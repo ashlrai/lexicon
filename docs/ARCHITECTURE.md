@@ -29,7 +29,8 @@ src/
     index.ts                entry point (bin: lexicon)
     commands.ts             commander program and every command handler
   daemon/
-    clipboard.ts            macOS pbpaste/pbcopy watcher (lexicon daemon); read/write injectable for tests
+    clipboard.ts            clipboard watcher (lexicon daemon): loop mode and --once for shortcuts; read/write injectable for tests
+    clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) backends + PATH detection
 
 .claude-plugin/plugin.json  Claude Code plugin manifest
 .mcp.json                   plugin MCP server entry (node ${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js)
@@ -90,12 +91,14 @@ The prompt is not rewritten. Claude Code does not allow hooks to mutate the prom
 
 ```text
   dictation app --> clipboard --> lexicon daemon --> clipboard --> paste anywhere
-                                 (pbpaste/pbcopy, loop guard)
+                                 (pbpaste/pbcopy, wl-clipboard, xclip/xsel or PowerShell; loop guard)
 
   lexicon export wispr|superwhisper|macos|espanso|...  -->  the app's own dictionary
 ```
 
 These fix the text before any agent sees it, at the cost of being per-machine (daemon) or per-app (export).
+
+The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the tool from the platform, `WAYLAND_DISPLAY` and PATH (no process is spawned to detect), and every backend treats an empty or non-text clipboard as `''`. `lexicon daemon --once` is the shortcut-friendly form: one read, one write if anything changed, a diff on stdout, exit 0; `--paste` (macOS) sends Cmd+V through `osascript`, which is the only part that needs a permission (Accessibility). The loop mode keeps the same guard against rewriting its own output and re-reads the lexicon at most every 5s.
 
 ## File resolution
 
@@ -124,7 +127,7 @@ The hook runs on every prompt in Claude Code, so it is the tightest constraint.
 |---|---|---|
 | `lexicon hook`, 1KB prompt | under 200ms end to end, including Node startup. Measured: about 100ms on an M-series Mac with an 8-term lexicon | No network. YAML read once. `buildIndex()` precomputes alias map and phonetic keys. Exact alias is a single word-boundary regex pass. |
 | `normalize_transcript` | under 50ms for a typical prompt | Same index; server process stays warm |
-| `lexicon daemon` | 250ms poll, negligible CPU when idle | `pbpaste` only; skips normalize when text is unchanged |
+| `lexicon daemon` | 250ms poll, negligible CPU when idle | one clipboard read per poll (`pbpaste`, `wl-paste`, `xclip -o`, `xsel` or a PowerShell process); skips normalize when text is unchanged |
 | `harvestRepo()` | bounded by caps | 5000 files, 512KB per file, skips `node_modules`, `dist`, `.git`, `vendor`, `build` |
 
 The hook always exits 0. A thrown error prints to stderr and produces no context; it never blocks a prompt. The CLI `normalize` command follows the same rule: on a lexicon load error it warns on stderr and passes the text through unchanged, so a pipeline never loses input.

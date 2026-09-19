@@ -31,7 +31,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 - A Claude Code plugin (skill, `/lexicon` command, prompt hook) installable from this repo's marketplace.
 - Exports for Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Azure and Google STT.
 - Importers for the dictionary you already have (Wispr CSV, Superwhisper JSON, macOS plist, espanso, plain text).
-- Repo harvesting, correction learning ("it's Ashlr.AI not Ashler"), a trust gate for project lexicons, and a macOS clipboard daemon.
+- Repo harvesting, correction learning ("it's Ashlr.AI not Ashler"), a trust gate for project lexicons, and a clipboard daemon for macOS, Linux and Windows.
 
 ## Why
 
@@ -75,9 +75,9 @@ claude plugin install lexicon@ashlrai
 
 Or inside a Claude Code session: `/plugin marketplace add ashlrai/lexicon` then `/plugin install lexicon@ashlrai`. The marketplace manifest is [.claude-plugin/marketplace.json](.claude-plugin/marketplace.json).
 
-The plugin ships `.mcp.json` (the `lexicon` MCP server, run as `node ${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js`), `hooks/hooks.json` (the prompt hook), a `lexicon` skill that tells Claude when to normalize and when to save a correction, and a `/lexicon` command (`/lexicon`, `/lexicon add X as Y, Z`, `/lexicon harvest`, `/lexicon export <format>`, `/lexicon remove X`).
+The plugin ships `.mcp.json` (the `lexicon` MCP server), `hooks/hooks.json` (a `SessionStart` hook that hands the model your lexicon once per session and a `UserPromptSubmit` hook that corrects each dictated prompt), a `lexicon` skill that tells Claude when to normalize and when to save a correction, and a `/lexicon` command (`/lexicon`, `/lexicon add X as Y, Z`, `/lexicon harvest`, `/lexicon export <format>`, `/lexicon remove X`).
 
-The plugin's MCP server and hook point at `${CLAUDE_PLUGIN_ROOT}/dist/...`, which is fast and works offline but needs `dist/` to exist. A plugin install clones the repo without running `npm install`, so after installing either run `npm ci && npm run build` inside the plugin directory (`~/.claude/plugins/marketplaces/ashlrai/`), or skip the plugin's server and register the npm-installed one instead: `npm i -g @ashlr/lexicon && lexicon install claude --apply` (option b). If you want a zero-install fallback, point your own MCP config at `npx -y @ashlr/lexicon mcp` and the hook at `npx -y @ashlr/lexicon hook`; note `npx` adds startup latency the hook's 200ms budget was not designed for.
+The plugin is self-contained. `.mcp.json` and `hooks/hooks.json` run `plugin/mcp-server.mjs` and `plugin/hook.mjs`, two single-file bundles committed to the repo with every dependency inlined. A plugin install is a bare clone with no `npm install` and no build step, and that is all it needs: the only runtime requirement is Node 20 or newer on your `PATH`. The bundles are produced by `npm run build:bundle` and CI fails when they are out of date with `src/`.
 
 ### b. Manual
 
@@ -88,11 +88,11 @@ lexicon install-claude --apply  # do it
 
 Without `--apply` it prints the three steps. With `--apply` it performs the first two:
 
-1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/dist/mcp/server.js"`. Use `--scope project` to register it in the current repo instead.
-2. Merges a `UserPromptSubmit` hook running `node "<install path>/dist/hooks/user-prompt-submit.js"` (timeout 5s) into `~/.claude/settings.json`. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](examples/claude-settings.hook.json).
+1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead.
+2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json`. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](examples/claude-settings.hook.json).
 3. Reminds you to add "Read the `lexicon://me` resource before interpreting dictated text" to your `CLAUDE.md`.
 
-Paths are absolute and quoted, so an install path with spaces works.
+Paths are absolute and quoted, so an install path with spaces works. The self-contained bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`.
 
 ### c. Minimal
 
@@ -115,6 +115,10 @@ tell Ashlr.AI to ship it to Hetzner
 ```
 
 The model starts the turn already knowing that "Ashler" means "Ashlr.AI". When nothing changed it prints nothing. It always exits 0, logs errors to stderr only, and measures about 100ms end to end including Node startup (budget 200ms), so a broken lexicon never blocks a prompt.
+
+When the prompt itself is a correction ("it's Ashlr.AI, not Ashlar", "Ashlar -> Ashlr.AI", "replace Ashlar with Ashlr.AI") the hook adds one more line asking the model to call `learn_correction` with those two values. The hook never writes to the lexicon on its own; the model makes the call, so a false positive costs nothing.
+
+The same file also runs as a `SessionStart` hook (startup, resume, clear and compact). It emits the `claude-md` export of your merged lexicon, the table from `lexicon export claude-md`, as `additionalContext`, so the spellings reach the model once per session even if it never reads `lexicon://me`. The context is capped at about 4000 characters; longer tables end with "... N more terms; read the lexicon://me resource for the full list." An empty lexicon emits nothing.
 
 ## Use with other agents
 
@@ -237,18 +241,108 @@ Ashlr.AI       brand       2      Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI  RE
 
 Review the list before `--add`; it writes every candidate to the project `.lexicon.yaml` with its suggested aliases. `--limit N` caps candidates, `--min-count N` sets the minimum occurrences (default 2), `--json` prints candidates as JSON. It never reads `node_modules`, `dist`, `.git`, `vendor` or `build`.
 
-## Clipboard daemon (macOS)
+### Pick candidates one by one
+
+On a terminal, `--add` walks the candidates instead of adding them blindly (`--yes` restores the old add-everything behaviour; `--interactive` / `-i` forces the walkthrough without `--add`). Each candidate shows its category, count, evidence and suggested aliases; one key decides it:
+
+```text
+$ lexicon harvest . --add
+12 candidates [y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit
+
+[1/12] LexiconStore  identifier, seen 5x
+  evidence: src/store.ts, src/index.ts
+  aliases:  Lexicon Store, Lexikon Store, LexikonStore
+  add? [y/n/e/c/a/q] y
+  added LexiconStore
+
+[2/12] Ashlr.AI  brand, seen 2x
+  evidence: README.md
+  aliases:  Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI
+  add? [y/n/e/c/a/q] e
+  aliases (comma-separated, replaces the suggestions) [Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI] Ashler, Ashlar, Ashley our AI
+  aliases:  Ashler, Ashlar, Ashley our AI
+  add? [y/n/e/c/a/q] y
+  added Ashlr.AI
+
+[3/12] Mason Wyatt  person, seen 40x
+  evidence: git log
+  aliases:  Mason Wyat, Mason Wyeth
+  add? [y/n/e/c/a/q] q
+
+added 2 new terms, merged 0, skipped 10 in /repo/.lexicon.yaml
+project lexicon trusted (/repo/.lexicon.yaml)
+```
+
+`y` adds, `n` skips, `e` replaces the suggested aliases with what you type, `c` changes the category, `a` adds this and every remaining candidate, `q` stops. Adds go to the project lexicon and respect the trust gate: an untrusted `.lexicon.yaml` is refused up front with the `lexicon trust` hint. `--interactive` without a terminal (a pipe, CI) is an error; use `--add --yes` there.
+
+The same walkthrough exists for terms you already have: `lexicon review` (`--never-hit` to see only terms that never fired, `--project` for the project file, `--category <c>`) shows each term's aliases and hit count and takes `k` keep, `d` delete, `e` edit aliases, `p` phonetic hint, `n` notes, `q` quit, writing the file once at the end. `lexicon edit` opens the global (or `--project`) file in `$VISUAL` / `$EDITOR` and validates it when the editor exits, reporting any schema error with the path so your edits are never lost. `lexicon add <canonical> -i` turns the auto-suggested aliases into a checklist and asks for the phonetic hint and category.
+
+## Clipboard daemon (macOS, Linux, Windows)
 
 Dictate anywhere, copy the text, paste the corrected version.
 
 ```bash
 lexicon daemon                 # watch the clipboard, rewrite in place
+lexicon daemon --once          # correct the clipboard once and exit (bind this to a shortcut)
+lexicon daemon --once --paste  # ...then send Cmd+V to the frontmost app (macOS)
 lexicon daemon --dry-run       # print what would change, do not write
 lexicon daemon --interval 500  # poll every 500ms instead of 250
 lexicon daemon --quiet         # rewrite silently
+lexicon daemon --which         # print the detected clipboard backend and exit
+lexicon daemon --backend xsel  # force a backend: pbcopy | wl | xclip | xsel | powershell
 ```
 
-It polls `pbpaste` every 250ms. When the clipboard text changes and `normalize` would alter it, it writes the corrected text back with `pbcopy` and prints the diff. A loop guard remembers the last value it wrote so it never rewrites its own output. Ctrl-C stops it cleanly.
+The watcher polls the clipboard every 250ms. When the text changes and `normalize` would alter it, it writes the corrected text back and prints the diff. A loop guard remembers the last value it wrote so it never rewrites its own output. Ctrl-C stops it cleanly.
+
+The clipboard tool is detected per platform (`lexicon daemon --which` and `lexicon doctor` show which one):
+
+| Platform | Backend | Commands |
+|---|---|---|
+| macOS | `pbcopy` | `pbpaste` / `pbcopy` (built in) |
+| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline` / `wl-copy` (`sudo apt install wl-clipboard`) |
+| Linux, X11 | `xclip`, else `xsel` | `xclip -selection clipboard -o` / `-i` (`sudo apt install xclip`) |
+| Windows | `powershell` | `Get-Clipboard -Raw` / `Set-Clipboard` (built in; CRLF preserved) |
+
+An empty or non-text clipboard (an image, a file) is treated as no text and skipped.
+
+### One-shot mode for a keyboard shortcut
+
+`lexicon daemon --once` reads the clipboard once, corrects it, writes it back if anything changed, prints the diff (or `no changes`) and exits 0. Bind it to a key: dictate, copy, press the key, paste. With `--paste` (macOS only) it also sends Cmd+V to the frontmost app, so the shortcut becomes "dictate, press the key". `--paste` uses `osascript` and needs Accessibility permission for whatever runs the shortcut (Raycast, Alfred, Keyboard Maestro, Terminal): System Settings > Privacy & Security > Accessibility. Nothing else in the daemon needs a permission.
+
+Raycast script command (save as `~/raycast-scripts/lexicon-fix.sh`, `chmod +x`, add the folder in Raycast > Extensions > Script Commands, then give it a hotkey):
+
+```bash
+#!/bin/bash
+# @raycast.schemaVersion 1
+# @raycast.title Fix dictation
+# @raycast.mode silent
+# @raycast.packageName Lexicon
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+lexicon daemon --once --paste --quiet
+```
+
+Alfred (Workflow > Run Script, `/bin/bash`) or Keyboard Maestro (Execute Shell Script), one line:
+
+```bash
+PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" lexicon daemon --once --paste --quiet
+```
+
+Windows, AutoHotkey v2 (`Ctrl+Alt+V` corrects the clipboard, then pastes):
+
+```autohotkey
+^!v:: {
+    RunWait('lexicon daemon --once --quiet', , 'Hide')
+    Send('^v')
+}
+```
+
+Linux, GNOME custom shortcut (Settings > Keyboard > View and Customize Shortcuts > Custom Shortcuts), command:
+
+```bash
+sh -c 'lexicon daemon --once --quiet && xdotool key ctrl+v'   # X11; drop the xdotool part on Wayland and paste by hand
+```
+
+Use the absolute path to `lexicon` (`which lexicon`) if the shortcut runner has a minimal PATH.
 
 ## Security and trust
 
@@ -374,28 +468,86 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | Command | Does |
 |---|---|
 | `lexicon init` | Create the global lexicon file if missing. `--project` creates `.lexicon.yaml` at the git root (or cwd) instead |
-| `lexicon add <canonical> [aliases...]` | Add a term or merge aliases into an existing one. `--phonetic <hint>`, `--category <c>`, `--notes <text>`, `--project` (write to the project file), `--suggest` (append auto-generated misspellings; automatic when no aliases are given) |
+| `lexicon add <canonical> [aliases...]` | Add a term or merge aliases into an existing one. `--phonetic <hint>`, `--category <c>`, `--notes <text>`, `--project` (write to the project file), `--suggest` (append auto-generated misspellings; automatic when no aliases are given), `-i` / `--interactive` (confirm the suggested aliases as a checklist, then ask for phonetic hint and category; needs a terminal) |
 | `lexicon remove <canonical>` (alias `rm`) | Remove a term, project lexicon first then global. `--project` looks only in the project file |
 | `lexicon list` (alias `ls`) | List the merged lexicon. `--json`, `--category <c>`, `--query <text>` |
 | `lexicon normalize [text...]` | Correct text from arguments or stdin. `--json`, `--diff` (to stderr), `--dry-run`, `--min-confidence <n>`, `--no-phonetic`, `--no-fuzzy`. Always exits 0 |
-| `lexicon harvest [path]` | Scan a repo for candidate terms. `--limit <n>`, `--min-count <n>`, `--add`, `--json` |
+| `lexicon harvest [path]` | Scan a repo for candidate terms. `--limit <n>`, `--min-count <n>`, `--add` (on a terminal this walks candidates one by one; `--yes` adds them all without asking), `-i` / `--interactive` (the walkthrough: `y` add, `n` skip, `e` edit aliases, `c` category, `a` add all remaining, `q` quit; needs a terminal), `--json` |
+| `lexicon review` | Walk existing terms and `k` keep, `d` delete, `e` edit aliases, `p` set phonetic, `n` set notes, `q` quit; the file is written once at the end. `--never-hit` (only terms with 0 hits), `--project` / `--global` (which file; global by default), `--category <c>`. Needs a terminal |
+| `lexicon edit` | Open the global lexicon (`--project` for `.lexicon.yaml`) in `$VISUAL` / `$EDITOR`, then re-parse it and report schema errors with the path (the file is never rewritten). Without an editor variable it prints the path. A trusted project file is re-pinned after the edit |
 | `lexicon export [format]` | Export for another tool; no format lists them. `--out <file>`, `--category <c...>`, `--limit <n>` |
 | `lexicon import <file> [format]` | Import a dictation app's dictionary (`-` for stdin; format auto-detected). `--format <f>`, `--project`, `--dry-run`, `--source <s>`, `--category <c>`, `--json` |
 | `lexicon path` | Print the resolved global and project file paths |
 | `lexicon doctor` | Check lexicon files, term conflicts (duplicates across scopes, ambiguous aliases, aliases that are common words) and the Claude Code integration. Lines are `✓` ok, `!` warning, `✗` failure, `·` info. Exits 1 if anything failed |
 | `lexicon mcp` | Start the stdio MCP server (same as `lexicon-mcp`) |
 | `lexicon hook` | Run the Claude Code UserPromptSubmit hook (JSON in, JSON out) |
-| `lexicon daemon` | macOS clipboard watcher. `--interval <ms>`, `--dry-run`, `--quiet` |
+| `lexicon daemon` | Clipboard watcher (macOS, Linux, Windows). `--once` (correct once and exit), `--paste` (with `--once`, send Cmd+V on macOS; needs Accessibility), `--interval <ms>`, `--dry-run`, `--quiet`, `--backend <name>`, `--which` |
 | `lexicon install-claude` | Print the Claude Code MCP + hook setup. `--apply` performs it, `--scope user|project` picks the MCP registration scope |
 | `lexicon install [client]` | Print (or with `--apply`, merge) the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `claude-desktop` or `vscode`; no client prints the generic snippet. `--project` / `--scope project` targets the repo-level file, `--home <dir>` overrides the home directory |
+
+## Use as a library
+
+Everything the CLI, MCP server and hook do is available as plain functions. `normalize()` is pure (text + lexicon in, result out); the store functions read and write the same YAML files the CLI uses.
+
+```bash
+npm i @ashlr/lexicon
+```
+
+```ts
+import { normalize, loadLexicon, addTerm, harvestRepo, exportLexicon } from '@ashlr/lexicon';
+
+// Global ~/.config/lexicon/lexicon.yaml (or $LEXICON_PATH) merged with a trusted
+// project .lexicon.yaml found from cwd.
+const { merged: lexicon } = await loadLexicon({ cwd: process.cwd() });
+
+const result = normalize('ask ashler to deploy pie dantic', lexicon);
+// {
+//   input: 'ask ashler to deploy pie dantic',
+//   output: 'ask Ashlr.AI to deploy Pydantic',
+//   changed: true,
+//   replacements: [
+//     { start: 4, end: 10, original: 'ashler', replacement: 'Ashlr.AI',
+//       canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 },
+//     { start: 21, end: 31, original: 'pie dantic', replacement: 'Pydantic',
+//       canonical: 'Pydantic', reason: 'alias', confidence: 1 },
+//   ],
+// }
+
+// Teach it a term (merges aliases into an existing canonical; scope: 'project' writes .lexicon.yaml).
+await addTerm({ canonical: 'Deepgram', aliases: ['deep gram'], category: 'product' });
+
+// Mine a codebase for names worth adding, then render the lexicon for another tool.
+const candidates = await harvestRepo('/path/to/repo', { limit: 20 });
+const whisperPrompt = exportLexicon(lexicon, 'whisper-prompt');
+```
+
+Embedding it in your own STT pipeline, between the transcription API and the model:
+
+```ts
+import { loadLexicon, normalize, exportLexicon } from '@ashlr/lexicon';
+
+const { merged: lexicon } = await loadLexicon();
+const prompt = exportLexicon(lexicon, 'whisper-prompt');          // bias the STT model first
+const heard = await transcribe(audio, { prompt });                  // Whisper / Deepgram / etc.
+const fixed = normalize(heard, lexicon);                            // then fix what it still got wrong
+if (fixed.changed) console.error(fixed.replacements.map((r) => `${r.original} -> ${r.replacement}`));
+await llm.send(fixed.output);
+```
+
+Other useful exports: `parseLexicon(raw)` validates an object you loaded yourself, `diffSummary(result)` renders the replacement list, `suggestAliases(canonical)` guesses likely misspellings, `learnCorrection({ heard, meant })` records a correction, `computeStats(loaded)` reports usage, and `EXPORT_FORMATS` / `IMPORT_FORMATS` list what `exportLexicon` / `importLexicon` accept. Types (`Lexicon`, `Term`, `NormalizeResult`, `HarvestCandidate`, ...) are exported too. Runnable versions of both snippets: [examples/library-usage.ts](examples/library-usage.ts) and [examples/stt-pipeline.ts](examples/stt-pipeline.ts) (`node --import tsx examples/<file>`).
 
 ## Development
 
 ```bash
 npm install
 npm run build
-npm test
+npm test            # unit + integration + e2e (vitest)
+npm run test:e2e    # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
+npm run bench       # accuracy benchmark (see bench/README.md); results land in docs/BENCHMARK.md
+npm run docs:cli    # regenerate docs/CLI.md from every command's --help
 ```
+
+The e2e suite runs from source (`node --import tsx`) against a temp HOME, so it needs no build and never touches your real lexicon. Set `LEXICON_SKIP_E2E=1` to skip it.
 
 Manual stdio check:
 
@@ -409,7 +561,23 @@ Interactive check with the MCP inspector:
 npx @modelcontextprotocol/inspector node dist/mcp/server.js
 ```
 
-Module layout and design decisions are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The research behind the project is in [docs/RESEARCH.md](docs/RESEARCH.md). See [CONTRIBUTING.md](CONTRIBUTING.md) to add an exporter or harvester.
+Project layout:
+
+```text
+src/core/        the library: types, schema, store, matcher, normalize, suggest, harvest, learn, stats, exporters/, importers/
+src/cli/         the `lexicon` command (commander wiring in index.ts, handlers in commands.ts and cmd-*.ts)
+src/mcp/         the stdio MCP server (`lexicon-mcp`)
+src/hooks/       the Claude Code UserPromptSubmit hook
+src/daemon/      the clipboard watcher
+tests/           vitest; one file per module, e2e.test.ts for whole-journey subprocess tests, fixtures/fake-repo for harvest
+bench/           accuracy benchmark corpus and runner
+examples/        example lexicon, client configs, library and STT pipeline examples
+scripts/         build-bundle (plugin) and gen-cli-docs
+docs/            ARCHITECTURE, RESEARCH, BENCHMARK and the generated CLI reference
+skills/ commands/ hooks/ .claude-plugin/ .mcp.json   what makes the repo a Claude Code plugin
+```
+
+Module layout and design decisions are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The full CLI reference generated from `--help` is [docs/CLI.md](docs/CLI.md). The research behind the project is in [docs/RESEARCH.md](docs/RESEARCH.md). See [CONTRIBUTING.md](CONTRIBUTING.md) to add an exporter, harvester or journey test.
 
 ## Roadmap and non-goals
 
@@ -423,7 +591,6 @@ Roadmap:
 
 - Learned aliases: notice when you correct the agent and propose the alias.
 - Team-shared lexicon committed to the repo, merged under the personal one.
-- Windows and Linux clipboard daemon.
 - VS Code extension.
 
 ## License

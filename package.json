@@ -18,6 +18,7 @@
   },
   "files": [
     "dist",
+    "plugin",
     "skills",
     "commands",
     "hooks",
@@ -27,14 +28,18 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:bundle": "node scripts/build-bundle.mjs",
+    "check:bundle": "npm run build:bundle && git diff --exit-code --stat -- plugin",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run",
+    "test:e2e": "vitest run tests/e2e.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "mcp": "node dist/mcp/server.js",
     "bench": "node --import tsx bench/run.ts",
-    "prepublishOnly": "npm run build && npm test"
+    "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
+    "prepublishOnly": "npm run build && npm run build:bundle && npm test"
   },
   "keywords": [
     "mcp",
@@ -58,6 +63,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.13",
     "typescript": "^5.9.0",
     "vitest": "^5.0.1"

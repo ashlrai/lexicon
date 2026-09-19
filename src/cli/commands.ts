@@ -9,6 +9,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
@@ -39,6 +40,9 @@ import type {
   TermCategory,
   TermScope,
 } from '../core/index.js';
+import { runHarvestInteractive } from './cmd-review.js';
+import { createPrompter, isInteractive, splitList } from './prompt.js';
+import type { Prompter } from './prompt.js';
 
 // ---------------------------------------------------------------------------
 // IO + shared helpers
@@ -132,6 +136,12 @@ function parseCategory(value: string | undefined): TermCategory | undefined {
     throw new Error(`unknown category "${value}" (expected one of: ${CATEGORIES.join(', ')})`);
   }
   return lower as TermCategory;
+}
+
+/** Like parseCategory but returns undefined instead of throwing (interactive re-ask loops). */
+function parseCategoryLoose(value: string): TermCategory | undefined {
+  const lower = value.trim().toLowerCase();
+  return (CATEGORIES as readonly string[]).includes(lower) ? (lower as TermCategory) : undefined;
 }
 
 function isExportFormat(value: string): value is ExportFormat {
@@ -264,6 +274,10 @@ export interface AddOptions extends CommonOptions {
   project?: boolean;
   suggest?: boolean;
   never?: string[];
+  /** `-i`: confirm suggested aliases as a checklist, then ask for phonetic and category. */
+  interactive?: boolean;
+  /** Explicit global lexicon path (test hook, no CLI flag). */
+  globalPath?: string;
 }
 
 export async function runAdd(
@@ -271,11 +285,19 @@ export async function runAdd(
   aliasArgs: readonly string[],
   opts: AddOptions,
   io: IO,
+  prompter?: Prompter,
 ): Promise<number> {
   const trimmed = canonical.trim();
   if (!trimmed) throw new Error('canonical must not be empty');
   const cwd = resolveCwd(opts);
   const scope: TermScope = opts.project ? 'project' : 'global';
+  if (opts.interactive && !prompter && !isInteractive()) {
+    throw new Error('add --interactive needs a terminal (stdin and stdout must be a TTY); pass aliases as arguments instead');
+  }
+  const ownPrompter = opts.interactive && !prompter;
+  const p: Prompter | undefined = opts.interactive
+    ? (prompter ?? createPrompter({ input: process.stdin, output: process.stdout }))
+    : undefined;
 
   const aliases = aliasArgs.map((a) => a.trim()).filter(Boolean);
   let suggested: string[] = [];
@@ -287,20 +309,57 @@ export async function runAdd(
       have.add(key);
       return true;
     });
-    aliases.push(...suggested);
+    if (p && aliasArgs.length === 0) {
+      // Interactive: the suggestions are a checklist, not a fait accompli.
+      const kept =
+        suggested.length > 0
+          ? await p.choose(
+              `aliases for ${trimmed} (what STT is likely to write)`,
+              suggested.map((s) => ({ label: s, value: s })),
+              { multi: true },
+            )
+          : [];
+      const extra = splitList(await p.ask('more aliases (comma-separated, Enter for none)')).filter((a) => {
+        const key = a.toLowerCase();
+        if (key === trimmed.toLowerCase() || kept.some((k) => k.toLowerCase() === key)) return false;
+        return true;
+      });
+      suggested = kept;
+      aliases.push(...kept, ...extra);
+    } else {
+      aliases.push(...suggested);
+    }
   }
 
   const term: Term = { canonical: trimmed, aliases };
   if (opts.phonetic) term.phonetic = opts.phonetic;
-  const category = parseCategory(opts.category);
+  let category = parseCategory(opts.category);
+  if (p) {
+    try {
+      const phonetic = (await p.ask('phonetic hint (e.g. ASH-ler, Enter for none)', { default: opts.phonetic ?? '' })).trim();
+      if (phonetic) term.phonetic = phonetic;
+      else delete term.phonetic;
+      for (;;) {
+        const answer = (await p.ask(`category (${CATEGORIES.join('|')})`, { default: category ?? 'other' })).trim();
+        const parsed = parseCategoryLoose(answer);
+        if (parsed) {
+          category = parsed;
+          break;
+        }
+        io.stderr(`lexicon: unknown category "${answer}"\n`);
+      }
+    } finally {
+      if (ownPrompter) p.close();
+    }
+  }
   if (category) term.category = category;
   if (opts.notes) term.notes = opts.notes;
   const never = (opts.never ?? []).map((w) => w.trim()).filter(Boolean);
   if (never.length > 0) term.never = never;
 
-  const result = await addTerm(term, { scope, cwd });
+  const result = await addTerm(term, { scope, cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) });
   line(io, `${result.created ? green('created') : green('merged')} ${bold(result.term.canonical)} (${scope}) in ${result.file.path}`);
-  if (suggested.length > 0) line(io, `suggested aliases: ${suggested.join(', ')}`);
+  if (suggested.length > 0 && !p) line(io, `suggested aliases: ${suggested.join(', ')}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? result.term.aliases.join(', ') : dim('(none)')}`);
   if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${result.file.path})`));
   return 0;
@@ -460,12 +519,38 @@ export interface HarvestCliOptions extends CommonOptions {
   minCount?: string | number;
   add?: boolean;
   json?: boolean;
+  /** `-i`: walk candidates one by one. Implied by `--add` on a terminal unless `--yes`. */
+  interactive?: boolean;
+  /** With `--add`: add every candidate without prompting even on a terminal. */
+  yes?: boolean;
+  /** Explicit global lexicon path (test hook, no CLI flag). */
+  globalPath?: string;
 }
 
-export async function runHarvest(root: string | undefined, opts: HarvestCliOptions, io: IO): Promise<number> {
+/** Test hooks for runHarvest: TTY detection and the prompter used for the walkthrough. */
+export interface HarvestDeps {
+  isInteractive?: () => boolean;
+  createPrompter?: () => Prompter;
+}
+
+export async function runHarvest(
+  root: string | undefined,
+  opts: HarvestCliOptions,
+  io: IO,
+  deps: HarvestDeps = {},
+): Promise<number> {
   const cwd = resolveCwd(opts);
   const target = path.resolve(cwd, root ?? '.');
   if (!existsSync(target)) throw new Error(`harvest: path does not exist: ${target}`);
+
+  const tty = (deps.isInteractive ?? isInteractive)();
+  if (opts.interactive && !tty) {
+    throw new Error(
+      'harvest --interactive needs a terminal (stdin and stdout must be a TTY); use --add --yes to add every candidate without prompts',
+    );
+  }
+  if (opts.interactive && opts.json) throw new Error('harvest: --interactive and --json cannot be combined');
+  const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !opts.json && tty);
 
   const harvestOpts: HarvestOptions = {};
   const limit = parseIntOption(opts.limit, '--limit');
@@ -474,6 +559,21 @@ export async function runHarvest(root: string | undefined, opts: HarvestCliOptio
   if (minCount !== undefined) harvestOpts.minCount = minCount;
 
   const candidates: HarvestCandidate[] = await harvestRepo(target, harvestOpts);
+
+  if (interactive) {
+    // The walkthrough is the display; the table would only repeat it.
+    const prompter = (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))();
+    try {
+      return await runHarvestInteractive(
+        candidates,
+        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) },
+        io,
+        prompter,
+      );
+    } finally {
+      prompter.close();
+    }
+  }
 
   if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
@@ -594,6 +694,68 @@ export interface DoctorDeps {
   env?: NodeJS.ProcessEnv;
   /** Run a binary and return stdout; must throw on failure. */
   exec?: (file: string, args: readonly string[]) => string;
+  /** Claude settings file. Default ~/.claude/settings.json. */
+  settingsPath?: string;
+  /** Claude's plugin registry. Default ~/.claude/plugins/installed_plugins.json. */
+  installedPluginsPath?: string;
+}
+
+/** Hook events the lexicon hook handles; `install-claude` registers both. */
+export const HOOK_EVENTS: readonly string[] = ['UserPromptSubmit', 'SessionStart'];
+
+/** Commands `install-claude` (any version) or the plugin register for the hook. */
+const LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;
+
+interface JsonFileRead {
+  exists: boolean;
+  value?: unknown;
+  error?: string;
+}
+
+async function readJsonFile(file: string): Promise<JsonFileRead> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT') return { exists: false };
+    return { exists: true, error: errorMessage(err) };
+  }
+  try {
+    return { exists: true, value: raw.trim() === '' ? {} : (JSON.parse(raw) as unknown) };
+  } catch (err) {
+    return { exists: true, error: errorMessage(err) };
+  }
+}
+
+/**
+ * The id (`lexicon@<marketplace>`) under which the lexicon plugin is recorded,
+ * either in Claude's plugin registry (`installed_plugins.json`, `plugins` keyed
+ * by id) or in settings.json `enabledPlugins`; undefined when neither lists it.
+ */
+export function findInstalledLexiconPlugin(settings: unknown, installedPlugins: unknown): string | undefined {
+  const isLexicon = (id: string): boolean => /^lexicon@/i.test(id);
+  if (isRecord(installedPlugins) && isRecord(installedPlugins.plugins)) {
+    const id = Object.keys(installedPlugins.plugins).find(isLexicon);
+    if (id) return id;
+  }
+  if (isRecord(settings) && isRecord(settings.enabledPlugins)) {
+    const id = Object.entries(settings.enabledPlugins).find(([k, v]) => isLexicon(k) && v === true)?.[0];
+    if (id) return id;
+  }
+  return undefined;
+}
+
+/** True when settings.json registers a lexicon hook command for `event`. */
+export function settingsHasLexiconHook(settings: unknown, event: string): boolean {
+  if (!isRecord(settings) || !isRecord(settings.hooks)) return false;
+  const groups = settings.hooks[event];
+  if (!Array.isArray(groups)) return false;
+  return groups.some(
+    (g) =>
+      isRecord(g) &&
+      Array.isArray(g.hooks) &&
+      g.hooks.some((h) => isRecord(h) && typeof h.command === 'string' && LEXICON_HOOK_COMMAND.test(h.command)),
+  );
 }
 
 type CheckStatus = 'ok' | 'fail' | 'warn' | 'info';
@@ -716,6 +878,29 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
     push('ok', 'no alias/canonical conflicts');
   }
 
+  // --- Claude Code plugin / hooks -------------------------------------------------
+  const settingsPath = deps.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json');
+  const installedPluginsPath =
+    deps.installedPluginsPath ?? path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  if (settings.error) push('warn', `could not parse ${settingsPath}: ${settings.error}`);
+  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  if (pluginId) {
+    push('ok', `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
+  } else {
+    for (const event of HOOK_EVENTS) {
+      if (settingsHasLexiconHook(settings.value, event)) {
+        push('ok', `${event} hook found in ${settingsPath}`);
+      } else {
+        push(
+          'warn',
+          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install-claude --apply)`,
+        );
+      }
+    }
+  }
+
   // --- claude CLI ---------------------------------------------------------------
   const claudeBin = whichBin('claude', env);
   if (!claudeBin) {
@@ -725,6 +910,7 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
     try {
       const out = exec('claude', ['mcp', 'list']);
       if (/lexicon/i.test(out)) push('ok', 'lexicon MCP server is registered with claude');
+      else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
       else push('fail', 'lexicon MCP server not registered with claude (run: lexicon install-claude --apply)');
     } catch (err) {
       push('warn', `could not run "claude mcp list": ${errorMessage(err)}`);
@@ -732,12 +918,11 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
   }
 
   // --- clipboard -----------------------------------------------------------------
-  if (platform === 'darwin') {
-    const pb = whichBin('pbpaste', env);
-    if (pb) push('ok', `pbpaste found: ${pb} (clipboard daemon available)`);
-    else push('fail', 'pbpaste not found on PATH; clipboard daemon will not work');
-  } else {
-    push('info', `clipboard daemon is macOS-only (platform: ${platform})`);
+  try {
+    const backend = await detectClipboardBackend(platform, env, async (bin) => whichBin(bin, env) !== undefined);
+    push('ok', `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ''}`);
+  } catch (err) {
+    push('warn', `no clipboard backend found (${errorMessage(err)})`);
   }
 
   for (const c of checks) line(io, renderCheck(c));
@@ -771,42 +956,82 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function hookConfigFor(command: string, timeout = 5): { hooks: { UserPromptSubmit: HookGroup[] } } {
-  return { hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command, timeout }] }] } };
+export function hookConfigFor(
+  command: string,
+  timeout = 5,
+  events: readonly string[] = ['UserPromptSubmit'],
+): { hooks: Record<string, HookGroup[]> } {
+  const hooks: Record<string, HookGroup[]> = {};
+  for (const event of events) hooks[event] = [{ hooks: [{ type: 'command', command, timeout }] }];
+  return { hooks };
 }
 
 /**
- * Merge the UserPromptSubmit hook for `command` into a Claude settings object.
- * Never mutates the input. Existing hooks (any event) are preserved; if a hook
- * with an identical command already exists nothing changes.
+ * Merge a hook running `command` for each of `events` into a Claude settings
+ * object. Never mutates the input. Existing hooks (any event) are preserved;
+ * an event that already has a hook with an identical command is left alone.
  */
 export function mergeHookIntoSettings(
   settings: unknown,
   command: string,
   timeout = 5,
+  events: readonly string[] = ['UserPromptSubmit'],
 ): { settings: ClaudeSettings; changed: boolean } {
   const base: ClaudeSettings = isRecord(settings) ? (structuredClone(settings) as ClaudeSettings) : {};
   if (base.hooks !== undefined && !isRecord(base.hooks)) {
     throw new Error('settings.hooks is not an object; refusing to overwrite it');
   }
   const hooks: Record<string, unknown> = isRecord(base.hooks) ? base.hooks : {};
-  const existing = hooks.UserPromptSubmit;
-  if (existing !== undefined && !Array.isArray(existing)) {
-    throw new Error('settings.hooks.UserPromptSubmit is not an array; refusing to overwrite it');
-  }
-  const groups: HookGroup[] = Array.isArray(existing) ? (existing as HookGroup[]) : [];
+  let changed = false;
 
-  const alreadyPresent = groups.some(
-    (g) => isRecord(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord(h) && h.command === command),
-  );
-  if (alreadyPresent) {
-    return { settings: base, changed: false };
+  for (const event of events) {
+    const existing = hooks[event];
+    if (existing !== undefined && !Array.isArray(existing)) {
+      throw new Error(`settings.hooks.${event} is not an array; refusing to overwrite it`);
+    }
+    const groups: HookGroup[] = Array.isArray(existing) ? (existing as HookGroup[]) : [];
+    const alreadyPresent = groups.some(
+      (g) => isRecord(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord(h) && h.command === command),
+    );
+    if (alreadyPresent) continue;
+    groups.push({ hooks: [{ type: 'command', command, timeout }] });
+    hooks[event] = groups;
+    changed = true;
   }
 
-  groups.push({ hooks: [{ type: 'command', command, timeout }] });
-  hooks.UserPromptSubmit = groups;
-  base.hooks = hooks as Record<string, HookGroup[]>;
-  return { settings: base, changed: true };
+  if (changed) base.hooks = hooks as Record<string, HookGroup[]>;
+  return { settings: base, changed };
+}
+
+export interface IntegrationPaths {
+  /** Absolute path to the MCP server entry point. */
+  server: string;
+  /** Absolute path to the hook entry point. */
+  hook: string;
+  /** True when the self-contained bundles under plugin/ were found and chosen. */
+  bundled: boolean;
+}
+
+/**
+ * Where `install-claude` / `install` point clients at. Prefers the
+ * self-contained bundles in `<package root>/plugin/` (no node_modules needed
+ * at runtime, same files the Claude Code plugin uses) and falls back to the
+ * tsc output next to this file when they are absent (e.g. a checkout that only
+ * ran `npm run build`).
+ */
+export function resolveIntegrationPaths(cliDir?: string): IntegrationPaths {
+  const dir = cliDir ?? path.dirname(fileURLToPath(import.meta.url));
+  const root = path.resolve(dir, '..', '..');
+  const bundledServer = path.join(root, 'plugin', 'mcp-server.mjs');
+  const bundledHook = path.join(root, 'plugin', 'hook.mjs');
+  if (existsSync(bundledServer) && existsSync(bundledHook)) {
+    return { server: bundledServer, hook: bundledHook, bundled: true };
+  }
+  return {
+    server: path.resolve(dir, '../mcp/server.js'),
+    hook: path.resolve(dir, '../hooks/user-prompt-submit.js'),
+    bundled: false,
+  };
 }
 
 export interface InstallClaudeOptions extends CommonOptions {
@@ -833,9 +1058,7 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const cliDir = deps.cliDir ?? path.dirname(fileURLToPath(import.meta.url));
-  const serverPath = path.resolve(cliDir, '../mcp/server.js');
-  const hookPath = path.resolve(cliDir, '../hooks/user-prompt-submit.js');
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const settingsPath = deps.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json');
   const exec = deps.exec ?? defaultExec;
   let failed = false;
@@ -844,9 +1067,10 @@ export async function runInstallClaude(
   const mcpArgs = ['mcp', 'add', '--scope', scope, 'lexicon', '--', 'node', serverPath];
   line(io, bold('1. Register the MCP server'));
   line(io, `   claude ${mcpArgs.map(quoteArg).join(' ')}`);
+  if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
     if (!existsSync(serverPath)) {
-      line(io, yellow(`   note: ${serverPath} does not exist yet (run the build first)`));
+      line(io, yellow(`   note: ${serverPath} does not exist yet (run npm run build first)`));
     }
     try {
       const out = exec('claude', mcpArgs).trim();
@@ -858,12 +1082,12 @@ export async function runInstallClaude(
   }
   line(io);
 
-  // 2. UserPromptSubmit hook -----------------------------------------------------
+  // 2. UserPromptSubmit + SessionStart hooks ----------------------------------------
   // Always quoted: the path is embedded in a shell command string in settings.json.
   const hookCommand = `node "${hookPath.replace(/(["\\$`])/g, '\\$1')}"`;
-  line(io, bold('2. Add the UserPromptSubmit hook'));
+  line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
   line(io, `   merge into ${settingsPath}:`);
-  line(io, indent(JSON.stringify(hookConfigFor(hookCommand), null, 2), '   '));
+  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, 5, HOOK_EVENTS), null, 2), '   '));
   if (opts.apply) {
     let current: unknown = {};
     let existed = false;
@@ -876,13 +1100,13 @@ export async function runInstallClaude(
         throw new Error(`could not read ${settingsPath}: ${errorMessage(err)}`);
       }
     }
-    const { settings, changed } = mergeHookIntoSettings(current, hookCommand);
+    const { settings, changed } = mergeHookIntoSettings(current, hookCommand, 5, HOOK_EVENTS);
     if (changed) {
       await fs.mkdir(path.dirname(settingsPath), { recursive: true });
       await fs.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
-      line(io, green(`   ${existed ? 'updated' : 'created'} ${settingsPath}: added UserPromptSubmit hook`));
+      line(io, green(`   ${existed ? 'updated' : 'created'} ${settingsPath}: added ${HOOK_EVENTS.join(' + ')} hooks`));
     } else {
-      line(io, dim(`   ${settingsPath}: hook already present, nothing changed`));
+      line(io, dim(`   ${settingsPath}: hooks already present, nothing changed`));
     }
   }
   line(io);

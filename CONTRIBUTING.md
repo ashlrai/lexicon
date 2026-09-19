@@ -12,6 +12,12 @@ npm test
 
 Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit`.
 
+## The committed plugin bundles
+
+`plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.mcp.json`, `hooks/hooks.json`). They are single-file esbuild bundles of `src/mcp/server.ts` and `src/hooks/user-prompt-submit.ts` with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
+
+Run `npm run build:bundle` before committing any change that the MCP server or the hook can reach (almost everything under `src/core`, `src/mcp`, `src/hooks`, or a dependency bump) and commit the regenerated files. CI runs `npm run check:bundle`, which rebuilds and fails on any diff under `plugin/`. `dist/` (the tsc output for the npm package and library types) stays untracked.
+
 To try the CLI from a checkout:
 
 ```bash
@@ -27,13 +33,30 @@ Vitest. Tests live under `tests/`, one file per module:
 tests/
   schema.test.ts      normalize.test.ts   harvest.test.ts    mcp.test.ts
   store.test.ts       suggest.test.ts     exporters.test.ts  hook.test.ts
-  matcher.test.ts     cli.test.ts         daemon.test.ts
+  matcher.test.ts     cli.test.ts         daemon.test.ts     e2e.test.ts (real CLI/hook/MCP as subprocesses)
   fixtures/fake-repo/ a small repo (package.json, README.md, src/, scripts/, node_modules/) for harvest tests
 ```
 
 `npm test` runs them once; `npm run test:watch` watches.
 
 Matcher and normalize tests use inline fixtures. Store, CLI and hook tests use a temp directory and `LEXICON_PATH` so they never touch a real config. The daemon test injects read/write functions instead of touching the clipboard.
+
+### End-to-end journeys
+
+`tests/e2e.test.ts` is the only suite that does not mock anything: it spawns the real CLI (`node --import tsx src/cli/index.ts`), the hook and the MCP server as subprocesses against a throwaway HOME under `os.tmpdir()` (`HOME`, `XDG_CONFIG_HOME` and `LEXICON_PATH` all point there) and a temp git repo passed with `--cwd`. It covers the user journey end to end: init, add, list, normalize (args, stdin, `--json`, `--diff`, `--dry-run`, `--min-confidence`), learn, import, every export format, harvest, the trust flow, stats, path, doctor, install, the hook's `additionalContext`, and a JSON-RPC handshake with the MCP server over stdio. The daemon is skipped so the suite runs on CI without a clipboard.
+
+```bash
+npm run test:e2e          # about 20s
+LEXICON_SKIP_E2E=1 npm test   # everything but the journeys
+```
+
+To add a journey test:
+
+1. Pick the `describe` block for the area (or add one) and use `runCli(args, { env, stdin?, cwd? })`, which returns `{ code, stdout, stderr }`. Pass `cwd` when the command should see a project `.lexicon.yaml`; it is turned into `--cwd`.
+2. Read-only checks can use the `shared` home (seeded once with `Ashlr.AI` and `Mason Wyatt`). Anything that writes gets its own home from `freshHome(label)` or, to start from the seeded terms, `cloneOf(shared, label)`. Homes are deleted in `afterAll`.
+3. Assert on exit code, stdout and stderr separately. Warnings and `--diff` output belong on stderr; stdout is the data channel (and for `lexicon mcp`, the protocol channel).
+4. Keep it fast: each spawn costs about 200ms. Reuse the shared home where you can and keep the whole file under a minute.
+5. For a new command, also run `npm run docs:cli` so `docs/CLI.md` picks up its `--help`.
 
 ## Conventions
 

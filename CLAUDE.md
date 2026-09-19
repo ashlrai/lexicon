@@ -7,9 +7,10 @@ agent sees them. Not a dictation app.
 ## Layout
 - `src/core/` pure library: `types.ts` (contract), `schema.ts`, `store.ts` (YAML files), `matcher.ts` (alias > phonetic > fuzzy), `normalize.ts`, `suggest.ts`, `harvest.ts`, `exporters/`.
 - `src/mcp/server.ts` stdio MCP server (bin `lexicon-mcp`). stderr logging only.
-- `src/hooks/user-prompt-submit.ts` Claude Code UserPromptSubmit hook (injects corrections as additionalContext, never rewrites the prompt).
+- `src/hooks/user-prompt-submit.ts` Claude Code hook for `UserPromptSubmit` (injects corrections as additionalContext, flags "it's X not Y" corrections for `learn_correction`, never rewrites the prompt) and `SessionStart` (injects the claude-md export, capped at 4000 chars). `runHook` dispatches on `hook_event_name`.
+- `plugin/mcp-server.mjs`, `plugin/hook.mjs` committed esbuild bundles (`npm run build:bundle`, checked by CI via `npm run check:bundle`) that the plugin manifests point at; rebuild after touching anything they import. `dist/` stays untracked.
 - `src/cli/` commander CLI (bin `lexicon`); handlers live in `commands.ts`, `index.ts` only wires commander.
-- `src/daemon/clipboard.ts` macOS clipboard watcher.
+- `src/daemon/clipboard.ts` clipboard watcher (loop and `--once`); `src/daemon/clipboard-backends.ts` pbcopy/wl/xclip/xsel/powershell backends + PATH detection.
 - `skills/`, `hooks/hooks.json`, `commands/`, `.mcp.json`, `.claude-plugin/plugin.json` make the repo a Claude Code plugin.
 - `CONTRACT.md` is the module API contract. Update it when a public signature changes.
 

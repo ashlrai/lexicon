@@ -2,7 +2,7 @@
   "mcpServers": {
     "lexicon": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT:-.}/dist/mcp/server.js"]
+      "args": ["${CLAUDE_PLUGIN_ROOT:-.}/plugin/mcp-server.mjs"]
     }
   }
 }

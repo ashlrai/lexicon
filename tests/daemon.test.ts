@@ -24,7 +24,15 @@ vi.mock('../src/core/index.js', () => {
 });
 
 import * as core from '../src/core/index.js';
-import { runClipboardDaemon } from '../src/daemon/clipboard.js';
+import { runClipboardDaemon, runClipboardOnce, runDaemonCommand } from '../src/daemon/clipboard.js';
+import {
+  ExecError,
+  createClipboardBackend,
+  detectClipboardBackend,
+  findOnPath,
+  powershellBackend,
+} from '../src/daemon/clipboard-backends.js';
+import type { ClipboardExec } from '../src/daemon/clipboard-backends.js';
 
 interface Harness {
   clipboard: string;
@@ -161,13 +169,298 @@ describe('runClipboardDaemon', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it('throws a clear error off macOS when no clipboard functions are injected', async () => {
-    const original = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'linux' });
-    try {
-      await expect(runClipboardDaemon({ quiet: true })).rejects.toThrow(/macOS/);
-    } finally {
-      Object.defineProperty(process, 'platform', { value: original });
+  it('throws with an install hint on Linux when no clipboard tool is on PATH', async () => {
+    await expect(runClipboardDaemon({ quiet: true, platform: 'linux', env: { PATH: '' } })).rejects.toThrow(/wl-clipboard.*xclip/);
+  });
+
+  it('completes a single injected read function from the detected backend', async () => {
+    const calls: { cmd: string; args: string[]; stdin?: string }[] = [];
+    const exec: ClipboardExec = async (cmd, args, stdin) => {
+      calls.push({ cmd, args: [...args], stdin });
+      return '';
+    };
+    const controller = new AbortController();
+    const read = vi.fn(async () => 'meet Ashler');
+    const done = runClipboardDaemon({ read, exec, backend: 'pbcopy', quiet: true, signal: controller.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual([{ cmd: 'pbcopy', args: [], stdin: 'meet Ashlr.AI' }]);
+    controller.abort();
+    await done;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Once mode
+
+function onceHarness(initial: string) {
+  const h = { clipboard: initial, out: [] as string[], err: [] as string[] };
+  const read = vi.fn(async () => h.clipboard);
+  const write = vi.fn(async (s: string) => {
+    h.clipboard = s;
+  });
+  return { h, read, write, out: (s: string) => h.out.push(s), err: (s: string) => h.err.push(s) };
+}
+
+describe('runClipboardOnce', () => {
+  it('changed text is written back once and summarized', async () => {
+    const { h, read, write, out, err } = onceHarness('meet Ashler');
+    const result = await runClipboardOnce({ read, write, out, err });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith('meet Ashlr.AI');
+    expect(h.clipboard).toBe('meet Ashlr.AI');
+    expect(result).toEqual({ changed: true, written: true, corrections: 1, pasted: false });
+    const report = h.out.join('');
+    expect(report).toMatch(/^1 correction\n/);
+    expect(report).toContain('"Ashler" -> "Ashlr.AI"');
+    expect(report).not.toMatch(/\[\d\d:\d\d:\d\d\]/);
+  });
+
+  it('unchanged text is not written and prints "no changes"', async () => {
+    const { h, read, write, out, err } = onceHarness('nothing to fix');
+    const result = await runClipboardOnce({ read, write, out, err });
+    expect(write).not.toHaveBeenCalled();
+    expect(result).toEqual({ changed: false, written: false, corrections: 0, pasted: false });
+    expect(h.out.join('')).toBe('no changes\n');
+  });
+
+  it('empty clipboard prints no changes and never normalizes', async () => {
+    const { h, read, write, out, err } = onceHarness('');
+    await runClipboardOnce({ read, write, out, err });
+    expect(core.normalize).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(h.out.join('')).toContain('no changes (clipboard is empty');
+  });
+
+  it('dryRun reports without writing', async () => {
+    const { h, read, write, out, err } = onceHarness('meet Ashler');
+    const result = await runClipboardOnce({ read, write, out, err, dryRun: true });
+    expect(write).not.toHaveBeenCalled();
+    expect(result.changed).toBe(true);
+    expect(result.written).toBe(false);
+    expect(h.out.join('')).toMatch(/^\(dry-run\) 1 correction/);
+  });
+
+  it('--paste sends the keystroke on darwin (even when unchanged) and reports failure with the Accessibility hint', async () => {
+    const { read, write, out, err } = onceHarness('nothing to fix');
+    const sendPaste = vi.fn(async () => undefined);
+    const result = await runClipboardOnce({ read, write, out, err, paste: true, platform: 'darwin', sendPaste });
+    expect(sendPaste).toHaveBeenCalledTimes(1);
+    expect(result.pasted).toBe(true);
+
+    const failing = vi.fn(async () => {
+      throw new ExecError('osascript', 1, 'osascript is not allowed to send keystrokes (1002)');
+    });
+    await expect(runClipboardOnce({ read, write, out, err, paste: true, platform: 'darwin', sendPaste: failing })).rejects.toThrow(
+      /Accessibility/,
+    );
+  });
+
+  it('--paste uses osascript through exec by default', async () => {
+    const { read, write, out, err } = onceHarness('meet Ashler');
+    const exec = vi.fn<ClipboardExec>(async () => '');
+    await runClipboardOnce({ read, write, out, err, paste: true, platform: 'darwin', exec });
+    expect(exec).toHaveBeenCalledWith('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+  });
+
+  it('--paste off macOS is skipped with a message, exit stays clean', async () => {
+    const { h, read, write, out, err } = onceHarness('meet Ashler');
+    const sendPaste = vi.fn(async () => undefined);
+    const result = await runClipboardOnce({ read, write, out, err, paste: true, platform: 'linux', sendPaste });
+    expect(sendPaste).not.toHaveBeenCalled();
+    expect(result.pasted).toBe(false);
+    expect(result.written).toBe(true);
+    expect(h.err.join('')).toMatch(/macOS-only/);
+  });
+});
+
+describe('runDaemonCommand', () => {
+  it('--which prints the backend and exits 0; exits 1 with the hint when none', async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const push = (s: string) => out.push(s);
+    expect(await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', out: push, err: (s) => err.push(s) })).toBe(0);
+    expect(out.join('')).toBe('clipboard backend: xclip (xclip -selection clipboard -o / -i (X11))\n');
+
+    out.length = 0;
+    expect(await runDaemonCommand({ which: true, platform: 'linux', env: { PATH: '' }, out: push, err: (s) => err.push(s) })).toBe(1);
+    expect(err.join('')).toMatch(/no clipboard backend: .*wl-clipboard/);
+  });
+
+  it('--once dispatches to once mode and returns 0', async () => {
+    const { h, read, write, out, err } = onceHarness('meet Ashler');
+    expect(await runDaemonCommand({ once: true, read, write, out, err })).toBe(0);
+    expect(h.clipboard).toBe('meet Ashlr.AI');
+  });
+
+  it('--paste without --once is rejected', async () => {
+    await expect(runDaemonCommand({ paste: true, read: async () => '', write: async () => undefined })).rejects.toThrow(/--once/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Backends (never spawn: every backend takes an injected exec)
+
+interface Call {
+  cmd: string;
+  args: readonly string[];
+  stdin?: string;
+}
+
+function fakeExec(reply: (call: Call) => string | Error): { exec: ClipboardExec; calls: Call[] } {
+  const calls: Call[] = [];
+  const exec: ClipboardExec = async (cmd, args, stdin) => {
+    const call: Call = stdin === undefined ? { cmd, args } : { cmd, args, stdin };
+    calls.push(call);
+    const r = reply(call);
+    if (r instanceof Error) throw r;
+    return r;
+  };
+  return { exec, calls };
+}
+
+describe('clipboard backends', () => {
+  it('powershell: CRLF is normalized on read and restored on write; LF stays LF', async () => {
+    let clipboard = 'meet Ashler\r\nsecond line\r\n';
+    const { exec, calls } = fakeExec(({ cmd, args, stdin }) => {
+      expect(cmd).toBe('powershell');
+      expect(args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-Command']);
+      if (stdin === undefined) {
+        expect(args[3]).toContain('Get-Clipboard -Raw');
+        return clipboard;
+      }
+      expect(args[3]).toContain('Set-Clipboard');
+      clipboard = stdin;
+      return '';
+    });
+    const backend = powershellBackend(exec);
+    expect(await backend.read()).toBe('meet Ashler\nsecond line\n');
+    await backend.write('meet Ashlr.AI\nsecond line\n');
+    expect(clipboard).toBe('meet Ashlr.AI\r\nsecond line\r\n');
+    expect(calls).toHaveLength(2);
+
+    clipboard = 'plain\nlf';
+    expect(await backend.read()).toBe('plain\nlf');
+    await backend.write('plain\nLF');
+    expect(clipboard).toBe('plain\nLF');
+  });
+
+  it('every backend returns "" when the tool exits non-zero (empty / non-text clipboard)', async () => {
+    const { exec } = fakeExec(({ cmd }) => new ExecError(cmd, 1, 'Nothing is copied'));
+    for (const name of ['pbcopy', 'wl', 'xclip', 'xsel', 'powershell'] as const) {
+      expect(await createClipboardBackend(name, exec).read()).toBe('');
     }
+  });
+
+  it('a missing binary or a display problem is not swallowed', async () => {
+    const enoent = Object.assign(new Error('spawn xclip ENOENT'), { code: 'ENOENT' });
+    const { exec } = fakeExec(() => enoent);
+    await expect(createClipboardBackend('xclip', exec).read()).rejects.toThrow(/ENOENT/);
+    const { exec: noDisplay } = fakeExec(() => new ExecError('xclip', 1, "Error: Can't open display: (null)"));
+    await expect(createClipboardBackend('xclip', noDisplay).read()).rejects.toThrow(/display/);
+  });
+
+  it('uses the documented commands', async () => {
+    const { exec, calls } = fakeExec(() => 'x');
+    await createClipboardBackend('pbcopy', exec).read();
+    await createClipboardBackend('pbcopy', exec).write('a');
+    await createClipboardBackend('wl', exec).read();
+    await createClipboardBackend('wl', exec).write('b');
+    await createClipboardBackend('xclip', exec).read();
+    await createClipboardBackend('xclip', exec).write('c');
+    await createClipboardBackend('xsel', exec).read();
+    await createClipboardBackend('xsel', exec).write('d');
+    expect(calls).toEqual([
+      { cmd: 'pbpaste', args: [] },
+      { cmd: 'pbcopy', args: [], stdin: 'a' },
+      { cmd: 'wl-paste', args: ['--no-newline'] },
+      { cmd: 'wl-copy', args: [], stdin: 'b' },
+      { cmd: 'xclip', args: ['-selection', 'clipboard', '-o'] },
+      { cmd: 'xclip', args: ['-selection', 'clipboard', '-i'], stdin: 'c' },
+      { cmd: 'xsel', args: ['--clipboard', '--output'] },
+      { cmd: 'xsel', args: ['--clipboard', '--input'], stdin: 'd' },
+    ]);
+  });
+});
+
+describe('detectClipboardBackend', () => {
+  const which = (...available: string[]) => async (bin: string) => available.includes(bin);
+
+  it('darwin -> pbcopy', async () => {
+    expect((await detectClipboardBackend('darwin', {}, which('pbpaste', 'pbcopy'))).name).toBe('pbcopy');
+    await expect(detectClipboardBackend('darwin', {}, which())).rejects.toThrow(/pbpaste/);
+  });
+
+  it('linux + WAYLAND_DISPLAY + wl-paste/wl-copy -> wl', async () => {
+    expect((await detectClipboardBackend('linux', { WAYLAND_DISPLAY: 'wayland-0' }, which('wl-paste', 'wl-copy', 'xclip'))).name).toBe('wl');
+  });
+
+  it('linux with WAYLAND_DISPLAY but no wl-clipboard, or no WAYLAND_DISPLAY -> xclip', async () => {
+    expect((await detectClipboardBackend('linux', { WAYLAND_DISPLAY: 'wayland-0' }, which('xclip'))).name).toBe('xclip');
+    expect((await detectClipboardBackend('linux', { DISPLAY: ':0' }, which('wl-paste', 'wl-copy', 'xclip'))).name).toBe('xclip');
+  });
+
+  it('linux xsel as last resort', async () => {
+    expect((await detectClipboardBackend('linux', {}, which('xsel'))).name).toBe('xsel');
+  });
+
+  it('linux none -> error with install hint', async () => {
+    await expect(detectClipboardBackend('linux', { DISPLAY: ':0' }, which())).rejects.toThrow(
+      /X11 session.*sudo apt install wl-clipboard.*sudo apt install xclip/,
+    );
+  });
+
+  it('win32 -> powershell (pwsh fallback)', async () => {
+    const ps = await detectClipboardBackend('win32', {}, which('powershell'));
+    expect(ps.name).toBe('powershell');
+    expect(ps.description).toMatch(/^powershell /);
+    const pwsh = await detectClipboardBackend('win32', {}, which('pwsh'));
+    expect(pwsh.description).toMatch(/^pwsh /);
+    await expect(detectClipboardBackend('win32', {}, which())).rejects.toThrow(/powershell/);
+  });
+
+  it('unknown platform -> error', async () => {
+    await expect(detectClipboardBackend('haiku' as NodeJS.Platform, {}, which())).rejects.toThrow(/does not support/);
+  });
+});
+
+describe('findOnPath', () => {
+  it('splits PATH with the platform delimiter and probes each dir', async () => {
+    const probed: string[] = [];
+    const exists = async (c: string) => {
+      probed.push(c);
+      return c === '/usr/local/bin/xclip';
+    };
+    expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '/usr/bin:/usr/local/bin' }, exists })).toBe('/usr/local/bin/xclip');
+    expect(probed).toEqual(['/usr/bin/xclip', '/usr/local/bin/xclip']);
+    expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '' }, exists })).toBeUndefined();
+  });
+
+  it('on win32 tries PATHEXT extensions (then the bare name) in every PATH entry', async () => {
+    const probed: string[] = [];
+    const exists = async (c: string) => {
+      probed.push(c);
+      return c === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE';
+    };
+    const env = { Path: 'C:\\Tools;C:\\Windows\\System32\\WindowsPowerShell\\v1.0', PATHEXT: '.COM;.EXE' };
+    expect(await findOnPath('powershell', { platform: 'win32', env, exists })).toBe(
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE',
+    );
+    expect(probed.slice(0, 5)).toEqual([
+      'C:\\Tools\\powershell.COM',
+      'C:\\Tools\\powershell.EXE',
+      'C:\\Tools\\powershell.com',
+      'C:\\Tools\\powershell.exe',
+      'C:\\Tools\\powershell',
+    ]);
+    // A name that already has an extension is probed as-is.
+    probed.length = 0;
+    await findOnPath('wl-copy.exe', { platform: 'win32', env, exists });
+    expect(probed).toEqual(['C:\\Tools\\wl-copy.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\wl-copy.exe']);
+  });
+
+  it('finds a real executable on this machine', async () => {
+    const node = await findOnPath('node');
+    expect(node).toBeDefined();
   });
 });

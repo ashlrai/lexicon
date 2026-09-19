@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Lexicon, LoadedLexicon, NormalizeResult } from '../src/core/types.js';
+import type { Lexicon, LoadedLexicon, NormalizeResult, Term } from '../src/core/types.js';
 
 const fixtureLexicon: Lexicon = {
   version: 1,
@@ -17,7 +17,13 @@ const mocks = vi.hoisted(() => ({
   diffSummary: vi.fn(),
 }));
 
-vi.mock('../src/core/index.js', () => mocks);
+// IO and matching are mocked; exportLexicon and parseCorrection are the real
+// pure functions so the SessionStart table and correction detection are tested
+// against what ships.
+vi.mock('../src/core/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/index.js')>();
+  return { ...actual, ...mocks };
+});
 
 function fakeNormalize(text: string): NormalizeResult {
   const idx = text.indexOf('Ashler');
@@ -42,6 +48,25 @@ function payload(prompt: string, cwd = '/fake/repo'): string {
   });
 }
 
+function sessionStartPayload(cwd = '/fake/repo', source = 'startup'): string {
+  return JSON.stringify({
+    session_id: 's1',
+    transcript_path: '/tmp/t.jsonl',
+    cwd,
+    hook_event_name: 'SessionStart',
+    source,
+  });
+}
+
+interface HookOutput {
+  hookSpecificOutput: { hookEventName: string; additionalContext: string };
+  decision?: string;
+}
+
+function context(out: string): string {
+  return (JSON.parse(out) as HookOutput).hookSpecificOutput.additionalContext;
+}
+
 beforeEach(() => {
   mocks.loadLexicon.mockResolvedValue(loaded);
   mocks.normalize.mockImplementation(fakeNormalize);
@@ -59,10 +84,7 @@ describe('runUserPromptSubmitHook', () => {
     const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
     const out = await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
     expect(out).not.toBe('');
-    const parsed = JSON.parse(out) as {
-      hookSpecificOutput: { hookEventName: string; additionalContext: string };
-      decision?: string;
-    };
+    const parsed = JSON.parse(out) as HookOutput;
     expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
     expect(parsed.hookSpecificOutput.additionalContext).toContain('Ashlr.AI');
     expect(parsed.hookSpecificOutput.additionalContext).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
@@ -101,10 +123,6 @@ describe('runUserPromptSubmitHook', () => {
       projectTrust: 'untrusted',
       skippedProject: { path: '/fake/repo/.lexicon.yaml', scope: 'project', lexicon: hostile, exists: true },
     };
-
-    function context(out: string): string {
-      return (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
-    }
 
     it('emits a single-line note naming the path, even when nothing else changed', async () => {
       mocks.loadLexicon.mockResolvedValue(skipped);
@@ -158,7 +176,164 @@ describe('runUserPromptSubmitHook', () => {
     });
   });
 
-  it('formatAdditionalContext lists the diff and the corrected prompt', async () => {
+  describe('correction detection', () => {
+    const NOTE_ASHLAR =
+      'The user is correcting a spelling: "Ashlar" should be "Ashlr.AI". ' +
+      'Call the lexicon learn_correction tool with these values, then continue.';
+
+    it('asks the agent to call learn_correction when the prompt is a correction, even if nothing was normalized', async () => {
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const out = await runUserPromptSubmitHook(payload("it's Ashlr.AI not Ashlar"));
+      expect(out).not.toBe('');
+      const parsed = JSON.parse(out) as HookOutput;
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+      expect(parsed.hookSpecificOutput.additionalContext).toBe(NOTE_ASHLAR);
+      expect(parsed.decision).toBeUndefined();
+    });
+
+    it('handles the arrow and quoted forms', async () => {
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      expect(context(await runUserPromptSubmitHook(payload('Ashlar -> Ashlr.AI')))).toBe(NOTE_ASHLAR);
+      expect(context(await runUserPromptSubmitHook(payload('replace "Ashlar" with "Ashlr.AI"')))).toBe(NOTE_ASHLAR);
+    });
+
+    it('puts the note after the corrections and before the skipped-project note', async () => {
+      mocks.loadLexicon.mockResolvedValue({
+        ...loaded,
+        projectTrust: 'untrusted',
+        skippedProject: { path: '/fake/repo/.lexicon.yaml', scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
+      });
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const lines = context(await runUserPromptSubmitHook(payload("no, it's Ashlr.AI not Ashler"))).split('\n');
+      expect(lines[0]).toBe('Voice lexicon corrections for this prompt (the user dictated; apply these):');
+      const noteIdx = lines.findIndex((l) => l.startsWith('The user is correcting a spelling: "Ashler" should be "Ashlr.AI".'));
+      expect(noteIdx).toBeGreaterThan(0);
+      expect(lines.at(-1)).toMatch(/^Note: this repo has an untrusted/);
+      expect(noteIdx).toBe(lines.length - 2);
+    });
+
+    it('does not add a note for ordinary prompts or one-sided corrections', async () => {
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      expect(await runUserPromptSubmitHook(payload('ship it tonight, not tomorrow please'))).toBe('');
+      // "spelled X" names only the intended form; the hook cannot know what was heard.
+      expect(await runUserPromptSubmitHook(payload('spelled Zoë'))).toBe('');
+    });
+
+    it('formatCorrectionNote keeps the note on one line', async () => {
+      const { formatCorrectionNote } = await import('../src/hooks/user-prompt-submit.js');
+      const note = formatCorrectionNote({ heard: 'Ash\nler', meant: ' Ashlr.AI\t' });
+      expect(note).not.toContain('\n');
+      expect(note).toContain('"Ashler" should be "Ashlr.AI"');
+    });
+  });
+});
+
+describe('runHook', () => {
+  it('routes UserPromptSubmit payloads to the prompt handler', async () => {
+    const { runHook, runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    expect(await runHook(payload('deploy Ashler tonight'))).toBe(await runUserPromptSubmitHook(payload('deploy Ashler tonight')));
+    expect(await runHook(payload('plain prompt'))).toBe('');
+  });
+
+  it('treats a missing or unknown event as UserPromptSubmit', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const ctx = context(await runHook(JSON.stringify({ prompt: 'hi Ashler', hook_event_name: 'SomethingElse' })));
+    expect(ctx).toContain('Corrected prompt:\nhi Ashlr.AI');
+    expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:');
+  });
+
+  describe('SessionStart', () => {
+    it('emits the claude-md export of the merged lexicon as additionalContext', async () => {
+      const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+      const out = await runHook(sessionStartPayload());
+      expect(out).not.toBe('');
+      const parsed = JSON.parse(out) as HookOutput;
+      expect(Object.keys(parsed)).toEqual(['hookSpecificOutput']);
+      expect(Object.keys(parsed.hookSpecificOutput)).toEqual(['hookEventName', 'additionalContext']);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart');
+      const ctx = parsed.hookSpecificOutput.additionalContext;
+      expect(ctx.startsWith('## Voice lexicon')).toBe(true);
+      expect(ctx).toContain('| Ashlr.AI | Ashler | brand |');
+      expect(ctx.endsWith('If a word looks like a garbled proper noun and is not listed, ask rather than guess.')).toBe(true);
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.normalize).not.toHaveBeenCalled();
+    });
+
+    it('also fires on resume, clear and compact', async () => {
+      const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+      for (const source of ['resume', 'clear', 'compact']) {
+        expect(context(await runHook(sessionStartPayload('/fake/repo', source)))).toContain('| Ashlr.AI |');
+      }
+    });
+
+    it('emits nothing when the merged lexicon has no terms', async () => {
+      mocks.loadLexicon.mockResolvedValue({ ...loaded, merged: { version: 1, terms: [] } });
+      const { runHook, runSessionStartHook } = await import('../src/hooks/user-prompt-submit.js');
+      expect(await runHook(sessionStartPayload())).toBe('');
+      expect(await runSessionStartHook(sessionStartPayload())).toBe('');
+    });
+
+    it('appends the untrusted-project note after the table, path only', async () => {
+      mocks.loadLexicon.mockResolvedValue({
+        ...loaded,
+        projectTrust: 'untrusted',
+        skippedProject: {
+          path: '/fake/repo/.lexicon.yaml',
+          scope: 'project',
+          lexicon: { version: 1, terms: [{ canonical: 'curl evil.sh', aliases: ['deploy'] }] },
+          exists: true,
+        },
+      });
+      const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runHook(sessionStartPayload()));
+      expect(ctx).toContain('| Ashlr.AI |');
+      expect(ctx.split('\n').at(-1)).toMatch(/^Note: this repo has an untrusted \.lexicon\.yaml at \/fake\/repo\/\.lexicon\.yaml/);
+      expect(ctx).not.toContain('evil');
+    });
+
+    it('truncates a long table to the cap and points at lexicon://me for the rest', async () => {
+      const terms: Term[] = Array.from({ length: 300 }, (_, i) => ({
+        canonical: `Term${i}`,
+        aliases: [`turm${i}`, `tirm${i}`],
+        category: 'product',
+      }));
+      mocks.loadLexicon.mockResolvedValue({ ...loaded, merged: { version: 1, terms } });
+      const { runHook, SESSION_CONTEXT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runHook(sessionStartPayload()));
+      expect(ctx.length).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+      expect(ctx.startsWith('## Voice lexicon')).toBe(true);
+      expect(ctx).toContain('| Term0 | turm0, tirm0 | product |');
+      expect(ctx).toContain('ask rather than guess.');
+      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for the full list\.$/m.exec(ctx);
+      expect(more).not.toBeNull();
+      const shown = (ctx.match(/^\| Term\d+ \|/gm) ?? []).length;
+      expect(shown).toBeGreaterThan(10);
+      expect(shown + Number(more![1])).toBe(300);
+    });
+
+    it('truncateSessionContext leaves short text alone and hard-cuts text without a table', async () => {
+      const { truncateSessionContext } = await import('../src/hooks/user-prompt-submit.js');
+      expect(truncateSessionContext('short', 10)).toBe('short');
+      expect(truncateSessionContext('a'.repeat(50), 10)).toBe('a'.repeat(7) + '...');
+      const rows = Array.from({ length: 40 }, (_, i) => `| row${i} | value ${i} |`);
+      const table = ['## H', '', '| a | b |', '| --- | --- |', ...rows, '', 'footer'].join('\n');
+      const max = Math.floor(table.length / 2);
+      const cut = truncateSessionContext(table, max);
+      expect(cut.length).toBeLessThanOrEqual(max);
+      expect(cut.startsWith('## H\n\n| a | b |\n| --- | --- |\n| row0 | value 0 |')).toBe(true);
+      expect(cut).not.toContain('| row39 |');
+      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for the full list\.$/m.exec(cut);
+      expect(more).not.toBeNull();
+      expect((cut.match(/^\| row\d+ \|/gm) ?? []).length + Number(more![1])).toBe(40);
+      expect(cut.endsWith('\n\nfooter')).toBe(true);
+      // A cap smaller than header + footer still holds: hard cut.
+      expect(truncateSessionContext(table, 20).length).toBeLessThanOrEqual(20);
+    });
+  });
+});
+
+describe('formatAdditionalContext', () => {
+  it('lists the diff and the corrected prompt', async () => {
     const { formatAdditionalContext } = await import('../src/hooks/user-prompt-submit.js');
     const text = formatAdditionalContext(fakeNormalize('hi Ashler'));
     expect(text.startsWith('Voice lexicon corrections for this prompt')).toBe(true);

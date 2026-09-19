@@ -363,12 +363,13 @@ describe('generic, claude and the commander wiring', () => {
     const io = makeIO();
     const program = new Command().name('lexicon').option('--cwd <dir>').exitOverride();
     registerInstallCommands(program, io);
-    // The registered action uses the real dist path for the server; only the file location matters here.
+    // The registered action resolves the real server path: the committed plugin bundle when
+    // present (a normal checkout), else dist/mcp/server.js. Only the file location matters here.
     await program.parseAsync(['node', 'lexicon', 'install', 'cursor', '--home', home, '--apply']);
     const written = await readJson(path.join(home, '.cursor', 'mcp.json'));
     const servers = written.mcpServers as Record<string, { command: string; args: string[] }>;
     expect(servers.lexicon.command).toBe('node');
-    expect(servers.lexicon.args[0]).toMatch(/[\\/]mcp[\\/]server\.js$/);
+    expect(servers.lexicon.args[0]).toMatch(/[\\/](plugin[\\/]mcp-server\.mjs|mcp[\\/]server\.js)$/);
     expect(io.out).toContain('created');
   });
 });

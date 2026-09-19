@@ -109,17 +109,21 @@ function errorMessage(err: unknown): string {
 }
 
 function readPackageVersion(): string {
-  try {
-    // dist/mcp/server.js and src/mcp/server.ts both sit two levels below package.json.
-    const raw = readFileSync(new URL('../../package.json', import.meta.url), 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && 'version' in parsed) {
-      const v = (parsed as { version?: unknown }).version;
-      if (typeof v === 'string') return v;
+  // dist/mcp/server.js and src/mcp/server.ts sit two levels below package.json;
+  // the self-contained plugin/mcp-server.mjs bundle sits one level below it.
+  // The name check keeps an unrelated package.json further up from being picked.
+  for (const rel of ['../../package.json', '../package.json']) {
+    try {
+      const raw = readFileSync(new URL(rel, import.meta.url), 'utf8');
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') continue;
+      const { name, version } = parsed as { name?: unknown; version?: unknown };
+      if (name === '@ashlr/lexicon' && typeof version === 'string') return version;
+    } catch {
+      // try the next candidate
     }
-  } catch (err) {
-    log('could not read package.json version:', errorMessage(err));
   }
+  log('could not read package.json version');
   return '0.0.0';
 }
 

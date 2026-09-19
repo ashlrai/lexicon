@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T07:59:11.850Z",
+  "generatedAt": "2026-09-19T08:18:22.664Z",
   "lexicon": "/Users/masonwyatt/Desktop/dictation mcp/bench/lexicon.yaml",
   "corpus": "/Users/masonwyatt/Desktop/dictation mcp/bench/corpus.jsonl",
   "config": {
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 321.5920296482406,
-    "findReplacementsUs": 64.7240517587965,
+    "normalizeUs": 331.27437185929574,
+    "findReplacementsUs": 67.4055909547746,
     "rounds": 5
   },
   "failures": [

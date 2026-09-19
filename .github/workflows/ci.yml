@@ -35,6 +35,13 @@ jobs:
 
       - run: npm run build
 
+      - name: Plugin bundle is up to date
+        run: |
+          npm run build:bundle
+          git diff --exit-code --stat -- plugin
+          untracked="$(git ls-files --others --exclude-standard -- plugin)"
+          if [ -n "$untracked" ]; then echo "untracked bundle files: $untracked"; exit 1; fi
+
       - run: npm test
 
       - name: Smoke test the built CLI
@@ -44,6 +51,16 @@ jobs:
           out="$(node dist/cli/index.js normalize "ping ashler")"
           echo "normalize -> $out"
           echo "$out" | grep -q "Ashlr.AI"
+
+      - name: Smoke test the bundled plugin hook
+        env:
+          LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
+        run: |
+          out="$(echo '{"hook_event_name":"UserPromptSubmit","prompt":"ping ashler"}' | node plugin/hook.mjs)"
+          echo "hook -> $out"
+          echo "$out" | grep -q "Ashlr.AI"
+          out="$(echo '{"hook_event_name":"SessionStart","source":"startup"}' | node plugin/hook.mjs)"
+          echo "$out" | grep -q '"hookEventName":"SessionStart"'
 
       - name: Smoke test the MCP server starts
         run: |

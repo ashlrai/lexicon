@@ -84,6 +84,10 @@ vi.mock('../src/core/index.js', () => {
 import * as core from '../src/core/index.js';
 import {
   mergeHookIntoSettings,
+  HOOK_EVENTS,
+  findInstalledLexiconPlugin,
+  resolveIntegrationPaths,
+  settingsHasLexiconHook,
   renderTable,
   runAdd,
   runDoctor,
@@ -395,12 +399,13 @@ describe('doctor', () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
     await fs.writeFile(path.join(dir, 'claude'), '');
     await fs.writeFile(path.join(dir, 'pbpaste'), '');
+    await fs.writeFile(path.join(dir, 'pbcopy'), '');
     const exec = vi.fn(() => 'lexicon: node /x/server.js - ✓ Connected');
     const code = await runDoctor({}, io, { platform: 'darwin', env: { PATH: dir }, exec });
     expect(code).toBe(0);
     expect(io.out).toContain('✓ global lexicon parses');
     expect(io.out).toContain('✓ lexicon MCP server is registered');
-    expect(io.out).toContain('✓ pbpaste found');
+    expect(io.out).toContain('✓ clipboard backend: pbcopy');
     expect(io.out).toContain('all checks passed');
   });
 
@@ -421,7 +426,142 @@ describe('doctor', () => {
     expect(io.out).toContain('✗ lexicon MCP server not registered');
     expect(io.out).toMatch(/✗ alias "Ashler" of "Ashlr\.AI" equals the canonical of "Ashler"/);
     expect(io.out).toMatch(/! alias "the" of "Ashlr\.AI" is a common English word/);
-    expect(io.out).toContain('macOS-only');
+    expect(io.out).toMatch(/! no clipboard backend found \(.*wl-clipboard/);
+  });
+});
+
+describe('doctor: Claude Code hooks and plugin', () => {
+  beforeEach(() => {
+    // The conflict test above leaves readLexiconFile on the conflicted lexicon; start clean.
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: FIXED_LEXICON, exists: true });
+  });
+
+  async function scratch(): Promise<{ dir: string; bin: string; settingsPath: string; installedPluginsPath: string }> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-doctor-'));
+    const bin = path.join(dir, 'bin');
+    await fs.mkdir(bin);
+    await fs.writeFile(path.join(bin, 'claude'), '');
+    return {
+      dir,
+      bin,
+      settingsPath: path.join(dir, 'settings.json'),
+      installedPluginsPath: path.join(dir, 'installed_plugins.json'),
+    };
+  }
+
+  it('warns, without failing, when neither hook nor plugin is present', async () => {
+    const s = await scratch();
+    const io = makeIO();
+    const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
+    expect(code).toBe(0);
+    expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (fine if you use the plugin`);
+    expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (fine if you use the plugin`);
+    expect(io.out).toContain('all checks passed');
+  });
+
+  it('passes when both hooks are registered in settings.json', async () => {
+    const s = await scratch();
+    const { settings } = mergeHookIntoSettings({}, 'node "/opt/lexicon/plugin/hook.mjs"', 5, HOOK_EVENTS);
+    await fs.writeFile(s.settingsPath, JSON.stringify(settings));
+    const io = makeIO();
+    const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
+    expect(code).toBe(0);
+    expect(io.out).toContain(`✓ UserPromptSubmit hook found in ${s.settingsPath}`);
+    expect(io.out).toContain(`✓ SessionStart hook found in ${s.settingsPath}`);
+    expect(io.out).not.toContain('hook not found');
+  });
+
+  it('recognises the installed plugin and softens the mcp list check to a warning', async () => {
+    const s = await scratch();
+    await fs.writeFile(
+      s.installedPluginsPath,
+      JSON.stringify({ version: 2, plugins: { 'lexicon@ashlrai': [{ scope: 'user', installPath: '/x', version: '0.1.0' }] } }),
+    );
+    const io = makeIO();
+    const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'no servers', ...s });
+    expect(code).toBe(0);
+    expect(io.out).toContain('✓ lexicon plugin installed as lexicon@ashlrai');
+    expect(io.out).toContain('! lexicon MCP server not listed by "claude mcp list"; the lexicon@ashlrai plugin provides it');
+    expect(io.out).not.toContain('hook not found');
+  });
+
+  it('warns about an unparseable settings.json instead of crashing', async () => {
+    const s = await scratch();
+    await fs.writeFile(s.settingsPath, '{ not json');
+    const io = makeIO();
+    const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
+    expect(code).toBe(0);
+    expect(io.out).toContain(`! could not parse ${s.settingsPath}`);
+  });
+
+  it('findInstalledLexiconPlugin reads the registry or enabledPlugins', () => {
+    expect(findInstalledLexiconPlugin(undefined, undefined)).toBeUndefined();
+    expect(findInstalledLexiconPlugin({ enabledPlugins: { 'other@x': true } }, { plugins: {} })).toBeUndefined();
+    expect(findInstalledLexiconPlugin({ enabledPlugins: { 'lexicon@ashlrai': false } }, {})).toBeUndefined();
+    expect(findInstalledLexiconPlugin({ enabledPlugins: { 'lexicon@ashlrai': true } }, {})).toBe('lexicon@ashlrai');
+    expect(findInstalledLexiconPlugin({}, { version: 2, plugins: { 'lexicon@local': [] } })).toBe('lexicon@local');
+    expect(findInstalledLexiconPlugin({}, { plugins: { 'lexicon-extra@x': [] } })).toBeUndefined();
+  });
+
+  it('settingsHasLexiconHook matches old and new hook commands only', () => {
+    const cfg = (command: string): unknown => ({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command }] }] } });
+    expect(settingsHasLexiconHook(cfg('node "/x/dist/hooks/user-prompt-submit.js"'), 'UserPromptSubmit')).toBe(true);
+    expect(settingsHasLexiconHook(cfg('node "/dictation mcp/plugin/hook.mjs"'), 'UserPromptSubmit')).toBe(true);
+    expect(settingsHasLexiconHook(cfg('lexicon hook'), 'UserPromptSubmit')).toBe(true);
+    expect(settingsHasLexiconHook(cfg('echo other'), 'UserPromptSubmit')).toBe(false);
+    expect(settingsHasLexiconHook(cfg('lexicon hook'), 'SessionStart')).toBe(false);
+    expect(settingsHasLexiconHook({ hooks: 'nope' }, 'UserPromptSubmit')).toBe(false);
+    expect(settingsHasLexiconHook(undefined, 'UserPromptSubmit')).toBe(false);
+  });
+});
+
+describe('resolveIntegrationPaths and the bundled plugin files', () => {
+  it('falls back to dist paths when plugin/ bundles are absent', () => {
+    const paths = resolveIntegrationPaths('/x/dist/cli');
+    expect(paths).toEqual({
+      server: '/x/dist/mcp/server.js',
+      hook: '/x/dist/hooks/user-prompt-submit.js',
+      bundled: false,
+    });
+  });
+
+  it('prefers plugin/mcp-server.mjs and plugin/hook.mjs when both exist, and install-claude uses them for both hooks', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-root-'));
+    await fs.mkdir(path.join(root, 'plugin'));
+    await fs.writeFile(path.join(root, 'plugin', 'mcp-server.mjs'), '');
+    // Only one bundle present: not enough, must fall back.
+    expect(resolveIntegrationPaths(path.join(root, 'dist', 'cli')).bundled).toBe(false);
+    await fs.writeFile(path.join(root, 'plugin', 'hook.mjs'), '');
+    const paths = resolveIntegrationPaths(path.join(root, 'dist', 'cli'));
+    expect(paths).toEqual({
+      server: path.join(root, 'plugin', 'mcp-server.mjs'),
+      hook: path.join(root, 'plugin', 'hook.mjs'),
+      bundled: true,
+    });
+
+    const settingsPath = path.join(root, '.claude', 'settings.json');
+    const exec = vi.fn(() => 'Added stdio MCP server lexicon');
+    const io = makeIO();
+    const code = await runInstallClaude({ apply: true }, io, { cliDir: path.join(root, 'dist', 'cli'), settingsPath, exec });
+    expect(code).toBe(0);
+    expect(exec).toHaveBeenCalledWith('claude', ['mcp', 'add', '--scope', 'user', 'lexicon', '--', 'node', paths.server]);
+    expect(io.out).toContain('self-contained bundle');
+    const written = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
+      hooks: Record<string, { hooks: { command: string }[] }[]>;
+    };
+    expect(Object.keys(written.hooks).sort()).toEqual(['SessionStart', 'UserPromptSubmit']);
+    for (const event of HOOK_EVENTS) {
+      expect(written.hooks[event]).toHaveLength(1);
+      expect(written.hooks[event][0].hooks[0].command).toBe(`node "${paths.hook}"`);
+    }
+
+    // Adding the SessionStart hook to a settings file that already has the UserPromptSubmit one.
+    const { settings: legacy } = mergeHookIntoSettings({}, `node "${paths.hook}"`);
+    const upgraded = mergeHookIntoSettings(legacy, `node "${paths.hook}"`, 5, HOOK_EVENTS);
+    expect(upgraded.changed).toBe(true);
+    expect(upgraded.settings.hooks?.UserPromptSubmit).toHaveLength(1);
+    expect(upgraded.settings.hooks?.SessionStart).toHaveLength(1);
+    expect(mergeHookIntoSettings(upgraded.settings, `node "${paths.hook}"`, 5, HOOK_EVENTS).changed).toBe(false);
   });
 });
 

@@ -1,11 +1,22 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/ABSOLUTE/PATH/TO/lexicon/plugin/hook.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/ABSOLUTE/PATH/TO/lexicon/dist/hooks/user-prompt-submit.js\"",
+            "command": "node \"/ABSOLUTE/PATH/TO/lexicon/plugin/hook.mjs\"",
             "timeout": 5
           }
         ]

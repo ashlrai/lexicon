@@ -12,8 +12,11 @@ use it so the user never has to re-type a name.
 
 ## At session start
 
-Read the resource `lexicon://me` once. It lists every canonical spelling and its
-known aliases. Keep it in mind while interpreting everything the user types.
+The plugin's `SessionStart` hook already put a "## Voice lexicon" table in your
+context: every canonical spelling and its known aliases. Keep it in mind while
+interpreting everything the user types. If that table is missing, or ends with
+"... N more terms; read the lexicon://me resource", read the resource
+`lexicon://me` once to get the full list.
 
 If the current repo has no `.lexicon.yaml`, call `harvest_repo` (without `add`)
 and offer to save the candidates that look like real project vocabulary
@@ -45,6 +48,13 @@ Correction phrasing to detect: "it's X not Y", "it's X, not Y", "I said X not
 Y", "I meant X", "not Y, X", "spelled X", "that should be X", "Y should be X",
 "replace Y with X", "Y -> X", or the user simply retyping a name you wrote with
 a different spelling. X is what they meant; Y is what was heard/written.
+
+The `UserPromptSubmit` hook detects the explicit forms for you: when the prompt
+is a correction it adds the line `The user is correcting a spelling: "Y" should
+be "X". Call the lexicon learn_correction tool with these values, then
+continue.` The hook only flags; it never writes. Make the call unless the
+sentence clearly was not a correction (then just continue). Corrections the
+hook cannot see ("spelled Zoë", a retyped name) are still yours to catch.
 
 1. Call `learn_correction { heard: Y, meant: X }`. When the user only names
    the right spelling ("spelled Zoë", "that should be Ashlr.AI"), `heard` is

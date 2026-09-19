@@ -14,9 +14,8 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Command } from 'commander';
-import { runInstallClaude } from './commands.js';
+import { resolveIntegrationPaths, runInstallClaude } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
 
 // ---------------------------------------------------------------------------
@@ -130,10 +129,13 @@ function isInstallClient(value: string): value is InstallClient {
 // Paths
 // ---------------------------------------------------------------------------
 
-/** Absolute path to dist/mcp/server.js, resolved from the built CLI's directory. */
+/**
+ * Absolute path to the MCP server entry, resolved from the built CLI's
+ * directory: the self-contained plugin/mcp-server.mjs when present, else
+ * dist/mcp/server.js (see resolveIntegrationPaths).
+ */
 export function resolveServerPath(cliDir?: string): string {
-  const dir = cliDir ?? path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(dir, '../mcp/server.js');
+  return resolveIntegrationPaths(cliDir).server;
 }
 
 interface PathContext {

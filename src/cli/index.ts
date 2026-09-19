@@ -5,11 +5,12 @@
  */
 import { readFileSync } from 'node:fs';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
-import { runClipboardDaemon } from '../daemon/clipboard.js';
+import { parseBackendName, runDaemonCommand } from '../daemon/clipboard.js';
 import { registerImportCommands } from './cmd-import.js';
 import { registerInstallCommands } from './cmd-install.js';
 import { registerTrustCommands } from './cmd-trust.js';
 import { registerLearnCommands } from './cmd-learn.js';
+import { registerReviewCommands } from './cmd-review.js';
 import {
   processIO,
   runAdd,
@@ -23,6 +24,7 @@ import {
   runPath,
   runRemove,
 } from './commands.js';
+import type { ClipboardBackendName } from '../daemon/clipboard-backends.js';
 import type {
   AddOptions,
   ExportCliOptions,
@@ -43,6 +45,16 @@ function readVersion(): string {
   } catch {
     return '0.0.0';
   }
+}
+
+interface DaemonCliOptions {
+  interval: number;
+  dryRun?: boolean;
+  quiet?: boolean;
+  once?: boolean;
+  paste?: boolean;
+  which?: boolean;
+  backend?: ClipboardBackendName;
 }
 
 function positiveInt(value: string): number {
@@ -88,6 +100,7 @@ program
   .option('--notes <text>', 'free text shown to the agent')
   .option('--project', 'write to the project lexicon instead of the global one')
   .option('--suggest', 'append auto-generated likely misspellings (automatic when no aliases are given)')
+  .option('-i, --interactive', 'confirm suggested aliases as a checklist, then ask for phonetic hint and category')
   .option(
     '--never <word...>',
     'words that must never be rewritten to this term even if they sound alike, e.g. --never sauce',
@@ -132,7 +145,9 @@ program
   .argument('[path]', 'repository root (default: cwd)')
   .option('--limit <n>', 'max candidates', positiveInt)
   .option('--min-count <n>', 'minimum occurrences', positiveInt)
-  .option('--add', 'add every candidate (with suggested aliases) to the project lexicon')
+  .option('--add', 'add candidates (with suggested aliases) to the project lexicon; on a terminal this walks them one by one')
+  .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
+  .option('--yes', 'with --add: add every candidate without prompting')
   .option('--json', 'print candidates as JSON')
   .action(async (root: string | undefined, opts: HarvestCliOptions) =>
     done(await runHarvest(root, withGlobals(opts), io)),
@@ -177,18 +192,34 @@ program
 
 program
   .command('daemon')
-  .description('watch the macOS clipboard and correct dictated text in place')
+  .description('watch the clipboard (macOS, Linux, Windows) and correct dictated text in place')
+  .option('--once', 'correct the clipboard once and exit (for a keyboard shortcut after dictating)')
+  .option('--paste', 'with --once: send Cmd+V afterwards (macOS only; needs Accessibility permission)')
   .option('--interval <ms>', 'poll interval in milliseconds', positiveInt, 250)
   .option('--dry-run', 'report corrections without writing to the clipboard')
   .option('--quiet', 'do not print corrections')
-  .action(async (opts: { interval: number; dryRun?: boolean; quiet?: boolean }) => {
+  .option('--backend <name>', 'force a clipboard backend: pbcopy|wl|xclip|xsel|powershell', (v: string) => {
+    try {
+      return parseBackendName(v);
+    } catch (e) {
+      throw new InvalidArgumentError(e instanceof Error ? e.message : String(e));
+    }
+  })
+  .option('--which', 'print the detected clipboard backend and exit')
+  .action(async (opts: DaemonCliOptions) => {
     const { cwd } = withGlobals({});
-    await runClipboardDaemon({
-      intervalMs: opts.interval,
-      dryRun: opts.dryRun ?? false,
-      quiet: opts.quiet ?? false,
-      ...(cwd ? { cwd } : {}),
-    });
+    done(
+      await runDaemonCommand({
+        intervalMs: opts.interval,
+        dryRun: opts.dryRun ?? false,
+        quiet: opts.quiet ?? false,
+        once: opts.once ?? false,
+        paste: opts.paste ?? false,
+        which: opts.which ?? false,
+        ...(opts.backend ? { backend: opts.backend } : {}),
+        ...(cwd ? { cwd } : {}),
+      }),
+    );
   });
 
 program
@@ -203,6 +234,7 @@ registerImportCommands(program, io);
 registerInstallCommands(program, io);
 registerTrustCommands(program, io);
 registerLearnCommands(program, io);
+registerReviewCommands(program, io);
 
 try {
   await program.parseAsync(process.argv);
