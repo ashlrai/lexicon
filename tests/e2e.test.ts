@@ -82,7 +82,9 @@ function runNode(script: string, args: readonly string[], opts: RunOptions = {})
 
 /** The real CLI. `--cwd` is appended when `opts.cwd` is set so project discovery follows it. */
 function runCli(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
-  const full = opts.cwd ? [...args, '--cwd', opts.cwd] : [...args];
+  // Always pin --cwd so the repo's own .lexicon.yaml (a real project lexicon we dogfood)
+  // never leaks into a test that did not ask for a project.
+  const full = [...args, '--cwd', opts.cwd ?? os.tmpdir()];
   return runNode(CLI, full, { ...opts, cwd: REPO_ROOT });
 }
 

@@ -77,6 +77,12 @@ describe('parseCorrection', () => {
     ['Ashler → Ashlr.AI', ashlr],
     ['Ashler should be Ashlr.AI', ashlr],
     ["it's Mason Wyatt not Mason Wyeth", { heard: 'Mason Wyeth', meant: 'Mason Wyatt' }],
+    // A sentence after the correction is ignored; a period ends a bare word unless something follows it directly.
+    ["it's Ashlr.AI not Ashlur. remember that.", { heard: 'Ashlur', meant: 'Ashlr.AI' }],
+    ["no, it's Ashlr.AI not Ashler. Now deploy it to Vercel.", ashlr],
+    ["it's Ashlr.AI not Ashlur! save it", { heard: 'Ashlur', meant: 'Ashlr.AI' }],
+    ["it's Entire.io not entire i o", { heard: 'entire i o', meant: 'Entire.io' }],
+    ["it's README.md not read me", { heard: 'read me', meant: 'README.md' }],
     // Bare "replace X with Y" / "X should be Y" need one side to look like a name...
     ['replace ashler with Ashlr.AI', { heard: 'ashler', meant: 'Ashlr.AI' }],
     ['replace the ashler with the Ashlr team', { heard: 'the ashler', meant: 'the Ashlr team' }],
@@ -117,7 +123,8 @@ describe('parseCorrection', () => {
     "it's not ready",
     "it's not ready, not done",
     'Ashlr.AI not Ashler', // bare "X not Y" is only accepted when quoted
-    "it's Ashlr.AI not Ashler, please remember", // correction must end the message
+    "it's Ashlr.AI not Ashler, please remember", // a comma clause after the heard side is not a sentence boundary
+    'the file is not README.md. open it', // no correction verb
     "it's Ashlr.AI not Ashler not really",
     "it's Ashlr.AI not ashlr.ai", // heard equals meant (case-insensitive)
     `it's ${'x'.repeat(61)} not y`, // > 60 chars

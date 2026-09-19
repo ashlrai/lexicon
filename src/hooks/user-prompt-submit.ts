@@ -12,9 +12,10 @@
  *   additionalContext telling the agent which corrections to apply. When the
  *   prompt reads like a spelling correction ("it's X not Y") it adds one line
  *   asking the agent to call `learn_correction`; the hook never adds terms
- *   itself. The prompt is never blocked or rewritten. Usage counters
- *   (`hits`) are bumped best-effort in the background so `lexicon stats`
- *   also counts hook-only sessions.
+ *   itself, and it does not normalize the words being corrected (see
+ *   dropCorrectionSpans). The prompt is never blocked or rewritten. Usage
+ *   counters (`hits`) are bumped best-effort in the background so
+ *   `lexicon stats` also counts hook-only sessions.
  *
  * The hook must never fail the user's prompt: every error path prints nothing
  * and exits 0.
@@ -23,7 +24,7 @@ import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
-import type { Correction, LoadedLexicon, NormalizeResult } from '../core/index.js';
+import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
@@ -90,15 +91,72 @@ export function formatSkippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTru
 /**
  * One line asking the agent to record a correction the user just made. The
  * hook only flags it; the agent calls `learn_correction` (and can still judge
- * that the sentence was not a correction after all).
+ * that the sentence was not a correction after all). The fields are named
+ * because the note is read before the tool schema is loaded, and the agent is
+ * told to trim `heard` since a bare-word capture can still carry a short
+ * unpunctuated tail ("versel please fix it").
  */
 export function formatCorrectionNote(correction: Correction): string {
   const heard = stripControlChars(correction.heard).trim();
   const meant = stripControlChars(correction.meant).trim();
   return (
     `The user is correcting a spelling: "${heard}" should be "${meant}". ` +
-    'Call the lexicon learn_correction tool with these values, then continue.'
+    `Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". ` +
+    `If "${heard}" contains words that are not part of the misspelled name, pass only the name. ` +
+    'Then continue with the rest of the message.'
   );
+}
+
+/** Every [start, end) span at which `needle` occurs in `haystack`, case-insensitively. */
+function spansOf(haystack: string, needle: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  if (!needle) return spans;
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return spans;
+    spans.push([at, at + needle.length]);
+    from = at + needle.length;
+  }
+}
+
+function collapse(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * A correction sentence is metadata about the lexicon, not dictation to be
+ * corrected: on "it's Ashlr.AI not Ashlur" the phonetic pass would otherwise
+ * rewrite "Ashlur" to "Ashlr.AI" (making the corrected prompt read "it's
+ * Ashlr.AI not Ashlr.AI") and bump hits for the very term the user is saying
+ * was misread. Drops every replacement whose span overlaps an occurrence of
+ * `heard` or `meant` in the prompt, or whose original text equals one of them,
+ * and rebuilds the output from what is left. Other garbles in the same prompt
+ * ("... not Ashlur. Also ping mason white") are still corrected.
+ */
+export function dropCorrectionSpans(result: NormalizeResult, correction: Correction): NormalizeResult {
+  const input = result.input;
+  const lower = input.toLowerCase();
+  const sides = [collapse(correction.heard), collapse(correction.meant)].filter((s) => s !== '');
+  if (sides.length === 0 || result.replacements.length === 0) return result;
+  const protectedSpans = sides.flatMap((side) => spansOf(lower, side));
+
+  const overlapsSide = (r: Replacement): boolean =>
+    sides.includes(collapse(input.slice(r.start, r.end))) ||
+    protectedSpans.some(([s, e]) => r.start < e && r.end > s);
+  const kept = result.replacements.filter((r) => !overlapsSide(r));
+  if (kept.length === result.replacements.length) return result;
+
+  // Replacement offsets index the original input and never overlap, so a
+  // single left-to-right pass rebuilds the output.
+  let output = '';
+  let pos = 0;
+  for (const r of [...kept].sort((a, b) => a.start - b.start)) {
+    output += input.slice(pos, r.start) + r.replacement;
+    pos = r.end;
+  }
+  output += input.slice(pos);
+  return { input, output, replacements: kept, changed: output !== input };
 }
 
 /**
@@ -174,13 +232,15 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const loaded = await loadLexicon({ cwd });
   const skippedNote = formatSkippedProjectNote(loaded);
 
-  const result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : undefined;
+  const parsed = parseCorrection(prompt);
+  const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
+  const correctionNote = correction ? formatCorrectionNote(correction) : '';
+
+  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : undefined;
+  // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
+  if (result && correction) result = dropCorrectionSpans(result, correction);
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd);
-
-  const correction = parseCorrection(prompt);
-  const correctionNote =
-    correction && correction.heard.trim() !== '' && correction.meant.trim() !== '' ? formatCorrectionNote(correction) : '';
 
   if (!changed && !skippedNote && !correctionNote) return '';
 

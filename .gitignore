@@ -4,3 +4,8 @@ dist/
 .DS_Store
 coverage/
 .lexicon.local.yaml
+.claude/launch.json
+site/dist/
+# real-audio benchmark artifacts (wav, transcripts, json); bench/audio/results.md is committed
+bench/audio/out/
+bench/audio/models/

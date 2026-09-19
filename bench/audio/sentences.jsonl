@@ -1,0 +1,110 @@
+{"id":"a-brand-01","category":"brand","expected":"Can you ping Ashlr.AI about the invoice before Friday?","spoken":"Can you ping Ashler A I about the invoice before Friday?","terms":["Ashlr.AI"]}
+{"id":"a-brand-02","category":"brand","expected":"Move the staging box off Hetzner before the renewal.","terms":["Hetzner"]}
+{"id":"a-brand-03","category":"brand","expected":"The Vercel bill doubled last month, can you check why?","terms":["Vercel"]}
+{"id":"a-brand-04","category":"brand","expected":"Spin up a new Supabase project for the demo.","terms":["Supabase"]}
+{"id":"a-brand-05","category":"brand","expected":"Is Neon down or is it just me?","terms":["Neon"]}
+{"id":"a-brand-06","category":"brand","expected":"Our Upstash usage is way over the free tier.","terms":["Upstash"]}
+{"id":"a-brand-07","category":"brand","expected":"Swap the Deepgram key in the staging environment.","terms":["Deepgram"]}
+{"id":"a-brand-08","category":"brand","expected":"I dictated the whole spec with Wispr Flow this morning.","spoken":"I dictated the whole spec with Whisper Flow this morning.","terms":["Wispr Flow"]}
+{"id":"a-brand-09","category":"brand","expected":"Superwhisper keeps capitalizing the wrong words.","spoken":"Super whisper keeps capitalizing the wrong words.","terms":["Superwhisper"]}
+{"id":"a-brand-10","category":"brand","expected":"Add OpenClaw to the stack slide in the pitch deck.","spoken":"Add Open Claw to the stack slide in the pitch deck.","terms":["OpenClaw"]}
+{"id":"a-brand-11","category":"brand","expected":"Anthropic released a new model, update the pricing doc.","terms":["Anthropic"]}
+{"id":"a-brand-12","category":"brand","expected":"Put the API behind Cloudflare before we announce.","spoken":"Put the A P I behind Cloudflare before we announce.","terms":["Cloudflare","API"]}
+{"id":"a-brand-13","category":"brand","expected":"Write a quick note on why we picked Hetzner over Vercel.","terms":["Hetzner","Vercel"]}
+{"id":"a-brand-14","category":"brand","expected":"Ashlr.AI's dashboard shows zero traffic since the deploy.","spoken":"Ashler A I's dashboard shows zero traffic since the deploy.","terms":["Ashlr.AI"]}
+{"id":"a-brand-15","category":"brand","expected":"Reply to the Supabase support ticket with the logs attached.","terms":["Supabase"]}
+{"id":"a-brand-16","category":"brand","expected":"Does Deepgram support the new region yet?","terms":["Deepgram"]}
+{"id":"a-prod-01","category":"product","expected":"Add a Pydantic model for the sync job.","terms":["Pydantic"]}
+{"id":"a-prod-02","category":"product","expected":"The Kubernetes cluster ran out of memory again last night.","terms":["Kubernetes"]}
+{"id":"a-prod-03","category":"product","expected":"Migrate the sessions table from PostgreSQL to Redis.","spoken":"Migrate the sessions table from Postgres to Redis.","terms":["PostgreSQL","Redis"]}
+{"id":"a-prod-04","category":"product","expected":"Ship the SQLite fallback for offline mode.","spoken":"Ship the S Q lite fallback for offline mode.","terms":["SQLite"]}
+{"id":"a-prod-05","category":"product","expected":"Upgrade Next.js and see if the build still passes.","spoken":"Upgrade Next J S and see if the build still passes.","terms":["Next.js"]}
+{"id":"a-prod-06","category":"product","expected":"Replace the handwritten styles with Tailwind on the settings page.","terms":["Tailwind"]}
+{"id":"a-prod-07","category":"product","expected":"Validate the request body with Zod before it hits the handler.","terms":["Zod"]}
+{"id":"a-prod-08","category":"product","expected":"Switch the build from webpack to Vite.","spoken":"Switch the build from webpack to Veet.","terms":["Vite"]}
+{"id":"a-prod-09","category":"product","expected":"Run the Vitest suite before you push.","spoken":"Run the Vee test suite before you push.","terms":["Vitest"]}
+{"id":"a-prod-10","category":"product","expected":"Prisma migrations are failing on the new column.","terms":["Prisma"]}
+{"id":"a-prod-11","category":"product","expected":"Move the schema to Drizzle and drop the wrapper.","terms":["Drizzle"]}
+{"id":"a-prod-12","category":"product","expected":"The tRPC router needs an auth middleware.","spoken":"The T R P C router needs an auth middleware.","terms":["tRPC"]}
+{"id":"a-prod-13","category":"product","expected":"Expose the search endpoint over GraphQL as well.","spoken":"Expose the search endpoint over Graph Q L as well.","terms":["GraphQL"]}
+{"id":"a-prod-14","category":"product","expected":"The OAuth callback is redirecting to the wrong port.","spoken":"The O Auth callback is redirecting to the wrong port.","terms":["OAuth"]}
+{"id":"a-prod-15","category":"product","expected":"Rotate the JWT signing key before the audit.","spoken":"Rotate the J W T signing key before the audit.","terms":["JWT"]}
+{"id":"a-prod-16","category":"product","expected":"Refresh the JWT when it has less than five minutes left.","spoken":"Refresh the jot when it has less than five minutes left.","terms":["JWT"]}
+{"id":"a-prod-17","category":"product","expected":"Nginx is returning a bad gateway on the websocket route.","spoken":"Engine X is returning a bad gateway on the websocket route.","terms":["Nginx"]}
+{"id":"a-prod-18","category":"product","expected":"Apply the Terraform plan for the new network.","terms":["Terraform"]}
+{"id":"a-prod-19","category":"product","expected":"The Docker image is huge, trim the layers.","terms":["Docker"]}
+{"id":"a-prod-20","category":"product","expected":"Kafka consumer lag spiked after the deploy.","terms":["Kafka"]}
+{"id":"a-prod-21","category":"product","expected":"Set up a Grafana dashboard for checkout latency.","terms":["Grafana"]}
+{"id":"a-prod-22","category":"product","expected":"Prometheus is scraping the wrong port.","terms":["Prometheus"]}
+{"id":"a-prod-23","category":"product","expected":"The Playwright tests are flaky on the build server.","terms":["Playwright"]}
+{"id":"a-prod-24","category":"product","expected":"Replace Puppeteer with Playwright in the scraper.","terms":["Puppeteer","Playwright"]}
+{"id":"a-prod-25","category":"product","expected":"Rip out LangChain and call the model directly.","spoken":"Rip out Lang chain and call the model directly.","terms":["LangChain"]}
+{"id":"a-prod-26","category":"product","expected":"Run the eval locally with Ollama first.","terms":["Ollama"]}
+{"id":"a-prod-27","category":"product","expected":"Whisper keeps dropping the last word of every sentence.","terms":["Whisper"]}
+{"id":"a-prod-28","category":"product","expected":"The Metaphone keys collide for those two names.","terms":["Metaphone"]}
+{"id":"a-prod-29","category":"product","expected":"Use Levenshtein distance for the fuzzy pass.","terms":["Levenshtein"]}
+{"id":"a-prod-30","category":"product","expected":"Point Grafana at Prometheus instead of the old exporter.","terms":["Grafana","Prometheus"]}
+{"id":"a-prod-31","category":"product","expected":"Cache the PostgreSQL query results in Redis for an hour.","spoken":"Cache the Postgres query results in Redis for an hour.","terms":["PostgreSQL","Redis"]}
+{"id":"a-prod-32","category":"product","expected":"Wire Kafka into the Kubernetes deployment with a sidecar.","terms":["Kafka","Kubernetes"]}
+{"id":"a-acr-01","category":"acronym","expected":"Our SaaS margins are fine, the services margin is the problem.","spoken":"Our sass margins are fine, the services margin is the problem.","terms":["SaaS"]}
+{"id":"a-acr-02","category":"acronym","expected":"Register the MCP server in the plugin manifest.","spoken":"Register the M C P server in the plugin manifest.","terms":["MCP"]}
+{"id":"a-acr-03","category":"acronym","expected":"The CLI should print the diff before it writes.","spoken":"The C L I should print the diff before it writes.","terms":["CLI"]}
+{"id":"a-acr-04","category":"acronym","expected":"Export the lexicon as YAML, not JSON.","spoken":"Export the lexicon as yammel, not jason.","terms":["YAML","JSON"]}
+{"id":"a-acr-05","category":"acronym","expected":"The RLS policy blocks the export for admins.","spoken":"The R L S policy blocks the export for admins.","terms":["RLS"]}
+{"id":"a-acr-06","category":"acronym","expected":"Enterprise customers keep asking for SSO.","spoken":"Enterprise customers keep asking for S S O.","terms":["SSO"]}
+{"id":"a-acr-07","category":"acronym","expected":"Sync the CRM with the billing events nightly.","spoken":"Sync the C R M with the billing events nightly.","terms":["CRM"]}
+{"id":"a-acr-08","category":"acronym","expected":"ARR crossed the target this quarter.","spoken":"A R R crossed the target this quarter.","terms":["ARR"]}
+{"id":"a-acr-09","category":"acronym","expected":"MRR is flat but churn dropped.","spoken":"M R R is flat but churn dropped.","terms":["MRR"]}
+{"id":"a-acr-10","category":"acronym","expected":"Draft the GTM plan for the launch.","spoken":"Draft the G T M plan for the launch.","terms":["GTM"]}
+{"id":"a-acr-11","category":"acronym","expected":"Add the retention KPI to the OKR doc.","spoken":"Add the retention K P I to the O K R doc.","terms":["KPI","OKR"]}
+{"id":"a-acr-12","category":"acronym","expected":"Write the PRD before we touch the SDK.","spoken":"Write the P R D before we touch the S D K.","terms":["PRD","SDK"]}
+{"id":"a-acr-13","category":"acronym","expected":"Rate limit the API at the edge.","spoken":"Rate limit the A P I at the edge.","terms":["API"]}
+{"id":"a-acr-14","category":"acronym","expected":"Compare TTS latency against the STT pipeline.","spoken":"Compare T T S latency against the S T T pipeline.","terms":["TTS","STT"]}
+{"id":"a-person-01","category":"person","expected":"Ask Mason Wyatt to review the pricing page.","terms":["Mason Wyatt"]}
+{"id":"a-person-02","category":"person","expected":"Siobhan Reilly owns the onboarding flow now.","spoken":"Shivawn Reilly owns the onboarding flow now.","terms":["Siobhan Reilly"]}
+{"id":"a-person-03","category":"person","expected":"Loop in Kwame Mensah on the data pipeline.","spoken":"Loop in Kwahmay Mensah on the data pipeline.","terms":["Kwame Mensah"]}
+{"id":"a-person-04","category":"person","expected":"Xiuying Zhao wrote the original matcher.","spoken":"Shooying Jow wrote the original matcher.","terms":["Xiuying Zhao"]}
+{"id":"a-person-05","category":"person","expected":"Bjørn Halvorsen is presenting at the offsite.","spoken":"Byorn Halvorsen is presenting at the offsite.","terms":["Bjørn Halvorsen"]}
+{"id":"a-person-06","category":"person","expected":"Priyanka Raghunathan flagged the memory leak.","spoken":"Preeyanka Ragoonathan flagged the memory leak.","terms":["Priyanka Raghunathan"]}
+{"id":"a-person-07","category":"person","expected":"Send the contract to Tadeusz Wróblewski today.","spoken":"Send the contract to Tadayoosh Vrooblefski today.","terms":["Tadeusz Wróblewski"]}
+{"id":"a-person-08","category":"person","expected":"Mason Wyatt and Siobhan Reilly are both out Friday.","spoken":"Mason Wyatt and Shivawn Reilly are both out Friday.","terms":["Mason Wyatt","Siobhan Reilly"]}
+{"id":"a-person-09","category":"person","expected":"Kwame Mensah's branch conflicts with the migration.","spoken":"Kwahmay Mensah's branch conflicts with the migration.","terms":["Kwame Mensah"]}
+{"id":"a-person-10","category":"person","expected":"Get Priyanka Raghunathan's sign off on the schema.","spoken":"Get Preeyanka Ragoonathan's sign off on the schema.","terms":["Priyanka Raghunathan"]}
+{"id":"a-ident-01","category":"identifier","expected":"The LexiconStore should cache the parsed file.","spoken":"The lexicon store should cache the parsed file.","terms":["LexiconStore"]}
+{"id":"a-ident-02","category":"identifier","expected":"Call normalizeTranscript before the hook returns.","spoken":"Call normalize transcript before the hook returns.","terms":["normalizeTranscript"]}
+{"id":"a-ident-03","category":"identifier","expected":"The UserPromptSubmit hook has to stay fast.","spoken":"The user prompt submit hook has to stay fast.","terms":["UserPromptSubmit"]}
+{"id":"a-ident-04","category":"identifier","expected":"Add a dry run flag to harvestRepo.","spoken":"Add a dry run flag to harvest repo.","terms":["harvestRepo"]}
+{"id":"a-ident-05","category":"identifier","expected":"Have LexiconStore reload when the YAML changes.","spoken":"Have lexicon store reload when the yammel changes.","terms":["LexiconStore","YAML"]}
+{"id":"a-ident-06","category":"identifier","expected":"normalizeTranscript is returning the wrong offsets.","spoken":"normalize transcript is returning the wrong offsets.","terms":["normalizeTranscript"]}
+{"id":"a-ident-07","category":"identifier","expected":"Register UserPromptSubmit in the plugin hooks file.","spoken":"Register user prompt submit in the plugin hooks file.","terms":["UserPromptSubmit"]}
+{"id":"a-ident-08","category":"identifier","expected":"harvestRepo should skip node modules.","spoken":"harvest repo should skip node modules.","terms":["harvestRepo"]}
+{"id":"a-prose-01","category":"prose","expected":"Pass the sauce please, the pasta is getting cold.","terms":[],"note":"SaaS sound-alike"}
+{"id":"a-prose-02","category":"prose","expected":"The ashes of the fire were still warm in the morning.","terms":[],"note":"Ashlr.AI sound-alike"}
+{"id":"a-prose-03","category":"prose","expected":"Cooper is a good name for a dog.","terms":[],"note":"Kubernetes sound-alike"}
+{"id":"a-prose-04","category":"prose","expected":"Red is my favorite color for a front door.","terms":[],"note":"Redis sound-alike"}
+{"id":"a-prose-05","category":"prose","expected":"We watched a prison drama last night and it dragged.","terms":[],"note":"Prisma sound-alike"}
+{"id":"a-prose-06","category":"prose","expected":"The wind is strong on the coast today.","terms":[],"note":"Tailwind sound-alike"}
+{"id":"a-prose-07","category":"prose","expected":"Can you pick up milk on the way home?","terms":[]}
+{"id":"a-prose-08","category":"prose","expected":"The meeting ran long so lunch got pushed back.","terms":[]}
+{"id":"a-prose-09","category":"prose","expected":"My cousin is visiting next weekend with the kids.","terms":[]}
+{"id":"a-prose-10","category":"prose","expected":"There was a light drizzle all afternoon.","terms":[],"note":"expected-hard: Drizzle canonical is an English word; casing fix expected"}
+{"id":"a-prose-11","category":"prose","expected":"The neon sign outside the diner finally got fixed.","terms":[],"note":"expected-hard: Neon canonical is an English word; casing fix expected"}
+{"id":"a-prose-12","category":"prose","expected":"Please whisper, the baby is asleep.","terms":[],"note":"expected-hard: Whisper canonical is an English word; casing fix expected"}
+{"id":"a-prose-13","category":"prose","expected":"The playwright took a bow after the final curtain.","terms":[],"note":"expected-hard: Playwright canonical is an English word; casing fix expected"}
+{"id":"a-prose-14","category":"prose","expected":"Our graphical report needs a cleaner legend.","terms":[],"note":"expected-hard: graphical -> GraphQL phonetic collision"}
+{"id":"a-prose-15","category":"prose","expected":"He can be a bit pedantic about commas.","terms":[],"note":"expected-hard: pedantic -> Pydantic phonetic collision"}
+{"id":"a-prose-16","category":"prose","expected":"Let's zoom in on the chart for the second quarter.","terms":[],"note":"Zod sound-alike"}
+{"id":"a-prose-17","category":"prose","expected":"The vet checked the dog this morning and everything looks fine.","terms":[],"note":"Vite sound-alike"}
+{"id":"a-prose-18","category":"prose","expected":"Next year we should book the venue earlier.","terms":[],"note":"Next.js sound-alike"}
+{"id":"a-prose-19","category":"prose","expected":"The kids built a fort out of couch cushions.","terms":[]}
+{"id":"a-prose-20","category":"prose","expected":"Remind me to water the plants on Thursday.","terms":[]}
+{"id":"a-prose-21","category":"prose","expected":"The train was late again so I walked the last mile.","terms":[]}
+{"id":"a-prose-22","category":"prose","expected":"She ordered the soup and a side salad.","terms":[],"note":"Supabase sound-alike (soup a)"}
+{"id":"a-prose-23","category":"prose","expected":"The garden needs weeding before the rain comes.","terms":[]}
+{"id":"a-prose-24","category":"prose","expected":"We should repaint the hallway a warmer color.","terms":[]}
+{"id":"a-prose-25","category":"prose","expected":"Traffic on the bridge was terrible this morning.","terms":[]}
+{"id":"a-prose-26","category":"prose","expected":"The library closes early on Sundays.","terms":[]}
+{"id":"a-prose-27","category":"prose","expected":"I left my umbrella in the back of the taxi.","terms":[]}
+{"id":"a-prose-28","category":"prose","expected":"Grab a table near the window if you get there first.","terms":[]}
+{"id":"a-prose-29","category":"prose","expected":"The recipe calls for a cup of flour and a pinch of salt.","terms":[]}
+{"id":"a-prose-30","category":"prose","expected":"Our neighbors adopted a rescue cat last week.","terms":[]}

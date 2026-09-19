@@ -28255,6 +28255,8 @@ var MAX_PHONETIC_KEYS_PER_TERM = 24;
 var PHONETIC_MIN_KEY = 3;
 var PHONETIC_MIN_WINDOW = 4;
 var ALIASED_PLAIN_WORD_MIN = 0.88;
+var PHONETIC_LONE_TOKEN_MIN_SIM = 0.6;
+var VOWEL_RE = /^[aeiouy]/;
 var DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 var STOPLIST = new Set(
   `
@@ -28449,7 +28451,7 @@ function buildIndex(lexicon) {
           const dedupePhonetic = `${key}\0${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, length: alpha.length });
+            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length });
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
             maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4));
@@ -28594,6 +28596,7 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     allStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
+    loneToken: from === to,
     plainWord: from === to && new RegExp("^\\p{Ll}+$", "u").test(norm),
     digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
   };
@@ -28642,7 +28645,7 @@ function findBest(view, index, opts) {
   const exactHit = current();
   if (exactHit) return exactHit;
   if (view.allStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return void 0;
-  const barFor = (termIndex) => view.plainWord && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
+  const barFor = (termIndex, lone) => lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
   if (opts.phonetic && index.phoneticKeys.size > 0) {
     const alpha = alphaOnly(view.collapsed);
     if (alpha.length >= 3 && alpha.length * 2 >= index.phoneticMinLen && alpha.length <= index.phoneticMaxLen * 2) {
@@ -28655,7 +28658,10 @@ function findBest(view, index, opts) {
           const max = Math.max(alpha.length, e.length);
           const diffRatio = Math.abs(alpha.length - e.length) / max;
           const confidence = PHONETIC_BASE * (1 - diffRatio * PHONETIC_LENGTH_WEIGHT);
-          if (confidence < barFor(e.termIndex)) continue;
+          if (confidence < barFor(e.termIndex, view.loneToken)) continue;
+          if (view.loneToken && alpha.charCodeAt(0) !== e.alpha.charCodeAt(0) && (VOWEL_RE.test(alpha) || VOWEL_RE.test(e.alpha)) && similarity(alpha, e.alpha) < PHONETIC_LONE_TOKEN_MIN_SIM) {
+            continue;
+          }
           if (blocked(e)) continue;
           consider(e, "phonetic", confidence);
         }
@@ -28669,7 +28675,7 @@ function findBest(view, index, opts) {
       for (const e of bucket) {
         const max = Math.max(wlen, e.normLower.length);
         if (Math.abs(wlen - e.normLower.length) > (1 - opts.minConfidence) * max) continue;
-        const bar = barFor(e.termIndex);
+        const bar = barFor(e.termIndex, view.plainWord);
         const a = e.term.caseSensitive ? view.norm : view.normLower;
         const b = e.term.caseSensitive ? e.norm : e.normLower;
         if (1 - Math.ceil((0, import_fastest_levenshtein.distance)(a, b) / 2) / max < bar) continue;
@@ -29034,12 +29040,12 @@ var import_yaml4 = __toESM(require_dist(), 1);
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
 var MAX_BARE_WORDS = 4;
-var BARE_WORD = `(?!not\\b)[^\\s"\u201C\u201D\`,;:!?]+`;
+var BARE_WORD = `(?!not\\b)(?:[^\\s"\u201C\u201D\`,;:!?.]|\\.(?=\\S))+`;
 var BARE = `${BARE_WORD}(?: ${BARE_WORD}){0,${MAX_BARE_WORDS - 1}}`;
 var SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80})\`|(${BARE}))`;
 var QUOTED_SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80})\`|((?!)))`;
 var GROUPS_PER_SIDE = 4;
-var TAIL = `\\s*[.!?]*\\s*$`;
+var TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 var LEAD = `(?:^|[\\s,;:\u2014-])`;
 var PATTERNS = [
   // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"
@@ -29146,7 +29152,39 @@ function formatSkippedProjectNote(loaded) {
 function formatCorrectionNote(correction) {
   const heard = stripControlChars(correction.heard).trim();
   const meant = stripControlChars(correction.meant).trim();
-  return `The user is correcting a spelling: "${heard}" should be "${meant}". Call the lexicon learn_correction tool with these values, then continue.`;
+  return `The user is correcting a spelling: "${heard}" should be "${meant}". Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". If "${heard}" contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
+}
+function spansOf(haystack, needle) {
+  const spans = [];
+  if (!needle) return spans;
+  let from = 0;
+  for (; ; ) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return spans;
+    spans.push([at, at + needle.length]);
+    from = at + needle.length;
+  }
+}
+function collapse2(text) {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+function dropCorrectionSpans(result, correction) {
+  const input2 = result.input;
+  const lower = input2.toLowerCase();
+  const sides = [collapse2(correction.heard), collapse2(correction.meant)].filter((s) => s !== "");
+  if (sides.length === 0 || result.replacements.length === 0) return result;
+  const protectedSpans = sides.flatMap((side) => spansOf(lower, side));
+  const overlapsSide = (r) => sides.includes(collapse2(input2.slice(r.start, r.end))) || protectedSpans.some(([s, e]) => r.start < e && r.end > s);
+  const kept = result.replacements.filter((r) => !overlapsSide(r));
+  if (kept.length === result.replacements.length) return result;
+  let output2 = "";
+  let pos = 0;
+  for (const r of [...kept].sort((a, b) => a.start - b.start)) {
+    output2 += input2.slice(pos, r.start) + r.replacement;
+    pos = r.end;
+  }
+  output2 += input2.slice(pos);
+  return { input: input2, output: output2, replacements: kept, changed: output2 !== input2 };
 }
 function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   if (text.length <= max) return text;
@@ -29199,11 +29237,13 @@ async function userPromptSubmit(payload, opts) {
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
   const loaded = await loadLexicon({ cwd });
   const skippedNote = formatSkippedProjectNote(loaded);
-  const result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : void 0;
+  const parsed = parseCorrection(prompt);
+  const correction = parsed && parsed.heard.trim() !== "" && parsed.meant.trim() !== "" ? parsed : void 0;
+  const correctionNote = correction ? formatCorrectionNote(correction) : "";
+  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : void 0;
+  if (result && correction) result = dropCorrectionSpans(result, correction);
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd);
-  const correction = parseCorrection(prompt);
-  const correctionNote = correction && correction.heard.trim() !== "" && correction.meant.trim() !== "" ? formatCorrectionNote(correction) : "";
   if (!changed && !skippedNote && !correctionNote) return "";
   const parts = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
@@ -29265,6 +29305,7 @@ if (isMainModule()) {
 }
 export {
   SESSION_CONTEXT_MAX_CHARS,
+  dropCorrectionSpans,
   formatAdditionalContext,
   formatCorrectionNote,
   formatSkippedProjectNote,

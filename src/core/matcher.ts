@@ -40,13 +40,31 @@ const PHONETIC_MIN_KEY = 3;
 const PHONETIC_MIN_WINDOW = 4;
 /**
  * When the user listed explicit aliases for a term, the inexact passes are a
- * fallback and a lone dictionary-looking token (single, all-lowercase word)
- * needs to clear a higher bar than minConfidence: "prism" -> Prisma at 0.86 is
- * wrong far more often than "prizma" -> Prisma, and the latter is what the
- * aliases are for. A capitalised token ("Ashlet") reads as a proper noun and
- * keeps the normal bar.
+ * fallback and a lone token (single-token window) needs to clear a higher bar
+ * than minConfidence: "prism" -> Prisma at 0.86 is wrong far more often than
+ * "prizma" -> Prisma, and the latter is what the aliases are for.
+ *
+ * In the phonetic pass the bar applies regardless of case: phonetic confidence
+ * is a length formula with no spelling evidence in it, and a capital at the
+ * start of a sentence or on a proper noun is no evidence of a garble ("Inter",
+ * the font, became Entire.io at 0.86). In the fuzzy pass only an all-lowercase
+ * token is held to it: fuzzy confidence is an edit similarity, so a capitalised
+ * token one edit from a listed alias ("Ashlet" / "Ashler", 0.83) is what the
+ * alias was listed for. Multi-token windows keep the normal bar; STT rarely
+ * splits an ordinary word into several.
  */
 const ALIASED_PLAIN_WORD_MIN = 0.88;
+/**
+ * Double metaphone folds every initial vowel to "A", so "inter" and "entire"
+ * share ANTR while agreeing on nothing else (similarity 0.5). A lone phonetic
+ * candidate whose window or alias starts with a vowel (a e i o u y) must start
+ * with the same letter (diacritics folded) or reach this edit similarity.
+ * Two different initial consonants ("coopernetties" / "kubernetes") already
+ * agreed on the key's first consonant and are exempt; "ashlur"/"ashlr" and
+ * "hetsner"/"hetzner" start alike and never reach the check.
+ */
+const PHONETIC_LONE_TOKEN_MIN_SIM = 0.6;
+const VOWEL_RE = /^[aeiouy]/;
 /** Domain-style suffixes stripped to derive an implicit short alias ("Ashlr.AI" -> "Ashlr"). */
 const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 
@@ -243,7 +261,9 @@ export interface PhoneticEntry {
   readonly termIndex: number;
   readonly term: Term;
   readonly alias: string;
-  /** Length of the alpha-only form the key was computed from. */
+  /** Alpha-only, diacritics-folded, lowercase form the key was computed from. */
+  readonly alpha: string;
+  /** Length of `alpha`. */
   readonly length: number;
 }
 
@@ -366,7 +386,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
           const dedupePhonetic = `${key} ${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, length: alpha.length });
+            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length });
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
             // STT tends to split one long word into several ("pie dentic"), so
@@ -531,7 +551,9 @@ interface WindowView {
   readonly anyProtected: boolean;
   /** Multi-token window whose first or last token is a function word (see FUNCTION_WORDS). */
   readonly edgeFunctionWord: boolean;
-  /** Single all-lowercase alphabetic token: looks like an ordinary word rather than a garbled name. */
+  /** Single-token window (any case): held to ALIASED_PLAIN_WORD_MIN in the phonetic pass against terms with explicit aliases. */
+  readonly loneToken: boolean;
+  /** Single all-lowercase alphabetic token: held to ALIASED_PLAIN_WORD_MIN in the fuzzy pass as well. */
   readonly plainWord: boolean;
   readonly digitsOnly: boolean;
 }
@@ -597,6 +619,7 @@ function makeView(
     allStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
+    loneToken: from === to,
     plainWord: from === to && /^\p{Ll}+$/u.test(norm),
     digitsOnly: /^\p{N}+$/u.test(collapsedRaw),
   };
@@ -659,8 +682,8 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
 
   // Shared guards for the inexact passes.
   if (view.allStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return undefined;
-  const barFor = (termIndex: number): number =>
-    view.plainWord && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
+  const barFor = (termIndex: number, lone: boolean): number =>
+    lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
 
   // --- pass b: phonetic -----------------------------------------------------
   if (opts.phonetic && index.phoneticKeys.size > 0) {
@@ -680,7 +703,17 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
           const max = Math.max(alpha.length, e.length);
           const diffRatio = Math.abs(alpha.length - e.length) / max;
           const confidence = PHONETIC_BASE * (1 - diffRatio * PHONETIC_LENGTH_WEIGHT);
-          if (confidence < barFor(e.termIndex)) continue;
+          if (confidence < barFor(e.termIndex, view.loneToken)) continue;
+          // A lone token that keys alike only because metaphone dropped its
+          // initial vowel ("inter" / "entire") is a different word, not a garble.
+          if (
+            view.loneToken &&
+            alpha.charCodeAt(0) !== e.alpha.charCodeAt(0) &&
+            (VOWEL_RE.test(alpha) || VOWEL_RE.test(e.alpha)) &&
+            similarity(alpha, e.alpha) < PHONETIC_LONE_TOKEN_MIN_SIM
+          ) {
+            continue;
+          }
           if (blocked(e)) continue;
           consider(e, 'phonetic', confidence);
         }
@@ -697,7 +730,7 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
         const max = Math.max(wlen, e.normLower.length);
         // similarity <= 1 - |lenDiff| / max, so prune before running any edit distance.
         if (Math.abs(wlen - e.normLower.length) > (1 - opts.minConfidence) * max) continue;
-        const bar = barFor(e.termIndex);
+        const bar = barFor(e.termIndex, view.plainWord);
         const a = e.term.caseSensitive ? view.norm : view.normLower;
         const b = e.term.caseSensitive ? e.norm : e.normLower;
         // A swap saves at most one edit over plain Levenshtein, so the

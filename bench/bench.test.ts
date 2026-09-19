@@ -43,9 +43,9 @@ describe('bench corpus', () => {
 describe('bench accuracy (default config)', () => {
   const report = runBench(corpus, lexicon, { timing: false });
 
-  // Measured 2026-09-19 after the matcher precision fixes (docs/BENCHMARK.md):
+  // Measured 2026-09-19 after the matcher precision fixes A-G (docs/BENCHMARK.md):
   // positives 94.2%, term recall 96.5%, prose FP 0.0% excl. expected-hard /
-  // 15.0% incl. Thresholds are those numbers minus a small margin so a matcher
+  // 14.2% incl. Thresholds are those numbers minus a small margin so a matcher
   // regression trips them.
   it('recovers misheard terms (target >= 0.88 / 0.94)', () => {
     expect(report.sentence.positives.rate).toBeGreaterThanOrEqual(0.92);
@@ -55,10 +55,11 @@ describe('bench accuracy (default config)', () => {
   // The suite's target is <= 0.02 excl. expected-hard; the matcher measures
   // 0.0% (0/95) today. The expected-hard negatives are corpus ambiguities
   // (canonicals that are English words, user aliases that are phrases) and
-  // sit at 18/25; they are bounded separately so they cannot creep up.
-  it('leaves clean prose alone (<= 0.02 excl. expected-hard, <= 0.17 incl.)', () => {
+  // sit at 17/25 (19/120 passes, 20/120 trips); they are bounded separately
+  // so they cannot creep up.
+  it('leaves clean prose alone (<= 0.02 excl. expected-hard, <= 0.16 incl.)', () => {
     expect(report.falsePositiveRateExcludingHard.rate).toBeLessThanOrEqual(0.02);
-    expect(report.falsePositiveRate.rate).toBeLessThanOrEqual(0.17);
+    expect(report.falsePositiveRate.rate).toBeLessThanOrEqual(0.16);
   });
 
   it('never touches code spans, fences, URLs, emails or paths', () => {

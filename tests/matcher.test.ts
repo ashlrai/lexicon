@@ -186,19 +186,56 @@ describe('phonetic pass', () => {
     expect(find('add a gram of salt', [{ canonical: 'CRM', aliases: ['see are em'] }])).toHaveLength(0);
   });
 
-  it('holds a lone lowercase word to 0.88 when the term has explicit aliases (bug D)', () => {
+  it('holds a lone token to 0.88 when the term has explicit aliases, regardless of case (bug D, bug G)', () => {
     const prisma: Term = { canonical: 'Prisma', aliases: ['prizma', 'prism a', 'prismo'] };
     expect(find('the prism split the light', [prisma])).toHaveLength(0);
     // the same word with no aliases listed is still a phonetic candidate at the normal bar
     const bare: Term = { canonical: 'Prisma', aliases: [] };
     expect(find('the prism split the light', [bare])[0]).toMatchObject({ original: 'prism', replacement: 'Prisma' });
-    // a capitalised token reads as a proper noun and keeps the normal bar
-    expect(find('ask Prism about it', [prisma])[0]).toMatchObject({ original: 'Prism', replacement: 'Prisma' });
-    // and a garble that clears 0.88 still matches
+    // a capital is no evidence of a garble in the phonetic pass: "Prism" at 0.86 is held to the same bar (bug G)
+    expect(find('ask Prism about it', [prisma], { fuzzy: false })).toHaveLength(0);
+    expect(find('Prism is a word', [prisma], { fuzzy: false })).toHaveLength(0);
+    // the fuzzy pass keeps the case heuristic (see the fuzzy tests), so with both on it is a 0.83 fuzzy hit
+    expect(find('ask Prism about it', [prisma])[0]).toMatchObject({ original: 'Prism', reason: 'fuzzy' });
+    // and a garble that clears 0.88 still matches, capitalised or not
     expect(find('use prysma here', [prisma])[0]).toMatchObject({ original: 'prysma', replacement: 'Prisma', reason: 'phonetic' });
-    // "email" -> YAML keys to AML (3 chars) at 0.855: only the aliased plain-word bar stops it
+    expect(find('Prysma is down', [prisma])[0]).toMatchObject({ original: 'Prysma', replacement: 'Prisma', reason: 'phonetic' });
+    // "email" -> YAML keys to AML (3 chars) at 0.855: the aliased lone-token bar stops it
     expect(find('send the email', [{ canonical: 'YAML', aliases: ['yammel'] }])).toHaveLength(0);
-    expect(find('send the email', [{ canonical: 'YAML', aliases: [] }])).toHaveLength(1);
+    // without aliases the bar is 0.82, and the first-letter guard (e vs y, similarity 0.4) stops it instead
+    expect(find('send the email', [{ canonical: 'YAML', aliases: [] }])).toHaveLength(0);
+  });
+
+  it('does not rewrite a capitalised sound-alike word to an aliased term (bug G: Inter -> Entire.io)', () => {
+    // "inter" and "entire" both key to ANTR; the hit was phonetic 0.86 and the old bar
+    // only applied to lowercase tokens, so the font name became Entire.io.
+    const entire: Term = { canonical: 'Entire.io', aliases: ['entire i o', 'entire dot io'] };
+    expect(find('the Inter font looks right', [entire])).toHaveLength(0);
+    expect(find('Inter is the font', [entire])).toHaveLength(0);
+    expect(find('the inter font looks right', [entire])).toHaveLength(0);
+    // the explicit alias and the implicit domain stem still fire as exact hits
+    expect(find('Entire dot io sessions', [entire])[0]).toMatchObject({ original: 'Entire dot io', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
+    expect(find('entire i o sessions', [entire])[0]).toMatchObject({ original: 'entire i o', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
+    expect(find('entire sessions', [entire])[0]).toMatchObject({ original: 'entire', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
+    // a sentence-initial capitalised garble that clears 0.88 still matches
+    expect(find('Ashlur is down', [ASHLR])[0]).toMatchObject({ original: 'Ashlur', replacement: 'Ashlr.AI', reason: 'phonetic' });
+    expect(find('Ashlur is down', [ASHLR])[0].confidence).toBeGreaterThanOrEqual(0.88);
+  });
+
+  it('requires a vowel-initial lone phonetic candidate to share its first letter or 0.6 similarity with the alias (bug G)', () => {
+    // same first letter: no similarity check
+    expect(find('use hetsner boxes', [{ canonical: 'Hetzner', aliases: [] }])[0]).toMatchObject({ original: 'hetsner', replacement: 'Hetzner', reason: 'phonetic' });
+    expect(find('ashlur is down', [ASHLR])[0]).toMatchObject({ original: 'ashlur', replacement: 'Ashlr.AI', reason: 'phonetic' });
+    // different initial vowel, similarity 0.5: rejected even with no aliases and confidence (0.86) above the bar
+    expect(find('the inter font', [{ canonical: 'Entire.io', aliases: [] }])).toHaveLength(0);
+    expect(find('the Inter font', [{ canonical: 'Entire', aliases: [] }])).toHaveLength(0);
+    // vowel vs y: "email" / "yaml" both key to AML
+    expect(find('send the email', [{ canonical: 'YAML', aliases: [] }])).toHaveLength(0);
+    // two different initial consonants already agreed on the key's first consonant: exempt
+    expect(similarity('coopernetties', 'kubernetes')).toBeLessThan(0.6);
+    expect(find('deploy to coopernetties', [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
+    // multi-token windows are exempt
+    expect(find("Deploy to Cooper Nettie's tonight", [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
   });
 
   it('does not let an inexact window start or end on a function word (bug A)', () => {
@@ -266,9 +303,14 @@ describe('fuzzy pass', () => {
 
   it('holds a lone lowercase word to 0.88 when the term has explicit aliases', () => {
     const prisma: Term = { canonical: 'Prisma', aliases: ['prizma', 'prism a', 'prismo'] };
-    // "prism" -> "prisma" is 0.83 by edit distance: blocked for a plain word, allowed when capitalised
+    // "prism" -> "prisma" is 0.83 by edit distance: blocked for a plain word, allowed when capitalised.
+    // Unlike the phonetic pass (bug G), fuzzy keeps the case heuristic: its confidence is an edit
+    // similarity, and a capitalised token one edit from a listed alias is what the alias is for
+    // ("Ashlet" -> Ashlr.AI above would otherwise be lost).
     expect(find('the prism split the light', [prisma], { phonetic: false })).toHaveLength(0);
     expect(find('ask Prism about it', [prisma], { phonetic: false })[0]).toMatchObject({ original: 'Prism', reason: 'fuzzy' });
+    // "Inter" / "entire" is 0.5 by edit distance, nowhere near the fuzzy bar
+    expect(find('the Inter font', [{ canonical: 'Entire.io', aliases: ['entire i o', 'entire dot io'] }], { phonetic: false })).toHaveLength(0);
   });
 
   it('respects minConfidence override', () => {
@@ -328,10 +370,13 @@ describe('overlap resolution', () => {
   });
 
   it('claims spans that already equal a canonical so no other term can take a token inside (bug C)', () => {
-    const tts: Term = { canonical: 'TTS', aliases: ['tee tee ess'] };
+    // "tee tee s" is 7 letters like "tadeusz", so the guess scores 0.9 and clears the aliased lone-token bar
+    const tts: Term = { canonical: 'TTS', aliases: ['tee tee s'] };
     expect(find('remind Tadeusz Wróblewski today', [{ canonical: 'Tadeusz Wróblewski', aliases: [] }, tts])).toHaveLength(0);
     // without the name in the lexicon the phonetic pass is free to guess
     expect(find('remind Tadeusz today', [tts])).toHaveLength(1);
+    // with the longer alias the guess scores 0.85 and the aliased lone-token bar stops it on its own (bug G)
+    expect(find('remind Tadeusz today', [{ canonical: 'TTS', aliases: ['tee tee ess'] }])).toHaveLength(0);
 
     const wispr: Term = { canonical: 'Wispr Flow', aliases: ['whisper flow'] };
     const whisper: Term = { canonical: 'Whisper', aliases: [] };

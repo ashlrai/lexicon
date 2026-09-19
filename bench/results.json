@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T08:18:22.664Z",
+  "generatedAt": "2026-09-19T20:55:57.139Z",
   "lexicon": "/Users/masonwyatt/Desktop/dictation mcp/bench/lexicon.yaml",
   "corpus": "/Users/masonwyatt/Desktop/dictation mcp/bench/corpus.jsonl",
   "config": {
@@ -16,9 +16,9 @@
   },
   "sentence": {
     "all": {
-      "hit": 364,
+      "hit": 365,
       "total": 398,
-      "rate": 0.914572864321608
+      "rate": 0.9170854271356784
     },
     "positives": {
       "hit": 262,
@@ -26,9 +26,9 @@
       "rate": 0.9424460431654677
     },
     "negatives": {
-      "hit": 102,
+      "hit": 103,
       "total": 120,
-      "rate": 0.85
+      "rate": 0.8583333333333333
     },
     "positivesExcludingHard": {
       "hit": 255,
@@ -67,9 +67,9 @@
         "rate": 0.9375
       },
       "prose": {
-        "hit": 102,
+        "hit": 103,
         "total": 120,
-        "rate": 0.85
+        "rate": 0.8583333333333333
       }
     }
   },
@@ -86,12 +86,12 @@
     },
     "precision": {
       "hit": 302,
-      "total": 322,
-      "rate": 0.937888198757764
+      "total": 321,
+      "rate": 0.940809968847352
     },
-    "f1": 0.9511811023622048,
+    "f1": 0.9526813880126183,
     "tp": 302,
-    "fp": 20,
+    "fp": 19,
     "fn": 11,
     "byCategory": {
       "brand": {
@@ -157,9 +157,9 @@
     }
   },
   "falsePositiveRate": {
-    "hit": 18,
+    "hit": 17,
     "total": 120,
-    "rate": 0.15
+    "rate": 0.14166666666666666
   },
   "falsePositiveRateExcludingHard": {
     "hit": 0,
@@ -174,10 +174,10 @@
       "meanConfidence": 1
     },
     "phonetic": {
-      "replacements": 56,
+      "replacements": 55,
       "correct": 51,
-      "wrong": 5,
-      "meanConfidence": 0.8797024627158552
+      "wrong": 4,
+      "meanConfidence": 0.8793334165834162
     },
     "fuzzy": {
       "replacements": 9,
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 331.27437185929574,
-    "findReplacementsUs": 67.4055909547746,
+    "normalizeUs": 293.2224105527636,
+    "findReplacementsUs": 59.660214572863765,
     "rounds": 5
   },
   "failures": [
@@ -765,39 +765,6 @@
           "canonical": "Prometheus",
           "reason": "alias",
           "confidence": 1
-        }
-      ]
-    },
-    {
-      "id": "neg-116",
-      "category": "prose",
-      "heard": "send me the email when you get a chance",
-      "expected": "send me the email when you get a chance",
-      "output": "send me the YAML when you get a chance",
-      "pass": false,
-      "negative": true,
-      "hard": true,
-      "replacements": [
-        {
-          "start": 12,
-          "end": 17,
-          "original": "email",
-          "replacement": "YAML",
-          "canonical": "YAML",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ],
-      "missed": [],
-      "spurious": [
-        {
-          "start": 12,
-          "end": 17,
-          "original": "email",
-          "replacement": "YAML",
-          "canonical": "YAML",
-          "reason": "phonetic",
-          "confidence": 0.9
         }
       ]
     },

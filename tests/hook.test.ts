@@ -234,7 +234,25 @@ describe('runUserPromptSubmitHook', () => {
   describe('correction detection', () => {
     const NOTE_ASHLAR =
       'The user is correcting a spelling: "Ashlar" should be "Ashlr.AI". ' +
-      'Call the lexicon learn_correction tool with these values, then continue.';
+      'Call the lexicon learn_correction tool with heard: "Ashlar", meant: "Ashlr.AI". ' +
+      'If "Ashlar" contains words that are not part of the misspelled name, pass only the name. ' +
+      'Then continue with the rest of the message.';
+
+    /** Phonetic hit on the word being corrected plus an unrelated alias hit, like the real matcher on the dogfood prompt. */
+    function phoneticNormalize(text: string): NormalizeResult {
+      const replacements: NormalizeResult['replacements'] = [];
+      const ashlur = text.indexOf('Ashlur');
+      if (ashlur !== -1) {
+        replacements.push({ start: ashlur, end: ashlur + 6, original: 'Ashlur', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'phonetic', confidence: 0.9 });
+      }
+      const mason = text.indexOf('mason white');
+      if (mason !== -1) {
+        replacements.push({ start: mason, end: mason + 11, original: 'mason white', replacement: 'Mason Wyatt', canonical: 'Mason Wyatt', reason: 'alias', confidence: 1 });
+      }
+      let output = text;
+      for (const r of [...replacements].reverse()) output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+      return { input: text, output, replacements, changed: output !== text };
+    }
 
     it('asks the agent to call learn_correction when the prompt is a correction, even if nothing was normalized', async () => {
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
@@ -258,13 +276,55 @@ describe('runUserPromptSubmitHook', () => {
         projectTrust: 'untrusted',
         skippedProject: { path: '/fake/repo/.lexicon.yaml', scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
       });
+      mocks.normalize.mockImplementation(phoneticNormalize);
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
-      const lines = context(await runUserPromptSubmitHook(payload("no, it's Ashlr.AI not Ashler"))).split('\n');
+      const lines = context(await runUserPromptSubmitHook(payload("no, it's Ashlr.AI not Ashlur. Also ping mason white"))).split('\n');
       expect(lines[0]).toBe('Voice lexicon corrections for this prompt (the user dictated; apply these):');
-      const noteIdx = lines.findIndex((l) => l.startsWith('The user is correcting a spelling: "Ashler" should be "Ashlr.AI".'));
+      const noteIdx = lines.findIndex((l) => l.startsWith('The user is correcting a spelling: "Ashlur" should be "Ashlr.AI".'));
       expect(noteIdx).toBeGreaterThan(0);
       expect(lines.at(-1)).toMatch(/^Note: this repo has an untrusted/);
       expect(noteIdx).toBe(lines.length - 2);
+    });
+
+    it('does not normalize the word being corrected, and records no hit for it', async () => {
+      mocks.normalize.mockImplementation(phoneticNormalize);
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const out = await runUserPromptSubmitHook(payload("it's Ashlr.AI not Ashlur. remember that."));
+      expect(out).not.toBe('');
+      const ctx = context(out);
+      // Only the correction note: the phonetic hit on "Ashlur" was the only replacement.
+      expect(ctx).not.toContain('Corrected prompt');
+      expect(ctx).not.toContain('not Ashlr.AI.');
+      expect(ctx).toContain('The user is correcting a spelling: "Ashlur" should be "Ashlr.AI".');
+      expect(ctx).toContain('learn_correction tool with heard: "Ashlur", meant: "Ashlr.AI".');
+      expect(ctx).toContain('Then continue with the rest of the message.');
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+    });
+
+    it('still corrects an unrelated garble in the same prompt', async () => {
+      mocks.normalize.mockImplementation(phoneticNormalize);
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runUserPromptSubmitHook(payload("it's Ashlr.AI not Ashlur. Also ping mason white")));
+      expect(ctx).toContain('"mason white" -> "Mason Wyatt" (alias, 1.00)');
+      expect(ctx).not.toContain('"Ashlur" -> "Ashlr.AI"');
+      expect(ctx).toContain("Corrected prompt:\nit's Ashlr.AI not Ashlur. Also ping Mason Wyatt");
+      expect(ctx).toContain('heard: "Ashlur", meant: "Ashlr.AI"');
+      expect(mocks.recordHits).toHaveBeenCalledTimes(1);
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Mason Wyatt'], { cwd: '/fake/repo' });
+    });
+
+    it('dropCorrectionSpans matches the heard side case-insensitively and leaves other results alone', async () => {
+      const { dropCorrectionSpans } = await import('../src/hooks/user-prompt-submit.js');
+      const r = phoneticNormalize("it's Ashlr.AI not Ashlur. ping mason white");
+      const dropped = dropCorrectionSpans(r, { heard: 'ASHLUR', meant: 'ashlr.ai' });
+      expect(dropped.replacements.map((x) => x.canonical)).toEqual(['Mason Wyatt']);
+      expect(dropped.output).toBe("it's Ashlr.AI not Ashlur. ping Mason Wyatt");
+      expect(dropped.changed).toBe(true);
+      // Nothing overlaps: the same object comes back.
+      expect(dropCorrectionSpans(r, { heard: 'versel', meant: 'Vercel' })).toBe(r);
+      // An unchanged result stays unchanged.
+      const none = phoneticNormalize('plain prompt');
+      expect(dropCorrectionSpans(none, { heard: 'Ashlur', meant: 'Ashlr.AI' })).toBe(none);
     });
 
     it('does not add a note for ordinary prompts or one-sided corrections', async () => {

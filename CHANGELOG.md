@@ -2,7 +2,7 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-09-19)
 
 Initial release.
 
@@ -10,11 +10,15 @@ Initial release.
 - `lexicon review` re-reads the file before its final write and merges hits, aliases and terms changed elsewhere while it ran.
 - The UserPromptSubmit hook and the clipboard daemon (loop and `--once`) record `hits` best-effort in the background, so `lexicon stats` counts hook-only and clipboard usage.
 - Core exports `stripControlChars`, `sanitizeForDisplay`, `DISPLAY_MAX_CHARS`.
+- `parseCorrection` stops the heard side at a sentence boundary: "it's Ashlr.AI not Ashlur. remember that." yields `heard: "Ashlur"` and a following sentence ("... not Ashler. Now deploy it to Vercel.") is ignored. A period stays inside a bare word only when something follows it directly (`Ashlr.AI`, `Entire.io`, `README.md`).
+- The UserPromptSubmit hook no longer normalizes the words being corrected: on a correction prompt it drops any replacement overlapping `heard` or `meant`, rebuilds the corrected prompt from the rest, records no hit for the dropped terms, and emits only the correction note when nothing else changed. The note names its fields (`heard: "Ashlur", meant: "Ashlr.AI"`), tells the model to pass only the name when the capture carries trailing words, and ends with "Then continue with the rest of the message."
+- README: manual installs do not load `SKILL.md`; a "Headless and scripted use" note (`claude -p`, `--allowedTools mcp__lexicon`, `LEXICON_PATH` reaching hook and server); `lexicon stats` counts hook matches from any session. SKILL.md: trailing-word guidance for the hook's `heard`, and the one-time ToolSearch turn in sessions with many MCP servers.
 
 - Lexicon file format (`version: 1`): terms with `canonical`, `aliases`, `phonetic`, `category`, `notes`, `never`, `caseSensitive`, plus tool-managed `source`, `createdAt`, `hits`; settings `minConfidence`, `phonetic`, `fuzzy`, `protectedWords`, `skipCode`.
 - Global file at `~/.config/lexicon/lexicon.yaml` (override with `LEXICON_PATH` or `XDG_CONFIG_HOME`) and project `.lexicon.yaml` at the git root. Project wins on collision, aliases unioned.
 - Matcher with three tiers: exact alias, phonetic (double metaphone), fuzzy (Damerau-Levenshtein). Built-in stoplist of about 300 common English words, `protectedWords`, per-term `never`, code span and URL skipping, three-character minimum for guessed matches. Explicit aliases always beat the stoplist.
 - Matcher precision (benchmark in `docs/BENCHMARK.md`, prose false positives 18.9% -> 0.0% excluding expected-hard, positive sentence accuracy 88.1% -> 94.2%): exact hits win overlap resolution; inexact windows never start or end on a function word; possessives survive phonetic and fuzzy matches; spans already equal to a canonical are claimed; no phonetic match on keys under 3 characters, windows under 4 letters or spelled-out aliases; lone lowercase words against aliased terms need 0.88; diacritics folded in the exact pass; transposition-aware similarity.
+- Matcher: a capitalised sound-alike is no longer rewritten to an aliased term on a weak phonetic hit (`Inter`, the font, became `Entire.io` at 0.86 in production). The 0.88 aliased-term bar now applies to every single-token phonetic candidate regardless of case, and a lone candidate that keys alike only because double metaphone folded its initial vowel (`inter` / `entire`, `email` / `yaml`) must share its first letter or reach similarity 0.6. Benchmark unchanged on positives (94.2% / 96.5% recall); prose false positives incl. expected-hard 15.0% -> 14.2%.
 - `normalize` with replacement offsets, reasons, confidence and a one-line-per-change diff summary. Dry-run mode.
 - Alias suggestion (`suggestAliases`) that generates likely STT misspellings of a canonical.
 - Correction learning: `parseCorrection` recognises "it's X not Y", "I said X not Y", "I meant X not Y", "not Y, X", "replace Y with X", "Y -> X", "Y should be X", "spelled X" and quoted forms; `learnCorrection` adds the heard form as an alias of the matching term or creates a `source: learned` term; `suggestCanonicalFor` returns the closest existing terms for "did you mean".
@@ -53,3 +57,5 @@ Initial release.
 - `src/mcp/server.ts` keeps an `EXPORT_FORMAT_VALUES` tuple with a compile-time exhaustiveness check against `ExportFormat`.
 - `hookConfigFor` and `mergeHookIntoSettings` take an optional list of events; `HOOK_EVENTS` is `['UserPromptSubmit', 'SessionStart']`.
 - The hook, CLI and daemon tests inject IO and clipboard functions; MCP and CLI tests mock `src/core/index.js`.
+- `src/hooks/user-prompt-submit.ts` exports `dropCorrectionSpans(result, correction)` (pure; returns the same object when nothing overlaps). `parseCorrection` runs before `normalize` in the hook so the filter can apply.
+- `docs/DOGFOOD.md` records the live run against Claude Code 2.1.257 that found both hook bugs.

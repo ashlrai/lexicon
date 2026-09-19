@@ -79,3 +79,37 @@ meaningful before/after number is term recall, and the honesty check is the pros
 After a matcher change: `npm run bench -- --sweep`, commit the new `results.json`, update the
 numbers in `docs/BENCHMARK.md`, and move the thresholds in `bench.test.ts` if they changed
 deliberately.
+
+## Real audio (`bench/audio/`)
+
+The corpus above is synthetic: the `heard` strings are hand-written STT errors. `bench/audio/`
+produces them with an actual recognizer so the README claim is measured, not assumed. Each
+sentence is synthesized with macOS `say` (three voices), transcribed with whisper.cpp, and the
+transcript is what `normalize()` sees. Numbers and the "what Whisper wrote" table:
+[`bench/audio/results.md`](audio/results.md); methodology and caveats: the "Real audio" section
+of [`docs/BENCHMARK.md`](../docs/BENCHMARK.md).
+
+```bash
+brew install whisper-cpp                   # once; models download into bench/audio/models/ on first run
+npm run bench:audio                        # base.en + small.en, 3 voices, with and without --prompt (~5 min cold, seconds cached)
+npm run bench:audio -- --models base.en    # one model
+npm run bench:audio -- --voices Samantha,Daniel
+npm run bench:audio -- --no-prompt         # skip the whisper initial_prompt variants
+npm run bench:audio -- --limit 10 --verbose   # smoke test, print failing clips (does not overwrite results.md)
+npm run bench:audio -- --force             # re-transcribe; audio is always reused
+```
+
+| file | what |
+|---|---|
+| `audio/sentences.jsonl` | 80 sentences with lexicon terms + 30 clean-prose negatives. `expected` is the ground truth; `spoken` (optional) is what is fed to TTS when the spelling would be mispronounced (`Ashlr.AI` -> "Ashler A I", `tRPC` -> "T R P C", `Nginx` -> "Engine X"), i.e. how a person actually says it. |
+| `audio/run.ts` | Synthesis, transcription (one whisper-cli process per model/prompt variant), metrics via `bench/lib.ts`, word alignment to recover what Whisper wrote in each term slot, alias suggestions. |
+| `audio/results.md` | Committed report from the last run: headline per variant, per voice/category/reason, per-term "what Whisper wrote", suggested aliases, every failing clip. |
+| `audio/out/` | Gitignored cache: `wav/` clips, `transcripts.json` (keyed by model, prompt, voice, sentence hash), `results.json`. |
+| `audio/models/` | Gitignored ggml models. |
+
+Metrics are the same as above with two differences: `raw STT` recall is now what Whisper really
+got right, and sentence accuracy is "loose" (case and edge punctuation folded, internal punctuation
+kept) because Whisper capitalizes and punctuates on its own. Sentence accuracy after the lexicon
+also counts Whisper errors on ordinary words, so it is the whole-pipeline number, not the matcher's.
+There is deliberately no vitest guard on these numbers: they depend on a locally installed
+recognizer and TTS voices.

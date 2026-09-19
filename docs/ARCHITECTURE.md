@@ -116,7 +116,10 @@ The agent decides when to call the tool. `lexicon://me` gives it the vocabulary 
                  tell Ashlr.AI to ship it"
               + (when the prompt is itself a correction)
                 "The user is correcting a spelling: "Ashler" should be "Ashlr.AI".
-                 Call the lexicon learn_correction tool with these values, then continue."
+                 Call the lexicon learn_correction tool with heard: "Ashler", meant: "Ashlr.AI".
+                 If "Ashler" contains words that are not part of the misspelled name, pass only the name.
+                 Then continue with the rest of the message."
+                (and the "Ashler" the user is correcting is left out of the corrected prompt and the hits)
 ```
 
 One file handles both events, dispatched on `hook_event_name`. The prompt is not rewritten. Claude Code does not allow hooks to mutate the prompt, so the hook adds context instead: the diff plus the fully corrected prompt, so the model can use either. When nothing changes the hook prints nothing at all. The `lexicon` skill tells the agent that when this note is present it should apply the corrected prompt and skip its own `normalize_transcript` call. The correction note only asks; the model makes the `learn_correction` call, so the hook never writes. See the decision log.

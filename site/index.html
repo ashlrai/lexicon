@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lexicon demo</title>
+  <meta name="description" content="Say your company name and watch it get fixed. @ashlr/lexicon rewrites what speech-to-text got wrong before your agent sees it. Runs entirely in the browser.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Cpath d='M10 9v14h12' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="https://github.com/ashlrai/lexicon" aria-label="@ashlr/lexicon on GitHub">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">@ashlr/lexicon</span>
+      </a>
+      <nav class="header-links" aria-label="Project links">
+        <a href="https://github.com/ashlrai/lexicon">GitHub</a>
+        <a href="https://www.npmjs.com/package/@ashlr/lexicon">npm</a>
+        <span class="install">
+          <code>npm i -g @ashlr/lexicon</code>
+          <button type="button" id="copy-install" class="btn btn-ghost btn-xs">Copy</button>
+        </span>
+      </nav>
+    </div>
+    <div class="wrap hero">
+      <h1>Say your company name. Watch it get fixed.</h1>
+      <p class="pitch">
+        A personal lexicon for voice-to-agents. It maps what speech-to-text actually writes
+        (<em>Ashler</em>, <em>Cooper Nettie's</em>, <em>sass</em>) back to what you meant
+        (<strong>Ashlr.AI</strong>, <strong>Kubernetes</strong>, <strong>SaaS</strong>) before an agent sees the prompt.
+        This page runs the real matcher in your browser.
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap grid">
+    <section class="panel" aria-labelledby="h-input">
+      <header class="panel-head">
+        <h2 id="h-input"><span class="step">1</span> What STT heard</h2>
+        <div class="panel-actions">
+          <button type="button" id="reset-input" class="btn btn-ghost btn-sm">Demo</button>
+          <button type="button" id="clear-input" class="btn btn-ghost btn-sm">Clear</button>
+        </div>
+      </header>
+      <textarea id="input" class="field mono" rows="6" spellcheck="false" aria-label="Transcript to correct" placeholder="Paste a transcript or press Dictate"></textarea>
+      <div class="dictate-row">
+        <button type="button" id="dictate" class="btn btn-primary" aria-pressed="false">
+          <span class="mic" aria-hidden="true"></span>
+          <span class="label">Dictate</span>
+        </button>
+        <p id="interim" class="interim" aria-live="polite"></p>
+      </div>
+      <p id="speech-note" class="hint"></p>
+      <div class="settings">
+        <label class="switch"><input type="checkbox" id="opt-phonetic"> <span>Phonetic</span></label>
+        <label class="switch"><input type="checkbox" id="opt-fuzzy"> <span>Fuzzy</span></label>
+        <label class="range">
+          <span>Min confidence <output id="opt-minconf-out" for="opt-minconf">0.82</output></span>
+          <input type="range" id="opt-minconf" min="0.7" max="0.95" step="0.01" value="0.82">
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-output">
+      <header class="panel-head">
+        <h2 id="h-output"><span class="step">2</span> What the agent gets</h2>
+        <span id="stats" class="stats" aria-live="polite"></span>
+      </header>
+      <div id="output" class="output mono" aria-live="polite"></div>
+      <ul class="legend" aria-label="How each correction was found">
+        <li><mark class="hit hit-alias">alias</mark> listed in the lexicon</li>
+        <li><mark class="hit hit-phonetic">phonetic</mark> sounds the same</li>
+        <li><mark class="hit hit-fuzzy">fuzzy</mark> spelled almost the same</li>
+      </ul>
+      <ul id="diff" class="diff"></ul>
+    </section>
+
+    <section class="panel panel-lexicon" aria-labelledby="h-lexicon">
+      <header class="panel-head">
+        <h2 id="h-lexicon"><span class="step">3</span> Your lexicon</h2>
+        <div class="panel-actions">
+          <span id="yaml-status" class="status"></span>
+          <button type="button" id="reset-yaml" class="btn btn-ghost btn-sm">Reset to example</button>
+        </div>
+      </header>
+      <textarea id="yaml" class="field mono yaml" rows="18" spellcheck="false" aria-label="Lexicon YAML" aria-describedby="yaml-error"></textarea>
+      <pre id="yaml-error" class="error" hidden></pre>
+
+      <form id="add-term" class="add-term" autocomplete="off">
+        <h3>Add a term</h3>
+        <div class="add-fields">
+          <input id="canonical" class="field" placeholder="Correct spelling, e.g. Ashlr.AI" aria-label="Canonical spelling">
+          <input id="aliases" class="field" placeholder="What STT writes, comma separated" aria-label="Aliases">
+        </div>
+        <div id="suggestions" class="chips" aria-label="Suggested aliases"></div>
+        <div class="add-actions">
+          <button type="button" id="use-suggestions" class="btn btn-ghost btn-sm" disabled>Use suggestions</button>
+          <button type="submit" class="btn btn-secondary btn-sm">Add term</button>
+          <p id="add-error" class="hint error-text" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <div class="export">
+        <h3>Export for your dictation app</h3>
+        <div class="export-row">
+          <select id="format" class="field" aria-label="Export format"></select>
+          <button type="button" id="copy-export" class="btn btn-secondary btn-sm">Copy</button>
+          <button type="button" id="download-export" class="btn btn-secondary btn-sm">Download</button>
+        </div>
+        <span id="format-info" class="hint"></span>
+        <pre id="export-preview" class="export-preview mono" aria-label="Export preview"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p class="privacy">Runs entirely in your browser. Nothing is sent anywhere.</p>
+      <dl class="bench">
+        <div><dt>proper nouns recovered</dt><dd><span class="before">5.1%</span> <span class="to">&rarr;</span> 96.5%</dd></div>
+        <div><dt>clean prose wrongly changed</dt><dd>0 of 95</dd></div>
+        <div><dt>per sentence</dt><dd>0.3 ms</dd></div>
+      </dl>
+      <p class="bench-note">
+        Measured on 398 dictated sentences with a 70-term lexicon.
+        <a href="https://github.com/ashlrai/lexicon/blob/main/docs/BENCHMARK.md">Full benchmark</a>
+        &middot; <a href="https://github.com/ashlrai/lexicon">Source</a>
+        &middot; <a href="https://www.npmjs.com/package/@ashlr/lexicon">npm</a>
+        &middot; MIT
+      </p>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

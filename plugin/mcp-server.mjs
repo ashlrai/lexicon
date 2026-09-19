@@ -45143,6 +45143,8 @@ var MAX_PHONETIC_KEYS_PER_TERM = 24;
 var PHONETIC_MIN_KEY = 3;
 var PHONETIC_MIN_WINDOW = 4;
 var ALIASED_PLAIN_WORD_MIN = 0.88;
+var PHONETIC_LONE_TOKEN_MIN_SIM = 0.6;
+var VOWEL_RE = /^[aeiouy]/;
 var DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 var STOPLIST = new Set(
   `
@@ -45342,7 +45344,7 @@ function buildIndex(lexicon) {
           const dedupePhonetic = `${key}\0${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, length: alpha.length });
+            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length });
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
             maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4));
@@ -45487,6 +45489,7 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     allStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
+    loneToken: from === to,
     plainWord: from === to && new RegExp("^\\p{Ll}+$", "u").test(norm),
     digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
   };
@@ -45535,7 +45538,7 @@ function findBest(view, index, opts) {
   const exactHit = current();
   if (exactHit) return exactHit;
   if (view.allStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return void 0;
-  const barFor = (termIndex) => view.plainWord && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
+  const barFor = (termIndex, lone) => lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
   if (opts.phonetic && index.phoneticKeys.size > 0) {
     const alpha = alphaOnly(view.collapsed);
     if (alpha.length >= 3 && alpha.length * 2 >= index.phoneticMinLen && alpha.length <= index.phoneticMaxLen * 2) {
@@ -45548,7 +45551,10 @@ function findBest(view, index, opts) {
           const max = Math.max(alpha.length, e.length);
           const diffRatio = Math.abs(alpha.length - e.length) / max;
           const confidence = PHONETIC_BASE * (1 - diffRatio * PHONETIC_LENGTH_WEIGHT);
-          if (confidence < barFor(e.termIndex)) continue;
+          if (confidence < barFor(e.termIndex, view.loneToken)) continue;
+          if (view.loneToken && alpha.charCodeAt(0) !== e.alpha.charCodeAt(0) && (VOWEL_RE.test(alpha) || VOWEL_RE.test(e.alpha)) && similarity(alpha, e.alpha) < PHONETIC_LONE_TOKEN_MIN_SIM) {
+            continue;
+          }
           if (blocked(e)) continue;
           consider(e, "phonetic", confidence);
         }
@@ -45562,7 +45568,7 @@ function findBest(view, index, opts) {
       for (const e of bucket) {
         const max = Math.max(wlen, e.normLower.length);
         if (Math.abs(wlen - e.normLower.length) > (1 - opts.minConfidence) * max) continue;
-        const bar = barFor(e.termIndex);
+        const bar = barFor(e.termIndex, view.plainWord);
         const a = e.term.caseSensitive ? view.norm : view.normLower;
         const b = e.term.caseSensitive ? e.norm : e.normLower;
         if (1 - Math.ceil((0, import_fastest_levenshtein.distance)(a, b) / 2) / max < bar) continue;
@@ -48065,11 +48071,11 @@ var MAX_BARE_WORDS = 4;
 var MIN_SUGGEST_CONFIDENCE = 0.6;
 var PHONETIC_MATCH_CONFIDENCE = 0.9;
 var MAX_SUGGESTIONS = 3;
-var BARE_WORD = `(?!not\\b)[^\\s"\u201C\u201D\`,;:!?]+`;
+var BARE_WORD = `(?!not\\b)(?:[^\\s"\u201C\u201D\`,;:!?.]|\\.(?=\\S))+`;
 var BARE = `${BARE_WORD}(?: ${BARE_WORD}){0,${MAX_BARE_WORDS - 1}}`;
 var SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80})\`|(${BARE}))`;
 var QUOTED_SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80})\`|((?!)))`;
-var TAIL = `\\s*[.!?]*\\s*$`;
+var TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 var LEAD = `(?:^|[\\s,;:\u2014-])`;
 var PATTERNS = [
   // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"

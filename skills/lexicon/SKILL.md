@@ -33,6 +33,11 @@ Call it before acting on any prompt that looks dictated:
 - a UserPromptSubmit hook note titled "Voice lexicon corrections" (the hook
   already ran normalize; apply its corrected prompt and skip the call)
 
+In sessions with many MCP servers Claude Code loads tool schemas on demand;
+the first lexicon call costs one ToolSearch turn. Prefer the hook's
+corrected prompt when it is present rather than re-running normalize for the
+same text.
+
 Use the `output` field as the prompt you act on. Mention corrections briefly only
 when they change meaning; never ask the user to confirm an exact alias match.
 If a replacement has low confidence and the sentence reads fine either way,
@@ -51,10 +56,14 @@ a different spelling. X is what they meant; Y is what was heard/written.
 
 The `UserPromptSubmit` hook detects the explicit forms for you: when the prompt
 is a correction it adds the line `The user is correcting a spelling: "Y" should
-be "X". Call the lexicon learn_correction tool with these values, then
-continue.` The hook only flags; it never writes. Make the call unless the
-sentence clearly was not a correction (then just continue). Corrections the
-hook cannot see ("spelled Zoë", a retyped name) are still yours to catch.
+be "X". Call the lexicon learn_correction tool with heard: "Y", meant: "X".
+... Then continue with the rest of the message.` The hook only flags; it never
+writes, and it does not normalize Y or X in that prompt. Make the call unless
+the sentence clearly was not a correction (then just continue). The hook's "Y"
+is a regex capture of the words after "not"; if it carries trailing words
+("versel please fix it"), pass only the misspelled name as `heard`.
+Corrections the hook cannot see ("spelled Zoë", a retyped name) are still
+yours to catch.
 
 1. Call `learn_correction { heard: Y, meant: X }`. When the user only names
    the right spelling ("spelled Zoë", "that should be Ashlr.AI"), `heard` is

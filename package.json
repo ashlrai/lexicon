@@ -38,8 +38,11 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "mcp": "node dist/mcp/server.js",
     "bench": "node --import tsx bench/run.ts",
+    "bench:audio": "node --import tsx bench/audio/run.ts",
     "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
-    "prepublishOnly": "npm run build && npm run build:bundle && npm test"
+    "prepublishOnly": "npm run build && npm run build:bundle && npm test",
+    "build:site": "node scripts/build-site.mjs",
+    "dev:site": "npm run build:site && node site/serve.mjs"
   },
   "keywords": [
     "mcp",

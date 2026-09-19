@@ -59,16 +59,25 @@ const MAX_SUGGESTIONS = 3;
  * when the side matches: "double quoted", “curly quoted”, `backticked`, bare.
  * Bare = 1..MAX_BARE_WORDS words with no quotes, commas or clause punctuation,
  * and never the word "not" (so "it's X not Y not Z" cannot swallow "not").
+ * A period is part of a word only when something follows it without a space
+ * (Ashlr.AI, Entire.io, README.md); a period followed by whitespace ends the
+ * word, so ". remember that" cannot be swallowed into `heard`.
  */
-const BARE_WORD = `(?!not\\b)[^\\s"“”\`,;:!?]+`;
+const BARE_WORD = `(?!not\\b)(?:[^\\s"“”\`,;:!?.]|\\.(?=\\S))+`;
 const BARE = `${BARE_WORD}(?: ${BARE_WORD}){0,${MAX_BARE_WORDS - 1}}`;
 const SIDE = `(?:"([^"]{1,80})"|“([^”]{1,80})”|\`([^\`]{1,80})\`|(${BARE}))`;
 /** Same shape (still four groups, so indexes line up) but the bare alternative can never match. */
 const QUOTED_SIDE = `(?:"([^"]{1,80})"|“([^”]{1,80})”|\`([^\`]{1,80})\`|((?!)))`;
 const GROUPS_PER_SIDE = 4;
-/** Trailing sentence punctuation tolerated after the last side. */
-const TAIL = `\\s*[.!?]*\\s*$`;
-/** A correction may be introduced mid-message ("no, it's X not Y") but must end the message. */
+/**
+ * Trailing sentence punctuation tolerated after the last side. A correction
+ * may also be followed by a new sentence ("... not Ashlur. remember that.",
+ * "... not Ashler! now deploy it"): once a sentence terminator plus whitespace
+ * follows the last side, the rest of the message is ignored. A comma or an
+ * unpunctuated clause still fails, so "not Ashler, please remember" is rejected.
+ */
+const TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
+/** A correction may be introduced mid-message ("no, it's X not Y") but must end its sentence (see TAIL). */
 const LEAD = `(?:^|[\\s,;:—-])`;
 
 type Side = 'meant' | 'heard';

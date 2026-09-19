@@ -1,0 +1,128 @@
+# Lexicon — personal vocabulary for voice-to-agents.
+# canonical: the spelling you want; aliases: what STT actually hears.
+#
+# Each term may also carry: phonetic (pronunciation hint), category
+# (brand|person|product|acronym|identifier|place|other), notes (shown to the
+# agent), never (words that must not be rewritten to this canonical).
+# settings: minConfidence, phonetic, fuzzy, protectedWords, skipCode.
+
+version: 1
+terms:
+  - canonical: Ashlr.AI
+    aliases:
+      - Ashlr AI
+      - Ashlr
+      - Ashler
+      - Ashlar
+      - Ashler AI
+      - Ashlar AI
+    category: brand
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.793Z
+    hits: 3
+  - canonical: UserPromptSubmit
+    aliases:
+      - User Prompt Submit
+      - User Prompet Submit
+      - User Prompat Submit
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.806Z
+  - canonical: ExportOptions
+    aliases:
+      - Export Options
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.810Z
+  - canonical: NormalizeResult
+    aliases:
+      - Normalize Result
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.813Z
+  - canonical: TermCategory
+    aliases:
+      - Term Category
+      - Term Kategory
+      - Term Categori
+      - TermKategory
+      - TermCategori
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.816Z
+  - canonical: OpenClaw
+    aliases:
+      - Open Claw
+    category: product
+    never: []
+    scope: project
+    source: harvest:package
+    createdAt: 2026-09-19T20:35:00.819Z
+  - canonical: LexiconFile
+    aliases:
+      - Lexicon File
+      - Lexikon File
+      - LexikonFile
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.822Z
+  - canonical: TermScope
+    aliases:
+      - Term Scope
+      - Term Skope
+      - TermSkope
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.825Z
+  - canonical: CommonOptions
+    aliases:
+      - Common Options
+      - Kommon Options
+      - Comon Options
+      - KommonOptions
+      - ComonOptions
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.829Z
+  - canonical: RawImport
+    aliases:
+      - Raw Import
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.833Z
+  - canonical: LoadedLexicon
+    aliases:
+      - Loaded Lexicon
+      - Loaded Lexikon
+      - LoadedLexikon
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.837Z
+  - canonical: StoreOptions
+    aliases:
+      - Store Options
+    category: identifier
+    never: []
+    scope: project
+    source: harvest:repo
+    createdAt: 2026-09-19T20:35:00.840Z

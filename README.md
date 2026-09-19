@@ -21,13 +21,15 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 ## Measured
 
-On the bundled benchmark (398 dictated sentences, 70-term lexicon, see [docs/BENCHMARK.md](docs/BENCHMARK.md)):
+Method and full tables are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
-| metric | raw STT | after lexicon |
-| --- | --- | --- |
-| proper nouns recovered | 5.1% | 96.5% |
-| clean prose sentences wrongly changed | | 0.0% (0 of 95) |
-| latency per sentence | | 0.3 ms |
+| corpus | proper nouns recovered, raw STT | after lexicon | clean prose wrongly changed |
+| --- | --- | --- | --- |
+| real audio, whisper.cpp base.en (330 clips) | 41.9% | 86.4% | 0 of 72 |
+| real audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
+| synthetic STT errors (398 sentences, 70 terms) | 5.1% | 96.5% | 0 of 95 |
+
+Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone. Reproduce with `npm run bench:audio`.
 
 ## What you get
 
@@ -39,6 +41,8 @@ On the bundled benchmark (398 dictated sentences, 70-term lexicon, see [docs/BEN
 - A plain library: `normalize()` is a pure function. See [Use as a library](#use-as-a-library).
 
 ## Install
+
+Try it first without installing anything: the [live demo](https://ashlrai.github.io/lexicon/) runs the same matcher in your browser, with dictation.
 
 ```bash
 npm i -g @ashlr/lexicon
@@ -96,6 +100,8 @@ Without `--apply` it prints the three steps. With `--apply` it performs the firs
 
 Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place.
 
+Manual installs do not load `skills/lexicon/SKILL.md`; the hook notes and the tool descriptions carry the instructions. Install the plugin (option a) to get the skill and the `/lexicon` command.
+
 ### c. Minimal
 
 No hook, no MCP. Paste the markdown export into `CLAUDE.md` so the model at least knows the right spellings.
@@ -108,7 +114,7 @@ lexicon export claude-md >> CLAUDE.md
 
 Claude Code hooks cannot rewrite the prompt. The `UserPromptSubmit` hook does not try. It runs `normalize` on the submitted text and, only if something changed, returns an `additionalContext` note:
 
-The hook also bumps each matched term's `hits` counter in the background; it never delays or fails the prompt.
+The hook also bumps each matched term's `hits` counter in the background; it never delays or fails the prompt. `lexicon stats` therefore counts hook matches from any session, including headless and scripted ones (a hook timing loop over a prompt that mentions Vercel bumps Vercel).
 
 ```text
 Voice lexicon corrections for this prompt (the user dictated; apply these):
@@ -120,9 +126,17 @@ tell Ashlr.AI to ship it to Hetzner
 
 The model starts the turn already knowing that "Ashler" means "Ashlr.AI". When nothing changed it prints nothing. It always exits 0, logs errors to stderr only, and measures about 100ms end to end including Node startup (budget 200ms), so a broken lexicon never blocks a prompt.
 
-When the prompt itself is a correction ("it's Ashlr.AI, not Ashlar", "Ashlar -> Ashlr.AI", "replace Ashlar with Ashlr.AI") the hook adds one more line asking the model to call `learn_correction` with those two values. The hook never writes to the lexicon; the model makes the call, so a false positive costs nothing.
+When the prompt itself is a correction ("it's Ashlr.AI, not Ashlar", "Ashlar -> Ashlr.AI", "replace Ashlar with Ashlr.AI", "it's Ashlr.AI not Ashlar. remember that.") the hook adds one more line asking the model to call `learn_correction` with `heard: "Ashlar", meant: "Ashlr.AI"`. On a correction prompt the hook does not normalize the words being corrected: "Ashlar" is left as the user wrote it, is not counted as a hit, and the rest of the prompt is still corrected. The hook never writes to the lexicon; the model makes the call, so a false positive costs nothing.
 
 The same file runs as the `SessionStart` hook (startup, resume, clear and compact). It emits the `claude-md` export of your merged lexicon as `additionalContext`, so the spellings reach the model once per session even if it never reads `lexicon://me`. The context is capped at about 4000 characters; longer tables end with "... N more terms; read the lexicon://me resource for the full list." An empty lexicon emits nothing. An untrusted project file adds one line naming its path, never its contents (see [Security and trust](#security-and-trust)).
+
+### Headless and scripted use
+
+Both hooks fire in print mode (`claude -p "..."`), so a scripted run gets the same corrections as an interactive one. In a session that is not in bypass-permissions mode, pre-approve the tools with `--allowedTools mcp__lexicon` (the whole server) or list them, for example `--allowedTools mcp__lexicon__normalize_transcript mcp__lexicon__learn_correction`. To test writes without touching your real file set `LEXICON_PATH=/tmp/lex.yaml` in the environment of the `claude` process; the hook and the MCP server it spawns both inherit it.
+
+```bash
+LEXICON_PATH=/tmp/lex.yaml claude -p "it's Ashlr.AI not Ashlur. remember that." --allowedTools mcp__lexicon
+```
 
 ## Use with other agents
 
@@ -292,7 +306,7 @@ lexicon learn --from "it's Ashlr.AI, not Ashler"     # natural language
 
 If `Ashlr.AI` already exists (as a canonical or an alias) the heard form becomes one more alias of it; otherwise a new term is created with `source: learned` plus auto-suggested aliases. Recognized phrasings: "it's X not Y", "I said X not Y", "I meant X not Y", "not Y, X", "replace Y with X", "Y -> X", "Y should be X", plus quoted forms. `--project` writes to `.lexicon.yaml`.
 
-`lexicon stats` shows term and alias counts, total hits, the ten most-used terms and up to twenty that never fired. Every replacement made by the MCP `normalize_transcript` tool bumps the term's `hits` counter (the hook and the CLI do not write), so the numbers reflect what the agent actually corrected.
+`lexicon stats` shows term and alias counts, total hits, the ten most-used terms and up to twenty that never fired. Every replacement made by the MCP `normalize_transcript` tool, the `UserPromptSubmit` hook or the clipboard daemon bumps the term's `hits` counter (the CLI does not), so the numbers reflect what was actually corrected, in any session including headless and scripted ones.
 
 ### Review what you have
 
