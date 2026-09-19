@@ -20,6 +20,7 @@ vi.mock('../src/core/index.js', () => {
     normalize: vi.fn(normalize),
     diffSummary: vi.fn((r: NormalizeResult) => r.replacements.map((x) => `"${x.original}" -> "${x.replacement}"`).join('\n')),
     loadLexicon: vi.fn(async () => ({ merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } })),
+    recordHits: vi.fn(async () => undefined),
   };
 });
 
@@ -39,12 +40,13 @@ interface Harness {
   read: ReturnType<typeof vi.fn<() => Promise<string>>>;
   write: ReturnType<typeof vi.fn<(s: string) => Promise<void>>>;
   out: string[];
+  err: string[];
   controller: AbortController;
   done: Promise<void>;
 }
 
 function start(initial: string, opts: { dryRun?: boolean; quiet?: boolean; mirror?: boolean } = {}): Harness {
-  const h: Partial<Harness> & { clipboard: string; out: string[] } = { clipboard: initial, out: [] };
+  const h: Partial<Harness> & { clipboard: string; out: string[]; err: string[] } = { clipboard: initial, out: [], err: [] };
   h.read = vi.fn(async () => h.clipboard);
   h.write = vi.fn(async (s: string) => {
     // A real clipboard would now hold what we wrote; `mirror:false` simulates a laggy pbpaste.
@@ -59,7 +61,8 @@ function start(initial: string, opts: { dryRun?: boolean; quiet?: boolean; mirro
     write: h.write,
     signal: h.controller.signal,
     out: (s) => h.out.push(s),
-    err: () => undefined,
+    err: (s) => h.err.push(s),
+    cwd: '/fake/cwd',
   });
   return h as Harness;
 }
@@ -85,6 +88,35 @@ describe('runClipboardDaemon', () => {
     expect(h.write).toHaveBeenCalledTimes(1);
     expect(h.read.mock.calls.length).toBeGreaterThanOrEqual(3);
 
+    h.controller.abort();
+    await h.done;
+  });
+
+  it('records hits for the corrected canonicals after a write, and keeps polling when that fails', async () => {
+    vi.mocked(core.recordHits).mockRejectedValueOnce(new Error('disk full'));
+    const h = start('meet Ashler');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledWith('meet Ashlr.AI');
+    expect(core.recordHits).toHaveBeenCalledTimes(1);
+    expect(core.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/cwd' });
+    expect(h.err.join('')).toContain('recordHits: disk full');
+
+    // The loop is alive: a second correction is written and counted again.
+    h.clipboard = 'call Ashler now';
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(core.recordHits).toHaveBeenCalledTimes(2);
+    expect(h.err).toHaveLength(1);
+
+    h.controller.abort();
+    await h.done;
+  });
+
+  it('dryRun never records hits', async () => {
+    const h = start('meet Ashler', { dryRun: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).not.toHaveBeenCalled();
+    expect(core.recordHits).not.toHaveBeenCalled();
     h.controller.abort();
     await h.done;
   });
@@ -214,6 +246,25 @@ describe('runClipboardOnce', () => {
     expect(report).toMatch(/^1 correction\n/);
     expect(report).toContain('"Ashler" -> "Ashlr.AI"');
     expect(report).not.toMatch(/\[\d\d:\d\d:\d\d\]/);
+  });
+
+  it('records hits after the write; a failing recordHits is reported on err without changing the result', async () => {
+    const ok = onceHarness('meet Ashler');
+    await runClipboardOnce({ read: ok.read, write: ok.write, out: ok.out, err: ok.err, cwd: '/fake/cwd' });
+    expect(core.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/cwd' });
+
+    vi.mocked(core.recordHits).mockRejectedValueOnce(new Error('disk full'));
+    const { h, read, write, out, err } = onceHarness('meet Ashler');
+    const result = await runClipboardOnce({ read, write, out, err, cwd: '/fake/cwd' });
+    expect(result).toEqual({ changed: true, written: true, corrections: 1, pasted: false });
+    expect(h.out.join('')).toMatch(/^1 correction\n/);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.err.join('')).toContain('recordHits: disk full');
+
+    const dry = onceHarness('meet Ashler');
+    vi.mocked(core.recordHits).mockClear();
+    await runClipboardOnce({ read: dry.read, write: dry.write, out: dry.out, err: dry.err, dryRun: true });
+    expect(core.recordHits).not.toHaveBeenCalled();
   });
 
   it('unchanged text is not written and prints "no changes"', async () => {

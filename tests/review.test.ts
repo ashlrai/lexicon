@@ -13,7 +13,7 @@ import { runAdd, runHarvest } from '../src/cli/commands.js';
 import type { IO } from '../src/cli/commands.js';
 import { askKey, splitList } from '../src/cli/prompt.js';
 import type { PromptChoice, Prompter } from '../src/cli/prompt.js';
-import { trustProject, writeLexiconFile } from '../src/core/index.js';
+import { addTerm, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
 
 // ---------------------------------------------------------------------------
@@ -319,6 +319,57 @@ describe('review', () => {
     expect(io.out).toContain('[2/4] Stale');
     expect(io.out).toContain('deleted Stale');
     expect(io.out).toContain(`kept 3, deleted 1, edited 3 — wrote ${globalPath}`);
+  });
+
+  it('merges hits and terms written elsewhere while the review was running instead of overwriting them', async () => {
+    await seedGlobal(terms);
+    const inner = scripted([
+      'k', // Ashlr.AI
+      'd', // Stale
+      'e', 'Mason Wyeth, Mace on Wyatt', 'k', // Mason Wyatt (edited)
+      'k', // Keeper
+    ]);
+    // Between the first two prompts another process bumps hits (the MCP
+    // server) and adds a term (`lexicon add` in another shell): both must
+    // survive the review's final write.
+    let interleaved = false;
+    const p: Prompter = {
+      ...inner,
+      async ask(question, opts) {
+        const answer = await inner.ask(question, opts);
+        if (!interleaved) {
+          interleaved = true;
+          await recordHits(['Ashlr.AI', 'Ashlr.AI', 'Mason Wyatt', 'Stale'], { cwd: tmp, globalPath });
+          await addTerm({ canonical: 'Newcomer', aliases: ['new comer'], category: 'product' }, { cwd: tmp, globalPath });
+          await addTerm({ canonical: 'Keeper', aliases: ['keep her'] }, { cwd: tmp, globalPath });
+        }
+        return answer;
+      },
+    };
+    const io = makeIO();
+    expect(await runReview({ cwd: tmp, globalPath }, io, p)).toBe(0);
+
+    const written = await readYaml(globalPath);
+    expect(written.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt', 'Keeper', 'Newcomer']);
+    // Untouched term: on-disk hits carried over (4 + 2).
+    expect(written.terms[0].hits).toBe(6);
+    // Edited term: the session's aliases win, the on-disk hit count is kept.
+    expect(written.terms[1]).toMatchObject({ aliases: ['Mason Wyeth', 'Mace on Wyatt'], hits: 1 });
+    // Kept term whose aliases were merged elsewhere: the on-disk version wins.
+    expect(written.terms[2].aliases).toEqual(['keep her']);
+    // Deleted stays deleted even though its hits were bumped meanwhile.
+    expect(written.terms.some((t) => t.canonical === 'Stale')).toBe(false);
+    expect(written.terms[3]).toMatchObject({ canonical: 'Newcomer', aliases: ['new comer'] });
+    expect(io.out).toContain('merged 4 changes made elsewhere during review');
+    expect(io.out).toContain(`kept 3, deleted 1, edited 1 — wrote ${globalPath}`);
+  });
+
+  it('does not report a merge when nothing changed on disk', async () => {
+    await seedGlobal(terms);
+    const io = makeIO();
+    expect(await runReview({ cwd: tmp, globalPath }, io, scripted(['d', 'k', 'k', 'k']))).toBe(0);
+    expect(io.out).not.toContain('made elsewhere');
+    expect((await readYaml(globalPath)).terms).toHaveLength(3);
   });
 
   it('--never-hit and --category filter what is walked; q stops without writing', async () => {

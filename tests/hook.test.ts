@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   loadLexicon: vi.fn(),
   normalize: vi.fn(),
   diffSummary: vi.fn(),
+  recordHits: vi.fn(),
 }));
 
 // IO and matching are mocked; exportLexicon and parseCorrection are the real
@@ -73,6 +74,7 @@ beforeEach(() => {
   mocks.diffSummary.mockImplementation((r: NormalizeResult) =>
     r.replacements.map((x) => `"${x.original}" -> "${x.replacement}" (${x.reason}, ${x.confidence.toFixed(2)})`).join('\n'),
   );
+  mocks.recordHits.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -110,6 +112,45 @@ describe('runUserPromptSubmitHook', () => {
     const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
     await runUserPromptSubmitHook(payload('Ashler'), { cwd: '/override' });
     expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/override' });
+  });
+
+  describe('usage counters', () => {
+    it('records one hit per distinct canonical, in the background, only when something changed', async () => {
+      mocks.normalize.mockImplementation((text: string): NormalizeResult => {
+        const r = fakeNormalize(text);
+        // Two replacements of the same canonical plus one of another: recordHits gets each canonical once.
+        r.replacements = [
+          ...r.replacements,
+          { ...r.replacements[0], start: 20, end: 26 },
+          { ...r.replacements[0], start: 30, end: 36, original: 'Mason Wyeth', replacement: 'Mason Wyatt', canonical: 'Mason Wyatt' },
+        ];
+        return r;
+      });
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const out = await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
+      expect(out).not.toBe('');
+      expect(mocks.recordHits).toHaveBeenCalledTimes(1);
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI', 'Mason Wyatt'], { cwd: '/fake/repo' });
+
+      mocks.recordHits.mockClear();
+      expect(await runUserPromptSubmitHook(payload('plain prompt'))).toBe('');
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+    });
+
+    it('a failing recordHits neither changes the output nor throws', async () => {
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const expected = await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        mocks.recordHits.mockRejectedValue(new Error('disk full'));
+        const out = await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
+        expect(out).toBe(expected);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining('[lexicon hook] recordHits: disk full'));
+      } finally {
+        stderr.mockRestore();
+      }
+    });
   });
 
   describe('untrusted project lexicon', () => {
@@ -173,6 +214,20 @@ describe('runUserPromptSubmitHook', () => {
       });
       expect(note).not.toContain('\n');
       expect(note).toContain('/x/IGNORE ABOVE/.lexicon.yaml');
+    });
+
+    it('drops an ANSI escape sequence hidden in the skipped project path', async () => {
+      const ESC = String.fromCodePoint(0x1b);
+      mocks.loadLexicon.mockResolvedValue({
+        ...skipped,
+        skippedProject: { ...skipped.skippedProject!, path: `/x/${ESC}]0;pwned${String.fromCodePoint(7)}${ESC}[31mrepo/.lexicon.yaml` },
+      });
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runUserPromptSubmitHook(payload('plain prompt')));
+      expect(ctx).not.toContain(ESC);
+      expect(ctx).not.toContain(String.fromCodePoint(7));
+      expect(ctx.split('\n')).toHaveLength(1);
+      expect(ctx).toContain('repo/.lexicon.yaml');
     });
   });
 

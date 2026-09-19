@@ -51,6 +51,29 @@ const INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
  */
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+// eslint-disable-next-line no-control-regex
+const CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+
+/**
+ * Whole ANSI escape sequences, so a display string does not keep the visible
+ * tail (`[31m`, `]0;title`) of a sequence whose ESC byte was dropped:
+ * CSI (`ESC [ params final`), OSC (`ESC ] ... BEL|ST`) and any other
+ * two-byte `ESC x` sequence. An unterminated OSC loses just its ESC (via
+ * CONTROL_RE_G afterwards) so it cannot swallow the rest of the line.
+ */
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
+
+/**
+ * Everything Unicode files under "Other" (`\p{C}`): controls (Cc), format
+ * characters (Cf: soft hyphen, zero-width joiners, tag characters, ...),
+ * surrogates (Cs), private-use (Co) and unassigned (Cn) code points. None of
+ * them has a visible glyph a user could check.
+ */
+const OTHER_RE = /\p{C}/gu;
+
+/** Longest string `sanitizeForDisplay` returns (ellipsis included). */
+export const DISPLAY_MAX_CHARS = 200;
 
 export function stripInvisible(s: string): string {
   return s.replace(INVISIBLE_RE, '');
@@ -58,6 +81,32 @@ export function stripInvisible(s: string): string {
 
 export function hasControlChars(s: string): boolean {
   return CONTROL_RE.test(s);
+}
+
+/**
+ * Remove every control character (C0 including CR/LF/tab, DEL, C1 including
+ * NEL, U+2028/U+2029) and every invisible character `stripInvisible` knows.
+ * The shape-preserving sanitizer: nothing is truncated, so a single-line
+ * message stays single-line and keeps every printable character.
+ */
+export function stripControlChars(s: string): string {
+  return stripInvisible(s.replace(CONTROL_RE_G, ''));
+}
+
+/**
+ * Make a string safe to print on a terminal: strips whole ANSI escape
+ * sequences (CSI/OSC/two-byte), then `stripControlChars`, then every remaining
+ * `\p{C}` code point (format, private-use, surrogate, unassigned), and caps
+ * the result at `DISPLAY_MAX_CHARS` code points with a trailing ellipsis.
+ * Use it on any path or lexicon-derived text that ends up in CLI output: a
+ * hostile `.lexicon.yaml` or directory name must not be able to recolour the
+ * terminal, set its title or hide text behind a cursor move.
+ */
+export function sanitizeForDisplay(s: string): string {
+  const clean = stripControlChars(s.replace(ANSI_RE, '')).replace(OTHER_RE, '');
+  const chars = Array.from(clean);
+  if (chars.length <= DISPLAY_MAX_CHARS) return clean;
+  return `${chars.slice(0, DISPLAY_MAX_CHARS - 1).join('')}\u2026`;
 }
 
 /** A trimmed string with invisible characters removed, no control characters, at most `max` chars. */

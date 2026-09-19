@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-git clone <repo>
+git clone https://github.com/ashlrai/lexicon
 cd lexicon
 npm install
 npm run build
@@ -31,15 +31,17 @@ Vitest. Tests live under `tests/`, one file per module:
 
 ```text
 tests/
-  schema.test.ts      normalize.test.ts   harvest.test.ts    mcp.test.ts
-  store.test.ts       suggest.test.ts     exporters.test.ts  hook.test.ts
-  matcher.test.ts     cli.test.ts         daemon.test.ts     e2e.test.ts (real CLI/hook/MCP as subprocesses)
+  schema.test.ts      normalize.test.ts   harvest.test.ts     mcp.test.ts       trust.test.ts
+  store.test.ts       suggest.test.ts     exporters.test.ts   hook.test.ts      learn.test.ts
+  matcher.test.ts     cli.test.ts         importers.test.ts   install.test.ts   stats.test.ts
+  daemon.test.ts      review.test.ts      e2e.test.ts (real CLI/hook/MCP as subprocesses)
   fixtures/fake-repo/ a small repo (package.json, README.md, src/, scripts/, node_modules/) for harvest tests
+bench/bench.test.ts   accuracy regression guard over the benchmark corpus (npx vitest run bench)
 ```
 
-`npm test` runs them once; `npm run test:watch` watches.
+`npm test` runs them once; `npm run test:watch` watches. `npm run bench` prints the accuracy report as markdown and writes `bench/results.json`; `docs/BENCHMARK.md` is updated by hand from that report. See `bench/README.md`.
 
-Matcher and normalize tests use inline fixtures. Store, CLI and hook tests use a temp directory and `LEXICON_PATH` so they never touch a real config. The daemon test injects read/write functions instead of touching the clipboard.
+Matcher and normalize tests use inline fixtures. Store, trust, CLI and hook tests use a temp directory and `LEXICON_PATH` so they never touch a real config. The daemon test injects read/write functions instead of touching the clipboard. Interactive commands (`harvest --add`, `add -i`, `review`, `edit`) take a `Prompter` or an editor spawner as a parameter, so `review.test.ts` scripts the answers.
 
 ### End-to-end journeys
 
@@ -84,9 +86,17 @@ To add a journey test:
 2. Add the format name to the `ExportFormat` union in `src/core/types.ts`.
 3. Register it in `src/core/exporters/index.ts`: add it to `EXPORT_FORMATS`, add a `description` and `ext` entry to `EXPORT_FORMAT_INFO`, and add it to the `EXPORTERS` map that `exportLexicon()` dispatches through. Use `sortByImportance()` from `shared.ts` so term order matches the other exporters.
 4. Add a test in `tests/exporters.test.ts` with a small lexicon and an exact expected string. Cover `categories` and `limit`.
-5. Add a row to the export table in `README.md` and to the format list in `commands/lexicon.md` and `skills/lexicon/SKILL.md`.
+5. Add the format to `EXPORT_FORMAT_VALUES` in `src/mcp/server.ts` (the build fails until you do) and to the `export_lexicon` description.
+6. Add a row to the export table in `README.md`, the format lists in `commands/lexicon.md` and `skills/lexicon/SKILL.md`, and the exporters line in `CONTRACT.md`. Update the format count wherever it is stated ("fifteen").
 
-The CLI (`lexicon export` with no format), the MCP `export_lexicon` tool and its `format` enum pick up new formats from `EXPORT_FORMATS` automatically.
+The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORMATS` automatically.
+
+## Adding an importer
+
+1. Create `src/core/importers/<format>.ts` exporting `parse<Format>Import(content: string): RawImport` (`rows` plus `skipped` with a 1-based line and a reason) and, when the format can be sniffed, a `looksLike<Format>(content)` predicate. Use `rowFor()` from `shared.ts` and `parseCsv()` from `csv-parse.ts` where they fit. Parsers must be linear-time; the CLI already caps input at 8 MB.
+2. Add the name to `ImportFormat` and `IMPORT_FORMATS` in `src/core/importers/index.ts`, describe it in `IMPORT_FORMAT_INFO`, register the parser in `PARSERS`, and add a detection step to `detectImportFormat()` (unambiguous structured markers first, extensions last).
+3. Add a test in `tests/importers.test.ts` with an exact fixture, including a malformed row that lands in `skipped`. If the format has an exporter, add a round-trip case.
+4. Add a row to the import table in `README.md` and update the `lexicon import` help text in `src/cli/cmd-import.ts` and `src/cli/index.ts`, then run `npm run docs:cli`. Update the format count wherever it is stated ("seven").
 
 ## Adding a harvester source
 
@@ -101,4 +111,4 @@ The CLI (`lexicon export` with no format), the MCP `export_lexicon` tool and its
 
 ## Pull requests
 
-Keep them small. One exporter, one harvester, one matcher change per PR. Include the test. Update `CHANGELOG.md` under an Unreleased heading.
+Keep them small. One exporter, one importer, one harvester, one matcher change per PR. Include the test. Update `CHANGELOG.md` under the `0.1.0 (unreleased)` heading (Added, Security or Internal) until the first release ships. Rebuild the plugin bundles (`npm run build:bundle`) when the change is reachable from the MCP server or the hook, and commit them.

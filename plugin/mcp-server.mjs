@@ -43983,6 +43983,7 @@ var LIMITS = {
 };
 var INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 var CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+var OTHER_RE = new RegExp("\\p{C}", "gu");
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
 }

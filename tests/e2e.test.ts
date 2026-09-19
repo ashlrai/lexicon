@@ -679,8 +679,11 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: UserPromptSubmit hook', () =
     });
   }
 
-  it('emits additionalContext with the corrections and the corrected prompt', async () => {
-    const r = await runNode(HOOK, [], { env: shared.env, stdin: payload('ask Ashler about mason wyeth', shared.repo) });
+  it('emits additionalContext with the corrections and the corrected prompt, and records the hits', async () => {
+    // Own clone: the hook bumps `hits` in the global file, which must not leak into the shared fixture.
+    const h = await cloneOf(shared, 'hook-hits');
+    expect(await fs.readFile(h.globalPath, 'utf8')).not.toMatch(/hits: [1-9]/);
+    const r = await runNode(HOOK, [], { env: h.env, stdin: payload('ask Ashler about mason wyeth', h.repo) });
     expect(r.code).toBe(0);
     expect(r.stderr).toBe('');
     const out = JSON.parse(r.stdout) as {
@@ -691,6 +694,9 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: UserPromptSubmit hook', () =
     expect(ctx).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
     expect(ctx).toContain('"mason wyeth" -> "Mason Wyatt" (alias, 1.00)');
     expect(ctx).toContain('Corrected prompt:\nask Ashlr.AI about Mason Wyatt');
+    // The process only exits once the background recordHits write has landed.
+    const yaml = await fs.readFile(h.globalPath, 'utf8');
+    expect(yaml.match(/hits: 1/g)).toHaveLength(2);
   });
 
   it('prints nothing for a prompt that needs no correction, and exits 0 on garbage input', async () => {
@@ -715,7 +721,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: UserPromptSubmit hook', () =
   });
 
   it('is reachable through `lexicon hook` as well', async () => {
-    const r = await runCli(['hook'], { env: shared.env, stdin: payload('ping Ashler', shared.repo) });
+    const h = await cloneOf(shared, 'hook-cli');
+    const r = await runCli(['hook'], { env: h.env, stdin: payload('ping Ashler', h.repo) });
     expect(r.code).toBe(0);
     const out = JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } };
     expect(out.hookSpecificOutput.additionalContext).toContain('ping Ashlr.AI');

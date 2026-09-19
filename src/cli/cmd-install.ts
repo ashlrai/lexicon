@@ -15,7 +15,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { resolveIntegrationPaths, runInstallClaude } from './commands.js';
+import { resolveIntegrationPaths, runInstallClaude, safe } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
 
 // ---------------------------------------------------------------------------
@@ -449,14 +449,14 @@ export async function runInstall(
   const body = target.format === 'toml' ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
 
   line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
-  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${target.file}:`);
+  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
   line(io, indent(body, '   '));
   if (opts.apply) {
     const outcome = target.format === 'toml' ? await applyToml(target) : await applyJson(target);
     if (outcome === 'unchanged') {
-      line(io, dim(`   ${target.file}: lexicon entry already present, nothing changed`));
+      line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
     } else {
-      line(io, green(`   ${outcome} ${target.file}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
+      line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
   }
   line(io);

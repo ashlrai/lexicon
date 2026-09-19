@@ -27207,11 +27207,16 @@ var LIMITS = {
 };
 var INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 var CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+var CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+var OTHER_RE = new RegExp("\\p{C}", "gu");
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
 }
 function hasControlChars(s) {
   return CONTROL_RE.test(s);
+}
+function stripControlChars(s) {
+  return stripInvisible(s.replace(CONTROL_RE_G, ""));
 }
 function SafeString(max) {
   return external_exports.string().transform((s) => stripInvisible(s).trim()).pipe(
@@ -27366,6 +27371,14 @@ async function readTrustRegistry(opts = {}) {
   }
   return { version: 1, trusted };
 }
+async function writeTrustRegistry(registry2, opts = {}) {
+  const target = getTrustPath(opts);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const tmp = `${target}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(registry2, null, 2)}
+`, "utf8");
+  await fs.rename(tmp, target);
+}
 async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
   const target = await canonicalPath(filePath);
@@ -27383,6 +27396,17 @@ async function isTrusted(projectFile, opts = {}) {
   const sha = await hashFile(key);
   if (sha === void 0) return "untrusted";
   return sha === entry.sha256 ? "trusted" : "changed";
+}
+async function refreshTrust(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  const registry2 = await readTrustRegistry(opts);
+  const existing = registry2.trusted[key];
+  if (!existing) return false;
+  const sha256 = await hashFile(key);
+  if (sha256 === void 0 || sha256 === existing.sha256) return false;
+  registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
+  await writeTrustRegistry(registry2, opts);
+  return true;
 }
 
 // src/core/store.ts
@@ -27448,6 +27472,57 @@ async function readLexiconFile(filePath, scope) {
   }
   return { path: filePath, scope, lexicon, exists: true };
 }
+async function writeLexiconFile(file2) {
+  const dir = path2.dirname(file2.path);
+  await fs2.mkdir(dir, { recursive: true });
+  const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
+  const header = HEADER_COMMENT.split("\n").map((line) => line ? `# ${line}` : "#").join("\n");
+  const text = `${header}
+
+${body}`;
+  const tmp = `${file2.path}.tmp`;
+  await fs2.writeFile(tmp, text, "utf8");
+  await fs2.rename(tmp, file2.path);
+  file2.exists = true;
+}
+var TERM_KEY_ORDER = [
+  "canonical",
+  "aliases",
+  "phonetic",
+  "category",
+  "notes",
+  "caseSensitive",
+  "never",
+  "scope",
+  "source",
+  "createdAt",
+  "hits"
+];
+function orderLexicon(lexicon) {
+  const out = { version: lexicon.version };
+  if (lexicon.settings && Object.keys(stripUndefined(lexicon.settings)).length > 0) {
+    out.settings = stripUndefined(lexicon.settings);
+  }
+  out.terms = lexicon.terms.map((term) => {
+    const ordered = {};
+    for (const key of TERM_KEY_ORDER) {
+      const value = term[key];
+      if (value !== void 0) ordered[key] = value;
+    }
+    for (const [key, value] of Object.entries(term)) {
+      if (!(key in ordered) && value !== void 0) ordered[key] = value;
+    }
+    return ordered;
+  });
+  return out;
+}
+function stripUndefined(obj) {
+  const out = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== void 0) out[key] = value;
+  }
+  return out;
+}
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
   const global = await readLexiconFile(paths.global, "global");
@@ -27496,6 +27571,46 @@ function mergeSettings(global, project) {
   if (protectedWords.length > 0) out.protectedWords = protectedWords;
   else delete out.protectedWords;
   return out;
+}
+async function recordHits(canonicals, opts = {}) {
+  try {
+    if (canonicals.length === 0) return;
+    const counts = /* @__PURE__ */ new Map();
+    for (const c of canonicals) {
+      const key = c.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const files = await candidateFiles(opts);
+    for (const file2 of files) {
+      if (!file2.exists) continue;
+      if (file2.scope === "project" && await isTrusted(file2, opts) !== "trusted") continue;
+      let touched = false;
+      for (const term of file2.lexicon.terms) {
+        const n = counts.get(term.canonical.toLowerCase());
+        if (n) {
+          term.hits = (term.hits ?? 0) + n;
+          touched = true;
+          counts.delete(term.canonical.toLowerCase());
+        }
+      }
+      if (touched) {
+        await writeLexiconFile(file2);
+        if (file2.scope === "project") await refreshTrust(file2.path, opts);
+      }
+    }
+  } catch {
+  }
+}
+async function candidateFiles(opts, scope) {
+  const paths = resolvePaths(opts);
+  if (scope === "global") return [await readLexiconFile(paths.global, "global")];
+  if (scope === "project") {
+    return paths.project ? [await readLexiconFile(paths.project, "project")] : [];
+  }
+  const files = [];
+  if (paths.project) files.push(await readLexiconFile(paths.project, "project"));
+  files.push(await readLexiconFile(paths.global, "global"));
+  return files;
 }
 function sameCanonical(a, b) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -29022,15 +29137,15 @@ Corrected prompt:
 }
 function formatSkippedProjectNote(loaded) {
   if (!loaded.skippedProject) return "";
-  const safePath = stripControl(loaded.skippedProject.path);
+  const safePath = stripControlChars(loaded.skippedProject.path);
   if (loaded.projectTrust === "changed") {
     return `Note: this repo's .lexicon.yaml at ${safePath} changed since the user trusted it, so it was not applied; the user can review it and run \`lexicon trust\` again to enable it.`;
   }
   return `Note: this repo has an untrusted .lexicon.yaml at ${safePath} that was not applied; the user can review it and run \`lexicon trust\` to enable it.`;
 }
 function formatCorrectionNote(correction) {
-  const heard = stripControl(correction.heard).trim();
-  const meant = stripControl(correction.meant).trim();
+  const heard = stripControlChars(correction.heard).trim();
+  const meant = stripControlChars(correction.meant).trim();
   return `The user is correcting a spelling: "${heard}" should be "${meant}". Call the lexicon learn_correction tool with these values, then continue.`;
 }
 function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
@@ -29056,8 +29171,14 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   const out = [...header, ...kept, moreLine(dropped), ...footer].join("\n");
   return out.length <= max ? out : out.slice(0, Math.max(0, max - 3)) + "...";
 }
-function stripControl(s) {
-  return s.replace(/[ -]/g, "");
+function recordHitsInBackground(result, cwd) {
+  const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
+  if (canonicals.length === 0) return;
+  void recordHits(canonicals, { cwd }).catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[lexicon hook] recordHits: ${message}
+`);
+  });
 }
 function parseInput(raw) {
   const trimmed = raw.trim();
@@ -29080,6 +29201,7 @@ async function userPromptSubmit(payload, opts) {
   const skippedNote = formatSkippedProjectNote(loaded);
   const result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : void 0;
   const changed = result?.changed === true;
+  if (result && changed) recordHitsInBackground(result, cwd);
   const correction = parseCorrection(prompt);
   const correctionNote = correction && correction.heard.trim() !== "" && correction.meant.trim() !== "" ? formatCorrectionNote(correction) : "";
   if (!changed && !skippedNote && !correctionNote) return "";

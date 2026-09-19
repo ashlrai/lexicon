@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { renderTable } from './commands.js';
+import { renderTable, safe, safeLines } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
 
 function line(io: IO, s = ''): void {
@@ -56,13 +56,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   const correction = correctionFromArgs(words, opts.from);
   if (!correction) {
     const source = opts.from ?? words.join(' ');
-    io.stderr(source ? `lexicon: could not find a correction in "${source}"\n` : 'lexicon: nothing to learn\n');
+    io.stderr(source ? `lexicon: could not find a correction in "${safe(source)}"\n` : 'lexicon: nothing to learn\n');
     usageHint(io);
     return 1;
   }
   if (!correction.heard) {
     io.stderr(
-      `lexicon: "${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard\n`,
+      `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
     line(io, `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`);
     return 1;
@@ -80,11 +80,11 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       : result.aliasAdded
         ? 'alias added'
         : 'already known';
-    line(io, `learned ${correction.heard} -> ${result.term.canonical} (${what}) in ${result.file.path}`);
-    line(io, `aliases: ${result.term.aliases.length > 0 ? result.term.aliases.join(', ') : '(none)'}`);
+    line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
+    line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
     return 0;
   } catch (err) {
-    io.stderr(`lexicon: ${errorMessage(err)}\n`);
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
     return 1;
   }
 }
@@ -126,7 +126,7 @@ export function renderStats(stats: LexiconStats): string {
   out.push('');
 
   out.push(`never hit (${stats.neverHit.length}${stats.neverHit.length >= 20 ? '+' : ''})`);
-  out.push(stats.neverHit.length > 0 ? `  ${stats.neverHit.join(', ')}` : '  (none)');
+  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}` : '  (none)');
   out.push('');
 
   out.push('files');
@@ -147,7 +147,7 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     }
     return 0;
   } catch (err) {
-    io.stderr(`lexicon: ${errorMessage(err)}\n`);
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
     return 1;
   }
 }

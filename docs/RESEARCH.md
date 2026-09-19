@@ -74,15 +74,22 @@ Watch for: Claude Code changelog, Wispr Flow feature announcements, OpenAI and A
 
 ## What we shipped
 
+Each recommendation above, mapped to what exists in the repo today.
+
 | Research recommendation | Feature in this repo |
 |---|---|
-| One portable vocabulary the user owns | `~/.config/lexicon/lexicon.yaml` plus project `.lexicon.yaml`; `src/core/store.ts` |
-| Reach agents that own their STT | `lexicon-mcp` stdio server with `normalize_transcript`; `src/mcp/server.ts` |
-| Fix Claude Code `/voice` without waiting for first-party support | `UserPromptSubmit` hook injecting corrections as context; `src/hooks/user-prompt-submit.ts` |
-| Give the model the vocabulary as memory | `lexicon://me` resource, `voice-context` prompt, `lexicon export claude-md` |
-| Do not abandon existing dictation apps | Exporters for Wispr, Superwhisper, macOS Text Replacement, espanso; `src/core/exporters/` |
-| Reach recognizers that accept hotwords | `whisper-prompt` and `deepgram` exporters |
-| Reduce setup friction (Aqua's 800 terms are hand-entered) | `lexicon harvest` pulls names from the codebase; `suggestAliases()` guesses misspellings |
-| Avoid false positives that make users distrust the tool | Stoplist, `protectedWords`, per-term `never`, `minConfidence`, three-character minimum |
-| Work with any app before agents adopt MCP | macOS clipboard daemon; `src/daemon/clipboard.ts` |
+| One portable vocabulary the user owns | `~/.config/lexicon/lexicon.yaml` plus project `.lexicon.yaml`, merged at load; `src/core/store.ts` |
+| Reach agents that own their STT | `lexicon-mcp` stdio server with nine tools (`normalize_transcript`, `add_term`, `remove_term`, `list_terms`, `harvest_repo`, `export_lexicon`, `learn_correction`, `suggest_canonical`, `lexicon_stats`); `lexicon install <client>` writes the config for Codex, Cursor, Windsurf, Gemini CLI, Claude Desktop and VS Code; `src/mcp/server.ts`, `src/cli/cmd-install.ts` |
+| Fix Claude Code `/voice` without waiting for first-party support | Claude Code plugin (`claude plugin install lexicon@ashlrai`): `UserPromptSubmit` hook injecting corrections as context, `SessionStart` hook injecting the vocabulary once per session, a skill and a `/lexicon` command; bundled as `plugin/hook.mjs` and `plugin/mcp-server.mjs` so a bare clone runs with Node alone |
+| Give the model the vocabulary as memory | `lexicon://me` resource, `voice-context` prompt, `lexicon export claude-md`, and the `SessionStart` injection (capped at about 4000 characters) |
+| Close the loop when the user corrects the agent | `learn_correction` tool and `lexicon learn`; the hook recognises "it's X not Y" and asks the model to call it; `suggest_canonical` for "did you mean X?" on a garble the lexicon does not know yet; `src/core/learn.ts` |
+| Do not abandon existing dictation apps | Fifteen exporters (Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper, OpenAI, Deepgram, AssemblyAI, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON) and seven importers (Wispr, Superwhisper, macOS, espanso, text, CSV, JSON) so an existing dictionary seeds the lexicon; `src/core/exporters/`, `src/core/importers/` |
+| Reach recognizers that accept hotwords | `whisper-prompt`, `openai`, `deepgram`, `assemblyai`, `azure` and `google` exporters |
+| Reduce setup friction (Aqua's 800 terms are hand-entered) | `lexicon harvest` pulls names from the codebase and walks them one by one; `suggestAliases()` guesses misspellings; `lexicon import` brings a dictionary over; `lexicon add -i`, `review`, `edit` for maintenance |
+| Avoid false positives that make users distrust the tool | Stoplist, `protectedWords`, per-term `never`, `minConfidence`, three-character minimum, function-word and possessive guards. Benchmark: 0 of 95 clean prose sentences changed, 96.5% of misheard terms recovered (`docs/BENCHMARK.md`) |
+| Work with any app before agents adopt MCP | Clipboard daemon for macOS, Linux and Windows, with `--once` for a keyboard shortcut; `src/daemon/` |
+| Share a vocabulary with a teammate | Commit `.lexicon.yaml`; each teammate approves it with `lexicon trust`. Untrusted project files are never merged or written to (`src/core/trust.ts`, `SECURITY.md`) |
+| Dogfood before deciding anything else | `lexicon stats` and `review --never-hit` show which terms fire and which never do; `hits` is recorded on every MCP correction |
 | Not a dictation app, no hosted service | No audio code, no accounts, no network calls |
+
+Still open: a VS Code extension, per-app sync (pushing changes into the apps instead of exporting), non-English phonetics, and a benchmark on recorded audio rather than generated STT errors.

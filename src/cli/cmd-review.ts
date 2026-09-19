@@ -6,7 +6,8 @@
  * registerReviewCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
@@ -17,6 +18,7 @@ import {
   readLexiconFile,
   refreshTrust,
   resolvePaths,
+  sanitizeForDisplay,
   writeLexiconFile,
 } from '../core/index.js';
 import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
@@ -46,6 +48,17 @@ function resolveCwd(opts: CommonOptions): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Terminal-safe rendering of paths and lexicon-derived text (see
+ * `safe` in commands.ts; defined again here because commands.ts imports this
+ * module and a value import back would make the cycle a runtime one).
+ */
+const safe: (s: string) => string = sanitizeForDisplay;
+
+function safeLines(s: string): string {
+  return s.split('\n').map(safe).join('\n');
 }
 
 function plural(n: number, word: string): string {
@@ -85,9 +98,9 @@ const HARVEST_KEYS = ['y', 'n', 'e', 'c', 'a', 'q'] as const;
 const HARVEST_HELP = '[y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit';
 
 function showCandidate(io: IO, c: HarvestCandidate, index: number, total: number): void {
-  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(c.canonical)}  ${dim(`${c.category}, seen ${c.count}x`)}`);
-  line(io, `  evidence: ${c.evidence.length > 0 ? c.evidence.slice(0, 3).join(', ') : dim('(none)')}`);
-  line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? c.suggestedAliases.join(', ') : dim('(none)')}`);
+  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(c.canonical))}  ${dim(`${c.category}, seen ${c.count}x`)}`);
+  line(io, `  evidence: ${c.evidence.length > 0 ? safe(c.evidence.slice(0, 3).join(', ')) : dim('(none)')}`);
+  line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
 }
 
 /**
@@ -115,7 +128,7 @@ export async function runHarvestInteractive(
   if (projectPath && existsSync(projectPath)) {
     const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${new ProjectTrustError(projectPath, status).message}\n`);
+      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(projectPath, status).message)}\n`);
       return 1;
     }
   }
@@ -139,11 +152,11 @@ export async function runHarvestInteractive(
       filePath = result.file.path;
       if (result.created) created += 1;
       else merged += 1;
-      line(io, `  ${result.created ? 'added' : 'merged'} ${bold(result.term.canonical)}`);
+      line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
       return true;
     } catch (err) {
       if (err instanceof ProjectTrustError) {
-        io.stderr(`lexicon: ${err.message}\n`);
+        io.stderr(`lexicon: ${safeLines(err.message)}\n`);
         return false;
       }
       throw err;
@@ -174,7 +187,7 @@ export async function runHarvestInteractive(
             default: c.suggestedAliases.join(', '),
           });
           c.suggestedAliases = splitList(answer).filter((a) => a.toLowerCase() !== c.canonical.toLowerCase());
-          line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? c.suggestedAliases.join(', ') : dim('(none)')}`);
+          line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
           break;
         }
         case 'c':
@@ -198,9 +211,9 @@ export async function runHarvestInteractive(
     line(io);
   }
 
-  const where = filePath ? ` in ${filePath}` : '';
+  const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
-  if (filePath) line(io, dim(`project lexicon trusted (${filePath})`));
+  if (filePath) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   return 0;
 }
 
@@ -225,10 +238,87 @@ const REVIEW_HELP = '[k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]u
 function showTerm(io: IO, t: Term, index: number, total: number): void {
   const meta = [t.category ?? 'uncategorized', `${t.hits ?? 0} hit${(t.hits ?? 0) === 1 ? '' : 's'}`];
   if (t.source) meta.push(t.source);
-  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(t.canonical)}  ${dim(meta.join(', '))}`);
-  line(io, `  aliases:  ${t.aliases.length > 0 ? t.aliases.join(', ') : dim('(none)')}`);
-  if (t.phonetic) line(io, `  phonetic: ${t.phonetic}`);
-  if (t.notes) line(io, `  notes:    ${t.notes}`);
+  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(t.canonical))}  ${dim(meta.join(', '))}`);
+  line(io, `  aliases:  ${t.aliases.length > 0 ? safe(t.aliases.join(', ')) : dim('(none)')}`);
+  if (t.phonetic) line(io, `  phonetic: ${safe(t.phonetic)}`);
+  if (t.notes) line(io, `  notes:    ${safe(t.notes)}`);
+}
+
+/** sha256 of the file's bytes, or undefined when it cannot be read (deleted meanwhile). */
+async function fileDigest(filePath: string): Promise<string | undefined> {
+  try {
+    return createHash('sha256').update(await fs.readFile(filePath)).digest('hex');
+  } catch {
+    return undefined;
+  }
+}
+
+function termKey(t: Term): string {
+  return t.canonical.trim().toLowerCase();
+}
+
+/** Key-order-independent JSON of a term, for change detection. */
+function termFingerprint(t: Term): string {
+  return JSON.stringify(t, Object.keys(t).sort());
+}
+
+/**
+ * Reconcile the reviewed terms with what is on disk now, for the case where
+ * the file changed while the user was answering prompts (the MCP server or
+ * the hook bumping `hits`, a `lexicon add` in another shell, ...). Without
+ * this the review's final write would silently drop those changes.
+ *
+ * - a term the session deleted stays deleted;
+ * - a term the session edited keeps the session's aliases/phonetic/notes and
+ *   takes the larger of the two `hits`;
+ * - a term the session did not touch takes the on-disk version, so aliases
+ *   merged elsewhere and hit counts survive;
+ * - a term that vanished from disk is dropped unless the session edited it;
+ * - a term added on disk that the session never saw is appended.
+ *
+ * `changes` counts the terms whose written form differs from what the session
+ * alone would have written.
+ */
+export function reconcileReview(
+  session: readonly Term[],
+  snapshot: ReadonlyMap<string, string>,
+  disk: readonly Term[],
+  edited: ReadonlySet<Term>,
+  deleted: ReadonlySet<Term>,
+): { terms: Term[]; changes: number } {
+  const diskByKey = new Map<string, Term>();
+  for (const t of disk) if (!diskByKey.has(termKey(t))) diskByKey.set(termKey(t), t);
+  const terms: Term[] = [];
+  let changes = 0;
+
+  for (const t of session) {
+    const key = termKey(t);
+    const onDisk = diskByKey.get(key);
+    diskByKey.delete(key);
+    if (deleted.has(t)) continue;
+    if (!onDisk) {
+      // Removed elsewhere while we looked at it: only an explicit edit overrides that.
+      if (edited.has(t)) terms.push(t);
+      else changes += 1;
+      continue;
+    }
+    if (!edited.has(t)) {
+      terms.push(onDisk);
+      if (termFingerprint(onDisk) !== snapshot.get(key)) changes += 1;
+      continue;
+    }
+    const hits = Math.max(t.hits ?? 0, onDisk.hits ?? 0);
+    if (hits > (t.hits ?? 0)) {
+      t.hits = hits;
+      changes += 1;
+    }
+    terms.push(t);
+  }
+  for (const t of diskByKey.values()) {
+    terms.push(t);
+    changes += 1;
+  }
+  return { terms, changes };
 }
 
 /**
@@ -261,34 +351,39 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
 
   const file = await pickFile(opts, cwd);
   if (!file.exists) {
-    line(io, dim(`no ${file.scope} lexicon at ${file.path}`));
+    line(io, dim(`no ${file.scope} lexicon at ${safe(file.path)}`));
     return 0;
   }
   if (file.scope === 'project') {
     const status = await isTrusted(file, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${new ProjectTrustError(file.path, status).message}\n`);
+      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(file.path, status).message)}\n`);
       return 1;
     }
   }
+  // Remembered so a concurrent write (hits from the MCP server, an add in
+  // another shell) can be detected and merged before the final write.
+  const digestAtStart = await fileDigest(file.path);
+  const snapshot = new Map(file.lexicon.terms.map((t) => [termKey(t), termFingerprint(t)]));
 
   const subject = file.lexicon.terms.filter(
     (t) => (!opts.neverHit || (t.hits ?? 0) === 0) && (category === undefined || t.category === category),
   );
   if (subject.length === 0) {
-    line(io, dim(`no terms to review in ${file.path}`));
+    line(io, dim(`no terms to review in ${safe(file.path)}`));
     return 0;
   }
 
   const own = prompter === undefined;
   const p = prompter ?? createPrompter({ input: process.stdin, output: process.stdout });
   const deleted = new Set<Term>();
+  const editedTerms = new Set<Term>();
   let edited = 0;
   let kept = 0;
   let changed = false;
 
   try {
-    line(io, `${bold(`${plural(subject.length, 'term')} in ${file.path}`)} ${dim(REVIEW_HELP)}`);
+    line(io, `${bold(`${plural(subject.length, 'term')} in ${safe(file.path)}`)} ${dim(REVIEW_HELP)}`);
     line(io);
     for (let i = 0; i < subject.length; i += 1) {
       const t = subject[i];
@@ -305,18 +400,19 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
           case 'd':
             deleted.add(t);
             changed = true;
-            line(io, `  deleted ${bold(t.canonical)}`);
+            line(io, `  deleted ${bold(safe(t.canonical))}`);
             decided = true;
             break;
           case 'e': {
             const answer = await p.ask('  aliases (comma-separated)', { default: t.aliases.join(', ') });
             const next = splitList(answer).filter((a) => a.toLowerCase() !== t.canonical.toLowerCase());
-            if (next.join(' ') !== t.aliases.join(' ')) {
+            if (next.join('\0') !== t.aliases.join('\0')) {
               t.aliases = next;
               changed = true;
               edited += 1;
+              editedTerms.add(t);
             }
-            line(io, `  aliases:  ${t.aliases.length > 0 ? t.aliases.join(', ') : dim('(none)')}`);
+            line(io, `  aliases:  ${t.aliases.length > 0 ? safe(t.aliases.join(', ')) : dim('(none)')}`);
             break;
           }
           case 'p': {
@@ -327,8 +423,9 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
               else t.phonetic = next;
               changed = true;
               edited += 1;
+              editedTerms.add(t);
             }
-            line(io, `  phonetic: ${t.phonetic ?? dim('(none)')}`);
+            line(io, `  phonetic: ${t.phonetic ? safe(t.phonetic) : dim('(none)')}`);
             break;
           }
           case 'n': {
@@ -339,8 +436,9 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
               else t.notes = next;
               changed = true;
               edited += 1;
+              editedTerms.add(t);
             }
-            line(io, `  notes:    ${t.notes ?? dim('(none)')}`);
+            line(io, `  notes:    ${t.notes ? safe(t.notes) : dim('(none)')}`);
             break;
           }
           case 'q':
@@ -358,13 +456,30 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     if (own) p.close();
   }
 
+  let mergedElsewhere = 0;
   if (changed) {
-    file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
+    if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
+      try {
+        const disk = await readLexiconFile(file.path, file.scope);
+        const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
+        // The session never touches settings, so the on-disk ones win too.
+        file.lexicon = { ...disk.lexicon, terms: merged.terms };
+        mergedElsewhere = merged.changes;
+      } catch (err) {
+        io.stderr(
+          `lexicon: ${safe(file.path)} changed during review but could not be re-read (${safeLines(errorMessage(err))}); writing the reviewed version\n`,
+        );
+        file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
+      }
+    } else {
+      file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
+    }
     await writeLexiconFile(file);
     // The user's own edit must not flip a trusted project file to 'changed'.
     if (file.scope === 'project') await refreshTrust(file.path, store);
   }
-  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? ` — wrote ${file.path}` : ' (nothing written)'}`);
+  if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
+  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? ` — wrote ${safe(file.path)}` : ' (nothing written)'}`);
   return 0;
 }
 
@@ -423,7 +538,7 @@ export async function runEdit(
 
   if (!existsSync(target)) {
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
-    line(io, `created ${scope} lexicon: ${target}`);
+    line(io, `created ${scope} lexicon: ${safe(target)}`);
   }
   const trustedBefore =
     scope === 'project'
@@ -433,7 +548,7 @@ export async function runEdit(
   const editor = editorCommand(env);
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
-    line(io, target);
+    line(io, safe(target));
     return 0;
   }
 
@@ -442,10 +557,10 @@ export async function runEdit(
 
   try {
     const file = await readLexiconFile(target, scope);
-    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${target}`);
+    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safe(target)}`);
   } catch (err) {
-    io.stderr(`lexicon: ${errorMessage(err)}\n`);
-    io.stderr(`lexicon: your edits are still in ${target}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+    io.stderr(`lexicon: your edits are still in ${safe(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
     return 1;
   }
 
@@ -453,7 +568,7 @@ export async function runEdit(
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
       await refreshTrust(target, store);
-      line(io, dim(`project lexicon re-trusted (${target})`));
+      line(io, dim(`project lexicon re-trusted (${safe(target)})`));
     } else {
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }

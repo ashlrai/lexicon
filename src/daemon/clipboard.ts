@@ -11,7 +11,7 @@
  * The platform tools live in ./clipboard-backends.ts. Read/write stay
  * injectable so the loop can be tested without touching a real clipboard.
  */
-import { diffSummary, loadLexicon, normalize } from '../core/index.js';
+import { diffSummary, loadLexicon, normalize, recordHits } from '../core/index.js';
 import type { Lexicon, NormalizeResult } from '../core/index.js';
 import {
   createClipboardBackend,
@@ -127,6 +127,19 @@ function formatSummary(result: NormalizeResult): string {
   return summary.endsWith('\n') || summary === '' ? summary : `${summary}\n`;
 }
 
+/**
+ * Bump `hits` for the canonicals a clipboard correction used, without waiting
+ * for the write (a slow disk must not stall the poll loop or the --once exit).
+ * recordHits is best-effort by contract; the catch covers a rejecting mock.
+ */
+function recordHitsInBackground(result: NormalizeResult, cwd: string, err: (s: string) => void): void {
+  const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
+  if (canonicals.length === 0) return;
+  void recordHits(canonicals, { cwd }).catch((e: unknown) => {
+    err(`[${timestamp()}] clipboard daemon: recordHits: ${message(e)}\n`);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Loop mode
 
@@ -182,6 +195,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       lastWritten = result.output;
       lastInput = text;
       lastSeen = result.output;
+      recordHitsInBackground(result, cwd, err);
     }
     if (!quiet) {
       const header = `[${timestamp()}]${dryRun ? ' (dry-run)' : ''} ${result.replacements.length} correction${result.replacements.length === 1 ? '' : 's'}`;
@@ -283,6 +297,7 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
       if (!dryRun) {
         await write(normalized.output);
         result.written = true;
+        recordHitsInBackground(normalized, cwd, err);
       }
       if (!quiet) {
         const header = `${dryRun ? '(dry-run) ' : ''}${normalized.replacements.length} correction${normalized.replacements.length === 1 ? '' : 's'}`;

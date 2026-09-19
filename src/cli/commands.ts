@@ -24,6 +24,7 @@ import {
   readLexiconFile,
   removeTerm,
   resolvePaths,
+  sanitizeForDisplay,
   suggestAliases,
   trustProject,
   writeLexiconFile,
@@ -93,6 +94,20 @@ function line(io: IO, s = ''): void {
   io.stdout(`${s}\n`);
 }
 
+/**
+ * Terminal-safe rendering of anything that did not come from this program's
+ * own string literals: file paths (a repository can be cloned into a directory
+ * named after an escape sequence), canonicals/aliases/notes (a project
+ * `.lexicon.yaml` is untrusted input), harvest evidence, error messages that
+ * quote any of those. `renderTable` applies it to every cell on its own.
+ */
+export const safe: (s: string) => string = sanitizeForDisplay;
+
+/** `safe` per line, for text whose line breaks are the point (diff summaries, multi-line errors). */
+export function safeLines(s: string): string {
+  return s.split('\n').map(safe).join('\n');
+}
+
 function ensureNewline(s: string): string {
   return s.endsWith('\n') || s === '' ? s : `${s}\n`;
 }
@@ -109,7 +124,7 @@ function errorMessage(err: unknown): string {
 function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, io: IO): void {
   if (!loaded.skippedProject) return;
   const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
-  io.stderr(`lexicon: ${why} project lexicon skipped: ${loaded.skippedProject.path} (run: lexicon trust)\n`);
+  io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
 }
 
 function findGitRoot(start: string): string | undefined {
@@ -187,10 +202,15 @@ export async function readStdin(maxBytes?: number): Promise<string> {
 /**
  * Render rows as a plain, left-aligned, two-space-separated table. When a
  * header is given it is followed by a dashed underline. Trailing whitespace is
- * trimmed so the output is diff-friendly. Ends with a newline.
+ * trimmed so the output is diff-friendly. Ends with a newline. Every cell is
+ * passed through `safe` (escape sequences, control and invisible characters
+ * dropped, 200-char cap) before it is measured, so a hostile alias can neither
+ * recolour the terminal nor misalign the column it sits in.
  */
 export function renderTable(rows: readonly (readonly string[])[], header?: readonly string[]): string {
-  const all: (readonly string[])[] = header ? [header, ...rows] : [...rows];
+  const all: (readonly string[])[] = header
+    ? [header.map(safe), ...rows.map((r) => r.map(safe))]
+    : rows.map((r) => r.map(safe));
   if (all.length === 0) return '';
   const cols = Math.max(...all.map((r) => r.length));
   const widths: number[] = new Array<number>(cols).fill(0);
@@ -206,10 +226,10 @@ export function renderTable(rows: readonly (readonly string[])[], header?: reado
       .trimEnd();
   const out: string[] = [];
   if (header) {
-    out.push(fmt(header));
+    out.push(fmt(all[0]));
     out.push(fmt(widths.map((w) => '-'.repeat(w))));
   }
-  for (const row of rows) out.push(fmt(row));
+  for (const row of header ? all.slice(1) : all) out.push(fmt(row));
   return `${out.join('\n')}\n`;
 }
 
@@ -243,7 +263,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
     : paths.global;
 
   if (existsSync(target)) {
-    line(io, `${scope} lexicon already exists: ${target}`);
+    line(io, `${scope} lexicon already exists: ${safe(target)}`);
     return 0;
   }
 
@@ -254,11 +274,11 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   // YAML comments survive round-trips as far as parsing goes (they are simply
   // ignored), so appending the example after the generated body is safe.
   await fs.appendFile(target, EXAMPLE_TERM_COMMENT, 'utf8');
-  line(io, `created ${scope} lexicon: ${target}`);
+  line(io, `created ${scope} lexicon: ${safe(target)}`);
   if (scope === 'project') {
     // The user asked for this file; that is the approval `lexicon trust` records.
     await trustProject(target, { cwd });
-    line(io, dim(`trusted ${target} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
+    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
   }
   return 0;
 }
@@ -358,10 +378,10 @@ export async function runAdd(
   if (never.length > 0) term.never = never;
 
   const result = await addTerm(term, { scope, cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) });
-  line(io, `${result.created ? green('created') : green('merged')} ${bold(result.term.canonical)} (${scope}) in ${result.file.path}`);
-  if (suggested.length > 0 && !p) line(io, `suggested aliases: ${suggested.join(', ')}`);
-  line(io, `aliases: ${result.term.aliases.length > 0 ? result.term.aliases.join(', ') : dim('(none)')}`);
-  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${result.file.path})`));
+  line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+  if (suggested.length > 0 && !p) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
+  line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
+  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
   return 0;
 }
 
@@ -373,10 +393,10 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   const cwd = resolveCwd(opts);
   const removed = await removeTerm(canonical, opts.project ? { scope: 'project', cwd } : { cwd });
   if (!removed) {
-    io.stderr(`lexicon: term "${canonical}" not found${opts.project ? ' in project lexicon' : ''}\n`);
+    io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
     return 1;
   }
-  line(io, `removed ${bold(canonical)}`);
+  line(io, `removed ${bold(safe(canonical))}`);
   return 0;
 }
 
@@ -421,11 +441,11 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     io.stdout(renderTable(rows, ['canonical', 'aliases', 'category', 'hits']));
   }
   line(io);
-  line(io, `global: ${loaded.global.path}`);
+  line(io, `global: ${safe(loaded.global.path)}`);
   const projectLabel = loaded.project
-    ? loaded.project.path
+    ? safe(loaded.project.path)
     : loaded.skippedProject
-      ? `${loaded.skippedProject.path} (${loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted'}, not loaded)`
+      ? `${safe(loaded.skippedProject.path)} (${loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted'}, not loaded)`
       : '(none)';
   line(io, `project: ${projectLabel}`);
   return 0;
@@ -496,11 +516,12 @@ export async function runNormalize(
     }
     if (opts.diff) {
       const summary = diffSummary(result);
-      if (summary) io.stderr(ensureNewline(summary));
+      // stdout must round-trip the user's text byte-exactly; the stderr diff quotes lexicon content, so it is sanitized per line.
+      if (summary) io.stderr(ensureNewline(safeLines(summary)));
     }
     emit(result.output);
   } catch (err) {
-    io.stderr(`lexicon: ${errorMessage(err)} (passing text through unchanged)\n`);
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))} (passing text through unchanged)\n`);
     if (opts.json) {
       line(io, JSON.stringify({ input: text, output: text, replacements: [], changed: false }, null, 2));
     } else {
@@ -541,7 +562,7 @@ export async function runHarvest(
 ): Promise<number> {
   const cwd = resolveCwd(opts);
   const target = path.resolve(cwd, root ?? '.');
-  if (!existsSync(target)) throw new Error(`harvest: path does not exist: ${target}`);
+  if (!existsSync(target)) throw new Error(`harvest: path does not exist: ${safe(target)}`);
 
   const tty = (deps.isInteractive ?? isInteractive)();
   if (opts.interactive && !tty) {
@@ -578,7 +599,7 @@ export async function runHarvest(
   if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
   } else if (candidates.length === 0) {
-    line(io, dim(`no candidates found in ${target}`));
+    line(io, dim(`no candidates found in ${safe(target)}`));
   } else {
     const rows = candidates.map((c) => [
       c.canonical,
@@ -606,12 +627,12 @@ export async function runHarvest(
       if (result.created) created += 1;
       else merged += 1;
     }
-    const where = filePath ? ` in ${filePath}` : '';
+    const where = filePath ? ` in ${safe(filePath)}` : '';
     const summary = `added ${created} new term${created === 1 ? '' : 's'}, merged ${merged}${where}`;
     if (opts.json) io.stderr(`${summary}\n`);
     else line(io, green(summary));
     // addTerm(scope: 'project') registers the file as trusted at its new content.
-    if (filePath && !opts.json) line(io, dim(`project lexicon trusted (${filePath})`));
+    if (filePath && !opts.json) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   }
   return 0;
 }
@@ -638,7 +659,7 @@ export async function runExport(format: string | undefined, opts: ExportCliOptio
     return 0;
   }
   if (!isExportFormat(format)) {
-    io.stderr(`lexicon: unknown export format "${format}"\n`);
+    io.stderr(`lexicon: unknown export format "${safe(format)}"\n`);
     io.stderr(formatList());
     return 1;
   }
@@ -658,7 +679,7 @@ export async function runExport(format: string | undefined, opts: ExportCliOptio
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, ensureNewline(text), 'utf8');
-    line(io, `wrote ${format} export (${merged.terms.length} terms) to ${outPath}`);
+    line(io, `wrote ${format} export (${merged.terms.length} terms) to ${safe(outPath)}`);
   } else {
     io.stdout(ensureNewline(text));
   }
@@ -671,8 +692,8 @@ export async function runExport(format: string | undefined, opts: ExportCliOptio
 
 export async function runPath(opts: CommonOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
-  line(io, `global: ${paths.global}`);
-  line(io, `project: ${paths.project ?? '(none)'}`);
+  line(io, `global: ${safe(paths.global)}`);
+  line(io, `project: ${paths.project ? safe(paths.project) : '(none)'}`);
   return 0;
 }
 
@@ -768,16 +789,18 @@ function defaultExec(file: string, args: readonly string[]): string {
   return execFileSync(file, [...args], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
+/** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
 function renderCheck(c: Check): string {
+  const message = safeLines(c.message);
   switch (c.status) {
     case 'ok':
-      return `${green('✓')} ${c.message}`;
+      return `${green('✓')} ${message}`;
     case 'fail':
-      return `${red('✗')} ${c.message}`;
+      return `${red('✗')} ${message}`;
     case 'warn':
-      return `${yellow('!')} ${c.message}`;
+      return `${yellow('!')} ${message}`;
     default:
-      return `${dim('·')} ${c.message}`;
+      return `${dim('·')} ${message}`;
   }
 }
 
@@ -1070,14 +1093,14 @@ export async function runInstallClaude(
   if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
     if (!existsSync(serverPath)) {
-      line(io, yellow(`   note: ${serverPath} does not exist yet (run npm run build first)`));
+      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
       const out = exec('claude', mcpArgs).trim();
       line(io, green(`   ${out || 'registered'}`));
     } catch (err) {
       failed = true;
-      line(io, red(`   failed: ${errorMessage(err)}`));
+      line(io, red(`   failed: ${safeLines(errorMessage(err))}`));
     }
   }
   line(io);
@@ -1086,7 +1109,7 @@ export async function runInstallClaude(
   // Always quoted: the path is embedded in a shell command string in settings.json.
   const hookCommand = `node "${hookPath.replace(/(["\\$`])/g, '\\$1')}"`;
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
-  line(io, `   merge into ${settingsPath}:`);
+  line(io, `   merge into ${safe(settingsPath)}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, 5, HOOK_EVENTS), null, 2), '   '));
   if (opts.apply) {
     let current: unknown = {};
@@ -1097,16 +1120,16 @@ export async function runInstallClaude(
       current = raw.trim() === '' ? {} : (JSON.parse(raw) as unknown);
     } catch (err) {
       if (!(typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT')) {
-        throw new Error(`could not read ${settingsPath}: ${errorMessage(err)}`);
+        throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(errorMessage(err))}`);
       }
     }
     const { settings, changed } = mergeHookIntoSettings(current, hookCommand, 5, HOOK_EVENTS);
     if (changed) {
       await fs.mkdir(path.dirname(settingsPath), { recursive: true });
       await fs.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
-      line(io, green(`   ${existed ? 'updated' : 'created'} ${settingsPath}: added ${HOOK_EVENTS.join(' + ')} hooks`));
+      line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
     } else {
-      line(io, dim(`   ${settingsPath}: hooks already present, nothing changed`));
+      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
     }
   }
   line(io);

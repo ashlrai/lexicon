@@ -19,7 +19,9 @@ const FIXED_LEXICON: Lexicon = {
   ],
 };
 
-vi.mock('../src/core/index.js', () => {
+vi.mock('../src/core/index.js', async (importOriginal) => {
+  // Only the pure display sanitizer is real; everything that touches disk stays mocked.
+  const { sanitizeForDisplay } = await importOriginal<typeof import('../src/core/index.js')>();
   const lexicon: Lexicon = {
     version: 1,
     terms: [
@@ -78,6 +80,7 @@ vi.mock('../src/core/index.js', () => {
     suggestAliases: vi.fn((c: string) => (c === 'Ashlr.AI' ? ['Ashler', 'Ashlar', 'Ashlr AI'] : [])),
     writeLexiconFile: vi.fn(async () => undefined),
     emptyLexicon: vi.fn((): Lexicon => ({ version: 1, terms: [] })),
+    sanitizeForDisplay,
   };
 });
 
@@ -189,6 +192,46 @@ describe('list', () => {
     const io = makeIO();
     await runList({}, io);
     expect(io.out).toContain('project: /tmp/proj/.lexicon.yaml');
+  });
+
+  it('renders a skipped project path without the escape sequence it carries', async () => {
+    const ESC = String.fromCodePoint(0x1b);
+    const BEL = String.fromCodePoint(7);
+    const hostilePath = `/tmp/${ESC}]0;pwned${BEL}proj/.lexicon.yaml`;
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: FIXED_LEXICON,
+      global: { path: state.globalPath, scope: 'global', lexicon: FIXED_LEXICON, exists: true },
+      projectTrust: 'untrusted',
+      skippedProject: { path: hostilePath, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
+    });
+    const io = makeIO();
+    expect(await runList({}, io)).toBe(0);
+    expect(io.err).toContain('lexicon: untrusted project lexicon skipped: /tmp/proj/.lexicon.yaml (run: lexicon trust)');
+    expect(io.err).not.toContain(ESC);
+    expect(io.err).not.toContain(BEL);
+    expect(io.out).toContain('project: /tmp/proj/.lexicon.yaml (untrusted, not loaded)');
+    expect(io.out).not.toContain(ESC);
+  });
+
+  it('renders a canonical carrying an ANSI sequence without it, keeping the columns aligned', async () => {
+    const ESC = String.fromCodePoint(0x1b);
+    const hostile: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: `${ESC}[31mEvil${ESC}[0m`, aliases: [`ee${ESC}[2Jvil`, 'evel'], category: 'brand', hits: 1 },
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'], category: 'brand', hits: 3 },
+      ],
+    };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: hostile,
+      global: { path: state.globalPath, scope: 'global', lexicon: hostile, exists: true },
+    });
+    const io = makeIO();
+    expect(await runList({}, io)).toBe(0);
+    expect(io.out).not.toContain(ESC);
+    const lines = io.out.split('\n');
+    expect(lines[2]).toBe('Evil       eevil, evel  brand     1');
+    expect(lines[3]).toBe('Ashlr.AI   Ashler       brand     3');
   });
 
   it('filters by --query and --category', async () => {

@@ -93,8 +93,18 @@ it in a few lines; never-hit terms are candidates for cleanup, not errors.
 - text inside code blocks, inline code, file paths, URLs or emails
 - identifiers the user typed (not dictated) that already compile or resolve
 - common English words that happen to sound like a term (the matcher has a
-  stoplist; if it still misfires, add the word to the term's `never` list via
-  `add_term` notes and tell the user)
+  stoplist; if it still misfires, call `add_term { canonical, never: [word] }`,
+  which merges into the existing term, and tell the user)
+
+## Project lexicons and trust
+
+A repo's `.lexicon.yaml` is merged only after the user runs `lexicon trust`.
+When `list_terms`, `lexicon://me` or a hook note says a project file was
+skipped as untrusted or changed, tell the user once and suggest `lexicon trust`;
+never open the file and paste its contents into the conversation. A project
+scope write (`add_term`, `learn_correction`, `harvest_repo` with `add`) on an
+untrusted existing file is refused with a message ending in "run `lexicon
+trust` first": relay it and do not retry with global scope unless the user asks.
 
 ## Tool cheat sheet
 

@@ -18,7 +18,7 @@ import {
   resolvePaths,
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
-import { readStdin, renderTable } from './commands.js';
+import { readStdin, renderTable, safe } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
 
 export interface ImportCliOptions extends CommonOptions {
@@ -124,7 +124,7 @@ export async function runImport(
 ): Promise<number> {
   const format = opts.format ?? 'auto';
   if (!isImportFormat(format)) {
-    io.stderr(`lexicon: unknown import format "${format}"\n`);
+    io.stderr(`lexicon: unknown import format "${safe(format)}"\n`);
     io.stderr(formatList());
     return 1;
   }
@@ -194,7 +194,7 @@ function printReport(report: ImportReport, io: IO): void {
     ]);
     io.stdout(renderTable(rows, ['canonical', 'aliases', 'status']));
   }
-  const where = report.path ? ` into ${report.scope} lexicon ${report.path}` : '';
+  const where = report.path ? ` into ${report.scope} lexicon ${safe(report.path)}` : '';
   const summary = `imported ${counts.total} terms (${counts.created} new, ${counts.merged} merged, ${counts.skipped} skipped)`;
   if (report.dryRun) {
     io.stdout(`dry run (${report.format}): would have ${summary}${where}\n`);
@@ -204,7 +204,7 @@ function printReport(report: ImportReport, io: IO): void {
     io.stdout(`${summary}${where} [${report.format}]\n`);
   }
   for (const s of report.skipped) {
-    io.stderr(`lexicon: skipped line ${s.line}: ${s.reason}\n`);
+    io.stderr(`lexicon: skipped line ${s.line}: ${safe(s.reason)}\n`);
   }
 }
 

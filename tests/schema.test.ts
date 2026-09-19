@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { LIMITS, LexiconSchema, LexiconSettingsSchema, TermSchema, emptyLexicon, parseLexicon, stripInvisible } from '../src/core/schema.js';
+import {
+  DISPLAY_MAX_CHARS,
+  LIMITS,
+  LexiconSchema,
+  LexiconSettingsSchema,
+  TermSchema,
+  emptyLexicon,
+  parseLexicon,
+  sanitizeForDisplay,
+  stripControlChars,
+  stripInvisible,
+} from '../src/core/schema.js';
 
 describe('parseLexicon', () => {
   it('accepts a minimal valid lexicon', () => {
@@ -110,6 +121,7 @@ describe('hardening (lexicon content reaches model context)', () => {
   const NUL = cp(0);
   const ESC = cp(0x1b);
   const NEL = cp(0x85); // C1 control
+  const LSEP = cp(0x2028);
 
   it('strips zero-width, bidi and BOM characters from canonical, aliases, notes and phonetic', () => {
     const lex = parseLexicon({
@@ -193,6 +205,40 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: 'p'.repeat(201) }] })).toThrow(/terms\[0\]\.phonetic/);
     // Length is measured after stripping invisibles and trimming.
     expect(parseLexicon({ terms: [{ canonical: `  ${'a'.repeat(80)}${ZW}  ` }] }).terms[0].canonical).toHaveLength(80);
+  });
+
+  it('stripControlChars removes every control, separator and invisible character and nothing else', () => {
+    const CR = cp(0x0d);
+    const DEL = cp(0x7f);
+    const C1 = cp(0x9b); // CSI as a single C1 byte
+    const LS = cp(0x2028);
+    const PS = cp(0x2029);
+    const input = `a${CR}b${DEL}c${C1}d${LS}e${PS}f${NEL}g${ESC}[31mh${ESC}]0;title${cp(7)}i${ZW}j${RLO}k${NUL}`;
+    const out = stripControlChars(input);
+    for (const bad of [CR, DEL, C1, LS, PS, NEL, ESC, cp(7), ZW, RLO, NUL]) expect(out).not.toContain(bad);
+    expect(out).toBe('abcdefg[31mh]0;titleijk');
+    expect(stripControlChars('Ashlr.AI, café — naïve')).toBe('Ashlr.AI, café — naïve');
+  });
+
+  it('sanitizeForDisplay drops whole ANSI sequences, format/private-use code points, and caps the length', () => {
+    expect(sanitizeForDisplay(`${ESC}[31mred${ESC}[0m`)).toBe('red');
+    expect(sanitizeForDisplay(`/repo${ESC}]0;pwned${cp(7)}/.lexicon.yaml`)).toBe('/repo/.lexicon.yaml');
+    expect(sanitizeForDisplay(`${ESC}]0;pwned${ESC}\\x`)).toBe('x'); // OSC with ST terminator
+    expect(sanitizeForDisplay(`${ESC}]0;unterminated`)).toBe('0;unterminated'); // ESC ] alone is a two-byte sequence; the text after it stays visible
+    expect(sanitizeForDisplay(`a${ESC}Mb`)).toBe('ab'); // two-byte ESC sequence
+    expect(sanitizeForDisplay(`${RLO}evil${ZW}${BOM}${cp(0x00ad)}${cp(0xe000)}${cp(0xe0041)}ok${NEL}${LSEP}`)).toBe('evilok');
+    expect(sanitizeForDisplay(`${cp(0xd800)}lone surrogate`)).toBe('lone surrogate');
+    expect(sanitizeForDisplay('emoji 🙂 and 日本語 survive')).toBe('emoji 🙂 and 日本語 survive');
+
+    const long = 'x'.repeat(DISPLAY_MAX_CHARS + 50);
+    const capped = sanitizeForDisplay(long);
+    expect(Array.from(capped)).toHaveLength(DISPLAY_MAX_CHARS);
+    expect(capped.endsWith('…')).toBe(true);
+    expect(sanitizeForDisplay('x'.repeat(DISPLAY_MAX_CHARS))).toBe('x'.repeat(DISPLAY_MAX_CHARS));
+    // Astral characters count once each and are never split.
+    const astral = '🙂'.repeat(DISPLAY_MAX_CHARS + 1);
+    expect(Array.from(sanitizeForDisplay(astral))).toHaveLength(DISPLAY_MAX_CHARS);
+    expect(sanitizeForDisplay(astral).slice(-3)).toBe('🙂…'); // the cut lands between pairs, never inside one
   });
 
   it('caps aliases per term at 64 and terms per file at 5000', () => {

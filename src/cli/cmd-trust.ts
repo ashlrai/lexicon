@@ -19,7 +19,7 @@ import {
   untrustProject,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { renderTable } from './commands.js';
+import { renderTable, safe, safeLines } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
 
 export interface TrustOptions extends CommonOptions {
@@ -39,7 +39,7 @@ function resolveTarget(target: string | undefined, cwd: string): string | undefi
   return resolvePaths({ cwd }).project;
 }
 
-/** First alias plus a count, e.g. `Ashler (+3)`; control chars dropped so the table stays one row per term. */
+/** First alias plus a count, e.g. `Ashler (+3)`; renderTable sanitizes the cell so the table stays one row per term. */
 function previewAliases(term: Term): string {
   if (term.aliases.length === 0) return '';
   const first = term.aliases[0];
@@ -49,7 +49,7 @@ function previewAliases(term: Term): string {
 
 function renderPreview(file: LexiconFile, io: IO): void {
   const terms = file.lexicon.terms;
-  io.stdout(`${file.path}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
+  io.stdout(`${safe(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
   if (terms.length === 0) return;
   const rows = terms.slice(0, PREVIEW_ROWS).map((t) => [t.canonical, previewAliases(t), t.notes ? 'has notes' : '']);
   io.stdout(renderTable(rows, ['canonical', 'first alias', '']));
@@ -62,11 +62,11 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
 
   const filePath = resolveTarget(target, cwd);
   if (!filePath) {
-    io.stderr(`lexicon: no project .lexicon.yaml found from ${cwd} (pass a path, or run: lexicon init --project)\n`);
+    io.stderr(`lexicon: no project .lexicon.yaml found from ${safe(cwd)} (pass a path, or run: lexicon init --project)\n`);
     return 1;
   }
   if (!existsSync(filePath)) {
-    io.stderr(`lexicon: file does not exist: ${filePath}\n`);
+    io.stderr(`lexicon: file does not exist: ${safe(filePath)}\n`);
     return 1;
   }
 
@@ -75,7 +75,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   try {
     file = await readLexiconFile(filePath, 'project');
   } catch (err) {
-    io.stderr(`lexicon: refusing to trust an invalid lexicon: ${err instanceof Error ? err.message : String(err)}\n`);
+    io.stderr(`lexicon: refusing to trust an invalid lexicon: ${safeLines(err instanceof Error ? err.message : String(err))}\n`);
     return 1;
   }
 
@@ -83,7 +83,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   renderPreview(file, io);
   const entry = await trustProject(filePath, { cwd });
   const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
-  io.stdout(`${verb} ${filePath} (sha256 ${entry.sha256.slice(0, 12)}) in ${getTrustPath({ cwd })}\n`);
+  io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(getTrustPath({ cwd }))}\n`);
   io.stdout('It will be merged into the lexicon until its content changes; then run `lexicon trust` again.\n');
   return 0;
 }
@@ -92,21 +92,21 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
   if (!filePath) {
-    io.stderr(`lexicon: no project .lexicon.yaml found from ${cwd} (pass a path)\n`);
+    io.stderr(`lexicon: no project .lexicon.yaml found from ${safe(cwd)} (pass a path)\n`);
     return 1;
   }
   const removed = await untrustProject(filePath, { cwd });
   if (!removed) {
-    io.stdout(`${filePath} was not trusted; nothing to do\n`);
+    io.stdout(`${safe(filePath)} was not trusted; nothing to do\n`);
     return 0;
   }
-  io.stdout(`untrusted ${filePath}; it will no longer be merged\n`);
+  io.stdout(`untrusted ${safe(filePath)}; it will no longer be merged\n`);
   return 0;
 }
 
 async function runTrustList(cwd: string, io: IO): Promise<number> {
   const entries = await listTrusted({ cwd });
-  io.stdout(`registry: ${getTrustPath({ cwd })}\n`);
+  io.stdout(`registry: ${safe(getTrustPath({ cwd }))}\n`);
   if (trustAllEnabled()) io.stdout('LEXICON_TRUST_ALL is set: every project lexicon is treated as trusted\n');
   if (entries.length === 0) {
     io.stdout('no trusted project lexicons (run: lexicon trust)\n');
