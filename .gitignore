@@ -9,3 +9,8 @@ site/dist/
 # real-audio benchmark artifacts (wav, transcripts, json); bench/audio/results.md is committed
 bench/audio/out/
 bench/audio/models/
+
+# Browser extension build output (npm run build:extension)
+extension/dist/
+extension/dist-firefox/
+extension/*.zip

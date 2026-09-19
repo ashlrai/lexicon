@@ -139,18 +139,22 @@ test`) and user aliases that are phrases (`jot`, `jason`, `okay are`, `tail wind
 
 ## What still fails
 
-33 failing cases: 1 ordinary positive and 32 of the 47 `expected-hard` cases (15 hard cases now
+31 failing cases: 1 ordinary positive and 30 of the 47 `expected-hard` cases (17 hard cases now
 pass, up from 10). Nothing in the ordinary negatives fails. Fix G below (a production false
 positive, `Inter` the font -> Entire.io) changed no headline number except the expected-hard
-prose rate: `email` -> YAML (neg-116) no longer fires, so prose FP incl. hard is 14.2% (17/120),
-term precision 94.1% and F1 95.3%; the tables above predate G by one row.
+prose rate: `email` -> YAML (neg-116) no longer fires. Fix H (a second production false
+positive, `lacks` -> Locus) again left the positives untouched (99.6% excl. hard, term recall
+96.5%) and dropped two more expected-hard negatives: `graphical` -> GraphQL (neg-038, now a
+stoplist word) and `tropic` -> tRPC (neg-039, keyed via the alias `tea rpc` at 0.90 but only
+0.33 alike). Prose FP incl. hard is 12.5% (15/120), term precision 95.0% and F1 95.7%; the
+tables above predate G and H by one row.
 
 | case | heard -> output | expected | why |
 |---|---|---|---|
 | pos-128 | `wire the sas into` -> unchanged | `SaaS` | SaaS keys to `SS` (2 chars); the key-length rule blocks it. Add `sas` as an alias. |
 | hard-018 | `use zed schemas` -> unchanged | `Zod` | Same rule (`ST`). `zed` is also a plausible word; an alias is the right fix. |
 | hard-001 | `our sass margins` -> unchanged | `SaaS` | `sass` is on the built-in stoplist. |
-| hard-002 | `and tropic released` -> `and tRPC released` | `Anthropic released` | `anthropic` keys to `AN0RPK` (th = theta), `andtropic` to `ANTRPK`; and `tropic` alone is a legitimate tRPC sound-alike. |
+| hard-002 | `and tropic released` -> unchanged | `Anthropic released` | `anthropic` keys to `AN0RPK` (th = theta), `andtropic` to `ANTRPK`. Before H the output was `and tRPC released`; the lone-token similarity floor now refuses `tropic` -> tRPC, but nothing recovers Anthropic. |
 | hard-003 | `play right is flaky` -> unchanged | `Playwright` | Both tokens are stoplist words, so the window is never guessed. |
 | hard-004 | `the vite test run` -> `the Vite test run` | `Vitest` | `vite` is an exact hit and exact hits are claimed first. |
 | hard-005, 016 | `ollamas` -> `Ollama`, `key pee eyes` -> `KPI` | plural kept | Replacement is whole-token; no plural handling. |
@@ -161,14 +165,17 @@ term precision 94.1% and F1 95.3%; the tables above predate G by one row.
 | hard-012, 015 | `post gress sequel`, `docker file` | `PostgreSQL`, `Dockerfile` | Two terms that share a prefix; the shorter alias wins and the remainder is left. |
 | hard-013 | `normalize the transcript` -> unchanged | `normalizeTranscript` | Article inside the name. |
 | hard-014 | `ping priyanka` -> unchanged | `Priyanka Raghunathan` | First name only; the canonical has two tokens. |
-| 17 negatives (neg-012, 027, 028, 029, 030, 033, 034, 035, 036, 038, 039, 041, 042, 054, 060, 073, 077) | `drizzle`, `neon`, `whisper`, `docker`, `playwright`, `prometheus` case-fixed; `jot`, `jason`, `okay are`, `tail wind`, `super base` aliased; `llama`, `pedantic`, `graphical`, `tropic` guessed | unchanged | Corpus ambiguities: the canonical or a user alias is itself an English word or phrase. Only `never` lists resolve these; see recommendations. `email` -> YAML (neg-116) is gone since G: `e` and `y` are different initial vowels and the words are 0.4 alike. |
+| 15 negatives (neg-012, 027, 028, 029, 030, 033, 034, 035, 036, 041, 042, 054, 060, 073, 077) | `drizzle`, `neon`, `whisper`, `docker`, `playwright`, `prometheus` case-fixed; `jot`, `jason`, `okay are`, `tail wind`, `super base` aliased; `llama`, `pedantic` guessed | unchanged | Corpus ambiguities: the canonical or a user alias is itself an English word or phrase (`tail wind` is the collapsed implicit alias of Tailwind, and `tail` is deliberately kept off the stoplist so pos-058 `tail wind's docs` still fires). Only `never` lists resolve these; see recommendations. `email` -> YAML (neg-116) is gone since G; `graphical` -> GraphQL (neg-038) and `tropic` -> tRPC (neg-039) are gone since H. `pedantic` -> Pydantic survives H: the key is 5 consonants and the words are 0.88 alike, so it is indistinguishable from a garble. |
 
-Bugs A-G are fixed and each has a unit test in `tests/matcher.test.ts` (search for `bug A` ..
-`bug G`); A-F also have an end-to-end test in `tests/normalize.test.ts`. G is the case seen in
+Bugs A-H are fixed and each has a unit test in `tests/matcher.test.ts` (search for `bug A` ..
+`bug H`); A-F also have an end-to-end test in `tests/normalize.test.ts`. G is the case seen in
 production on 2026-09-19: the global term `Entire.io` (aliases `entire i o`, `entire dot io`)
 rewrote the capitalised, sentence-internal font name `Inter` to `Entire.io` as `phonetic 0.86`.
 `inter` and `entire` both key to `ANTR`, and the 0.88 aliased plain-word bar from D only applied
-to lowercase tokens.
+to lowercase tokens. H is the second production case from the same day: the alias-less term
+`Locus` rewrote the ordinary word `lacks` (`the process lacks ...`) as `phonetic 0.90`. Both key
+to `LKS`; the term had no aliases, so the 0.88 bar from D and G did not apply, and `lacks` was
+not among the ~600 words of the old stoplist.
 
 ## Matcher rules that changed
 
@@ -204,6 +211,29 @@ to lowercase tokens.
   the key's first consonant and are exempt; the guard as first drafted (any differing first
   letter) would have lost that headline case. Multi-token windows are exempt. Terms with and
   without aliases are both covered, so `the inter font` stays put even for a bare `Entire.io`.
+- **Stoplist (H).** The built-in stoplist moved to `src/core/stoplist.ts` and grew from about
+  600 to 3376 words: function words, the common verbs, nouns, adjectives and adverbs in the
+  inflections STT produces (`lack`, `lacks`, `lacked`, `lacking`, `looked`, `looking`, `users`,
+  ...), calendar words and everyday tech vocabulary. It still only blocks the phonetic and fuzzy
+  passes and the implicit (canonical-derived) exact alias; an alias the user listed explicitly
+  fires on any of them. Product names that double as words (`docker`, `neon`, `whisper`,
+  `playwright`, `prometheus`, `drizzle`) are deliberately absent so a bare canonical is still
+  case-fixed in prose, and `tail`/`tale`/`dock`/`transcript` stay off it so the multi-token
+  garbles the corpus contains (`tail wind`, `tale wind`, `dock her`, `normal eyes transcript`)
+  can still be reassembled. One consequence worth knowing: the implicit domain stem of
+  `Entire.io` is the word `entire`, so a bare `entire` is no longer rewritten; list `entire` as
+  an alias to opt in.
+- **Lone-token similarity floors (H).** A single-token phonetic candidate must also resemble
+  the alias in spelling, and the shorter the metaphone key the more it must: `similarity() >=
+  0.8` on a 3-consonant key (`lokus`/`locus` 0.8 and `doker`/`docker` 0.83 pass; `lacks`/`locus`
+  0.6 and `tucker`/`docker` 0.67 fail), `>= 0.65` on a 4-consonant key (`playwrite`/`playwright`
+  0.7 passes; `inter`/`entire` 0.5 fails), and no floor beyond the initial-vowel guard from G on
+  5 or more consonants, since that many consonants agreeing in order is spelling evidence in
+  itself (`coopernetties`/`kubernetes` at 0.46 still matches). The floors apply to terms with
+  and without aliases. A flat "key >= 4 for lone tokens" rule was measured first and lost two
+  headline positives, `doker` -> Docker (`TKR`) and `olama` -> Ollama (`ALM`), both alias-less,
+  so restricting it to alias-less terms would not have saved them either; the tiers keep both
+  at 99.6% / 96.5%. Multi-token windows are exempt (`dock her`, `oh llama`).
 - **Diacritics** are folded (NFD plus `ø`, `ł`, `ß`, ...) in the exact and collapsed lookups, so
   `bjorn halvorsen` is an exact hit on `Bjørn Halvorsen`.
 - **Similarity** is optimal-string-alignment (transposition-aware) up to 40 characters, so

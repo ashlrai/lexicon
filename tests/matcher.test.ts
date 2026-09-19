@@ -48,10 +48,24 @@ describe('helpers', () => {
     expect(similarity(long, `${long}y`)).toBeCloseTo(1 - 1 / 61, 5);
   });
 
-  it('STOPLIST is a sizeable lowercase set', () => {
-    expect(STOPLIST.size).toBeGreaterThan(300);
-    for (const w of ['the', 'and', 'for', 'was', 'sauce', 'ash', 'head', 'off', 'auth']) expect(STOPLIST.has(w)).toBe(true);
-    for (const w of STOPLIST) expect(w).toBe(w.toLowerCase());
+  it('STOPLIST is a large, frozen, lowercase, alphabetized set', () => {
+    expect(STOPLIST.size).toBeGreaterThan(3000);
+    const must = [
+      'the', 'and', 'for', 'was', 'sauce', 'ash', 'head', 'off', 'auth',
+      'lacks', 'lack', 'lacked', 'locks', 'lock', 'ashes', 'cooper', 'noon', 'vet', 'seed', 'suit', 'suite', 'said', 'cube',
+      'email', 'zoo', 'sea', 'red', 'prison', 'wind', 'entire', 'graphical', 'lacking', 'looked', 'looking', 'users',
+    ];
+    for (const w of must) expect(STOPLIST.has(w), w).toBe(true);
+    // product names that double as words stay out so a bare canonical is still case-fixed
+    for (const w of ['docker', 'neon', 'whisper', 'playwright', 'prometheus', 'drizzle', 'prism', 'tale', 'dock', 'ai']) expect(STOPLIST.has(w), w).toBe(false);
+    const words = [...STOPLIST];
+    for (const w of words) expect(w).toMatch(/^[a-z]+$/);
+    expect(words).toEqual([...words].sort());
+    const mutable = STOPLIST as Set<string>;
+    expect(() => mutable.add('zzz')).toThrow(TypeError);
+    expect(() => mutable.delete('the')).toThrow(TypeError);
+    expect(() => mutable.clear()).toThrow(TypeError);
+    expect(STOPLIST.has('the')).toBe(true);
   });
 });
 
@@ -216,7 +230,11 @@ describe('phonetic pass', () => {
     // the explicit alias and the implicit domain stem still fire as exact hits
     expect(find('Entire dot io sessions', [entire])[0]).toMatchObject({ original: 'Entire dot io', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
     expect(find('entire i o sessions', [entire])[0]).toMatchObject({ original: 'entire i o', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
-    expect(find('entire sessions', [entire])[0]).toMatchObject({ original: 'entire', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
+    // the bare domain stem is the ordinary word "entire", a stoplist word: an implicit alias never rewrites it
+    expect(find('entire sessions', [entire])).toHaveLength(0);
+    expect(find('the entire session', [entire])).toHaveLength(0);
+    // listing it explicitly is the opt-in
+    expect(find('entire sessions', [{ ...entire, aliases: [...entire.aliases, 'entire'] }])[0]).toMatchObject({ original: 'entire', replacement: 'Entire.io', reason: 'alias', confidence: 1 });
     // a sentence-initial capitalised garble that clears 0.88 still matches
     expect(find('Ashlur is down', [ASHLR])[0]).toMatchObject({ original: 'Ashlur', replacement: 'Ashlr.AI', reason: 'phonetic' });
     expect(find('Ashlur is down', [ASHLR])[0].confidence).toBeGreaterThanOrEqual(0.88);
@@ -236,6 +254,65 @@ describe('phonetic pass', () => {
     expect(find('deploy to coopernetties', [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
     // multi-token windows are exempt
     expect(find("Deploy to Cooper Nettie's tonight", [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
+  });
+
+  it('does not rewrite an ordinary word to an alias-less sound-alike term (bug H: lacks -> Locus)', () => {
+    // "lacks" and "locus" share the 3-consonant key LKS; the hit was phonetic 0.90 and the term had no
+    // aliases, so neither the 0.88 aliased bar nor the old ~420-word stoplist stopped it.
+    const locus: Term = { canonical: 'Locus', aliases: [] };
+    const text = 'the process lacks locks';
+    expect(find(text, [locus])).toHaveLength(0);
+    expect(apply(text, find(text, [locus]))).toBe(text);
+    expect(find('it likes the leaks', [locus])).toHaveLength(0);
+    // the canonical itself is an implicit alias: a case-insensitive exact hit fixes the casing
+    expect(find('locus is fine', [locus])[0]).toMatchObject({ original: 'locus', replacement: 'Locus', reason: 'alias', confidence: 1 });
+    expect(find('Locus is fine', [locus])).toHaveLength(0);
+    // a real garble (similarity 0.8 on the same key) still matches phonetically
+    expect(find('open lokus now', [locus])[0]).toMatchObject({ original: 'lokus', replacement: 'Locus', reason: 'phonetic' });
+    expect(find('open lokus now', [locus])[0].confidence).toBeCloseTo(0.9, 5);
+  });
+
+  it('holds a lone phonetic candidate to a similarity floor that shrinks with key length', () => {
+    const docker: Term = { canonical: 'Docker', aliases: [] };
+    // 3-consonant key (TKR): 0.8 needed. "doker" is 0.83 alike, "tucker" 0.67, "decor" 0.5
+    expect(find('run doker here', [docker])[0]).toMatchObject({ original: 'doker', replacement: 'Docker', reason: 'phonetic' });
+    expect(find('ask tucker later', [docker])).toHaveLength(0);
+    expect(find('the art deco decor', [docker])).toHaveLength(0);
+    expect(similarity('tucker', 'docker')).toBeCloseTo(0.667, 2);
+    // 4-consonant key (PLRT / ANTR): 0.65 needed
+    expect(find('the playwrite suite', [{ canonical: 'Playwright', aliases: [] }])[0]).toMatchObject({ original: 'playwrite', replacement: 'Playwright', reason: 'phonetic' });
+    expect(find('the inter font', [{ canonical: 'Entire', aliases: [] }])).toHaveLength(0);
+    // an aliased term is held to the floor too: "tropic" keys like the alias "tea rpc" (TRPK, 0.90) but is 0.33 alike
+    expect(find('the tropic of cancer', [{ canonical: 'tRPC', aliases: ['tea rpc'] }])).toHaveLength(0);
+    // 5+ consonants agreeing in order is spelling evidence enough: no floor beyond the initial-vowel guard
+    expect(find('deploy to coopernetties', [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
+    expect(find('use olama locally', [{ canonical: 'Ollama', aliases: [] }])[0]).toMatchObject({ original: 'olama', replacement: 'Ollama', reason: 'phonetic' });
+    // multi-token windows are exempt
+    expect(find('why is dock her throwing', [docker])[0]).toMatchObject({ original: 'dock her', replacement: 'Docker' });
+  });
+
+  it('leaves a sentence of stoplist words untouched against a realistic lexicon', () => {
+    const canonicals = [
+      'Ashlr.AI', 'Kubernetes', 'Hetzner', 'Vercel', 'Supabase', 'Neon', 'Upstash', 'Deepgram', 'Wispr Flow', 'Superwhisper',
+      'OpenClaw', 'Cloudflare', 'Anthropic', 'Prisma', 'Pydantic', 'Tailwind', 'Vitest', 'Terraform', 'Docker', 'LangChain',
+      'Ollama', 'Whisper', 'Metaphone', 'Levenshtein', 'Prometheus', 'Playwright', 'Locus', 'Zod', 'YAML', 'GraphQL',
+      'tRPC', 'PostgreSQL', 'Redis', 'Next.js', 'Entire.io', 'Drizzle', 'Grafana', 'Sentry', 'Datadog', 'Stripe',
+      'Twilio', 'Figma', 'Notion', 'Linear', 'Vite', 'Deno', 'Rust', 'Golang', 'Python', 'TypeScript',
+      'Svelte', 'Astro', 'Remix', 'Nuxt', 'Hono', 'Fastify', 'Express', 'Django', 'Flask', 'Rails',
+    ];
+    expect(canonicals).toHaveLength(60);
+    const terms: Term[] = canonicals.map((canonical, i) => ({ canonical, aliases: i % 3 === 0 ? [`${canonical.toLowerCase()}x`] : [] }));
+    const words = [...STOPLIST];
+    // deterministic "random" sample: a small LCG seeded per run so the 20 words differ between the three runs
+    for (const seed of [7, 1234, 98765]) {
+      let state = seed;
+      const next = (): number => (state = (state * 1103515245 + 12345) % 2147483648);
+      const sample = Array.from({ length: 20 }, () => words[next() % words.length]);
+      for (const w of sample) expect(find(w, terms), w).toHaveLength(0);
+      const sentence = sample.join(' ');
+      expect(find(sentence, terms), sentence).toHaveLength(0);
+      expect(find(sentence, terms, { minConfidence: 0.5 }), sentence).toHaveLength(0);
+    }
   });
 
   it('does not let an inexact window start or end on a function word (bug A)', () => {
@@ -370,11 +447,14 @@ describe('overlap resolution', () => {
   });
 
   it('claims spans that already equal a canonical so no other term can take a token inside (bug C)', () => {
-    // "tee tee s" is 7 letters like "tadeusz", so the guess scores 0.9 and clears the aliased lone-token bar
-    const tts: Term = { canonical: 'TTS', aliases: ['tee tee s'] };
-    expect(find('remind Tadeusz Wróblewski today', [{ canonical: 'Tadeusz Wróblewski', aliases: [] }, tts])).toHaveLength(0);
+    // "tadeus" keys to TTS like "tadeusz", one letter shorter (0.87) and 0.86 alike, so it clears every lone-token guard
+    const tadeus: Term = { canonical: 'Tadeus', aliases: [] };
+    expect(find('remind Tadeusz Wróblewski today', [{ canonical: 'Tadeusz Wróblewski', aliases: [] }, tadeus])).toHaveLength(0);
     // without the name in the lexicon the phonetic pass is free to guess
-    expect(find('remind Tadeusz today', [tts])).toHaveLength(1);
+    expect(find('remind Tadeusz today', [tadeus])[0]).toMatchObject({ original: 'Tadeusz', replacement: 'Tadeus', reason: 'phonetic' });
+    // "tee tee s" is 7 letters like "tadeusz", so the guess scored 0.9 and cleared the aliased lone-token bar;
+    // the short-key similarity floor (TTS is 3 consonants, similarity 0.29) is what stops it now
+    expect(find('remind Tadeusz today', [{ canonical: 'TTS', aliases: ['tee tee s'] }])).toHaveLength(0);
     // with the longer alias the guess scores 0.85 and the aliased lone-token bar stops it on its own (bug G)
     expect(find('remind Tadeusz today', [{ canonical: 'TTS', aliases: ['tee tee ess'] }])).toHaveLength(0);
 
@@ -408,6 +488,65 @@ describe('skipCode', () => {
 
   it('does not skip an ordinary slash like and/or', () => {
     expect(find('Ashler and/or Ashlar', [ASHLR])).toHaveLength(2);
+  });
+
+  it('treats a scope/name slug as a path even without a file extension', () => {
+    expect(find('ashlrai/lexicon', [ASHLR])).toHaveLength(0);
+    expect(find('clone github.com/ashlrai/lexicon now', [ASHLR])).toHaveLength(0);
+    expect(find('see ~/ashlr and /opt/ashlr', [ASHLR])).toHaveLength(0);
+    // a slash with spaces around it is prose, not a path
+    expect(find('ashler / ashlar', [ASHLR])).toHaveLength(2);
+  });
+});
+
+describe('identifier glue', () => {
+  it('leaves a window glued to @ / # : \\ ~ _ - on the left alone, in every pass', () => {
+    const text = '@ashlr/lexicon';
+    expect(find(text, [ASHLR])).toHaveLength(0);
+    expect(find(text, [ASHLR], { skipCode: false })).toHaveLength(0);
+    expect(find('install @ashlr/lexicon today', [ASHLR])).toHaveLength(0);
+    expect(find('#ashlr', [ASHLR])).toHaveLength(0);
+    expect(find('#ashler', [ASHLR])).toHaveLength(0);
+    expect(find('C:\\ashlr', [ASHLR])).toHaveLength(0);
+    expect(find('note:ashler', [ASHLR])).toHaveLength(0);
+    expect(find('the -ashler flag', [ASHLR])).toHaveLength(0);
+    expect(find('run coopernetties', [K8S])).toHaveLength(1);
+    expect(find('run /coopernetties', [K8S])).toHaveLength(0);
+    expect(find('run ~coopernetties', [K8S])).toHaveLength(0);
+  });
+
+  it('leaves a window glued to / \\ _ on the right alone', () => {
+    expect(find('ashlrai/lexicon', [ASHLR], { skipCode: false })).toHaveLength(0);
+    expect(find('ashlr_core', [ASHLR])).toHaveLength(0);
+    expect(find('ashler_core and core_ashler', [ASHLR])).toHaveLength(0);
+    expect(find('ashlr\\bin', [ASHLR])).toHaveLength(0);
+    expect(find('coopernetties_cfg', [K8S])).toHaveLength(0);
+    // only the window that touches the glue is skipped: "ashler ai" ends on "_", the lone "ashler" does not
+    expect(find('ashler ai_core', [ASHLR]).map((r) => r.original)).toEqual(['ashler']);
+  });
+
+  it('still matches a plain word, a possessive, sentence punctuation and a spaced hyphen', () => {
+    expect(find('ping ashlr today', [ASHLR])[0]).toMatchObject({ original: 'ashlr', replacement: 'Ashlr.AI', reason: 'alias' });
+    const possessive = "ashler's team";
+    expect(apply(possessive, find(possessive, [ASHLR]))).toBe("Ashlr.AI's team");
+    const list = 'ashler, ashlar and ashler.';
+    const reps = find(list, [ASHLR]);
+    expect(reps).toHaveLength(3);
+    expect(apply(list, reps)).toBe('Ashlr.AI, Ashlr.AI and Ashlr.AI.');
+    const dash = 'see ashler - it works';
+    expect(apply(dash, find(dash, [ASHLR]))).toBe('see Ashlr.AI - it works');
+    expect(find('ashler- it works', [ASHLR])).toHaveLength(1);
+    expect(find('(ashler) [ashlar] "ashler"', [ASHLR])).toHaveLength(3);
+    expect(find('ashler@ashler.com', [ASHLR], { skipCode: false })).toHaveLength(1);
+  });
+
+  it('checks only the characters outside the window, so a hyphenated alias still matches whole', () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['ashler-ai'] };
+    expect(find('use ashler-ai here', [term])[0]).toMatchObject({ original: 'ashler-ai', replacement: 'Ashlr.AI', reason: 'alias' });
+    expect(find('use Ashlr-AI here', [ASHLR])).toHaveLength(1);
+    // glued to a suffix it is one token and no longer the alias
+    expect(find('use ashler-core here', [term])).toHaveLength(0);
+    expect(find('use ashler-ai-core here', [term])).toHaveLength(0);
   });
 });
 

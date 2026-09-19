@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lexicon options</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options">
+  <main class="wrap">
+    <header class="row between">
+      <h1><span class="mark" aria-hidden="true"></span> Lexicon for voice chats</h1>
+      <span id="version" class="muted small"></span>
+    </header>
+
+    <section class="card">
+      <h2>Local API</h2>
+      <p class="muted">Run <code>lexicon serve</code> on this machine, then <code>lexicon serve --show</code> prints the token. The extension only ever talks to 127.0.0.1.</p>
+      <div class="grid">
+        <label>Base URL <input type="url" id="baseUrl" placeholder="http://127.0.0.1:41733" spellcheck="false"></label>
+        <label>Token
+          <span class="row gap">
+            <input type="password" id="token" placeholder="paste from lexicon serve --show" autocomplete="off" spellcheck="false">
+            <button type="button" id="toggle-token" class="btn ghost small">Show</button>
+          </span>
+        </label>
+      </div>
+      <div class="row gap">
+        <button type="button" id="test" class="btn ghost">Test connection</button>
+        <span id="test-result" class="small muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Mode</h2>
+      <label class="radio"><input type="radio" name="mode" value="api"> <span><strong>Local API</strong> (default). Falls back to the embedded lexicon whenever the server is unreachable.</span></label>
+      <label class="radio"><input type="radio" name="mode" value="embedded"> <span><strong>Embedded lexicon</strong>. Never contacts the server; uses the YAML below.</span></label>
+      <label class="check"><input type="checkbox" id="live"> <span><strong>Live</strong>: also correct while typing (400 ms idle, text before the caret only). Off by default.</span></label>
+    </section>
+
+    <section class="card">
+      <div class="row between">
+        <h2>Embedded lexicon</h2>
+        <span class="row gap">
+          <button type="button" id="sync" class="btn ghost">Sync from local API</button>
+          <button type="button" id="reset-yaml" class="btn ghost">Reset to example</button>
+        </span>
+      </div>
+      <p class="muted">Same file format as <code>~/.config/lexicon/lexicon.yaml</code>. Used when the server is down or the mode is Embedded.</p>
+      <textarea id="yaml" rows="22" spellcheck="false" wrap="off"></textarea>
+      <pre id="yaml-error" class="error" hidden></pre>
+      <p id="yaml-ok" class="small muted"></p>
+    </section>
+
+    <section class="card">
+      <h2>Sites</h2>
+      <ul id="sites" class="sites"></ul>
+      <label class="check"><input type="checkbox" id="anySite"> <span><strong>Any site</strong>: also run on every other page (asks for the extra browser permission). Uses the focused text box as the composer.</span></label>
+      <p id="anySite-msg" class="small muted"></p>
+    </section>
+
+    <div class="row between sticky">
+      <span id="save-msg" class="small muted"></span>
+      <button type="button" id="save" class="btn">Save</button>
+    </div>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

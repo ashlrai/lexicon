@@ -10,6 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
+import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
+import { WHISPER_BIN_NAMES, installHint, locateToolSync } from '../voice/process.js';
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
@@ -946,6 +948,22 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
     push('ok', `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ''}`);
   } catch (err) {
     push('warn', `no clipboard backend found (${errorMessage(err)})`);
+  }
+
+  // --- voice (lexicon voice: ffmpeg -> whisper.cpp) ------------------------------
+  // Warnings only: dictation is optional and the rest of the tool works without it.
+  const whisperOverride = env.LEXICON_WHISPER_BIN;
+  const whisperCli = whisperOverride ? (existsSync(whisperOverride) ? whisperOverride : undefined) : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  if (whisperCli) push('ok', `whisper-cli found: ${whisperCli}`);
+  else push('warn', `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
+  const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
+  const ffmpegBin = ffmpegOverride ? (existsSync(ffmpegOverride) ? ffmpegOverride : undefined) : locateToolSync(['ffmpeg'], env, platform);
+  if (ffmpegBin) push('ok', `ffmpeg found: ${ffmpegBin}`);
+  else push('warn', `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
+  const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
+  push('info', model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+  if (platform === 'darwin') {
+    push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
   for (const c of checks) line(io, renderCheck(c));

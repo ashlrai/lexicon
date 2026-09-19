@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Lexicon for voice chats",
+  "version": "0.0.0",
+  "description": "Fixes the brand, product and people names speech-to-text gets wrong in ChatGPT, Claude, Grok, Gemini, Perplexity and more, before the message is sent. Talks only to a lexicon server on 127.0.0.1 or runs fully offline.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "http://127.0.0.1:41733/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://grok.com/*",
+    "https://x.com/i/grok*",
+    "https://gemini.google.com/*",
+    "https://www.perplexity.ai/*",
+    "https://poe.com/*",
+    "https://copilot.microsoft.com/*"
+  ],
+  "optional_host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://grok.com/*",
+        "https://x.com/i/grok*",
+        "https://gemini.google.com/*",
+        "https://www.perplexity.ai/*",
+        "https://poe.com/*",
+        "https://copilot.microsoft.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lexicon",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

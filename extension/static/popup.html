@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lexicon</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <header class="row between">
+    <div class="brand"><span class="mark" aria-hidden="true"></span> Lexicon</div>
+    <button type="button" id="open-options" class="link">Options</button>
+  </header>
+
+  <section class="card" id="status-card">
+    <div class="row between">
+      <span class="label">Engine</span>
+      <span id="mode" class="pill">checking</span>
+    </div>
+    <p id="server" class="muted small"></p>
+  </section>
+
+  <section class="card">
+    <label class="row between">
+      <span><span class="label">This site</span> <span id="site-host" class="muted small"></span></span>
+      <input type="checkbox" id="site-enabled" class="switch">
+    </label>
+    <p id="site-note" class="muted small"></p>
+  </section>
+
+  <section class="card">
+    <div class="label">Recent corrections</div>
+    <ul id="recent" class="recent"><li class="muted small">None yet.</li></ul>
+  </section>
+
+  <section class="card">
+    <form id="learn" class="learn">
+      <div class="label">Learn a word</div>
+      <div class="row gap">
+        <span class="muted small">It's</span>
+        <input type="text" id="meant" placeholder="Ashlr.AI" required autocomplete="off" spellcheck="false">
+        <span class="muted small">not</span>
+        <input type="text" id="heard" placeholder="Ashler" required autocomplete="off" spellcheck="false">
+      </div>
+      <div class="row between">
+        <span id="learn-msg" class="small muted"></span>
+        <button type="submit" class="btn">Learn</button>
+      </div>
+    </form>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

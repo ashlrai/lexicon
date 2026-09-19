@@ -1,6 +1,6 @@
 # CLI reference
 
-Generated from `lexicon --help` (v0.1.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.2.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -27,6 +27,8 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon untrust [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
 | [`lexicon learn [options] [words...]`](#lexicon-learn) | record a spelling correction: what STT heard and what you meant |
 | [`lexicon stats [options]`](#lexicon-stats) | show term/alias counts, most-used terms and terms that never fired |
+| [`lexicon serve [options]`](#lexicon-serve) | run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps |
+| [`lexicon voice [options]`](#lexicon-voice) | dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
 
@@ -63,6 +65,8 @@ Commands:
   untrust [path]                          revoke approval for a project .lexicon.yaml
   learn [options] [words...]              record a spelling correction: what STT heard and what you meant
   stats [options]                         show term/alias counts, most-used terms and terms that never fired
+  serve [options]                         run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps
+  voice [options]                         dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
   help [command]                          display help for command
@@ -366,6 +370,62 @@ show term/alias counts, most-used terms and terms that never fired
 Options:
   --json      print the stats as JSON
   -h, --help  display help for command
+```
+
+## `lexicon serve`
+
+```text
+Usage: lexicon serve [options]
+
+run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts,
+Raycast and desktop apps
+
+Options:
+  --port <n>     port to listen on (default 41733; 0 picks a free port)
+  --host <host>  interface to bind (default 127.0.0.1; anything else is exposed
+                 to the network)
+  --json         print the listening info (or --show/--status result) as JSON
+  --quiet        do not log requests
+  --show         print the URL and bearer token (for the extension options page)
+                 and exit
+  --status       check whether the server is up and exit
+  --install      install as a login service (launchd on macOS, systemd --user on
+                 Linux)
+  --uninstall    remove the login service
+  -h, --help     display help for command
+```
+
+## `lexicon voice`
+
+```text
+Usage: lexicon voice [options]
+
+dictate locally: record the microphone, transcribe with whisper.cpp, correct
+with the lexicon
+
+Options:
+  --toggle               hotkey mode: first call starts recording in the
+                         background, second call stops and transcribes
+  --status               print "recording since <time>" (exit 0) or "idle" (exit
+                         1)
+  --list-devices         print the audio input devices ffmpeg can see
+  --seconds <n>          stop recording after n seconds instead of waiting for
+                         Enter
+  --device <name|index>  input device (default: the system default microphone)
+  --model <name|path>    whisper model: a name like base.en or small.en
+                         (auto-downloaded) or a ggml file (default: "base.en")
+  --lang <code>          spoken language (default: "en")
+  --translate            translate to English (whisper -tr)
+  --no-prompt            do not pass the lexicon canonicals as the whisper
+                         initial prompt
+  --no-history           do not append to voice/history.jsonl
+  --copy                 also put the corrected text on the clipboard
+  --paste                copy and paste into the frontmost app (macOS; needs
+                         Accessibility permission)
+  --json                 print { raw, output, replacements, summary, model,
+                         seconds, ms } as JSON
+  --quiet                no status lines on stderr
+  -h, --help             display help for command
 ```
 
 ## `lexicon review`

@@ -38,6 +38,7 @@ Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-spee
 - Fifteen export formats: Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON.
 - Seven import formats for the dictionary you already have: Wispr CSV, Superwhisper JSON, macOS plist, espanso, text, CSV, JSON.
 - Repo harvesting, correction learning ("it's Ashlr.AI not Ashler"), usage stats, a trust gate for project lexicons, and a clipboard daemon for macOS, Linux and Windows.
+- Desktop coverage: a local HTTP API (`lexicon serve`), a browser extension for ChatGPT, Claude.ai, Grok, Gemini and Perplexity, local push-to-talk (`lexicon voice`, whisper.cpp), and a macOS menu bar app. See [Desktop apps, browser chats and local voice](#desktop-apps-browser-chats-and-local-voice).
 - A plain library: `normalize()` is a pure function. See [Use as a library](#use-as-a-library).
 
 ## Install
@@ -183,11 +184,37 @@ The agent then calls `normalize_transcript` on dictated input and reads `lexicon
 
 ### ChatGPT, Claude, Grok voice
 
-You cannot patch their recognizer. What you can do is give the model the vocabulary so it corrects the transcript itself. Paste the export into custom instructions, memory or a project system prompt.
+You cannot patch their recognizer. Two things work: the browser extension below fixes the text composer before you hit send, and pasting the export into custom instructions or memory lets the model correct itself.
 
 ```bash
 lexicon export claude-md | pbcopy
 ```
+
+## Desktop apps, browser chats and local voice
+
+Hooks and MCP only reach agents that support them. Everything else on your desktop goes through one of these.
+
+| Surface | What to use |
+|---|---|
+| Claude Desktop, Codex app, Cursor, Windsurf, VS Code | `lexicon install <client> --apply` registers the MCP server; the model calls `normalize_transcript` on dictated input |
+| ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe, Copilot in a browser | The [browser extension](docs/EXTENSION.md) rewrites the composer when you press send, using the local API or an embedded copy of your lexicon |
+| Any text field, any app | `lexicon daemon --once --paste` on a shortcut, or the [LexiconBar](docs/MACOS-APP.md) menu bar app on macOS |
+| `lexicon serve` | Local HTTP API on 127.0.0.1:41733 with a bearer token. `--show`, `--status`, `--install`/`--uninstall` (launchd or systemd user unit), `--port`, `--json` |
+| `lexicon voice` | Local push-to-talk: ffmpeg + whisper.cpp + lexicon. `--toggle` for a hotkey, `--paste`/`--copy`/`--json`, `--model`, `--device`, `--list-devices`, `--status` |
+| Local dictation without a dictation app | `lexicon voice --toggle --paste` on a hotkey: ffmpeg records, whisper.cpp transcribes with your canonicals as prompt hints, the lexicon corrects, then it pastes. See [docs/VOICE.md](docs/VOICE.md) |
+| Shortcuts, Raycast, scripts, your own app | `lexicon serve` exposes `POST /normalize` and friends on `127.0.0.1:41733` with a bearer token. See [docs/LOCAL-API.md](docs/LOCAL-API.md) |
+
+Start the pieces you want once:
+
+```bash
+lexicon serve --install          # local API at login (launchd or systemd user unit)
+lexicon serve --show             # URL and token to paste into the extension options
+lexicon voice --list-devices     # pick a microphone, then bind: lexicon voice --toggle --paste
+npm run build:extension          # then Load unpacked: extension/dist
+scripts/build-macos-app.sh       # apps/macos/build/LexiconBar.app (hotkey, clipboard, voice, API)
+```
+
+The voice path is deliberately minimal. Wispr Flow and Superwhisper remain nicer dictation apps; use them and export your lexicon into their dictionaries. `lexicon voice` is for people who want a fully local path with no accounts.
 
 ## Use with your dictation app
 

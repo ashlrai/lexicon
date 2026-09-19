@@ -1,0 +1,56 @@
+# Builds the LexiconBar menu bar app (apps/macos/LexiconBar) and uploads the
+# ad-hoc signed .app zip as a workflow artifact. Separate from ci.yml so the
+# Node test matrix does not wait on a macOS runner.
+name: macOS app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/macos/**'
+      - 'scripts/build-macos-app.sh'
+      - '.github/workflows/macos-app.yml'
+  pull_request:
+    paths:
+      - 'apps/macos/**'
+      - 'scripts/build-macos-app.sh'
+      - '.github/workflows/macos-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build (release)
+        working-directory: apps/macos/LexiconBar
+        run: swift build -c release
+
+      - name: Unit tests (LexiconBarKit)
+        working-directory: apps/macos/LexiconBar
+        run: swift test
+
+      - name: Package LexiconBar.app
+        run: scripts/build-macos-app.sh
+
+      - name: Verify bundle
+        run: |
+          plutil -lint apps/macos/build/LexiconBar.app/Contents/Info.plist
+          codesign --verify --verbose=2 apps/macos/build/LexiconBar.app
+          ls -la apps/macos/build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LexiconBar.app
+          path: apps/macos/build/LexiconBar.app.zip
+          if-no-files-found: error

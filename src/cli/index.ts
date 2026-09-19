@@ -10,6 +10,8 @@ import { registerImportCommands } from './cmd-import.js';
 import { registerInstallCommands } from './cmd-install.js';
 import { registerTrustCommands } from './cmd-trust.js';
 import { registerLearnCommands } from './cmd-learn.js';
+import { registerServeCommands } from './cmd-serve.js';
+import { registerVoiceCommands } from './cmd-voice.js';
 import { registerReviewCommands } from './cmd-review.js';
 import {
   processIO,
@@ -234,6 +236,8 @@ registerImportCommands(program, io);
 registerInstallCommands(program, io);
 registerTrustCommands(program, io);
 registerLearnCommands(program, io);
+registerServeCommands(program, io);
+registerVoiceCommands(program, io);
 registerReviewCommands(program, io);
 
 try {

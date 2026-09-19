@@ -1,6 +1,6 @@
 {
   "name": "lexicon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Personal voice lexicon for agents: fixes the names, brands and identifiers speech-to-text gets wrong (Ashler -> Ashlr.AI) before Claude acts on a dictated prompt.",
   "author": {
     "name": "Ashlr.AI"

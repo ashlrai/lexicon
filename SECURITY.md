@@ -29,6 +29,26 @@ macOS, Linux and Windows. It only applies the same merged lexicon, so the trust
 gate below applies, but the user should be aware that a trusted lexicon can
 rewrite anything they copy. Payloads over 20,000 characters are skipped.
 
+**Local HTTP API (`lexicon serve`).** The server binds `127.0.0.1` only (a
+non-loopback `--host` is possible but prints a warning) and every request
+except `GET /health` needs the bearer token from `<config dir>/serve.json`,
+which is created with mode 0600 and compared in constant time. CORS headers are
+sent only to browser-extension origins (`chrome-extension://`,
+`moz-extension://`, `safari-web-extension://`) or exact origins the user lists
+in `serve.json.allowedOrigins`, never `*`, so a web page cannot read responses
+even with the token. There is no TLS: the traffic never leaves the loopback
+interface. Bodies are capped at 1 MB, concurrency at 64 requests. The trust
+gate applies unchanged, so a request whose `cwd` points at a repository with an
+untrusted `.lexicon.yaml` gets only the global lexicon and the skipped file's
+path. What an attacker who already runs code as the same user account could
+do: read `serve.json` (it is their file), then normalize text, read the
+lexicon, and add or learn terms, which is exactly what they could already do by
+editing `~/.config/lexicon/lexicon.yaml` directly. The API does not widen that
+boundary; it does not run commands, read arbitrary files (`cwd` only chooses
+which `.lexicon.yaml` to consider, subject to trust) or bind other ports. A
+different user on the same machine cannot read the token (0600) and cannot use
+the API without it.
+
 Out of scope: the STT engine itself, the agent's own tool permissions, and the
 user's global lexicon (it lives under the user's config directory and is
 treated as the user's own words).

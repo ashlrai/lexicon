@@ -9,6 +9,7 @@
  */
 import { doubleMetaphone } from 'double-metaphone';
 import { distance } from 'fastest-levenshtein';
+import { STOPLIST } from './stoplist.js';
 import type { Lexicon, MatchReason, NormalizeOptions, Replacement, Term } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -65,49 +66,41 @@ const ALIASED_PLAIN_WORD_MIN = 0.88;
  */
 const PHONETIC_LONE_TOKEN_MIN_SIM = 0.6;
 const VOWEL_RE = /^[aeiouy]/;
+/**
+ * A lone token's metaphone key is all the phonetic evidence there is, and a
+ * short key is shared by dozens of everyday words: LKS is "lacks", "locks",
+ * "likes", "leaks" and "Locus"; TKR is "docker", "decor", "tucker", "taker".
+ * So a single-token phonetic candidate must also look like the alias in
+ * spelling, and the shorter the key the more it must: edit similarity >= 0.8
+ * on a 3-consonant key ("lokus"/"locus" 0.8, "doker"/"docker" 0.83 pass;
+ * "lacks"/"locus" 0.6, "tucker"/"docker" 0.67 fail) and >= 0.65 on a 4-consonant
+ * key ("playwrite"/"playwright" 0.7 passes; "inter"/"entire" 0.5 fails). Five
+ * or more consonants agreeing in order is spelling evidence in itself, so
+ * longer keys keep only the initial-vowel guard above ("coopernetties" /
+ * "kubernetes", KPRNTS, similarity 0.46, still matches). A flat key >= 4 rule
+ * was measured instead and lost two headline positives ("doker" -> Docker,
+ * "olama" -> Ollama, both alias-less); the tiers keep them. Multi-token windows
+ * are exempt: STT rarely splits an ordinary word into several.
+ */
+const PHONETIC_LONE_KEY3_MIN_SIM = 0.8;
+const PHONETIC_LONE_KEY4_MIN_SIM = 0.65;
+
+/** Edit similarity a single-token phonetic candidate must reach for a key of the given length. */
+function loneTokenMinSim(keyLength: number): number {
+  if (keyLength <= 3) return PHONETIC_LONE_KEY3_MIN_SIM;
+  if (keyLength === 4) return PHONETIC_LONE_KEY4_MIN_SIM;
+  return 0;
+}
 /** Domain-style suffixes stripped to derive an implicit short alias ("Ashlr.AI" -> "Ashlr"). */
 const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 
 /**
- * Built-in stoplist: common English words plus everyday tech vocabulary that
- * phonetic/fuzzy passes must never rewrite. Exact aliases the user listed
- * explicitly still fire on these words (user intent wins).
+ * Built-in stoplist (src/core/stoplist.ts): common English words plus
+ * everyday tech vocabulary that the phonetic/fuzzy passes must never rewrite.
+ * Exact aliases the user listed explicitly still fire on these words (user
+ * intent wins). Re-exported here so `STOPLIST` keeps its import path.
  */
-export const STOPLIST: ReadonlySet<string> = new Set<string>(
-  `
-a about above across act actually add added after again against ago agree ahead all allow almost alone along
-already also although always am among an and another answer any anyone anything anyway app apps are area
-around as ash ashes ask asked at auth away back bad base based be became because become been before began
-begin behind being below best better between big bit block both bottom break bring brought bug bugs build built
-but buy by cache call came can cannot car care case cash cat cause certain change check child choose city class
-clean clear close cloud code come comes common company config could country course cut data day days deal did
-die do does doing done door down draft drive due during each early earth easy eat edge edit either else end
-enough even ever every everyone everything example eye face fact fail failed fair fall family far fast feel feet
-few field file files fill final find fine fire first fit five fix fixed flow follow food for form found four free
-from front full fun game gave get give given go god going gone good got great green ground group grow had half
-hand happen hard has have he head hear heard heart heat held help her here high him his hit hold home hope host
-hour hours house how however hundred i idea if image in inside instead into is issue issues it its itself job
-join just keep kept key keys kind knew know known land large last late later law lead learn least leave led left
-less let life light like line link list little live load local log logs long look lost lot love low made main
-make makes man many map mark may maybe me mean means meet men merge might mind miss model moment money month more
-morning most mother move much must my name near need never new news next nice night no node none nor not note
-notes nothing now number of off often oh ok old on once one only open or order other our out over own page part
-pass past path pay people per phase pick pie piece place plan play please point port post power press pretty
-probably problem pull push put question queue quick quite rate read ready real really reason red rest result
-return right rise road role room root round rule run same save saw say says seas seat second see seem seen sees
-self sell send sense sent server service set setup seven shall shape share she ship short should show shown side
-sign simple since sis site six size sky sleep small so some someone something sometimes soon sort sound source
-space speak stack stage stand start state stay step still stop store story stream street strong such sudden sun
-sure sauce sass system table take talk task tasks team tell ten term test tests text than thank that the their them
-then there these they thing things think third this those though thought three through time times to today
-together told too took top total toward town tree tried true try turn two type under unit until up upon us use
-used user users using usual value very view voice wait walk want war warm was watch water way we week well went
-were what when where whether which while white who whole whose why wide will win wire wish with within without
-woman word words work world would write written wrong year years yes yet you young your yours zero
-`
-    .split(/\s+/)
-    .filter((w) => w.length > 0),
-);
+export { STOPLIST };
 
 /**
  * Function words: articles, prepositions, conjunctions, pronouns, auxiliaries,
@@ -460,7 +453,14 @@ const INLINE_CODE_RE = /`[^`\n]*`/g;
 const URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 const WWW_RE = /\bwww\.\S+/gi;
 const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
-const PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2})?[\w.~-]*(?:\/[\w.\-]+)+\.\w+/g;
+/**
+ * A file path or a `scope/name` slug: a token containing `/` with no spaces,
+ * starting at a word boundary (`src/core/matcher.ts`, `~/ashlr`, `@ashlr/lexicon`,
+ * `ashlrai/lexicon`, `github.com/ashlrai/lexicon`). No file extension is
+ * required: a repo or package slug is a typed identifier just as a path is.
+ * `and/or` also qualifies, harmlessly; a slash with spaces around it does not.
+ */
+const PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
 
 function collectRanges(text: string): Range[] {
   const ranges: Range[] = [];
@@ -570,6 +570,30 @@ interface Candidate extends Replacement {
 }
 
 const REASON_RANK: Record<MatchReason, number> = { alias: 0, phonetic: 1, fuzzy: 2 };
+
+/**
+ * Identifier glue. A window whose first token is directly preceded (no
+ * whitespace) by one of GLUE_BEFORE, or whose end is directly followed by one
+ * of GLUE_AFTER, is part of a typed identifier, never a dictated garble:
+ * `@ashlr/lexicon`, `ashlrai/lexicon`, `ashlr_core`, `#ashlr`, `~/ashlr`,
+ * `C:\ashlr`, `-ashlr`. No pass considers it, the exact alias pass included
+ * (the implicit stem alias of Ashlr.AI turned `@ashlr/lexicon` into
+ * `@Ashlr.AI/lexicon` in production). Only the characters outside the window
+ * are examined, so an alias that itself carries a hyphen ("ashler-ai") still
+ * matches as one window. A hyphen after the window is not glue (`ashler- it`
+ * keeps matching; a glued `ashler-core` is one token and matches nothing), and
+ * neither is a possessive `'s` or sentence punctuation, so "ashler's team" and
+ * "ashler." are rewritten as before.
+ * Skipped ranges (code spans, URLs, paths) are handled by the tokenizer; this
+ * is the complement for glue the range regexes cannot see.
+ */
+const GLUE_BEFORE: ReadonlySet<string> = new Set(['@', '/', '#', ':', '\\', '~', '_', '-']);
+const GLUE_AFTER: ReadonlySet<string> = new Set(['/', '\\', '_']);
+
+/** True when the character right after `end` glues the window to an identifier (see GLUE_AFTER). */
+function gluedAfter(text: string, end: number): boolean {
+  return GLUE_AFTER.has(text.charAt(end));
+}
 
 function isBetter(a: Candidate, b: Candidate | undefined): boolean {
   if (!b) return true;
@@ -704,15 +728,20 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
           const diffRatio = Math.abs(alpha.length - e.length) / max;
           const confidence = PHONETIC_BASE * (1 - diffRatio * PHONETIC_LENGTH_WEIGHT);
           if (confidence < barFor(e.termIndex, view.loneToken)) continue;
-          // A lone token that keys alike only because metaphone dropped its
-          // initial vowel ("inter" / "entire") is a different word, not a garble.
-          if (
-            view.loneToken &&
-            alpha.charCodeAt(0) !== e.alpha.charCodeAt(0) &&
-            (VOWEL_RE.test(alpha) || VOWEL_RE.test(e.alpha)) &&
-            similarity(alpha, e.alpha) < PHONETIC_LONE_TOKEN_MIN_SIM
-          ) {
-            continue;
+          if (view.loneToken) {
+            const sim = similarity(alpha, e.alpha);
+            // A short key is weak evidence; the spelling has to agree too
+            // ("lacks" / "locus" share LKS at similarity 0.6).
+            if (sim < loneTokenMinSim(key.length)) continue;
+            // A lone token that keys alike only because metaphone dropped its
+            // initial vowel ("inter" / "entire") is a different word, not a garble.
+            if (
+              alpha.charCodeAt(0) !== e.alpha.charCodeAt(0) &&
+              (VOWEL_RE.test(alpha) || VOWEL_RE.test(e.alpha)) &&
+              sim < PHONETIC_LONE_TOKEN_MIN_SIM
+            ) {
+              continue;
+            }
           }
           if (blocked(e)) continue;
           consider(e, 'phonetic', confidence);
@@ -768,6 +797,8 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
 
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].skipped) continue;
+    // Every window starting here shares this left edge, so one check covers them all.
+    if (GLUE_BEFORE.has(text.charAt(tokens[i].start - 1))) continue;
     for (let n = 1; n <= index.maxWindow; n++) {
       const j = i + n - 1;
       if (j >= tokens.length) break;
@@ -776,14 +807,14 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
       if (n > 1 && !tokens[j - 1].joinsNext) break;
 
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = findBest(full, index, resolved);
+      let best = gluedAfter(text, full.end) ? undefined : findBest(full, index, resolved);
 
       // A trailing possessive ("ashler ai's") is almost never part of the
       // term: when the view without it matches the same term, or matches at
       // least as confidently, keep the 's in the text and replace only the base.
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = findBest(alt, index, resolved);
+        const bestAlt = gluedAfter(text, alt.end) ? undefined : findBest(alt, index, resolved);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (best) candidates.push(best);

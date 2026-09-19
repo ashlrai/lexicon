@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T20:55:57.139Z",
+  "generatedAt": "2026-09-19T23:08:54.259Z",
   "lexicon": "/Users/masonwyatt/Desktop/dictation mcp/bench/lexicon.yaml",
   "corpus": "/Users/masonwyatt/Desktop/dictation mcp/bench/corpus.jsonl",
   "config": {
@@ -16,9 +16,9 @@
   },
   "sentence": {
     "all": {
-      "hit": 365,
+      "hit": 367,
       "total": 398,
-      "rate": 0.9170854271356784
+      "rate": 0.9221105527638191
     },
     "positives": {
       "hit": 262,
@@ -26,9 +26,9 @@
       "rate": 0.9424460431654677
     },
     "negatives": {
-      "hit": 103,
+      "hit": 105,
       "total": 120,
-      "rate": 0.8583333333333333
+      "rate": 0.875
     },
     "positivesExcludingHard": {
       "hit": 255,
@@ -67,9 +67,9 @@
         "rate": 0.9375
       },
       "prose": {
-        "hit": 103,
+        "hit": 105,
         "total": 120,
-        "rate": 0.8583333333333333
+        "rate": 0.875
       }
     }
   },
@@ -86,12 +86,12 @@
     },
     "precision": {
       "hit": 302,
-      "total": 321,
-      "rate": 0.940809968847352
+      "total": 318,
+      "rate": 0.949685534591195
     },
-    "f1": 0.9526813880126183,
+    "f1": 0.9572107765451664,
     "tp": 302,
-    "fp": 19,
+    "fp": 16,
     "fn": 11,
     "byCategory": {
       "brand": {
@@ -157,9 +157,9 @@
     }
   },
   "falsePositiveRate": {
-    "hit": 17,
+    "hit": 15,
     "total": 120,
-    "rate": 0.14166666666666666
+    "rate": 0.125
   },
   "falsePositiveRateExcludingHard": {
     "hit": 0,
@@ -174,10 +174,10 @@
       "meanConfidence": 1
     },
     "phonetic": {
-      "replacements": 55,
+      "replacements": 52,
       "correct": 51,
-      "wrong": 4,
-      "meanConfidence": 0.8793334165834162
+      "wrong": 1,
+      "meanConfidence": 0.878141113693998
     },
     "fuzzy": {
       "replacements": 9,
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 293.2224105527636,
-    "findReplacementsUs": 59.660214572863765,
+    "normalizeUs": 286.1701422110565,
+    "findReplacementsUs": 53.83755326633083,
     "rounds": 5
   },
   "failures": [
@@ -505,72 +505,6 @@
       ]
     },
     {
-      "id": "neg-038",
-      "category": "prose",
-      "heard": "the graphical interface is out of date",
-      "expected": "the graphical interface is out of date",
-      "output": "the GraphQL interface is out of date",
-      "pass": false,
-      "negative": true,
-      "hard": true,
-      "replacements": [
-        {
-          "start": 4,
-          "end": 13,
-          "original": "graphical",
-          "replacement": "GraphQL",
-          "canonical": "GraphQL",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ],
-      "missed": [],
-      "spurious": [
-        {
-          "start": 4,
-          "end": 13,
-          "original": "graphical",
-          "replacement": "GraphQL",
-          "canonical": "GraphQL",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ]
-    },
-    {
-      "id": "neg-039",
-      "category": "prose",
-      "heard": "the tropic of cancer runs through mexico",
-      "expected": "the tropic of cancer runs through mexico",
-      "output": "the tRPC of cancer runs through mexico",
-      "pass": false,
-      "negative": true,
-      "hard": true,
-      "replacements": [
-        {
-          "start": 4,
-          "end": 10,
-          "original": "tropic",
-          "replacement": "tRPC",
-          "canonical": "tRPC",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ],
-      "missed": [],
-      "spurious": [
-        {
-          "start": 4,
-          "end": 10,
-          "original": "tropic",
-          "replacement": "tRPC",
-          "canonical": "tRPC",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ]
-    },
-    {
       "id": "neg-041",
       "category": "prose",
       "heard": "we had a tail wind on the flight back",
@@ -788,35 +722,15 @@
       "category": "brand",
       "heard": "and tropic released a new model today",
       "expected": "Anthropic released a new model today",
-      "output": "and tRPC released a new model today",
+      "output": "and tropic released a new model today",
       "pass": false,
       "negative": false,
       "hard": true,
-      "replacements": [
-        {
-          "start": 4,
-          "end": 10,
-          "original": "tropic",
-          "replacement": "tRPC",
-          "canonical": "tRPC",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ],
+      "replacements": [],
       "missed": [
         "Anthropic"
       ],
-      "spurious": [
-        {
-          "start": 4,
-          "end": 10,
-          "original": "tropic",
-          "replacement": "tRPC",
-          "canonical": "tRPC",
-          "reason": "phonetic",
-          "confidence": 0.9
-        }
-      ]
+      "spurious": []
     },
     {
       "id": "hard-003",

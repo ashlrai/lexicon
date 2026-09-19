@@ -1,0 +1,653 @@
+import { mkdirSync, promises as fs, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  formatDeviceList,
+  parseArecordList,
+  parseAvfoundationDevices,
+  parseDshowDevices,
+  parsePulseSources,
+  pickDevice,
+} from '../src/voice/devices.js';
+import { HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import type { Downloader } from '../src/voice/models.js';
+import { installHint, locateWhisperCli } from '../src/voice/process.js';
+import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
+import { ffmpegRecordArgs, readState, stateFilePath, stopRecorder } from '../src/voice/recorder.js';
+import { cleanTranscript, parseWhisperOutput, whisperArgs } from '../src/voice/transcribe.js';
+import {
+  EXIT_ERROR,
+  EXIT_MISSING_TOOL,
+  EXIT_NOTHING_HEARD,
+  EXIT_OK,
+  runVoice,
+  runVoiceListDevices,
+  runVoiceStatus,
+  runVoiceToggle,
+} from '../src/voice/voice.js';
+import type { VoiceDeps, VoiceJsonResult, VoiceOptions } from '../src/voice/voice.js';
+
+// ---------------------------------------------------------------------------
+// Fixtures
+
+const AVFOUNDATION_LIST = `[AVFoundation indev @ 0x86b01c140] AVFoundation video devices:
+[AVFoundation indev @ 0x86b01c140] [0] MacBook Pro Camera
+[AVFoundation indev @ 0x86b01c140] [1] MacBook Pro Desk View Camera
+[AVFoundation indev @ 0x86b01c140] [2] Capture screen 0
+[AVFoundation indev @ 0x86b01c140] AVFoundation audio devices:
+[AVFoundation indev @ 0x86b01c140] [0] Mason’s iPhone Microphone
+[AVFoundation indev @ 0x86b01c140] [1] External Microphone
+[AVFoundation indev @ 0x86b01c140] [2] MacBook Pro Microphone
+[in#0 @ 0x86b01c000] Error opening input: Input/output error
+Error opening input file .
+Error opening input files: Input/output error
+`;
+
+const DSHOW_LIST = `[dshow @ 000001] "Integrated Camera" (video)
+[dshow @ 000001]   Alternative name "@device_pnp_\\\\?\\usb#vid_04f2"
+[dshow @ 000001] "Microphone Array (Realtek(R) Audio)" (audio)
+[dshow @ 000001]   Alternative name "@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\\wave_{1234}"
+[dshow @ 000001] "Headset Microphone (USB)" (audio)
+dummy: Immediate exit requested
+`;
+
+const PULSE_SOURCES = `Auto-detected sources for pulse:
+  alsa_output.pci-0000_00_1f.3.analog-stereo.monitor [Monitor of Built-in Audio Analog Stereo]
+* alsa_input.pci-0000_00_1f.3.analog-stereo [Built-in Audio Analog Stereo]
+  alsa_input.usb-Blue_Yeti-00.analog-stereo [Yeti Stereo Microphone Analog Stereo]
+`;
+
+const ARECORD_LIST = `**** List of CAPTURE Hardware Devices ****
+card 0: PCH [HDA Intel PCH], device 0: ALC295 Analog [ALC295 Analog]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+card 1: Microphone [Yeti Stereo Microphone], device 0: USB Audio [USB Audio]
+  Subdevices: 1/1
+`;
+
+const LEXICON_YAML = `version: 1
+terms:
+  - canonical: Ashlr.AI
+    aliases: [Ashler, Ashlar]
+    category: brand
+  - canonical: Kubernetes
+    aliases: ["cooper netties", "Cooper Nettie's"]
+    category: product
+`;
+
+// ---------------------------------------------------------------------------
+// Harness: fake exec / spawn / pids, real temp filesystem
+
+interface Harness {
+  dir: string;
+  globalPath: string;
+  binDir: string;
+  execCalls: Array<{ cmd: string; args: string[] }>;
+  spawnCalls: Array<{ cmd: string; args: string[]; opts: SpawnOptions }>;
+  transcript: string;
+  whisperExit: number;
+  alive: Set<number>;
+  kills: Array<{ pid: number; signal: string }>;
+  clipboard: string[];
+  pastes: number;
+  out: string[];
+  err: string[];
+  io: { stdout(s: string): void; stderr(s: string): void };
+  deps: VoiceDeps;
+  opts: VoiceOptions;
+  nextPid: number;
+  /** Resolvers for attached children (foreground mode). */
+  children: Array<{ pid: number; resolve: (code: number | null) => void }>;
+}
+
+async function makeHarness(overrides: { platform?: NodeJS.Platform; missing?: string[]; lexicon?: string } = {}): Promise<Harness> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-voice-'));
+  const globalPath = path.join(dir, 'lexicon.yaml');
+  await fs.writeFile(globalPath, overrides.lexicon ?? LEXICON_YAML);
+  const binDir = '/fake/bin';
+  const missing = new Set(overrides.missing ?? []);
+  const modelsDir = path.join(dir, 'models');
+  await fs.mkdir(modelsDir, { recursive: true });
+  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), 'fake model');
+
+  const h: Harness = {
+    dir,
+    globalPath,
+    binDir,
+    execCalls: [],
+    spawnCalls: [],
+    transcript: 'ping ashler about the cooper netties rollout',
+    whisperExit: 0,
+    alive: new Set(),
+    kills: [],
+    clipboard: [],
+    pastes: 0,
+    out: [],
+    err: [],
+    io: { stdout: (s) => h.out.push(s), stderr: (s) => h.err.push(s) },
+    deps: {},
+    opts: {},
+    nextPid: 4242,
+    children: [],
+  };
+
+  const exec: VoiceExec = async (cmd, args): Promise<ExecResult> => {
+    h.execCalls.push({ cmd, args: [...args] });
+    const base = path.basename(cmd);
+    if (base === 'whisper-cli' || base === 'main') {
+      const of = args[args.indexOf('-of') + 1];
+      if (h.whisperExit === 0) {
+        await fs.writeFile(`${of}.json`, JSON.stringify({ transcription: [{ text: ` ${h.transcript}` }] }));
+      }
+      return { code: h.whisperExit, stdout: '', stderr: h.whisperExit === 0 ? '' : 'whisper: boom' };
+    }
+    if (base === 'ffmpeg' && args.includes('-list_devices')) {
+      return { code: 1, stdout: '', stderr: args.includes('avfoundation') ? AVFOUNDATION_LIST : DSHOW_LIST };
+    }
+    if (base === 'ffmpeg' && args.includes('-devices')) {
+      return { code: 0, stdout: ' D  pulse           Pulse audio input\n DE alsa            ALSA audio\n', stderr: '' };
+    }
+    if (base === 'ffmpeg' && args.includes('-sources')) {
+      return { code: 0, stdout: PULSE_SOURCES, stderr: '' };
+    }
+    if (base === 'osascript') {
+      h.pastes += 1;
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    return { code: 0, stdout: '', stderr: '' };
+  };
+
+  const spawn: VoiceSpawn = (cmd, args, opts): ChildHandle => {
+    h.spawnCalls.push({ cmd, args: [...args], opts });
+    const pid = h.nextPid++;
+    h.alive.add(pid);
+    const wav = args[args.length - 1];
+    // ffmpeg would write the WAV as it records; write a header-plus-audio placeholder now.
+    mkdirSync(path.dirname(wav), { recursive: true });
+    writeFileSync(wav, Buffer.alloc(1000));
+    let resolveExit: (code: number | null) => void = () => undefined;
+    const exited = new Promise<number | null>((res) => {
+      resolveExit = (code) => {
+        h.alive.delete(pid);
+        res(code);
+      };
+    });
+    h.children.push({ pid, resolve: resolveExit });
+    return {
+      pid,
+      exited,
+      stderr: () => '',
+      kill: (signal) => {
+        h.kills.push({ pid, signal });
+        resolveExit(signal === 'SIGKILL' ? null : 255);
+      },
+    };
+  };
+
+  h.deps = {
+    exec,
+    spawn,
+    platform: overrides.platform ?? 'darwin',
+    env: { PATH: binDir },
+    isAlive: (pid) => h.alive.has(pid),
+    kill: (pid, signal) => {
+      h.kills.push({ pid, signal });
+      h.alive.delete(pid);
+      // a real signal makes ffmpeg exit, which settles the attached child's `exited`
+      for (const c of h.children) if (c.pid === pid) c.resolve(signal === 'SIGKILL' ? null : 255);
+    },
+    sleep: async () => undefined,
+    exists: async (p) => p.startsWith(binDir) && !missing.has(path.basename(p)),
+    extraBinDirs: [],
+    modelFallbackDirs: [],
+    tmpDir: path.join(dir, 'tmp'),
+    clipboardWrite: async (text) => {
+      h.clipboard.push(text);
+    },
+    now: () => new Date('2026-09-19T12:00:00.000Z'),
+  };
+  h.opts = { cwd: dir, globalPath, quiet: true };
+  return h;
+}
+
+const harnesses: Harness[] = [];
+afterEach(async () => {
+  for (const h of harnesses.splice(0)) await fs.rm(h.dir, { recursive: true, force: true });
+});
+async function harness(overrides?: Parameters<typeof makeHarness>[0]): Promise<Harness> {
+  const h = await makeHarness(overrides);
+  harnesses.push(h);
+  return h;
+}
+
+function whisperCall(h: Harness): { cmd: string; args: string[] } | undefined {
+  return h.execCalls.find((c) => path.basename(c.cmd) === 'whisper-cli');
+}
+
+// ---------------------------------------------------------------------------
+// Toggle mode
+
+describe('lexicon voice --toggle', () => {
+  it('starts a detached recording, writes the state file and prints "recording"', async () => {
+    const h = await harness();
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+
+    expect(h.spawnCalls).toHaveLength(1);
+    const { cmd, args, opts } = h.spawnCalls[0];
+    expect(cmd).toBe('/fake/bin/ffmpeg');
+    expect(opts.detached).toBe(true);
+    expect(args).toEqual(expect.arrayContaining(['-f', 'avfoundation', '-i', ':default', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le']));
+    expect(args[args.length - 1]).toMatch(/voice[\\/]recording-.*\.wav$/);
+
+    const state = await readState(h.globalPath);
+    expect(state).toBeDefined();
+    expect(state?.pid).toBe(4242);
+    expect(state?.startedAt).toBe('2026-09-19T12:00:00.000Z');
+    expect(state?.wav).toBe(args[args.length - 1]);
+    expect(stateFilePath(h.globalPath)).toBe(path.join(h.dir, 'voice', 'recording.json'));
+  });
+
+  it('stops the recorder on the second call, transcribes, normalizes and clears the state file', async () => {
+    const h = await harness();
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    const wav = (await readState(h.globalPath))?.wav;
+    h.out.length = 0;
+
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(h.err.join('')).toBe('');
+    expect(code).toBe(EXIT_OK);
+    expect(h.kills).toEqual([{ pid: 4242, signal: 'SIGINT' }]);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(await readState(h.globalPath)).toBeUndefined();
+    // the recording is deleted once transcribed
+    await expect(fs.access(wav ?? '')).rejects.toThrow();
+    // whisper ran on the recorded wav with the model from the models dir
+    const w = whisperCall(h);
+    expect(w?.args).toEqual(expect.arrayContaining(['-f', wav, '-m', path.join(h.dir, 'models', 'ggml-base.en.bin'), '-l', 'en', '-nt', '-np', '-oj']));
+  });
+
+  it('cleans up a stale state file (pid not alive) and starts a new recording', async () => {
+    const h = await harness();
+    const staleWav = path.join(h.dir, 'voice', 'recording-stale.wav');
+    await fs.mkdir(path.dirname(staleWav), { recursive: true });
+    await fs.writeFile(staleWav, Buffer.alloc(100));
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 99999, wav: staleWav, startedAt: '2026-09-19T11:00:00.000Z' }));
+
+    h.opts.quiet = false;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+    expect(h.err.join('')).toContain('stale recording state (pid 99999 is gone)');
+    expect(h.kills).toEqual([]);
+    expect(h.spawnCalls).toHaveLength(1);
+    const state = await readState(h.globalPath);
+    expect(state?.pid).toBe(4242);
+    await expect(fs.access(staleWav)).rejects.toThrow();
+  });
+
+  it('SIGKILLs a recorder that ignores SIGINT past the grace period', async () => {
+    const h = await harness();
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    // isAlive keeps saying yes, so stopRecorder escalates.
+    let t = 0;
+    const kills: string[] = [];
+    const result = await stopRecorder({
+      pid: 4242,
+      isAlive: () => !kills.includes('SIGKILL'),
+      kill: (_pid, signal) => {
+        kills.push(signal);
+      },
+      sleep: async (ms) => {
+        t += ms;
+      },
+      graceMs: 100,
+    });
+    expect(kills).toEqual(['SIGINT', 'SIGKILL']);
+    expect(result).toEqual({ finalized: false, killed: true });
+    expect(t).toBeGreaterThan(0);
+  });
+
+  it('--status reports recording since <time> (0) or idle (1)', async () => {
+    const h = await harness();
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.out).toEqual(['idle\n']);
+    h.out.length = 0;
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    h.out.length = 0;
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording since 2026-09-19T12:00:00.000Z\n']);
+    h.out.length = 0;
+    expect(await runVoiceStatus({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(JSON.parse(h.out[0])).toEqual({ recording: true, since: '2026-09-19T12:00:00.000Z', pid: 4242 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Foreground mode
+
+describe('lexicon voice (foreground)', () => {
+  it('records until Enter, sends SIGINT to ffmpeg and prints the corrected text', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.spawnCalls[0].opts.detached).toBe(false);
+    expect(h.kills).toEqual([{ pid: 4242, signal: 'SIGINT' }]);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+  });
+
+  it('does not re-signal ffmpeg after Ctrl-C (it already got the SIGINT)', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => {
+      // the terminal delivered SIGINT to the whole group; ffmpeg exits on its own
+      h.children[0].resolve(255);
+      return 'sigint';
+    };
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.kills).toEqual([]);
+  });
+
+  it('--seconds passes -t to ffmpeg and waits for it to exit', async () => {
+    const h = await harness();
+    const spawn = h.deps.spawn;
+    h.deps.spawn = (cmd, args, opts) => {
+      const child = spawn!(cmd, args, opts);
+      setTimeout(() => h.children[0].resolve(0), 5);
+      return child;
+    };
+    const code = await runVoice({ ...h.opts, seconds: 3 }, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-t', '3']));
+    expect(h.kills).toEqual([]);
+  });
+
+  it('builds the whisper prompt from the lexicon canonicals and passes it as --prompt', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice(h.opts, h.io, h.deps);
+    const w = whisperCall(h);
+    expect(w).toBeDefined();
+    const i = w!.args.indexOf('--prompt');
+    expect(i).toBeGreaterThan(-1);
+    const prompt = w!.args[i + 1];
+    expect(prompt.split(', ').sort()).toEqual(['Ashlr.AI', 'Kubernetes']);
+    expect(prompt).not.toContain('Ashler');
+  });
+
+  it('--no-prompt omits --prompt', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice({ ...h.opts, prompt: false }, h.io, h.deps);
+    expect(whisperCall(h)!.args).not.toContain('--prompt');
+  });
+
+  it('--lang and --translate reach whisper-cli', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice({ ...h.opts, lang: 'de', translate: true }, h.io, h.deps);
+    const args = whisperCall(h)!.args;
+    expect(args).toEqual(expect.arrayContaining(['-l', 'de', '-tr']));
+  });
+
+  it('--json prints { raw, output, replacements, summary, model, seconds, ms }', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const code = await runVoice({ ...h.opts, json: true }, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    const parsed = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(parsed.raw).toBe('ping ashler about the cooper netties rollout');
+    expect(parsed.output).toBe('ping Ashlr.AI about the Kubernetes rollout');
+    expect(parsed.replacements.map((x) => [x.original, x.replacement])).toEqual([
+      ['ashler', 'Ashlr.AI'],
+      ['cooper netties', 'Kubernetes'],
+    ]);
+    expect(parsed.summary).toContain('"ashler" -> "Ashlr.AI"');
+    expect(parsed.model).toBe('base.en');
+    expect(typeof parsed.seconds).toBe('number');
+    expect(Object.keys(parsed.ms).sort()).toEqual(['normalize', 'record', 'transcribe']);
+    expect(Object.keys(parsed).sort()).toEqual(['model', 'ms', 'output', 'raw', 'replacements', 'seconds', 'summary']);
+  });
+
+  it('appends to voice/history.jsonl and records hits for the corrected terms', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice(h.opts, h.io, h.deps);
+    const history = await readHistory(h.globalPath);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      at: '2026-09-19T12:00:00.000Z',
+      raw: 'ping ashler about the cooper netties rollout',
+      output: 'ping Ashlr.AI about the Kubernetes rollout',
+      model: 'base.en',
+    });
+    expect(Object.keys(history[0].ms).sort()).toEqual(['normalize', 'record', 'transcribe']);
+    const yaml = await fs.readFile(h.globalPath, 'utf8');
+    expect(yaml).toMatch(/hits: 1/);
+  });
+
+  it('--no-history leaves history.jsonl alone', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice({ ...h.opts, history: false }, h.io, h.deps);
+    await expect(fs.access(historyPath(h.globalPath))).rejects.toThrow();
+  });
+
+  it('strips [BLANK_AUDIO] and exits 3 with "(nothing heard)" on an empty transcript', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = ' [BLANK_AUDIO] ';
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_NOTHING_HEARD);
+    expect(h.out).toEqual(['(nothing heard)\n']);
+    expect(await readHistory(h.globalPath)).toEqual([]);
+  });
+
+  it('exits 2 with an install hint when whisper-cli is missing', async () => {
+    const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_MISSING_TOOL);
+    expect(h.err.join('')).toContain('whisper-cli not found');
+    expect(h.err.join('')).toContain('brew install ffmpeg whisper-cpp');
+    expect(h.spawnCalls).toHaveLength(0);
+  });
+
+  it('exits 2 when ffmpeg is missing, naming both tools if both are absent', async () => {
+    const h = await harness({ missing: ['ffmpeg', 'whisper-cli', 'whisper-cpp'], platform: 'linux' });
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_MISSING_TOOL);
+    expect(h.err.join('')).toContain('ffmpeg and whisper-cli not found');
+    expect(h.err.join('')).toContain('apt install ffmpeg');
+  });
+
+  it('LEXICON_WHISPER_BIN points at a checkout binary named main', async () => {
+    const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
+    h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_BIN: '/fake/bin/main' };
+    h.deps.waitForStop = async () => 'enter';
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.execCalls.some((c) => c.cmd === '/fake/bin/main')).toBe(true);
+  });
+
+  it('surfaces a whisper failure and keeps the audio', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.whisperExit = 1;
+    const code = await runVoice(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toMatch(/whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)/);
+  });
+
+  it('--copy writes the corrected text to the clipboard', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice({ ...h.opts, copy: true }, h.io, h.deps);
+    expect(h.clipboard).toEqual(['ping Ashlr.AI about the Kubernetes rollout']);
+    expect(h.pastes).toBe(0);
+  });
+
+  it('--paste copies and sends Cmd+V through osascript on darwin', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice({ ...h.opts, paste: true }, h.io, h.deps);
+    expect(h.clipboard).toEqual(['ping Ashlr.AI about the Kubernetes rollout']);
+    const osa = h.execCalls.find((c) => c.cmd === 'osascript');
+    expect(osa?.args).toEqual(['-e', 'tell application "System Events" to keystroke "v" using command down']);
+  });
+
+  it('--paste off darwin falls back to --copy with a "not supported yet" notice', async () => {
+    const h = await harness({ platform: 'linux' });
+    h.deps.waitForStop = async () => 'enter';
+    const code = await runVoice({ ...h.opts, paste: true }, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.clipboard).toHaveLength(1);
+    expect(h.pastes).toBe(0);
+    expect(h.err.join('')).toContain('--paste is not supported yet on linux');
+    // linux records through pulse when ffmpeg has the demuxer
+    expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-f', 'pulse', '-i', 'default']));
+  });
+
+  it('--device picks the avfoundation index by name', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice({ ...h.opts, device: 'external' }, h.io, h.deps);
+    expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-i', ':1']));
+  });
+
+  it('downloads a missing named model with a progress line', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.opts.quiet = false;
+    const download: Downloader = async (url, dest, onProgress) => {
+      expect(url).toBe('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin');
+      onProgress({ received: 50, total: 100 });
+      onProgress({ received: 100, total: 100 });
+      await fs.writeFile(dest, 'fake');
+    };
+    h.deps.download = download;
+    const code = await runVoice({ ...h.opts, model: 'small.en' }, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.err.join('')).toContain('whisper model small.en not found; fetching');
+    expect(h.err.join('')).toContain('downloading ggml-small.en.bin 100%');
+    expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-small.en.bin')]));
+  });
+
+  it('LEXICON_WHISPER_MODELS overrides the models directory', async () => {
+    const h = await harness();
+    const alt = path.join(h.dir, 'alt-models');
+    await fs.mkdir(alt);
+    await fs.writeFile(path.join(alt, 'ggml-base.en.bin'), 'x');
+    h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_MODELS: alt };
+    h.deps.waitForStop = async () => 'enter';
+    await runVoice(h.opts, h.io, h.deps);
+    expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(alt, 'ggml-base.en.bin')]));
+  });
+
+  it('--list-devices prints the avfoundation audio devices', async () => {
+    const h = await harness();
+    const code = await runVoiceListDevices(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out.join('')).toBe('[0] Mason’s iPhone Microphone\n[1] External Microphone\n[2] MacBook Pro Microphone\n');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure pieces
+
+describe('cleanTranscript', () => {
+  it('strips whisper tags, collapses whitespace and trims', () => {
+    expect(cleanTranscript(' [BLANK_AUDIO] ')).toBe('');
+    expect(cleanTranscript('[BLANK_AUDIO] Ping Ashler.  [MUSIC]\n about the  rollout. [inaudible]')).toBe('Ping Ashler. about the rollout.');
+    expect(cleanTranscript('(applause) hello (soft music) there *laughs*')).toBe('hello there');
+    // a dictated parenthetical is not a noise tag
+    expect(cleanTranscript('deploy it (the new build) tonight')).toBe('deploy it (the new build) tonight');
+  });
+
+  it('parseWhisperOutput joins JSON segments and falls back to stdout', () => {
+    expect(parseWhisperOutput(JSON.stringify({ transcription: [{ text: ' a' }, { text: ' b' }] }), 'x')).toBe(' a  b');
+    expect(parseWhisperOutput('not json', 'plain')).toBe('plain');
+    expect(parseWhisperOutput(undefined, 'plain')).toBe('plain');
+  });
+
+  it('whisperArgs and ffmpegRecordArgs produce the documented argv', () => {
+    expect(whisperArgs({ modelPath: '/m.bin', wav: '/a.wav', outBase: '/o', lang: 'en', translate: false, prompt: 'A, B' })).toEqual([
+      '-m', '/m.bin', '-f', '/a.wav', '-l', 'en', '-nt', '-np', '-oj', '-of', '/o', '--prompt', 'A, B',
+    ]);
+    expect(ffmpegRecordArgs({ input: { format: 'avfoundation', input: ':default' }, wav: '/r.wav', seconds: 600 })).toEqual([
+      '-nostdin', '-hide_banner', '-loglevel', 'error', '-f', 'avfoundation', '-i', ':default', '-t', '600', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', '/r.wav',
+    ]);
+  });
+});
+
+describe('device parsers', () => {
+  it('parses the avfoundation listing (audio block only)', () => {
+    const devices = parseAvfoundationDevices(AVFOUNDATION_LIST);
+    expect(devices).toEqual([
+      { index: 0, name: 'Mason’s iPhone Microphone', id: ':0', backend: 'avfoundation' },
+      { index: 1, name: 'External Microphone', id: ':1', backend: 'avfoundation' },
+      { index: 2, name: 'MacBook Pro Microphone', id: ':2', backend: 'avfoundation' },
+    ]);
+    expect(pickDevice(devices, '2')?.name).toBe('MacBook Pro Microphone');
+    expect(pickDevice(devices, 'macbook pro microphone')?.id).toBe(':2');
+    expect(pickDevice(devices, 'iphone')?.id).toBe(':0');
+    expect(pickDevice(devices, 'nope')).toBeUndefined();
+  });
+
+  it('parses dshow, pulse and arecord listings', () => {
+    expect(parseDshowDevices(DSHOW_LIST).map((d) => d.name)).toEqual(['Microphone Array (Realtek(R) Audio)', 'Headset Microphone (USB)']);
+    const pulse = parsePulseSources(PULSE_SOURCES);
+    expect(pulse.map((d) => d.id)).toEqual(['alsa_input.pci-0000_00_1f.3.analog-stereo', 'alsa_input.usb-Blue_Yeti-00.analog-stereo']);
+    expect(pulse[1].name).toBe('Yeti Stereo Microphone Analog Stereo');
+    const alsa = parseArecordList(ARECORD_LIST);
+    expect(alsa).toEqual([
+      { index: 0, name: 'HDA Intel PCH (ALC295 Analog)', id: 'hw:0,0', backend: 'alsa' },
+      { index: 1, name: 'Yeti Stereo Microphone (USB Audio)', id: 'hw:1,0', backend: 'alsa' },
+    ]);
+    expect(formatDeviceList(alsa)).toBe('[0] HDA Intel PCH (ALC295 Analog)  (hw:0,0)\n[1] Yeti Stereo Microphone (USB Audio)  (hw:1,0)\n');
+    expect(formatDeviceList([])).toBe('no audio input devices found\n');
+  });
+});
+
+describe('history', () => {
+  it('caps the file at the newest N lines', async () => {
+    const h = await harness();
+    const entry = (i: number) => ({ at: `t${i}`, raw: `r${i}`, output: `o${i}`, model: 'base.en', ms: { record: 0, transcribe: 0, normalize: 0 } });
+    for (let i = 0; i < 7; i += 1) await appendHistory(h.globalPath, entry(i), 5);
+    const kept = await readHistory(h.globalPath);
+    expect(kept.map((e) => e.at)).toEqual(['t2', 't3', 't4', 't5', 't6']);
+    const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text.split('\n').filter(Boolean)).toHaveLength(5);
+    expect(HISTORY_MAX_LINES).toBe(1000);
+  });
+});
+
+describe('models and tools', () => {
+  it('resolves names to ggml files, prefers the models dir, then the fallback dirs', () => {
+    const present = new Set(['/fallback/ggml-base.en.bin', '/cfg/models/ggml-tiny.en.bin']);
+    const exists = (p: string) => present.has(p);
+    const opts = { globalPath: '/cfg/lexicon.yaml', env: {}, fallbackDirs: ['/fallback'], exists };
+    expect(resolveModel('tiny.en', opts)).toEqual({ name: 'tiny.en', path: '/cfg/models/ggml-tiny.en.bin', present: true, url: modelUrl('tiny.en') });
+    expect(resolveModel('base.en', opts)).toMatchObject({ path: '/fallback/ggml-base.en.bin', present: true, foundIn: '/fallback' });
+    expect(resolveModel('small.en', opts)).toEqual({ name: 'small.en', path: '/cfg/models/ggml-small.en.bin', present: false, url: modelUrl('small.en') });
+    expect(resolveModel('/x/ggml-medium.bin', opts)).toEqual({ name: 'medium', path: '/x/ggml-medium.bin', present: false });
+    expect(modelFileName('base.en')).toBe('ggml-base.en.bin');
+    expect(resolveModel('base.en', { ...opts, env: { LEXICON_WHISPER_MODELS: '/fallback' } }).path).toBe('/fallback/ggml-base.en.bin');
+  });
+
+  it('locateWhisperCli honours LEXICON_WHISPER_BIN and falls back to PATH names', async () => {
+    const exists = async (p: string) => p === '/bin/whisper-cpp' || p === '/src/main';
+    expect(await locateWhisperCli({ env: { PATH: '/bin', LEXICON_WHISPER_BIN: '/src/main' }, platform: 'darwin', exists, extraDirs: [] })).toBe('/src/main');
+    expect(await locateWhisperCli({ env: { PATH: '/bin', LEXICON_WHISPER_BIN: '/nope' }, platform: 'darwin', exists, extraDirs: [] })).toBeUndefined();
+    expect(await locateWhisperCli({ env: { PATH: '/bin' }, platform: 'darwin', exists, extraDirs: [] })).toBe('/bin/whisper-cpp');
+    expect(installHint('win32')).toContain('winget');
+  });
+});
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+});

@@ -68,3 +68,14 @@ jobs:
           timeout 5 node dist/mcp/server.js < /dev/null > /dev/null 2> server.err || code=$?
           # 124 = killed by timeout (server was healthy); 0 = clean EOF exit. Anything else is a crash.
           if [ "${code:-0}" != "0" ] && [ "${code:-0}" != "124" ]; then cat server.err; exit 1; fi
+
+      - name: Build the browser extension
+        run: npm run build:extension
+
+      - name: Upload the browser extension
+        if: matrix.node == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexicon-extension
+          path: extension/dist
+          if-no-files-found: error
