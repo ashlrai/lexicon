@@ -788,7 +788,7 @@ interface Check {
 }
 
 function defaultExec(file: string, args: readonly string[]): string {
-  return execFileSync(file, [...args], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+  return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
 /** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
