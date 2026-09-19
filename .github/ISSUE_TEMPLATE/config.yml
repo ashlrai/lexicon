@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/ashlrai/lexicon/discussions
+    about: Ask how to wire lexicon into a client, or propose a feature, before opening an issue.
+  - name: Security
+    url: mailto:mason@ashlr.ai
+    about: Report a security problem privately by email rather than in a public issue.

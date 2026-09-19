@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lexicon": {
+      "command": "lexicon-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

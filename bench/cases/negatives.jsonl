@@ -1,0 +1,120 @@
+{"id":"neg-001","category":"prose","heard":"pass the sauce please","expected":"pass the sauce please","terms":[],"note":"SaaS sound-alike"}
+{"id":"neg-002","category":"prose","heard":"the ashes of the fire were still warm","expected":"the ashes of the fire were still warm","terms":[],"note":"Ashlr.AI sound-alike"}
+{"id":"neg-003","category":"prose","heard":"head off to the store before it closes","expected":"head off to the store before it closes","terms":[],"note":"Hetzner / OAuth sound-alikes"}
+{"id":"neg-004","category":"prose","heard":"cooper is a good name for a dog","expected":"cooper is a good name for a dog","terms":[],"note":"Kubernetes sound-alike"}
+{"id":"neg-005","category":"prose","heard":"the sass in her voice was unmistakable","expected":"the sass in her voice was unmistakable","terms":[],"note":"SaaS sound-alike"}
+{"id":"neg-006","category":"prose","heard":"let's zoom in on the chart","expected":"let's zoom in on the chart","terms":[],"note":"Zod sound-alike"}
+{"id":"neg-007","category":"prose","heard":"red is my favorite color","expected":"red is my favorite color","terms":[],"note":"Redis sound-alike"}
+{"id":"neg-008","category":"prose","heard":"the vet checked the dog this morning","expected":"the vet checked the dog this morning","terms":[],"note":"Vite sound-alike"}
+{"id":"neg-009","category":"prose","heard":"we watched prison break last night","expected":"we watched prison break last night","terms":[],"note":"Prisma sound-alike"}
+{"id":"neg-010","category":"prose","heard":"next year we should do this earlier","expected":"next year we should do this earlier","terms":[],"note":"Next.js sound-alike"}
+{"id":"neg-011","category":"prose","heard":"the wind is strong on the coast today","expected":"the wind is strong on the coast today","terms":[],"note":"Tailwind sound-alike"}
+{"id":"neg-012","category":"prose","heard":"the docker at the pier tied off the boat","expected":"the docker at the pier tied off the boat","terms":[],"note":"expected-hard: Docker as ordinary noun; casing collision with canonical"}
+{"id":"neg-013","category":"prose","heard":"can you pick up milk on the way home","expected":"can you pick up milk on the way home","terms":[]}
+{"id":"neg-014","category":"prose","heard":"the meeting ran long so lunch got pushed","expected":"the meeting ran long so lunch got pushed","terms":[]}
+{"id":"neg-015","category":"prose","heard":"my cousin mason is visiting next weekend","expected":"my cousin mason is visiting next weekend","terms":[],"note":"Mason Wyatt partial"}
+{"id":"neg-016","category":"prose","heard":"the mason laid the bricks in two days","expected":"the mason laid the bricks in two days","terms":[]}
+{"id":"neg-017","category":"prose","heard":"the cube on the desk is a puzzle","expected":"the cube on the desk is a puzzle","terms":[],"note":"Kubernetes partial"}
+{"id":"neg-018","category":"prose","heard":"she has a lot of sass but she is right","expected":"she has a lot of sass but she is right","terms":[]}
+{"id":"neg-019","category":"prose","heard":"let's head out around five","expected":"let's head out around five","terms":[]}
+{"id":"neg-020","category":"prose","heard":"the auth flow needs a rewrite","expected":"the auth flow needs a rewrite","terms":[],"note":"OAuth partial; auth is stoplisted"}
+{"id":"neg-021","category":"prose","heard":"turn the lights off when you leave","expected":"turn the lights off when you leave","terms":[]}
+{"id":"neg-022","category":"prose","heard":"the graph shows a clear upward trend","expected":"the graph shows a clear upward trend","terms":[],"note":"GraphQL / Grafana partial"}
+{"id":"neg-023","category":"prose","heard":"the fauna in the park is protected","expected":"the fauna in the park is protected","terms":[],"note":"Grafana partial"}
+{"id":"neg-024","category":"prose","heard":"my cough is finally getting better","expected":"my cough is finally getting better","terms":[],"note":"Kafka partial"}
+{"id":"neg-025","category":"prose","heard":"the engine is making a strange noise","expected":"the engine is making a strange noise","terms":[],"note":"Nginx partial"}
+{"id":"neg-026","category":"prose","heard":"the puppet show starts at noon","expected":"the puppet show starts at noon","terms":[],"note":"Puppeteer partial"}
+{"id":"neg-027","category":"prose","heard":"a light drizzle is expected this afternoon","expected":"a light drizzle is expected this afternoon","terms":[],"note":"expected-hard: Drizzle canonical is a common word"}
+{"id":"neg-028","category":"prose","heard":"the neon sign outside is flickering again","expected":"the neon sign outside is flickering again","terms":[],"note":"expected-hard: Neon canonical is a common word"}
+{"id":"neg-029","category":"prose","heard":"she answered in a whisper","expected":"she answered in a whisper","terms":[],"note":"expected-hard: Whisper canonical is a common word"}
+{"id":"neg-030","category":"prose","heard":"the llama at the petting zoo spat at me","expected":"the llama at the petting zoo spat at me","terms":[],"note":"expected-hard: Ollama sound-alike"}
+{"id":"neg-031","category":"prose","heard":"the house next door is for sale","expected":"the house next door is for sale","terms":[],"note":"expected-hard: Vercel sound-alike (for sale)"}
+{"id":"neg-032","category":"prose","heard":"lay fresh sod on the lawn this weekend","expected":"lay fresh sod on the lawn this weekend","terms":[],"note":"expected-hard: Zod sound-alike"}
+{"id":"neg-033","category":"prose","heard":"he was being pedantic about the commas","expected":"he was being pedantic about the commas","terms":[],"note":"expected-hard: Pydantic sound-alike"}
+{"id":"neg-034","category":"prose","heard":"jot down the action items before you forget","expected":"jot down the action items before you forget","terms":[],"note":"expected-hard: JWT alias 'jot' collides with the verb"}
+{"id":"neg-035","category":"prose","heard":"call jason about the lease renewal","expected":"call jason about the lease renewal","terms":[],"note":"expected-hard: JSON alias 'jason' collides with the name"}
+{"id":"neg-036","category":"prose","heard":"okay are we done for today","expected":"okay are we done for today","terms":[],"note":"expected-hard: OKR alias 'okay are' collides with prose"}
+{"id":"neg-037","category":"prose","heard":"that was a cram session before the exam","expected":"that was a cram session before the exam","terms":[],"note":"expected-hard: CRM sound-alike"}
+{"id":"neg-038","category":"prose","heard":"the graphical interface is out of date","expected":"the graphical interface is out of date","terms":[],"note":"expected-hard: GraphQL sound-alike"}
+{"id":"neg-039","category":"prose","heard":"the tropic of cancer runs through mexico","expected":"the tropic of cancer runs through mexico","terms":[],"note":"expected-hard: tRPC sound-alike"}
+{"id":"neg-040","category":"prose","heard":"the doctor said to rest for a week","expected":"the doctor said to rest for a week","terms":[],"note":"Docker sound-alike"}
+{"id":"neg-041","category":"prose","heard":"we had a tail wind on the flight back","expected":"we had a tail wind on the flight back","terms":[],"note":"expected-hard: Tailwind as two ordinary words"}
+{"id":"neg-042","category":"prose","heard":"the playwright wrote a second act","expected":"the playwright wrote a second act","terms":[],"note":"expected-hard: Playwright canonical is a common word"}
+{"id":"neg-043","category":"prose","heard":"the kernel panic happened after the update","expected":"the kernel panic happened after the update","terms":[]}
+{"id":"neg-044","category":"prose","heard":"we should cooperate with the other team","expected":"we should cooperate with the other team","terms":[]}
+{"id":"neg-045","category":"prose","heard":"he read us the whole report out loud","expected":"he read us the whole report out loud","terms":[],"note":"Redis sound-alike (read us)"}
+{"id":"neg-046","category":"prose","heard":"i am ready when you are","expected":"i am ready when you are","terms":[]}
+{"id":"neg-047","category":"prose","heard":"the prism split the light into colors","expected":"the prism split the light into colors","terms":[],"note":"Prisma partial"}
+{"id":"neg-048","category":"prose","heard":"the store closes at nine","expected":"the store closes at nine","terms":[],"note":"LexiconStore partial"}
+{"id":"neg-049","category":"prose","heard":"the harvest was good this year","expected":"the harvest was good this year","terms":[],"note":"harvestRepo partial"}
+{"id":"neg-050","category":"prose","heard":"submit the form before the deadline","expected":"submit the form before the deadline","terms":[],"note":"UserPromptSubmit partial"}
+{"id":"neg-051","category":"prose","heard":"the summit is at three thousand meters","expected":"the summit is at three thousand meters","terms":[]}
+{"id":"neg-052","category":"prose","heard":"the transcript from the interview is ready","expected":"the transcript from the interview is ready","terms":[],"note":"normalizeTranscript partial"}
+{"id":"neg-053","category":"prose","heard":"the prompt was too vague","expected":"the prompt was too vague","terms":[]}
+{"id":"neg-054","category":"prose","heard":"a whisper of wind moved the curtains","expected":"a whisper of wind moved the curtains","terms":[],"note":"expected-hard: common word collides with a canonical or alias"}
+{"id":"neg-055","category":"prose","heard":"sequel to the movie comes out in june","expected":"sequel to the movie comes out in june","terms":[],"note":"SQLite partial"}
+{"id":"neg-056","category":"prose","heard":"the light in the hallway is out","expected":"the light in the hallway is out","terms":[]}
+{"id":"neg-057","category":"prose","heard":"we are heading up to the lake","expected":"we are heading up to the lake","terms":[],"note":"Upstash partial"}
+{"id":"neg-058","category":"prose","heard":"stash the leftovers in the fridge","expected":"stash the leftovers in the fridge","terms":[]}
+{"id":"neg-059","category":"prose","heard":"the soup needs more salt","expected":"the soup needs more salt","terms":[],"note":"Supabase partial"}
+{"id":"neg-060","category":"prose","heard":"it was a super base hit","expected":"it was a super base hit","terms":[],"note":"expected-hard: Supabase alias collision (super base)"}
+{"id":"neg-061","category":"prose","heard":"the deep end of the pool is closed","expected":"the deep end of the pool is closed","terms":[],"note":"Deepgram partial"}
+{"id":"neg-062","category":"prose","heard":"add a gram of salt to the water","expected":"add a gram of salt to the water","terms":[]}
+{"id":"neg-063","category":"prose","heard":"the flow of traffic was steady","expected":"the flow of traffic was steady","terms":[],"note":"Wispr Flow partial"}
+{"id":"neg-064","category":"prose","heard":"open the window it is stuffy in here","expected":"open the window it is stuffy in here","terms":[],"note":"OpenClaw partial"}
+{"id":"neg-065","category":"prose","heard":"the crab lost a claw in the fight","expected":"the crab lost a claw in the fight","terms":[]}
+{"id":"neg-066","category":"prose","heard":"the clouds are rolling in from the west","expected":"the clouds are rolling in from the west","terms":[],"note":"Cloudflare partial"}
+{"id":"neg-067","category":"prose","heard":"a solar flare knocked out the radio","expected":"a solar flare knocked out the radio","terms":[]}
+{"id":"neg-068","category":"prose","heard":"the pie is in the oven","expected":"the pie is in the oven","terms":[],"note":"Pydantic partial"}
+{"id":"neg-069","category":"prose","heard":"the post office is closed on sunday","expected":"the post office is closed on sunday","terms":[],"note":"PostgreSQL partial"}
+{"id":"neg-070","category":"prose","heard":"the grass needs cutting","expected":"the grass needs cutting","terms":[]}
+{"id":"neg-071","category":"prose","heard":"the zoo is open until dusk","expected":"the zoo is open until dusk","terms":[]}
+{"id":"neg-072","category":"prose","heard":"the tail of the kite got tangled","expected":"the tail of the kite got tangled","terms":[]}
+{"id":"neg-073","category":"prose","heard":"the drizzle turned into a downpour","expected":"the drizzle turned into a downpour","terms":[],"note":"expected-hard: common word collides with a canonical or alias"}
+{"id":"neg-074","category":"prose","heard":"the terrace has a nice view","expected":"the terrace has a nice view","terms":[],"note":"Terraform partial"}
+{"id":"neg-075","category":"prose","heard":"they are terraforming the back yard","expected":"they are terraforming the back yard","terms":[]}
+{"id":"neg-076","category":"prose","heard":"the dock was slippery after the rain","expected":"the dock was slippery after the rain","terms":[]}
+{"id":"neg-077","category":"prose","heard":"prometheus stole fire from the gods","expected":"prometheus stole fire from the gods","terms":[],"note":"expected-hard: Prometheus as the myth, casing collision"}
+{"id":"neg-078","category":"prose","heard":"the play was right on time","expected":"the play was right on time","terms":[]}
+{"id":"neg-079","category":"prose","heard":"my lang is the old word for long","expected":"my lang is the old word for long","terms":[],"note":"LangChain partial"}
+{"id":"neg-080","category":"prose","heard":"the chain on my bike slipped","expected":"the chain on my bike slipped","terms":[]}
+{"id":"neg-081","category":"prose","heard":"the meta discussion went nowhere","expected":"the meta discussion went nowhere","terms":[],"note":"Metaphone partial"}
+{"id":"neg-082","category":"prose","heard":"leave the phone on the table","expected":"leave the phone on the table","terms":[]}
+{"id":"neg-083","category":"prose","heard":"i left the keys in the car","expected":"i left the keys in the car","terms":[]}
+{"id":"neg-084","category":"prose","heard":"the sea lion barked at the tourists","expected":"the sea lion barked at the tourists","terms":[],"note":"CLI sound-alike"}
+{"id":"neg-085","category":"prose","heard":"see you at the game","expected":"see you at the game","terms":[]}
+{"id":"neg-086","category":"prose","heard":"my son is learning to ride a bike","expected":"my son is learning to ride a bike","terms":[],"note":"JSON partial"}
+{"id":"neg-087","category":"prose","heard":"the yam is done when a fork goes in easily","expected":"the yam is done when a fork goes in easily","terms":[],"note":"YAML partial"}
+{"id":"neg-088","category":"prose","heard":"ess is the nineteenth letter","expected":"ess is the nineteenth letter","terms":[]}
+{"id":"neg-089","category":"prose","heard":"are we there yet","expected":"are we there yet","terms":[]}
+{"id":"neg-090","category":"prose","heard":"the key is under the mat","expected":"the key is under the mat","terms":[]}
+{"id":"neg-091","category":"prose","heard":"it will take a tee shirt and jeans","expected":"it will take a tee shirt and jeans","terms":[]}
+{"id":"neg-092","category":"prose","heard":"the white house is on the corner","expected":"the white house is on the corner","terms":[],"note":"Mason Wyatt alias partial"}
+{"id":"neg-093","category":"prose","heard":"riley brought cupcakes to the office","expected":"riley brought cupcakes to the office","terms":[],"note":"Siobhan Reilly partial"}
+{"id":"neg-094","category":"prose","heard":"the men saw the storm coming","expected":"the men saw the storm coming","terms":[],"note":"Kwame Mensah partial"}
+{"id":"neg-095","category":"prose","heard":"stop shooing the cat away","expected":"stop shooing the cat away","terms":[],"note":"Xiuying Zhao partial"}
+{"id":"neg-096","category":"prose","heard":"the lexicon of a language grows over time","expected":"the lexicon of a language grows over time","terms":[]}
+{"id":"neg-097","category":"prose","heard":"install it with `npm install prizma` and restart","expected":"install it with `npm install prizma` and restart","terms":[],"note":"inline code must be untouched"}
+{"id":"neg-098","category":"prose","heard":"```\nconst ashler = new Ashler()\n```","expected":"```\nconst ashler = new Ashler()\n```","terms":[],"note":"fenced code must be untouched"}
+{"id":"neg-099","category":"prose","heard":"the docs are at https://ashler.example.com/cooper-netties/guide","expected":"the docs are at https://ashler.example.com/cooper-netties/guide","terms":[],"note":"URL must be untouched"}
+{"id":"neg-100","category":"prose","heard":"send the invoice to shivon.riley@ashler.example.com today","expected":"send the invoice to shivon.riley@ashler.example.com today","terms":[],"note":"email must be untouched"}
+{"id":"neg-101","category":"prose","heard":"open src/ashler/versel.ts and look at line 40","expected":"open src/ashler/versel.ts and look at line 40","terms":[],"note":"file path must be untouched"}
+{"id":"neg-102","category":"prose","heard":"see www.hetsner.example.com for pricing","expected":"see www.hetsner.example.com for pricing","terms":[],"note":"www URL must be untouched"}
+{"id":"neg-103","category":"prose","heard":"run `pie dantic --check` in the shell","expected":"run `pie dantic --check` in the shell","terms":[],"note":"inline code must be untouched"}
+{"id":"neg-104","category":"prose","heard":"the sauce on the pasta was too salty","expected":"the sauce on the pasta was too salty","terms":[]}
+{"id":"neg-105","category":"prose","heard":"the ash tree in the yard is dying","expected":"the ash tree in the yard is dying","terms":[]}
+{"id":"neg-106","category":"prose","heard":"his ashen face said it all","expected":"his ashen face said it all","terms":[],"note":"Ashlr.AI sound-alike"}
+{"id":"neg-107","category":"prose","heard":"the quarterly numbers look fine to me","expected":"the quarterly numbers look fine to me","terms":[]}
+{"id":"neg-108","category":"prose","heard":"remind me to water the plants tonight","expected":"remind me to water the plants tonight","terms":[]}
+{"id":"neg-109","category":"prose","heard":"we need a bigger table for the team dinner","expected":"we need a bigger table for the team dinner","terms":[]}
+{"id":"neg-110","category":"prose","heard":"the printer is out of toner again","expected":"the printer is out of toner again","terms":[]}
+{"id":"neg-111","category":"prose","heard":"rerun the whole suite before merging","expected":"rerun the whole suite before merging","terms":[],"note":"expected-hard: 'suite' shares phonetic key ST with Zod's alias 'zaad'"}
+{"id":"neg-112","category":"prose","heard":"the hotel suite had a view of the bay","expected":"the hotel suite had a view of the bay","terms":[],"note":"expected-hard: 'suite' shares phonetic key ST with Zod's alias 'zaad'"}
+{"id":"neg-113","category":"prose","heard":"he wore a grey suit to the interview","expected":"he wore a grey suit to the interview","terms":[],"note":"Zod sound-alike (suit)"}
+{"id":"neg-114","category":"prose","heard":"the seed round closed last week","expected":"the seed round closed last week","terms":[],"note":"Zod sound-alike (seed)"}
+{"id":"neg-115","category":"prose","heard":"we sat in the back row","expected":"we sat in the back row","terms":[],"note":"Zod sound-alike (sat)"}
+{"id":"neg-116","category":"prose","heard":"send me the email when you get a chance","expected":"send me the email when you get a chance","terms":[],"note":"expected-hard: 'email' shares phonetic key AML with YAML's alias 'yamel'"}
+{"id":"neg-117","category":"prose","heard":"lunch is at noon in the big room","expected":"lunch is at noon in the big room","terms":[],"note":"expected-hard: 'noon' shares phonetic key NN with Neon"}
+{"id":"neg-118","category":"prose","heard":"she said the demo is thursday","expected":"she said the demo is thursday","terms":[],"note":"expected-hard: the two-word window 'said the' shares phonetic key ST with Zod's alias 'zawed'"}
+{"id":"neg-119","category":"prose","heard":"they said it would ship on time","expected":"they said it would ship on time","terms":[],"note":"Zod sound-alike (said)"}
+{"id":"neg-120","category":"prose","heard":"the emails from the vendor are all spam","expected":"the emails from the vendor are all spam","terms":[],"note":"YAML sound-alike (emails)"}

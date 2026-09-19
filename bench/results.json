@@ -1,0 +1,1110 @@
+{
+  "generatedAt": "2026-09-19T07:59:11.850Z",
+  "lexicon": "/Users/masonwyatt/Desktop/dictation mcp/bench/lexicon.yaml",
+  "corpus": "/Users/masonwyatt/Desktop/dictation mcp/bench/corpus.jsonl",
+  "config": {
+    "minConfidence": 0.82,
+    "phonetic": true,
+    "fuzzy": true
+  },
+  "counts": {
+    "cases": 398,
+    "positives": 278,
+    "negatives": 120,
+    "hard": 47,
+    "termSlots": 313
+  },
+  "sentence": {
+    "all": {
+      "hit": 364,
+      "total": 398,
+      "rate": 0.914572864321608
+    },
+    "positives": {
+      "hit": 262,
+      "total": 278,
+      "rate": 0.9424460431654677
+    },
+    "negatives": {
+      "hit": 102,
+      "total": 120,
+      "rate": 0.85
+    },
+    "positivesExcludingHard": {
+      "hit": 255,
+      "total": 256,
+      "rate": 0.99609375
+    },
+    "negativesExcludingHard": {
+      "hit": 95,
+      "total": 95,
+      "rate": 1
+    },
+    "byCategory": {
+      "brand": {
+        "hit": 47,
+        "total": 48,
+        "rate": 0.9791666666666666
+      },
+      "product": {
+        "hit": 114,
+        "total": 122,
+        "rate": 0.9344262295081968
+      },
+      "acronym": {
+        "hit": 54,
+        "total": 58,
+        "rate": 0.9310344827586207
+      },
+      "person": {
+        "hit": 32,
+        "total": 34,
+        "rate": 0.9411764705882353
+      },
+      "identifier": {
+        "hit": 15,
+        "total": 16,
+        "rate": 0.9375
+      },
+      "prose": {
+        "hit": 102,
+        "total": 120,
+        "rate": 0.85
+      }
+    }
+  },
+  "terms": {
+    "rawRecall": {
+      "hit": 16,
+      "total": 313,
+      "rate": 0.051118210862619806
+    },
+    "recall": {
+      "hit": 302,
+      "total": 313,
+      "rate": 0.9648562300319489
+    },
+    "precision": {
+      "hit": 302,
+      "total": 322,
+      "rate": 0.937888198757764
+    },
+    "f1": 0.9511811023622048,
+    "tp": 302,
+    "fp": 20,
+    "fn": 11,
+    "byCategory": {
+      "brand": {
+        "recall": {
+          "hit": 52,
+          "total": 53,
+          "rate": 0.9811320754716981
+        },
+        "rawRecall": {
+          "hit": 3,
+          "total": 53,
+          "rate": 0.05660377358490566
+        }
+      },
+      "product": {
+        "recall": {
+          "hit": 133,
+          "total": 138,
+          "rate": 0.9637681159420289
+        },
+        "rawRecall": {
+          "hit": 7,
+          "total": 138,
+          "rate": 0.050724637681159424
+        }
+      },
+      "acronym": {
+        "recall": {
+          "hit": 56,
+          "total": 59,
+          "rate": 0.9491525423728814
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 59,
+          "rate": 0.01694915254237288
+        }
+      },
+      "person": {
+        "recall": {
+          "hit": 42,
+          "total": 43,
+          "rate": 0.9767441860465116
+        },
+        "rawRecall": {
+          "hit": 4,
+          "total": 43,
+          "rate": 0.09302325581395349
+        }
+      },
+      "identifier": {
+        "recall": {
+          "hit": 19,
+          "total": 20,
+          "rate": 0.95
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 20,
+          "rate": 0.05
+        }
+      }
+    }
+  },
+  "falsePositiveRate": {
+    "hit": 18,
+    "total": 120,
+    "rate": 0.15
+  },
+  "falsePositiveRateExcludingHard": {
+    "hit": 0,
+    "total": 95,
+    "rate": 0
+  },
+  "byReason": {
+    "alias": {
+      "replacements": 242,
+      "correct": 228,
+      "wrong": 14,
+      "meanConfidence": 1
+    },
+    "phonetic": {
+      "replacements": 56,
+      "correct": 51,
+      "wrong": 5,
+      "meanConfidence": 0.8797024627158552
+    },
+    "fuzzy": {
+      "replacements": 9,
+      "correct": 8,
+      "wrong": 1,
+      "meanConfidence": 0.8944805194805195
+    }
+  },
+  "latency": {
+    "normalizeUs": 321.5920296482406,
+    "findReplacementsUs": 64.7240517587965,
+    "rounds": 5
+  },
+  "failures": [
+    {
+      "id": "pos-128",
+      "category": "acronym",
+      "heard": "wire the sas into the onboarding flow",
+      "expected": "wire the SaaS into the onboarding flow",
+      "output": "wire the sas into the onboarding flow",
+      "pass": false,
+      "negative": false,
+      "hard": false,
+      "replacements": [],
+      "missed": [
+        "SaaS"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "neg-012",
+      "category": "prose",
+      "heard": "the docker at the pier tied off the boat",
+      "expected": "the docker at the pier tied off the boat",
+      "output": "the Docker at the pier tied off the boat",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "docker",
+          "replacement": "Docker",
+          "canonical": "Docker",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "docker",
+          "replacement": "Docker",
+          "canonical": "Docker",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-027",
+      "category": "prose",
+      "heard": "a light drizzle is expected this afternoon",
+      "expected": "a light drizzle is expected this afternoon",
+      "output": "a light Drizzle is expected this afternoon",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 8,
+          "end": 15,
+          "original": "drizzle",
+          "replacement": "Drizzle",
+          "canonical": "Drizzle",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 8,
+          "end": 15,
+          "original": "drizzle",
+          "replacement": "Drizzle",
+          "canonical": "Drizzle",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-028",
+      "category": "prose",
+      "heard": "the neon sign outside is flickering again",
+      "expected": "the neon sign outside is flickering again",
+      "output": "the Neon sign outside is flickering again",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 8,
+          "original": "neon",
+          "replacement": "Neon",
+          "canonical": "Neon",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 8,
+          "original": "neon",
+          "replacement": "Neon",
+          "canonical": "Neon",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-029",
+      "category": "prose",
+      "heard": "she answered in a whisper",
+      "expected": "she answered in a whisper",
+      "output": "she answered in a Whisper",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 18,
+          "end": 25,
+          "original": "whisper",
+          "replacement": "Whisper",
+          "canonical": "Whisper",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 18,
+          "end": 25,
+          "original": "whisper",
+          "replacement": "Whisper",
+          "canonical": "Whisper",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-030",
+      "category": "prose",
+      "heard": "the llama at the petting zoo spat at me",
+      "expected": "the llama at the petting zoo spat at me",
+      "output": "the Ollama at the petting zoo spat at me",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 9,
+          "original": "llama",
+          "replacement": "Ollama",
+          "canonical": "Ollama",
+          "reason": "fuzzy",
+          "confidence": 0.8333333333333334
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 9,
+          "original": "llama",
+          "replacement": "Ollama",
+          "canonical": "Ollama",
+          "reason": "fuzzy",
+          "confidence": 0.8333333333333334
+        }
+      ]
+    },
+    {
+      "id": "neg-033",
+      "category": "prose",
+      "heard": "he was being pedantic about the commas",
+      "expected": "he was being pedantic about the commas",
+      "output": "he was being Pydantic about the commas",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 13,
+          "end": 21,
+          "original": "pedantic",
+          "replacement": "Pydantic",
+          "canonical": "Pydantic",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 13,
+          "end": 21,
+          "original": "pedantic",
+          "replacement": "Pydantic",
+          "canonical": "Pydantic",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "neg-034",
+      "category": "prose",
+      "heard": "jot down the action items before you forget",
+      "expected": "jot down the action items before you forget",
+      "output": "JWT down the action items before you forget",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 0,
+          "end": 3,
+          "original": "jot",
+          "replacement": "JWT",
+          "canonical": "JWT",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 0,
+          "end": 3,
+          "original": "jot",
+          "replacement": "JWT",
+          "canonical": "JWT",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-035",
+      "category": "prose",
+      "heard": "call jason about the lease renewal",
+      "expected": "call jason about the lease renewal",
+      "output": "call JSON about the lease renewal",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 5,
+          "end": 10,
+          "original": "jason",
+          "replacement": "JSON",
+          "canonical": "JSON",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 5,
+          "end": 10,
+          "original": "jason",
+          "replacement": "JSON",
+          "canonical": "JSON",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-036",
+      "category": "prose",
+      "heard": "okay are we done for today",
+      "expected": "okay are we done for today",
+      "output": "OKR we done for today",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 0,
+          "end": 8,
+          "original": "okay are",
+          "replacement": "OKR",
+          "canonical": "OKR",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 0,
+          "end": 8,
+          "original": "okay are",
+          "replacement": "OKR",
+          "canonical": "OKR",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-038",
+      "category": "prose",
+      "heard": "the graphical interface is out of date",
+      "expected": "the graphical interface is out of date",
+      "output": "the GraphQL interface is out of date",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 13,
+          "original": "graphical",
+          "replacement": "GraphQL",
+          "canonical": "GraphQL",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 13,
+          "original": "graphical",
+          "replacement": "GraphQL",
+          "canonical": "GraphQL",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "neg-039",
+      "category": "prose",
+      "heard": "the tropic of cancer runs through mexico",
+      "expected": "the tropic of cancer runs through mexico",
+      "output": "the tRPC of cancer runs through mexico",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "tropic",
+          "replacement": "tRPC",
+          "canonical": "tRPC",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "tropic",
+          "replacement": "tRPC",
+          "canonical": "tRPC",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "neg-041",
+      "category": "prose",
+      "heard": "we had a tail wind on the flight back",
+      "expected": "we had a tail wind on the flight back",
+      "output": "we had a Tailwind on the flight back",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 9,
+          "end": 18,
+          "original": "tail wind",
+          "replacement": "Tailwind",
+          "canonical": "Tailwind",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 9,
+          "end": 18,
+          "original": "tail wind",
+          "replacement": "Tailwind",
+          "canonical": "Tailwind",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-042",
+      "category": "prose",
+      "heard": "the playwright wrote a second act",
+      "expected": "the playwright wrote a second act",
+      "output": "the Playwright wrote a second act",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 14,
+          "original": "playwright",
+          "replacement": "Playwright",
+          "canonical": "Playwright",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 14,
+          "original": "playwright",
+          "replacement": "Playwright",
+          "canonical": "Playwright",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-054",
+      "category": "prose",
+      "heard": "a whisper of wind moved the curtains",
+      "expected": "a whisper of wind moved the curtains",
+      "output": "a Whisper of wind moved the curtains",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 2,
+          "end": 9,
+          "original": "whisper",
+          "replacement": "Whisper",
+          "canonical": "Whisper",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 2,
+          "end": 9,
+          "original": "whisper",
+          "replacement": "Whisper",
+          "canonical": "Whisper",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-060",
+      "category": "prose",
+      "heard": "it was a super base hit",
+      "expected": "it was a super base hit",
+      "output": "it was a Supabase hit",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 9,
+          "end": 19,
+          "original": "super base",
+          "replacement": "Supabase",
+          "canonical": "Supabase",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 9,
+          "end": 19,
+          "original": "super base",
+          "replacement": "Supabase",
+          "canonical": "Supabase",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-073",
+      "category": "prose",
+      "heard": "the drizzle turned into a downpour",
+      "expected": "the drizzle turned into a downpour",
+      "output": "the Drizzle turned into a downpour",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 11,
+          "original": "drizzle",
+          "replacement": "Drizzle",
+          "canonical": "Drizzle",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 11,
+          "original": "drizzle",
+          "replacement": "Drizzle",
+          "canonical": "Drizzle",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-077",
+      "category": "prose",
+      "heard": "prometheus stole fire from the gods",
+      "expected": "prometheus stole fire from the gods",
+      "output": "Prometheus stole fire from the gods",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 0,
+          "end": 10,
+          "original": "prometheus",
+          "replacement": "Prometheus",
+          "canonical": "Prometheus",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 0,
+          "end": 10,
+          "original": "prometheus",
+          "replacement": "Prometheus",
+          "canonical": "Prometheus",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-116",
+      "category": "prose",
+      "heard": "send me the email when you get a chance",
+      "expected": "send me the email when you get a chance",
+      "output": "send me the YAML when you get a chance",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 12,
+          "end": 17,
+          "original": "email",
+          "replacement": "YAML",
+          "canonical": "YAML",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 12,
+          "end": 17,
+          "original": "email",
+          "replacement": "YAML",
+          "canonical": "YAML",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "hard-001",
+      "category": "acronym",
+      "heard": "our sass margins are great this quarter",
+      "expected": "our SaaS margins are great this quarter",
+      "output": "our sass margins are great this quarter",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "SaaS"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-002",
+      "category": "brand",
+      "heard": "and tropic released a new model today",
+      "expected": "Anthropic released a new model today",
+      "output": "and tRPC released a new model today",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "tropic",
+          "replacement": "tRPC",
+          "canonical": "tRPC",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ],
+      "missed": [
+        "Anthropic"
+      ],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "tropic",
+          "replacement": "tRPC",
+          "canonical": "tRPC",
+          "reason": "phonetic",
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "hard-003",
+      "category": "product",
+      "heard": "play right is flaky on ci",
+      "expected": "Playwright is flaky on ci",
+      "output": "play right is flaky on ci",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "Playwright"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-004",
+      "category": "product",
+      "heard": "the vite test run is slow",
+      "expected": "the Vitest run is slow",
+      "output": "the Vite test run is slow",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 8,
+          "original": "vite",
+          "replacement": "Vite",
+          "canonical": "Vite",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [
+        "Vitest"
+      ],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 8,
+          "original": "vite",
+          "replacement": "Vite",
+          "canonical": "Vite",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "hard-005",
+      "category": "product",
+      "heard": "we run three ollamas on the box",
+      "expected": "we run three Ollamas on the box",
+      "output": "we run three Ollama on the box",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 13,
+          "end": 20,
+          "original": "ollamas",
+          "replacement": "Ollama",
+          "canonical": "Ollama",
+          "reason": "fuzzy",
+          "confidence": 0.8571428571428572
+        }
+      ],
+      "missed": [],
+      "spurious": []
+    },
+    {
+      "id": "hard-006",
+      "category": "product",
+      "heard": "rotate the jots every hour",
+      "expected": "rotate the JWTs every hour",
+      "output": "rotate the jots every hour",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "JWT"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-007",
+      "category": "product",
+      "heard": "language chain agents are slow to start",
+      "expected": "LangChain agents are slow to start",
+      "output": "language chain agents are slow to start",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "LangChain"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-008",
+      "category": "person",
+      "heard": "ask be yorn halvorsen about the offsite",
+      "expected": "ask Bjørn Halvorsen about the offsite",
+      "output": "ask be Bjørn Halvorsen about the offsite",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 7,
+          "end": 21,
+          "original": "yorn halvorsen",
+          "replacement": "Bjørn Halvorsen",
+          "canonical": "Bjørn Halvorsen",
+          "reason": "fuzzy",
+          "confidence": 0.9333333333333333
+        }
+      ],
+      "missed": [],
+      "spurious": []
+    },
+    {
+      "id": "hard-009",
+      "category": "acronym",
+      "heard": "the a p eye is rate limited",
+      "expected": "the API is rate limited",
+      "output": "the a p eye is rate limited",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "API"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-012",
+      "category": "product",
+      "heard": "the post gress sequel database",
+      "expected": "the PostgreSQL database",
+      "output": "the PostgreSQL sequel database",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 14,
+          "original": "post gress",
+          "replacement": "PostgreSQL",
+          "canonical": "PostgreSQL",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": []
+    },
+    {
+      "id": "hard-013",
+      "category": "identifier",
+      "heard": "normalize the transcript before saving",
+      "expected": "normalizeTranscript before saving",
+      "output": "normalize the transcript before saving",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "normalizeTranscript"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-014",
+      "category": "person",
+      "heard": "ping priyanka about the demo",
+      "expected": "ping Priyanka Raghunathan about the demo",
+      "output": "ping priyanka about the demo",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "Priyanka Raghunathan"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "hard-015",
+      "category": "product",
+      "heard": "the docker file is missing a step",
+      "expected": "the Dockerfile is missing a step",
+      "output": "the Docker file is missing a step",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 10,
+          "original": "docker",
+          "replacement": "Docker",
+          "canonical": "Docker",
+          "reason": "alias",
+          "confidence": 1
+        }
+      ],
+      "missed": [],
+      "spurious": []
+    },
+    {
+      "id": "hard-016",
+      "category": "acronym",
+      "heard": "export the key pee eyes to a sheet",
+      "expected": "export the KPIs to a sheet",
+      "output": "export the KPI to a sheet",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 11,
+          "end": 23,
+          "original": "key pee eyes",
+          "replacement": "KPI",
+          "canonical": "KPI",
+          "reason": "fuzzy",
+          "confidence": 0.8333333333333334
+        }
+      ],
+      "missed": [],
+      "spurious": []
+    },
+    {
+      "id": "hard-018",
+      "category": "product",
+      "heard": "use zed schemas for the form",
+      "expected": "use Zod schemas for the form",
+      "output": "use zed schemas for the form",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "replacements": [],
+      "missed": [
+        "Zod"
+      ],
+      "spurious": []
+    }
+  ]
+}

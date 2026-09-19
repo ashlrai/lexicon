@@ -1,0 +1,13 @@
+{
+  "name": "@ashlr/openclaw",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "fastest-levenshtein": "^1.0.16",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.0"
+  }
+}

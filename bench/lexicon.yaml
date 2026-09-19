@@ -1,0 +1,229 @@
+# Benchmark lexicon: what a founder/developer would realistically keep.
+# 70 terms. Aliases are spellings Whisper / Apple / Google STT actually emit.
+# Roughly 30% of terms deliberately have NO aliases so the phonetic and fuzzy
+# passes are what gets measured for them (marked "# no aliases: measures ...").
+# No `never` lists and no settings overrides: this is the naive out-of-the-box
+# configuration. See docs/BENCHMARK.md for the never/protectedWords a user
+# would add after a week of use and what they buy.
+version: 1
+terms:
+  # ---------------------------------------------------------------- brands
+  - canonical: Ashlr.AI
+    category: brand
+    aliases: [Ashler, Ashlar, Ashler AI, Ashlar AI, Ashley our AI]
+    notes: my company
+  - canonical: Hetzner
+    category: brand
+    aliases: []            # no aliases: measures phonetic (hetsner, head sner)
+  - canonical: Vercel
+    category: brand
+    aliases: [versel, ver cell, vercell, versell]
+  - canonical: Supabase
+    category: brand
+    aliases: [soup a base, super base, supa base, soupabase, super bass]
+  - canonical: Neon
+    category: brand
+    aliases: [knee on, nee on]
+  - canonical: Upstash
+    category: brand
+    aliases: [up stash, upstache, up stache]
+  - canonical: Deepgram
+    category: brand
+    aliases: [deep gram, deep graham]
+  - canonical: Wispr Flow
+    category: brand
+    aliases: [whisper flow, wisper flow, whisper flo, wispr flo]
+  - canonical: Superwhisper
+    category: brand
+    aliases: [super whisper, superwisper, super wisper]
+  - canonical: OpenClaw
+    category: brand
+    aliases: [open claw, open clause, open klaw]
+  - canonical: Anthropic
+    category: brand
+    aliases: []            # no aliases: measures phonetic (anthropik) + collapsed (an thropic)
+  - canonical: Cloudflare
+    category: brand
+    aliases: []            # no aliases: measures phonetic (cloudflair) + collapsed (cloud flare)
+
+  # ------------------------------------------------------- products / tech
+  - canonical: Kubernetes
+    category: product
+    aliases: []            # no aliases: measures phonetic (cooper netties, cube or netties)
+  - canonical: Pydantic
+    category: product
+    aliases: []            # no aliases: measures phonetic (pie dantic)
+  - canonical: PostgreSQL
+    category: product
+    aliases: [postgres, post gress, post gres, postgress, post grass, postgre sequel]
+  - canonical: SQLite
+    category: product
+    aliases: [sequel light, sequel lite, sq lite, ess queue lite, sequelite]
+  - canonical: Redis
+    category: product
+    aliases: [reddis, red iss, redd is, readis]
+  - canonical: Next.js
+    category: product
+    aliases: [next js, next jay ess, nextjs, next jazz]
+  - canonical: Tailwind
+    category: product
+    aliases: []            # no aliases: measures collapsed (tail wind) + fuzzy (tailwin) + phonetic (tale wind)
+  - canonical: Zod
+    category: product
+    aliases: [zawed, zaad, zahd]
+  - canonical: Vite
+    category: product
+    aliases: [veet, vee t, vight, veat]
+  - canonical: Vitest
+    category: product
+    aliases: []            # no aliases: measures phonetic (vee test) + collapsed (vi test)
+  - canonical: Prisma
+    category: product
+    aliases: [prizma, prism a, prismo]
+  - canonical: Drizzle
+    category: product
+    aliases: [drizzel, drizzl]
+  - canonical: tRPC
+    category: product
+    aliases: [t r p c, tea r p c, tea rpc, t rpc, trpc]
+  - canonical: GraphQL
+    category: product
+    aliases: [graph q l, graph queue el, graph cool, graph ql]
+  - canonical: OAuth
+    category: product
+    aliases: [oh auth, o auth, oh off, o off]
+  - canonical: JWT
+    category: product
+    aliases: [jot, j w t, jay double u tee, jay w t]
+  - canonical: Nginx
+    category: product
+    aliases: [engine x, engine ex, en jinx, n jinx]
+  - canonical: Terraform
+    category: product
+    aliases: []            # no aliases: measures collapsed (terra form) + phonetic (tera form)
+  - canonical: Docker
+    category: product
+    aliases: []            # no aliases: measures casing fix + phonetic (dock her)
+  - canonical: Kafka
+    category: product
+    aliases: [cough ka, kaf ka, cafca]
+  - canonical: Grafana
+    category: product
+    aliases: [gra fauna, graph fauna, gravana, grafauna]
+  - canonical: Prometheus
+    category: product
+    aliases: []            # no aliases: measures phonetic (promethius) + collapsed (pro metheus)
+  - canonical: Playwright
+    category: product
+    aliases: []            # no aliases: measures phonetic (playwrite) + collapsed (play wright)
+  - canonical: Puppeteer
+    category: product
+    aliases: [puppet ear, puppet tear, pup a tear, puppateer]
+  - canonical: LangChain
+    category: product
+    aliases: []            # no aliases: measures collapsed (lang chain) + phonetic (lang chane)
+  - canonical: Ollama
+    category: product
+    aliases: []            # no aliases: measures phonetic (oh llama, olama)
+  - canonical: Whisper
+    category: product
+    aliases: []            # no aliases: measures casing fix + phonetic (wisper)
+  - canonical: Metaphone
+    category: product
+    aliases: []            # no aliases: measures collapsed (meta phone) + phonetic (metafone)
+  - canonical: Levenshtein
+    category: product
+    aliases: []            # no aliases: measures fuzzy (levenstein) + phonetic (leven shtine)
+
+  # -------------------------------------------------------------- acronyms
+  - canonical: SaaS
+    category: acronym
+    aliases: []            # no aliases: measures phonetic (sas); "sass" is on the built-in stoplist
+  - canonical: MCP
+    category: acronym
+    aliases: [em see pee, m c p, emcee pee]
+  - canonical: CLI
+    category: acronym
+    aliases: [see el eye, c l i, sea el eye]
+  - canonical: YAML
+    category: acronym
+    aliases: [yammel, yamel, yam l, yamble]
+  - canonical: JSON
+    category: acronym
+    aliases: [jason, jay son, j s o n]
+  - canonical: RLS
+    category: acronym
+    aliases: [r l s, are el ess, ar el es]
+  - canonical: SSO
+    category: acronym
+    aliases: [s s o, ess ess oh, es es oh]
+  - canonical: CRM
+    category: acronym
+    aliases: [c r m, see are em, see ar em]
+  - canonical: ARR
+    category: acronym
+    aliases: [a r r, ay are are, ay ar ar]
+  - canonical: MRR
+    category: acronym
+    aliases: [m r r, em are are, em ar ar]
+  - canonical: GTM
+    category: acronym
+    aliases: [g t m, gee tee em, jee tee em]
+  - canonical: PRD
+    category: acronym
+    aliases: [p r d, pee are dee, pee ar dee]
+  - canonical: OKR
+    category: acronym
+    aliases: [o k r, oh kay are, okay are]
+  - canonical: KPI
+    category: acronym
+    aliases: [k p i, kay pee eye, kay pee i]
+  - canonical: SDK
+    category: acronym
+    aliases: [s d k, ess dee kay, es dee kay]
+  - canonical: API
+    category: acronym
+    aliases: [a p i, ay pee eye, ay pee i]
+  - canonical: TTS
+    category: acronym
+    aliases: [t t s, tee tee ess, tee tee es]
+  - canonical: STT
+    category: acronym
+    aliases: [s t t, ess tee tee, es tee tee]
+
+  # ---------------------------------------------------------------- people
+  - canonical: Mason Wyatt
+    category: person
+    aliases: [mason white, mason wyat, mason why it, mason wyett]
+  - canonical: Siobhan Reilly
+    category: person
+    aliases: [shivon riley, shavon riley, shivawn reilly, she von riley, shivon reilly]
+  - canonical: Kwame Mensah
+    category: person
+    aliases: [kwame mensa, kwamay mensah, quame mensah, kwame men saw]
+  - canonical: Xiuying Zhao
+    category: person
+    aliases: [shooing zhao, shu ying zhao, shoe ying jow, shooing jow, xiu ying zhao]
+  - canonical: Bjørn Halvorsen
+    category: person
+    aliases: [bjorn halvorsen, bjorn halverson, byorn halvorsen, bjorn halvorson]
+  - canonical: Priyanka Raghunathan
+    category: person
+    aliases: []            # no aliases: measures fuzzy (ragunathan) + phonetic (pre yanka) + collapsed (raghu nathan)
+  - canonical: Tadeusz Wróblewski
+    category: person
+    aliases: [tadeusz wroblewski, tadeus vroblevski, tadeush vrublevski, ta dash roblesky]
+
+  # ----------------------------------------------------------- identifiers
+  - canonical: LexiconStore
+    category: identifier
+    aliases: []            # no aliases: measures collapsed (lexicon store) + phonetic (lexicon stor)
+  - canonical: normalizeTranscript
+    category: identifier
+    aliases: []            # no aliases: measures collapsed + phonetic (normalise transcript)
+  - canonical: UserPromptSubmit
+    category: identifier
+    aliases: [user prompt submit, user prompt summit, user prompts submit]
+  - canonical: harvestRepo
+    category: identifier
+    aliases: []            # no aliases: measures collapsed (harvest repo) + phonetic (harvest ripo)

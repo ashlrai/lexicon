@@ -1,0 +1,40 @@
+name: Add a misheard term
+description: Propose a term for the shared example lexicon (examples/lexicon.example.yaml).
+labels: [lexicon, good first issue]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A lightweight way to grow the example lexicon. Only public names belong here (products, tools, companies, well-known people). Your own company or teammates go in your personal file.
+  - type: input
+    id: canonical
+    attributes:
+      label: Canonical spelling
+      placeholder: Kubernetes
+    validations:
+      required: true
+  - type: input
+    id: aliases
+    attributes:
+      label: What speech-to-text writes
+      description: Comma-separated. Real transcripts beat guesses.
+      placeholder: Cooper Nettie's, kubernetees, cube or netties
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options: [brand, person, product, acronym, identifier, place, other]
+    validations:
+      required: true
+  - type: input
+    id: phonetic
+    attributes:
+      label: Pronunciation hint (optional)
+      placeholder: koo-ber-NET-eez
+  - type: input
+    id: engine
+    attributes:
+      label: Which STT produced it (optional)
+      placeholder: Wispr Flow, Superwhisper, Claude Code /voice, Whisper large-v3

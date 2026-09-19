@@ -1,0 +1,10 @@
+{
+  "name": "lexicon",
+  "version": "0.1.0",
+  "description": "Personal voice lexicon for agents: fixes the names, brands and identifiers speech-to-text gets wrong (Ashler -> Ashlr.AI) before Claude acts on a dictated prompt.",
+  "author": {
+    "name": "Ashlr.AI"
+  },
+  "keywords": ["dictation", "voice", "speech-to-text", "lexicon", "mcp"],
+  "mcpServers": "./.mcp.json"
+}

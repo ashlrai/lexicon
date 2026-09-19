@@ -1,0 +1,71 @@
+name: Bug report
+description: A correction that was wrong, missed, or applied where it should not have been.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. The three lines below are what make a correction bug reproducible. Run `lexicon normalize --diff "<text>"` to get the third one.
+  - type: input
+    id: said
+    attributes:
+      label: What you said
+      placeholder: tell Ashlr.AI to deploy the Kubernetes auth service
+    validations:
+      required: true
+  - type: input
+    id: heard
+    attributes:
+      label: What speech-to-text wrote
+      placeholder: tell Ashler to deploy the Cooper Nettie's off service
+    validations:
+      required: true
+  - type: textarea
+    id: produced
+    attributes:
+      label: What lexicon produced
+      description: Output of `lexicon normalize --diff "<what STT wrote>"` (both stdout and the stderr diff lines).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: term
+    attributes:
+      label: Your term YAML
+      description: The relevant entries from `~/.config/lexicon/lexicon.yaml` or `.lexicon.yaml`, plus any `settings`.
+      render: yaml
+      placeholder: |
+        terms:
+          - canonical: Ashlr.AI
+            aliases: [Ashler, Ashlar]
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client
+      options:
+        - Claude Code (plugin)
+        - Claude Code (hook / install-claude)
+        - Codex
+        - Cursor
+        - Windsurf
+        - Gemini CLI
+        - Claude Desktop
+        - VS Code
+        - CLI only
+        - Clipboard daemon
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      description: Output of `lexicon --version` and `node --version`, plus your OS.
+      placeholder: lexicon 0.1.0, node v22.12.0, macOS 15
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Dictation app, expected behaviour, workarounds you tried.

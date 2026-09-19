@@ -1,0 +1,65 @@
+{
+  "name": "@ashlr/lexicon",
+  "version": "0.1.0",
+  "description": "Personal lexicon for voice-to-agents. Fixes the words STT gets wrong (Ashler -> Ashlr.AI) before your agent sees the prompt.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "lexicon": "./dist/cli/index.js",
+    "lexicon-mcp": "./dist/mcp/server.js"
+  },
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills",
+    "commands",
+    "hooks",
+    ".claude-plugin",
+    ".mcp.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "mcp": "node dist/mcp/server.js",
+    "bench": "node --import tsx bench/run.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "mcp",
+    "dictation",
+    "voice",
+    "speech-to-text",
+    "vocabulary",
+    "claude-code",
+    "lexicon"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "commander": "^15.0.0",
+    "double-metaphone": "^2.0.1",
+    "fastest-levenshtein": "^1.0.16",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.1"
+  }
+}

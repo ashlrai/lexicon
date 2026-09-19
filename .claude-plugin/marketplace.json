@@ -1,0 +1,27 @@
+{
+  "name": "ashlrai",
+  "description": "Ashlr.AI plugins for Claude Code.",
+  "owner": {
+    "name": "Ashlr.AI",
+    "email": "mason@ashlr.ai",
+    "url": "https://github.com/ashlrai"
+  },
+  "plugins": [
+    {
+      "name": "lexicon",
+      "displayName": "Lexicon",
+      "source": "./",
+      "description": "Personal voice lexicon for agents: fixes the names, brands and identifiers speech-to-text gets wrong (Ashler -> Ashlr.AI) before Claude acts on a dictated prompt.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Ashlr.AI",
+        "url": "https://github.com/ashlrai"
+      },
+      "homepage": "https://github.com/ashlrai/lexicon#readme",
+      "repository": "https://github.com/ashlrai/lexicon",
+      "license": "MIT",
+      "category": "productivity",
+      "keywords": ["dictation", "voice", "speech-to-text", "lexicon", "mcp", "hooks"]
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+# Lexicon: personal vocabulary for voice-to-agents.
+#
+# canonical: the spelling you want to see.
+# aliases:   what speech-to-text actually produces. Single or multi word,
+#            matched case-insensitively at word boundaries.
+# phonetic:  pronunciation hint. Shown to the agent and used by exporters
+#            that accept one.
+# category:  brand | person | product | acronym | identifier | place | other
+# notes:     free text shown to the agent.
+# never:     words that must NOT be rewritten to this canonical, even if
+#            they sound alike. Per-term override of settings.protectedWords.
+# caseSensitive: match aliases case-sensitively. Default false.
+#
+# Global file:  ~/.config/lexicon/lexicon.yaml (or $LEXICON_PATH)
+# Project file: .lexicon.yaml at the git root. Project wins on collision.
+
+version: 1
+
+terms:
+  # A brand STT has never heard of. Every alias here is a real transcription.
+  - canonical: Ashlr.AI
+    aliases:
+      - Ashler
+      - Ashlar
+      - Ashler AI
+      - Ashlar AI
+      - Ashley our AI
+    phonetic: ASH-ler
+    category: brand
+    notes: My company. Never write "Ashlar" (that is a masonry term).
+
+  # Multi-word aliases are fine. "k8s" is how people type it, not say it,
+  # but it is cheap to include.
+  - canonical: Kubernetes
+    aliases:
+      - Cooper Nettie's
+      - cube or netties
+      - k8s
+    phonetic: koo-ber-NET-eez
+    category: product
+
+  # `never` in action. "sass" should become SaaS. "sauce" sounds the same
+  # but is a real word and must be left alone.
+  - canonical: SaaS
+    aliases:
+      - sass
+    category: acronym
+    never:
+      - sauce
+
+  - canonical: Pydantic
+    aliases:
+      - pie dentic
+      - pie dantic
+    phonetic: pie-DAN-tick
+    category: product
+
+  - canonical: Hetzner
+    aliases:
+      - head sner
+      - hetsner
+    phonetic: HETS-ner
+    category: brand
+    notes: Hosting provider.
+
+  # People. STT usually gets first names and mangles surnames.
+  - canonical: Mason Wyatt
+    aliases:
+      - Mason White
+      - Mason Wyat
+    category: person
+    notes: Founder, Ashlr.AI.
+
+  - canonical: PostgreSQL
+    aliases:
+      - postgres sequel
+      - post gress
+      - post gres
+    phonetic: POST-gress
+    category: product
+
+  # A project identifier, the kind `lexicon harvest` finds on its own.
+  # `source` records where it came from; harvest sets it for you.
+  - canonical: LexiconStore
+    aliases:
+      - lexicon store
+      - lexicon storage
+    category: identifier
+    source: harvest:repo
+    notes: The class in src/core/store.ts.
+
+# All settings are optional. Values shown are the defaults.
+settings:
+  # Minimum confidence (0..1) a phonetic or fuzzy match needs before it is
+  # applied. Exact alias matches are always 1.0 and always applied.
+  minConfidence: 0.82
+
+  # Double metaphone matching: "cooper netties" ~ "Kubernetes".
+  phonetic: true
+
+  # Edit-distance matching: "Pydantik" ~ "Pydantic".
+  fuzzy: true
+
+  # Leave `code spans`, ```fences```, URLs and emails untouched.
+  skipCode: true
+
+  # Words no term may ever replace. Merged with the built-in stoplist of
+  # about 300 common English words. Explicit aliases still win over this list.
+  protectedWords: []

@@ -1,0 +1,398 @@
+{"id":"pos-001","category":"brand","heard":"our ashler usage is way over the free tier","expected":"our Ashlr.AI usage is way over the free tier","terms":["Ashlr.AI"]}
+{"id":"pos-002","category":"brand","heard":"the ashlar bill doubled last month can you check why","expected":"the Ashlr.AI bill doubled last month can you check why","terms":["Ashlr.AI"]}
+{"id":"pos-003","category":"brand","heard":"ashler ai's dashboard shows zero traffic since the deploy","expected":"Ashlr.AI's dashboard shows zero traffic since the deploy","terms":["Ashlr.AI"]}
+{"id":"pos-004","category":"brand","heard":"reply to the ashley our ai support ticket with the logs attached","expected":"reply to the Ashlr.AI support ticket with the logs attached","terms":["Ashlr.AI"]}
+{"id":"pos-005","category":"brand","heard":"add hetsner to the stack slide in the pitch deck","expected":"add Hetzner to the stack slide in the pitch deck","terms":["Hetzner"]}
+{"id":"pos-006","category":"brand","heard":"i want to swap head sner for something cheaper honestly","expected":"i want to swap Hetzner for something cheaper honestly","terms":["Hetzner"]}
+{"id":"pos-007","category":"brand","heard":"can you ping hets nur about the invoice","expected":"can you ping Hetzner about the invoice","terms":["Hetzner"]}
+{"id":"pos-008","category":"brand","heard":"move the staging box off versel before friday","expected":"move the staging box off Vercel before friday","terms":["Vercel"]}
+{"id":"pos-009","category":"brand","heard":"add ver cell to the stack slide in the pitch deck","expected":"add Vercel to the stack slide in the pitch deck","terms":["Vercel"]}
+{"id":"pos-010","category":"brand","heard":"i want to swap vercell for something cheaper honestly","expected":"i want to swap Vercel for something cheaper honestly","terms":["Vercel"]}
+{"id":"pos-011","category":"brand","heard":"our soup a base usage is way over the free tier","expected":"our Supabase usage is way over the free tier","terms":["Supabase"]}
+{"id":"pos-012","category":"brand","heard":"the super base bill doubled last month can you check why","expected":"the Supabase bill doubled last month can you check why","terms":["Supabase"]}
+{"id":"pos-013","category":"brand","heard":"supa base's dashboard shows zero traffic since the deploy","expected":"Supabase's dashboard shows zero traffic since the deploy","terms":["Supabase"]}
+{"id":"pos-014","category":"brand","heard":"can you ping knee on about the invoice","expected":"can you ping Neon about the invoice","terms":["Neon"]}
+{"id":"pos-015","category":"brand","heard":"we should migrate the billing service to nee on this sprint","expected":"we should migrate the billing service to Neon this sprint","terms":["Neon"]}
+{"id":"pos-016","category":"brand","heard":"does neon support the new region yet","expected":"does Neon support the new region yet","terms":["Neon"],"note":"casing-only"}
+{"id":"pos-017","category":"brand","heard":"up stash's dashboard shows zero traffic since the deploy","expected":"Upstash's dashboard shows zero traffic since the deploy","terms":["Upstash"]}
+{"id":"pos-018","category":"brand","heard":"reply to the upstache support ticket with the logs attached","expected":"reply to the Upstash support ticket with the logs attached","terms":["Upstash"]}
+{"id":"pos-019","category":"brand","heard":"move the staging box off up stache before friday","expected":"move the staging box off Upstash before friday","terms":["Upstash"]}
+{"id":"pos-020","category":"brand","heard":"add deep gram to the stack slide in the pitch deck","expected":"add Deepgram to the stack slide in the pitch deck","terms":["Deepgram"]}
+{"id":"pos-021","category":"brand","heard":"i want to swap deep graham for something cheaper honestly","expected":"i want to swap Deepgram for something cheaper honestly","terms":["Deepgram"]}
+{"id":"pos-022","category":"brand","heard":"can you ping deepgram about the invoice","expected":"can you ping Deepgram about the invoice","terms":["Deepgram"],"note":"casing-only"}
+{"id":"pos-023","category":"brand","heard":"i want to swap whisper flow for something cheaper honestly","expected":"i want to swap Wispr Flow for something cheaper honestly","terms":["Wispr Flow"]}
+{"id":"pos-024","category":"brand","heard":"can you ping whisper flo about the invoice","expected":"can you ping Wispr Flow about the invoice","terms":["Wispr Flow"]}
+{"id":"pos-025","category":"brand","heard":"we should migrate the billing service to wisper flow this sprint","expected":"we should migrate the billing service to Wispr Flow this sprint","terms":["Wispr Flow"]}
+{"id":"pos-026","category":"brand","heard":"can you ping super whisper about the invoice","expected":"can you ping Superwhisper about the invoice","terms":["Superwhisper"]}
+{"id":"pos-027","category":"brand","heard":"we should migrate the billing service to superwisper this sprint","expected":"we should migrate the billing service to Superwhisper this sprint","terms":["Superwhisper"]}
+{"id":"pos-028","category":"brand","heard":"does super wisper support the new region yet","expected":"does Superwhisper support the new region yet","terms":["Superwhisper"]}
+{"id":"pos-029","category":"brand","heard":"open claw's dashboard shows zero traffic since the deploy","expected":"OpenClaw's dashboard shows zero traffic since the deploy","terms":["OpenClaw"]}
+{"id":"pos-030","category":"brand","heard":"reply to the open clause support ticket with the logs attached","expected":"reply to the OpenClaw support ticket with the logs attached","terms":["OpenClaw"]}
+{"id":"pos-031","category":"brand","heard":"move the staging box off open klaw before friday","expected":"move the staging box off OpenClaw before friday","terms":["OpenClaw"]}
+{"id":"pos-032","category":"brand","heard":"write a quick adr on why we picked anthropik over the alternatives","expected":"write a quick adr on why we picked Anthropic over the alternatives","terms":["Anthropic"]}
+{"id":"pos-033","category":"brand","heard":"spin up a new an thropic project for the demo","expected":"spin up a new Anthropic project for the demo","terms":["Anthropic"]}
+{"id":"pos-034","category":"brand","heard":"can we get anthropic's pricing page into the comparison doc","expected":"can we get Anthropic's pricing page into the comparison doc","terms":["Anthropic"],"note":"casing-only"}
+{"id":"pos-035","category":"brand","heard":"add cloud flare to the stack slide in the pitch deck","expected":"add Cloudflare to the stack slide in the pitch deck","terms":["Cloudflare"]}
+{"id":"pos-036","category":"brand","heard":"i want to swap cloudflair for something cheaper honestly","expected":"i want to swap Cloudflare for something cheaper honestly","terms":["Cloudflare"]}
+{"id":"pos-037","category":"brand","heard":"can you ping cloud flair about the invoice","expected":"can you ping Cloudflare about the invoice","terms":["Cloudflare"]}
+{"id":"pos-038","category":"product","heard":"let's use cooper netties instead of hand rolling it","expected":"let's use Kubernetes instead of hand rolling it","terms":["Kubernetes"]}
+{"id":"pos-039","category":"product","heard":"the cube or netties layer is where the latency is coming from","expected":"the Kubernetes layer is where the latency is coming from","terms":["Kubernetes"]}
+{"id":"pos-040","category":"product","heard":"the kubernetties upgrade broke the build again","expected":"the Kubernetes upgrade broke the build again","terms":["Kubernetes"]}
+{"id":"pos-041","category":"product","heard":"pin the cooper nettie's version in the lockfile","expected":"pin the Kubernetes version in the lockfile","terms":["Kubernetes"]}
+{"id":"pos-042","category":"product","heard":"can you write a migration guide from the legacy setup to pie dantic","expected":"can you write a migration guide from the legacy setup to Pydantic","terms":["Pydantic"]}
+{"id":"pos-043","category":"product","heard":"add a pie dentic model for the sync job","expected":"add a Pydantic model for the sync job","terms":["Pydantic"]}
+{"id":"pos-044","category":"product","heard":"rewrite the pie dan tick config so it works locally too","expected":"rewrite the Pydantic config so it works locally too","terms":["Pydantic"]}
+{"id":"pos-045","category":"product","heard":"i think post gress is the wrong tool here but lets try it","expected":"i think PostgreSQL is the wrong tool here but lets try it","terms":["PostgreSQL"]}
+{"id":"pos-046","category":"product","heard":"the tests fail whenever postgress is upgraded","expected":"the tests fail whenever PostgreSQL is upgraded","terms":["PostgreSQL"]}
+{"id":"pos-047","category":"product","heard":"can you add post grass to the new service","expected":"can you add PostgreSQL to the new service","terms":["PostgreSQL"]}
+{"id":"pos-048","category":"product","heard":"can you write a migration guide from the legacy setup to postgre sequel","expected":"can you write a migration guide from the legacy setup to PostgreSQL","terms":["PostgreSQL"]}
+{"id":"pos-049","category":"product","heard":"set sequel light up on the new laptop","expected":"set SQLite up on the new laptop","terms":["SQLite"]}
+{"id":"pos-050","category":"product","heard":"let's use sequel lite instead of hand rolling it","expected":"let's use SQLite instead of hand rolling it","terms":["SQLite"]}
+{"id":"pos-051","category":"product","heard":"the ess queue lite layer is where the latency is coming from","expected":"the SQLite layer is where the latency is coming from","terms":["SQLite"]}
+{"id":"pos-052","category":"product","heard":"can you add reddis to the new service","expected":"can you add Redis to the new service","terms":["Redis"]}
+{"id":"pos-053","category":"product","heard":"can you write a migration guide from the legacy setup to red iss","expected":"can you write a migration guide from the legacy setup to Redis","terms":["Redis"]}
+{"id":"pos-054","category":"product","heard":"add a readis model for the sync job","expected":"add a Redis model for the sync job","terms":["Redis"]}
+{"id":"pos-055","category":"product","heard":"the next js layer is where the latency is coming from","expected":"the Next.js layer is where the latency is coming from","terms":["Next.js"]}
+{"id":"pos-056","category":"product","heard":"the next jay ess upgrade broke the build again","expected":"the Next.js upgrade broke the build again","terms":["Next.js"]}
+{"id":"pos-057","category":"product","heard":"pin the next jazz version in the lockfile","expected":"pin the Next.js version in the lockfile","terms":["Next.js"]}
+{"id":"pos-058","category":"product","heard":"tail wind's docs say this should just work","expected":"Tailwind's docs say this should just work","terms":["Tailwind"]}
+{"id":"pos-059","category":"product","heard":"i think tailwin is the wrong tool here but lets try it","expected":"i think Tailwind is the wrong tool here but lets try it","terms":["Tailwind"]}
+{"id":"pos-060","category":"product","heard":"the tests fail whenever tale wind is upgraded","expected":"the tests fail whenever Tailwind is upgraded","terms":["Tailwind"]}
+{"id":"pos-061","category":"product","heard":"swap the old thing for zawed and rerun the tests","expected":"swap the old thing for Zod and rerun the tests","terms":["Zod"]}
+{"id":"pos-062","category":"product","heard":"set zaad up on the new laptop","expected":"set Zod up on the new laptop","terms":["Zod"]}
+{"id":"pos-063","category":"product","heard":"let's use zod instead of hand rolling it","expected":"let's use Zod instead of hand rolling it","terms":["Zod"],"note":"casing-only"}
+{"id":"pos-064","category":"product","heard":"let's use veet instead of hand rolling it","expected":"let's use Vite instead of hand rolling it","terms":["Vite"]}
+{"id":"pos-065","category":"product","heard":"the vee t layer is where the latency is coming from","expected":"the Vite layer is where the latency is coming from","terms":["Vite"]}
+{"id":"pos-066","category":"product","heard":"the veat upgrade broke the build again","expected":"the Vite upgrade broke the build again","terms":["Vite"]}
+{"id":"pos-067","category":"product","heard":"swap the old thing for vee test and rerun the tests","expected":"swap the old thing for Vitest and rerun the tests","terms":["Vitest"]}
+{"id":"pos-068","category":"product","heard":"set vi test up on the new laptop","expected":"set Vitest up on the new laptop","terms":["Vitest"]}
+{"id":"pos-069","category":"product","heard":"let's use vitest instead of hand rolling it","expected":"let's use Vitest instead of hand rolling it","terms":["Vitest"],"note":"casing-only"}
+{"id":"pos-070","category":"product","heard":"grep the repo for anything touching prizma","expected":"grep the repo for anything touching Prisma","terms":["Prisma"]}
+{"id":"pos-071","category":"product","heard":"why is prism a throwing on startup","expected":"why is Prisma throwing on startup","terms":["Prisma"]}
+{"id":"pos-072","category":"product","heard":"swap the old thing for prismo and rerun the tests","expected":"swap the old thing for Prisma and rerun the tests","terms":["Prisma"]}
+{"id":"pos-073","category":"product","heard":"i think drizzel is the wrong tool here but lets try it","expected":"i think Drizzle is the wrong tool here but lets try it","terms":["Drizzle"]}
+{"id":"pos-074","category":"product","heard":"the tests fail whenever drizzl is upgraded","expected":"the tests fail whenever Drizzle is upgraded","terms":["Drizzle"]}
+{"id":"pos-075","category":"product","heard":"can you add drizzle to the new service","expected":"can you add Drizzle to the new service","terms":["Drizzle"],"note":"casing-only"}
+{"id":"pos-076","category":"product","heard":"i think t r p c is the wrong tool here but lets try it","expected":"i think tRPC is the wrong tool here but lets try it","terms":["tRPC"]}
+{"id":"pos-077","category":"product","heard":"the tests fail whenever tea r p c is upgraded","expected":"the tests fail whenever tRPC is upgraded","terms":["tRPC"]}
+{"id":"pos-078","category":"product","heard":"can you add trpc to the new service","expected":"can you add tRPC to the new service","terms":["tRPC"],"note":"casing-only"}
+{"id":"pos-079","category":"product","heard":"can you write a migration guide from the legacy setup to t rpc","expected":"can you write a migration guide from the legacy setup to tRPC","terms":["tRPC"]}
+{"id":"pos-080","category":"product","heard":"add a graph q l model for the sync job","expected":"add a GraphQL model for the sync job","terms":["GraphQL"]}
+{"id":"pos-081","category":"product","heard":"rewrite the graph queue el config so it works locally too","expected":"rewrite the GraphQL config so it works locally too","terms":["GraphQL"]}
+{"id":"pos-082","category":"product","heard":"um so graph cool is not picking up the env file","expected":"um so GraphQL is not picking up the env file","terms":["GraphQL"]}
+{"id":"pos-083","category":"product","heard":"the oh auth upgrade broke the build again","expected":"the OAuth upgrade broke the build again","terms":["OAuth"]}
+{"id":"pos-084","category":"product","heard":"pin the o off version in the lockfile","expected":"pin the OAuth version in the lockfile","terms":["OAuth"]}
+{"id":"pos-085","category":"product","heard":"oh off's docs say this should just work","expected":"OAuth's docs say this should just work","terms":["OAuth"]}
+{"id":"pos-086","category":"product","heard":"the tests fail whenever jot is upgraded","expected":"the tests fail whenever JWT is upgraded","terms":["JWT"]}
+{"id":"pos-087","category":"product","heard":"can you add j w t to the new service","expected":"can you add JWT to the new service","terms":["JWT"]}
+{"id":"pos-088","category":"product","heard":"can you write a migration guide from the legacy setup to jay double u tee","expected":"can you write a migration guide from the legacy setup to JWT","terms":["JWT"]}
+{"id":"pos-089","category":"product","heard":"the engine x layer is where the latency is coming from","expected":"the Nginx layer is where the latency is coming from","terms":["Nginx"]}
+{"id":"pos-090","category":"product","heard":"the engine ex upgrade broke the build again","expected":"the Nginx upgrade broke the build again","terms":["Nginx"]}
+{"id":"pos-091","category":"product","heard":"pin the en jinx version in the lockfile","expected":"pin the Nginx version in the lockfile","terms":["Nginx"]}
+{"id":"pos-092","category":"product","heard":"can you write a migration guide from the legacy setup to terra form","expected":"can you write a migration guide from the legacy setup to Terraform","terms":["Terraform"]}
+{"id":"pos-093","category":"product","heard":"add a tera form model for the sync job","expected":"add a Terraform model for the sync job","terms":["Terraform"]}
+{"id":"pos-094","category":"product","heard":"rewrite the terraform config so it works locally too","expected":"rewrite the Terraform config so it works locally too","terms":["Terraform"],"note":"casing-only"}
+{"id":"pos-095","category":"product","heard":"grep the repo for anything touching docker","expected":"grep the repo for anything touching Docker","terms":["Docker"],"note":"casing-only"}
+{"id":"pos-096","category":"product","heard":"why is dock her throwing on startup","expected":"why is Docker throwing on startup","terms":["Docker"]}
+{"id":"pos-097","category":"product","heard":"swap the old thing for doker and rerun the tests","expected":"swap the old thing for Docker and rerun the tests","terms":["Docker"]}
+{"id":"pos-098","category":"product","heard":"rewrite the cough ka config so it works locally too","expected":"rewrite the Kafka config so it works locally too","terms":["Kafka"]}
+{"id":"pos-099","category":"product","heard":"um so kaf ka is not picking up the env file","expected":"um so Kafka is not picking up the env file","terms":["Kafka"]}
+{"id":"pos-100","category":"product","heard":"grep the repo for anything touching cafca","expected":"grep the repo for anything touching Kafka","terms":["Kafka"]}
+{"id":"pos-101","category":"product","heard":"add a gra fauna model for the sync job","expected":"add a Grafana model for the sync job","terms":["Grafana"]}
+{"id":"pos-102","category":"product","heard":"rewrite the graph fauna config so it works locally too","expected":"rewrite the Grafana config so it works locally too","terms":["Grafana"]}
+{"id":"pos-103","category":"product","heard":"um so gravana is not picking up the env file","expected":"um so Grafana is not picking up the env file","terms":["Grafana"]}
+{"id":"pos-104","category":"product","heard":"can you add promethius to the new service","expected":"can you add Prometheus to the new service","terms":["Prometheus"]}
+{"id":"pos-105","category":"product","heard":"can you write a migration guide from the legacy setup to pro metheus","expected":"can you write a migration guide from the legacy setup to Prometheus","terms":["Prometheus"]}
+{"id":"pos-106","category":"product","heard":"add a prometheus model for the sync job","expected":"add a Prometheus model for the sync job","terms":["Prometheus"],"note":"casing-only"}
+{"id":"pos-107","category":"product","heard":"i think playwrite is the wrong tool here but lets try it","expected":"i think Playwright is the wrong tool here but lets try it","terms":["Playwright"]}
+{"id":"pos-108","category":"product","heard":"the tests fail whenever playwright is upgraded","expected":"the tests fail whenever Playwright is upgraded","terms":["Playwright"],"note":"casing-only"}
+{"id":"pos-109","category":"product","heard":"can you add play wright to the new service","expected":"can you add Playwright to the new service","terms":["Playwright"]}
+{"id":"pos-110","category":"product","heard":"let's use puppet ear instead of hand rolling it","expected":"let's use Puppeteer instead of hand rolling it","terms":["Puppeteer"]}
+{"id":"pos-111","category":"product","heard":"the puppet tear layer is where the latency is coming from","expected":"the Puppeteer layer is where the latency is coming from","terms":["Puppeteer"]}
+{"id":"pos-112","category":"product","heard":"the pup a tear upgrade broke the build again","expected":"the Puppeteer upgrade broke the build again","terms":["Puppeteer"]}
+{"id":"pos-113","category":"product","heard":"can you write a migration guide from the legacy setup to lang chain","expected":"can you write a migration guide from the legacy setup to LangChain","terms":["LangChain"]}
+{"id":"pos-114","category":"product","heard":"add a langchain model for the sync job","expected":"add a LangChain model for the sync job","terms":["LangChain"],"note":"casing-only"}
+{"id":"pos-115","category":"product","heard":"rewrite the lang chane config so it works locally too","expected":"rewrite the LangChain config so it works locally too","terms":["LangChain"]}
+{"id":"pos-116","category":"product","heard":"the oh llama upgrade broke the build again","expected":"the Ollama upgrade broke the build again","terms":["Ollama"]}
+{"id":"pos-117","category":"product","heard":"pin the o llama version in the lockfile","expected":"pin the Ollama version in the lockfile","terms":["Ollama"]}
+{"id":"pos-118","category":"product","heard":"olama's docs say this should just work","expected":"Ollama's docs say this should just work","terms":["Ollama"]}
+{"id":"pos-119","category":"product","heard":"add a wisper model for the sync job","expected":"add a Whisper model for the sync job","terms":["Whisper"]}
+{"id":"pos-120","category":"product","heard":"rewrite the whisper config so it works locally too","expected":"rewrite the Whisper config so it works locally too","terms":["Whisper"],"note":"casing-only"}
+{"id":"pos-121","category":"product","heard":"um so whispr is not picking up the env file","expected":"um so Whisper is not picking up the env file","terms":["Whisper"]}
+{"id":"pos-122","category":"product","heard":"why is meta phone throwing on startup","expected":"why is Metaphone throwing on startup","terms":["Metaphone"]}
+{"id":"pos-123","category":"product","heard":"swap the old thing for metafone and rerun the tests","expected":"swap the old thing for Metaphone and rerun the tests","terms":["Metaphone"]}
+{"id":"pos-124","category":"product","heard":"set meta fone up on the new laptop","expected":"set Metaphone up on the new laptop","terms":["Metaphone"]}
+{"id":"pos-125","category":"product","heard":"can you add levenstein to the new service","expected":"can you add Levenshtein to the new service","terms":["Levenshtein"]}
+{"id":"pos-126","category":"product","heard":"can you write a migration guide from the legacy setup to leven shtine","expected":"can you write a migration guide from the legacy setup to Levenshtein","terms":["Levenshtein"]}
+{"id":"pos-127","category":"product","heard":"add a levenshtine model for the sync job","expected":"add a Levenshtein model for the sync job","terms":["Levenshtein"]}
+{"id":"pos-128","category":"acronym","heard":"wire the sas into the onboarding flow","expected":"wire the SaaS into the onboarding flow","terms":["SaaS"]}
+{"id":"pos-129","category":"acronym","heard":"the saas spec is in the shared drive","expected":"the SaaS spec is in the shared drive","terms":["SaaS"],"note":"casing-only"}
+{"id":"pos-130","category":"acronym","heard":"m c p's not the metric i care about right now","expected":"MCP's not the metric i care about right now","terms":["MCP"]}
+{"id":"pos-131","category":"acronym","heard":"add em see pee support to the settings page","expected":"add MCP support to the settings page","terms":["MCP"]}
+{"id":"pos-132","category":"acronym","heard":"the mcp endpoint returns a 500 on empty payloads","expected":"the MCP endpoint returns a 500 on empty payloads","terms":["MCP"],"note":"casing-only"}
+{"id":"pos-133","category":"acronym","heard":"the c l i is broken again after the merge","expected":"the CLI is broken again after the merge","terms":["CLI"]}
+{"id":"pos-134","category":"acronym","heard":"document the see el eye flags in the readme","expected":"document the CLI flags in the readme","terms":["CLI"]}
+{"id":"pos-135","category":"acronym","heard":"put the cli numbers in the board update","expected":"put the CLI numbers in the board update","terms":["CLI"],"note":"casing-only"}
+{"id":"pos-136","category":"acronym","heard":"the yammel doc needs a section on pricing","expected":"the YAML doc needs a section on pricing","terms":["YAML"]}
+{"id":"pos-137","category":"acronym","heard":"wire the yamel into the onboarding flow","expected":"wire the YAML into the onboarding flow","terms":["YAML"]}
+{"id":"pos-138","category":"acronym","heard":"the yam l spec is in the shared drive","expected":"the YAML spec is in the shared drive","terms":["YAML"]}
+{"id":"pos-139","category":"acronym","heard":"document the jason flags in the readme","expected":"document the JSON flags in the readme","terms":["JSON"]}
+{"id":"pos-140","category":"acronym","heard":"put the jay son numbers in the board update","expected":"put the JSON numbers in the board update","terms":["JSON"]}
+{"id":"pos-141","category":"acronym","heard":"regenerate the json from the schema","expected":"regenerate the JSON from the schema","terms":["JSON"],"note":"casing-only"}
+{"id":"pos-142","category":"acronym","heard":"the r l s endpoint returns a 500 on empty payloads","expected":"the RLS endpoint returns a 500 on empty payloads","terms":["RLS"]}
+{"id":"pos-143","category":"acronym","heard":"what's our are el ess looking like this quarter","expected":"what's our RLS looking like this quarter","terms":["RLS"]}
+{"id":"pos-144","category":"acronym","heard":"the rls is broken again after the merge","expected":"the RLS is broken again after the merge","terms":["RLS"],"note":"casing-only"}
+{"id":"pos-145","category":"acronym","heard":"tighten the s s o policy on the users table","expected":"tighten the SSO policy on the users table","terms":["SSO"]}
+{"id":"pos-146","category":"acronym","heard":"our ess ess oh for q3 is ambitious","expected":"our SSO for q3 is ambitious","terms":["SSO"]}
+{"id":"pos-147","category":"acronym","heard":"sso's not the metric i care about right now","expected":"SSO's not the metric i care about right now","terms":["SSO"],"note":"casing-only"}
+{"id":"pos-148","category":"acronym","heard":"the c r m is broken again after the merge","expected":"the CRM is broken again after the merge","terms":["CRM"]}
+{"id":"pos-149","category":"acronym","heard":"document the see are em flags in the readme","expected":"document the CRM flags in the readme","terms":["CRM"]}
+{"id":"pos-150","category":"acronym","heard":"put the crm numbers in the board update","expected":"put the CRM numbers in the board update","terms":["CRM"],"note":"casing-only"}
+{"id":"pos-151","category":"acronym","heard":"the a r r doc needs a section on pricing","expected":"the ARR doc needs a section on pricing","terms":["ARR"]}
+{"id":"pos-152","category":"acronym","heard":"wire the ay are are into the onboarding flow","expected":"wire the ARR into the onboarding flow","terms":["ARR"]}
+{"id":"pos-153","category":"acronym","heard":"the arr spec is in the shared drive","expected":"the ARR spec is in the shared drive","terms":["ARR"],"note":"casing-only"}
+{"id":"pos-154","category":"acronym","heard":"wire the m r r into the onboarding flow","expected":"wire the MRR into the onboarding flow","terms":["MRR"]}
+{"id":"pos-155","category":"acronym","heard":"the em are are spec is in the shared drive","expected":"the MRR spec is in the shared drive","terms":["MRR"]}
+{"id":"pos-156","category":"acronym","heard":"tighten the mrr policy on the users table","expected":"tighten the MRR policy on the users table","terms":["MRR"],"note":"casing-only"}
+{"id":"pos-157","category":"acronym","heard":"the g t m spec is in the shared drive","expected":"the GTM spec is in the shared drive","terms":["GTM"]}
+{"id":"pos-158","category":"acronym","heard":"tighten the gee tee em policy on the users table","expected":"tighten the GTM policy on the users table","terms":["GTM"]}
+{"id":"pos-159","category":"acronym","heard":"our gtm for q3 is ambitious","expected":"our GTM for q3 is ambitious","terms":["GTM"],"note":"casing-only"}
+{"id":"pos-160","category":"acronym","heard":"tighten the p r d policy on the users table","expected":"tighten the PRD policy on the users table","terms":["PRD"]}
+{"id":"pos-161","category":"acronym","heard":"our pee are dee for q3 is ambitious","expected":"our PRD for q3 is ambitious","terms":["PRD"]}
+{"id":"pos-162","category":"acronym","heard":"prd's not the metric i care about right now","expected":"PRD's not the metric i care about right now","terms":["PRD"],"note":"casing-only"}
+{"id":"pos-163","category":"acronym","heard":"add o k r support to the settings page","expected":"add OKR support to the settings page","terms":["OKR"]}
+{"id":"pos-164","category":"acronym","heard":"the oh kay are endpoint returns a 500 on empty payloads","expected":"the OKR endpoint returns a 500 on empty payloads","terms":["OKR"]}
+{"id":"pos-165","category":"acronym","heard":"what's our okr looking like this quarter","expected":"what's our OKR looking like this quarter","terms":["OKR"],"note":"casing-only"}
+{"id":"pos-166","category":"acronym","heard":"the k p i spec is in the shared drive","expected":"the KPI spec is in the shared drive","terms":["KPI"]}
+{"id":"pos-167","category":"acronym","heard":"tighten the kay pee eye policy on the users table","expected":"tighten the KPI policy on the users table","terms":["KPI"]}
+{"id":"pos-168","category":"acronym","heard":"our kpi for q3 is ambitious","expected":"our KPI for q3 is ambitious","terms":["KPI"],"note":"casing-only"}
+{"id":"pos-169","category":"acronym","heard":"regenerate the s d k from the schema","expected":"regenerate the SDK from the schema","terms":["SDK"]}
+{"id":"pos-170","category":"acronym","heard":"can you draft the ess dee kay for the voice feature","expected":"can you draft the SDK for the voice feature","terms":["SDK"]}
+{"id":"pos-171","category":"acronym","heard":"the sdk doc needs a section on pricing","expected":"the SDK doc needs a section on pricing","terms":["SDK"],"note":"casing-only"}
+{"id":"pos-172","category":"acronym","heard":"the a p i is broken again after the merge","expected":"the API is broken again after the merge","terms":["API"]}
+{"id":"pos-173","category":"acronym","heard":"document the ay pee eye flags in the readme","expected":"document the API flags in the readme","terms":["API"]}
+{"id":"pos-174","category":"acronym","heard":"put the api numbers in the board update","expected":"put the API numbers in the board update","terms":["API"],"note":"casing-only"}
+{"id":"pos-175","category":"acronym","heard":"add t t s support to the settings page","expected":"add TTS support to the settings page","terms":["TTS"]}
+{"id":"pos-176","category":"acronym","heard":"the tee tee ess endpoint returns a 500 on empty payloads","expected":"the TTS endpoint returns a 500 on empty payloads","terms":["TTS"]}
+{"id":"pos-177","category":"acronym","heard":"what's our tts looking like this quarter","expected":"what's our TTS looking like this quarter","terms":["TTS"],"note":"casing-only"}
+{"id":"pos-178","category":"acronym","heard":"tighten the s t t policy on the users table","expected":"tighten the STT policy on the users table","terms":["STT"]}
+{"id":"pos-179","category":"acronym","heard":"our ess tee tee for q3 is ambitious","expected":"our STT for q3 is ambitious","terms":["STT"]}
+{"id":"pos-180","category":"acronym","heard":"stt's not the metric i care about right now","expected":"STT's not the metric i care about right now","terms":["STT"],"note":"casing-only"}
+{"id":"pos-181","category":"person","heard":"get mason white access to the repo","expected":"get Mason Wyatt access to the repo","terms":["Mason Wyatt"]}
+{"id":"pos-182","category":"person","heard":"mason wyat's pr is still waiting on review","expected":"Mason Wyatt's pr is still waiting on review","terms":["Mason Wyatt"]}
+{"id":"pos-183","category":"person","heard":"remind mason why it about the offsite","expected":"remind Mason Wyatt about the offsite","terms":["Mason Wyatt"]}
+{"id":"pos-184","category":"person","heard":"cc shivon riley on the launch announcement","expected":"cc Siobhan Reilly on the launch announcement","terms":["Siobhan Reilly"]}
+{"id":"pos-185","category":"person","heard":"ask shavon riley if the invoice went out","expected":"ask Siobhan Reilly if the invoice went out","terms":["Siobhan Reilly"]}
+{"id":"pos-186","category":"person","heard":"forward the contract to she von riley","expected":"forward the contract to Siobhan Reilly","terms":["Siobhan Reilly"]}
+{"id":"pos-187","category":"person","heard":"so siobhan riley's point was that we ship too slowly","expected":"so Siobhan Reilly's point was that we ship too slowly","terms":["Siobhan Reilly"]}
+{"id":"pos-188","category":"person","heard":"get kwame mensa access to the repo","expected":"get Kwame Mensah access to the repo","terms":["Kwame Mensah"]}
+{"id":"pos-189","category":"person","heard":"kwamay mensah's pr is still waiting on review","expected":"Kwame Mensah's pr is still waiting on review","terms":["Kwame Mensah"]}
+{"id":"pos-190","category":"person","heard":"remind quame mensah about the offsite","expected":"remind Kwame Mensah about the offsite","terms":["Kwame Mensah"]}
+{"id":"pos-191","category":"person","heard":"i talked to shooing zhao about the roadmap yesterday","expected":"i talked to Xiuying Zhao about the roadmap yesterday","terms":["Xiuying Zhao"]}
+{"id":"pos-192","category":"person","heard":"get shu ying zhao access to the repo","expected":"get Xiuying Zhao access to the repo","terms":["Xiuying Zhao"]}
+{"id":"pos-193","category":"person","heard":"shoe ying jow's pr is still waiting on review","expected":"Xiuying Zhao's pr is still waiting on review","terms":["Xiuying Zhao"]}
+{"id":"pos-194","category":"person","heard":"loop in bjorn halvorsen on the design review","expected":"loop in Bjørn Halvorsen on the design review","terms":["Bjørn Halvorsen"]}
+{"id":"pos-195","category":"person","heard":"i talked to bjorn halverson about the roadmap yesterday","expected":"i talked to Bjørn Halvorsen about the roadmap yesterday","terms":["Bjørn Halvorsen"]}
+{"id":"pos-196","category":"person","heard":"get byorn halvorsen access to the repo","expected":"get Bjørn Halvorsen access to the repo","terms":["Bjørn Halvorsen"]}
+{"id":"pos-197","category":"person","heard":"remind priyanka ragunathan about the offsite","expected":"remind Priyanka Raghunathan about the offsite","terms":["Priyanka Raghunathan"]}
+{"id":"pos-198","category":"person","heard":"pre yanka raghunathan told me the demo is thursday","expected":"Priyanka Raghunathan told me the demo is thursday","terms":["Priyanka Raghunathan"]}
+{"id":"pos-199","category":"person","heard":"cc priyanka raghu nathan on the launch announcement","expected":"cc Priyanka Raghunathan on the launch announcement","terms":["Priyanka Raghunathan"]}
+{"id":"pos-200","category":"person","heard":"i talked to tadeusz wroblewski about the roadmap yesterday","expected":"i talked to Tadeusz Wróblewski about the roadmap yesterday","terms":["Tadeusz Wróblewski"]}
+{"id":"pos-201","category":"person","heard":"get tadeus vroblevski access to the repo","expected":"get Tadeusz Wróblewski access to the repo","terms":["Tadeusz Wróblewski"]}
+{"id":"pos-202","category":"person","heard":"ta dash roblesky's pr is still waiting on review","expected":"Tadeusz Wróblewski's pr is still waiting on review","terms":["Tadeusz Wróblewski"]}
+{"id":"pos-203","category":"identifier","heard":"lexicon store throws when the file is empty","expected":"LexiconStore throws when the file is empty","terms":["LexiconStore"]}
+{"id":"pos-204","category":"identifier","heard":"add a doc comment to lexicon stor","expected":"add a doc comment to LexiconStore","terms":["LexiconStore"]}
+{"id":"pos-205","category":"identifier","heard":"can you refactor lexi con store to take an options object","expected":"can you refactor LexiconStore to take an options object","terms":["LexiconStore"]}
+{"id":"pos-206","category":"identifier","heard":"can you refactor normalize transcript to take an options object","expected":"can you refactor normalizeTranscript to take an options object","terms":["normalizeTranscript"]}
+{"id":"pos-207","category":"identifier","heard":"the bug is somewhere in normalise transcript i think","expected":"the bug is somewhere in normalizeTranscript i think","terms":["normalizeTranscript"]}
+{"id":"pos-208","category":"identifier","heard":"move normal eyes transcript into its own module","expected":"move normalizeTranscript into its own module","terms":["normalizeTranscript"]}
+{"id":"pos-209","category":"identifier","heard":"add a doc comment to user prompt submit","expected":"add a doc comment to UserPromptSubmit","terms":["UserPromptSubmit"]}
+{"id":"pos-210","category":"identifier","heard":"can you refactor user prompt summit to take an options object","expected":"can you refactor UserPromptSubmit to take an options object","terms":["UserPromptSubmit"]}
+{"id":"pos-211","category":"identifier","heard":"the bug is somewhere in user prompts submit i think","expected":"the bug is somewhere in UserPromptSubmit i think","terms":["UserPromptSubmit"]}
+{"id":"pos-212","category":"identifier","heard":"can you refactor harvest repo to take an options object","expected":"can you refactor harvestRepo to take an options object","terms":["harvestRepo"]}
+{"id":"pos-213","category":"identifier","heard":"the bug is somewhere in harvest ripo i think","expected":"the bug is somewhere in harvestRepo i think","terms":["harvestRepo"]}
+{"id":"pos-214","category":"identifier","heard":"move harvest re po into its own module","expected":"move harvestRepo into its own module","terms":["harvestRepo"]}
+{"id":"multi-001","category":"brand","heard":"can you ping ashler about the head sner invoice","expected":"can you ping Ashlr.AI about the Hetzner invoice","terms":["Ashlr.AI","Hetzner"],"note":"multi-term (2)"}
+{"id":"multi-002","category":"product","heard":"add a pie dan tick model for the see are em sync","expected":"add a Pydantic model for the CRM sync","terms":["Pydantic","CRM"],"note":"multi-term (2)"}
+{"id":"multi-003","category":"product","heard":"deploy the next jay ess app to cube or netties and put engine ex in front of it","expected":"deploy the Next.js app to Kubernetes and put Nginx in front of it","terms":["Next.js","Kubernetes","Nginx"],"note":"multi-term (3)"}
+{"id":"multi-004","category":"person","heard":"mason white and shavon riley both want the arr numbers before the board meeting","expected":"Mason Wyatt and Siobhan Reilly both want the ARR numbers before the board meeting","terms":["Mason Wyatt","Siobhan Reilly","ARR"],"note":"multi-term (3)"}
+{"id":"multi-005","category":"product","heard":"switch the queue from kaf ka to up stash and keep readis for caching","expected":"switch the queue from Kafka to Upstash and keep Redis for caching","terms":["Kafka","Upstash","Redis"],"note":"multi-term (3)"}
+{"id":"multi-006","category":"product","heard":"the zawed schema should mirror the prismo types","expected":"the Zod schema should mirror the Prisma types","terms":["Zod","Prisma"],"note":"multi-term (2)"}
+{"id":"multi-007","category":"product","heard":"run the vee test tests before you touch normalise transcript","expected":"run the Vitest tests before you touch normalizeTranscript","terms":["Vitest","normalizeTranscript"],"note":"multi-term (2)"}
+{"id":"multi-008","category":"person","heard":"kwame mensa wants the yamel export to work with wisper flow","expected":"Kwame Mensah wants the YAML export to work with Wispr Flow","terms":["Kwame Mensah","YAML","Wispr Flow"],"note":"multi-term (3)"}
+{"id":"multi-009","category":"product","heard":"scrape engine x with promethius and chart it in gravana","expected":"scrape Nginx with Prometheus and chart it in Grafana","terms":["Nginx","Prometheus","Grafana"],"note":"multi-term (3)"}
+{"id":"multi-010","category":"identifier","heard":"the user prompts submit hook should call normalize transcript not harvest re po","expected":"the UserPromptSubmit hook should call normalizeTranscript not harvestRepo","terms":["UserPromptSubmit","normalizeTranscript","harvestRepo"],"note":"multi-term (3)"}
+{"id":"multi-011","category":"brand","heard":"vercell is fine but dock her on hetsner is cheaper","expected":"Vercel is fine but Docker on Hetzner is cheaper","terms":["Vercel","Docker","Hetzner"],"note":"multi-term (3)"}
+{"id":"multi-012","category":"person","heard":"ask priyanka ragunathan whether supa base handles j w t tokens","expected":"ask Priyanka Raghunathan whether Supabase handles JWT tokens","terms":["Priyanka Raghunathan","Supabase","JWT"],"note":"multi-term (3)"}
+{"id":"multi-013","category":"product","heard":"replace puppet ear with playwright in the e2e tests","expected":"replace Puppeteer with Playwright in the e2e tests","terms":["Puppeteer","Playwright"],"note":"multi-term (2)"}
+{"id":"multi-014","category":"product","heard":"get oh llama talking to lang chain through the mcp server","expected":"get Ollama talking to LangChain through the MCP server","terms":["Ollama","LangChain","MCP"],"note":"multi-term (3)"}
+{"id":"multi-015","category":"person","heard":"shu ying zhao and tadeus vroblevski are on the g t m call at ten","expected":"Xiuying Zhao and Tadeusz Wróblewski are on the GTM call at ten","terms":["Xiuying Zhao","Tadeusz Wróblewski","GTM"],"note":"multi-term (3)"}
+{"id":"multi-016","category":"product","heard":"move the postgre sequel tables to nee on and turn on r l s","expected":"move the PostgreSQL tables to Neon and turn on RLS","terms":["PostgreSQL","Neon","RLS"],"note":"multi-term (3)"}
+{"id":"keep-001","category":"product","heard":"add a Kubernetes model for the sync job","expected":"add a Kubernetes model for the sync job","terms":["Kubernetes"],"note":"already-correct: must stay untouched"}
+{"id":"keep-002","category":"brand","heard":"reply to the Ashlr.AI support ticket with the logs attached","expected":"reply to the Ashlr.AI support ticket with the logs attached","terms":["Ashlr.AI"],"note":"already-correct: must stay untouched"}
+{"id":"keep-003","category":"person","heard":"Mason Wyatt's pr is still waiting on review","expected":"Mason Wyatt's pr is still waiting on review","terms":["Mason Wyatt"],"note":"already-correct: must stay untouched"}
+{"id":"keep-004","category":"product","heard":"the tests fail whenever Next.js is upgraded","expected":"the tests fail whenever Next.js is upgraded","terms":["Next.js"],"note":"already-correct: must stay untouched"}
+{"id":"keep-005","category":"product","heard":"can you write a migration guide from the legacy setup to tRPC","expected":"can you write a migration guide from the legacy setup to tRPC","terms":["tRPC"],"note":"already-correct: must stay untouched"}
+{"id":"keep-006","category":"person","heard":"so Bjørn Halvorsen's point was that we ship too slowly","expected":"so Bjørn Halvorsen's point was that we ship too slowly","terms":["Bjørn Halvorsen"],"note":"already-correct: must stay untouched"}
+{"id":"keep-007","category":"product","heard":"i think PostgreSQL is the wrong tool here but lets try it","expected":"i think PostgreSQL is the wrong tool here but lets try it","terms":["PostgreSQL"],"note":"already-correct: must stay untouched"}
+{"id":"keep-008","category":"identifier","heard":"can you refactor normalizeTranscript to take an options object","expected":"can you refactor normalizeTranscript to take an options object","terms":["normalizeTranscript"],"note":"already-correct: must stay untouched"}
+{"id":"keep-009","category":"product","heard":"set OAuth up on the new laptop","expected":"set OAuth up on the new laptop","terms":["OAuth"],"note":"already-correct: must stay untouched"}
+{"id":"keep-010","category":"acronym","heard":"put the SaaS numbers in the board update","expected":"put the SaaS numbers in the board update","terms":["SaaS"],"note":"already-correct: must stay untouched"}
+{"id":"keep-011","category":"brand","heard":"Wispr Flow's dashboard shows zero traffic since the deploy","expected":"Wispr Flow's dashboard shows zero traffic since the deploy","terms":["Wispr Flow"],"note":"already-correct: must stay untouched"}
+{"id":"keep-012","category":"person","heard":"Siobhan Reilly owns the billing migration","expected":"Siobhan Reilly owns the billing migration","terms":["Siobhan Reilly"],"note":"already-correct: must stay untouched"}
+{"id":"keep-013","category":"product","heard":"set GraphQL up on the new laptop","expected":"set GraphQL up on the new laptop","terms":["GraphQL"],"note":"already-correct: must stay untouched"}
+{"id":"keep-014","category":"person","heard":"remind Tadeusz Wróblewski about the offsite","expected":"remind Tadeusz Wróblewski about the offsite","terms":["Tadeusz Wróblewski"],"note":"already-correct: must stay untouched"}
+{"id":"keep-015","category":"brand","heard":"move the staging box off Cloudflare before friday","expected":"move the staging box off Cloudflare before friday","terms":["Cloudflare"],"note":"already-correct: must stay untouched"}
+{"id":"keep-016","category":"product","heard":"let's use JWT instead of hand rolling it","expected":"let's use JWT instead of hand rolling it","terms":["JWT"],"note":"already-correct: must stay untouched"}
+{"id":"mix-001","category":"brand","heard":"open https://ashler.example.com and ask ashler for the key","expected":"open https://ashler.example.com and ask Ashlr.AI for the key","terms":["Ashlr.AI"],"note":"URL untouched, prose fixed"}
+{"id":"mix-002","category":"product","heard":"run `kubectl get pods` then tell me why cooper netties is unhappy","expected":"run `kubectl get pods` then tell me why Kubernetes is unhappy","terms":["Kubernetes"],"note":"inline code untouched, prose fixed"}
+{"id":"mix-003","category":"product","heard":"the pie dantic model in `models/user.py` is wrong","expected":"the Pydantic model in `models/user.py` is wrong","terms":["Pydantic"]}
+{"id":"mix-004","category":"person","heard":"cc shivon riley and mason white on the thread","expected":"cc Siobhan Reilly and Mason Wyatt on the thread","terms":["Siobhan Reilly","Mason Wyatt"]}
+{"id":"mix-005","category":"brand","heard":"Versel, Hetsner and Cloud Flare all sent invoices","expected":"Vercel, Hetzner and Cloudflare all sent invoices","terms":["Vercel","Hetzner","Cloudflare"],"note":"capitalised STT output with commas"}
+{"id":"mix-006","category":"acronym","heard":"What's the M R R? And the A R R?","expected":"What's the MRR? And the ARR?","terms":["MRR","ARR"],"note":"punctuation around spelled-out acronyms"}
+{"id":"mix-007","category":"identifier","heard":"user prompt submit calls normalize transcript which calls lexicon store","expected":"UserPromptSubmit calls normalizeTranscript which calls LexiconStore","terms":["UserPromptSubmit","normalizeTranscript","LexiconStore"]}
+{"id":"mix-008","category":"product","heard":"Kubernetes is fine but the cooper netties docs are not","expected":"Kubernetes is fine but the Kubernetes docs are not","terms":["Kubernetes"],"note":"canonical already present once, misheard once"}
+{"id":"mix-009","category":"brand","heard":"ashler's roadmap and Ashlr.AI's roadmap are the same doc","expected":"Ashlr.AI's roadmap and Ashlr.AI's roadmap are the same doc","terms":["Ashlr.AI"],"note":"possessive on alias and on canonical"}
+{"id":"mix-010","category":"product","heard":"deploy to cooper netties\nthen check gra fauna\nthen tell shivon riley","expected":"deploy to Kubernetes\nthen check Grafana\nthen tell Siobhan Reilly","terms":["Kubernetes","Grafana","Siobhan Reilly"],"note":"multi-line dictation"}
+{"id":"neg-001","category":"prose","heard":"pass the sauce please","expected":"pass the sauce please","terms":[],"note":"SaaS sound-alike"}
+{"id":"neg-002","category":"prose","heard":"the ashes of the fire were still warm","expected":"the ashes of the fire were still warm","terms":[],"note":"Ashlr.AI sound-alike"}
+{"id":"neg-003","category":"prose","heard":"head off to the store before it closes","expected":"head off to the store before it closes","terms":[],"note":"Hetzner / OAuth sound-alikes"}
+{"id":"neg-004","category":"prose","heard":"cooper is a good name for a dog","expected":"cooper is a good name for a dog","terms":[],"note":"Kubernetes sound-alike"}
+{"id":"neg-005","category":"prose","heard":"the sass in her voice was unmistakable","expected":"the sass in her voice was unmistakable","terms":[],"note":"SaaS sound-alike"}
+{"id":"neg-006","category":"prose","heard":"let's zoom in on the chart","expected":"let's zoom in on the chart","terms":[],"note":"Zod sound-alike"}
+{"id":"neg-007","category":"prose","heard":"red is my favorite color","expected":"red is my favorite color","terms":[],"note":"Redis sound-alike"}
+{"id":"neg-008","category":"prose","heard":"the vet checked the dog this morning","expected":"the vet checked the dog this morning","terms":[],"note":"Vite sound-alike"}
+{"id":"neg-009","category":"prose","heard":"we watched prison break last night","expected":"we watched prison break last night","terms":[],"note":"Prisma sound-alike"}
+{"id":"neg-010","category":"prose","heard":"next year we should do this earlier","expected":"next year we should do this earlier","terms":[],"note":"Next.js sound-alike"}
+{"id":"neg-011","category":"prose","heard":"the wind is strong on the coast today","expected":"the wind is strong on the coast today","terms":[],"note":"Tailwind sound-alike"}
+{"id":"neg-012","category":"prose","heard":"the docker at the pier tied off the boat","expected":"the docker at the pier tied off the boat","terms":[],"note":"expected-hard: Docker as ordinary noun; casing collision with canonical"}
+{"id":"neg-013","category":"prose","heard":"can you pick up milk on the way home","expected":"can you pick up milk on the way home","terms":[]}
+{"id":"neg-014","category":"prose","heard":"the meeting ran long so lunch got pushed","expected":"the meeting ran long so lunch got pushed","terms":[]}
+{"id":"neg-015","category":"prose","heard":"my cousin mason is visiting next weekend","expected":"my cousin mason is visiting next weekend","terms":[],"note":"Mason Wyatt partial"}
+{"id":"neg-016","category":"prose","heard":"the mason laid the bricks in two days","expected":"the mason laid the bricks in two days","terms":[]}
+{"id":"neg-017","category":"prose","heard":"the cube on the desk is a puzzle","expected":"the cube on the desk is a puzzle","terms":[],"note":"Kubernetes partial"}
+{"id":"neg-018","category":"prose","heard":"she has a lot of sass but she is right","expected":"she has a lot of sass but she is right","terms":[]}
+{"id":"neg-019","category":"prose","heard":"let's head out around five","expected":"let's head out around five","terms":[]}
+{"id":"neg-020","category":"prose","heard":"the auth flow needs a rewrite","expected":"the auth flow needs a rewrite","terms":[],"note":"OAuth partial; auth is stoplisted"}
+{"id":"neg-021","category":"prose","heard":"turn the lights off when you leave","expected":"turn the lights off when you leave","terms":[]}
+{"id":"neg-022","category":"prose","heard":"the graph shows a clear upward trend","expected":"the graph shows a clear upward trend","terms":[],"note":"GraphQL / Grafana partial"}
+{"id":"neg-023","category":"prose","heard":"the fauna in the park is protected","expected":"the fauna in the park is protected","terms":[],"note":"Grafana partial"}
+{"id":"neg-024","category":"prose","heard":"my cough is finally getting better","expected":"my cough is finally getting better","terms":[],"note":"Kafka partial"}
+{"id":"neg-025","category":"prose","heard":"the engine is making a strange noise","expected":"the engine is making a strange noise","terms":[],"note":"Nginx partial"}
+{"id":"neg-026","category":"prose","heard":"the puppet show starts at noon","expected":"the puppet show starts at noon","terms":[],"note":"Puppeteer partial"}
+{"id":"neg-027","category":"prose","heard":"a light drizzle is expected this afternoon","expected":"a light drizzle is expected this afternoon","terms":[],"note":"expected-hard: Drizzle canonical is a common word"}
+{"id":"neg-028","category":"prose","heard":"the neon sign outside is flickering again","expected":"the neon sign outside is flickering again","terms":[],"note":"expected-hard: Neon canonical is a common word"}
+{"id":"neg-029","category":"prose","heard":"she answered in a whisper","expected":"she answered in a whisper","terms":[],"note":"expected-hard: Whisper canonical is a common word"}
+{"id":"neg-030","category":"prose","heard":"the llama at the petting zoo spat at me","expected":"the llama at the petting zoo spat at me","terms":[],"note":"expected-hard: Ollama sound-alike"}
+{"id":"neg-031","category":"prose","heard":"the house next door is for sale","expected":"the house next door is for sale","terms":[],"note":"expected-hard: Vercel sound-alike (for sale)"}
+{"id":"neg-032","category":"prose","heard":"lay fresh sod on the lawn this weekend","expected":"lay fresh sod on the lawn this weekend","terms":[],"note":"expected-hard: Zod sound-alike"}
+{"id":"neg-033","category":"prose","heard":"he was being pedantic about the commas","expected":"he was being pedantic about the commas","terms":[],"note":"expected-hard: Pydantic sound-alike"}
+{"id":"neg-034","category":"prose","heard":"jot down the action items before you forget","expected":"jot down the action items before you forget","terms":[],"note":"expected-hard: JWT alias 'jot' collides with the verb"}
+{"id":"neg-035","category":"prose","heard":"call jason about the lease renewal","expected":"call jason about the lease renewal","terms":[],"note":"expected-hard: JSON alias 'jason' collides with the name"}
+{"id":"neg-036","category":"prose","heard":"okay are we done for today","expected":"okay are we done for today","terms":[],"note":"expected-hard: OKR alias 'okay are' collides with prose"}
+{"id":"neg-037","category":"prose","heard":"that was a cram session before the exam","expected":"that was a cram session before the exam","terms":[],"note":"expected-hard: CRM sound-alike"}
+{"id":"neg-038","category":"prose","heard":"the graphical interface is out of date","expected":"the graphical interface is out of date","terms":[],"note":"expected-hard: GraphQL sound-alike"}
+{"id":"neg-039","category":"prose","heard":"the tropic of cancer runs through mexico","expected":"the tropic of cancer runs through mexico","terms":[],"note":"expected-hard: tRPC sound-alike"}
+{"id":"neg-040","category":"prose","heard":"the doctor said to rest for a week","expected":"the doctor said to rest for a week","terms":[],"note":"Docker sound-alike"}
+{"id":"neg-041","category":"prose","heard":"we had a tail wind on the flight back","expected":"we had a tail wind on the flight back","terms":[],"note":"expected-hard: Tailwind as two ordinary words"}
+{"id":"neg-042","category":"prose","heard":"the playwright wrote a second act","expected":"the playwright wrote a second act","terms":[],"note":"expected-hard: Playwright canonical is a common word"}
+{"id":"neg-043","category":"prose","heard":"the kernel panic happened after the update","expected":"the kernel panic happened after the update","terms":[]}
+{"id":"neg-044","category":"prose","heard":"we should cooperate with the other team","expected":"we should cooperate with the other team","terms":[]}
+{"id":"neg-045","category":"prose","heard":"he read us the whole report out loud","expected":"he read us the whole report out loud","terms":[],"note":"Redis sound-alike (read us)"}
+{"id":"neg-046","category":"prose","heard":"i am ready when you are","expected":"i am ready when you are","terms":[]}
+{"id":"neg-047","category":"prose","heard":"the prism split the light into colors","expected":"the prism split the light into colors","terms":[],"note":"Prisma partial"}
+{"id":"neg-048","category":"prose","heard":"the store closes at nine","expected":"the store closes at nine","terms":[],"note":"LexiconStore partial"}
+{"id":"neg-049","category":"prose","heard":"the harvest was good this year","expected":"the harvest was good this year","terms":[],"note":"harvestRepo partial"}
+{"id":"neg-050","category":"prose","heard":"submit the form before the deadline","expected":"submit the form before the deadline","terms":[],"note":"UserPromptSubmit partial"}
+{"id":"neg-051","category":"prose","heard":"the summit is at three thousand meters","expected":"the summit is at three thousand meters","terms":[]}
+{"id":"neg-052","category":"prose","heard":"the transcript from the interview is ready","expected":"the transcript from the interview is ready","terms":[],"note":"normalizeTranscript partial"}
+{"id":"neg-053","category":"prose","heard":"the prompt was too vague","expected":"the prompt was too vague","terms":[]}
+{"id":"neg-054","category":"prose","heard":"a whisper of wind moved the curtains","expected":"a whisper of wind moved the curtains","terms":[],"note":"expected-hard: common word collides with a canonical or alias"}
+{"id":"neg-055","category":"prose","heard":"sequel to the movie comes out in june","expected":"sequel to the movie comes out in june","terms":[],"note":"SQLite partial"}
+{"id":"neg-056","category":"prose","heard":"the light in the hallway is out","expected":"the light in the hallway is out","terms":[]}
+{"id":"neg-057","category":"prose","heard":"we are heading up to the lake","expected":"we are heading up to the lake","terms":[],"note":"Upstash partial"}
+{"id":"neg-058","category":"prose","heard":"stash the leftovers in the fridge","expected":"stash the leftovers in the fridge","terms":[]}
+{"id":"neg-059","category":"prose","heard":"the soup needs more salt","expected":"the soup needs more salt","terms":[],"note":"Supabase partial"}
+{"id":"neg-060","category":"prose","heard":"it was a super base hit","expected":"it was a super base hit","terms":[],"note":"expected-hard: Supabase alias collision (super base)"}
+{"id":"neg-061","category":"prose","heard":"the deep end of the pool is closed","expected":"the deep end of the pool is closed","terms":[],"note":"Deepgram partial"}
+{"id":"neg-062","category":"prose","heard":"add a gram of salt to the water","expected":"add a gram of salt to the water","terms":[]}
+{"id":"neg-063","category":"prose","heard":"the flow of traffic was steady","expected":"the flow of traffic was steady","terms":[],"note":"Wispr Flow partial"}
+{"id":"neg-064","category":"prose","heard":"open the window it is stuffy in here","expected":"open the window it is stuffy in here","terms":[],"note":"OpenClaw partial"}
+{"id":"neg-065","category":"prose","heard":"the crab lost a claw in the fight","expected":"the crab lost a claw in the fight","terms":[]}
+{"id":"neg-066","category":"prose","heard":"the clouds are rolling in from the west","expected":"the clouds are rolling in from the west","terms":[],"note":"Cloudflare partial"}
+{"id":"neg-067","category":"prose","heard":"a solar flare knocked out the radio","expected":"a solar flare knocked out the radio","terms":[]}
+{"id":"neg-068","category":"prose","heard":"the pie is in the oven","expected":"the pie is in the oven","terms":[],"note":"Pydantic partial"}
+{"id":"neg-069","category":"prose","heard":"the post office is closed on sunday","expected":"the post office is closed on sunday","terms":[],"note":"PostgreSQL partial"}
+{"id":"neg-070","category":"prose","heard":"the grass needs cutting","expected":"the grass needs cutting","terms":[]}
+{"id":"neg-071","category":"prose","heard":"the zoo is open until dusk","expected":"the zoo is open until dusk","terms":[]}
+{"id":"neg-072","category":"prose","heard":"the tail of the kite got tangled","expected":"the tail of the kite got tangled","terms":[]}
+{"id":"neg-073","category":"prose","heard":"the drizzle turned into a downpour","expected":"the drizzle turned into a downpour","terms":[],"note":"expected-hard: common word collides with a canonical or alias"}
+{"id":"neg-074","category":"prose","heard":"the terrace has a nice view","expected":"the terrace has a nice view","terms":[],"note":"Terraform partial"}
+{"id":"neg-075","category":"prose","heard":"they are terraforming the back yard","expected":"they are terraforming the back yard","terms":[]}
+{"id":"neg-076","category":"prose","heard":"the dock was slippery after the rain","expected":"the dock was slippery after the rain","terms":[]}
+{"id":"neg-077","category":"prose","heard":"prometheus stole fire from the gods","expected":"prometheus stole fire from the gods","terms":[],"note":"expected-hard: Prometheus as the myth, casing collision"}
+{"id":"neg-078","category":"prose","heard":"the play was right on time","expected":"the play was right on time","terms":[]}
+{"id":"neg-079","category":"prose","heard":"my lang is the old word for long","expected":"my lang is the old word for long","terms":[],"note":"LangChain partial"}
+{"id":"neg-080","category":"prose","heard":"the chain on my bike slipped","expected":"the chain on my bike slipped","terms":[]}
+{"id":"neg-081","category":"prose","heard":"the meta discussion went nowhere","expected":"the meta discussion went nowhere","terms":[],"note":"Metaphone partial"}
+{"id":"neg-082","category":"prose","heard":"leave the phone on the table","expected":"leave the phone on the table","terms":[]}
+{"id":"neg-083","category":"prose","heard":"i left the keys in the car","expected":"i left the keys in the car","terms":[]}
+{"id":"neg-084","category":"prose","heard":"the sea lion barked at the tourists","expected":"the sea lion barked at the tourists","terms":[],"note":"CLI sound-alike"}
+{"id":"neg-085","category":"prose","heard":"see you at the game","expected":"see you at the game","terms":[]}
+{"id":"neg-086","category":"prose","heard":"my son is learning to ride a bike","expected":"my son is learning to ride a bike","terms":[],"note":"JSON partial"}
+{"id":"neg-087","category":"prose","heard":"the yam is done when a fork goes in easily","expected":"the yam is done when a fork goes in easily","terms":[],"note":"YAML partial"}
+{"id":"neg-088","category":"prose","heard":"ess is the nineteenth letter","expected":"ess is the nineteenth letter","terms":[]}
+{"id":"neg-089","category":"prose","heard":"are we there yet","expected":"are we there yet","terms":[]}
+{"id":"neg-090","category":"prose","heard":"the key is under the mat","expected":"the key is under the mat","terms":[]}
+{"id":"neg-091","category":"prose","heard":"it will take a tee shirt and jeans","expected":"it will take a tee shirt and jeans","terms":[]}
+{"id":"neg-092","category":"prose","heard":"the white house is on the corner","expected":"the white house is on the corner","terms":[],"note":"Mason Wyatt alias partial"}
+{"id":"neg-093","category":"prose","heard":"riley brought cupcakes to the office","expected":"riley brought cupcakes to the office","terms":[],"note":"Siobhan Reilly partial"}
+{"id":"neg-094","category":"prose","heard":"the men saw the storm coming","expected":"the men saw the storm coming","terms":[],"note":"Kwame Mensah partial"}
+{"id":"neg-095","category":"prose","heard":"stop shooing the cat away","expected":"stop shooing the cat away","terms":[],"note":"Xiuying Zhao partial"}
+{"id":"neg-096","category":"prose","heard":"the lexicon of a language grows over time","expected":"the lexicon of a language grows over time","terms":[]}
+{"id":"neg-097","category":"prose","heard":"install it with `npm install prizma` and restart","expected":"install it with `npm install prizma` and restart","terms":[],"note":"inline code must be untouched"}
+{"id":"neg-098","category":"prose","heard":"```\nconst ashler = new Ashler()\n```","expected":"```\nconst ashler = new Ashler()\n```","terms":[],"note":"fenced code must be untouched"}
+{"id":"neg-099","category":"prose","heard":"the docs are at https://ashler.example.com/cooper-netties/guide","expected":"the docs are at https://ashler.example.com/cooper-netties/guide","terms":[],"note":"URL must be untouched"}
+{"id":"neg-100","category":"prose","heard":"send the invoice to shivon.riley@ashler.example.com today","expected":"send the invoice to shivon.riley@ashler.example.com today","terms":[],"note":"email must be untouched"}
+{"id":"neg-101","category":"prose","heard":"open src/ashler/versel.ts and look at line 40","expected":"open src/ashler/versel.ts and look at line 40","terms":[],"note":"file path must be untouched"}
+{"id":"neg-102","category":"prose","heard":"see www.hetsner.example.com for pricing","expected":"see www.hetsner.example.com for pricing","terms":[],"note":"www URL must be untouched"}
+{"id":"neg-103","category":"prose","heard":"run `pie dantic --check` in the shell","expected":"run `pie dantic --check` in the shell","terms":[],"note":"inline code must be untouched"}
+{"id":"neg-104","category":"prose","heard":"the sauce on the pasta was too salty","expected":"the sauce on the pasta was too salty","terms":[]}
+{"id":"neg-105","category":"prose","heard":"the ash tree in the yard is dying","expected":"the ash tree in the yard is dying","terms":[]}
+{"id":"neg-106","category":"prose","heard":"his ashen face said it all","expected":"his ashen face said it all","terms":[],"note":"Ashlr.AI sound-alike"}
+{"id":"neg-107","category":"prose","heard":"the quarterly numbers look fine to me","expected":"the quarterly numbers look fine to me","terms":[]}
+{"id":"neg-108","category":"prose","heard":"remind me to water the plants tonight","expected":"remind me to water the plants tonight","terms":[]}
+{"id":"neg-109","category":"prose","heard":"we need a bigger table for the team dinner","expected":"we need a bigger table for the team dinner","terms":[]}
+{"id":"neg-110","category":"prose","heard":"the printer is out of toner again","expected":"the printer is out of toner again","terms":[]}
+{"id":"neg-111","category":"prose","heard":"rerun the whole suite before merging","expected":"rerun the whole suite before merging","terms":[],"note":"expected-hard: 'suite' shares phonetic key ST with Zod's alias 'zaad'"}
+{"id":"neg-112","category":"prose","heard":"the hotel suite had a view of the bay","expected":"the hotel suite had a view of the bay","terms":[],"note":"expected-hard: 'suite' shares phonetic key ST with Zod's alias 'zaad'"}
+{"id":"neg-113","category":"prose","heard":"he wore a grey suit to the interview","expected":"he wore a grey suit to the interview","terms":[],"note":"Zod sound-alike (suit)"}
+{"id":"neg-114","category":"prose","heard":"the seed round closed last week","expected":"the seed round closed last week","terms":[],"note":"Zod sound-alike (seed)"}
+{"id":"neg-115","category":"prose","heard":"we sat in the back row","expected":"we sat in the back row","terms":[],"note":"Zod sound-alike (sat)"}
+{"id":"neg-116","category":"prose","heard":"send me the email when you get a chance","expected":"send me the email when you get a chance","terms":[],"note":"expected-hard: 'email' shares phonetic key AML with YAML's alias 'yamel'"}
+{"id":"neg-117","category":"prose","heard":"lunch is at noon in the big room","expected":"lunch is at noon in the big room","terms":[],"note":"expected-hard: 'noon' shares phonetic key NN with Neon"}
+{"id":"neg-118","category":"prose","heard":"she said the demo is thursday","expected":"she said the demo is thursday","terms":[],"note":"expected-hard: the two-word window 'said the' shares phonetic key ST with Zod's alias 'zawed'"}
+{"id":"neg-119","category":"prose","heard":"they said it would ship on time","expected":"they said it would ship on time","terms":[],"note":"Zod sound-alike (said)"}
+{"id":"neg-120","category":"prose","heard":"the emails from the vendor are all spam","expected":"the emails from the vendor are all spam","terms":[],"note":"YAML sound-alike (emails)"}
+{"id":"hard-001","category":"acronym","heard":"our sass margins are great this quarter","expected":"our SaaS margins are great this quarter","terms":["SaaS"],"note":"expected-hard: 'sass' is on the built-in stoplist so the phonetic pass is blocked; user must add it as an explicit alias"}
+{"id":"hard-002","category":"brand","heard":"and tropic released a new model today","expected":"Anthropic released a new model today","terms":["Anthropic"],"note":"expected-hard: 'th' vs 'dt' give different metaphone keys and fuzzy only compares equal token counts"}
+{"id":"hard-003","category":"product","heard":"play right is flaky on ci","expected":"Playwright is flaky on ci","terms":["Playwright"],"note":"expected-hard: both tokens are stoplist words so the window is never considered"}
+{"id":"hard-004","category":"product","heard":"the vite test run is slow","expected":"the Vitest run is slow","terms":["Vitest"],"note":"expected-hard: 'vite' matches Vite exactly and blocks the wider window"}
+{"id":"hard-005","category":"product","heard":"we run three ollamas on the box","expected":"we run three Ollamas on the box","terms":["Ollama"],"note":"expected-hard: plural suffix is dropped by whole-token replacement"}
+{"id":"hard-006","category":"product","heard":"rotate the jots every hour","expected":"rotate the JWTs every hour","terms":["JWT"],"note":"expected-hard: plural of an alias"}
+{"id":"hard-007","category":"product","heard":"language chain agents are slow to start","expected":"LangChain agents are slow to start","terms":["LangChain"],"note":"expected-hard: STT expanded the abbreviation; no pass can bridge it"}
+{"id":"hard-008","category":"person","heard":"ask be yorn halvorsen about the offsite","expected":"ask Bjørn Halvorsen about the offsite","terms":["Bjørn Halvorsen"],"note":"expected-hard: three-token split of a two-token name; only the last two tokens fuzzy-match"}
+{"id":"hard-009","category":"acronym","heard":"the a p eye is rate limited","expected":"the API is rate limited","terms":["API"],"note":"expected-hard: mixed letter/word spelling not in aliases"}
+{"id":"hard-010","category":"brand","heard":"ashley our a i has a new logo","expected":"Ashlr.AI has a new logo","terms":["Ashlr.AI"],"note":"expected-hard: four-token split; alias is 'Ashley our AI'"}
+{"id":"hard-011","category":"product","heard":"the cooper netty's cluster is down","expected":"the Kubernetes cluster is down","terms":["Kubernetes"],"note":"expected-hard: possessive inside a split word; likely still works via phonetic"}
+{"id":"hard-012","category":"product","heard":"the post gress sequel database","expected":"the PostgreSQL database","terms":["PostgreSQL"],"note":"expected-hard: three-token variant; 'post gress' matches and leaves 'sequel' behind"}
+{"id":"hard-013","category":"identifier","heard":"normalize the transcript before saving","expected":"normalizeTranscript before saving","terms":["normalizeTranscript"],"note":"expected-hard: STT inserted a word; arguably the user did not mean the identifier"}
+{"id":"hard-014","category":"person","heard":"ping priyanka about the demo","expected":"ping Priyanka Raghunathan about the demo","terms":["Priyanka Raghunathan"],"note":"expected-hard: first name only; the lexicon term is the full name"}
+{"id":"hard-015","category":"product","heard":"the docker file is missing a step","expected":"the Dockerfile is missing a step","terms":["Docker"],"note":"expected-hard: compound word; Docker will be case-fixed but not joined"}
+{"id":"hard-016","category":"acronym","heard":"export the key pee eyes to a sheet","expected":"export the KPIs to a sheet","terms":["KPI"],"note":"expected-hard: pluralized spelled-out acronym"}
+{"id":"hard-017","category":"product","heard":"the sequel light db is locked","expected":"the SQLite db is locked","terms":["SQLite"],"note":"expected-hard: alias contains a stoplist word ('light'); explicit aliases should still win"}
+{"id":"hard-018","category":"product","heard":"use zed schemas for the form","expected":"use Zod schemas for the form","terms":["Zod"],"note":"expected-hard: 'zed' is a plausible mishearing but is not aliased and phonetic differs"}
+{"id":"hard-019","category":"brand","heard":"the cloud flair dashboard shows a spike","expected":"the Cloudflare dashboard shows a spike","terms":["Cloudflare"],"note":"expected-hard: 'cloud' is stoplisted; works only if the non-stop token carries the window"}
+{"id":"hard-020","category":"product","heard":"levenshtien distance is the fallback","expected":"Levenshtein distance is the fallback","terms":["Levenshtein"],"note":"expected-hard: transposition; fastest-levenshtein is not Damerau so fuzzy scores 0.82 on the edge"}
+{"id":"hard-021","category":"person","heard":"our new hire priyanka raghunathan starts monday and priyanka is remote","expected":"our new hire Priyanka Raghunathan starts monday and priyanka is remote","terms":["Priyanka Raghunathan"],"note":"expected-hard: same name twice, only the full form should be rewritten"}
+{"id":"hard-022","category":"product","heard":"the reddis and red iss instances are the same box","expected":"the Redis and Redis instances are the same box","terms":["Redis"],"note":"expected-hard: two different aliases of one term in one sentence"}
