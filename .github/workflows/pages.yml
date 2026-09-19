@@ -7,6 +7,7 @@ on:
       - 'site/**'
       - 'src/core/**'
       - 'scripts/build-site.mjs'
+      - 'scripts/install.sh'
       - 'examples/**'
       - 'package.json'
       - 'package-lock.json'

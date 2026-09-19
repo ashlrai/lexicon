@@ -80,6 +80,8 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     suggestAliases: vi.fn((c: string) => (c === 'Ashlr.AI' ? ['Ashler', 'Ashlar', 'Ashlr AI'] : [])),
     writeLexiconFile: vi.fn(async () => undefined),
     emptyLexicon: vi.fn((): Lexicon => ({ version: 1, terms: [] })),
+    getTrustPath: vi.fn(() => path.join(path.dirname(state.globalPath), 'trust.json')),
+    isTrusted: vi.fn(async () => 'trusted'),
     sanitizeForDisplay,
   };
 });
@@ -94,6 +96,8 @@ import {
   renderTable,
   runAdd,
   runDoctor,
+  runDoctorReport,
+  renderDoctorReport,
   runExport,
   runInstallClaude,
   runList,
@@ -470,6 +474,77 @@ describe('doctor', () => {
     expect(io.out).toMatch(/✗ alias "Ashler" of "Ashlr\.AI" equals the canonical of "Ashler"/);
     expect(io.out).toMatch(/! alias "the" of "Ashlr\.AI" is a common English word/);
     expect(io.out).toMatch(/! no clipboard backend found \(.*wl-clipboard/);
+  });
+});
+
+describe('runDoctorReport', () => {
+  beforeEach(() => {
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: FIXED_LEXICON, exists: true });
+  });
+
+  it('returns the checks as data with paths and versions', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    await fs.writeFile(path.join(dir, 'claude'), '');
+    const settingsPath = path.join(dir, 'settings.json');
+    const installedPluginsPath = path.join(dir, 'installed_plugins.json');
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected', settingsPath, installedPluginsPath });
+    expect(report.ok).toBe(true);
+    expect(report.checks.length).toBeGreaterThan(5);
+    for (const c of report.checks) {
+      expect(['ok', 'warn', 'fail', 'info']).toContain(c.level);
+      expect(typeof c.message).toBe('string');
+    }
+    expect(report.checks.some((c) => c.level === 'ok' && c.message.startsWith('global lexicon parses'))).toBe(true);
+    expect(report.checks.some((c) => c.level === 'ok' && c.message === 'lexicon MCP server is registered with claude')).toBe(true);
+    expect(report.paths).toEqual({
+      global: state.globalPath,
+      trust: path.join(path.dirname(state.globalPath), 'trust.json'),
+      settings: settingsPath,
+      installedPlugins: installedPluginsPath,
+    });
+    expect(report.versions.node).toBe(process.version);
+    expect(report.versions.platform).toBe('linux');
+    expect(report.versions.lexicon).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('sets ok to false and includes the project path when a check fails', async () => {
+    state.projectPath = '/tmp/proj/.lexicon.yaml';
+    const conflicted: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'] },
+        { canonical: 'Ashler', aliases: ['Ashlar'] },
+      ],
+    };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: conflicted, exists: true });
+    vi.mocked(core.isTrusted).mockResolvedValue('untrusted');
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+    expect(report.ok).toBe(false);
+    expect(report.paths.project).toBe('/tmp/proj/.lexicon.yaml');
+    expect(report.checks.some((c) => c.level === 'fail' && /conflict/.test(c.message))).toBe(true);
+    expect(report.checks.some((c) => c.level === 'warn' && /untrusted and not merged/.test(c.message))).toBe(true);
+  });
+
+  it('runDoctor prints exactly the rendering of runDoctorReport', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    await fs.writeFile(path.join(dir, 'claude'), '');
+    const deps = { platform: 'linux' as const, env: { PATH: dir }, exec: () => 'no servers', settingsPath: path.join(dir, 's.json'), installedPluginsPath: path.join(dir, 'p.json') };
+    const report = await runDoctorReport({}, deps);
+    const rendered = makeIO();
+    const renderedCode = renderDoctorReport(report, rendered);
+    const direct = makeIO();
+    const directCode = await runDoctor({}, direct, deps);
+    expect(directCode).toBe(renderedCode);
+    expect(directCode).toBe(1);
+    expect(direct.out).toBe(rendered.out);
+    const lines = rendered.out.trimEnd().split('\n');
+    expect(lines).toHaveLength(report.checks.length + 2);
+    expect(lines.at(-2)).toBe('');
+    expect(lines.at(-1)).toBe('1 check failed');
+    report.checks.forEach((c, i) => {
+      const marker = { ok: '✓', fail: '✗', warn: '!', info: '·' }[c.level];
+      expect(lines[i]).toBe(`${marker} ${c.message}`);
+    });
   });
 });
 

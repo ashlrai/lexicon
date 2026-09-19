@@ -14,3 +14,4 @@ export * from './importers/index.js';
 export * from './suggest.js';
 export * from './learn.js';
 export * from './stats.js';
+export * from './suggestTerms.js';

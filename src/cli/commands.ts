@@ -5,7 +5,7 @@
  * without spawning a process.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,7 @@ import {
   diffSummary,
   emptyLexicon,
   exportLexicon,
+  getTrustPath,
   harvestRepo,
   isTrusted,
   loadLexicon,
@@ -781,20 +782,62 @@ export function settingsHasLexiconHook(settings: unknown, event: string): boolea
   );
 }
 
-type CheckStatus = 'ok' | 'fail' | 'warn' | 'info';
-interface Check {
-  status: CheckStatus;
+export type DoctorLevel = 'ok' | 'fail' | 'warn' | 'info';
+
+export interface DoctorCheck {
+  level: DoctorLevel;
+  /** Unsanitized: quotes paths, canonicals, aliases and error text. Renderers apply `safeLines`. */
   message: string;
+}
+
+/** Structured `lexicon doctor` result; `runDoctor` renders it, the MCP `lexicon_doctor` tool returns it as JSON. */
+export interface DoctorReport {
+  /** True when no check is at level `fail`. */
+  ok: boolean;
+  checks: DoctorCheck[];
+  paths: {
+    global: string;
+    project?: string;
+    /** Trust registry next to the global lexicon. */
+    trust: string;
+    /** Claude Code settings.json that was inspected for hooks. */
+    settings: string;
+    /** Claude Code plugin registry that was inspected. */
+    installedPlugins: string;
+  };
+  versions: {
+    lexicon: string;
+    node: string;
+    platform: NodeJS.Platform;
+  };
 }
 
 function defaultExec(file: string, args: readonly string[]): string {
   return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
+/**
+ * Version of the @ashlr/lexicon package.json: two levels above src/cli or
+ * dist/cli, one level above the plugin/ bundles (which inline this module).
+ * '0.0.0' when neither can be read.
+ */
+function readCliPackageVersion(): string {
+  for (const rel of ['../../package.json', '../package.json']) {
+    try {
+      const raw = readFileSync(new URL(rel, import.meta.url), 'utf8');
+      const parsed: unknown = JSON.parse(raw);
+      if (isRecord(parsed) && parsed.name === '@ashlr/lexicon' && typeof parsed.version === 'string') return parsed.version;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return '0.0.0';
+}
+
 /** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
-function renderCheck(c: Check): string {
+function renderCheck(c: DoctorCheck): string {
   const message = safeLines(c.message);
-  switch (c.status) {
+  switch (c.level) {
     case 'ok':
       return `${green('✓')} ${message}`;
     case 'fail':
@@ -806,14 +849,31 @@ function renderCheck(c: Check): string {
   }
 }
 
+/** Prints a report the way `lexicon doctor` always has: one line per check, a blank line, then the verdict. Returns the exit code. */
+export function renderDoctorReport(report: DoctorReport, io: IO): number {
+  for (const c of report.checks) line(io, renderCheck(c));
+  const failures = report.checks.filter((c) => c.level === 'fail').length;
+  line(io);
+  line(io, failures === 0 ? green('all checks passed') : red(`${failures} check${failures === 1 ? '' : 's'} failed`));
+  return failures === 0 ? 0 : 1;
+}
+
 export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = {}): Promise<number> {
+  return renderDoctorReport(await runDoctorReport(opts, deps), io);
+}
+
+/**
+ * Runs every doctor check and returns them as data (no output). `runDoctor`
+ * is this plus rendering; the MCP server hands the report to the model as is.
+ */
+export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}): Promise<DoctorReport> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultExec;
   const cwd = resolveCwd(opts);
-  const checks: Check[] = [];
-  const push = (status: CheckStatus, message: string): void => {
-    checks.push({ status, message });
+  const checks: DoctorCheck[] = [];
+  const push = (level: DoctorLevel, message: string): void => {
+    checks.push({ level, message });
   };
 
   // --- lexicon files -------------------------------------------------------
@@ -899,7 +959,7 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
       push('warn', `alias "${alias}" belongs to several terms: ${[...distinct].join(', ')} (ambiguous)`);
     }
   }
-  if (allTerms.length > 0 && !checks.some((c) => c.status === 'fail' && c.message.includes('conflict'))) {
+  if (allTerms.length > 0 && !checks.some((c) => c.level === 'fail' && c.message.includes('conflict'))) {
     push('ok', 'no alias/canonical conflicts');
   }
 
@@ -966,11 +1026,18 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
-  for (const c of checks) line(io, renderCheck(c));
-  const failures = checks.filter((c) => c.status === 'fail').length;
-  line(io);
-  line(io, failures === 0 ? green('all checks passed') : red(`${failures} check${failures === 1 ? '' : 's'} failed`));
-  return failures === 0 ? 0 : 1;
+  return {
+    ok: !checks.some((c) => c.level === 'fail'),
+    checks,
+    paths: {
+      global: paths.global,
+      ...(paths.project ? { project: paths.project } : {}),
+      trust: getTrustPath({ cwd }),
+      settings: settingsPath,
+      installedPlugins: installedPluginsPath,
+    },
+    versions: { lexicon: readCliPackageVersion(), node: process.version, platform },
+  };
 }
 
 // ---------------------------------------------------------------------------

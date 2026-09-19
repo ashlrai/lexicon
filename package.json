@@ -1,6 +1,6 @@
 {
   "name": "@ashlr/lexicon",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Personal lexicon for voice-to-agents. Fixes the words STT gets wrong (Ashler -> Ashlr.AI) before your agent sees the prompt.",
   "type": "module",
   "license": "MIT",
@@ -29,6 +29,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:bundle": "node scripts/build-bundle.mjs",
+    "prepare": "npm run build && npm run build:bundle",
     "check:bundle": "npm run build:bundle && git diff --exit-code --stat -- plugin",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run",

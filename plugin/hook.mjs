@@ -6922,14 +6922,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs3 = this.flowScalar(this.type);
+              const fs4 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs3, sep: [] });
+                map2.items.push({ start, key: fs4, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs3);
+                this.stack.push(fs4);
               } else {
-                Object.assign(it, { key: fs3, sep: [] });
+                Object.assign(it, { key: fs4, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -7057,13 +7057,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs3 = this.flowScalar(this.type);
+              const fs4 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs3, sep: [] });
+                fc.items.push({ start: [], key: fs4, sep: [] });
               else if (it.sep)
-                this.stack.push(fs3);
+                this.stack.push(fs4);
               else
-                Object.assign(it, { key: fs3, sep: [] });
+                Object.assign(it, { key: fs4, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -7488,7 +7488,7 @@ var require_mod = __commonJS({
       }
       return score;
     };
-    var distance2 = function(a, b) {
+    var distance3 = function(a, b) {
       if (a.length < b.length) {
         var tmp = b;
         b = a;
@@ -7502,12 +7502,12 @@ var require_mod = __commonJS({
       }
       return myers_x(a, b);
     };
-    exports.distance = distance2;
+    exports.distance = distance3;
     var closest = function(str, arr) {
       var min_distance = Infinity;
       var min_index = 0;
       for (var i = 0; i < arr.length; i++) {
-        var dist = distance2(str, arr[i]);
+        var dist = distance3(str, arr[i]);
         if (dist < min_distance) {
           min_distance = dist;
           min_index = i;
@@ -7520,8 +7520,8 @@ var require_mod = __commonJS({
 });
 
 // src/hooks/user-prompt-submit.ts
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { promises as fs3, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/zod/v4/classic/external.js
@@ -32509,8 +32509,51 @@ function parseCorrection(text) {
   return void 0;
 }
 
+// src/core/suggestTerms.ts
+var import_fastest_levenshtein2 = __toESM(require_mod(), 1);
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var FUNCTION_WORDS2 = new Set(
+  `a an the and or but nor so yet if then than because although while whether unless
+at by for from in into of off on onto to with without about over under up down out through across between among
+after before during until since around near above below behind beside upon toward towards via per
+i me my mine you your yours he him his she hers it its we us our ours they them their theirs
+this that these those who whom whose which what
+am is are was were be been being do does did done have has had having
+can could may might must shall should will would
+not no yes there here now when where why how`.split(/\s+/).filter((w) => w.length > 0)
+);
+var DIGITS_RE = new RegExp("^\\p{N}+$", "u");
+
 // src/hooks/user-prompt-submit.ts
 var SESSION_CONTEXT_MAX_CHARS = 4e3;
+var ONBOARD_NOTE_FILE = "onboard-note.json";
+var ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1e3;
+var ONBOARD_NOTE = "The user's voice lexicon is empty. If they dictate, offer to set it up: ask for their company/product spelling and run the lexicon setup_lexicon tool (or the onboard prompt).";
+function onboardNotePath(globalPath) {
+  return join(dirname(globalPath), ONBOARD_NOTE_FILE);
+}
+async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
+  const file2 = onboardNotePath(globalPath);
+  try {
+    const raw = await fs3.readFile(file2, "utf8");
+    const parsed = JSON.parse(raw);
+    const last = typeof parsed === "object" && parsed !== null ? parsed.lastNotedAt : void 0;
+    const lastMs = typeof last === "string" ? Date.parse(last) : Number.NaN;
+    if (Number.isFinite(lastMs) && now - lastMs < ONBOARD_NOTE_INTERVAL_MS) return false;
+  } catch {
+  }
+  const state = { lastNotedAt: new Date(now).toISOString() };
+  try {
+    await fs3.mkdir(dirname(file2), { recursive: true });
+    await fs3.writeFile(file2, `${JSON.stringify(state)}
+`, "utf8");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[lexicon hook] onboard-note: ${message}
+`);
+  }
+  return true;
+}
 function formatAdditionalContext(result) {
   return `Voice lexicon corrections for this prompt (the user dictated; apply these):
 ${diffSummary(result)}
@@ -32630,9 +32673,12 @@ async function userPromptSubmit(payload, opts) {
 async function sessionStart(payload, opts) {
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
   const loaded = await loadLexicon({ cwd });
-  if (loaded.merged.terms.length === 0) return "";
-  const parts = [truncateSessionContext(exportLexicon(loaded.merged, "claude-md").trimEnd())];
   const skippedNote = formatSkippedProjectNote(loaded);
+  if (loaded.merged.terms.length === 0) {
+    if (!await shouldEmitOnboardNote(loaded.global.path)) return "";
+    return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
+  }
+  const parts = [truncateSessionContext(exportLexicon(loaded.merged, "claude-md").trimEnd())];
   if (skippedNote) parts.push(skippedNote);
   return emit("SessionStart", parts);
 }
@@ -32680,14 +32726,19 @@ if (isMainModule()) {
   void main();
 }
 export {
+  ONBOARD_NOTE,
+  ONBOARD_NOTE_FILE,
+  ONBOARD_NOTE_INTERVAL_MS,
   SESSION_CONTEXT_MAX_CHARS,
   dropCorrectionSpans,
   formatAdditionalContext,
   formatCorrectionNote,
   formatSkippedProjectNote,
   main,
+  onboardNotePath,
   runHook,
   runSessionStartHook,
   runUserPromptSubmitHook,
+  shouldEmitOnboardNote,
   truncateSessionContext
 };

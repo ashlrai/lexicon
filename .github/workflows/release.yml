@@ -1,13 +1,28 @@
-# Publishes @ashlr/lexicon to npm and creates a GitHub release when a `v*` tag is pushed.
+# Cuts a release when a `v*` tag is pushed: publishes @ashlr/lexicon to npm (when
+# NPM_TOKEN is set), creates the GitHub release, and attaches the download assets.
+#
+# Assets on every release (names are load-bearing; the README, the demo site and
+# the Homebrew formula link to them by name):
+#   ashlr-lexicon-<version>.tgz     npm pack tarball, `npm i -g <url>` works on it
+#   lexicon-extension.zip           Chrome / Edge extension (Load unpacked or drag in)
+#   lexicon-extension-firefox.zip   Firefox variant of the extension
+#   LexiconBar.app.zip              macOS menu bar app, ad-hoc signed
+#   SHA256SUMS                      sha256 of every asset above
 #
 # Required repository secret:
 #   NPM_TOKEN  - an npm "Automation" (or granular, publish-enabled) access token for the
 #                @ashlr scope. Provenance attestation additionally needs the `id-token: write`
-#                permission below; nothing else to configure.
+#                permission below; nothing else to configure. Without it the npm publish is
+#                skipped and everything else still happens.
 #
-# GITHUB_TOKEN is provided automatically and is used by `gh release create`.
+# GITHUB_TOKEN is provided automatically and is used by `gh release ...`.
 #
-# Release flow:
+# Job order: `publish` (ubuntu) tests, publishes, creates the release and uploads the
+# tarball, the extension zips and a first SHA256SUMS. `macos` waits for it, builds
+# LexiconBar.app.zip, appends its checksum and re-uploads SHA256SUMS. Every upload uses
+# --clobber so a re-run of a failed job replaces its own assets.
+#
+# Release flow (see docs/RELEASING.md):
 #   npm version minor            # bumps package.json + creates the tag
 #   git push --follow-tags       # triggers this workflow
 name: Release
@@ -26,6 +41,8 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
@@ -46,12 +63,14 @@ jobs:
       - run: npm test
 
       - name: Check the tag matches package.json
+        id: meta
         run: |
-          pkg="v$(node -p "require('./package.json').version")"
-          if [ "$pkg" != "${GITHUB_REF_NAME}" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match package.json version ${pkg}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version v${version}"
             exit 1
           fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
         if: ${{ env.NPM_TOKEN != '' }}
@@ -61,9 +80,81 @@ jobs:
 
       - name: Skipped npm publish
         if: ${{ env.NPM_TOKEN == '' }}
-        run: echo "NPM_TOKEN secret not set; skipping npm publish (GitHub release still created)"
+        run: echo "NPM_TOKEN secret not set; skipping npm publish (GitHub release and assets are still produced)"
+
+      - name: Build the browser extension zips
+        run: |
+          npm run build:extension
+          test -f extension/lexicon-extension.zip
+          test -f extension/lexicon-extension-firefox.zip
+
+      - name: Pack the npm tarball
+        run: |
+          # build, bundle and tests already ran above; skip prepublishOnly.
+          mkdir -p release
+          npm pack --ignore-scripts --pack-destination release
+          test -f "release/ashlr-lexicon-${{ steps.meta.outputs.version }}.tgz"
+
+      - name: Collect assets and write SHA256SUMS
+        run: |
+          cp extension/lexicon-extension.zip extension/lexicon-extension-firefox.zip release/
+          cd release
+          sha256sum "ashlr-lexicon-${{ steps.meta.outputs.version }}.tgz" lexicon-extension.zip lexicon-extension-firefox.zip > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create GitHub release
         run: gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" --clobber \
+            "release/ashlr-lexicon-${{ steps.meta.outputs.version }}.tgz" \
+            release/lexicon-extension.zip \
+            release/lexicon-extension-firefox.zip \
+            release/SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos:
+    needs: publish
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Unit tests (LexiconBarKit)
+        working-directory: apps/macos/LexiconBar
+        run: swift test
+
+      - name: Package LexiconBar.app
+        run: scripts/build-macos-app.sh
+
+      - name: Verify bundle
+        run: |
+          plutil -lint apps/macos/build/LexiconBar.app/Contents/Info.plist
+          codesign --verify --verbose=2 apps/macos/build/LexiconBar.app
+          test -f apps/macos/build/LexiconBar.app.zip
+
+      - name: Append LexiconBar.app.zip to SHA256SUMS
+        run: |
+          mkdir -p release
+          cp apps/macos/build/LexiconBar.app.zip release/
+          # The publish job uploaded SHA256SUMS for its own assets; extend it.
+          gh release download "${GITHUB_REF_NAME}" --pattern SHA256SUMS --dir release --clobber
+          cd release
+          shasum -a 256 LexiconBar.app.zip >> SHA256SUMS
+          cat SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        run: gh release upload "${GITHUB_REF_NAME}" --clobber release/LexiconBar.app.zip release/SHA256SUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

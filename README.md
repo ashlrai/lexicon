@@ -7,6 +7,18 @@
 
 Name the job, not the protocol: a personal lexicon for voice-to-agents.
 
+**Try it in 60 seconds**
+
+```bash
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh   # runs `lexicon setup`
+# or: brew install ashlrai/tap/lexicon
+# or: npm i -g @ashlr/lexicon
+```
+
+Say a sentence with your company name into Claude Code. Done.
+
+The script runs `lexicon setup`, an interactive wizard. It seeds your lexicon with a few terms and registers the MCP server and hooks in the agent clients it finds. After a Homebrew or npm install, run `lexicon setup` yourself. npm publish is pending; until then `npm i -g github:ashlrai/lexicon` installs from GitHub.
+
 ```text
 You said:        "tell Ashlr.AI to deploy the Kubernetes auth service"
 STT heard:       "tell Ashler to deploy the Cooper Nettie's off service"
@@ -41,28 +53,42 @@ Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-spee
 - Desktop coverage: a local HTTP API (`lexicon serve`), a browser extension for ChatGPT, Claude.ai, Grok, Gemini and Perplexity, local push-to-talk (`lexicon voice`, whisper.cpp), and a macOS menu bar app. See [Desktop apps, browser chats and local voice](#desktop-apps-browser-chats-and-local-voice).
 - A plain library: `normalize()` is a pure function. See [Use as a library](#use-as-a-library).
 
+**Agent-native.** Your agent can do the setup itself. The MCP server exposes `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary` and `suggest_terms`, plus an `onboard` prompt, so "set up my lexicon" in Claude Code runs setup, doctor, install, trust, import and suggestions without you touching a terminal. The `SessionStart` hook offers onboarding when the lexicon is empty. See [docs/AGENT-NATIVE.md](docs/AGENT-NATIVE.md).
+
 ## Install
 
-Try it first without installing anything: the [live demo](https://ashlrai.github.io/lexicon/) runs the same matcher in your browser, with dictation.
+The walkthrough, with what each step writes and how to undo it, is in [docs/QUICKSTART.md](docs/QUICKSTART.md). Try it first without installing anything: the [live demo](https://ashlrai.github.io/lexicon/) runs the same matcher in your browser, with dictation.
+
+Pick one:
+
+| | Command | Notes |
+|---|---|---|
+| Script | `curl -fsSL https://ashlrai.github.io/lexicon/install.sh \| sh` | Installs the CLI, then runs `lexicon setup` |
+| Homebrew | `brew install ashlrai/tap/lexicon` | macOS and Linux. The formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap) |
+| npm | `npm i -g @ashlr/lexicon` | Node 20 or newer. Until the npm publish lands, use `npm i -g github:ashlrai/lexicon` |
+| Claude Code plugin | `claude plugin marketplace add ashlrai/lexicon` then `claude plugin install lexicon@ashlrai` | No Node install step, no CLI. See [Use with Claude Code](#use-with-claude-code) |
+
+Then run the wizard, or skip it and add a term by hand. The first argument is the canonical spelling, the rest are what STT actually produces.
 
 ```bash
-npm i -g @ashlr/lexicon
-```
-
-Add a term. The first argument is the canonical spelling, the rest are what STT actually produces.
-
-```bash
+lexicon setup
+# or
 lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler
-```
-
-Try it.
-
-```bash
 lexicon normalize "tell Ashler to ship it"
 # tell Ashlr.AI to ship it
 ```
 
-Node 20 or newer. Nothing else is required; the tool makes no network requests.
+`lexicon doctor` checks the install. The tool makes no network requests.
+
+**Downloads.** Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches:
+
+| Asset | What it is |
+|---|---|
+| [`lexicon-extension.zip`](https://github.com/ashlrai/lexicon/releases/latest/download/lexicon-extension.zip) | Chrome and Edge extension for ChatGPT, Claude.ai, Grok, Gemini and Perplexity. Unzip, then "Load unpacked" at `chrome://extensions`. See [docs/EXTENSION.md](docs/EXTENSION.md) |
+| [`lexicon-extension-firefox.zip`](https://github.com/ashlrai/lexicon/releases/latest/download/lexicon-extension-firefox.zip) | The same extension for Firefox, loaded from `about:debugging` |
+| [`LexiconBar.app.zip`](https://github.com/ashlrai/lexicon/releases/latest/download/LexiconBar.app.zip) | macOS menu bar app: push to talk, fix clipboard, supervise the daemon. Ad-hoc signed, so right-click and Open on first launch. See [docs/MACOS-APP.md](docs/MACOS-APP.md) |
+| `ashlr-lexicon-<version>.tgz` | The npm package as a tarball, for `npm i -g ./ashlr-lexicon-<version>.tgz` offline |
+| `SHA256SUMS` | Checksums for the assets above |
 
 ## Use with Claude Code
 
@@ -201,6 +227,8 @@ Hooks and MCP only reach agents that support them. Everything else on your deskt
 | Any text field, any app | `lexicon daemon --once --paste` on a shortcut, or the [LexiconBar](docs/MACOS-APP.md) menu bar app on macOS |
 | `lexicon serve` | Local HTTP API on 127.0.0.1:41733 with a bearer token. `--show`, `--status`, `--install`/`--uninstall` (launchd or systemd user unit), `--port`, `--json` |
 | `lexicon voice` | Local push-to-talk: ffmpeg + whisper.cpp + lexicon. `--toggle` for a hotkey, `--paste`/`--copy`/`--json`, `--model`, `--device`, `--list-devices`, `--status` |
+| `lexicon setup` | Interactive onboarding: seed the lexicon (your name, company), harvest the repo, register the MCP server and hooks in detected clients, install the local API, export to your dictation app. `--yes`, `--clients`, `--company`, `--person`, `--json` |
+| `lexicon suggest` | Propose aliases, terms, never-words and stale terms from voice history, hits and the repo. `--apply` walks them, `--yes` applies confidence >= 0.8, `--harvest [dir]`, `--json` |
 | Local dictation without a dictation app | `lexicon voice --toggle --paste` on a hotkey: ffmpeg records, whisper.cpp transcribes with your canonicals as prompt hints, the lexicon corrects, then it pastes. See [docs/VOICE.md](docs/VOICE.md) |
 | Shortcuts, Raycast, scripts, your own app | `lexicon serve` exposes `POST /normalize` and friends on `127.0.0.1:41733` with a bearer token. See [docs/LOCAL-API.md](docs/LOCAL-API.md) |
 
@@ -511,7 +539,7 @@ lexicon normalize --diff "deploy to head sner with cooper netties and kubernetee
 
 ## MCP tools
 
-Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Nine tools, two resources, one prompt.
+Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Seventeen tools, two resources, two prompts.
 
 | Tool | Arguments | Returns |
 |---|---|---|
@@ -524,6 +552,14 @@ Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, 
 | `learn_correction` | `heard`, `meant`, `scope?` | The term the alias was added to, `created`, `aliasAdded`, a one-line summary |
 | `suggest_canonical` | `heard` | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?" |
 | `lexicon_stats` | none | Term and alias counts, total hits, top ten terms, never-hit terms, per-file breakdown |
+| `setup_lexicon` | `company?`, `person?`, `clients?`, `serve?` | One-shot onboarding: seeds the lexicon, registers the server and hooks in the chosen clients, optionally installs the local API. Returns a summary |
+| `lexicon_doctor` | none | Structured diagnosis: files, trust, hooks, MCP registration, clipboard, voice tools |
+| `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for Claude, Codex, Cursor, Windsurf, Gemini, VS Code or Claude Desktop |
+| `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
+| `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, text, CSV or JSON dictionary |
+| `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
+| `apply_suggestion` | `suggestion` | Applies one suggestion from `suggest_terms` |
+| `serve_status` | none | Whether the local API on 127.0.0.1:41733 is up |
 
 | Resource | Type | Content |
 |---|---|---|
@@ -533,6 +569,7 @@ Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, 
 | Prompt | Purpose |
 |---|---|
 | `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session |
+| `onboard` | Walks the agent through first-run setup: ask for company, product and teammate spellings, which clients are in use, then call `setup_lexicon` and `add_term` |
 
 Project-scope writes (`add_term`, `learn_correction`, `harvest_repo` with `add: true`) go through the same [trust gate](#security-and-trust) as the CLI and return an error instead of touching an unreviewed `.lexicon.yaml`.
 
@@ -667,14 +704,14 @@ Non-goals:
 
 - Not a dictation app. Bring your own.
 - No hosted accounts, no sync service. It is a file.
-- No Chrome extension.
 
 Roadmap:
 
-- VS Code extension that applies the lexicon to dictation inside the editor.
-- Per-app sync: push changes into Wispr Flow, Superwhisper and macOS Text Replacement automatically instead of by export.
+- Chrome Web Store and Firefox AMO listings for the extension. Today it installs from the release zip.
+- Notarized macOS app. LexiconBar is ad-hoc signed, so the first launch needs right-click and Open.
+- Windows and Linux tray app with the same push-to-talk and fix-clipboard actions.
 - Non-English phonetics. Double metaphone is tuned for English; names in other languages fall back to fuzzy matching.
-- Real-audio benchmark. The current corpus is generated from observed STT errors, not recorded speech.
+- Real-microphone benchmark. The audio corpus is macOS text-to-speech read into whisper.cpp, not recorded speech.
 
 Kill criteria, from the research memo: if Claude Code ships first-party custom vocabulary for `/voice`, the hook and MCP paths lose most of their value for the primary user (the file format and exports may still be worth keeping). If a system-wide dictation app captures agent voice input and its dictionary follows the user everywhere, the portable layer is redundant.
 

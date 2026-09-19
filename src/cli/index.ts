@@ -12,6 +12,8 @@ import { registerTrustCommands } from './cmd-trust.js';
 import { registerLearnCommands } from './cmd-learn.js';
 import { registerServeCommands } from './cmd-serve.js';
 import { registerVoiceCommands } from './cmd-voice.js';
+import { registerSetupCommands } from './cmd-setup.js';
+import { registerSuggestCommands } from './cmd-suggest.js';
 import { registerReviewCommands } from './cmd-review.js';
 import {
   processIO,
@@ -238,6 +240,8 @@ registerTrustCommands(program, io);
 registerLearnCommands(program, io);
 registerServeCommands(program, io);
 registerVoiceCommands(program, io);
+registerSetupCommands(program, io);
+registerSuggestCommands(program, io);
 registerReviewCommands(program, io);
 
 try {

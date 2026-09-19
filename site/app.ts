@@ -690,6 +690,14 @@ function init(): void {
     flash(ui.copyInstall, ok ? 'Copied' : 'Copy failed');
   });
 
+  // Install section: any button with data-copy copies that text.
+  for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-copy]')) {
+    button.addEventListener('click', async () => {
+      const ok = await copyText(button.dataset.copy ?? '');
+      flash(button, ok ? 'Copied' : 'Copy failed');
+    });
+  }
+
   setupDictation();
   renderLexiconStatus();
   renderSuggestions('');

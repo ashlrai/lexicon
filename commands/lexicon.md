@@ -1,6 +1,6 @@
 ---
-description: Show, add, harvest or export the user's personal voice lexicon (STT spelling corrections).
-argument-hint: "[add <canonical> as <alias>, <alias> | learn <heard> -> <meant> | stats | harvest | export <format>]"
+description: Show, add, harvest, export, set up, diagnose or improve the user's personal voice lexicon (STT spelling corrections).
+argument-hint: "[add <canonical> as <alias>, <alias> | learn <heard> -> <meant> | stats | harvest | export <format> | setup | doctor | suggest | trust [path]]"
 ---
 
 Manage the user's voice lexicon through the `lexicon` MCP server. Arguments: `$ARGUMENTS`
@@ -37,5 +37,33 @@ Decide what to do from the arguments:
 7. **`stats`** - call `lexicon_stats` and show: term/alias counts and total hits
    on one line, a small table of the top terms by hits, the never-hit list, and
    the files in use with their term counts.
+
+8. **`setup`** - first-run onboarding, no terminal needed. Ask, one question at
+   a time: the company/product names spelled exactly as they should appear and
+   how they are pronounced; the user's own name; which agent clients they use
+   (Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code).
+   Then call `setup_lexicon { company, person, clients }`. Report the lexicon
+   path, which clients were installed, skipped or failed, and the exports it
+   wrote. For every other name the user gave, call `add_term` (aliases omitted)
+   and show each term with its aliases on one line. End with one sentence the
+   user can dictate in a new session to test it.
+
+9. **`doctor`** - call `lexicon_doctor` and show the `fail` and `warn` checks
+   first, each with the fix its message names, then a one-line verdict. When a
+   fix is an `install_client` call, offer to preview it. When everything is
+   `ok`, say so in one line.
+
+10. **`suggest`** - call `suggest_terms` (pass `limit` if the user gave a
+    number). Show each suggestion on one line: kind, canonical, alias, reason,
+    count. Ask which to apply; for each accepted one call `apply_suggestion`
+    with the suggestion object exactly as returned. Report what was written
+    and skip the rest. With no suggestions, say the lexicon looks healthy.
+
+11. **`trust [path]`** - call `trust_project { action: 'status', path? }` and
+    show the user the file path, its status and the preview table (canonical,
+    first alias, alias count). Ask whether to trust it. Only on a clear yes
+    call `trust_project { action: 'trust', path? }` and confirm in one line.
+    `trust off [path]` or `untrust` calls `action: 'untrust'`. Never trust a
+    file whose preview the user has not just seen.
 
 Anything else: explain the forms above in one short paragraph.

@@ -1,6 +1,6 @@
 # CLI reference
 
-Generated from `lexicon --help` (v0.2.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.3.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -29,6 +29,8 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon stats [options]`](#lexicon-stats) | show term/alias counts, most-used terms and terms that never fired |
 | [`lexicon serve [options]`](#lexicon-serve) | run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps |
 | [`lexicon voice [options]`](#lexicon-voice) | dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon |
+| [`lexicon setup [options]`](#lexicon-setup) | guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app |
+| [`lexicon suggest [options]`](#lexicon-suggest) | suggest aliases, new terms, never-words and stale terms from your voice history |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
 
@@ -67,6 +69,8 @@ Commands:
   stats [options]                         show term/alias counts, most-used terms and terms that never fired
   serve [options]                         run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps
   voice [options]                         dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon
+  setup [options]                         guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app
+  suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
   help [command]                          display help for command
@@ -426,6 +430,55 @@ Options:
                          seconds, ms } as JSON
   --quiet                no status lines on stderr
   -h, --help             display help for command
+```
+
+## `lexicon setup`
+
+```text
+Usage: lexicon setup [options]
+
+guided first-run: seed the lexicon, harvest the repo, install into your agents
+and dictation app
+
+Options:
+  -y, --yes           take every default without prompting
+  --clients <list>    comma-separated clients to install into, or none (default:
+                      detect; one of claude, codex, cursor, windsurf, gemini,
+                      claude-desktop, vscode)
+  --company <name>    company or product name to seed (as you want it spelled)
+  --person <name>     your name to seed (default: git config --global user.name)
+  --phonetic <hint>   pronunciation hint for the company term, e.g. ASH-ler
+  --app <app>         dictation app to export for: wispr|superwhisper|macos|none
+  --export-dir <dir>  where to write the dictation export (default: ~/Desktop)
+  --no-harvest        skip the repo harvest
+  --no-serve          skip installing the local API login service
+  --reseed            seed person/company terms even if the lexicon already has
+                      terms
+  --home <dir>        treat <dir> as the home directory (mainly for tests)
+  --json              print a machine-readable summary on stdout (progress goes
+                      to stderr)
+  -h, --help          display help for command
+```
+
+## `lexicon suggest`
+
+```text
+Usage: lexicon suggest [options]
+
+suggest aliases, new terms, never-words and stale terms from your voice history
+
+Options:
+  --json           print the suggestions as JSON
+  --apply          walk the suggestions one by one: y apply, n skip, a apply all
+                   remaining, q quit
+  --yes            apply every suggestion at or above 0.80 confidence without
+                   asking
+  --harvest [dir]  also harvest a repository for new-term candidates (default:
+                   the --cwd directory); an explicit --cwd harvests too
+  --limit <n>      max suggestions (default 20)
+  --project        write new terms to the project lexicon instead of the global
+                   one
+  -h, --help       display help for command
 ```
 
 ## `lexicon review`

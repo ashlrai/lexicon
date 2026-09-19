@@ -254,13 +254,13 @@ var require_scope = __commonJS({
       }
     };
     exports.ValueScopeName = ValueScopeName;
-    var line = (0, code_1._)`\n`;
+    var line4 = (0, code_1._)`\n`;
     var ValueScope = class extends Scope {
       constructor(opts) {
         super(opts);
         this._values = {};
         this._scope = opts.scope;
-        this.opts = { ...opts, _n: opts.lines ? line : code_1.nil };
+        this.opts = { ...opts, _n: opts.lines ? line4 : code_1.nil };
       }
       get() {
         return this._scope;
@@ -3270,8 +3270,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path4) {
-      let input2 = path4;
+    function removeDotSegments(path15) {
+      let input2 = path15;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -3680,8 +3680,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path4 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
+        const path15 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -7194,12 +7194,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs4, exportName) {
+    function addFormats(ajv, list, fs15, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs4[f]);
+        ajv.addFormat(f, fs15[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -7284,17 +7284,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path4) {
-      const ctrl = callVisitor(key, node2, visitor, path4);
+    function visit_(key, node2, visitor, path15) {
+      const ctrl = callVisitor(key, node2, visitor, path15);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path4, ctrl);
-        return visit_(key, ctrl, visitor, path4);
+        replaceNode(key, path15, ctrl);
+        return visit_(key, ctrl, visitor, path15);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path4 = Object.freeze(path4.concat(node2));
+          path15 = Object.freeze(path15.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path4);
+            const ci = visit_(i, node2.items[i], visitor, path15);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7305,13 +7305,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path4 = Object.freeze(path4.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path4);
+          path15 = Object.freeze(path15.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path15);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path4);
+          const cv = visit_("value", node2.value, visitor, path15);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7332,17 +7332,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path4) {
-      const ctrl = await callVisitor(key, node2, visitor, path4);
+    async function visitAsync_(key, node2, visitor, path15) {
+      const ctrl = await callVisitor(key, node2, visitor, path15);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path4, ctrl);
-        return visitAsync_(key, ctrl, visitor, path4);
+        replaceNode(key, path15, ctrl);
+        return visitAsync_(key, ctrl, visitor, path15);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path4 = Object.freeze(path4.concat(node2));
+          path15 = Object.freeze(path15.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path4);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path15);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7353,13 +7353,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path4 = Object.freeze(path4.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path4);
+          path15 = Object.freeze(path15.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path15);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path4);
+          const cv = await visitAsync_("value", node2.value, visitor, path15);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7386,23 +7386,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path4) {
+    function callVisitor(key, node2, visitor, path15) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path4);
+        return visitor(key, node2, path15);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path4);
+        return visitor.Map?.(key, node2, path15);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path4);
+        return visitor.Seq?.(key, node2, path15);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path4);
+        return visitor.Pair?.(key, node2, path15);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path4);
+        return visitor.Scalar?.(key, node2, path15);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path4);
+        return visitor.Alias?.(key, node2, path15);
       return void 0;
     }
-    function replaceNode(key, path4, node2) {
-      const parent = path4[path4.length - 1];
+    function replaceNode(key, path15, node2) {
+      const parent = path15[path15.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -7474,13 +7474,13 @@ var require_directives = __commonJS({
        * @param onError - May be called even if the action was successful
        * @returns `true` on success
        */
-      add(line, onError) {
+      add(line4, onError) {
         if (this.atNextDocument) {
           this.yaml = { explicit: _Directives.defaultYaml.explicit, version: "1.1" };
           this.tags = Object.assign({}, _Directives.defaultTags);
           this.atNextDocument = false;
         }
-        const parts = line.trim().split(/[ \t]+/);
+        const parts = line4.trim().split(/[ \t]+/);
         const name = parts.shift();
         switch (name) {
           case "%TAG": {
@@ -8014,10 +8014,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path4, value) {
+    function collectionFromPath(schema, path15, value) {
       let v = value;
-      for (let i = path4.length - 1; i >= 0; --i) {
-        const k = path4[i];
+      for (let i = path15.length - 1; i >= 0; --i) {
+        const k = path15[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -8036,7 +8036,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path4) => path4 == null || typeof path4 === "object" && !!path4[Symbol.iterator]().next().done;
+    var isEmptyPath = (path15) => path15 == null || typeof path15 === "object" && !!path15[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -8066,11 +8066,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path4, value) {
-        if (isEmptyPath(path4))
+      addIn(path15, value) {
+        if (isEmptyPath(path15))
           this.add(value);
         else {
-          const [key, ...rest] = path4;
+          const [key, ...rest] = path15;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -8084,8 +8084,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path4) {
-        const [key, ...rest] = path4;
+      deleteIn(path15) {
+        const [key, ...rest] = path15;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -8099,8 +8099,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path4, keepScalar) {
-        const [key, ...rest] = path4;
+      getIn(path15, keepScalar) {
+        const [key, ...rest] = path15;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -8118,8 +8118,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path4) {
-        const [key, ...rest] = path4;
+      hasIn(path15) {
+        const [key, ...rest] = path15;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -8129,8 +8129,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path4, value) {
-        const [key, ...rest] = path4;
+      setIn(path15, value) {
+        const [key, ...rest] = path15;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -8155,12 +8155,12 @@ var require_stringifyComment = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyComment.js"(exports) {
     "use strict";
     var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
-    function indentComment(comment, indent) {
+    function indentComment(comment, indent3) {
       if (/^\n+$/.test(comment))
         return comment.substring(1);
-      return indent ? comment.replace(/^(?! *$)/gm, indent) : comment;
+      return indent3 ? comment.replace(/^(?! *$)/gm, indent3) : comment;
     }
-    var lineComment = (str, indent, comment) => str.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str.endsWith(" ") ? "" : " ") + comment;
+    var lineComment = (str, indent3, comment) => str.endsWith("\n") ? indentComment(comment, indent3) : comment.includes("\n") ? "\n" + indentComment(comment, indent3) : (str.endsWith(" ") ? "" : " ") + comment;
     exports.indentComment = indentComment;
     exports.lineComment = lineComment;
     exports.stringifyComment = stringifyComment;
@@ -8174,17 +8174,17 @@ var require_foldFlowLines = __commonJS({
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
     var FOLD_QUOTED = "quoted";
-    function foldFlowLines(text, indent, mode = "flow", { indentAtStart, lineWidth = 80, minContentWidth = 20, onFold, onOverflow } = {}) {
+    function foldFlowLines(text, indent3, mode = "flow", { indentAtStart, lineWidth = 80, minContentWidth = 20, onFold, onOverflow } = {}) {
       if (!lineWidth || lineWidth < 0)
         return text;
       if (lineWidth < minContentWidth)
         minContentWidth = 0;
-      const endStep = Math.max(1 + minContentWidth, 1 + lineWidth - indent.length);
+      const endStep = Math.max(1 + minContentWidth, 1 + lineWidth - indent3.length);
       if (text.length <= endStep)
         return text;
       const folds = [];
       const escapedFolds = {};
-      let end = lineWidth - indent.length;
+      let end = lineWidth - indent3.length;
       if (typeof indentAtStart === "number") {
         if (indentAtStart > lineWidth - Math.max(2, minContentWidth))
           folds.push(0);
@@ -8198,7 +8198,7 @@ var require_foldFlowLines = __commonJS({
       let escStart = -1;
       let escEnd = -1;
       if (mode === FOLD_BLOCK) {
-        i = consumeMoreIndentedLines(text, i, indent.length);
+        i = consumeMoreIndentedLines(text, i, indent3.length);
         if (i !== -1)
           end = i + endStep;
       }
@@ -8222,8 +8222,8 @@ var require_foldFlowLines = __commonJS({
         }
         if (ch === "\n") {
           if (mode === FOLD_BLOCK)
-            i = consumeMoreIndentedLines(text, i, indent.length);
-          end = i + indent.length + endStep;
+            i = consumeMoreIndentedLines(text, i, indent3.length);
+          end = i + indent3.length + endStep;
           split = void 0;
         } else {
           if (ch === " " && prev && prev !== " " && prev !== "\n" && prev !== "	") {
@@ -8264,26 +8264,26 @@ var require_foldFlowLines = __commonJS({
         onFold();
       let res = text.slice(0, folds[0]);
       for (let i2 = 0; i2 < folds.length; ++i2) {
-        const fold = folds[i2];
+        const fold2 = folds[i2];
         const end2 = folds[i2 + 1] || text.length;
-        if (fold === 0)
+        if (fold2 === 0)
           res = `
-${indent}${text.slice(0, end2)}`;
+${indent3}${text.slice(0, end2)}`;
         else {
-          if (mode === FOLD_QUOTED && escapedFolds[fold])
-            res += `${text[fold]}\\`;
+          if (mode === FOLD_QUOTED && escapedFolds[fold2])
+            res += `${text[fold2]}\\`;
           res += `
-${indent}${text.slice(fold + 1, end2)}`;
+${indent3}${text.slice(fold2 + 1, end2)}`;
         }
       }
       return res;
     }
-    function consumeMoreIndentedLines(text, i, indent) {
+    function consumeMoreIndentedLines(text, i, indent3) {
       let end = i;
       let start = i + 1;
       let ch = text[start];
       while (ch === " " || ch === "	") {
-        if (i < start + indent) {
+        if (i < start + indent3) {
           ch = text[++i];
         } else {
           do {
@@ -8339,7 +8339,7 @@ var require_stringifyString = __commonJS({
         return json2;
       const { implicitKey } = ctx;
       const minMultiLineLength = ctx.options.doubleQuotedMinMultiLineLength;
-      const indent = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
+      const indent3 = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
       let str = "";
       let start = 0;
       for (let i = 0, ch = json2[i]; ch; ch = json2[++i]) {
@@ -8399,7 +8399,7 @@ var require_stringifyString = __commonJS({
                   str += "\n";
                   i += 2;
                 }
-                str += indent;
+                str += indent3;
                 if (json2[i + 2] === " ")
                   str += "\\";
                 i += 1;
@@ -8411,15 +8411,15 @@ var require_stringifyString = __commonJS({
           }
       }
       str = start ? str + json2.slice(start) : json2;
-      return implicitKey ? str : foldFlowLines.foldFlowLines(str, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
+      return implicitKey ? str : foldFlowLines.foldFlowLines(str, indent3, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
     }
     function singleQuotedString(value, ctx) {
       if (ctx.options.singleQuote === false || ctx.implicitKey && value.includes("\n") || /[ \t]\n|\n[ \t]/.test(value))
         return doubleQuotedString(value, ctx);
-      const indent = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
+      const indent3 = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
       const res = "'" + value.replace(/'/g, "''").replace(/\n+/g, `$&
-${indent}`) + "'";
-      return ctx.implicitKey ? res : foldFlowLines.foldFlowLines(res, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
+${indent3}`) + "'";
+      return ctx.implicitKey ? res : foldFlowLines.foldFlowLines(res, indent3, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
     }
     function quotedString(value, ctx) {
       const { singleQuote } = ctx.options;
@@ -8449,8 +8449,8 @@ ${indent}`) + "'";
       if (!blockQuote || /\n[\t ]+$/.test(value)) {
         return quotedString(value, ctx);
       }
-      const indent = ctx.indent || (ctx.forceBlockIndent || containsDocumentMarker(value) ? "  " : "");
-      const literal2 = blockQuote === "literal" ? true : blockQuote === "folded" || type === Scalar.Scalar.BLOCK_FOLDED ? false : type === Scalar.Scalar.BLOCK_LITERAL ? true : !lineLengthOverLimit(value, lineWidth, indent.length);
+      const indent3 = ctx.indent || (ctx.forceBlockIndent || containsDocumentMarker(value) ? "  " : "");
+      const literal2 = blockQuote === "literal" ? true : blockQuote === "folded" || type === Scalar.Scalar.BLOCK_FOLDED ? false : type === Scalar.Scalar.BLOCK_LITERAL ? true : !lineLengthOverLimit(value, lineWidth, indent3.length);
       if (!value)
         return literal2 ? "|\n" : ">\n";
       let chomp;
@@ -8475,7 +8475,7 @@ ${indent}`) + "'";
         value = value.slice(0, -end.length);
         if (end[end.length - 1] === "\n")
           end = end.slice(0, -1);
-        end = end.replace(blockEndNewlines, `$&${indent}`);
+        end = end.replace(blockEndNewlines, `$&${indent3}`);
       }
       let startWithSpace = false;
       let startEnd;
@@ -8492,9 +8492,9 @@ ${indent}`) + "'";
       let start = value.substring(0, startNlPos < startEnd ? startNlPos + 1 : startEnd);
       if (start) {
         value = value.substring(start.length);
-        start = start.replace(/\n+/g, `$&${indent}`);
+        start = start.replace(/\n+/g, `$&${indent3}`);
       }
-      const indentSize = indent ? "2" : "1";
+      const indentSize = indent3 ? "2" : "1";
       let header = (startWithSpace ? indentSize : "") + chomp;
       if (comment) {
         header += " " + commentString(comment.replace(/ ?[\r\n]+/g, " "));
@@ -8502,7 +8502,7 @@ ${indent}`) + "'";
           onComment();
       }
       if (!literal2) {
-        const foldedValue = value.replace(/\n+/g, "\n$&").replace(/(?:^|\n)([\t ].*)(?:([\n\t ]*)\n(?![\n\t ]))?/g, "$1$2").replace(/\n+/g, `$&${indent}`);
+        const foldedValue = value.replace(/\n+/g, "\n$&").replace(/(?:^|\n)([\t ].*)(?:([\n\t ]*)\n(?![\n\t ]))?/g, "$1$2").replace(/\n+/g, `$&${indent3}`);
         let literalFallback = false;
         const foldOptions = getFoldOptions(ctx, true);
         if (blockQuote !== "folded" && type !== Scalar.Scalar.BLOCK_FOLDED) {
@@ -8510,18 +8510,18 @@ ${indent}`) + "'";
             literalFallback = true;
           };
         }
-        const body = foldFlowLines.foldFlowLines(`${start}${foldedValue}${end}`, indent, foldFlowLines.FOLD_BLOCK, foldOptions);
+        const body = foldFlowLines.foldFlowLines(`${start}${foldedValue}${end}`, indent3, foldFlowLines.FOLD_BLOCK, foldOptions);
         if (!literalFallback)
           return `>${header}
-${indent}${body}`;
+${indent3}${body}`;
       }
-      value = value.replace(/\n+/g, `$&${indent}`);
+      value = value.replace(/\n+/g, `$&${indent3}`);
       return `|${header}
-${indent}${start}${value}${end}`;
+${indent3}${start}${value}${end}`;
     }
     function plainString(item, ctx, onComment, onChompKeep) {
       const { type, value } = item;
-      const { actualString, implicitKey, indent, indentStep, inFlow } = ctx;
+      const { actualString, implicitKey, indent: indent3, indentStep, inFlow } = ctx;
       if (implicitKey && value.includes("\n") || inFlow && /[[\]{},]/.test(value)) {
         return quotedString(value, ctx);
       }
@@ -8532,22 +8532,22 @@ ${indent}${start}${value}${end}`;
         return blockString(item, ctx, onComment, onChompKeep);
       }
       if (containsDocumentMarker(value)) {
-        if (indent === "") {
+        if (indent3 === "") {
           ctx.forceBlockIndent = true;
           return blockString(item, ctx, onComment, onChompKeep);
-        } else if (implicitKey && indent === indentStep) {
+        } else if (implicitKey && indent3 === indentStep) {
           return quotedString(value, ctx);
         }
       }
       const str = value.replace(/\n+/g, `$&
-${indent}`);
+${indent3}`);
       if (actualString) {
         const test = (tag) => tag.default && tag.tag !== "tag:yaml.org,2002:str" && tag.test?.test(str);
         const { compat, tags } = ctx.doc.schema;
         if (tags.some(test) || compat?.some(test))
           return quotedString(value, ctx);
       }
-      return implicitKey ? str : foldFlowLines.foldFlowLines(str, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
+      return implicitKey ? str : foldFlowLines.foldFlowLines(str, indent3, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
     }
     function stringifyString(item, ctx, onComment, onChompKeep) {
       const { implicitKey, inFlow } = ctx;
@@ -8719,7 +8719,7 @@ var require_stringifyPair = __commonJS({
     var stringify = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
-      const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
+      const { allNullValues, doc, indent: indent3, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
       let keyComment = identity.isNode(key) && key.comment || null;
       if (simpleKeys) {
         if (keyComment) {
@@ -8734,7 +8734,7 @@ var require_stringifyPair = __commonJS({
       ctx = Object.assign({}, ctx, {
         allNullValues: false,
         implicitKey: !explicitKey && (simpleKeys || !allNullValues),
-        indent: indent + indentStep
+        indent: indent3 + indentStep
       });
       let keyCommentDone = false;
       let chompKeep = false;
@@ -8764,7 +8764,7 @@ var require_stringifyPair = __commonJS({
         if (keyComment)
           str += stringifyComment.lineComment(str, ctx.indent, commentString(keyComment));
         str = `? ${str}
-${indent}:`;
+${indent3}:`;
       } else {
         str = `${str}:`;
         if (keyComment)
@@ -9042,7 +9042,7 @@ var require_stringifyCollection = __commonJS({
       return stringify2(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
-      const { indent, options: { commentString } } = ctx;
+      const { indent: indent3, options: { commentString } } = ctx;
       const itemCtx = Object.assign({}, ctx, { indent: itemIndent, type: null });
       let chompKeep = false;
       const lines = [];
@@ -9077,13 +9077,13 @@ var require_stringifyCollection = __commonJS({
       } else {
         str = lines[0];
         for (let i = 1; i < lines.length; ++i) {
-          const line = lines[i];
-          str += line ? `
-${indent}${line}` : "\n";
+          const line4 = lines[i];
+          str += line4 ? `
+${indent3}${line4}` : "\n";
         }
       }
       if (comment) {
-        str += "\n" + stringifyComment.indentComment(commentString(comment), indent);
+        str += "\n" + stringifyComment.indentComment(commentString(comment), indent3);
         if (onComment)
           onComment();
       } else if (chompKeep && onChompKeep)
@@ -9091,7 +9091,7 @@ ${indent}${line}` : "\n";
       return str;
     }
     function stringifyFlowCollection({ items }, ctx, { flowChars, itemIndent }) {
-      const { indent, indentStep, flowCollectionPadding: fcPadding, options: { commentString } } = ctx;
+      const { indent: indent3, indentStep, flowCollectionPadding: fcPadding, options: { commentString } } = ctx;
       itemIndent += indentStep;
       const itemCtx = Object.assign({}, ctx, {
         indent: itemIndent,
@@ -9137,7 +9137,7 @@ ${indent}${line}` : "\n";
           str += ",";
         } else if (ctx.options.trailingComma) {
           if (ctx.options.lineWidth > 0) {
-            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str.length + 2) > ctx.options.lineWidth);
+            reqNewline || (reqNewline = lines.reduce((sum, line4) => sum + line4.length + 2, 2) + (str.length + 2) > ctx.options.lineWidth);
           }
           if (reqNewline) {
             str += ",";
@@ -9153,26 +9153,26 @@ ${indent}${line}` : "\n";
         return start + end;
       } else {
         if (!reqNewline) {
-          const len = lines.reduce((sum, line) => sum + line.length + 2, 2);
+          const len = lines.reduce((sum, line4) => sum + line4.length + 2, 2);
           reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
         }
         if (reqNewline) {
           let str = start;
-          for (const line of lines)
-            str += line ? `
-${indentStep}${indent}${line}` : "\n";
+          for (const line4 of lines)
+            str += line4 ? `
+${indentStep}${indent3}${line4}` : "\n";
           return `${str}
-${indent}${end}`;
+${indent3}${end}`;
         } else {
           return `${start}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
         }
       }
     }
-    function addCommentBefore({ indent, options: { commentString } }, lines, comment, chompKeep) {
+    function addCommentBefore({ indent: indent3, options: { commentString } }, lines, comment, chompKeep) {
       if (comment && chompKeep)
         comment = comment.replace(/^\n+/, "");
       if (comment) {
-        const ic = stringifyComment.indentComment(commentString(comment), indent);
+        const ic = stringifyComment.indentComment(commentString(comment), indent3);
         lines.push(ic.trimStart());
       }
     }
@@ -10645,9 +10645,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path4, value) {
+      addIn(path15, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path4, value);
+          this.contents.addIn(path15, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -10722,14 +10722,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path4) {
-        if (Collection.isEmptyPath(path4)) {
+      deleteIn(path15) {
+        if (Collection.isEmptyPath(path15)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path4) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path15) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -10744,10 +10744,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path4, keepScalar) {
-        if (Collection.isEmptyPath(path4))
+      getIn(path15, keepScalar) {
+        if (Collection.isEmptyPath(path15))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path4, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path15, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -10758,10 +10758,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path4) {
-        if (Collection.isEmptyPath(path4))
+      hasIn(path15) {
+        if (Collection.isEmptyPath(path15))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path4) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path15) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -10778,13 +10778,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path4, value) {
-        if (Collection.isEmptyPath(path4)) {
+      setIn(path15, value) {
+        if (Collection.isEmptyPath(path15)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path4), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path15), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path4, value);
+          this.contents.setIn(path15, value);
         }
       }
       /**
@@ -10903,10 +10903,10 @@ var require_errors2 = __commonJS({
       if (error62.pos[0] === -1)
         return;
       error62.linePos = error62.pos.map((pos) => lc.linePos(pos));
-      const { line, col } = error62.linePos[0];
-      error62.message += ` at line ${line}, column ${col}`;
+      const { line: line4, col } = error62.linePos[0];
+      error62.message += ` at line ${line4}, column ${col}`;
       let ci = col - 1;
-      let lineStr = src.substring(lc.lineStarts[line - 1], lc.lineStarts[line]).replace(/[\n\r]+$/, "");
+      let lineStr = src.substring(lc.lineStarts[line4 - 1], lc.lineStarts[line4]).replace(/[\n\r]+$/, "");
       if (ci >= 60 && lineStr.length > 80) {
         const trimStart = Math.min(ci - 39, lineStr.length - 79);
         lineStr = "\u2026" + lineStr.substring(trimStart);
@@ -10914,8 +10914,8 @@ var require_errors2 = __commonJS({
       }
       if (lineStr.length > 80)
         lineStr = lineStr.substring(0, 79) + "\u2026";
-      if (line > 1 && /^ *$/.test(lineStr.substring(0, ci))) {
-        let prev = src.substring(lc.lineStarts[line - 2], lc.lineStarts[line - 1]);
+      if (line4 > 1 && /^ *$/.test(lineStr.substring(0, ci))) {
+        let prev = src.substring(lc.lineStarts[line4 - 2], lc.lineStarts[line4 - 1]);
         if (prev.length > 80)
           prev = prev.substring(0, 79) + "\u2026\n";
         lineStr = prev + lineStr;
@@ -10923,7 +10923,7 @@ var require_errors2 = __commonJS({
       if (/[^ ]/.test(lineStr)) {
         let count = 1;
         const end = error62.linePos[1];
-        if (end?.line === line && end.col > col) {
+        if (end?.line === line4 && end.col > col) {
           count = Math.max(1, Math.min(end.col - col, 80 - ci));
         }
         const pointer = " ".repeat(ci) + "^".repeat(count);
@@ -11122,10 +11122,10 @@ var require_util_flow_indent_check = __commonJS({
   "node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports) {
     "use strict";
     var utilContainsNewline = require_util_contains_newline();
-    function flowIndentCheck(indent, fc, onError) {
+    function flowIndentCheck(indent3, fc, onError) {
       if (fc?.type === "flow-collection") {
         const end = fc.end[0];
-        if (end.indent === indent && (end.source === "]" || end.source === "}") && utilContainsNewline.containsNewline(fc)) {
+        if (end.indent === indent3 && (end.source === "]" || end.source === "}") && utilContainsNewline.containsNewline(fc)) {
           const msg = "Flow end indicator should be more indented than parent";
           onError(end, "BAD_INDENT", msg, true);
         }
@@ -11643,17 +11643,17 @@ var require_resolve_block_scalar = __commonJS({
       let offset = scalar.offset + header.length;
       let contentStart = 0;
       for (let i = 0; i < chompStart; ++i) {
-        const [indent, content] = lines[i];
+        const [indent3, content] = lines[i];
         if (content === "" || content === "\r") {
-          if (header.indent === 0 && indent.length > trimIndent)
-            trimIndent = indent.length;
+          if (header.indent === 0 && indent3.length > trimIndent)
+            trimIndent = indent3.length;
         } else {
-          if (indent.length < trimIndent) {
+          if (indent3.length < trimIndent) {
             const message = "Block scalars with more-indented leading empty lines must use an explicit indentation indicator";
-            onError(offset + indent.length, "MISSING_CHAR", message);
+            onError(offset + indent3.length, "MISSING_CHAR", message);
           }
           if (header.indent === 0)
-            trimIndent = indent.length;
+            trimIndent = indent3.length;
           contentStart = i;
           if (trimIndent === 0 && !ctx.atRoot) {
             const message = "Block scalar values in collections must be indented";
@@ -11661,7 +11661,7 @@ var require_resolve_block_scalar = __commonJS({
           }
           break;
         }
-        offset += indent.length + content.length + 1;
+        offset += indent3.length + content.length + 1;
       }
       for (let i = lines.length - 1; i >= chompStart; --i) {
         if (lines[i][0].length > trimIndent)
@@ -11673,26 +11673,26 @@ var require_resolve_block_scalar = __commonJS({
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
       for (let i = contentStart; i < chompStart; ++i) {
-        let [indent, content] = lines[i];
-        offset += indent.length + content.length + 1;
+        let [indent3, content] = lines[i];
+        offset += indent3.length + content.length + 1;
         const crlf = content[content.length - 1] === "\r";
         if (crlf)
           content = content.slice(0, -1);
-        if (content && indent.length < trimIndent) {
+        if (content && indent3.length < trimIndent) {
           const src = header.indent ? "explicit indentation indicator" : "first line";
           const message = `Block scalar lines must not be less indented than their ${src}`;
           onError(offset - content.length - (crlf ? 2 : 1), "BAD_INDENT", message);
-          indent = "";
+          indent3 = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep + indent.slice(trimIndent) + content;
+          value += sep + indent3.slice(trimIndent) + content;
           sep = "\n";
-        } else if (indent.length > trimIndent || content[0] === "	") {
+        } else if (indent3.length > trimIndent || content[0] === "	") {
           if (sep === " ")
             sep = "\n";
           else if (!prevMoreIndented && sep === "\n")
             sep = "\n\n";
-          value += sep + indent.slice(trimIndent) + content;
+          value += sep + indent3.slice(trimIndent) + content;
           sep = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
@@ -11728,7 +11728,7 @@ var require_resolve_block_scalar = __commonJS({
       }
       const { source } = props[0];
       const mode = source[0];
-      let indent = 0;
+      let indent3 = 0;
       let chomp = "";
       let error62 = -1;
       for (let i = 1; i < source.length; ++i) {
@@ -11737,8 +11737,8 @@ var require_resolve_block_scalar = __commonJS({
           chomp = ch;
         else {
           const n = Number(ch);
-          if (!indent && n)
-            indent = n;
+          if (!indent3 && n)
+            indent3 = n;
           else if (error62 === -1)
             error62 = offset + i;
         }
@@ -11779,7 +11779,7 @@ var require_resolve_block_scalar = __commonJS({
           }
         }
       }
-      return { mode, indent, chomp, comment, length };
+      return { mode, indent: indent3, chomp, comment, length };
     }
     function splitLines(source) {
       const split = source.split(/\n( *)/);
@@ -11872,8 +11872,8 @@ var require_resolve_flow_scalar = __commonJS({
       return unfoldLines(source.slice(1, -1)).replace(/''/g, "'");
     }
     function unfoldLines(source) {
-      const line = /(.*?)\r?\n/sy;
-      let match = line.exec(source);
+      const line4 = /(.*?)\r?\n/sy;
+      let match = line4.exec(source);
       if (!match)
         return source;
       let trimEnd, trimBoth;
@@ -11886,8 +11886,8 @@ var require_resolve_flow_scalar = __commonJS({
       }
       let res = match[1].replace(trimEnd, "");
       let sep = " ";
-      let pos = line.lastIndex;
-      while (match = line.exec(source)) {
+      let pos = line4.lastIndex;
+      while (match = line4.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
           if (sep === "\n")
@@ -11898,7 +11898,7 @@ var require_resolve_flow_scalar = __commonJS({
           res += sep + lm;
           sep = " ";
         }
-        pos = line.lastIndex;
+        pos = line4.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
@@ -11912,8 +11912,8 @@ var require_resolve_flow_scalar = __commonJS({
         if (ch === "\r" && source[i + 1] === "\n")
           continue;
         if (ch === "\n") {
-          const { fold, offset } = foldNewline(source, i);
-          res += fold;
+          const { fold: fold2, offset } = foldNewline(source, i);
+          res += fold2;
           i = offset;
         } else if (ch === "\\") {
           let next = source[++i];
@@ -11953,19 +11953,19 @@ var require_resolve_flow_scalar = __commonJS({
       return res;
     }
     function foldNewline(source, offset) {
-      let fold = "";
+      let fold2 = "";
       let ch = source[offset + 1];
       while (ch === " " || ch === "	" || ch === "\n" || ch === "\r") {
         if (ch === "\r" && source[offset + 2] !== "\n")
           break;
         if (ch === "\n")
-          fold += "\n";
+          fold2 += "\n";
         offset += 1;
         ch = source[offset + 1];
       }
-      if (!fold)
-        fold = " ";
-      return { fold, offset };
+      if (!fold2)
+        fold2 = " ";
+      return { fold: fold2, offset };
     }
     var escapeCodes = {
       "0": "\0",
@@ -12513,15 +12513,15 @@ var require_cst_scalar = __commonJS({
       return null;
     }
     function createScalarToken(value, context) {
-      const { implicitKey = false, indent, inFlow = false, offset = -1, type = "PLAIN" } = context;
+      const { implicitKey = false, indent: indent3, inFlow = false, offset = -1, type = "PLAIN" } = context;
       const source = stringifyString.stringifyString({ type, value }, {
         implicitKey,
-        indent: indent > 0 ? " ".repeat(indent) : "",
+        indent: indent3 > 0 ? " ".repeat(indent3) : "",
         inFlow,
         options: { blockQuote: true, lineWidth: -1 }
       });
       const end = context.end ?? [
-        { type: "newline", offset: -1, indent, source: "\n" }
+        { type: "newline", offset: -1, indent: indent3, source: "\n" }
       ];
       switch (source[0]) {
         case "|":
@@ -12530,25 +12530,25 @@ var require_cst_scalar = __commonJS({
           const head = source.substring(0, he);
           const body = source.substring(he + 1) + "\n";
           const props = [
-            { type: "block-scalar-header", offset, indent, source: head }
+            { type: "block-scalar-header", offset, indent: indent3, source: head }
           ];
           if (!addEndtoBlockProps(props, end))
-            props.push({ type: "newline", offset: -1, indent, source: "\n" });
-          return { type: "block-scalar", offset, indent, props, source: body };
+            props.push({ type: "newline", offset: -1, indent: indent3, source: "\n" });
+          return { type: "block-scalar", offset, indent: indent3, props, source: body };
         }
         case '"':
-          return { type: "double-quoted-scalar", offset, indent, source, end };
+          return { type: "double-quoted-scalar", offset, indent: indent3, source, end };
         case "'":
-          return { type: "single-quoted-scalar", offset, indent, source, end };
+          return { type: "single-quoted-scalar", offset, indent: indent3, source, end };
         default:
-          return { type: "scalar", offset, indent, source, end };
+          return { type: "scalar", offset, indent: indent3, source, end };
       }
     }
     function setScalarValue(token, value, context = {}) {
       let { afterKey = false, implicitKey = false, inFlow = false, type } = context;
-      let indent = "indent" in token ? token.indent : null;
-      if (afterKey && typeof indent === "number")
-        indent += 2;
+      let indent3 = "indent" in token ? token.indent : null;
+      if (afterKey && typeof indent3 === "number")
+        indent3 += 2;
       if (!type)
         switch (token.type) {
           case "single-quoted-scalar":
@@ -12568,8 +12568,8 @@ var require_cst_scalar = __commonJS({
             type = "PLAIN";
         }
       const source = stringifyString.stringifyString({ type, value }, {
-        implicitKey: implicitKey || indent === null,
-        indent: indent !== null && indent > 0 ? " ".repeat(indent) : "",
+        implicitKey: implicitKey || indent3 === null,
+        indent: indent3 !== null && indent3 > 0 ? " ".repeat(indent3) : "",
         inFlow,
         options: { blockQuote: true, lineWidth: -1 }
       });
@@ -12600,16 +12600,16 @@ var require_cst_scalar = __commonJS({
         token.source = body;
       } else {
         const { offset } = token;
-        const indent = "indent" in token ? token.indent : -1;
+        const indent3 = "indent" in token ? token.indent : -1;
         const props = [
-          { type: "block-scalar-header", offset, indent, source: head }
+          { type: "block-scalar-header", offset, indent: indent3, source: head }
         ];
         if (!addEndtoBlockProps(props, "end" in token ? token.end : void 0))
-          props.push({ type: "newline", offset: -1, indent, source: "\n" });
+          props.push({ type: "newline", offset: -1, indent: indent3, source: "\n" });
         for (const key of Object.keys(token))
           if (key !== "type" && key !== "offset")
             delete token[key];
-        Object.assign(token, { type: "block-scalar", indent, props, source: body });
+        Object.assign(token, { type: "block-scalar", indent: indent3, props, source: body });
       }
     }
     function addEndtoBlockProps(props, end) {
@@ -12654,12 +12654,12 @@ var require_cst_scalar = __commonJS({
           break;
         }
         default: {
-          const indent = "indent" in token ? token.indent : -1;
+          const indent3 = "indent" in token ? token.indent : -1;
           const end = "end" in token && Array.isArray(token.end) ? token.end.filter((st) => st.type === "space" || st.type === "comment" || st.type === "newline") : [];
           for (const key of Object.keys(token))
             if (key !== "type" && key !== "offset")
               delete token[key];
-          Object.assign(token, { type, indent, source, end });
+          Object.assign(token, { type, indent: indent3, source, end });
         }
       }
     }
@@ -12745,9 +12745,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path4) => {
+    visit2.itemAtPath = (cst, path15) => {
       let item = cst;
-      for (const [field, index] of path4) {
+      for (const [field, index] of path15) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -12756,23 +12756,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path4) => {
-      const parent = visit2.itemAtPath(cst, path4.slice(0, -1));
-      const field = path4[path4.length - 1][0];
+    visit2.parentCollection = (cst, path15) => {
+      const parent = visit2.itemAtPath(cst, path15.slice(0, -1));
+      const field = path15[path15.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path4, item, visitor) {
-      let ctrl = visitor(item, path4);
+    function _visit(path15, item, visitor) {
+      let ctrl = visitor(item, path15);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path4.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path15.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -12783,10 +12783,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path4);
+            ctrl = ctrl(item, path15);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path4) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path15) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -12965,15 +12965,15 @@ var require_lexer = __commonJS({
       continueScalar(offset) {
         let ch = this.buffer[offset];
         if (this.indentNext > 0) {
-          let indent = 0;
+          let indent3 = 0;
           while (ch === " ")
-            ch = this.buffer[++indent + offset];
+            ch = this.buffer[++indent3 + offset];
           if (ch === "\r") {
-            const next = this.buffer[indent + offset + 1];
+            const next = this.buffer[indent3 + offset + 1];
             if (next === "\n" || !next && !this.atEnd)
-              return offset + indent + 1;
+              return offset + indent3 + 1;
           }
-          return ch === "\n" || indent >= this.indentNext || !ch && !this.atEnd ? offset + indent : -1;
+          return ch === "\n" || indent3 >= this.indentNext || !ch && !this.atEnd ? offset + indent3 : -1;
         }
         if (ch === "-" || ch === ".") {
           const dt = this.buffer.substr(offset, 3);
@@ -13028,40 +13028,40 @@ var require_lexer = __commonJS({
         }
       }
       *parseStream() {
-        let line = this.getLine();
-        if (line === null)
+        let line4 = this.getLine();
+        if (line4 === null)
           return this.setNext("stream");
-        if (line[0] === cst.BOM) {
+        if (line4[0] === cst.BOM) {
           yield* this.pushCount(1);
-          line = line.substring(1);
+          line4 = line4.substring(1);
         }
-        if (line[0] === "%") {
-          let dirEnd = line.length;
-          let cs = line.indexOf("#");
+        if (line4[0] === "%") {
+          let dirEnd = line4.length;
+          let cs = line4.indexOf("#");
           while (cs !== -1) {
-            const ch = line[cs - 1];
+            const ch = line4[cs - 1];
             if (ch === " " || ch === "	") {
               dirEnd = cs - 1;
               break;
             } else {
-              cs = line.indexOf("#", cs + 1);
+              cs = line4.indexOf("#", cs + 1);
             }
           }
           while (true) {
-            const ch = line[dirEnd - 1];
+            const ch = line4[dirEnd - 1];
             if (ch === " " || ch === "	")
               dirEnd -= 1;
             else
               break;
           }
           const n = (yield* this.pushCount(dirEnd)) + (yield* this.pushSpaces(true));
-          yield* this.pushCount(line.length - n);
+          yield* this.pushCount(line4.length - n);
           this.pushNewline();
           return "stream";
         }
         if (this.atLineEnd()) {
           const sp = yield* this.pushSpaces(true);
-          yield* this.pushCount(line.length - sp);
+          yield* this.pushCount(line4.length - sp);
           yield* this.pushNewline();
           return "stream";
         }
@@ -13102,13 +13102,13 @@ var require_lexer = __commonJS({
       }
       *parseDocument() {
         yield* this.pushSpaces(true);
-        const line = this.getLine();
-        if (line === null)
+        const line4 = this.getLine();
+        if (line4 === null)
           return this.setNext("doc");
         let n = yield* this.pushIndicators();
-        switch (line[n]) {
+        switch (line4[n]) {
           case "#":
-            yield* this.pushCount(line.length - n);
+            yield* this.pushCount(line4.length - n);
           // fallthrough
           case void 0:
             yield* this.pushNewline();
@@ -13133,7 +13133,7 @@ var require_lexer = __commonJS({
           case ">":
             n += yield* this.parseBlockScalarHeader();
             n += yield* this.pushSpaces(true);
-            yield* this.pushCount(line.length - n);
+            yield* this.pushCount(line4.length - n);
             yield* this.pushNewline();
             return yield* this.parseBlockScalar();
           default:
@@ -13142,22 +13142,22 @@ var require_lexer = __commonJS({
       }
       *parseFlowCollection() {
         let nl, sp;
-        let indent = -1;
+        let indent3 = -1;
         do {
           nl = yield* this.pushNewline();
           if (nl > 0) {
             sp = yield* this.pushSpaces(false);
-            this.indentValue = indent = sp;
+            this.indentValue = indent3 = sp;
           } else {
             sp = 0;
           }
           sp += yield* this.pushSpaces(true);
         } while (nl + sp > 0);
-        const line = this.getLine();
-        if (line === null)
+        const line4 = this.getLine();
+        if (line4 === null)
           return this.setNext("flow");
-        if (indent !== -1 && indent < this.indentNext && line[0] !== "#" || indent === 0 && (line.startsWith("---") || line.startsWith("...")) && isEmpty(line[3])) {
-          const atFlowEndMarker = indent === this.indentNext - 1 && this.flowLevel === 1 && (line[0] === "]" || line[0] === "}");
+        if (indent3 !== -1 && indent3 < this.indentNext && line4[0] !== "#" || indent3 === 0 && (line4.startsWith("---") || line4.startsWith("...")) && isEmpty(line4[3])) {
+          const atFlowEndMarker = indent3 === this.indentNext - 1 && this.flowLevel === 1 && (line4[0] === "]" || line4[0] === "}");
           if (!atFlowEndMarker) {
             this.flowLevel = 0;
             yield cst.FLOW_END;
@@ -13165,17 +13165,17 @@ var require_lexer = __commonJS({
           }
         }
         let n = 0;
-        while (line[n] === ",") {
+        while (line4[n] === ",") {
           n += yield* this.pushCount(1);
           n += yield* this.pushSpaces(true);
           this.flowKey = false;
         }
         n += yield* this.pushIndicators();
-        switch (line[n]) {
+        switch (line4[n]) {
           case void 0:
             return "flow";
           case "#":
-            yield* this.pushCount(line.length - n);
+            yield* this.pushCount(line4.length - n);
             return "flow";
           case "{":
           case "[":
@@ -13265,16 +13265,16 @@ var require_lexer = __commonJS({
       }
       *parseBlockScalar() {
         let nl = this.pos - 1;
-        let indent = 0;
+        let indent3 = 0;
         let ch;
         loop: for (let i2 = this.pos; ch = this.buffer[i2]; ++i2) {
           switch (ch) {
             case " ":
-              indent += 1;
+              indent3 += 1;
               break;
             case "\n":
               nl = i2;
-              indent = 0;
+              indent3 = 0;
               break;
             case "\r": {
               const next = this.buffer[i2 + 1];
@@ -13290,9 +13290,9 @@ var require_lexer = __commonJS({
         }
         if (!ch && !this.atEnd)
           return this.setNext("block-scalar");
-        if (indent >= this.indentNext) {
+        if (indent3 >= this.indentNext) {
           if (this.blockScalarIndent === -1)
-            this.indentNext = indent;
+            this.indentNext = indent3;
           else {
             this.indentNext = this.blockScalarIndent + (this.indentNext === 0 ? 1 : this.indentNext);
           }
@@ -13325,7 +13325,7 @@ var require_lexer = __commonJS({
             const lastChar = i2;
             while (ch2 === " ")
               ch2 = this.buffer[--i2];
-            if (ch2 === "\n" && i2 >= this.pos && i2 + 1 + indent > lastChar)
+            if (ch2 === "\n" && i2 >= this.pos && i2 + 1 + indent3 > lastChar)
               nl = i2;
             else
               break;
@@ -14088,14 +14088,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs4 = this.flowScalar(this.type);
+              const fs15 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs4, sep: [] });
+                map2.items.push({ start, key: fs15, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs4);
+                this.stack.push(fs15);
               } else {
-                Object.assign(it, { key: fs4, sep: [] });
+                Object.assign(it, { key: fs15, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -14223,13 +14223,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs4 = this.flowScalar(this.type);
+              const fs15 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs4, sep: [] });
+                fc.items.push({ start: [], key: fs15, sep: [] });
               else if (it.sep)
-                this.stack.push(fs4);
+                this.stack.push(fs15);
               else
-                Object.assign(it, { key: fs4, sep: [] });
+                Object.assign(it, { key: fs15, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -14341,10 +14341,10 @@ var require_parser = __commonJS({
         }
         return null;
       }
-      atIndentedComment(start, indent) {
+      atIndentedComment(start, indent3) {
         if (this.type !== "comment")
           return false;
-        if (this.indent <= indent)
+        if (this.indent <= indent3)
           return false;
         return start.every((st) => st.type === "newline" || st.type === "space");
       }
@@ -14466,8 +14466,8 @@ var require_public_api = __commonJS({
       if (typeof options === "string")
         options = options.length;
       if (typeof options === "number") {
-        const indent = Math.round(options);
-        options = indent < 1 ? void 0 : indent > 8 ? { indent: 8 } : { indent };
+        const indent3 = Math.round(options);
+        options = indent3 < 1 ? void 0 : indent3 > 8 ? { indent: 8 } : { indent: indent3 };
       }
       if (value === void 0) {
         const { keepUndefined } = options ?? replacer ?? {};
@@ -14654,7 +14654,7 @@ var require_mod = __commonJS({
       }
       return score;
     };
-    var distance2 = function(a, b) {
+    var distance3 = function(a, b) {
       if (a.length < b.length) {
         var tmp = b;
         b = a;
@@ -14668,12 +14668,12 @@ var require_mod = __commonJS({
       }
       return myers_x(a, b);
     };
-    exports.distance = distance2;
+    exports.distance = distance3;
     var closest = function(str, arr) {
       var min_distance = Infinity;
       var min_index = 0;
       for (var i = 0; i < arr.length; i++) {
-        var dist = distance2(str, arr[i]);
+        var dist = distance3(str, arr[i]);
         if (dist < min_distance) {
           min_distance = dist;
           min_index = i;
@@ -14686,9 +14686,9 @@ var require_mod = __commonJS({
 });
 
 // src/mcp/server.ts
-import { readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync as readFileSync2, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // node_modules/zod/v3/helpers/util.js
 var util;
@@ -15064,8 +15064,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path4, errorMaps, issueData } = params;
-  const fullPath = [...path4, ...issueData.path || []];
+  const { data, path: path15, errorMaps, issueData } = params;
+  const fullPath = [...path15, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -15077,15 +15077,15 @@ var makeIssue = (params) => {
       message: issueData.message
     };
   }
-  let errorMessage3 = "";
+  let errorMessage7 = "";
   const maps = errorMaps.filter((m) => !!m).slice().reverse();
   for (const map2 of maps) {
-    errorMessage3 = map2(fullIssue, { data, defaultError: errorMessage3 }).message;
+    errorMessage7 = map2(fullIssue, { data, defaultError: errorMessage7 }).message;
   }
   return {
     ...issueData,
     path: fullPath,
-    message: errorMessage3
+    message: errorMessage7
   };
 };
 function addIssueToContext(ctx, issueData) {
@@ -15180,11 +15180,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path4, key) {
+  constructor(parent, value, path15, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path4;
+    this._path = path15;
     this._key = key;
   }
   get path() {
@@ -19138,10 +19138,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path4) {
-  if (!path4)
+function getElementAtPath(obj, path15) {
+  if (!path15)
     return obj;
-  return path4.reduce((acc, key) => acc?.[key], obj);
+  return path15.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -19481,11 +19481,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path4, issues) {
+function prefixIssues(path15, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path4);
+    iss.path.unshift(path15);
     return iss;
   });
 }
@@ -19935,16 +19935,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path4 = []) => {
+  const processError = (error63, path15 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path4, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path4, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path4, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else {
-        const fullpath = [...path4, ...issue2.path];
+        const fullpath = [...path15, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19983,17 +19983,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path4 = []) => {
+  const processError = (error63, path15 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path4, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path4, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path4, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else {
-        const fullpath = [...path4, ...issue2.path];
+        const fullpath = [...path15, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -20032,8 +20032,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path4 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path4) {
+  const path15 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path15) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -20894,8 +20894,8 @@ var Doc = class {
     const lines = content.split("\n").filter((x) => x);
     const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
     const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
-    for (const line of dedented) {
-      this.content.push(line);
+    for (const line4 of dedented) {
+      this.content.push(line4);
     }
   }
   compile() {
@@ -35548,11 +35548,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path4) {
-  if (path4.length === 0) {
+function getDotPath(path15) {
+  if (path15.length === 0) {
     return "object root";
   }
-  return path4.reduce((acc, seg, index) => {
+  return path15.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -37779,13 +37779,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path4 = ref.slice(1).split("/").filter(Boolean);
-  if (path4.length === 0) {
+  const path15 = ref.slice(1).split("/").filter(Boolean);
+  if (path15.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path4[0] === defsKey) {
-    const key = path4[1] === void 0 ? void 0 : decodeJSONPointerSegment(path4[1]);
+  if (path15[0] === defsKey) {
+    const key = path15[1] === void 0 ? void 0 : decodeJSONPointerSegment(path15[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -40071,19 +40071,19 @@ var getRefs = (options) => {
 };
 
 // node_modules/zod-to-json-schema/dist/esm/errorMessages.js
-function addErrorMessage(res, key, errorMessage3, refs) {
+function addErrorMessage(res, key, errorMessage7, refs) {
   if (!refs?.errorMessages)
     return;
-  if (errorMessage3) {
+  if (errorMessage7) {
     res.errorMessage = {
       ...res.errorMessage,
-      [key]: errorMessage3
+      [key]: errorMessage7
     };
   }
 }
-function setResponseValueAndErrors(res, key, value, errorMessage3, refs) {
+function setResponseValueAndErrors(res, key, value, errorMessage7, refs) {
   res[key] = value;
-  addErrorMessage(res, key, errorMessage3, refs);
+  addErrorMessage(res, key, errorMessage7, refs);
 }
 
 // node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
@@ -41394,8 +41394,8 @@ var Protocol = class {
                   if (queuedMessage.type === "response") {
                     resolver(message);
                   } else {
-                    const errorMessage3 = message;
-                    const error62 = new McpError(errorMessage3.error.code, errorMessage3.error.message, errorMessage3.error.data);
+                    const errorMessage7 = message;
+                    const error62 = new McpError(errorMessage7.error.code, errorMessage7.error.message, errorMessage7.error.data);
                     resolver(error62);
                   }
                 } else {
@@ -42686,23 +42686,23 @@ var Server = class extends Protocol {
       const wrappedHandler = async (request, extra) => {
         const validatedRequest = safeParse2(CallToolRequestSchema, request);
         if (!validatedRequest.success) {
-          const errorMessage3 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage3}`);
+          const errorMessage7 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage7}`);
         }
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
-            const errorMessage3 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage3}`);
+            const errorMessage7 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage7}`);
           }
           return taskValidationResult.data;
         }
         const validationResult = safeParse2(CallToolResultSchema, result);
         if (!validationResult.success) {
-          const errorMessage3 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage3}`);
+          const errorMessage7 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage7}`);
         }
         return validationResult.data;
       };
@@ -43196,12 +43196,12 @@ var McpServer = class {
    * @param errorMessage - The error message.
    * @returns The tool error result.
    */
-  createToolError(errorMessage3) {
+  createToolError(errorMessage7) {
     return {
       content: [
         {
           type: "text",
-          text: errorMessage3
+          text: errorMessage7
         }
       ],
       isError: true
@@ -43219,8 +43219,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(schemaToParse, args);
     if (!parseResult.success) {
       const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage3 = getParseErrorMessage(error62);
-      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage3}`);
+      const errorMessage7 = getParseErrorMessage(error62);
+      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage7}`);
     }
     return parseResult.data;
   }
@@ -43244,8 +43244,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(outputObj, result.structuredContent);
     if (!parseResult.success) {
       const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage3 = getParseErrorMessage(error62);
-      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage3}`);
+      const errorMessage7 = getParseErrorMessage(error62);
+      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage7}`);
     }
   }
   /**
@@ -43457,8 +43457,8 @@ var McpServer = class {
         const parseResult = await safeParseAsync2(argsObj, request.params.arguments);
         if (!parseResult.success) {
           const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-          const errorMessage3 = getParseErrorMessage(error62);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage3}`);
+          const errorMessage7 = getParseErrorMessage(error62);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage7}`);
         }
         const args = parseResult.data;
         const cb = prompt.callback;
@@ -43886,16 +43886,16 @@ var ReadBuffer = class {
     if (index === -1) {
       return null;
     }
-    const line = this._buffer.toString("utf8", 0, index).replace(/\r$/, "");
+    const line4 = this._buffer.toString("utf8", 0, index).replace(/\r$/, "");
     this._buffer = this._buffer.subarray(index + 1);
-    return deserializeMessage(line);
+    return deserializeMessage(line4);
   }
   clear() {
     this._buffer = void 0;
   }
 };
-function deserializeMessage(line) {
-  return JSONRPCMessageSchema.parse(JSON.parse(line));
+function deserializeMessage(line4) {
+  return JSONRPCMessageSchema.parse(JSON.parse(line4));
 }
 function serializeMessage(message) {
   return JSON.stringify(message) + "\n";
@@ -43983,12 +43983,24 @@ var LIMITS = {
 };
 var INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 var CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+var CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+var ANSI_RE = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
 var OTHER_RE = new RegExp("\\p{C}", "gu");
+var DISPLAY_MAX_CHARS = 200;
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
 }
 function hasControlChars(s) {
   return CONTROL_RE.test(s);
+}
+function stripControlChars(s) {
+  return stripInvisible(s.replace(CONTROL_RE_G, ""));
+}
+function sanitizeForDisplay(s) {
+  const clean = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
+  const chars = Array.from(clean);
+  if (chars.length <= DISPLAY_MAX_CHARS) return clean;
+  return `${chars.slice(0, DISPLAY_MAX_CHARS - 1).join("")}\u2026`;
 }
 function SafeString(max) {
   return external_exports.string().transform((s) => stripInvisible(s).trim()).pipe(
@@ -44049,10 +44061,10 @@ var LexiconSchema = external_exports.object({
   terms: external_exports.array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
   settings: LexiconSettingsSchema.optional()
 });
-function formatPath(path4) {
-  if (path4.length === 0) return "(root)";
+function formatPath(path15) {
+  if (path15.length === 0) return "(root)";
   let out = "";
-  for (const seg of path4) {
+  for (const seg of path15) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -44190,6 +44202,24 @@ async function refreshTrust(projectPath, opts = {}) {
   await writeTrustRegistry(registry2, opts);
   return true;
 }
+async function untrustProject(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  const registry2 = await readTrustRegistry(opts);
+  if (!(key in registry2.trusted)) return false;
+  delete registry2.trusted[key];
+  await writeTrustRegistry(registry2, opts);
+  return true;
+}
+async function listTrusted(opts = {}) {
+  const registry2 = await readTrustRegistry(opts);
+  const out = [];
+  for (const [filePath, entry] of Object.entries(registry2.trusted)) {
+    const sha = await hashFile(filePath);
+    const status = sha === void 0 ? "missing" : sha === entry.sha256 ? "trusted" : "changed";
+    out.push({ path: filePath, ...entry, status });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
 
 // src/core/store.ts
 var PROJECT_FILE_NAME = ".lexicon.yaml";
@@ -44270,7 +44300,7 @@ async function writeLexiconFile(file2) {
   const dir = path2.dirname(file2.path);
   await fs2.mkdir(dir, { recursive: true });
   const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
-  const header = HEADER_COMMENT.split("\n").map((line) => line ? `# ${line}` : "#").join("\n");
+  const header = HEADER_COMMENT.split("\n").map((line4) => line4 ? `# ${line4}` : "#").join("\n");
   const text = `${header}
 
 ${body}`;
@@ -48683,9 +48713,9 @@ function buildIndex(lexicon) {
       const collapsedRaw = norm.replace(/[^\p{L}\p{N}]+/gu, "");
       const collapsedLower = collapse(norm);
       if (!collapsedLower) continue;
-      const dedupeKey = `${normLower}\0${explicit ? 1 : 0}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
+      const dedupeKey2 = `${normLower}\0${explicit ? 1 : 0}`;
+      if (seen.has(dedupeKey2)) continue;
+      seen.add(dedupeKey2);
       const tokenCount = norm.split(" ").length;
       const entry = {
         termIndex,
@@ -50595,7 +50625,7 @@ async function harvestRepo(root, opts = {}) {
   const minCount = opts.minCount ?? 2;
   const limit = opts.limit ?? 50;
   const buckets = /* @__PURE__ */ new Map();
-  const bump2 = (canonical, category, source, evidence, count = 1, alwaysInclude = false) => {
+  const bump3 = (canonical, category, source, evidence, count = 1, alwaysInclude = false) => {
     const name = canonical.trim();
     if (!name) return;
     const key = name.toLowerCase();
@@ -50615,11 +50645,11 @@ async function harvestRepo(root, opts = {}) {
   };
   const rootName = path3.basename(absRoot);
   if (rootName && !GENERIC_ROOT_NAMES.has(rootName.toLowerCase()) && /^[A-Za-z]/.test(rootName)) {
-    bump2(rootName, "product", "harvest:repo", "directory name", 1, true);
+    bump3(rootName, "product", "harvest:repo", "directory name", 1, true);
   }
   if (wantGit) {
     for (const author of gitAuthors(absRoot)) {
-      bump2(author, "person", "harvest:git", "git log", 1, true);
+      bump3(author, "person", "harvest:git", "git log", 1, true);
     }
   }
   const { files } = walk(absRoot, ignore);
@@ -50629,19 +50659,19 @@ async function harvestRepo(root, opts = {}) {
     const ext = path3.extname(file2).toLowerCase();
     if (wantPackages) {
       if (base === "package.json") {
-        harvestPackageJson(file2, rel, bump2);
+        harvestPackageJson(file2, rel, bump3);
         continue;
       }
       if (base === "pyproject.toml") {
-        harvestPyproject(file2, rel, bump2);
+        harvestPyproject(file2, rel, bump3);
         continue;
       }
       if (base === "Cargo.toml") {
-        harvestCargo(file2, rel, bump2);
+        harvestCargo(file2, rel, bump3);
         continue;
       }
       if (base === "go.mod") {
-        harvestGoMod(file2, rel, bump2);
+        harvestGoMod(file2, rel, bump3);
         continue;
       }
     }
@@ -50650,18 +50680,18 @@ async function harvestRepo(root, opts = {}) {
     if (text === void 0) continue;
     if (ext === ".md" || SOURCE_EXTENSIONS.has(ext)) {
       for (const [brand, n] of countMatches(text, DOT_TLD_RE)) {
-        bump2(brand, "brand", "harvest:repo", rel, n, true);
+        bump3(brand, "brand", "harvest:repo", rel, n, true);
       }
     }
     if (ext === ".md" && /^readme/i.test(base)) {
       for (const [word, n] of readmeProperNouns(text)) {
-        bump2(word, "brand", "harvest:repo", rel, n);
+        bump3(word, "brand", "harvest:repo", rel, n);
       }
       continue;
     }
     if (wantIdentifiers && SOURCE_EXTENSIONS.has(ext)) {
       for (const [ident, n] of pascalCaseIdentifiers(text)) {
-        bump2(ident, "identifier", "harvest:repo", rel, n);
+        bump3(ident, "identifier", "harvest:repo", rel, n);
       }
     }
   }
@@ -50946,7 +50976,7 @@ var GENERIC_DEP_WORDS = /* @__PURE__ */ new Set([
   "tower",
   "tracing"
 ]);
-function harvestDependencyName(dep, evidence, bump2) {
+function harvestDependencyName(dep, evidence, bump3) {
   let bare = dep;
   let scope;
   const m = /^@([^/]+)\/(.+)$/.exec(dep);
@@ -50961,10 +50991,10 @@ function harvestDependencyName(dep, evidence, bump2) {
     if (GENERIC_DEP_WORDS.has(part.toLowerCase())) continue;
     if (HARVEST_STOPLIST.has(capitalize(part))) continue;
     if (!/^[A-Za-z][A-Za-z0-9._-]*$/.test(part)) continue;
-    bump2(part, "identifier", "harvest:package", ev, 1);
+    bump3(part, "identifier", "harvest:package", ev, 1);
   }
 }
-function harvestPackageJson(file2, rel, bump2) {
+function harvestPackageJson(file2, rel, bump3) {
   const text = readText(file2);
   if (text === void 0) return;
   let pkg;
@@ -50978,61 +51008,61 @@ function harvestPackageJson(file2, rel, bump2) {
     const m = /^@([^/]+)\/(.+)$/.exec(pkg.name);
     const bare = m ? m[2] : pkg.name;
     const generic = bare.length < 4 || GENERIC_DEP_WORDS.has(bare.toLowerCase()) || HARVEST_STOPLIST.has(capitalize(bare));
-    if (!generic) bump2(bare, "product", "harvest:package", `${rel}#name`, 1, true);
+    if (!generic) bump3(bare, "product", "harvest:package", `${rel}#name`, 1, true);
     if (m && m[1].length >= 4 && !GENERIC_DEP_WORDS.has(m[1].toLowerCase())) {
-      bump2(m[1], "brand", "harvest:package", `${rel}#name (@${m[1]}/${bare})`, 1, true);
+      bump3(m[1], "brand", "harvest:package", `${rel}#name (@${m[1]}/${bare})`, 1, true);
     }
   }
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     const deps = pkg[field];
     if (!isRecord(deps)) continue;
-    for (const dep of Object.keys(deps)) harvestDependencyName(dep, `${rel}#${field}`, bump2);
+    for (const dep of Object.keys(deps)) harvestDependencyName(dep, `${rel}#${field}`, bump3);
   }
 }
-function harvestPyproject(file2, rel, bump2) {
+function harvestPyproject(file2, rel, bump3) {
   const text = readText(file2);
   if (text === void 0) return;
   const sections = tomlSections(text);
   const project = sections.get("project") ?? sections.get("tool.poetry") ?? "";
   const name = /^\s*name\s*=\s*["']([^"']+)["']/m.exec(project);
-  if (name) bump2(name[1], "product", "harvest:package", `${rel}#project.name`, 1, true);
+  if (name) bump3(name[1], "product", "harvest:package", `${rel}#project.name`, 1, true);
   const depsBlock = /dependencies\s*=\s*\[([\s\S]*?)\]/.exec(project);
   if (depsBlock) {
     for (const m of depsBlock[1].matchAll(/["']([A-Za-z0-9_.-]+)/g)) {
-      harvestDependencyName(m[1], `${rel}#project.dependencies`, bump2);
+      harvestDependencyName(m[1], `${rel}#project.dependencies`, bump3);
     }
   }
   const poetryDeps = sections.get("tool.poetry.dependencies");
   if (poetryDeps) {
     for (const m of poetryDeps.matchAll(/^\s*([A-Za-z0-9_.-]+)\s*=/gm)) {
       if (m[1].toLowerCase() === "python") continue;
-      harvestDependencyName(m[1], `${rel}#tool.poetry.dependencies`, bump2);
+      harvestDependencyName(m[1], `${rel}#tool.poetry.dependencies`, bump3);
     }
   }
 }
-function harvestCargo(file2, rel, bump2) {
+function harvestCargo(file2, rel, bump3) {
   const text = readText(file2);
   if (text === void 0) return;
   const sections = tomlSections(text);
   const pkg = sections.get("package") ?? "";
   const name = /^\s*name\s*=\s*["']([^"']+)["']/m.exec(pkg);
-  if (name) bump2(name[1], "product", "harvest:package", `${rel}#package.name`, 1, true);
+  if (name) bump3(name[1], "product", "harvest:package", `${rel}#package.name`, 1, true);
   for (const key of ["dependencies", "dev-dependencies", "build-dependencies"]) {
     const block = sections.get(key);
     if (!block) continue;
     for (const m of block.matchAll(/^\s*([A-Za-z0-9_-]+)\s*=/gm)) {
-      harvestDependencyName(m[1], `${rel}#${key}`, bump2);
+      harvestDependencyName(m[1], `${rel}#${key}`, bump3);
     }
   }
 }
-function harvestGoMod(file2, rel, bump2) {
+function harvestGoMod(file2, rel, bump3) {
   const text = readText(file2);
   if (text === void 0) return;
   const mod = /^module\s+(\S+)/m.exec(text);
   if (mod) {
     const last = mod[1].split("/").pop() ?? mod[1];
     const name = /^v\d+$/.test(last) ? mod[1].split("/").slice(-2, -1)[0] ?? last : last;
-    bump2(name, "product", "harvest:package", `${rel}#module`, 1, true);
+    bump3(name, "product", "harvest:package", `${rel}#module`, 1, true);
   }
   const requireBlocks = [...text.matchAll(/require\s*\(([\s\S]*?)\)/g)].map((m) => m[1]);
   const singles = [...text.matchAll(/^require\s+(\S+)\s+\S+/gm)].map((m) => m[1]);
@@ -51043,7 +51073,7 @@ function harvestGoMod(file2, rel, bump2) {
   for (const mp of modulePaths) {
     const segs = mp.split("/").filter((s) => !/^v\d+$/.test(s));
     const last = segs[segs.length - 1];
-    if (last) harvestDependencyName(last, `${rel}#require`, bump2);
+    if (last) harvestDependencyName(last, `${rel}#require`, bump3);
   }
 }
 function tomlSections(text) {
@@ -51054,14 +51084,14 @@ function tomlSections(text) {
     if (current) out.set(current, (out.get(current) ?? "") + buf.join("\n") + "\n");
     buf = [];
   };
-  for (const line of text.split(/\r?\n/)) {
-    const header = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+  for (const line4 of text.split(/\r?\n/)) {
+    const header = /^\s*\[([^\]]+)\]\s*$/.exec(line4);
     if (header) {
       flush();
       current = header[1].trim();
       continue;
     }
-    buf.push(line);
+    buf.push(line4);
   }
   flush();
   return out;
@@ -51127,8 +51157,8 @@ function gitAuthors(root) {
     });
     const seen = /* @__PURE__ */ new Set();
     const authors = [];
-    for (const line of out.split(/\r?\n/)) {
-      const name = line.trim();
+    for (const line4 of out.split(/\r?\n/)) {
+      const name = line4.trim();
       if (!name) continue;
       if (/\[bot\]$/i.test(name) || /@/.test(name)) continue;
       const key = name.toLowerCase();
@@ -51397,6 +51427,23 @@ var EXPORT_FORMATS = [
   "text",
   "markdown"
 ];
+var EXPORT_FORMAT_INFO = {
+  "wispr": { description: "Wispr Flow dictionary CSV", ext: "csv" },
+  "superwhisper": { description: "Superwhisper replacements JSON", ext: "json" },
+  "whisper-prompt": { description: "Whisper initial_prompt line", ext: "txt" },
+  "macos": { description: "macOS Text Replacement plist", ext: "plist" },
+  "claude-md": { description: "Markdown snippet for CLAUDE.md / system prompt", ext: "md" },
+  "csv": { description: "Generic canonical,alias CSV", ext: "csv" },
+  "json": { description: "Raw lexicon JSON", ext: "json" },
+  "deepgram": { description: "Deepgram keywords with boost", ext: "json" },
+  "espanso": { description: "espanso match YAML", ext: "yml" },
+  "assemblyai": { description: "AssemblyAI word_boost JSON", ext: "json" },
+  "azure": { description: "Azure Speech phraseList JSON", ext: "json" },
+  "google": { description: "Google Speech-to-Text adaptation phraseSets JSON", ext: "json" },
+  "openai": { description: "OpenAI transcription `prompt` field (one line, <= 100 terms)", ext: "txt" },
+  "text": { description: 'Plain text, one "Canonical: alias1, alias2" per line (round-trips with `lexicon import`)', ext: "txt" },
+  "markdown": { description: "Markdown bullet list for READMEs and wikis", ext: "md" }
+};
 var EXPORTERS = {
   "wispr": exportWispr,
   "superwhisper": exportSuperwhisper,
@@ -51435,11 +51482,507 @@ function applyOptions(lexicon, opts) {
   return { ...lexicon, terms };
 }
 
+// src/core/importers/csv-parse.ts
+function stripBom(content) {
+  return content.charCodeAt(0) === 65279 ? content.slice(1) : content;
+}
+function parseCsv(content) {
+  const text = stripBom(content);
+  const records = [];
+  let fields = [];
+  let field = "";
+  let inQuotes = false;
+  let line4 = 1;
+  let recordLine = 1;
+  let sawQuote = false;
+  const endField = () => {
+    fields.push(field);
+    field = "";
+    sawQuote = false;
+  };
+  const endRecord = () => {
+    endField();
+    const blank = fields.length === 1 && fields[0] === "";
+    if (!blank) records.push({ line: recordLine, fields });
+    fields = [];
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        if (ch === "\n") line4++;
+        field += ch;
+      }
+      continue;
+    }
+    if (ch === '"' && field === "" && !sawQuote) {
+      inQuotes = true;
+      sawQuote = true;
+    } else if (ch === ",") {
+      endField();
+    } else if (ch === "\r") {
+      if (text[i + 1] === "\n") i++;
+      endRecord();
+      line4++;
+      recordLine = line4;
+    } else if (ch === "\n") {
+      endRecord();
+      line4++;
+      recordLine = line4;
+    } else {
+      field += ch;
+    }
+  }
+  if (field !== "" || fields.length > 0 || sawQuote) endRecord();
+  return records;
+}
+
+// src/core/importers/shared.ts
+var CATEGORIES = [
+  "brand",
+  "person",
+  "product",
+  "acronym",
+  "identifier",
+  "place",
+  "other"
+];
+function isTermCategory(value) {
+  return typeof value === "string" && CATEGORIES.includes(value);
+}
+function parseCategoryCell(value) {
+  if (value === void 0) return void 0;
+  const lower = value.trim().toLowerCase();
+  return isTermCategory(lower) ? lower : void 0;
+}
+function rowFor(line4, canonical, aliases, extra = {}) {
+  const c = canonical.trim();
+  if (!c) return { skip: { line: line4, reason: "empty canonical" } };
+  const term = { canonical: c, aliases: aliases.map((a) => a.trim()).filter(Boolean) };
+  if (extra.category) term.category = extra.category;
+  if (extra.phonetic?.trim()) term.phonetic = extra.phonetic.trim();
+  if (extra.notes?.trim()) term.notes = extra.notes.trim();
+  return { row: { line: line4, term } };
+}
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/core/importers/csv.ts
+var KNOWN_HEADERS = ["canonical", "alias", "category", "phonetic", "notes"];
+function isLexiconCsvHeader(fields) {
+  return fields.some((f) => f.trim().toLowerCase() === "canonical");
+}
+function parseCsvImport(content) {
+  const out = { rows: [], skipped: [] };
+  const records = parseCsv(content);
+  if (records.length === 0) return out;
+  let columns = { canonical: 0, alias: 1, category: 2, phonetic: 3 };
+  let start = 0;
+  if (isLexiconCsvHeader(records[0].fields)) {
+    columns = {};
+    records[0].fields.forEach((name, i) => {
+      const key = name.trim().toLowerCase();
+      if (KNOWN_HEADERS.includes(key)) columns[key] = i;
+    });
+    start = 1;
+  }
+  const cell = (fields, key) => {
+    const idx = columns[key];
+    return idx === void 0 ? void 0 : fields[idx];
+  };
+  for (const { line: line4, fields } of records.slice(start)) {
+    const alias = cell(fields, "alias")?.trim();
+    const { row, skip } = rowFor(line4, cell(fields, "canonical") ?? "", alias ? [alias] : [], {
+      category: parseCategoryCell(cell(fields, "category")),
+      phonetic: cell(fields, "phonetic"),
+      notes: cell(fields, "notes")
+    });
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  }
+  return out;
+}
+
 // src/core/importers/espanso.ts
 var import_yaml3 = __toESM(require_dist2(), 1);
+function looksLikeEspanso(content) {
+  return /^matches\s*:/m.test(content.replace(/^﻿/, ""));
+}
+function parseEspansoImport(content) {
+  const text = content.replace(/^﻿/, "");
+  const lineCounter = new import_yaml3.LineCounter();
+  const doc = (0, import_yaml3.parseDocument)(text, { lineCounter });
+  if (doc.errors.length > 0) {
+    throw new Error(`espanso: invalid YAML (${doc.errors[0].message.split("\n")[0]})`);
+  }
+  const root = doc.contents;
+  const matches = (0, import_yaml3.isMap)(root) ? root.get("matches", true) : void 0;
+  if (!(0, import_yaml3.isSeq)(matches)) {
+    throw new Error("espanso: expected a top-level `matches:` list");
+  }
+  const out = { rows: [], skipped: [] };
+  matches.items.forEach((node2, i) => {
+    const offset = (0, import_yaml3.isMap)(node2) && node2.range ? node2.range[0] : void 0;
+    const line4 = offset === void 0 ? i + 1 : lineCounter.linePos(offset).line;
+    const entry = (0, import_yaml3.isMap)(node2) ? node2.toJSON() : node2;
+    if (!isRecord2(entry)) {
+      out.skipped.push({ line: line4, reason: "match is not a mapping" });
+      return;
+    }
+    if (entry.vars !== void 0) {
+      out.skipped.push({ line: line4, reason: "match uses vars (template, not a word)" });
+      return;
+    }
+    if (typeof entry.replace !== "string") {
+      out.skipped.push({ line: line4, reason: "match has no string `replace`" });
+      return;
+    }
+    if (/[\r\n]/.test(entry.replace)) {
+      out.skipped.push({ line: line4, reason: "multi-line replace (template, not a word)" });
+      return;
+    }
+    const triggers = [];
+    if (typeof entry.trigger === "string") triggers.push(entry.trigger);
+    if (Array.isArray(entry.triggers)) {
+      for (const t of entry.triggers) if (typeof t === "string") triggers.push(t);
+    }
+    if (triggers.length === 0) {
+      out.skipped.push({ line: line4, reason: "match has no trigger (regex matches are skipped)" });
+      return;
+    }
+    const aliases = triggers.map((t) => t.replace(/^[:;]+/, ""));
+    const { row, skip } = rowFor(line4, entry.replace, aliases);
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  });
+  return out;
+}
 
 // src/core/importers/json.ts
 var import_yaml4 = __toESM(require_dist2(), 1);
+function looksLikeLexiconJson(value) {
+  return isRecord2(value) && (Array.isArray(value.terms) || "version" in value);
+}
+function parseJsonImport(content) {
+  let raw;
+  try {
+    raw = (0, import_yaml4.parse)(content.replace(/^﻿/, ""));
+  } catch (err) {
+    throw new Error(`json: invalid JSON/YAML (${err instanceof Error ? err.message : String(err)})`);
+  }
+  const lexicon = parseLexicon(raw);
+  const rows = lexicon.terms.map((t, i) => {
+    const { scope: _scope, createdAt: _createdAt, hits: _hits, ...rest } = t;
+    const term = { ...rest };
+    return { line: i + 1, term };
+  });
+  return { rows, skipped: [] };
+}
+
+// src/core/importers/macos.ts
+var NAMED_ENTITIES = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'"
+};
+function xmlUnescape(value) {
+  return value.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, body) => {
+    if (body.startsWith("#x") || body.startsWith("#X")) return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
+    if (body.startsWith("#")) return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
+    return NAMED_ENTITIES[body] ?? whole;
+  });
+}
+function looksLikePlist(content) {
+  const head = content.replace(/^﻿/, "").trimStart().slice(0, 400);
+  return head.startsWith("<?xml") || head.startsWith("<!DOCTYPE plist") || head.startsWith("<plist");
+}
+function isSpace(code) {
+  return code === 32 || code === 9 || code === 10 || code === 13;
+}
+function findTag(text, name, from) {
+  const needle = `<${name}`;
+  let at = from;
+  for (; ; ) {
+    const start = text.indexOf(needle, at);
+    if (start === -1) return void 0;
+    let i = start + needle.length;
+    while (i < text.length && isSpace(text.charCodeAt(i))) i += 1;
+    if (text[i] === ">") return { start, end: i + 1, selfClosing: false };
+    if (text[i] === "/" && text[i + 1] === ">") return { start, end: i + 2, selfClosing: true };
+    at = start + 1;
+  }
+}
+function scanPairs(body) {
+  const values = {};
+  let pos = 0;
+  for (; ; ) {
+    const keyOpen = findTag(body, "key", pos);
+    if (!keyOpen || keyOpen.selfClosing) break;
+    const keyClose = findTag(body, "/key", keyOpen.end);
+    if (!keyClose) break;
+    const key = xmlUnescape(body.slice(keyOpen.end, keyClose.start).trim());
+    pos = keyClose.end;
+    let next = pos;
+    while (next < body.length && isSpace(body.charCodeAt(next))) next += 1;
+    const str = findTag(body, "string", next);
+    if (!str || str.start !== next) {
+      values[key] = void 0;
+      continue;
+    }
+    if (str.selfClosing) {
+      values[key] = "";
+      pos = str.end;
+      continue;
+    }
+    const strClose = findTag(body, "/string", str.end);
+    if (!strClose) {
+      values[key] = void 0;
+      break;
+    }
+    values[key] = xmlUnescape(body.slice(str.end, strClose.start));
+    pos = strClose.end;
+  }
+  return values;
+}
+function parseMacosImport(content) {
+  const text = content.replace(/^﻿/, "");
+  if (!/<plist|<array|<dict/.test(text)) {
+    throw new Error("macos: expected an Apple Text Replacement plist (XML)");
+  }
+  const out = { rows: [], skipped: [] };
+  let line4 = 1;
+  let lineScanned = 0;
+  const lineOf = (offset) => {
+    for (; lineScanned < offset; lineScanned += 1) {
+      if (text.charCodeAt(lineScanned) === 10) line4 += 1;
+    }
+    return line4;
+  };
+  let pos = 0;
+  for (; ; ) {
+    const open2 = findTag(text, "dict", pos);
+    if (!open2) break;
+    if (open2.selfClosing) {
+      pos = open2.end;
+      continue;
+    }
+    const close = findTag(text, "/dict", open2.end);
+    if (!close) break;
+    pos = close.end;
+    const dictLine = lineOf(open2.start);
+    const values = scanPairs(text.slice(open2.end, close.start));
+    if (!("phrase" in values) && !("shortcut" in values)) {
+      out.skipped.push({ line: dictLine, reason: "dict has no phrase/shortcut keys" });
+      continue;
+    }
+    const shortcut = values.shortcut ?? "";
+    const { row, skip } = rowFor(dictLine, values.phrase ?? "", shortcut ? [shortcut] : []);
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  }
+  return out;
+}
+
+// src/core/importers/superwhisper.ts
+function looksLikeSuperwhisper(value) {
+  const list = Array.isArray(value) ? value : isRecord2(value) ? value.replacements : void 0;
+  return Array.isArray(list) && (list.length === 0 || list.some((e) => isRecord2(e) && "original" in e && "replacement" in e));
+}
+function parseSuperwhisperImport(content) {
+  let parsed;
+  try {
+    parsed = JSON.parse(content.replace(/^﻿/, ""));
+  } catch (err) {
+    throw new Error(`superwhisper: invalid JSON (${err instanceof Error ? err.message : String(err)})`);
+  }
+  const list = Array.isArray(parsed) ? parsed : isRecord2(parsed) ? parsed.replacements : void 0;
+  if (!Array.isArray(list)) {
+    throw new Error("superwhisper: expected a JSON array of { original, replacement } (or { replacements: [...] })");
+  }
+  const out = { rows: [], skipped: [] };
+  list.forEach((entry, i) => {
+    const line4 = i + 1;
+    if (!isRecord2(entry)) {
+      out.skipped.push({ line: line4, reason: "entry is not an object" });
+      return;
+    }
+    const original = typeof entry.original === "string" ? entry.original : "";
+    const replacement = typeof entry.replacement === "string" ? entry.replacement : "";
+    const { row, skip } = rowFor(line4, replacement, original ? [original] : []);
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  });
+  return out;
+}
+
+// src/core/importers/text.ts
+var EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
+function parseTextLine(raw) {
+  const text = raw.trim();
+  if (!text || text.startsWith("#")) return void 0;
+  const eq = EQUALS_FORM.exec(text);
+  if (eq) {
+    return { canonical: eq[1].trim(), aliases: eq[2].split("|").map((a) => a.trim()).filter(Boolean) };
+  }
+  if (text === "=") return { canonical: "", aliases: [] };
+  const colon = text.indexOf(":");
+  if (colon >= 0) {
+    return {
+      canonical: text.slice(0, colon).trim(),
+      aliases: text.slice(colon + 1).split(",").map((a) => a.trim()).filter(Boolean)
+    };
+  }
+  return { canonical: text, aliases: [] };
+}
+function parseTextImport(content) {
+  const out = { rows: [], skipped: [] };
+  const lines = content.replace(/^﻿/, "").split(/\r?\n/);
+  lines.forEach((raw, i) => {
+    const parsed = parseTextLine(raw);
+    if (!parsed) return;
+    const { row, skip } = rowFor(i + 1, parsed.canonical, parsed.aliases);
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  });
+  return out;
+}
+
+// src/core/importers/wispr.ts
+function isWisprHeader(fields) {
+  return fields.length >= 1 && fields[0].trim().toLowerCase() === "word" && (fields.length === 1 || fields[1].trim().toLowerCase() === "replacement");
+}
+function parseWisprImport(content) {
+  const out = { rows: [], skipped: [] };
+  const records = parseCsv(content);
+  const start = records.length > 0 && isWisprHeader(records[0].fields) ? 1 : 0;
+  for (const { line: line4, fields } of records.slice(start)) {
+    const word = (fields[0] ?? "").trim();
+    const replacement = (fields[1] ?? "").trim();
+    const { row, skip } = replacement ? rowFor(line4, replacement, [word]) : rowFor(line4, word, []);
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  }
+  return out;
+}
+
+// src/core/importers/index.ts
+var IMPORT_FORMATS = [
+  "auto",
+  "wispr",
+  "superwhisper",
+  "macos",
+  "espanso",
+  "text",
+  "csv",
+  "json"
+];
+var IMPORT_FORMAT_INFO = {
+  "auto": { description: "Detect the format from the content (default)" },
+  "wispr": { description: "Wispr Flow dictionary CSV (word,replacement)" },
+  "superwhisper": { description: "Superwhisper replacements JSON [{ original, replacement }]" },
+  "macos": { description: "macOS Text Replacement plist (phrase = canonical, shortcut = alias)" },
+  "espanso": { description: "espanso match YAML (trigger = alias, replace = canonical)" },
+  "text": { description: 'Plain text, one term per line: "Canonical: alias1, alias2" or "Canonical = alias1 | alias2"' },
+  "csv": { description: "Generic CSV with a canonical,alias,category,phonetic header" },
+  "json": { description: "A lexicon JSON/YAML file (what `lexicon export json` writes)" }
+};
+function isImportFormat(value) {
+  return IMPORT_FORMATS.includes(value);
+}
+var PARSERS = {
+  wispr: parseWisprImport,
+  superwhisper: parseSuperwhisperImport,
+  macos: parseMacosImport,
+  csv: parseCsvImport,
+  espanso: parseEspansoImport,
+  text: parseTextImport,
+  json: parseJsonImport
+};
+function detectImportFormat(content, filename) {
+  const text = content.replace(/^﻿/, "");
+  const trimmed = text.trimStart();
+  if (looksLikePlist(trimmed)) return "macos";
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      parsed = void 0;
+    }
+    if (parsed !== void 0) {
+      if (looksLikeSuperwhisper(parsed)) return "superwhisper";
+      if (looksLikeLexiconJson(parsed)) return "json";
+      throw new Error(
+        "could not detect the import format: JSON is neither a Superwhisper replacements list nor a lexicon file (use --format)"
+      );
+    }
+  }
+  if (looksLikeEspanso(text)) return "espanso";
+  if (/^(version|terms)\s*:/m.test(text) && /^terms\s*:/m.test(text)) return "json";
+  const firstLine = parseCsv(text)[0]?.fields;
+  if (firstLine) {
+    if (isWisprHeader(firstLine)) return "wispr";
+    if (isLexiconCsvHeader(firstLine)) return "csv";
+  }
+  const ext = filename ? filename.toLowerCase().replace(/^.*\./, "") : "";
+  if (ext === "plist") return "macos";
+  if (ext === "csv") return "wispr";
+  if (ext === "yml" || ext === "yaml") return "espanso";
+  return "text";
+}
+function importLexicon(content, format, opts = {}) {
+  if (!isImportFormat(format)) {
+    throw new Error(`Unknown import format "${String(format)}". Known: ${IMPORT_FORMATS.join(", ")}`);
+  }
+  const resolved = format === "auto" ? detectImportFormat(content, opts.filename) : format;
+  const raw = PARSERS[resolved](content);
+  const { terms, skipped } = mergeRows(raw.rows, opts.source);
+  return { terms, format: resolved, skipped: [...raw.skipped, ...skipped].sort((a, b) => a.line - b.line) };
+}
+function mergeRows(rows, source) {
+  const byKey = /* @__PURE__ */ new Map();
+  const skipped = [];
+  for (const { line: line4, term } of rows) {
+    const canonical = term.canonical.trim();
+    if (!canonical) {
+      skipped.push({ line: line4, reason: "empty canonical" });
+      continue;
+    }
+    const key = canonical.toLowerCase();
+    let target = byKey.get(key);
+    if (!target) {
+      target = { canonical, aliases: [], source: source ?? term.source ?? "import" };
+      byKey.set(key, target);
+    }
+    const seen = new Set(target.aliases.map((a) => a.toLowerCase()));
+    for (const alias of term.aliases) {
+      const a = alias.trim();
+      const k = a.toLowerCase();
+      if (!a || k === key || seen.has(k)) continue;
+      seen.add(k);
+      target.aliases.push(a);
+    }
+    if (term.phonetic && !target.phonetic) target.phonetic = term.phonetic;
+    if (term.category && !target.category) target.category = term.category;
+    if (term.notes && !target.notes) target.notes = term.notes;
+    if (term.caseSensitive !== void 0 && target.caseSensitive === void 0) target.caseSensitive = term.caseSensitive;
+    if (term.never?.length) {
+      const have = new Set((target.never ?? []).map((n) => n.toLowerCase()));
+      target.never = [...target.never ?? [], ...term.never.filter((n) => !have.has(n.toLowerCase()))];
+    }
+  }
+  return { terms: [...byKey.values()], skipped };
+}
 
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
@@ -51515,22 +52058,22 @@ async function learnCorrection(c, opts = {}) {
   if (sameText(heard, meant)) {
     throw new Error(`learnCorrection: "${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
-  const { scope, ...storeOpts } = opts;
-  const loaded = await loadLexicon(storeOpts);
+  const { scope, ...storeOpts2 } = opts;
+  const loaded = await loadLexicon(storeOpts2);
   const existing = termFor(loaded.merged, meant);
   if (existing) {
     const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope = scope ?? existing.scope ?? "global";
     const saved2 = await addTerm(
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: "learned" },
-      { ...storeOpts, scope: targetScope }
+      { ...storeOpts2, scope: targetScope }
     );
     return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown };
   }
   const aliases = dedupeCaseInsensitive2([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
     { canonical: meant, aliases, source: "learned" },
-    { ...storeOpts, scope: scope ?? "global" }
+    { ...storeOpts2, scope: scope ?? "global" }
   );
   return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
 }
@@ -51584,8 +52127,5366 @@ function computeStats(loaded) {
   return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, byCategory, bySource, files };
 }
 
-// src/mcp/server.ts
-var SERVER_NAME = "lexicon";
+// src/core/suggestTerms.ts
+import { promises as fs4 } from "node:fs";
+import path4 from "node:path";
+var import_fastest_levenshtein2 = __toESM(require_mod(), 1);
+var SUGGEST_DEFAULT_LIMIT = 20;
+var STALE_AFTER_DAYS = 30;
+var AUTO_APPLY_CONFIDENCE = 0.8;
+var MAX_EVIDENCE2 = 5;
+var EVIDENCE_MAX_CHARS = 120;
+var MAX_HISTORY_LINES = 1e3;
+var MAX_WINDOW2 = 3;
+var NEAR_MIN_SCORE = 0.7;
+var KEY_MATCH_SCORE = 0.85;
+var ALIAS_MIN_COUNT = 2;
+var PROMOTE_MIN_COUNT = 3;
+var TERM_MIN_COUNT = 3;
+var HARVEST_LIMIT = 10;
+var HARVEST_MIN_COUNT = 5;
+var HARVEST_MAX_CONFIDENCE = 0.7;
+var MAX_DIFF_TOKENS = 200;
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var FUNCTION_WORDS2 = new Set(
+  `a an the and or but nor so yet if then than because although while whether unless
+at by for from in into of off on onto to with without about over under up down out through across between among
+after before during until since around near above below behind beside upon toward towards via per
+i me my mine you your yours he him his she hers it its we us our ours they them their theirs
+this that these those who whom whose which what
+am is are was were be been being do does did done have has had having
+can could may might must shall should will would
+not no yes there here now when where why how`.split(/\s+/).filter((w) => w.length > 0)
+);
+function voiceHistoryPath(globalPath) {
+  return path4.join(path4.dirname(globalPath), "voice", "history.jsonl");
+}
+async function loadVoiceHistory(globalPath) {
+  const resolved = globalPath ?? resolvePaths().global;
+  let text;
+  try {
+    text = await fs4.readFile(voiceHistoryPath(resolved), "utf8");
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const line4 of text.split("\n")) {
+    if (!line4.trim()) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line4);
+    } catch {
+      continue;
+    }
+    const entry = toHistoryEntry(parsed);
+    if (entry) out.push(entry);
+  }
+  return out.length > MAX_HISTORY_LINES ? out.slice(out.length - MAX_HISTORY_LINES) : out;
+}
+function toHistoryEntry(value) {
+  if (typeof value !== "object" || value === null) return void 0;
+  const v = value;
+  if (typeof v.raw !== "string" || typeof v.output !== "string") return void 0;
+  const entry = { at: typeof v.at === "string" ? v.at : "", raw: v.raw, output: v.output };
+  if (typeof v.model === "string") entry.model = v.model;
+  const ms = v.ms;
+  if (typeof ms === "object" && ms !== null) {
+    const m = ms;
+    if (typeof m.record === "number" && typeof m.transcribe === "number" && typeof m.normalize === "number") {
+      entry.ms = { record: m.record, transcribe: m.transcribe, normalize: m.normalize };
+    }
+  }
+  return entry;
+}
+function fold(s) {
+  const base = /[^\x00-\x7f]/.test(s) ? s.normalize("NFD").replace(new RegExp("\\p{M}+", "gu"), "") : s;
+  return base.toLowerCase();
+}
+function alphaOnly2(s) {
+  return fold(s).replace(/[^\p{L}]+/gu, "");
+}
+function collapse2(s) {
+  return fold(s).replace(/[^\p{L}\p{N}]+/gu, "");
+}
+function isOrdinaryWord(lower) {
+  return new RegExp("^\\p{Ll}+$", "u").test(lower) && (STOPLIST.has(lower) || FUNCTION_WORDS2.has(lower));
+}
+function looksCapitalized(s) {
+  const letters = s.replace(/[^\p{L}]+/gu, "");
+  if (letters.length < 2) return false;
+  if (!new RegExp("\\p{Ll}", "u").test(letters)) return false;
+  if (new RegExp("^\\p{Lu}", "u").test(letters)) return true;
+  return new RegExp("\\p{Lu}", "u").test(letters);
+}
+function snippet(text, start = 0, end = text.length) {
+  const flat = text.replace(/\s+/g, " ");
+  let piece;
+  if (flat.length <= EVIDENCE_MAX_CHARS) {
+    piece = flat.trim();
+  } else {
+    const room = EVIDENCE_MAX_CHARS - 2;
+    const span = Math.min(end - start, room);
+    let from = Math.max(0, start - Math.floor((room - span) / 2));
+    let to = Math.min(flat.length, from + room);
+    if (to - from < room) from = Math.max(0, to - room);
+    piece = `${from > 0 ? "\u2026" : ""}${flat.slice(from, to).trim()}${to < flat.length ? "\u2026" : ""}`;
+  }
+  const chars = Array.from(sanitizeForDisplay(piece));
+  return chars.length <= EVIDENCE_MAX_CHARS ? chars.join("") : `${chars.slice(0, EVIDENCE_MAX_CHARS - 1).join("")}\u2026`;
+}
+function clamp012(n) {
+  return Math.min(1, Math.max(0, n));
+}
+function round(n) {
+  return Math.round(n * 1e3) / 1e3;
+}
+var TOKEN_RE2 = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
+var TRAILING_PUNCT_RE2 = /[.'’\-]+$/u;
+var POSSESSIVE_RE2 = /['’][sS]$/u;
+var SKIP_RES = [
+  /```[\s\S]*?(?:```|$)/g,
+  /`[^`\n]*`/g,
+  /\b(?:https?|ftp):\/\/\S+/gi,
+  /\bwww\.\S+/gi,
+  /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g,
+  /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g
+];
+function blankSkipped(text) {
+  let out = text;
+  for (const re of SKIP_RES) {
+    re.lastIndex = 0;
+    out = out.replace(re, (m) => " ".repeat(m.length));
+  }
+  return out;
+}
+function tokenize2(text) {
+  const blanked = /[`/@:]/.test(text) ? blankSkipped(text) : text;
+  const draft = [];
+  TOKEN_RE2.lastIndex = 0;
+  let m;
+  while ((m = TOKEN_RE2.exec(blanked)) !== null) {
+    const raw = m[0].replace(TRAILING_PUNCT_RE2, "");
+    if (raw.length === 0) continue;
+    const start = m.index;
+    const end = start + raw.length;
+    const base = POSSESSIVE_RE2.test(raw) && raw.length > 2 ? raw.slice(0, -2) : raw;
+    const lower = fold(base);
+    const prev = draft[draft.length - 1];
+    const gap = prev ? blanked.slice(prev.end, start) : "";
+    draft.push({
+      text: raw,
+      base,
+      lower,
+      start,
+      end,
+      stop: STOPLIST.has(lower),
+      fn: FUNCTION_WORDS2.has(lower),
+      sentenceStart: !prev || /[.!?\n]/.test(gap)
+    });
+  }
+  return draft.map((t, i) => {
+    const next = draft[i + 1];
+    return { ...t, joinsNext: next !== void 0 && /^\s+$/.test(blanked.slice(t.end, next.start)) };
+  });
+}
+function pushTo(map2, key, value) {
+  const list = map2.get(key);
+  if (list) list.push(value);
+  else map2.set(key, [value]);
+}
+function buildCatalogue(index) {
+  const byKey = /* @__PURE__ */ new Map();
+  const byPrefix = /* @__PURE__ */ new Map();
+  const known = /* @__PURE__ */ new Set();
+  const canonicalByForm = /* @__PURE__ */ new Map();
+  let maxCollapsedLength = 0;
+  for (const entries of index.exact.values()) {
+    for (const entry of entries) {
+      const alpha = alphaOnly2(entry.normLower);
+      const key = alpha.length >= 3 ? doubleMetaphone(alpha)[0] : "";
+      const item = { entry, alpha, key };
+      if (key.length >= 3) pushTo(byKey, key, item);
+      if (alpha.length >= 2) pushTo(byPrefix, alpha.slice(0, 2), item);
+      known.add(entry.normLower);
+      known.add(entry.collapsed);
+      maxCollapsedLength = Math.max(maxCollapsedLength, entry.collapsed.length);
+      if (!entry.explicit) {
+        canonicalByForm.set(entry.normLower, entry.term);
+        canonicalByForm.set(entry.collapsed, entry.term);
+      }
+    }
+  }
+  for (const term of index.lexicon.terms) {
+    for (const word of fold(term.canonical).split(/[^\p{L}\p{N}]+/u)) if (word) known.add(word);
+  }
+  return { index, byKey, byPrefix, known, canonicalByForm, maxCollapsedLength, nearCache: /* @__PURE__ */ new Map() };
+}
+function keyMatchMinSim(keyLength) {
+  if (keyLength <= 3) return 0.6;
+  if (keyLength === 4) return 0.5;
+  return 0;
+}
+function nearest(cat, windowLower) {
+  const cached2 = cat.nearCache.get(windowLower);
+  if (cached2 !== void 0) return cached2;
+  let result = null;
+  const collapsed = windowLower.replace(/[^\p{L}\p{N}]+/gu, "");
+  if (!cat.known.has(windowLower) && !cat.known.has(collapsed)) {
+    const alpha = windowLower.replace(/[^\p{L}]+/gu, "");
+    const key = alpha.length >= 3 ? doubleMetaphone(alpha)[0] : "";
+    const seen = /* @__PURE__ */ new Set();
+    const candidates = [];
+    for (const list of [key.length >= 3 ? cat.byKey.get(key) : void 0, cat.byPrefix.get(alpha.slice(0, 2))]) {
+      if (!list) continue;
+      for (const c of list) {
+        if (!seen.has(c)) {
+          seen.add(c);
+          candidates.push(c);
+        }
+      }
+    }
+    let best = 0;
+    for (const c of candidates) {
+      const e = c.entry;
+      const never2 = cat.index.never[e.termIndex];
+      if (never2.has(windowLower) || never2.has(collapsed)) continue;
+      const keyMatch = key.length >= 3 && c.key === key;
+      const max = Math.max(collapsed.length, e.collapsed.length);
+      if (!(keyMatch && key.length >= 5) && Math.abs(collapsed.length - e.collapsed.length) > (1 - NEAR_MIN_SCORE) * max) continue;
+      let sim = 0;
+      if (1 - Math.ceil((0, import_fastest_levenshtein2.distance)(collapsed, e.collapsed) / 2) / max >= 0.5) {
+        sim = Math.max(similarity(windowLower, e.normLower), similarity(collapsed, e.collapsed));
+      }
+      let score = sim;
+      if (keyMatch && sim >= keyMatchMinSim(key.length)) score = Math.max(sim, KEY_MATCH_SCORE);
+      if (score > best || score === best && result !== null && sim > result.sim) {
+        best = score;
+        result = { canonical: e.term.canonical, termIndex: e.termIndex, score, sim };
+      }
+    }
+    if (best < NEAR_MIN_SCORE) result = null;
+  }
+  cat.nearCache.set(windowLower, result);
+  return result;
+}
+var DIGITS_RE = new RegExp("^\\p{N}+$", "u");
+function windows(text, toks, maxCollapsed) {
+  const out = [];
+  for (let i = 0; i < toks.length; i++) {
+    let anyContent = false;
+    let length = 0;
+    for (let n = 1; n <= MAX_WINDOW2; n++) {
+      const j = i + n - 1;
+      if (j >= toks.length) break;
+      if (n > 1 && !toks[j - 1].joinsNext) break;
+      const last = toks[j];
+      length += last.lower.length;
+      if (length > maxCollapsed + 4) break;
+      if (!last.stop && !last.fn) anyContent = true;
+      if (!anyContent) continue;
+      if (n === 1 && alphaOnly2(last.lower).length < 3) continue;
+      if (n > 1 && (toks[i].fn || last.fn || DIGITS_RE.test(toks[i].lower) || DIGITS_RE.test(last.lower))) continue;
+      const first = toks[i];
+      const raw = text.slice(first.start, last.end);
+      const base = text.slice(first.start, last.start) + last.base;
+      out.push({ from: i, to: j, start: first.start, end: first.start + base.length, text: base, lower: fold(base).replace(/\s+/g, " ") });
+      if (raw !== base) {
+        out.push({ from: i, to: j, start: first.start, end: last.end, text: raw, lower: fold(raw).replace(/\s+/g, " ") });
+      }
+    }
+  }
+  return out;
+}
+function diffTokens(a, b) {
+  const n = a.length;
+  const m = b.length;
+  const width = m + 1;
+  const table = new Uint16Array((n + 1) * width);
+  for (let i2 = n - 1; i2 >= 0; i2--) {
+    for (let j2 = m - 1; j2 >= 0; j2--) {
+      table[i2 * width + j2] = a[i2] === b[j2] ? table[(i2 + 1) * width + j2 + 1] + 1 : Math.max(table[(i2 + 1) * width + j2], table[i2 * width + j2 + 1]);
+    }
+  }
+  const pairs = /* @__PURE__ */ new Map();
+  const hunks = [];
+  let i = 0;
+  let j = 0;
+  let a0 = 0;
+  let b0 = 0;
+  const flush = () => {
+    if (a0 < i || b0 < j) hunks.push({ a0, a1: i, b0, b1: j });
+  };
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      flush();
+      pairs.set(i, j);
+      i++;
+      j++;
+      a0 = i;
+      b0 = j;
+    } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  i = n;
+  j = m;
+  flush();
+  return { hunks, pairs };
+}
+function bump2(map2, canonical, word, count, evidence, confidence = 0, still = false) {
+  const key = `${fold(canonical)}\0${fold(word)}`;
+  let b = map2.get(key);
+  if (!b) {
+    b = { canonical, word, count: 0, evidence: [], confidenceSum: 0, still: false };
+    map2.set(key, b);
+  }
+  b.count += count;
+  b.confidenceSum += confidence * count;
+  b.still = b.still || still;
+  if (b.evidence.length < MAX_EVIDENCE2 && !b.evidence.includes(evidence)) b.evidence.push(evidence);
+}
+function dedupeKey(s) {
+  return `${s.kind}\0${fold(s.canonical)}\0${fold(s.alias ?? "")}`;
+}
+function mergeSuggestions(list) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const s of list) {
+    const key = dedupeKey(s);
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...s, evidence: [...s.evidence] });
+      continue;
+    }
+    const stronger = s.confidence > prev.confidence ? s : prev;
+    const merged = {
+      ...prev,
+      reason: stronger.reason,
+      confidence: Math.max(prev.confidence, s.confidence),
+      count: Math.max(prev.count, s.count),
+      evidence: [.../* @__PURE__ */ new Set([...prev.evidence, ...s.evidence])].slice(0, MAX_EVIDENCE2)
+    };
+    if (stronger.aliases) merged.aliases = stronger.aliases;
+    if (stronger.category) merged.category = stronger.category;
+    byKey.set(key, merged);
+  }
+  return [...byKey.values()];
+}
+function rank(s) {
+  return s.confidence * Math.log(1 + Math.max(s.count, 1));
+}
+async function suggestTerms(input2) {
+  const { loaded } = input2;
+  const limit = Math.max(0, Math.floor(input2.limit ?? SUGGEST_DEFAULT_LIMIT));
+  const now = input2.now ?? Date.now();
+  const history = input2.history ?? await loadVoiceHistory(loaded.global.path);
+  const lexicon = loaded.merged;
+  const index = buildIndex(lexicon);
+  const cat = buildCatalogue(index);
+  const lines = /* @__PURE__ */ new Map();
+  for (const entry of history) {
+    if (typeof entry.raw !== "string" || typeof entry.output !== "string" || !entry.raw.trim()) continue;
+    const key = `${entry.raw}\0${entry.output}`;
+    const line4 = lines.get(key);
+    if (line4) line4.count += 1;
+    else lines.set(key, { raw: entry.raw, output: entry.output, count: 1 });
+  }
+  const aliasBuckets = /* @__PURE__ */ new Map();
+  const promoteBuckets = /* @__PURE__ */ new Map();
+  const historicalBuckets = /* @__PURE__ */ new Map();
+  const neverBuckets = /* @__PURE__ */ new Map();
+  const termBuckets = /* @__PURE__ */ new Map();
+  const seenTokens = /* @__PURE__ */ new Set();
+  const replacementCache = /* @__PURE__ */ new Map();
+  const replacementsFor = (raw) => {
+    let r = replacementCache.get(raw);
+    if (!r) {
+      r = findReplacements(raw, index);
+      replacementCache.set(raw, r);
+    }
+    return r;
+  };
+  const covered = (reps, start, end) => reps.find((r) => r.start < end && start < r.end);
+  for (const line4 of lines.values()) {
+    const rawToks = tokenize2(line4.raw);
+    for (const t of rawToks) seenTokens.add(t.lower);
+    const outputLower = fold(line4.output);
+    const changed = line4.raw !== line4.output;
+    const near = [];
+    for (const win of windows(line4.raw, rawToks, cat.maxCollapsedLength)) {
+      if (win.from === win.to && isOrdinaryWord(win.lower)) continue;
+      const hit = nearest(cat, win.lower);
+      if (hit) near.push({ win, hit });
+    }
+    const reps = near.length > 0 || changed ? replacementsFor(line4.raw) : [];
+    near.sort(
+      (x, y) => y.hit.score - x.hit.score || y.hit.sim - x.hit.sim || y.win.end - y.win.start - (x.win.end - x.win.start) || x.win.start - y.win.start
+    );
+    const taken = [];
+    for (const { win, hit } of near) {
+      if (taken.some((t) => t.start < win.end && win.start < t.end)) continue;
+      taken.push({ start: win.start, end: win.end });
+      if (covered(reps, win.start, win.end)?.reason === "alias") continue;
+      if (!outputLower.includes(win.lower)) continue;
+      bump2(aliasBuckets, hit.canonical, win.text, line4.count, snippet(line4.raw, win.start, win.end), hit.score);
+    }
+    for (const r of reps) {
+      if (r.reason === "alias") continue;
+      bump2(promoteBuckets, r.canonical, r.original, line4.count, snippet(line4.raw, r.start, r.end), r.confidence);
+    }
+    if (changed) {
+      const outToks2 = tokenize2(line4.output);
+      if (rawToks.length <= MAX_DIFF_TOKENS && outToks2.length <= MAX_DIFF_TOKENS) {
+        const { hunks, pairs } = diffTokens(
+          rawToks.map((t) => t.lower),
+          outToks2.map((t) => t.lower)
+        );
+        for (const h of hunks) {
+          if (h.a1 <= h.a0 || h.b1 <= h.b0) continue;
+          let found;
+          for (let grow = 0; grow <= 2 && !found; grow++) {
+            for (let l = 0; l <= grow && !found; l++) {
+              const r = grow - l;
+              const a0 = h.a0 - l;
+              const a1 = h.a1 + r;
+              const b0 = h.b0 - l;
+              const b1 = h.b1 + r;
+              if (a0 < 0 || b0 < 0 || a1 > rawToks.length || b1 > outToks2.length) continue;
+              let aligned = true;
+              for (let x = 1; x <= l && aligned; x++) aligned = pairs.get(h.a0 - x) === h.b0 - x;
+              for (let x = 0; x < r && aligned; x++) aligned = pairs.get(h.a1 + x) === h.b1 + x;
+              if (!aligned) continue;
+              const outText = line4.output.slice(outToks2[b0].start, outToks2[b1 - 1].end);
+              const term = cat.canonicalByForm.get(fold(outText)) ?? cat.canonicalByForm.get(collapse2(outText));
+              if (term) found = { term, a0, a1 };
+            }
+          }
+          if (!found) continue;
+          const start = rawToks[found.a0].start;
+          const end = rawToks[found.a1 - 1].end;
+          const original = line4.raw.slice(start, end);
+          const originalLower = fold(original).replace(/\s+/g, " ");
+          if (cat.known.has(originalLower) || cat.known.has(collapse2(original))) continue;
+          const current = reps.find((r) => r.start < end && start < r.end && fold(r.canonical) === fold(found.term.canonical));
+          if (current?.reason === "alias") continue;
+          const still = current !== void 0;
+          const ev = snippet(line4.raw, start, end);
+          if (found.a1 - found.a0 === 1 && isOrdinaryWord(originalLower)) {
+            bump2(neverBuckets, found.term.canonical, original, line4.count, ev, 0, still);
+          } else if (!still) {
+            bump2(historicalBuckets, found.term.canonical, original, line4.count, ev);
+          }
+        }
+      }
+    }
+    const outToks = changed ? tokenize2(line4.output) : rawToks;
+    for (const t of outToks) seenTokens.add(t.lower);
+    const qualifies = (t) => looksCapitalized(t.base) && !t.stop && !t.fn && !HARVEST_STOPLIST.has(t.base) && !cat.known.has(t.lower) && !cat.known.has(t.lower.replace(/[^\p{L}\p{N}]+/gu, ""));
+    for (let i = 0; i < outToks.length; ) {
+      if (!qualifies(outToks[i])) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j + 1 < outToks.length && outToks[j].joinsNext && qualifies(outToks[j + 1])) j++;
+      const run = outToks.slice(i, j + 1);
+      i = j + 1;
+      if (run.length === 1 && run[0].sentenceStart) continue;
+      const first = run[0];
+      const last = run[run.length - 1];
+      const phrase = line4.output.slice(first.start, last.start) + last.base;
+      const phraseLower = fold(phrase).replace(/\s+/g, " ");
+      if (alphaOnly2(phraseLower).length < 4) continue;
+      if (cat.known.has(phraseLower) || cat.known.has(collapse2(phrase))) continue;
+      if (nearest(cat, phraseLower)) continue;
+      bump2(termBuckets, phrase, "", line4.count, snippet(line4.output, first.start, last.end));
+    }
+  }
+  const suggestions = [];
+  for (const b of aliasBuckets.values()) {
+    if (b.count < ALIAS_MIN_COUNT) continue;
+    const score = b.confidenceSum / b.count;
+    suggestions.push({
+      kind: "alias",
+      canonical: b.canonical,
+      alias: b.word,
+      reason: `"${b.word}" was left uncorrected ${b.count} times and sounds like ${b.canonical}`,
+      confidence: round(clamp012(0.3 + 0.45 * score + 0.05 * Math.min(b.count, 4))),
+      evidence: b.evidence,
+      count: b.count
+    });
+  }
+  for (const b of promoteBuckets.values()) {
+    if (b.count < PROMOTE_MIN_COUNT) continue;
+    const mean = b.confidenceSum / b.count;
+    suggestions.push({
+      kind: "alias",
+      canonical: b.canonical,
+      alias: b.word,
+      reason: `corrected by guess ${b.count} times; make it exact`,
+      confidence: round(Math.min(0.95, Math.max(AUTO_APPLY_CONFIDENCE, mean))),
+      evidence: b.evidence,
+      count: b.count
+    });
+  }
+  for (const b of historicalBuckets.values()) {
+    suggestions.push({
+      kind: "alias",
+      canonical: b.canonical,
+      alias: b.word,
+      reason: `rewritten to ${b.canonical} ${b.count} time${b.count === 1 ? "" : "s"} before; the current rules no longer match it`,
+      confidence: round(Math.min(0.75, 0.5 + 0.1 * Math.min(b.count, 3))),
+      evidence: b.evidence,
+      count: b.count
+    });
+  }
+  for (const b of neverBuckets.values()) {
+    const term = lexicon.terms.find((t) => fold(t.canonical) === fold(b.canonical));
+    if (term?.never?.some((w) => fold(w) === fold(b.word))) continue;
+    suggestions.push({
+      kind: "never",
+      canonical: b.canonical,
+      alias: b.word,
+      reason: b.still ? `ordinary word rewritten by guess ${b.count} time${b.count === 1 ? "" : "s"}; the current rules still do it` : `ordinary word rewritten by guess ${b.count} time${b.count === 1 ? "" : "s"} under earlier rules`,
+      confidence: round(b.still ? 0.7 : Math.min(0.65, 0.5 + 0.05 * Math.min(b.count, 3))),
+      evidence: b.evidence,
+      count: b.count
+    });
+  }
+  for (const b of termBuckets.values()) {
+    if (b.count < TERM_MIN_COUNT) continue;
+    suggestions.push({
+      kind: "term",
+      canonical: b.canonical,
+      reason: `capitalized name seen ${b.count} times in transcripts and not in the lexicon`,
+      confidence: round(Math.min(0.9, 0.35 + 0.1 * Math.min(b.count, 5))),
+      evidence: b.evidence,
+      count: b.count,
+      aliases: suggestAliases(b.canonical)
+    });
+  }
+  if (input2.cwd) {
+    const candidates = await harvestRepo(input2.cwd, { limit: HARVEST_LIMIT, minCount: HARVEST_MIN_COUNT });
+    const repoName = path4.basename(path4.resolve(input2.cwd)) || input2.cwd;
+    for (const c of candidates) {
+      if (cat.known.has(fold(c.canonical)) || cat.known.has(collapse2(c.canonical))) continue;
+      suggestions.push({
+        kind: "term",
+        canonical: c.canonical,
+        reason: `seen ${c.count} times in ${repoName} (harvest, ${c.source})`,
+        // Repo identifiers are review material: capped under AUTO_APPLY_CONFIDENCE so --yes never adds them.
+        confidence: round(Math.min(HARVEST_MAX_CONFIDENCE, 0.4 + 0.05 * Math.min(c.count, 6))),
+        evidence: c.evidence.slice(0, MAX_EVIDENCE2).map((e) => snippet(e)),
+        count: c.count,
+        aliases: c.suggestedAliases,
+        category: c.category
+      });
+    }
+  }
+  for (const term of lexicon.terms) {
+    if ((term.hits ?? 0) > 0 || !term.createdAt) continue;
+    const created = Date.parse(term.createdAt);
+    if (!Number.isFinite(created)) continue;
+    const days = Math.floor((now - created) / DAY_MS);
+    if (days < STALE_AFTER_DAYS) continue;
+    const forms = [term.canonical, ...term.aliases];
+    const seen = forms.some((f) => {
+      const words = fold(f).split(/[^\p{L}\p{N}.'’-]+/u).filter((w) => w.length > 0);
+      return words.length > 0 && words.every((w) => seenTokens.has(w) || seenTokens.has(w.replace(/[^\p{L}\p{N}]+/gu, "")));
+    });
+    if (seen) continue;
+    suggestions.push({
+      kind: "stale",
+      canonical: term.canonical,
+      reason: `never matched in ${days} days`,
+      confidence: 0.3,
+      evidence: [],
+      count: 0
+    });
+  }
+  const merged = mergeSuggestions(suggestions);
+  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
+  return merged.slice(0, limit);
+}
+
+// src/cli/commands.ts
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { existsSync as existsSync4, promises as fs8, readFileSync } from "node:fs";
+import os2 from "node:os";
+import path8 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// src/daemon/clipboard-backends.ts
+import { spawn } from "node:child_process";
+import { constants as fsConstants, promises as fs5 } from "node:fs";
+import path5 from "node:path";
+var ExecError = class extends Error {
+  constructor(cmd, exitCode, stderr) {
+    super(`${cmd} exited with code ${exitCode ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
+    this.cmd = cmd;
+    this.exitCode = exitCode;
+    this.stderr = stderr;
+    this.name = "ExecError";
+  }
+  cmd;
+  exitCode;
+  stderr;
+};
+var MAX_OUTPUT = 16 * 1024 * 1024;
+function defaultClipboardExec(cmd, args, stdin) {
+  const isWrite = stdin !== void 0;
+  return new Promise((resolve2, reject) => {
+    const child = spawn(cmd, [...args], {
+      stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
+      windowsHide: true
+    });
+    const out = [];
+    const errChunks = [];
+    let size = 0;
+    let settled = false;
+    const fail = (e) => {
+      if (settled) return;
+      settled = true;
+      reject(e);
+    };
+    child.once("error", fail);
+    child.stdout?.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_OUTPUT) {
+        child.kill();
+        fail(new Error(`${cmd}: output exceeds ${MAX_OUTPUT} bytes`));
+        return;
+      }
+      out.push(chunk);
+    });
+    child.stderr?.on("data", (chunk) => errChunks.push(chunk));
+    child.once(isWrite ? "exit" : "close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) resolve2(Buffer.concat(out).toString("utf8"));
+      else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
+    });
+    if (isWrite && child.stdin) {
+      child.stdin.once("error", () => void 0);
+      child.stdin.end(stdin, "utf8");
+    }
+  });
+}
+function isMissingBinary(e) {
+  return typeof e === "object" && e !== null && e.code === "ENOENT";
+}
+async function readOrEmpty(exec, cmd, args) {
+  try {
+    return await exec(cmd, args);
+  } catch (e) {
+    if (isMissingBinary(e)) throw e;
+    if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
+    return "";
+  }
+}
+function pbcopyBackend(exec = defaultClipboardExec) {
+  return {
+    name: "pbcopy",
+    description: "pbpaste / pbcopy (macOS)",
+    read: () => readOrEmpty(exec, "pbpaste", []),
+    write: async (text) => {
+      await exec("pbcopy", [], text);
+    }
+  };
+}
+function wlBackend(exec = defaultClipboardExec) {
+  return {
+    name: "wl",
+    description: "wl-paste --no-newline / wl-copy (Wayland, wl-clipboard)",
+    read: () => readOrEmpty(exec, "wl-paste", ["--no-newline"]),
+    write: async (text) => {
+      await exec("wl-copy", [], text);
+    }
+  };
+}
+function xclipBackend(exec = defaultClipboardExec) {
+  return {
+    name: "xclip",
+    description: "xclip -selection clipboard -o / -i (X11)",
+    read: () => readOrEmpty(exec, "xclip", ["-selection", "clipboard", "-o"]),
+    write: async (text) => {
+      await exec("xclip", ["-selection", "clipboard", "-i"], text);
+    }
+  };
+}
+function xselBackend(exec = defaultClipboardExec) {
+  return {
+    name: "xsel",
+    description: "xsel --clipboard --output / --input (X11)",
+    read: () => readOrEmpty(exec, "xsel", ["--clipboard", "--output"]),
+    write: async (text) => {
+      await exec("xsel", ["--clipboard", "--input"], text);
+    }
+  };
+}
+function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
+  let crlf = false;
+  const readScript = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write([string](Get-Clipboard -Raw))";
+  const writeScript = "[Console]::InputEncoding = [Text.Encoding]::UTF8; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
+  return {
+    name: "powershell",
+    description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
+    read: async () => {
+      const raw = await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript]);
+      crlf = raw.includes("\r\n");
+      return crlf ? raw.replace(/\r\n/g, "\n") : raw;
+    },
+    write: async (text) => {
+      const payload = crlf ? text.replace(/\r?\n/g, "\r\n") : text;
+      await exec(shell, ["-NoProfile", "-NonInteractive", "-Command", writeScript], payload);
+    }
+  };
+}
+var DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+async function findOnPath(bin, opts = {}) {
+  const platform = opts.platform ?? process.platform;
+  const env = opts.env ?? process.env;
+  const win = platform === "win32";
+  const p = win ? path5.win32 : path5.posix;
+  const exists = opts.exists ?? (async (candidate) => {
+    try {
+      await fs5.access(candidate, win ? fsConstants.F_OK : fsConstants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  const pathVar = env.PATH ?? env.Path ?? env.path ?? "";
+  const dirs = pathVar.split(win ? ";" : ":").filter(Boolean);
+  let names;
+  if (win) {
+    const exts = (env.PATHEXT ?? DEFAULT_PATHEXT).split(";").filter(Boolean);
+    const hasExt = p.extname(bin) !== "";
+    names = hasExt ? [bin] : [...exts.map((ext) => bin + ext), ...exts.map((ext) => bin + ext.toLowerCase()), bin];
+    names = [...new Set(names)];
+  } else {
+    names = [bin];
+  }
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = p.join(dir, name);
+      if (await exists(candidate)) return candidate;
+    }
+  }
+  return void 0;
+}
+var LINUX_INSTALL_HINT = "install one: sudo apt install wl-clipboard (Wayland) or sudo apt install xclip (X11; xsel also works)";
+async function detectClipboardBackend(platform = process.platform, env = process.env, which, exec = defaultClipboardExec) {
+  const has = which ?? (async (bin) => await findOnPath(bin, { env, platform }) !== void 0);
+  switch (platform) {
+    case "darwin": {
+      if (!await has("pbpaste") || !await has("pbcopy")) {
+        throw new Error("pbpaste/pbcopy not found on PATH (they ship with macOS; check your PATH)");
+      }
+      return pbcopyBackend(exec);
+    }
+    case "win32": {
+      if (await has("powershell")) return powershellBackend(exec, "powershell");
+      if (await has("pwsh")) return powershellBackend(exec, "pwsh");
+      throw new Error("powershell.exe not found on PATH (it ships with Windows; check your PATH, or install PowerShell 7 as pwsh)");
+    }
+    case "linux":
+    case "freebsd":
+    case "openbsd":
+    case "netbsd":
+    case "sunos":
+    case "aix": {
+      if (env.WAYLAND_DISPLAY && await has("wl-paste") && await has("wl-copy")) return wlBackend(exec);
+      if (await has("xclip")) return xclipBackend(exec);
+      if (await has("xsel")) return xselBackend(exec);
+      const session = env.WAYLAND_DISPLAY ? "Wayland session" : env.DISPLAY ? "X11 session" : "no DISPLAY or WAYLAND_DISPLAY set";
+      throw new Error(`no clipboard tool found (${session}); ${LINUX_INSTALL_HINT}`);
+    }
+    default:
+      throw new Error(`clipboard daemon does not support platform "${platform}"`);
+  }
+}
+
+// src/voice/models.ts
+import { createWriteStream, existsSync as existsSync2, promises as fs6 } from "node:fs";
+import path6 from "node:path";
+import { fileURLToPath } from "node:url";
+var DEFAULT_MODEL = "base.en";
+var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+var REPO_MODELS_DIR = fileURLToPath(new URL("../../bench/audio/models/", import.meta.url));
+function modelFileName(name) {
+  return `ggml-${name}.bin`;
+}
+function modelUrl(name) {
+  return `${MODEL_BASE_URL}/${modelFileName(name)}`;
+}
+function modelsDir(globalPath, env = process.env) {
+  return env.LEXICON_WHISPER_MODELS || path6.join(path6.dirname(globalPath), "models");
+}
+function isModelPath(value) {
+  return value.endsWith(".bin") || value.includes("/") || value.includes("\\") || value.startsWith(".") || value.startsWith("~");
+}
+function resolveModel(spec, opts) {
+  const exists = opts.exists ?? existsSync2;
+  if (isModelPath(spec)) {
+    const abs = path6.resolve(spec.startsWith("~/") ? path6.join(process.env.HOME ?? "", spec.slice(2)) : spec);
+    const base = path6.basename(abs);
+    const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
+    return { name, path: abs, present: exists(abs) };
+  }
+  const file2 = modelFileName(spec);
+  const primary = path6.join(modelsDir(opts.globalPath, opts.env), file2);
+  if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
+  for (const dir of opts.fallbackDirs ?? [REPO_MODELS_DIR]) {
+    const candidate = path6.join(dir, file2);
+    if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
+  }
+  return { name: spec, path: primary, present: false, url: modelUrl(spec) };
+}
+
+// src/voice/process.ts
+import { constants as fsConstants2, existsSync as existsSync3, openSync, promises as fs7 } from "node:fs";
+import path7 from "node:path";
+var MAX_OUTPUT2 = 16 * 1024 * 1024;
+var WELL_KNOWN_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+function locateToolSync(names, env = process.env, platform = process.platform) {
+  const dirs = [
+    ...(env.PATH ?? env.Path ?? "").split(platform === "win32" ? ";" : ":").filter(Boolean),
+    ...platform === "win32" ? [] : WELL_KNOWN_BIN_DIRS
+  ];
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = path7.join(dir, platform === "win32" ? `${name}.exe` : name);
+      if (existsSync3(candidate)) return candidate;
+    }
+  }
+  return void 0;
+}
+var WHISPER_BIN_NAMES = ["whisper-cli", "whisper-cpp"];
+var INSTALL_HINTS = {
+  darwin: "brew install ffmpeg whisper-cpp",
+  linux: "sudo apt install ffmpeg, then build whisper.cpp (https://github.com/ggml-org/whisper.cpp) and set LEXICON_WHISPER_BIN=/path/to/whisper-cli",
+  win32: "winget install Gyan.FFmpeg, then download whisper.cpp binaries and set LEXICON_WHISPER_BIN=C:\\path\\to\\whisper-cli.exe",
+  other: "install ffmpeg and whisper.cpp, then set LEXICON_WHISPER_BIN=/path/to/whisper-cli"
+};
+function installHint(platform) {
+  if (platform === "darwin" || platform === "linux" || platform === "win32") return INSTALL_HINTS[platform];
+  return INSTALL_HINTS.other;
+}
+
+// src/cli/prompt.ts
+import { createInterface } from "node:readline";
+var PromptClosedError = class extends Error {
+  constructor() {
+    super("input closed before the prompt was answered");
+    this.name = "PromptClosedError";
+  }
+};
+function outputIsTTY(output2) {
+  return Boolean(output2?.isTTY);
+}
+function styler(output2 = process.stdout) {
+  const tty = outputIsTTY(output2);
+  const paint3 = (code) => (s) => tty ? `\x1B[${code}m${s}\x1B[0m` : s;
+  return { bold: paint3("1"), dim: paint3("2") };
+}
+function isInteractive() {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+function createPrompter(io = {}) {
+  const input2 = io.input ?? process.stdin;
+  const output2 = io.output ?? process.stdout;
+  const { bold: bold5, dim: dim5 } = styler(output2);
+  let rl;
+  let closed = false;
+  const lines = [];
+  const waiters = [];
+  const ensure = () => {
+    if (!rl) {
+      rl = createInterface({ input: input2, output: output2, terminal: outputIsTTY(output2) });
+      rl.on("line", (text) => {
+        const waiter = waiters.shift();
+        if (waiter) waiter.resolve(text);
+        else lines.push(text);
+      });
+      rl.on("close", () => {
+        closed = true;
+        for (const waiter of waiters.splice(0)) waiter.reject(new PromptClosedError());
+      });
+    }
+    return rl;
+  };
+  const readLine = (prompt) => new Promise((resolve2, reject) => {
+    const iface = closed ? void 0 : ensure();
+    if (lines.length > 0) {
+      output2.write(prompt);
+      resolve2(lines.shift());
+      return;
+    }
+    if (!iface) {
+      reject(new PromptClosedError());
+      return;
+    }
+    waiters.push({ resolve: resolve2, reject });
+    iface.setPrompt(prompt);
+    iface.prompt();
+  });
+  const write = (s) => {
+    output2.write(s);
+  };
+  const ask = async (question, opts = {}) => {
+    const hint = opts.default ? dim5(` [${opts.default}]`) : "";
+    const answer = (await readLine(`${question}${hint} `)).trim();
+    return answer === "" && opts.default !== void 0 ? opts.default : answer;
+  };
+  const confirm = async (question, def = false) => {
+    for (; ; ) {
+      const hint = def ? "Y/n" : "y/N";
+      const answer = (await readLine(`${question} ${dim5(`[${hint}]`)} `)).trim().toLowerCase();
+      if (answer === "") return def;
+      if (answer === "y" || answer === "yes") return true;
+      if (answer === "n" || answer === "no") return false;
+    }
+  };
+  const chooseOne = async (question, choices) => {
+    write(`${bold5(question)}
+`);
+    choices.forEach((c, i) => write(`  ${i + 1}) ${c.label}
+`));
+    for (; ; ) {
+      const answer = (await readLine(`${dim5("number")} [1] `)).trim();
+      if (answer === "") return [choices[0].value];
+      const n = Number.parseInt(answer, 10);
+      if (Number.isInteger(n) && n >= 1 && n <= choices.length) return [choices[n - 1].value];
+      write(`  enter a number between 1 and ${choices.length}
+`);
+    }
+  };
+  const chooseMany = async (question, choices) => {
+    const selected = choices.map(() => true);
+    const render = () => {
+      write(`${bold5(question)}
+`);
+      choices.forEach((c, i) => write(`  ${selected[i] ? "[x]" : "[ ]"} ${i + 1}) ${c.label}
+`));
+    };
+    render();
+    for (; ; ) {
+      const answer = (await readLine(`${dim5("toggle numbers (e.g. 2,3), a=all, n=none, Enter=done")} `)).trim().toLowerCase();
+      if (answer === "") break;
+      if (answer === "a") selected.fill(true);
+      else if (answer === "n") selected.fill(false);
+      else {
+        const nums = answer.split(/[\s,]+/).filter(Boolean);
+        let ok = true;
+        for (const s of nums) {
+          const n = Number.parseInt(s, 10);
+          if (!Number.isInteger(n) || n < 1 || n > choices.length) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) {
+          write(`  enter numbers between 1 and ${choices.length}
+`);
+          continue;
+        }
+        for (const s of nums) {
+          const idx = Number.parseInt(s, 10) - 1;
+          selected[idx] = !selected[idx];
+        }
+      }
+      render();
+    }
+    return choices.filter((_, i) => selected[i]).map((c) => c.value);
+  };
+  return {
+    ask,
+    confirm,
+    choose: (question, choices, opts = {}) => {
+      if (choices.length === 0) return Promise.resolve([]);
+      return opts.multi ? chooseMany(question, choices) : chooseOne(question, choices);
+    },
+    close: () => {
+      closed = true;
+      rl?.close();
+      rl = void 0;
+    }
+  };
+}
+
+// src/cli/cmd-review.ts
+var { bold, dim } = styler(process.stdout);
+
+// src/cli/commands.ts
+var PROJECT_FILE_NAME2 = ".lexicon.yaml";
+function paint(code) {
+  return (s) => process.stdout.isTTY ? `\x1B[${code}m${s}\x1B[0m` : s;
+}
+var bold2 = paint("1");
+var dim2 = paint("2");
+var red = paint("31");
+var green = paint("32");
+var yellow = paint("33");
+function line(io, s = "") {
+  io.stdout(`${s}
+`);
+}
+var safe = sanitizeForDisplay;
+function safeLines(s) {
+  return s.split("\n").map(safe).join("\n");
+}
+function resolveCwd(opts) {
+  return path8.resolve(opts.cwd ?? process.cwd());
+}
+function errorMessage2(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function findGitRoot2(start) {
+  let dir = path8.resolve(start);
+  for (; ; ) {
+    if (existsSync4(path8.join(dir, ".git"))) return dir;
+    const parent = path8.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function whichBin(name, env = process.env) {
+  const dirs = (env.PATH ?? "").split(path8.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    const candidate = path8.join(dir, name);
+    if (existsSync4(candidate)) return candidate;
+  }
+  return void 0;
+}
+async function readStdin(maxBytes) {
+  if (process.stdin.isTTY) {
+    process.stderr.write("lexicon: reading text from stdin (press ctrl-D to finish)\n");
+  }
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of process.stdin) {
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    total += buf.length;
+    if (maxBytes !== void 0 && total > maxBytes) {
+      throw new Error(`stdin exceeds the ${maxBytes} byte limit`);
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+function renderTable(rows, header) {
+  const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
+  if (all.length === 0) return "";
+  const cols = Math.max(...all.map((r) => r.length));
+  const widths = new Array(cols).fill(0);
+  for (const row of all) {
+    row.forEach((cell, i) => {
+      widths[i] = Math.max(widths[i], cell.length);
+    });
+  }
+  const fmt = (row) => widths.map((w, i) => (row[i] ?? "").padEnd(w)).join("  ").trimEnd();
+  const out = [];
+  if (header) {
+    out.push(fmt(all[0]));
+    out.push(fmt(widths.map((w) => "-".repeat(w))));
+  }
+  for (const row of header ? all.slice(1) : all) out.push(fmt(row));
+  return `${out.join("\n")}
+`;
+}
+var EXAMPLE_TERM_COMMENT = `
+# Example term. To enable it, replace the empty \`terms: []\` above with:
+#
+# terms:
+#   - canonical: Ashlr.AI
+#     aliases: [Ashler, Ashlar, Ashler AI, Ashley our AI]
+#     phonetic: ASH-ler
+#     category: brand
+#     notes: my company; never write Ashlar
+#
+# Or simply run:  lexicon add "Ashlr.AI" Ashler Ashlar --category brand
+`;
+async function runInit(opts, io) {
+  const cwd = resolveCwd(opts);
+  const paths = resolvePaths({ cwd });
+  const scope = opts.project ? "project" : "global";
+  const target = opts.project ? paths.project ?? path8.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  if (existsSync4(target)) {
+    line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    return 0;
+  }
+  const lexicon = emptyLexicon();
+  lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
+  const file2 = { path: target, scope, lexicon, exists: false };
+  await writeLexiconFile(file2);
+  await fs8.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+  line(io, `created ${scope} lexicon: ${safe(target)}`);
+  if (scope === "project") {
+    await trustProject(target, { cwd });
+    line(io, dim2(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
+  }
+  return 0;
+}
+var COMMON_WORDS = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "are",
+  "but",
+  "not",
+  "you",
+  "all",
+  "any",
+  "can",
+  "had",
+  "her",
+  "was",
+  "one",
+  "our",
+  "out",
+  "has",
+  "his",
+  "how",
+  "its",
+  "may",
+  "new",
+  "now",
+  "old",
+  "see",
+  "way",
+  "who",
+  "did",
+  "get",
+  "let",
+  "say",
+  "she",
+  "too",
+  "use",
+  "off",
+  "ash",
+  "sauce",
+  "with",
+  "this",
+  "that",
+  "from",
+  "they",
+  "have",
+  "been",
+  "will",
+  "what",
+  "when",
+  "your",
+  "there",
+  "their",
+  "about",
+  "which",
+  "time",
+  "like",
+  "just",
+  "over",
+  "also",
+  "into",
+  "some",
+  "than",
+  "then",
+  "them",
+  "well",
+  "were",
+  "more"
+]);
+var HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"];
+var LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;
+async function readJsonFile(file2) {
+  let raw;
+  try {
+    raw = await fs8.readFile(file2, "utf8");
+  } catch (err) {
+    if (typeof err === "object" && err !== null && err.code === "ENOENT") return { exists: false };
+    return { exists: true, error: errorMessage2(err) };
+  }
+  try {
+    return { exists: true, value: raw.trim() === "" ? {} : JSON.parse(raw) };
+  } catch (err) {
+    return { exists: true, error: errorMessage2(err) };
+  }
+}
+function findInstalledLexiconPlugin(settings, installedPlugins) {
+  const isLexicon = (id) => /^lexicon@/i.test(id);
+  if (isRecord3(installedPlugins) && isRecord3(installedPlugins.plugins)) {
+    const id = Object.keys(installedPlugins.plugins).find(isLexicon);
+    if (id) return id;
+  }
+  if (isRecord3(settings) && isRecord3(settings.enabledPlugins)) {
+    const id = Object.entries(settings.enabledPlugins).find(([k, v]) => isLexicon(k) && v === true)?.[0];
+    if (id) return id;
+  }
+  return void 0;
+}
+function settingsHasLexiconHook(settings, event) {
+  if (!isRecord3(settings) || !isRecord3(settings.hooks)) return false;
+  const groups = settings.hooks[event];
+  if (!Array.isArray(groups)) return false;
+  return groups.some(
+    (g) => isRecord3(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord3(h) && typeof h.command === "string" && LEXICON_HOOK_COMMAND.test(h.command))
+  );
+}
+function defaultExec(file2, args) {
+  return execFileSync2(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "ignore"] });
+}
+function readCliPackageVersion() {
+  for (const rel of ["../../package.json", "../package.json"]) {
+    try {
+      const raw = readFileSync(new URL(rel, import.meta.url), "utf8");
+      const parsed = JSON.parse(raw);
+      if (isRecord3(parsed) && parsed.name === "@ashlr/lexicon" && typeof parsed.version === "string") return parsed.version;
+    } catch {
+    }
+  }
+  return "0.0.0";
+}
+async function runDoctorReport(opts, deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const exec = deps.exec ?? defaultExec;
+  const cwd = resolveCwd(opts);
+  const checks = [];
+  const push2 = (level, message) => {
+    checks.push({ level, message });
+  };
+  const paths = resolvePaths({ cwd });
+  const files = [];
+  try {
+    const g = await readLexiconFile(paths.global, "global");
+    if (g.exists) {
+      push2("ok", `global lexicon parses: ${paths.global} (${g.lexicon.terms.length} terms)`);
+      files.push(g);
+    } else {
+      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
+    }
+  } catch (err) {
+    push2("fail", `global lexicon: ${errorMessage2(err)}`);
+  }
+  if (paths.project) {
+    try {
+      const p = await readLexiconFile(paths.project, "project");
+      push2("ok", `project lexicon parses: ${paths.project} (${p.lexicon.terms.length} terms)`);
+      const trust = await isTrusted(p, { cwd });
+      if (trust === "trusted") {
+        push2("ok", "project lexicon is trusted and merged");
+        files.push(p);
+      } else if (trust === "changed") {
+        push2("warn", `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
+      } else {
+        push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
+      }
+    } catch (err) {
+      push2("fail", `project lexicon: ${errorMessage2(err)}`);
+    }
+  } else {
+    push2("info", "no project lexicon (.lexicon.yaml) found from " + cwd);
+  }
+  const canonicalOwners = /* @__PURE__ */ new Map();
+  const allTerms = [];
+  for (const f of files) {
+    for (const term of f.lexicon.terms) {
+      const entry = { term, scope: f.scope };
+      allTerms.push(entry);
+      const key = term.canonical.trim().toLowerCase();
+      const list = canonicalOwners.get(key) ?? [];
+      list.push(entry);
+      canonicalOwners.set(key, list);
+    }
+  }
+  push2("info", `${canonicalOwners.size} unique terms across ${files.length} file${files.length === 1 ? "" : "s"}`);
+  for (const [, owners] of canonicalOwners) {
+    const scopes = new Set(owners.map((o) => o.scope));
+    if (scopes.size > 1) {
+      push2("warn", `"${owners[0].term.canonical}" is defined in both global and project lexicons (project wins, aliases merge)`);
+    } else if (owners.length > 1) {
+      push2("fail", `"${owners[0].term.canonical}" is defined ${owners.length} times in the ${owners[0].scope} lexicon`);
+    }
+  }
+  const aliasOwners = /* @__PURE__ */ new Map();
+  for (const { term } of allTerms) {
+    for (const alias of term.aliases) {
+      const key = alias.trim().toLowerCase();
+      if (!key) continue;
+      const other = canonicalOwners.get(key);
+      if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
+        push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
+      }
+      if (COMMON_WORDS.has(key)) {
+        push2("warn", `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
+      }
+      const list = aliasOwners.get(key) ?? [];
+      list.push(term);
+      aliasOwners.set(key, list);
+    }
+  }
+  for (const [alias, owners] of aliasOwners) {
+    const distinct = new Set(owners.map((t) => t.canonical.toLowerCase()));
+    if (distinct.size > 1) {
+      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
+    }
+  }
+  if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
+    push2("ok", "no alias/canonical conflicts");
+  }
+  const settingsPath = deps.settingsPath ?? path8.join(os2.homedir(), ".claude", "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? path8.join(os2.homedir(), ".claude", "plugins", "installed_plugins.json");
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
+  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  if (pluginId) {
+    push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
+  } else {
+    for (const event of HOOK_EVENTS) {
+      if (settingsHasLexiconHook(settings.value, event)) {
+        push2("ok", `${event} hook found in ${settingsPath}`);
+      } else {
+        push2(
+          "warn",
+          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install-claude --apply)`
+        );
+      }
+    }
+  }
+  const claudeBin = whichBin("claude", env);
+  if (!claudeBin) {
+    push2("warn", "claude CLI not found on PATH (MCP + hook integration unavailable)");
+  } else {
+    push2("ok", `claude CLI found: ${claudeBin}`);
+    try {
+      const out = exec("claude", ["mcp", "list"]);
+      if (/lexicon/i.test(out)) push2("ok", "lexicon MCP server is registered with claude");
+      else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
+      else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install-claude --apply)");
+    } catch (err) {
+      push2("warn", `could not run "claude mcp list": ${errorMessage2(err)}`);
+    }
+  }
+  try {
+    const backend = await detectClipboardBackend(platform, env, async (bin) => whichBin(bin, env) !== void 0);
+    push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
+  } catch (err) {
+    push2("warn", `no clipboard backend found (${errorMessage2(err)})`);
+  }
+  const whisperOverride = env.LEXICON_WHISPER_BIN;
+  const whisperCli = whisperOverride ? existsSync4(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
+  else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
+  const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
+  const ffmpegBin = ffmpegOverride ? existsSync4(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
+  else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
+  const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
+  push2("info", model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+  if (platform === "darwin") {
+    push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
+  }
+  return {
+    ok: !checks.some((c) => c.level === "fail"),
+    checks,
+    paths: {
+      global: paths.global,
+      ...paths.project ? { project: paths.project } : {},
+      trust: getTrustPath({ cwd }),
+      settings: settingsPath,
+      installedPlugins: installedPluginsPath
+    },
+    versions: { lexicon: readCliPackageVersion(), node: process.version, platform }
+  };
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
+  const hooks = {};
+  for (const event of events) hooks[event] = [{ hooks: [{ type: "command", command, timeout }] }];
+  return { hooks };
+}
+function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
+  const base = isRecord3(settings) ? structuredClone(settings) : {};
+  if (base.hooks !== void 0 && !isRecord3(base.hooks)) {
+    throw new Error("settings.hooks is not an object; refusing to overwrite it");
+  }
+  const hooks = isRecord3(base.hooks) ? base.hooks : {};
+  let changed = false;
+  for (const event of events) {
+    const existing = hooks[event];
+    if (existing !== void 0 && !Array.isArray(existing)) {
+      throw new Error(`settings.hooks.${event} is not an array; refusing to overwrite it`);
+    }
+    const groups = Array.isArray(existing) ? existing : [];
+    const alreadyPresent = groups.some(
+      (g) => isRecord3(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord3(h) && h.command === command)
+    );
+    if (alreadyPresent) continue;
+    groups.push({ hooks: [{ type: "command", command, timeout }] });
+    hooks[event] = groups;
+    changed = true;
+  }
+  if (changed) base.hooks = hooks;
+  return { settings: base, changed };
+}
+function resolveIntegrationPaths(cliDir) {
+  const dir = cliDir ?? path8.dirname(fileURLToPath2(import.meta.url));
+  const root = path8.resolve(dir, "..", "..");
+  const bundledServer = path8.join(root, "plugin", "mcp-server.mjs");
+  const bundledHook = path8.join(root, "plugin", "hook.mjs");
+  if (existsSync4(bundledServer) && existsSync4(bundledHook)) {
+    return { server: bundledServer, hook: bundledHook, bundled: true };
+  }
+  return {
+    server: path8.resolve(dir, "../mcp/server.js"),
+    hook: path8.resolve(dir, "../hooks/user-prompt-submit.js"),
+    bundled: false
+  };
+}
+var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
+async function runInstallClaude(opts, io, deps = {}) {
+  const scope = opts.scope ?? "user";
+  if (scope !== "user" && scope !== "project") {
+    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
+  const settingsPath = deps.settingsPath ?? path8.join(os2.homedir(), ".claude", "settings.json");
+  const exec = deps.exec ?? defaultExec;
+  let failed = false;
+  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", "node", serverPath];
+  line(io, bold2("1. Register the MCP server"));
+  line(io, `   claude ${mcpArgs.map(quoteArg).join(" ")}`);
+  if (bundled) line(io, dim2("   (self-contained bundle: no node_modules needed at runtime)"));
+  if (opts.apply) {
+    if (!existsSync4(serverPath)) {
+      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
+    }
+    try {
+      const out = exec("claude", mcpArgs).trim();
+      line(io, green(`   ${out || "registered"}`));
+    } catch (err) {
+      failed = true;
+      line(io, red(`   failed: ${safeLines(errorMessage2(err))}`));
+    }
+  }
+  line(io);
+  const hookCommand = `node "${hookPath.replace(/(["\\$`])/g, "\\$1")}"`;
+  line(io, bold2(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
+  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, 5, HOOK_EVENTS), null, 2), "   "));
+  if (opts.apply) {
+    let current = {};
+    let existed = false;
+    try {
+      const raw = await fs8.readFile(settingsPath, "utf8");
+      existed = true;
+      current = raw.trim() === "" ? {} : JSON.parse(raw);
+    } catch (err) {
+      if (!(typeof err === "object" && err !== null && err.code === "ENOENT")) {
+        throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(errorMessage2(err))}`);
+      }
+    }
+    const { settings, changed } = mergeHookIntoSettings(current, hookCommand, 5, HOOK_EVENTS);
+    if (changed) {
+      await fs8.mkdir(path8.dirname(settingsPath), { recursive: true });
+      await fs8.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}
+`, "utf8");
+      line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
+    } else {
+      line(io, dim2(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+    }
+  }
+  line(io);
+  line(io, bold2("3. Add to your CLAUDE.md"));
+  line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (!opts.apply) {
+    line(io);
+    line(io, dim2("run again with --apply to perform steps 1 and 2"));
+  }
+  return failed ? 1 : 0;
+}
+function quoteArg(s) {
+  return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
+}
+function indent(s, prefix) {
+  return s.split("\n").map((l) => prefix + l).join("\n");
+}
+
+// src/cli/cmd-import.ts
+import { promises as fs9 } from "node:fs";
+import path9 from "node:path";
+var SOURCES = ["user", "harvest:repo", "harvest:git", "harvest:package", "import", "learned"];
+var CATEGORIES2 = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
+function parseSource(value) {
+  if (value === void 0) return void 0;
+  if (!SOURCES.includes(value)) {
+    throw new Error(`unknown source "${value}" (expected one of: ${SOURCES.join(", ")})`);
+  }
+  return value;
+}
+function parseCategory(value) {
+  if (value === void 0) return void 0;
+  const lower = value.toLowerCase();
+  if (!CATEGORIES2.includes(lower)) {
+    throw new Error(`unknown category "${value}" (expected one of: ${CATEGORIES2.join(", ")})`);
+  }
+  return lower;
+}
+function formatList() {
+  return renderTable(
+    IMPORT_FORMATS.map((f) => [f, IMPORT_FORMAT_INFO[f].description]),
+    ["format", "description"]
+  );
+}
+var MAX_IMPORT_BYTES = 8 * 1024 * 1024;
+function tooLarge(what, bytes) {
+  const size = bytes === void 0 ? "exceeds" : `is ${bytes} bytes, over`;
+  return new Error(`${what} ${size} the ${MAX_IMPORT_BYTES} byte (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) import limit`);
+}
+async function defaultReadInput(file2, cwd) {
+  if (file2 === "-") {
+    try {
+      return await readStdin(MAX_IMPORT_BYTES);
+    } catch (err) {
+      if (err instanceof Error && /byte limit/.test(err.message)) throw tooLarge("stdin");
+      throw err;
+    }
+  }
+  const resolved = path9.resolve(cwd, file2);
+  try {
+    const stat = await fs9.stat(resolved);
+    if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved}`);
+    if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved, stat.size);
+    return await fs9.readFile(resolved, "utf8");
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT") throw new Error(`file not found: ${resolved}`);
+    if (code === "EISDIR") throw new Error(`expected a file, got a directory: ${resolved}`);
+    throw err;
+  }
+}
+async function runImport(file2, opts, io, readInput = defaultReadInput) {
+  const format = opts.format ?? "auto";
+  if (!isImportFormat(format)) {
+    io.stderr(`lexicon: unknown import format "${safe(format)}"
+`);
+    io.stderr(formatList());
+    return 1;
+  }
+  const source = parseSource(opts.source);
+  const category = parseCategory(opts.category);
+  const cwd = path9.resolve(opts.cwd ?? process.cwd());
+  const scope = opts.project ? "project" : "global";
+  const dryRun = opts.dryRun ?? false;
+  const content = await readInput(file2, cwd);
+  const bytes = Buffer.byteLength(content, "utf8");
+  if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
+  const result = importLexicon(content, format, {
+    ...source ? { source } : {},
+    ...file2 !== "-" ? { filename: path9.basename(file2) } : {}
+  });
+  if (category) {
+    for (const term of result.terms) term.category ??= category;
+  }
+  const report = {
+    format: result.format,
+    scope,
+    dryRun,
+    terms: [],
+    skipped: result.skipped,
+    counts: { total: result.terms.length, created: 0, merged: 0, skipped: result.skipped.length }
+  };
+  if (dryRun) {
+    const paths = resolvePaths({ cwd });
+    const target = scope === "project" ? paths.project : paths.global;
+    const existing = target ? (await readLexiconFile(target, scope)).lexicon : void 0;
+    if (target) report.path = target;
+    for (const term of result.terms) {
+      const created = !existing || findTerm(existing, term.canonical) === void 0;
+      report.terms.push({ canonical: term.canonical, aliases: term.aliases, created });
+    }
+  } else {
+    for (const term of result.terms) {
+      const added = await addTerm(term, { scope, cwd });
+      report.path ??= added.file.path;
+      report.terms.push({ canonical: added.term.canonical, aliases: added.term.aliases, created: added.created });
+    }
+  }
+  report.counts.created = report.terms.filter((t) => t.created).length;
+  report.counts.merged = report.terms.length - report.counts.created;
+  if (opts.json) {
+    io.stdout(`${JSON.stringify(report, null, 2)}
+`);
+  } else {
+    printReport(report, io);
+  }
+  return 0;
+}
+function printReport(report, io) {
+  const { counts } = report;
+  if (report.terms.length > 0) {
+    const rows = report.terms.map((t) => [
+      t.canonical,
+      t.aliases.length > 0 ? t.aliases.join(", ") : "(none)",
+      t.created ? "new" : "merged"
+    ]);
+    io.stdout(renderTable(rows, ["canonical", "aliases", "status"]));
+  }
+  const where = report.path ? ` into ${report.scope} lexicon ${safe(report.path)}` : "";
+  const summary = `imported ${counts.total} terms (${counts.created} new, ${counts.merged} merged, ${counts.skipped} skipped)`;
+  if (report.dryRun) {
+    io.stdout(`dry run (${report.format}): would have ${summary}${where}
+`);
+  } else if (counts.total === 0) {
+    io.stdout(`nothing to import (${report.format}): ${summary}
+`);
+  } else {
+    io.stdout(`${summary}${where} [${report.format}]
+`);
+  }
+  for (const s of report.skipped) {
+    io.stderr(`lexicon: skipped line ${s.line}: ${safe(s.reason)}
+`);
+  }
+}
+
+// src/cli/cmd-install.ts
+import { promises as fs10 } from "node:fs";
+import os3 from "node:os";
+import path10 from "node:path";
+var INSTALL_CLIENTS = [
+  "claude",
+  "codex",
+  "cursor",
+  "windsurf",
+  "gemini",
+  "claude-desktop",
+  "vscode",
+  "generic"
+];
+function paint2(code) {
+  return (s) => process.stdout.isTTY ? `\x1B[${code}m${s}\x1B[0m` : s;
+}
+var bold3 = paint2("1");
+var dim3 = paint2("2");
+var green2 = paint2("32");
+function line2(io, s = "") {
+  io.stdout(`${s}
+`);
+}
+function indent2(s, prefix) {
+  return s.split("\n").map((l) => prefix + l).join("\n");
+}
+function errorMessage3(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isEnoent(err) {
+  return typeof err === "object" && err !== null && err.code === "ENOENT";
+}
+function isInstallClient(value) {
+  return INSTALL_CLIENTS.includes(value);
+}
+function resolveServerPath(cliDir) {
+  return resolveIntegrationPaths(cliDir).server;
+}
+function appData(ctx) {
+  return ctx.env.APPDATA ?? path10.join(ctx.home, "AppData", "Roaming");
+}
+function configPathFor(client, ctx) {
+  const { home, cwd, platform, project } = ctx;
+  switch (client) {
+    case "codex":
+      return project ? path10.join(cwd, ".codex", "config.toml") : path10.join(home, ".codex", "config.toml");
+    case "cursor":
+      return project ? path10.join(cwd, ".cursor", "mcp.json") : path10.join(home, ".cursor", "mcp.json");
+    case "windsurf":
+      if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
+      return path10.join(home, ".codeium", "windsurf", "mcp_config.json");
+    case "gemini":
+      return project ? path10.join(cwd, ".gemini", "settings.json") : path10.join(home, ".gemini", "settings.json");
+    case "claude-desktop": {
+      if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
+      if (platform === "darwin") {
+        return path10.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+      }
+      if (platform === "win32") return path10.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return path10.join(home, ".config", "Claude", "claude_desktop_config.json");
+    }
+    case "vscode": {
+      if (project) return path10.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return path10.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return path10.join(appData(ctx), "Code", "User", "mcp.json");
+      return path10.join(home, ".config", "Code", "User", "mcp.json");
+    }
+  }
+}
+function rulesFileFor(client) {
+  switch (client) {
+    case "claude":
+      return "CLAUDE.md";
+    case "codex":
+      return "AGENTS.md";
+    case "cursor":
+      return ".cursor/rules/lexicon.mdc";
+    case "windsurf":
+      return ".windsurfrules";
+    case "gemini":
+      return "GEMINI.md";
+    case "claude-desktop":
+      return "the project instructions (or Settings > Profile > preferences)";
+    case "vscode":
+      return ".github/copilot-instructions.md";
+    default:
+      return "the agent\u2019s rules or memory file";
+  }
+}
+function labelFor(client) {
+  switch (client) {
+    case "codex":
+      return "OpenAI Codex CLI";
+    case "cursor":
+      return "Cursor";
+    case "windsurf":
+      return "Windsurf";
+    case "gemini":
+      return "Gemini CLI";
+    case "claude-desktop":
+      return "Claude Desktop";
+    case "vscode":
+      return "VS Code";
+    case "claude":
+      return "Claude Code";
+    default:
+      return "any MCP client";
+  }
+}
+function targetFor(client, serverPath, ctx) {
+  const base = { command: "node", args: [serverPath] };
+  const file2 = configPathFor(client, ctx);
+  const common = { client, label: labelFor(client), file: file2, rulesFile: rulesFileFor(client) };
+  switch (client) {
+    case "codex":
+      return { ...common, format: "toml", key: "mcpServers", entry: base };
+    case "vscode":
+      return { ...common, format: "json", key: "servers", entry: { type: "stdio", ...base } };
+    default:
+      return { ...common, format: "json", key: "mcpServers", entry: base };
+  }
+}
+function deepEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+function mergeServerIntoJson(current, key, entry) {
+  const base = isRecord4(current) ? structuredClone(current) : {};
+  const existingMap = base[key];
+  if (existingMap !== void 0 && !isRecord4(existingMap)) {
+    throw new Error(`"${key}" is not an object; refusing to overwrite it`);
+  }
+  const servers = isRecord4(existingMap) ? existingMap : {};
+  if (deepEqual(servers.lexicon, entry)) {
+    return { next: base, changed: false };
+  }
+  servers.lexicon = structuredClone(entry);
+  base[key] = servers;
+  return { next: base, changed: true };
+}
+function tomlString(s) {
+  return JSON.stringify(s);
+}
+var CODEX_TABLE = "mcp_servers.lexicon";
+function codexBlock(entry) {
+  return [
+    `[${CODEX_TABLE}]`,
+    `command = ${tomlString(entry.command)}`,
+    `args = [${entry.args.map(tomlString).join(", ")}]`
+  ].join("\n");
+}
+function isBlankOrComment(line4) {
+  const trimmed = line4.trim();
+  return trimmed === "" || trimmed.startsWith("#");
+}
+function upsertTomlTable(text, header, block) {
+  const lines = text.split("\n");
+  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const headerRe = new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const start = lines.findIndex((l) => headerRe.test(l));
+  const blockLines = block.split("\n");
+  if (start === -1) {
+    const trimmed = text.replace(/\s+$/, "");
+    const next2 = trimmed === "" ? `${block}
+` : `${trimmed}
+
+${block}
+`;
+    return { next: next2, changed: true };
+  }
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end] ?? "")) end += 1;
+  let bodyEnd = end;
+  while (bodyEnd > start + 1 && isBlankOrComment(lines[bodyEnd - 1] ?? "")) bodyEnd -= 1;
+  const oldBlock = lines.slice(start, bodyEnd).join("\n");
+  if (oldBlock === block) return { next: text, changed: false };
+  const nextLines = [...lines.slice(0, start), ...blockLines, ...lines.slice(bodyEnd)];
+  let next = nextLines.join("\n");
+  if (!next.endsWith("\n")) next += "\n";
+  return { next, changed: true };
+}
+async function readText2(file2) {
+  try {
+    return { text: await fs10.readFile(file2, "utf8"), existed: true };
+  } catch (err) {
+    if (isEnoent(err)) return { text: "", existed: false };
+    throw new Error(`could not read ${file2}: ${errorMessage3(err)}`);
+  }
+}
+async function writeText(file2, text) {
+  await fs10.mkdir(path10.dirname(file2), { recursive: true });
+  await fs10.writeFile(file2, text, "utf8");
+}
+async function applyJson(target) {
+  const { text, existed } = await readText2(target.file);
+  let current = {};
+  if (text.trim() !== "") {
+    try {
+      current = JSON.parse(text);
+    } catch (err) {
+      throw new Error(`${target.file} is not valid JSON (${errorMessage3(err)}); fix or remove it first`);
+    }
+  }
+  const { next, changed } = mergeServerIntoJson(current, target.key, target.entry);
+  if (!changed) return "unchanged";
+  await writeText(target.file, `${JSON.stringify(next, null, 2)}
+`);
+  return existed ? "updated" : "created";
+}
+async function applyToml(target) {
+  const { text, existed } = await readText2(target.file);
+  const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
+  if (!changed) return "unchanged";
+  await writeText(target.file, next);
+  return existed ? "updated" : "created";
+}
+function jsonSnippet(key, entry) {
+  return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
+}
+function printExportHint(io, step, client) {
+  line2(io, bold3(`${step}. Give ${labelFor(client)} the vocabulary`));
+  line2(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
+  line2(io, dim3("   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)"));
+}
+function printGeneric(io, serverPath) {
+  line2(io, bold3("Generic MCP client configuration"));
+  line2(io, indent2(jsonSnippet("mcpServers", { command: "node", args: [serverPath] }), "   "));
+  line2(io);
+  line2(io, bold3("Supported clients"));
+  for (const c of INSTALL_CLIENTS) {
+    if (c === "generic") continue;
+    line2(io, `   lexicon install ${c}`);
+  }
+  line2(io);
+  line2(io, dim3("add --apply to write the config, --project for the repo-level file where the client supports one"));
+  line2(io);
+  printExportHint(io, 1, "generic");
+}
+async function runInstall(client, opts, io, deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const home = opts.home ? path10.resolve(opts.home) : os3.homedir();
+  const cwd = path10.resolve(opts.cwd ?? process.cwd());
+  const serverPath = resolveServerPath(deps.cliDir);
+  const scope = opts.scope ?? (opts.project ? "project" : "user");
+  if (scope !== "user" && scope !== "project") {
+    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
+  }
+  const project = scope === "project" || opts.project === true;
+  const name = (client ?? "generic").toLowerCase();
+  if (!isInstallClient(name)) {
+    throw new Error(
+      `unknown client "${client}" (expected one of: ${INSTALL_CLIENTS.join(", ")})`
+    );
+  }
+  if (name === "generic") {
+    printGeneric(io, serverPath);
+    return 0;
+  }
+  if (name === "claude") {
+    const claudeOpts = { ...opts, scope: project ? "project" : "user" };
+    const claudeDeps = {
+      ...deps.cliDir ? { cliDir: deps.cliDir } : {},
+      ...opts.home ? { settingsPath: path10.join(home, ".claude", "settings.json") } : {}
+    };
+    return runInstallClaude(claudeOpts, io, claudeDeps);
+  }
+  const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
+  const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
+  line2(io, bold3(`1. Add the lexicon MCP server to ${target.label}`));
+  line2(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
+  line2(io, indent2(body, "   "));
+  if (opts.apply) {
+    const outcome = target.format === "toml" ? await applyToml(target) : await applyJson(target);
+    if (outcome === "unchanged") {
+      line2(io, dim3(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
+    } else {
+      line2(io, green2(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
+    }
+  }
+  line2(io);
+  printExportHint(io, 2, name);
+  if (!opts.apply) {
+    line2(io);
+    line2(io, dim3("run again with --apply to write step 1"));
+  }
+  return 0;
+}
+
+// src/cli/cmd-setup.ts
+import { execFileSync as execFileSync3 } from "node:child_process";
+import { existsSync as existsSync5, promises as fs14 } from "node:fs";
+import os5 from "node:os";
+import path14 from "node:path";
+
+// src/cli/cmd-serve.ts
+import { spawn as spawn2 } from "node:child_process";
+import { promises as fs13 } from "node:fs";
+import os4 from "node:os";
+import path13 from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+
+// node_modules/commander/lib/error.js
+var CommanderError = class extends Error {
+  /**
+   * Constructs the CommanderError class
+   * @param {number} exitCode suggested exit code which could be used with process.exit
+   * @param {string} code an id string representing the error
+   * @param {string} message human-readable description of the error
+   */
+  constructor(exitCode, code, message) {
+    super(message);
+    Error.captureStackTrace(this, this.constructor);
+    this.name = this.constructor.name;
+    this.code = code;
+    this.exitCode = exitCode;
+    this.nestedError = void 0;
+  }
+};
+var InvalidArgumentError = class extends CommanderError {
+  /**
+   * Constructs the InvalidArgumentError class
+   * @param {string} [message] explanation of why argument is invalid
+   */
+  constructor(message) {
+    super(1, "commander.invalidArgument", message);
+    Error.captureStackTrace(this, this.constructor);
+    this.name = this.constructor.name;
+  }
+};
+
+// node_modules/commander/lib/argument.js
+var Argument = class {
+  /**
+   * Initialize a new command argument with the given name and description.
+   * The default is that the argument is required, and you can explicitly
+   * indicate this with <> around the name. Put [] around the name for an optional argument.
+   *
+   * @param {string} name
+   * @param {string} [description]
+   */
+  constructor(name, description) {
+    this.description = description || "";
+    this.variadic = false;
+    this.parseArg = void 0;
+    this.defaultValue = void 0;
+    this.defaultValueDescription = void 0;
+    this.argChoices = void 0;
+    switch (name[0]) {
+      case "<":
+        this.required = true;
+        this._name = name.slice(1, -1);
+        break;
+      case "[":
+        this.required = false;
+        this._name = name.slice(1, -1);
+        break;
+      default:
+        this.required = true;
+        this._name = name;
+        break;
+    }
+    if (this._name.endsWith("...")) {
+      this.variadic = true;
+      this._name = this._name.slice(0, -3);
+    }
+  }
+  /**
+   * Return argument name.
+   *
+   * @return {string}
+   */
+  name() {
+    return this._name;
+  }
+  /**
+   * @package
+   */
+  _collectValue(value, previous) {
+    if (previous === this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+    previous.push(value);
+    return previous;
+  }
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {*} value
+   * @param {string} [description]
+   * @return {Argument}
+   */
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+  /**
+   * Set the custom handler for processing CLI command arguments into argument values.
+   *
+   * @param {Function} [fn]
+   * @return {Argument}
+   */
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+  /**
+   * Only allow argument value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Argument}
+   */
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(
+          `Allowed choices are ${this.argChoices.join(", ")}.`
+        );
+      }
+      if (this.variadic) {
+        return this._collectValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+  /**
+   * Make argument required.
+   *
+   * @returns {Argument}
+   */
+  argRequired() {
+    this.required = true;
+    return this;
+  }
+  /**
+   * Make argument optional.
+   *
+   * @returns {Argument}
+   */
+  argOptional() {
+    this.required = false;
+    return this;
+  }
+};
+function humanReadableArgName(arg) {
+  const nameOutput = arg.name() + (arg.variadic === true ? "..." : "");
+  return arg.required ? "<" + nameOutput + ">" : "[" + nameOutput + "]";
+}
+
+// node_modules/commander/lib/command.js
+import { EventEmitter } from "node:events";
+import childProcess from "node:child_process";
+import path11 from "node:path";
+import fs11 from "node:fs";
+import process3 from "node:process";
+import { stripVTControlCharacters as stripVTControlCharacters2 } from "node:util";
+
+// node_modules/commander/lib/help.js
+import { stripVTControlCharacters } from "node:util";
+var Help = class {
+  constructor() {
+    this.helpWidth = void 0;
+    this.minWidthToWrap = 40;
+    this.sortSubcommands = false;
+    this.sortOptions = false;
+    this.showGlobalOptions = false;
+  }
+  /**
+   * prepareContext is called by Commander after applying overrides from `Command.configureHelp()`
+   * and just before calling `formatHelp()`.
+   *
+   * Commander just uses the helpWidth and the rest is provided for optional use by more complex subclasses.
+   *
+   * @param {{ error?: boolean, helpWidth?: number, outputHasColors?: boolean }} contextOptions
+   */
+  prepareContext(contextOptions) {
+    this.helpWidth = this.helpWidth ?? contextOptions.helpWidth ?? 80;
+  }
+  /**
+   * Get an array of the visible subcommands. Includes a placeholder for the implicit help command, if there is one.
+   *
+   * @param {Command} cmd
+   * @returns {Command[]}
+   */
+  visibleCommands(cmd) {
+    const visibleCommands = cmd.commands.filter((cmd2) => !cmd2._hidden);
+    const helpCommand = cmd._getHelpCommand();
+    if (helpCommand && !helpCommand._hidden) {
+      visibleCommands.push(helpCommand);
+    }
+    if (this.sortSubcommands) {
+      visibleCommands.sort((a, b) => {
+        return a.name().localeCompare(b.name());
+      });
+    }
+    return visibleCommands;
+  }
+  /**
+   * Compare options for sort.
+   *
+   * @param {Option} a
+   * @param {Option} b
+   * @returns {number}
+   */
+  compareOptions(a, b) {
+    const getSortKey = (option) => {
+      return option.short ? option.short.replace(/^-/, "") : option.long.replace(/^--/, "");
+    };
+    return getSortKey(a).localeCompare(getSortKey(b));
+  }
+  /**
+   * Get an array of the visible options. Includes a placeholder for the implicit help option, if there is one.
+   *
+   * @param {Command} cmd
+   * @returns {Option[]}
+   */
+  visibleOptions(cmd) {
+    const visibleOptions = cmd.options.filter((option) => !option.hidden);
+    const helpOption = cmd._getHelpOption();
+    if (helpOption && !helpOption.hidden) {
+      const removeShort = helpOption.short && cmd._findOption(helpOption.short);
+      const removeLong = helpOption.long && cmd._findOption(helpOption.long);
+      if (!removeShort && !removeLong) {
+        visibleOptions.push(helpOption);
+      } else if (helpOption.long && !removeLong) {
+        visibleOptions.push(
+          cmd.createOption(helpOption.long, helpOption.description)
+        );
+      } else if (helpOption.short && !removeShort) {
+        visibleOptions.push(
+          cmd.createOption(helpOption.short, helpOption.description)
+        );
+      }
+    }
+    if (this.sortOptions) {
+      visibleOptions.sort(this.compareOptions);
+    }
+    return visibleOptions;
+  }
+  /**
+   * Get an array of the visible global options. (Not including help.)
+   *
+   * @param {Command} cmd
+   * @returns {Option[]}
+   */
+  visibleGlobalOptions(cmd) {
+    if (!this.showGlobalOptions) return [];
+    const globalOptions = [];
+    for (let ancestorCmd = cmd.parent; ancestorCmd; ancestorCmd = ancestorCmd.parent) {
+      const visibleOptions = ancestorCmd.options.filter(
+        (option) => !option.hidden
+      );
+      globalOptions.push(...visibleOptions);
+    }
+    if (this.sortOptions) {
+      globalOptions.sort(this.compareOptions);
+    }
+    return globalOptions;
+  }
+  /**
+   * Get an array of the arguments if any have a description.
+   *
+   * @param {Command} cmd
+   * @returns {Argument[]}
+   */
+  visibleArguments(cmd) {
+    if (cmd._argsDescription) {
+      cmd.registeredArguments.forEach((argument) => {
+        argument.description = argument.description || cmd._argsDescription[argument.name()] || "";
+      });
+    }
+    if (cmd.registeredArguments.find((argument) => argument.description)) {
+      return cmd.registeredArguments;
+    }
+    return [];
+  }
+  /**
+   * Get the command term to show in the list of subcommands.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+  subcommandTerm(cmd) {
+    const args = cmd.registeredArguments.map((arg) => humanReadableArgName(arg)).join(" ");
+    return cmd._name + (cmd._aliases[0] ? "|" + cmd._aliases[0] : "") + (cmd.options.length ? " [options]" : "") + // simplistic check for non-help option
+    (args ? " " + args : "");
+  }
+  /**
+   * Get the option term to show in the list of options.
+   *
+   * @param {Option} option
+   * @returns {string}
+   */
+  optionTerm(option) {
+    return option.flags;
+  }
+  /**
+   * Get the argument term to show in the list of arguments.
+   *
+   * @param {Argument} argument
+   * @returns {string}
+   */
+  argumentTerm(argument) {
+    return argument.name();
+  }
+  /**
+   * Get the longest command term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+  longestSubcommandTermLength(cmd, helper) {
+    return helper.visibleCommands(cmd).reduce((max, command) => {
+      return Math.max(
+        max,
+        this.displayWidth(
+          helper.styleSubcommandTerm(helper.subcommandTerm(command))
+        )
+      );
+    }, 0);
+  }
+  /**
+   * Get the longest option term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+  longestOptionTermLength(cmd, helper) {
+    return helper.visibleOptions(cmd).reduce((max, option) => {
+      return Math.max(
+        max,
+        this.displayWidth(helper.styleOptionTerm(helper.optionTerm(option)))
+      );
+    }, 0);
+  }
+  /**
+   * Get the longest global option term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+  longestGlobalOptionTermLength(cmd, helper) {
+    return helper.visibleGlobalOptions(cmd).reduce((max, option) => {
+      return Math.max(
+        max,
+        this.displayWidth(helper.styleOptionTerm(helper.optionTerm(option)))
+      );
+    }, 0);
+  }
+  /**
+   * Get the longest argument term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+  longestArgumentTermLength(cmd, helper) {
+    return helper.visibleArguments(cmd).reduce((max, argument) => {
+      return Math.max(
+        max,
+        this.displayWidth(
+          helper.styleArgumentTerm(helper.argumentTerm(argument))
+        )
+      );
+    }, 0);
+  }
+  /**
+   * Get the command usage to be displayed at the top of the built-in help.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+  commandUsage(cmd) {
+    let cmdName = cmd._name;
+    if (cmd._aliases[0]) {
+      cmdName = cmdName + "|" + cmd._aliases[0];
+    }
+    let ancestorCmdNames = "";
+    for (let ancestorCmd = cmd.parent; ancestorCmd; ancestorCmd = ancestorCmd.parent) {
+      ancestorCmdNames = ancestorCmd.name() + " " + ancestorCmdNames;
+    }
+    return ancestorCmdNames + cmdName + " " + cmd.usage();
+  }
+  /**
+   * Get the description for the command.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+  commandDescription(cmd) {
+    return cmd.description();
+  }
+  /**
+   * Get the subcommand summary to show in the list of subcommands.
+   * (Fallback to description for backwards compatibility.)
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+  subcommandDescription(cmd) {
+    return cmd.summary() || cmd.description();
+  }
+  /**
+   * Get the option description to show in the list of options.
+   *
+   * @param {Option} option
+   * @return {string}
+   */
+  optionDescription(option) {
+    const extraInfo = [];
+    if (option.argChoices) {
+      extraInfo.push(
+        // use stringify to match the display of the default value
+        `choices: ${option.argChoices.map((choice) => JSON.stringify(choice)).join(", ")}`
+      );
+    }
+    if (option.defaultValue !== void 0) {
+      const showDefault = option.required || option.optional || option.isBoolean() && typeof option.defaultValue === "boolean";
+      if (showDefault) {
+        extraInfo.push(
+          `default: ${option.defaultValueDescription || JSON.stringify(option.defaultValue)}`
+        );
+      }
+    }
+    if (option.presetArg !== void 0 && option.optional) {
+      extraInfo.push(`preset: ${JSON.stringify(option.presetArg)}`);
+    }
+    if (option.envVar !== void 0) {
+      extraInfo.push(`env: ${option.envVar}`);
+    }
+    if (extraInfo.length > 0) {
+      const extraDescription = `(${extraInfo.join(", ")})`;
+      if (option.description) {
+        return `${option.description} ${extraDescription}`;
+      }
+      return extraDescription;
+    }
+    return option.description;
+  }
+  /**
+   * Get the argument description to show in the list of arguments.
+   *
+   * @param {Argument} argument
+   * @return {string}
+   */
+  argumentDescription(argument) {
+    const extraInfo = [];
+    if (argument.argChoices) {
+      extraInfo.push(
+        // use stringify to match the display of the default value
+        `choices: ${argument.argChoices.map((choice) => JSON.stringify(choice)).join(", ")}`
+      );
+    }
+    if (argument.defaultValue !== void 0) {
+      extraInfo.push(
+        `default: ${argument.defaultValueDescription || JSON.stringify(argument.defaultValue)}`
+      );
+    }
+    if (extraInfo.length > 0) {
+      const extraDescription = `(${extraInfo.join(", ")})`;
+      if (argument.description) {
+        return `${argument.description} ${extraDescription}`;
+      }
+      return extraDescription;
+    }
+    return argument.description;
+  }
+  /**
+   * Format a list of items, given a heading and an array of formatted items.
+   *
+   * @param {string} heading
+   * @param {string[]} items
+   * @param {Help} helper
+   * @returns string[]
+   */
+  formatItemList(heading, items, helper) {
+    if (items.length === 0) return [];
+    return [helper.styleTitle(heading), ...items, ""];
+  }
+  /**
+   * Group items by their help group heading.
+   *
+   * @param {Command[] | Option[]} unsortedItems
+   * @param {Command[] | Option[]} visibleItems
+   * @param {Function} getGroup
+   * @returns {Map<string, Command[] | Option[]>}
+   */
+  groupItems(unsortedItems, visibleItems, getGroup) {
+    const result = /* @__PURE__ */ new Map();
+    unsortedItems.forEach((item) => {
+      const group = getGroup(item);
+      if (!result.has(group)) result.set(group, []);
+    });
+    visibleItems.forEach((item) => {
+      const group = getGroup(item);
+      if (!result.has(group)) {
+        result.set(group, []);
+      }
+      result.get(group).push(item);
+    });
+    return result;
+  }
+  /**
+   * Generate the built-in help text.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {string}
+   */
+  formatHelp(cmd, helper) {
+    const termWidth = helper.padWidth(cmd, helper);
+    const helpWidth = helper.helpWidth ?? 80;
+    function callFormatItem(term, description) {
+      return helper.formatItem(term, termWidth, description, helper);
+    }
+    let output2 = [
+      `${helper.styleTitle("Usage:")} ${helper.styleUsage(helper.commandUsage(cmd))}`,
+      ""
+    ];
+    const commandDescription = helper.commandDescription(cmd);
+    if (commandDescription.length > 0) {
+      output2 = output2.concat([
+        helper.boxWrap(
+          helper.styleCommandDescription(commandDescription),
+          helpWidth
+        ),
+        ""
+      ]);
+    }
+    const argumentList = helper.visibleArguments(cmd).map((argument) => {
+      return callFormatItem(
+        helper.styleArgumentTerm(helper.argumentTerm(argument)),
+        helper.styleArgumentDescription(helper.argumentDescription(argument))
+      );
+    });
+    output2 = output2.concat(
+      this.formatItemList("Arguments:", argumentList, helper)
+    );
+    const optionGroups = this.groupItems(
+      cmd.options,
+      helper.visibleOptions(cmd),
+      (option) => option.helpGroupHeading ?? "Options:"
+    );
+    optionGroups.forEach((options, group) => {
+      const optionList = options.map((option) => {
+        return callFormatItem(
+          helper.styleOptionTerm(helper.optionTerm(option)),
+          helper.styleOptionDescription(helper.optionDescription(option))
+        );
+      });
+      output2 = output2.concat(this.formatItemList(group, optionList, helper));
+    });
+    if (helper.showGlobalOptions) {
+      const globalOptionList = helper.visibleGlobalOptions(cmd).map((option) => {
+        return callFormatItem(
+          helper.styleOptionTerm(helper.optionTerm(option)),
+          helper.styleOptionDescription(helper.optionDescription(option))
+        );
+      });
+      output2 = output2.concat(
+        this.formatItemList("Global Options:", globalOptionList, helper)
+      );
+    }
+    const commandGroups = this.groupItems(
+      cmd.commands,
+      helper.visibleCommands(cmd),
+      (sub) => sub.helpGroup() || "Commands:"
+    );
+    commandGroups.forEach((commands, group) => {
+      const commandList = commands.map((sub) => {
+        return callFormatItem(
+          helper.styleSubcommandTerm(helper.subcommandTerm(sub)),
+          helper.styleSubcommandDescription(helper.subcommandDescription(sub))
+        );
+      });
+      output2 = output2.concat(this.formatItemList(group, commandList, helper));
+    });
+    return output2.join("\n");
+  }
+  /**
+   * Return display width of string, ignoring ANSI escape sequences. Used in padding and wrapping calculations.
+   *
+   * @param {string} str
+   * @returns {number}
+   */
+  displayWidth(str) {
+    return stripVTControlCharacters(str).length;
+  }
+  /**
+   * Style the title for displaying in the help. Called with 'Usage:', 'Options:', etc.
+   *
+   * @param {string} str
+   * @returns {string}
+   */
+  styleTitle(str) {
+    return str;
+  }
+  styleUsage(str) {
+    return str.split(" ").map((word) => {
+      if (word === "[options]") return this.styleOptionText(word);
+      if (word === "[command]") return this.styleSubcommandText(word);
+      if (word[0] === "[" || word[0] === "<")
+        return this.styleArgumentText(word);
+      return this.styleCommandText(word);
+    }).join(" ");
+  }
+  styleCommandDescription(str) {
+    return this.styleDescriptionText(str);
+  }
+  styleOptionDescription(str) {
+    return this.styleDescriptionText(str);
+  }
+  styleSubcommandDescription(str) {
+    return this.styleDescriptionText(str);
+  }
+  styleArgumentDescription(str) {
+    return this.styleDescriptionText(str);
+  }
+  styleDescriptionText(str) {
+    return str;
+  }
+  styleOptionTerm(str) {
+    return this.styleOptionText(str);
+  }
+  styleSubcommandTerm(str) {
+    return str.split(" ").map((word) => {
+      if (word === "[options]") return this.styleOptionText(word);
+      if (word[0] === "[" || word[0] === "<")
+        return this.styleArgumentText(word);
+      return this.styleSubcommandText(word);
+    }).join(" ");
+  }
+  styleArgumentTerm(str) {
+    return this.styleArgumentText(str);
+  }
+  styleOptionText(str) {
+    return str;
+  }
+  styleArgumentText(str) {
+    return str;
+  }
+  styleSubcommandText(str) {
+    return str;
+  }
+  styleCommandText(str) {
+    return str;
+  }
+  /**
+   * Calculate the pad width from the maximum term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+  padWidth(cmd, helper) {
+    return Math.max(
+      helper.longestOptionTermLength(cmd, helper),
+      helper.longestGlobalOptionTermLength(cmd, helper),
+      helper.longestSubcommandTermLength(cmd, helper),
+      helper.longestArgumentTermLength(cmd, helper)
+    );
+  }
+  /**
+   * Detect manually wrapped and indented strings by checking for line break followed by whitespace.
+   *
+   * @param {string} str
+   * @returns {boolean}
+   */
+  preformatted(str) {
+    return /\n[^\S\r\n]/.test(str);
+  }
+  /**
+   * Format the "item", which consists of a term and description. Pad the term and wrap the description, indenting the following lines.
+   *
+   * So "TTT", 5, "DDD DDDD DD DDD" might be formatted for this.helpWidth=17 like so:
+   *   TTT  DDD DDDD
+   *        DD DDD
+   *
+   * @param {string} term
+   * @param {number} termWidth
+   * @param {string} description
+   * @param {Help} helper
+   * @returns {string}
+   */
+  formatItem(term, termWidth, description, helper) {
+    const itemIndent = 2;
+    const itemIndentStr = " ".repeat(itemIndent);
+    if (!description) return itemIndentStr + term;
+    const paddedTerm = term.padEnd(
+      termWidth + term.length - helper.displayWidth(term)
+    );
+    const spacerWidth = 2;
+    const helpWidth = this.helpWidth ?? 80;
+    const remainingWidth = helpWidth - termWidth - spacerWidth - itemIndent;
+    let formattedDescription;
+    if (remainingWidth < this.minWidthToWrap || helper.preformatted(description)) {
+      formattedDescription = description;
+    } else {
+      const wrappedDescription = helper.boxWrap(description, remainingWidth);
+      formattedDescription = wrappedDescription.replace(
+        /\n/g,
+        "\n" + " ".repeat(termWidth + spacerWidth)
+      );
+    }
+    return itemIndentStr + paddedTerm + " ".repeat(spacerWidth) + formattedDescription.replace(/\n/g, `
+${itemIndentStr}`);
+  }
+  /**
+   * Wrap a string at whitespace, preserving existing line breaks.
+   * Wrapping is skipped if the width is less than `minWidthToWrap`.
+   *
+   * @param {string} str
+   * @param {number} width
+   * @returns {string}
+   */
+  boxWrap(str, width) {
+    if (width < this.minWidthToWrap) return str;
+    const rawLines = str.split(/\r\n|\n/);
+    const chunkPattern = /[\s]*[^\s]+/g;
+    const wrappedLines = [];
+    rawLines.forEach((line4) => {
+      const chunks = line4.match(chunkPattern);
+      if (chunks === null) {
+        wrappedLines.push("");
+        return;
+      }
+      let sumChunks = [chunks.shift()];
+      let sumWidth = this.displayWidth(sumChunks[0]);
+      chunks.forEach((chunk) => {
+        const visibleWidth = this.displayWidth(chunk);
+        if (sumWidth + visibleWidth <= width) {
+          sumChunks.push(chunk);
+          sumWidth += visibleWidth;
+          return;
+        }
+        wrappedLines.push(sumChunks.join(""));
+        const nextChunk = chunk.trimStart();
+        sumChunks = [nextChunk];
+        sumWidth = this.displayWidth(nextChunk);
+      });
+      wrappedLines.push(sumChunks.join(""));
+    });
+    return wrappedLines.join("\n");
+  }
+};
+
+// node_modules/commander/lib/option.js
+var Option = class {
+  /**
+   * Initialize a new `Option` with the given `flags` and `description`.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   */
+  constructor(flags, description) {
+    this.flags = flags;
+    this.description = description || "";
+    this.required = flags.includes("<");
+    this.optional = flags.includes("[");
+    this.variadic = /\w\.\.\.[>\]]$/.test(flags);
+    this.mandatory = false;
+    const optionFlags = splitOptionFlags(flags);
+    this.short = optionFlags.shortFlag;
+    this.long = optionFlags.longFlag;
+    this.negate = false;
+    if (this.long) {
+      this.negate = this.long.startsWith("--no-");
+    }
+    this.defaultValue = void 0;
+    this.defaultValueDescription = void 0;
+    this.presetArg = void 0;
+    this.envVar = void 0;
+    this.parseArg = void 0;
+    this.hidden = false;
+    this.argChoices = void 0;
+    this.conflictsWith = [];
+    this.implied = void 0;
+    this.helpGroupHeading = void 0;
+  }
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {*} value
+   * @param {string} [description]
+   * @return {Option}
+   */
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+  /**
+   * Preset to use when option used without option-argument, especially optional but also boolean and negated.
+   * The custom processing (parseArg) is called.
+   *
+   * @example
+   * new Option('--color').default('GREYSCALE').preset('RGB');
+   * new Option('--donate [amount]').preset('20').argParser(parseFloat);
+   *
+   * @param {*} arg
+   * @return {Option}
+   */
+  preset(arg) {
+    this.presetArg = arg;
+    return this;
+  }
+  /**
+   * Add option name(s) that conflict with this option.
+   * An error will be displayed if conflicting options are found during parsing.
+   *
+   * @example
+   * new Option('--rgb').conflicts('cmyk');
+   * new Option('--js').conflicts(['ts', 'jsx']);
+   *
+   * @param {(string | string[])} names
+   * @return {Option}
+   */
+  conflicts(names) {
+    this.conflictsWith = this.conflictsWith.concat(names);
+    return this;
+  }
+  /**
+   * Specify implied option values for when this option is set and the implied options are not.
+   *
+   * The custom processing (parseArg) is not called on the implied values.
+   *
+   * @example
+   * program
+   *   .addOption(new Option('--log', 'write logging information to file'))
+   *   .addOption(new Option('--trace', 'log extra details').implies({ log: 'trace.txt' }));
+   *
+   * @param {object} impliedOptionValues
+   * @return {Option}
+   */
+  implies(impliedOptionValues) {
+    let newImplied = impliedOptionValues;
+    if (typeof impliedOptionValues === "string") {
+      newImplied = { [impliedOptionValues]: true };
+    }
+    this.implied = Object.assign(this.implied || {}, newImplied);
+    return this;
+  }
+  /**
+   * Set environment variable to check for option value.
+   *
+   * An environment variable is only used if when processed the current option value is
+   * undefined, or the source of the current value is 'default' or 'config' or 'env'.
+   *
+   * @param {string} name
+   * @return {Option}
+   */
+  env(name) {
+    this.envVar = name;
+    return this;
+  }
+  /**
+   * Set the custom handler for processing CLI option arguments into option values.
+   *
+   * @param {Function} [fn]
+   * @return {Option}
+   */
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+  /**
+   * Whether the option is mandatory and must have a value after parsing.
+   *
+   * @param {boolean} [mandatory=true]
+   * @return {Option}
+   */
+  makeOptionMandatory(mandatory = true) {
+    this.mandatory = !!mandatory;
+    return this;
+  }
+  /**
+   * Hide option in help.
+   *
+   * @param {boolean} [hide=true]
+   * @return {Option}
+   */
+  hideHelp(hide2 = true) {
+    this.hidden = !!hide2;
+    return this;
+  }
+  /**
+   * @package
+   */
+  _collectValue(value, previous) {
+    if (previous === this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+    previous.push(value);
+    return previous;
+  }
+  /**
+   * Only allow option value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Option}
+   */
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(
+          `Allowed choices are ${this.argChoices.join(", ")}.`
+        );
+      }
+      if (this.variadic) {
+        return this._collectValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+  /**
+   * Return option name.
+   *
+   * @return {string}
+   */
+  name() {
+    if (this.long) {
+      return this.long.replace(/^--/, "");
+    }
+    return this.short.replace(/^-/, "");
+  }
+  /**
+   * Return option name, in a camelcase format that can be used
+   * as an object attribute key.
+   *
+   * @return {string}
+   */
+  attributeName() {
+    if (this.negate) {
+      return camelcase(this.name().replace(/^no-/, ""));
+    }
+    return camelcase(this.name());
+  }
+  /**
+   * Set the help group heading.
+   *
+   * @param {string} heading
+   * @return {Option}
+   */
+  helpGroup(heading) {
+    this.helpGroupHeading = heading;
+    return this;
+  }
+  /**
+   * Check if `arg` matches the short or long flag.
+   *
+   * @param {string} arg
+   * @return {boolean}
+   * @package
+   */
+  is(arg) {
+    return this.short === arg || this.long === arg;
+  }
+  /**
+   * Return whether a boolean option.
+   *
+   * Options are one of boolean, negated, required argument, or optional argument.
+   *
+   * @return {boolean}
+   * @package
+   */
+  isBoolean() {
+    return !this.required && !this.optional && !this.negate;
+  }
+};
+var DualOptions = class {
+  /**
+   * @param {Option[]} options
+   */
+  constructor(options) {
+    this.positiveOptions = /* @__PURE__ */ new Map();
+    this.negativeOptions = /* @__PURE__ */ new Map();
+    this.dualOptions = /* @__PURE__ */ new Set();
+    options.forEach((option) => {
+      if (option.negate) {
+        this.negativeOptions.set(option.attributeName(), option);
+      } else {
+        this.positiveOptions.set(option.attributeName(), option);
+      }
+    });
+    this.negativeOptions.forEach((value, key) => {
+      if (this.positiveOptions.has(key)) {
+        this.dualOptions.add(key);
+      }
+    });
+  }
+  /**
+   * Did the value come from the option, and not from possible matching dual option?
+   *
+   * @param {*} value
+   * @param {Option} option
+   * @returns {boolean}
+   */
+  valueFromOption(value, option) {
+    const optionKey = option.attributeName();
+    if (!this.dualOptions.has(optionKey)) return true;
+    const preset = this.negativeOptions.get(optionKey).presetArg;
+    const negativeValue = preset !== void 0 ? preset : false;
+    return option.negate === (negativeValue === value);
+  }
+};
+function camelcase(str) {
+  return str.split("-").reduce((str2, word) => {
+    return str2 + word[0].toUpperCase() + word.slice(1);
+  });
+}
+function splitOptionFlags(flags) {
+  let shortFlag;
+  let longFlag;
+  const shortFlagExp = /^-[^-]$/;
+  const longFlagExp = /^--[^-]/;
+  const flagParts = flags.split(/[ |,]+/).concat("guard");
+  if (shortFlagExp.test(flagParts[0])) shortFlag = flagParts.shift();
+  if (longFlagExp.test(flagParts[0])) longFlag = flagParts.shift();
+  if (!shortFlag && shortFlagExp.test(flagParts[0]))
+    shortFlag = flagParts.shift();
+  if (!shortFlag && longFlagExp.test(flagParts[0])) {
+    shortFlag = longFlag;
+    longFlag = flagParts.shift();
+  }
+  if (flagParts[0].startsWith("-")) {
+    const unsupportedFlag = flagParts[0];
+    const baseError = `option creation failed due to '${unsupportedFlag}' in option flags '${flags}'`;
+    if (/^-[^-][^-]/.test(unsupportedFlag))
+      throw new Error(
+        `${baseError}
+- a short flag is a single dash and a single character
+  - either use a single dash and a single character (for a short flag)
+  - or use a double dash for a long option (and can have two, like '--ws, --workspace')`
+      );
+    if (shortFlagExp.test(unsupportedFlag))
+      throw new Error(`${baseError}
+- too many short flags`);
+    if (longFlagExp.test(unsupportedFlag))
+      throw new Error(`${baseError}
+- too many long flags`);
+    throw new Error(`${baseError}
+- unrecognised flag format`);
+  }
+  if (shortFlag === void 0 && longFlag === void 0)
+    throw new Error(
+      `option creation failed due to no flags found in '${flags}'.`
+    );
+  return { shortFlag, longFlag };
+}
+
+// node_modules/commander/lib/suggestSimilar.js
+var maxDistance = 3;
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > maxDistance)
+    return Math.max(a.length, b.length);
+  const d = [];
+  for (let i = 0; i <= a.length; i++) {
+    d[i] = [i];
+  }
+  for (let j = 0; j <= b.length; j++) {
+    d[0][j] = j;
+  }
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      let cost;
+      if (a[i - 1] === b[j - 1]) {
+        cost = 0;
+      } else {
+        cost = 1;
+      }
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        // deletion
+        d[i][j - 1] + 1,
+        // insertion
+        d[i - 1][j - 1] + cost
+        // substitution
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[a.length][b.length];
+}
+function suggestSimilar(word, candidates) {
+  if (!candidates || candidates.length === 0) return "";
+  candidates = Array.from(new Set(candidates));
+  const searchingOptions = word.startsWith("--");
+  if (searchingOptions) {
+    word = word.slice(2);
+    candidates = candidates.map((candidate) => candidate.slice(2));
+  }
+  let similar = [];
+  let bestDistance = maxDistance;
+  const minSimilarity = 0.4;
+  candidates.forEach((candidate) => {
+    if (candidate.length <= 1) return;
+    const distance3 = editDistance(word, candidate);
+    const length = Math.max(word.length, candidate.length);
+    const similarity2 = (length - distance3) / length;
+    if (similarity2 > minSimilarity) {
+      if (distance3 < bestDistance) {
+        bestDistance = distance3;
+        similar = [candidate];
+      } else if (distance3 === bestDistance) {
+        similar.push(candidate);
+      }
+    }
+  });
+  similar.sort((a, b) => a.localeCompare(b));
+  if (searchingOptions) {
+    similar = similar.map((candidate) => `--${candidate}`);
+  }
+  if (similar.length > 1) {
+    return `
+(Did you mean one of ${similar.join(", ")}?)`;
+  }
+  if (similar.length === 1) {
+    return `
+(Did you mean ${similar[0]}?)`;
+  }
+  return "";
+}
+
+// node_modules/commander/lib/command.js
+var Command = class _Command extends EventEmitter {
+  /**
+   * Initialize a new `Command`.
+   *
+   * @param {string} [name]
+   */
+  constructor(name) {
+    super();
+    this.commands = [];
+    this.options = [];
+    this.parent = null;
+    this._allowUnknownOption = false;
+    this._allowExcessArguments = false;
+    this.registeredArguments = [];
+    this._args = this.registeredArguments;
+    this.args = [];
+    this.rawArgs = [];
+    this.processedArgs = [];
+    this._scriptPath = null;
+    this._name = name || "";
+    this._optionValues = {};
+    this._optionValueSources = {};
+    this._storeOptionsAsProperties = false;
+    this._actionHandler = null;
+    this._executableHandler = false;
+    this._executableFile = null;
+    this._executableDir = null;
+    this._defaultCommandName = null;
+    this._exitCallback = null;
+    this._aliases = [];
+    this._combineFlagAndOptionalValue = true;
+    this._description = "";
+    this._summary = "";
+    this._argsDescription = void 0;
+    this._enablePositionalOptions = false;
+    this._passThroughOptions = false;
+    this._lifeCycleHooks = {};
+    this._showHelpAfterError = false;
+    this._showSuggestionAfterError = true;
+    this._savedState = null;
+    this._outputConfiguration = {
+      writeOut: (str) => process3.stdout.write(str),
+      writeErr: (str) => process3.stderr.write(str),
+      outputError: (str, write) => write(str),
+      getOutHelpWidth: () => process3.stdout.isTTY ? process3.stdout.columns : void 0,
+      getErrHelpWidth: () => process3.stderr.isTTY ? process3.stderr.columns : void 0,
+      getOutHasColors: () => useColor() ?? (process3.stdout.isTTY && process3.stdout.hasColors?.()),
+      getErrHasColors: () => useColor() ?? (process3.stderr.isTTY && process3.stderr.hasColors?.()),
+      stripColor: (str) => stripVTControlCharacters2(str)
+    };
+    this._hidden = false;
+    this._helpOption = void 0;
+    this._addImplicitHelpCommand = void 0;
+    this._helpCommand = void 0;
+    this._helpConfiguration = {};
+    this._helpGroupHeading = void 0;
+    this._defaultCommandGroup = void 0;
+    this._defaultOptionGroup = void 0;
+  }
+  /**
+   * Copy settings that are useful to have in common across root command and subcommands.
+   *
+   * (Used internally when adding a command using `.command()` so subcommands inherit parent settings.)
+   *
+   * @param {Command} sourceCommand
+   * @return {Command} `this` command for chaining
+   */
+  copyInheritedSettings(sourceCommand) {
+    this._outputConfiguration = sourceCommand._outputConfiguration;
+    this._helpOption = sourceCommand._helpOption;
+    this._helpCommand = sourceCommand._helpCommand;
+    this._helpConfiguration = sourceCommand._helpConfiguration;
+    this._exitCallback = sourceCommand._exitCallback;
+    this._storeOptionsAsProperties = sourceCommand._storeOptionsAsProperties;
+    this._combineFlagAndOptionalValue = sourceCommand._combineFlagAndOptionalValue;
+    this._allowExcessArguments = sourceCommand._allowExcessArguments;
+    this._enablePositionalOptions = sourceCommand._enablePositionalOptions;
+    this._showHelpAfterError = sourceCommand._showHelpAfterError;
+    this._showSuggestionAfterError = sourceCommand._showSuggestionAfterError;
+    return this;
+  }
+  /**
+   * @returns {Command[]}
+   * @private
+   */
+  _getCommandAndAncestors() {
+    const result = [];
+    for (let command = this; command; command = command.parent) {
+      result.push(command);
+    }
+    return result;
+  }
+  /**
+   * Define a command.
+   *
+   * There are two styles of command: pay attention to where to put the description.
+   *
+   * @example
+   * // Command implemented using action handler (description is supplied separately to `.command`)
+   * program
+   *   .command('clone <source> [destination]')
+   *   .description('clone a repository into a newly created directory')
+   *   .action((source, destination) => {
+   *     console.log('clone command called');
+   *   });
+   *
+   * // Command implemented using separate executable file (description is second parameter to `.command`)
+   * program
+   *   .command('start <service>', 'start named service')
+   *   .command('stop [service]', 'stop named service, or all if no name supplied');
+   *
+   * @param {string} nameAndArgs - command name and arguments, args are `<required>` or `[optional]` and last may also be `variadic...`
+   * @param {(object | string)} [actionOptsOrExecDesc] - configuration options (for action), or description (for executable)
+   * @param {object} [execOpts] - configuration options (for executable)
+   * @return {Command} returns new command for action handler, or `this` for executable command
+   */
+  command(nameAndArgs, actionOptsOrExecDesc, execOpts) {
+    let desc = actionOptsOrExecDesc;
+    let opts = execOpts;
+    if (typeof desc === "object" && desc !== null) {
+      opts = desc;
+      desc = null;
+    }
+    opts = opts || {};
+    const [, name, args] = nameAndArgs.match(/([^ ]+) *(.*)/);
+    const cmd = this.createCommand(name);
+    if (desc) {
+      cmd.description(desc);
+      cmd._executableHandler = true;
+    }
+    if (opts.isDefault) this._defaultCommandName = cmd._name;
+    cmd._hidden = !!(opts.noHelp || opts.hidden);
+    cmd._executableFile = opts.executableFile || null;
+    if (args) cmd.arguments(args);
+    this._registerCommand(cmd);
+    cmd.parent = this;
+    cmd.copyInheritedSettings(this);
+    if (desc) return this;
+    return cmd;
+  }
+  /**
+   * Factory routine to create a new unattached command.
+   *
+   * See .command() for creating an attached subcommand, which uses this routine to
+   * create the command. You can override createCommand to customise subcommands.
+   *
+   * @param {string} [name]
+   * @return {Command} new command
+   */
+  createCommand(name) {
+    return new _Command(name);
+  }
+  /**
+   * You can customise the help with a subclass of Help by overriding createHelp,
+   * or by overriding Help properties using configureHelp().
+   *
+   * @return {Help}
+   */
+  createHelp() {
+    return Object.assign(new Help(), this.configureHelp());
+  }
+  /**
+   * You can customise the help by overriding Help properties using configureHelp(),
+   * or with a subclass of Help by overriding createHelp().
+   *
+   * @param {object} [configuration] - configuration options
+   * @return {(Command | object)} `this` command for chaining, or stored configuration
+   */
+  configureHelp(configuration) {
+    if (configuration === void 0) return this._helpConfiguration;
+    this._helpConfiguration = configuration;
+    return this;
+  }
+  /**
+   * The default output goes to stdout and stderr. You can customise this for special
+   * applications. You can also customise the display of errors by overriding outputError.
+   *
+   * The configuration properties are all functions:
+   *
+   *     // change how output being written, defaults to stdout and stderr
+   *     writeOut(str)
+   *     writeErr(str)
+   *     // change how output being written for errors, defaults to writeErr
+   *     outputError(str, write) // used for displaying errors and not used for displaying help
+   *     // specify width for wrapping help
+   *     getOutHelpWidth()
+   *     getErrHelpWidth()
+   *     // color support, currently only used with Help
+   *     getOutHasColors()
+   *     getErrHasColors()
+   *     stripColor() // used to remove ANSI escape codes if output does not have colors
+   *
+   * @param {object} [configuration] - configuration options
+   * @return {(Command | object)} `this` command for chaining, or stored configuration
+   */
+  configureOutput(configuration) {
+    if (configuration === void 0) return this._outputConfiguration;
+    this._outputConfiguration = {
+      ...this._outputConfiguration,
+      ...configuration
+    };
+    return this;
+  }
+  /**
+   * Display the help or a custom message after an error occurs.
+   *
+   * @param {(boolean|string)} [displayHelp]
+   * @return {Command} `this` command for chaining
+   */
+  showHelpAfterError(displayHelp = true) {
+    if (typeof displayHelp !== "string") displayHelp = !!displayHelp;
+    this._showHelpAfterError = displayHelp;
+    return this;
+  }
+  /**
+   * Display suggestion of similar commands for unknown commands, or options for unknown options.
+   *
+   * @param {boolean} [displaySuggestion]
+   * @return {Command} `this` command for chaining
+   */
+  showSuggestionAfterError(displaySuggestion = true) {
+    this._showSuggestionAfterError = !!displaySuggestion;
+    return this;
+  }
+  /**
+   * Add a prepared subcommand.
+   *
+   * See .command() for creating an attached subcommand which inherits settings from its parent.
+   *
+   * @param {Command} cmd - new subcommand
+   * @param {object} [opts] - configuration options
+   * @return {Command} `this` command for chaining
+   */
+  addCommand(cmd, opts) {
+    if (!cmd._name) {
+      throw new Error(`Command passed to .addCommand() must have a name
+- specify the name in Command constructor or using .name()`);
+    }
+    opts = opts || {};
+    if (opts.isDefault) this._defaultCommandName = cmd._name;
+    if (opts.noHelp || opts.hidden) cmd._hidden = true;
+    this._registerCommand(cmd);
+    cmd.parent = this;
+    cmd._checkForBrokenPassThrough();
+    return this;
+  }
+  /**
+   * Factory routine to create a new unattached argument.
+   *
+   * See .argument() for creating an attached argument, which uses this routine to
+   * create the argument. You can override createArgument to return a custom argument.
+   *
+   * @param {string} name
+   * @param {string} [description]
+   * @return {Argument} new argument
+   */
+  createArgument(name, description) {
+    return new Argument(name, description);
+  }
+  /**
+   * Define argument syntax for command.
+   *
+   * The default is that the argument is required, and you can explicitly
+   * indicate this with <> around the name. Put [] around the name for an optional argument.
+   *
+   * @example
+   * program.argument('<input-file>');
+   * program.argument('[output-file]');
+   *
+   * @param {string} name
+   * @param {string} [description]
+   * @param {(Function|*)} [parseArg] - custom argument processing function or default value
+   * @param {*} [defaultValue]
+   * @return {Command} `this` command for chaining
+   */
+  argument(name, description, parseArg, defaultValue) {
+    const argument = this.createArgument(name, description);
+    if (typeof parseArg === "function") {
+      argument.default(defaultValue).argParser(parseArg);
+    } else {
+      argument.default(parseArg);
+    }
+    this.addArgument(argument);
+    return this;
+  }
+  /**
+   * Define argument syntax for command, adding multiple at once (without descriptions).
+   *
+   * See also .argument().
+   *
+   * @example
+   * program.arguments('<cmd> [env]');
+   *
+   * @param {string} names
+   * @return {Command} `this` command for chaining
+   */
+  arguments(names) {
+    names.trim().split(/ +/).forEach((detail) => {
+      this.argument(detail);
+    });
+    return this;
+  }
+  /**
+   * Define argument syntax for command, adding a prepared argument.
+   *
+   * @param {Argument} argument
+   * @return {Command} `this` command for chaining
+   */
+  addArgument(argument) {
+    const previousArgument = this.registeredArguments.slice(-1)[0];
+    if (previousArgument?.variadic) {
+      throw new Error(
+        `only the last argument can be variadic '${previousArgument.name()}'`
+      );
+    }
+    if (argument.required && argument.defaultValue !== void 0 && argument.parseArg === void 0) {
+      throw new Error(
+        `a default value for a required argument is never used: '${argument.name()}'`
+      );
+    }
+    this.registeredArguments.push(argument);
+    return this;
+  }
+  /**
+   * Customise or override default help command. By default a help command is automatically added if your command has subcommands.
+   *
+   * @example
+   *    program.helpCommand('help [cmd]');
+   *    program.helpCommand('help [cmd]', 'show help');
+   *    program.helpCommand(false); // suppress default help command
+   *    program.helpCommand(true); // add help command even if no subcommands
+   *
+   * @param {string|boolean} enableOrNameAndArgs - enable with custom name and/or arguments, or boolean to override whether added
+   * @param {string} [description] - custom description
+   * @return {Command} `this` command for chaining
+   */
+  helpCommand(enableOrNameAndArgs, description) {
+    if (typeof enableOrNameAndArgs === "boolean") {
+      this._addImplicitHelpCommand = enableOrNameAndArgs;
+      if (enableOrNameAndArgs && this._defaultCommandGroup) {
+        this._initCommandGroup(this._getHelpCommand());
+      }
+      return this;
+    }
+    const nameAndArgs = enableOrNameAndArgs ?? "help [command]";
+    const [, helpName, helpArgs] = nameAndArgs.match(/([^ ]+) *(.*)/);
+    const helpDescription = description ?? "display help for command";
+    const helpCommand = this.createCommand(helpName);
+    helpCommand.helpOption(false);
+    if (helpArgs) helpCommand.arguments(helpArgs);
+    if (helpDescription) helpCommand.description(helpDescription);
+    this._addImplicitHelpCommand = true;
+    this._helpCommand = helpCommand;
+    if (enableOrNameAndArgs || description) this._initCommandGroup(helpCommand);
+    return this;
+  }
+  /**
+   * Add prepared custom help command.
+   *
+   * @param {(Command|string|boolean)} helpCommand - custom help command, or deprecated enableOrNameAndArgs as for `.helpCommand()`
+   * @param {string} [deprecatedDescription] - deprecated custom description used with custom name only
+   * @return {Command} `this` command for chaining
+   */
+  addHelpCommand(helpCommand, deprecatedDescription) {
+    if (typeof helpCommand !== "object") {
+      this.helpCommand(helpCommand, deprecatedDescription);
+      return this;
+    }
+    this._addImplicitHelpCommand = true;
+    this._helpCommand = helpCommand;
+    this._initCommandGroup(helpCommand);
+    return this;
+  }
+  /**
+   * Lazy create help command.
+   *
+   * @return {(Command|null)}
+   * @package
+   */
+  _getHelpCommand() {
+    const hasImplicitHelpCommand = this._addImplicitHelpCommand ?? (this.commands.length && !this._actionHandler && !this._findCommand("help"));
+    if (hasImplicitHelpCommand) {
+      if (this._helpCommand === void 0) {
+        this.helpCommand(void 0, void 0);
+      }
+      return this._helpCommand;
+    }
+    return null;
+  }
+  /**
+   * Add hook for life cycle event.
+   *
+   * @param {string} event
+   * @param {Function} listener
+   * @return {Command} `this` command for chaining
+   */
+  hook(event, listener) {
+    const allowedValues = ["preSubcommand", "preAction", "postAction"];
+    if (!allowedValues.includes(event)) {
+      throw new Error(`Unexpected value for event passed to hook : '${event}'.
+Expecting one of '${allowedValues.join("', '")}'`);
+    }
+    if (this._lifeCycleHooks[event]) {
+      this._lifeCycleHooks[event].push(listener);
+    } else {
+      this._lifeCycleHooks[event] = [listener];
+    }
+    return this;
+  }
+  /**
+   * Register callback to use as replacement for calling process.exit.
+   *
+   * @param {Function} [fn] optional callback which will be passed a CommanderError, defaults to throwing
+   * @return {Command} `this` command for chaining
+   */
+  exitOverride(fn) {
+    if (fn) {
+      this._exitCallback = fn;
+    } else {
+      this._exitCallback = (err) => {
+        if (err.code !== "commander.executeSubCommandAsync") {
+          throw err;
+        } else {
+        }
+      };
+    }
+    return this;
+  }
+  /**
+   * Call process.exit, and _exitCallback if defined.
+   *
+   * @param {number} exitCode exit code for using with process.exit
+   * @param {string} code an id string representing the error
+   * @param {string} message human-readable description of the error
+   * @return never
+   * @private
+   */
+  _exit(exitCode, code, message) {
+    if (this._exitCallback) {
+      this._exitCallback(new CommanderError(exitCode, code, message));
+    }
+    process3.exit(exitCode);
+  }
+  /**
+   * Register callback `fn` for the command.
+   *
+   * @example
+   * program
+   *   .command('serve')
+   *   .description('start service')
+   *   .action(function() {
+   *      // do work here
+   *   });
+   *
+   * @param {Function} fn
+   * @return {Command} `this` command for chaining
+   */
+  action(fn) {
+    const listener = (args) => {
+      const expectedArgsCount = this.registeredArguments.length;
+      const actionArgs = args.slice(0, expectedArgsCount);
+      if (this._storeOptionsAsProperties) {
+        actionArgs[expectedArgsCount] = this;
+      } else {
+        actionArgs[expectedArgsCount] = this.opts();
+      }
+      actionArgs.push(this);
+      return fn.apply(this, actionArgs);
+    };
+    this._actionHandler = listener;
+    return this;
+  }
+  /**
+   * Factory routine to create a new unattached option.
+   *
+   * See .option() for creating an attached option, which uses this routine to
+   * create the option. You can override createOption to return a custom option.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   * @return {Option} new option
+   */
+  createOption(flags, description) {
+    return new Option(flags, description);
+  }
+  /**
+   * Wrap parseArgs to catch 'commander.invalidArgument'.
+   *
+   * @param {(Option | Argument)} target
+   * @param {string} value
+   * @param {*} previous
+   * @param {string} invalidArgumentMessage
+   * @private
+   */
+  _callParseArg(target, value, previous, invalidArgumentMessage) {
+    try {
+      return target.parseArg(value, previous);
+    } catch (err) {
+      if (err.code === "commander.invalidArgument") {
+        const message = `${invalidArgumentMessage} ${err.message}`;
+        this.error(message, { exitCode: err.exitCode, code: err.code });
+      }
+      throw err;
+    }
+  }
+  /**
+   * Check for option flag conflicts.
+   * Register option if no conflicts found, or throw on conflict.
+   *
+   * @param {Option} option
+   * @private
+   */
+  _registerOption(option) {
+    const matchingOption = option.short && this._findOption(option.short) || option.long && this._findOption(option.long);
+    if (matchingOption) {
+      const matchingFlag = option.long && this._findOption(option.long) ? option.long : option.short;
+      throw new Error(`Cannot add option '${option.flags}'${this._name && ` to command '${this._name}'`} due to conflicting flag '${matchingFlag}'
+-  already used by option '${matchingOption.flags}'`);
+    }
+    this._initOptionGroup(option);
+    this.options.push(option);
+  }
+  /**
+   * Check for command name and alias conflicts with existing commands.
+   * Register command if no conflicts found, or throw on conflict.
+   *
+   * @param {Command} command
+   * @private
+   */
+  _registerCommand(command) {
+    const knownBy = (cmd) => {
+      return [cmd.name()].concat(cmd.aliases());
+    };
+    const alreadyUsed = knownBy(command).find(
+      (name) => this._findCommand(name)
+    );
+    if (alreadyUsed) {
+      const existingCmd = knownBy(this._findCommand(alreadyUsed)).join("|");
+      const newCmd = knownBy(command).join("|");
+      throw new Error(
+        `cannot add command '${newCmd}' as already have command '${existingCmd}'`
+      );
+    }
+    this._initCommandGroup(command);
+    this.commands.push(command);
+  }
+  /**
+   * Add an option.
+   *
+   * @param {Option} option
+   * @return {Command} `this` command for chaining
+   */
+  addOption(option) {
+    this._registerOption(option);
+    const oname = option.name();
+    const name = option.attributeName();
+    if (option.defaultValue !== void 0) {
+      this.setOptionValueWithSource(name, option.defaultValue, "default");
+    }
+    const handleOptionValue = (val, invalidValueMessage, valueSource) => {
+      if (val == null && option.presetArg !== void 0) {
+        val = option.presetArg;
+      }
+      const oldValue = this.getOptionValue(name);
+      if (val !== null && option.parseArg) {
+        val = this._callParseArg(option, val, oldValue, invalidValueMessage);
+      } else if (val !== null && option.variadic) {
+        val = option._collectValue(val, oldValue);
+      }
+      if (val == null) {
+        if (option.negate) {
+          val = false;
+        } else if (option.isBoolean() || option.optional) {
+          val = true;
+        } else {
+          val = "";
+        }
+      }
+      this.setOptionValueWithSource(name, val, valueSource);
+    };
+    this.on("option:" + oname, (val) => {
+      const invalidValueMessage = `error: option '${option.flags}' argument '${val}' is invalid.`;
+      handleOptionValue(val, invalidValueMessage, "cli");
+    });
+    if (option.envVar) {
+      this.on("optionEnv:" + oname, (val) => {
+        const invalidValueMessage = `error: option '${option.flags}' value '${val}' from env '${option.envVar}' is invalid.`;
+        handleOptionValue(val, invalidValueMessage, "env");
+      });
+    }
+    return this;
+  }
+  /**
+   * Internal implementation shared by .option() and .requiredOption()
+   *
+   * @return {Command} `this` command for chaining
+   * @private
+   */
+  _optionEx(config2, flags, description, fn, defaultValue) {
+    if (typeof flags === "object" && flags instanceof Option) {
+      throw new Error(
+        "To add an Option object use addOption() instead of option() or requiredOption()"
+      );
+    }
+    const option = this.createOption(flags, description);
+    option.makeOptionMandatory(!!config2.mandatory);
+    if (typeof fn === "function") {
+      option.default(defaultValue).argParser(fn);
+    } else if (fn instanceof RegExp) {
+      const regex = fn;
+      fn = (val, def) => {
+        const m = regex.exec(val);
+        return m ? m[0] : def;
+      };
+      option.default(defaultValue).argParser(fn);
+    } else {
+      option.default(fn);
+    }
+    return this.addOption(option);
+  }
+  /**
+   * Define option with `flags`, `description`, and optional argument parsing function or `defaultValue` or both.
+   *
+   * The `flags` string contains the short and/or long flags, separated by comma, a pipe or space. A required
+   * option-argument is indicated by `<>` and an optional option-argument by `[]`.
+   *
+   * See the README for more details, and see also addOption() and requiredOption().
+   *
+   * @example
+   * program
+   *     .option('-p, --pepper', 'add pepper')
+   *     .option('--pt, --pizza-type <TYPE>', 'type of pizza') // required option-argument
+   *     .option('-c, --cheese [CHEESE]', 'add extra cheese', 'mozzarella') // optional option-argument with default
+   *     .option('-t, --tip <VALUE>', 'add tip to purchase cost', parseFloat) // custom parse function
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   * @param {(Function|*)} [parseArg] - custom option processing function or default value
+   * @param {*} [defaultValue]
+   * @return {Command} `this` command for chaining
+   */
+  option(flags, description, parseArg, defaultValue) {
+    return this._optionEx({}, flags, description, parseArg, defaultValue);
+  }
+  /**
+   * Add a required option which must have a value after parsing. This usually means
+   * the option must be specified on the command line. (Otherwise the same as .option().)
+   *
+   * The `flags` string contains the short and/or long flags, separated by comma, a pipe or space.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   * @param {(Function|*)} [parseArg] - custom option processing function or default value
+   * @param {*} [defaultValue]
+   * @return {Command} `this` command for chaining
+   */
+  requiredOption(flags, description, parseArg, defaultValue) {
+    return this._optionEx(
+      { mandatory: true },
+      flags,
+      description,
+      parseArg,
+      defaultValue
+    );
+  }
+  /**
+   * Alter parsing of short flags with optional values.
+   *
+   * @example
+   * // for `.option('-f,--flag [value]'):
+   * program.combineFlagAndOptionalValue(true);  // `-f80` is treated like `--flag=80`, this is the default behaviour
+   * program.combineFlagAndOptionalValue(false) // `-fb` is treated like `-f -b`
+   *
+   * @param {boolean} [combine] - if `true` or omitted, an optional value can be specified directly after the flag.
+   * @return {Command} `this` command for chaining
+   */
+  combineFlagAndOptionalValue(combine = true) {
+    this._combineFlagAndOptionalValue = !!combine;
+    return this;
+  }
+  /**
+   * Allow unknown options on the command line.
+   *
+   * @param {boolean} [allowUnknown] - if `true` or omitted, no error will be thrown for unknown options.
+   * @return {Command} `this` command for chaining
+   */
+  allowUnknownOption(allowUnknown = true) {
+    this._allowUnknownOption = !!allowUnknown;
+    return this;
+  }
+  /**
+   * Allow excess command-arguments on the command line. Pass false to make excess arguments an error.
+   *
+   * @param {boolean} [allowExcess] - if `true` or omitted, no error will be thrown for excess arguments.
+   * @return {Command} `this` command for chaining
+   */
+  allowExcessArguments(allowExcess = true) {
+    this._allowExcessArguments = !!allowExcess;
+    return this;
+  }
+  /**
+   * Enable positional options. Positional means global options are specified before subcommands which lets
+   * subcommands reuse the same option names, and also enables subcommands to turn on passThroughOptions.
+   * The default behaviour is non-positional and global options may appear anywhere on the command line.
+   *
+   * @param {boolean} [positional]
+   * @return {Command} `this` command for chaining
+   */
+  enablePositionalOptions(positional = true) {
+    this._enablePositionalOptions = !!positional;
+    return this;
+  }
+  /**
+   * Pass through options that come after command-arguments rather than treat them as command-options,
+   * so actual command-options come before command-arguments. Turning this on for a subcommand requires
+   * positional options to have been enabled on the program (parent commands).
+   * The default behaviour is non-positional and options may appear before or after command-arguments.
+   *
+   * @param {boolean} [passThrough] for unknown options.
+   * @return {Command} `this` command for chaining
+   */
+  passThroughOptions(passThrough = true) {
+    this._passThroughOptions = !!passThrough;
+    this._checkForBrokenPassThrough();
+    return this;
+  }
+  /**
+   * @private
+   */
+  _checkForBrokenPassThrough() {
+    if (this.parent && this._passThroughOptions && !this.parent._enablePositionalOptions) {
+      throw new Error(
+        `passThroughOptions cannot be used for '${this._name}' without turning on enablePositionalOptions for parent command(s)`
+      );
+    }
+  }
+  /**
+   * Whether to store option values as properties on command object,
+   * or store separately (specify false). In both cases the option values can be accessed using .opts().
+   *
+   * @param {boolean} [storeAsProperties=true]
+   * @return {Command} `this` command for chaining
+   */
+  storeOptionsAsProperties(storeAsProperties = true) {
+    if (this.options.length) {
+      throw new Error("call .storeOptionsAsProperties() before adding options");
+    }
+    if (Object.keys(this._optionValues).length) {
+      throw new Error(
+        "call .storeOptionsAsProperties() before setting option values"
+      );
+    }
+    this._storeOptionsAsProperties = !!storeAsProperties;
+    return this;
+  }
+  /**
+   * Retrieve option value.
+   *
+   * @param {string} key
+   * @return {object} value
+   */
+  getOptionValue(key) {
+    if (this._storeOptionsAsProperties) {
+      return this[key];
+    }
+    return this._optionValues[key];
+  }
+  /**
+   * Store option value.
+   *
+   * @param {string} key
+   * @param {object} value
+   * @return {Command} `this` command for chaining
+   */
+  setOptionValue(key, value) {
+    return this.setOptionValueWithSource(key, value, void 0);
+  }
+  /**
+   * Store option value and where the value came from.
+   *
+   * @param {string} key
+   * @param {object} value
+   * @param {string} source - expected values are default/config/env/cli/implied
+   * @return {Command} `this` command for chaining
+   */
+  setOptionValueWithSource(key, value, source) {
+    if (this._storeOptionsAsProperties) {
+      this[key] = value;
+    } else {
+      this._optionValues[key] = value;
+    }
+    this._optionValueSources[key] = source;
+    return this;
+  }
+  /**
+   * Get source of option value.
+   * Expected values are default | config | env | cli | implied
+   *
+   * @param {string} key
+   * @return {string}
+   */
+  getOptionValueSource(key) {
+    return this._optionValueSources[key];
+  }
+  /**
+   * Get source of option value. See also .optsWithGlobals().
+   * Expected values are default | config | env | cli | implied
+   *
+   * @param {string} key
+   * @return {string}
+   */
+  getOptionValueSourceWithGlobals(key) {
+    let source;
+    this._getCommandAndAncestors().forEach((cmd) => {
+      if (cmd.getOptionValueSource(key) !== void 0) {
+        source = cmd.getOptionValueSource(key);
+      }
+    });
+    return source;
+  }
+  /**
+   * Get user arguments from implied or explicit arguments.
+   * Side-effects: set _scriptPath if args included script. Used for default program name, and subcommand searches.
+   *
+   * @private
+   */
+  _prepareUserArgs(argv, parseOptions) {
+    if (argv !== void 0 && !Array.isArray(argv)) {
+      throw new Error("first parameter to parse must be array or undefined");
+    }
+    parseOptions = parseOptions || {};
+    if (argv === void 0 && parseOptions.from === void 0) {
+      if (process3.versions?.electron) {
+        parseOptions.from = "electron";
+      }
+      const execArgv = process3.execArgv ?? [];
+      if (execArgv.includes("-e") || execArgv.includes("--eval") || execArgv.includes("-p") || execArgv.includes("--print")) {
+        parseOptions.from = "eval";
+      }
+    }
+    if (argv === void 0) {
+      argv = process3.argv;
+    }
+    this.rawArgs = argv.slice();
+    let userArgs;
+    switch (parseOptions.from) {
+      case void 0:
+      case "node":
+        this._scriptPath = argv[1];
+        userArgs = argv.slice(2);
+        break;
+      case "electron":
+        if (process3.defaultApp) {
+          this._scriptPath = argv[1];
+          userArgs = argv.slice(2);
+        } else {
+          userArgs = argv.slice(1);
+        }
+        break;
+      case "user":
+        userArgs = argv.slice(0);
+        break;
+      case "eval":
+        userArgs = argv.slice(1);
+        break;
+      default:
+        throw new Error(
+          `unexpected parse option { from: '${parseOptions.from}' }`
+        );
+    }
+    if (!this._name && this._scriptPath)
+      this.nameFromFilename(this._scriptPath);
+    this._name = this._name || "program";
+    return userArgs;
+  }
+  /**
+   * Parse `argv`, setting options and invoking commands when defined.
+   *
+   * Use parseAsync instead of parse if any of your action handlers are async.
+   *
+   * Call with no parameters to parse `process.argv`. Detects Electron and special node options like `node --eval`. Easy mode!
+   *
+   * Or call with an array of strings to parse, and optionally where the user arguments start by specifying where the arguments are `from`:
+   * - `'node'`: default, `argv[0]` is the application and `argv[1]` is the script being run, with user arguments after that
+   * - `'electron'`: `argv[0]` is the application and `argv[1]` varies depending on whether the electron application is packaged
+   * - `'user'`: just user arguments
+   *
+   * @example
+   * program.parse(); // parse process.argv and auto-detect electron and special node flags
+   * program.parse(process.argv); // assume argv[0] is app and argv[1] is script
+   * program.parse(my-args, { from: 'user' }); // just user supplied arguments, nothing special about argv[0]
+   *
+   * @param {string[]} [argv] - optional, defaults to process.argv
+   * @param {object} [parseOptions] - optionally specify style of options with from: node/user/electron
+   * @param {string} [parseOptions.from] - where the args are from: 'node', 'user', 'electron'
+   * @return {Command} `this` command for chaining
+   */
+  parse(argv, parseOptions) {
+    this._prepareForParse();
+    const userArgs = this._prepareUserArgs(argv, parseOptions);
+    this._parseCommand([], userArgs);
+    return this;
+  }
+  /**
+   * Parse `argv`, setting options and invoking commands when defined.
+   *
+   * Call with no parameters to parse `process.argv`. Detects Electron and special node options like `node --eval`. Easy mode!
+   *
+   * Or call with an array of strings to parse, and optionally where the user arguments start by specifying where the arguments are `from`:
+   * - `'node'`: default, `argv[0]` is the application and `argv[1]` is the script being run, with user arguments after that
+   * - `'electron'`: `argv[0]` is the application and `argv[1]` varies depending on whether the electron application is packaged
+   * - `'user'`: just user arguments
+   *
+   * @example
+   * await program.parseAsync(); // parse process.argv and auto-detect electron and special node flags
+   * await program.parseAsync(process.argv); // assume argv[0] is app and argv[1] is script
+   * await program.parseAsync(my-args, { from: 'user' }); // just user supplied arguments, nothing special about argv[0]
+   *
+   * @param {string[]} [argv]
+   * @param {object} [parseOptions]
+   * @param {string} parseOptions.from - where the args are from: 'node', 'user', 'electron'
+   * @return {Promise}
+   */
+  async parseAsync(argv, parseOptions) {
+    this._prepareForParse();
+    const userArgs = this._prepareUserArgs(argv, parseOptions);
+    await this._parseCommand([], userArgs);
+    return this;
+  }
+  _prepareForParse() {
+    if (this._savedState === null) {
+      this.options.filter(
+        (option) => option.negate && option.defaultValue === void 0 && this.getOptionValue(option.attributeName()) === void 0
+      ).forEach((option) => {
+        const positiveLongFlag = option.long.replace(/^--no-/, "--");
+        if (!this._findOption(positiveLongFlag)) {
+          this.setOptionValueWithSource(
+            option.attributeName(),
+            true,
+            "default"
+          );
+        }
+      });
+      this.saveStateBeforeParse();
+    } else {
+      this.restoreStateBeforeParse();
+    }
+  }
+  /**
+   * Called the first time parse is called to save state and allow a restore before subsequent calls to parse.
+   * Not usually called directly, but available for subclasses to save their custom state.
+   *
+   * This is called in a lazy way. Only commands used in parsing chain will have state saved.
+   */
+  saveStateBeforeParse() {
+    this._savedState = {
+      // name is stable if supplied by author, but may be unspecified for root command and deduced during parsing
+      _name: this._name,
+      // option values before parse have default values (including false for negated options)
+      // shallow clones
+      _optionValues: { ...this._optionValues },
+      _optionValueSources: { ...this._optionValueSources }
+    };
+  }
+  /**
+   * Restore state before parse for calls after the first.
+   * Not usually called directly, but available for subclasses to save their custom state.
+   *
+   * This is called in a lazy way. Only commands used in parsing chain will have state restored.
+   */
+  restoreStateBeforeParse() {
+    if (this._storeOptionsAsProperties)
+      throw new Error(`Can not call parse again when storeOptionsAsProperties is true.
+- either make a new Command for each call to parse, or stop storing options as properties`);
+    this._name = this._savedState._name;
+    this._scriptPath = null;
+    this.rawArgs = [];
+    this._optionValues = { ...this._savedState._optionValues };
+    this._optionValueSources = { ...this._savedState._optionValueSources };
+    this.args = [];
+    this.processedArgs = [];
+  }
+  /**
+   * Throw if expected executable is missing. Add lots of help for author.
+   *
+   * @param {string} executableFile
+   * @param {string} executableDir
+   * @param {string} subcommandName
+   */
+  _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
+    if (fs11.existsSync(executableFile)) return;
+    const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
+    const executableMissing = `'${executableFile}' does not exist
+ - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
+ - if the default executable name is not suitable, use the executableFile option to supply a custom name or path
+ - ${executableDirMessage}`;
+    throw new Error(executableMissing);
+  }
+  /**
+   * Execute a sub-command executable.
+   *
+   * @private
+   */
+  _executeSubCommand(subcommand, args) {
+    args = args.slice();
+    const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
+    function findFile(baseDir, baseName) {
+      const localBin = path11.resolve(baseDir, baseName);
+      if (fs11.existsSync(localBin)) return localBin;
+      if (sourceExt.includes(path11.extname(baseName))) return void 0;
+      const foundExt = sourceExt.find(
+        (ext) => fs11.existsSync(`${localBin}${ext}`)
+      );
+      if (foundExt) return `${localBin}${foundExt}`;
+      return void 0;
+    }
+    this._checkForMissingMandatoryOptions();
+    this._checkForConflictingOptions();
+    let executableFile = subcommand._executableFile || `${this._name}-${subcommand._name}`;
+    let executableDir = this._executableDir || "";
+    if (this._scriptPath) {
+      let resolvedScriptPath;
+      try {
+        resolvedScriptPath = fs11.realpathSync(this._scriptPath);
+      } catch {
+        resolvedScriptPath = this._scriptPath;
+      }
+      executableDir = path11.resolve(
+        path11.dirname(resolvedScriptPath),
+        executableDir
+      );
+    }
+    if (executableDir) {
+      let localFile = findFile(executableDir, executableFile);
+      if (!localFile && !subcommand._executableFile && this._scriptPath) {
+        const legacyName = path11.basename(
+          this._scriptPath,
+          path11.extname(this._scriptPath)
+        );
+        if (legacyName !== this._name) {
+          localFile = findFile(
+            executableDir,
+            `${legacyName}-${subcommand._name}`
+          );
+        }
+      }
+      executableFile = localFile || executableFile;
+    }
+    const launchWithNode = sourceExt.includes(path11.extname(executableFile));
+    let proc;
+    if (process3.platform !== "win32") {
+      if (launchWithNode) {
+        args.unshift(executableFile);
+        args = incrementNodeInspectorPort(process3.execArgv).concat(args);
+        proc = childProcess.spawn(process3.argv[0], args, { stdio: "inherit" });
+      } else {
+        proc = childProcess.spawn(executableFile, args, { stdio: "inherit" });
+      }
+    } else {
+      this._checkForMissingExecutable(
+        executableFile,
+        executableDir,
+        subcommand._name
+      );
+      args.unshift(executableFile);
+      args = incrementNodeInspectorPort(process3.execArgv).concat(args);
+      proc = childProcess.spawn(process3.execPath, args, { stdio: "inherit" });
+    }
+    if (!proc.killed) {
+      const signals = ["SIGUSR1", "SIGUSR2", "SIGTERM", "SIGINT", "SIGHUP"];
+      signals.forEach((signal) => {
+        process3.on(signal, () => {
+          if (proc.killed === false && proc.exitCode === null) {
+            proc.kill(signal);
+          }
+        });
+      });
+    }
+    const exitCallback = this._exitCallback;
+    proc.on("close", (code) => {
+      code = code ?? 1;
+      if (!exitCallback) {
+        process3.exit(code);
+      } else {
+        exitCallback(
+          new CommanderError(
+            code,
+            "commander.executeSubCommandAsync",
+            "(close)"
+          )
+        );
+      }
+    });
+    proc.on("error", (err) => {
+      if (err.code === "ENOENT") {
+        this._checkForMissingExecutable(
+          executableFile,
+          executableDir,
+          subcommand._name
+        );
+      } else if (err.code === "EACCES") {
+        throw new Error(`'${executableFile}' not executable`);
+      }
+      if (!exitCallback) {
+        process3.exit(1);
+      } else {
+        const wrappedError = new CommanderError(
+          1,
+          "commander.executeSubCommandAsync",
+          "(error)"
+        );
+        wrappedError.nestedError = err;
+        exitCallback(wrappedError);
+      }
+    });
+    this.runningCommand = proc;
+  }
+  /**
+   * @private
+   */
+  _dispatchSubcommand(commandName, operands, unknown2) {
+    const subCommand = this._findCommand(commandName);
+    if (!subCommand) this.help({ error: true });
+    subCommand._prepareForParse();
+    let promiseChain;
+    promiseChain = this._chainOrCallSubCommandHook(
+      promiseChain,
+      subCommand,
+      "preSubcommand"
+    );
+    promiseChain = this._chainOrCall(promiseChain, () => {
+      if (subCommand._executableHandler) {
+        this._executeSubCommand(subCommand, operands.concat(unknown2));
+      } else {
+        return subCommand._parseCommand(operands, unknown2);
+      }
+    });
+    return promiseChain;
+  }
+  /**
+   * Invoke help directly if possible, or dispatch if necessary.
+   * e.g. help foo
+   *
+   * @private
+   */
+  _dispatchHelpCommand(subcommandName) {
+    if (!subcommandName) {
+      this.help();
+    }
+    const subCommand = this._findCommand(subcommandName);
+    if (subCommand && !subCommand._executableHandler) {
+      subCommand.help();
+    }
+    return this._dispatchSubcommand(
+      subcommandName,
+      [],
+      [this._getHelpOption()?.long ?? this._getHelpOption()?.short ?? "--help"]
+    );
+  }
+  /**
+   * Check this.args against expected this.registeredArguments.
+   *
+   * @private
+   */
+  _checkNumberOfArguments() {
+    this.registeredArguments.forEach((arg, i) => {
+      if (arg.required && this.args[i] == null) {
+        this.missingArgument(arg.name());
+      }
+    });
+    if (this.registeredArguments.length > 0 && this.registeredArguments[this.registeredArguments.length - 1].variadic) {
+      return;
+    }
+    if (this.args.length > this.registeredArguments.length) {
+      this._excessArguments(this.args);
+    }
+  }
+  /**
+   * Process this.args using this.registeredArguments and save as this.processedArgs!
+   *
+   * @private
+   */
+  _processArguments() {
+    const myParseArg = (argument, value, previous) => {
+      let parsedValue = value;
+      if (value !== null && argument.parseArg) {
+        const invalidValueMessage = `error: command-argument value '${value}' is invalid for argument '${argument.name()}'.`;
+        parsedValue = this._callParseArg(
+          argument,
+          value,
+          previous,
+          invalidValueMessage
+        );
+      }
+      return parsedValue;
+    };
+    this._checkNumberOfArguments();
+    const processedArgs = [];
+    this.registeredArguments.forEach((declaredArg, index) => {
+      let value = declaredArg.defaultValue;
+      if (declaredArg.variadic) {
+        if (index < this.args.length) {
+          value = this.args.slice(index);
+          if (declaredArg.parseArg) {
+            value = value.reduce((processed, v) => {
+              return myParseArg(declaredArg, v, processed);
+            }, declaredArg.defaultValue);
+          }
+        } else if (value === void 0) {
+          value = [];
+        }
+      } else if (index < this.args.length) {
+        value = this.args[index];
+        if (declaredArg.parseArg) {
+          value = myParseArg(declaredArg, value, declaredArg.defaultValue);
+        }
+      }
+      processedArgs[index] = value;
+    });
+    this.processedArgs = processedArgs;
+  }
+  /**
+   * Once we have a promise we chain, but call synchronously until then.
+   *
+   * @param {(Promise|undefined)} promise
+   * @param {Function} fn
+   * @return {(Promise|undefined)}
+   * @private
+   */
+  _chainOrCall(promise2, fn) {
+    if (promise2?.then && typeof promise2.then === "function") {
+      return promise2.then(() => fn());
+    }
+    return fn();
+  }
+  /**
+   *
+   * @param {(Promise|undefined)} promise
+   * @param {string} event
+   * @return {(Promise|undefined)}
+   * @private
+   */
+  _chainOrCallHooks(promise2, event) {
+    let result = promise2;
+    const hooks = [];
+    this._getCommandAndAncestors().reverse().filter((cmd) => cmd._lifeCycleHooks[event] !== void 0).forEach((hookedCommand) => {
+      hookedCommand._lifeCycleHooks[event].forEach((callback) => {
+        hooks.push({ hookedCommand, callback });
+      });
+    });
+    if (event === "postAction") {
+      hooks.reverse();
+    }
+    hooks.forEach((hookDetail) => {
+      result = this._chainOrCall(result, () => {
+        return hookDetail.callback(hookDetail.hookedCommand, this);
+      });
+    });
+    return result;
+  }
+  /**
+   *
+   * @param {(Promise|undefined)} promise
+   * @param {Command} subCommand
+   * @param {string} event
+   * @return {(Promise|undefined)}
+   * @private
+   */
+  _chainOrCallSubCommandHook(promise2, subCommand, event) {
+    let result = promise2;
+    if (this._lifeCycleHooks[event] !== void 0) {
+      this._lifeCycleHooks[event].forEach((hook) => {
+        result = this._chainOrCall(result, () => {
+          return hook(this, subCommand);
+        });
+      });
+    }
+    return result;
+  }
+  /**
+   * Process arguments in context of this command.
+   * Returns action result, in case it is a promise.
+   *
+   * @private
+   */
+  _parseCommand(operands, unknown2) {
+    const parsed = this.parseOptions(unknown2);
+    this._parseOptionsEnv();
+    this._parseOptionsImplied();
+    operands = operands.concat(parsed.operands);
+    unknown2 = parsed.unknown;
+    this.args = operands.concat(unknown2);
+    if (operands && this._findCommand(operands[0])) {
+      return this._dispatchSubcommand(operands[0], operands.slice(1), unknown2);
+    }
+    if (this._getHelpCommand() && operands[0] === this._getHelpCommand().name()) {
+      return this._dispatchHelpCommand(operands[1]);
+    }
+    if (this._defaultCommandName) {
+      this._outputHelpIfRequested(unknown2);
+      return this._dispatchSubcommand(
+        this._defaultCommandName,
+        operands,
+        unknown2
+      );
+    }
+    if (this.commands.length && this.args.length === 0 && !this._actionHandler && !this._defaultCommandName) {
+      this.help({ error: true });
+    }
+    this._outputHelpIfRequested(parsed.unknown);
+    this._checkForMissingMandatoryOptions();
+    this._checkForConflictingOptions();
+    const checkForUnknownOptions = () => {
+      if (parsed.unknown.length > 0) {
+        this.unknownOption(parsed.unknown[0]);
+      }
+    };
+    const commandEvent = `command:${this.name()}`;
+    if (this._actionHandler) {
+      checkForUnknownOptions();
+      this._processArguments();
+      let promiseChain;
+      promiseChain = this._chainOrCallHooks(promiseChain, "preAction");
+      promiseChain = this._chainOrCall(
+        promiseChain,
+        () => this._actionHandler(this.processedArgs)
+      );
+      if (this.parent) {
+        promiseChain = this._chainOrCall(promiseChain, () => {
+          this.parent.emit(commandEvent, operands, unknown2);
+        });
+      }
+      promiseChain = this._chainOrCallHooks(promiseChain, "postAction");
+      return promiseChain;
+    }
+    if (this.parent?.listenerCount(commandEvent)) {
+      checkForUnknownOptions();
+      this._processArguments();
+      this.parent.emit(commandEvent, operands, unknown2);
+    } else if (operands.length) {
+      if (this._findCommand("*")) {
+        return this._dispatchSubcommand("*", operands, unknown2);
+      }
+      if (this.listenerCount("command:*")) {
+        this.emit("command:*", operands, unknown2);
+      } else if (this.commands.length) {
+        this.unknownCommand();
+      } else {
+        checkForUnknownOptions();
+        this._processArguments();
+      }
+    } else if (this.commands.length) {
+      checkForUnknownOptions();
+      this.help({ error: true });
+    } else {
+      checkForUnknownOptions();
+      this._processArguments();
+    }
+  }
+  /**
+   * Find matching command.
+   *
+   * @private
+   * @return {Command | undefined}
+   */
+  _findCommand(name) {
+    if (!name) return void 0;
+    return this.commands.find(
+      (cmd) => cmd._name === name || cmd._aliases.includes(name)
+    );
+  }
+  /**
+   * Return an option matching `arg` if any.
+   *
+   * @param {string} arg
+   * @return {Option}
+   * @package
+   */
+  _findOption(arg) {
+    return this.options.find((option) => option.is(arg));
+  }
+  /**
+   * Display an error message if a mandatory option does not have a value.
+   * Called after checking for help flags in leaf subcommand.
+   *
+   * @private
+   */
+  _checkForMissingMandatoryOptions() {
+    this._getCommandAndAncestors().forEach((cmd) => {
+      cmd.options.forEach((anOption) => {
+        if (anOption.mandatory && cmd.getOptionValue(anOption.attributeName()) === void 0) {
+          cmd.missingMandatoryOptionValue(anOption);
+        }
+      });
+    });
+  }
+  /**
+   * Display an error message if conflicting options are used together in this.
+   *
+   * @private
+   */
+  _checkForConflictingLocalOptions() {
+    const definedNonDefaultOptions = this.options.filter((option) => {
+      const optionKey = option.attributeName();
+      if (this.getOptionValue(optionKey) === void 0) {
+        return false;
+      }
+      return this.getOptionValueSource(optionKey) !== "default";
+    });
+    const optionsWithConflicting = definedNonDefaultOptions.filter(
+      (option) => option.conflictsWith.length > 0
+    );
+    optionsWithConflicting.forEach((option) => {
+      const conflictingAndDefined = definedNonDefaultOptions.find(
+        (defined) => option.conflictsWith.includes(defined.attributeName())
+      );
+      if (conflictingAndDefined) {
+        this._conflictingOption(option, conflictingAndDefined);
+      }
+    });
+  }
+  /**
+   * Display an error message if conflicting options are used together.
+   * Called after checking for help flags in leaf subcommand.
+   *
+   * @private
+   */
+  _checkForConflictingOptions() {
+    this._getCommandAndAncestors().forEach((cmd) => {
+      cmd._checkForConflictingLocalOptions();
+    });
+  }
+  /**
+   * Parse options from `argv` removing known options,
+   * and return argv split into operands and unknown arguments.
+   *
+   * Side effects: modifies command by storing options. Does not reset state if called again.
+   *
+   * Examples:
+   *
+   *     argv => operands, unknown
+   *     --known kkk op => [op], []
+   *     op --known kkk => [op], []
+   *     sub --unknown uuu op => [sub], [--unknown uuu op]
+   *     sub -- --unknown uuu op => [sub --unknown uuu op], []
+   *
+   * @param {string[]} args
+   * @return {{operands: string[], unknown: string[]}}
+   */
+  parseOptions(args) {
+    const operands = [];
+    const unknown2 = [];
+    let dest = operands;
+    function maybeOption(arg) {
+      return arg.length > 1 && arg[0] === "-";
+    }
+    const negativeNumberArg = (arg) => {
+      if (!/^-(\d+|\d*\.\d+)(e[+-]?\d+)?$/.test(arg)) return false;
+      return !this._getCommandAndAncestors().some(
+        (cmd) => cmd.options.map((opt) => opt.short).some((short) => /^-\d$/.test(short))
+      );
+    };
+    let activeVariadicOption = null;
+    let activeGroup = null;
+    let i = 0;
+    while (i < args.length || activeGroup) {
+      const arg = activeGroup ?? args[i++];
+      activeGroup = null;
+      if (arg === "--") {
+        if (dest === unknown2) dest.push(arg);
+        dest.push(...args.slice(i));
+        break;
+      }
+      if (activeVariadicOption && (!maybeOption(arg) || negativeNumberArg(arg))) {
+        this.emit(`option:${activeVariadicOption.name()}`, arg);
+        continue;
+      }
+      activeVariadicOption = null;
+      if (maybeOption(arg)) {
+        const option = this._findOption(arg);
+        if (option) {
+          if (option.required) {
+            const value = args[i++];
+            if (value === void 0) this.optionMissingArgument(option);
+            this.emit(`option:${option.name()}`, value);
+          } else if (option.optional) {
+            let value = null;
+            if (i < args.length && (!maybeOption(args[i]) || negativeNumberArg(args[i]))) {
+              value = args[i++];
+            }
+            this.emit(`option:${option.name()}`, value);
+          } else {
+            this.emit(`option:${option.name()}`);
+          }
+          activeVariadicOption = option.variadic ? option : null;
+          continue;
+        }
+      }
+      if (arg.length > 2 && arg[0] === "-" && arg[1] !== "-") {
+        const option = this._findOption(`-${arg[1]}`);
+        if (option) {
+          if (option.required || option.optional && this._combineFlagAndOptionalValue) {
+            this.emit(`option:${option.name()}`, arg.slice(2));
+          } else {
+            this.emit(`option:${option.name()}`);
+            activeGroup = `-${arg.slice(2)}`;
+          }
+          continue;
+        }
+      }
+      if (/^--[^=]+=/.test(arg)) {
+        const index = arg.indexOf("=");
+        const option = this._findOption(arg.slice(0, index));
+        if (option && (option.required || option.optional)) {
+          this.emit(`option:${option.name()}`, arg.slice(index + 1));
+          continue;
+        }
+      }
+      if (dest === operands && maybeOption(arg) && !(this.commands.length === 0 && negativeNumberArg(arg))) {
+        dest = unknown2;
+      }
+      if ((this._enablePositionalOptions || this._passThroughOptions) && operands.length === 0 && unknown2.length === 0) {
+        if (this._findCommand(arg)) {
+          operands.push(arg);
+          unknown2.push(...args.slice(i));
+          break;
+        } else if (this._getHelpCommand() && arg === this._getHelpCommand().name()) {
+          operands.push(arg, ...args.slice(i));
+          break;
+        } else if (this._defaultCommandName) {
+          unknown2.push(arg, ...args.slice(i));
+          break;
+        }
+      }
+      if (this._passThroughOptions) {
+        dest.push(arg, ...args.slice(i));
+        break;
+      }
+      dest.push(arg);
+    }
+    return { operands, unknown: unknown2 };
+  }
+  /**
+   * Return an object containing local option values as key-value pairs.
+   *
+   * @return {object}
+   */
+  opts() {
+    if (this._storeOptionsAsProperties) {
+      const result = {};
+      const len = this.options.length;
+      for (let i = 0; i < len; i++) {
+        const key = this.options[i].attributeName();
+        result[key] = key === this._versionOptionName ? this._version : this[key];
+      }
+      return result;
+    }
+    return this._optionValues;
+  }
+  /**
+   * Return an object containing merged local and global option values as key-value pairs.
+   *
+   * @return {object}
+   */
+  optsWithGlobals() {
+    return this._getCommandAndAncestors().reduce(
+      (combinedOptions, cmd) => Object.assign(combinedOptions, cmd.opts()),
+      {}
+    );
+  }
+  /**
+   * Display error message and exit (or call exitOverride).
+   *
+   * @param {string} message
+   * @param {object} [errorOptions]
+   * @param {string} [errorOptions.code] - an id string representing the error
+   * @param {number} [errorOptions.exitCode] - used with process.exit
+   */
+  error(message, errorOptions) {
+    this._outputConfiguration.outputError(
+      `${message}
+`,
+      this._outputConfiguration.writeErr
+    );
+    if (typeof this._showHelpAfterError === "string") {
+      this._outputConfiguration.writeErr(`${this._showHelpAfterError}
+`);
+    } else if (this._showHelpAfterError) {
+      this._outputConfiguration.writeErr("\n");
+      this.outputHelp({ error: true });
+    }
+    const config2 = errorOptions || {};
+    const exitCode = config2.exitCode || 1;
+    const code = config2.code || "commander.error";
+    this._exit(exitCode, code, message);
+  }
+  /**
+   * Apply any option related environment variables, if option does
+   * not have a value from cli or client code.
+   *
+   * @private
+   */
+  _parseOptionsEnv() {
+    this.options.forEach((option) => {
+      if (option.envVar && option.envVar in process3.env) {
+        const optionKey = option.attributeName();
+        if (this.getOptionValue(optionKey) === void 0 || ["default", "config", "env"].includes(
+          this.getOptionValueSource(optionKey)
+        )) {
+          if (option.required || option.optional) {
+            this.emit(`optionEnv:${option.name()}`, process3.env[option.envVar]);
+          } else {
+            this.emit(`optionEnv:${option.name()}`);
+          }
+        }
+      }
+    });
+  }
+  /**
+   * Apply any implied option values, if option is undefined or default value.
+   *
+   * @private
+   */
+  _parseOptionsImplied() {
+    const dualHelper = new DualOptions(this.options);
+    const hasCustomOptionValue = (optionKey) => {
+      return this.getOptionValue(optionKey) !== void 0 && !["default", "implied"].includes(this.getOptionValueSource(optionKey));
+    };
+    this.options.filter(
+      (option) => option.implied !== void 0 && hasCustomOptionValue(option.attributeName()) && dualHelper.valueFromOption(
+        this.getOptionValue(option.attributeName()),
+        option
+      )
+    ).forEach((option) => {
+      Object.keys(option.implied).filter((impliedKey) => !hasCustomOptionValue(impliedKey)).forEach((impliedKey) => {
+        this.setOptionValueWithSource(
+          impliedKey,
+          option.implied[impliedKey],
+          "implied"
+        );
+      });
+    });
+  }
+  /**
+   * Argument `name` is missing.
+   *
+   * @param {string} name
+   * @private
+   */
+  missingArgument(name) {
+    const message = `error: missing required argument '${name}'`;
+    this.error(message, { code: "commander.missingArgument" });
+  }
+  /**
+   * `Option` is missing an argument.
+   *
+   * @param {Option} option
+   * @private
+   */
+  optionMissingArgument(option) {
+    const message = `error: option '${option.flags}' argument missing`;
+    this.error(message, { code: "commander.optionMissingArgument" });
+  }
+  /**
+   * `Option` does not have a value, and is a mandatory option.
+   *
+   * @param {Option} option
+   * @private
+   */
+  missingMandatoryOptionValue(option) {
+    const message = `error: required option '${option.flags}' not specified`;
+    this.error(message, { code: "commander.missingMandatoryOptionValue" });
+  }
+  /**
+   * `Option` conflicts with another option.
+   *
+   * @param {Option} option
+   * @param {Option} conflictingOption
+   * @private
+   */
+  _conflictingOption(option, conflictingOption) {
+    const findBestOptionFromValue = (option2) => {
+      const optionKey = option2.attributeName();
+      const optionValue = this.getOptionValue(optionKey);
+      const negativeOption = this.options.find(
+        (target) => target.negate && optionKey === target.attributeName()
+      );
+      const positiveOption = this.options.find(
+        (target) => !target.negate && optionKey === target.attributeName()
+      );
+      if (negativeOption && (negativeOption.presetArg === void 0 && optionValue === false || negativeOption.presetArg !== void 0 && optionValue === negativeOption.presetArg)) {
+        return negativeOption;
+      }
+      return positiveOption || option2;
+    };
+    const getErrorMessage = (option2) => {
+      const bestOption = findBestOptionFromValue(option2);
+      const optionKey = bestOption.attributeName();
+      const source = this.getOptionValueSource(optionKey);
+      if (source === "env") {
+        return `environment variable '${bestOption.envVar}'`;
+      }
+      return `option '${bestOption.flags}'`;
+    };
+    const message = `error: ${getErrorMessage(option)} cannot be used with ${getErrorMessage(conflictingOption)}`;
+    this.error(message, { code: "commander.conflictingOption" });
+  }
+  /**
+   * Unknown option `flag`.
+   *
+   * @param {string} flag
+   * @private
+   */
+  unknownOption(flag) {
+    if (this._allowUnknownOption) return;
+    let suggestion = "";
+    if (flag.startsWith("--") && this._showSuggestionAfterError) {
+      let candidateFlags = [];
+      let command = this;
+      do {
+        const moreFlags = command.createHelp().visibleOptions(command).filter((option) => option.long).map((option) => option.long);
+        candidateFlags = candidateFlags.concat(moreFlags);
+        command = command.parent;
+      } while (command && !command._enablePositionalOptions);
+      suggestion = suggestSimilar(flag, candidateFlags);
+    }
+    const message = `error: unknown option '${flag}'${suggestion}`;
+    this.error(message, { code: "commander.unknownOption" });
+  }
+  /**
+   * Excess arguments, more than expected.
+   *
+   * @param {string[]} receivedArgs
+   * @private
+   */
+  _excessArguments(receivedArgs) {
+    if (this._allowExcessArguments) return;
+    const expected = this.registeredArguments.length;
+    const s = expected === 1 ? "" : "s";
+    const received = receivedArgs.length;
+    const forSubcommand = this.parent ? ` for '${this.name()}'` : "";
+    const details = receivedArgs.join(", ");
+    const message = `error: too many arguments${forSubcommand}. Expected ${expected} argument${s} but got ${received}: ${details}.`;
+    this.error(message, { code: "commander.excessArguments" });
+  }
+  /**
+   * Unknown command.
+   *
+   * @private
+   */
+  unknownCommand() {
+    const unknownName = this.args[0];
+    let suggestion = "";
+    if (this._showSuggestionAfterError) {
+      const candidateNames = [];
+      this.createHelp().visibleCommands(this).forEach((command) => {
+        candidateNames.push(command.name());
+        if (command.alias()) candidateNames.push(command.alias());
+      });
+      suggestion = suggestSimilar(unknownName, candidateNames);
+    }
+    const message = `error: unknown command '${unknownName}'${suggestion}`;
+    this.error(message, { code: "commander.unknownCommand" });
+  }
+  /**
+   * Get or set the program version.
+   *
+   * This method auto-registers the "-V, --version" option which will print the version number.
+   *
+   * You can optionally supply the flags and description to override the defaults.
+   *
+   * @param {string} [str]
+   * @param {string} [flags]
+   * @param {string} [description]
+   * @return {(this | string | undefined)} `this` command for chaining, or version string if no arguments
+   */
+  version(str, flags, description) {
+    if (str === void 0) return this._version;
+    this._version = str;
+    flags = flags || "-V, --version";
+    description = description || "output the version number";
+    const versionOption = this.createOption(flags, description);
+    this._versionOptionName = versionOption.attributeName();
+    this._registerOption(versionOption);
+    this.on("option:" + versionOption.name(), () => {
+      this._outputConfiguration.writeOut(`${str}
+`);
+      this._exit(0, "commander.version", str);
+    });
+    return this;
+  }
+  /**
+   * Set the description.
+   *
+   * @param {string} [str]
+   * @param {object} [argsDescription]
+   * @return {(string|Command)}
+   */
+  description(str, argsDescription) {
+    if (str === void 0 && argsDescription === void 0)
+      return this._description;
+    this._description = str;
+    if (argsDescription) {
+      this._argsDescription = argsDescription;
+    }
+    return this;
+  }
+  /**
+   * Set the summary. Used when listed as subcommand of parent.
+   *
+   * @param {string} [str]
+   * @return {(string|Command)}
+   */
+  summary(str) {
+    if (str === void 0) return this._summary;
+    this._summary = str;
+    return this;
+  }
+  /**
+   * Set an alias for the command.
+   *
+   * You may call more than once to add multiple aliases. Only the first alias is shown in the auto-generated help.
+   *
+   * @param {string} [alias]
+   * @return {(string|Command)}
+   */
+  alias(alias) {
+    if (alias === void 0) return this._aliases[0];
+    let command = this;
+    if (this.commands.length !== 0 && this.commands[this.commands.length - 1]._executableHandler) {
+      command = this.commands[this.commands.length - 1];
+    }
+    if (alias === command._name)
+      throw new Error("Command alias can't be the same as its name");
+    const matchingCommand = this.parent?._findCommand(alias);
+    if (matchingCommand) {
+      const existingCmd = [matchingCommand.name()].concat(matchingCommand.aliases()).join("|");
+      throw new Error(
+        `cannot add alias '${alias}' to command '${this.name()}' as already have command '${existingCmd}'`
+      );
+    }
+    command._aliases.push(alias);
+    return this;
+  }
+  /**
+   * Set aliases for the command.
+   *
+   * Only the first alias is shown in the auto-generated help.
+   *
+   * @param {string[]} [aliases]
+   * @return {(string[]|Command)}
+   */
+  aliases(aliases) {
+    if (aliases === void 0) return this._aliases;
+    aliases.forEach((alias) => this.alias(alias));
+    return this;
+  }
+  /**
+   * Set / get the command usage `str`.
+   *
+   * @param {string} [str]
+   * @return {(string|Command)}
+   */
+  usage(str) {
+    if (str === void 0) {
+      if (this._usage) return this._usage;
+      const args = this.registeredArguments.map((arg) => {
+        return humanReadableArgName(arg);
+      });
+      return [].concat(
+        this.options.length || this._helpOption !== null ? "[options]" : [],
+        this.commands.length ? "[command]" : [],
+        this.registeredArguments.length ? args : []
+      ).join(" ");
+    }
+    this._usage = str;
+    return this;
+  }
+  /**
+   * Get or set the name of the command.
+   *
+   * @param {string} [str]
+   * @return {(string|Command)}
+   */
+  name(str) {
+    if (str === void 0) return this._name;
+    this._name = str;
+    return this;
+  }
+  /**
+   * Set/get the help group heading for this subcommand in parent command's help.
+   *
+   * @param {string} [heading]
+   * @return {Command | string}
+   */
+  helpGroup(heading) {
+    if (heading === void 0) return this._helpGroupHeading ?? "";
+    this._helpGroupHeading = heading;
+    return this;
+  }
+  /**
+   * Set/get the default help group heading for subcommands added to this command.
+   * (This does not override a group set directly on the subcommand using .helpGroup().)
+   *
+   * @example
+   * program.commandsGroup('Development Commands:);
+   * program.command('watch')...
+   * program.command('lint')...
+   * ...
+   *
+   * @param {string} [heading]
+   * @returns {Command | string}
+   */
+  commandsGroup(heading) {
+    if (heading === void 0) return this._defaultCommandGroup ?? "";
+    this._defaultCommandGroup = heading;
+    return this;
+  }
+  /**
+   * Set/get the default help group heading for options added to this command.
+   * (This does not override a group set directly on the option using .helpGroup().)
+   *
+   * @example
+   * program
+   *   .optionsGroup('Development Options:')
+   *   .option('-d, --debug', 'output extra debugging')
+   *   .option('-p, --profile', 'output profiling information')
+   *
+   * @param {string} [heading]
+   * @returns {Command | string}
+   */
+  optionsGroup(heading) {
+    if (heading === void 0) return this._defaultOptionGroup ?? "";
+    this._defaultOptionGroup = heading;
+    return this;
+  }
+  /**
+   * @param {Option} option
+   * @private
+   */
+  _initOptionGroup(option) {
+    if (this._defaultOptionGroup && !option.helpGroupHeading)
+      option.helpGroup(this._defaultOptionGroup);
+  }
+  /**
+   * @param {Command} cmd
+   * @private
+   */
+  _initCommandGroup(cmd) {
+    if (this._defaultCommandGroup && !cmd.helpGroup())
+      cmd.helpGroup(this._defaultCommandGroup);
+  }
+  /**
+   * Set the name of the command from script filename, such as process.argv[1],
+   * or import.meta.filename.
+   *
+   * (Used internally and public although not documented in README.)
+   *
+   * @example
+   * program.nameFromFilename(import.meta.filename);
+   *
+   * @param {string} filename
+   * @return {Command}
+   */
+  nameFromFilename(filename) {
+    this._name = path11.basename(filename, path11.extname(filename));
+    return this;
+  }
+  /**
+   * Get or set the directory for searching for executable subcommands of this command.
+   *
+   * @example
+   * program.executableDir(import.meta.dirname);
+   * // or
+   * program.executableDir('subcommands');
+   *
+   * @param {string} [path]
+   * @return {(string|null|Command)}
+   */
+  executableDir(path15) {
+    if (path15 === void 0) return this._executableDir;
+    this._executableDir = path15;
+    return this;
+  }
+  /**
+   * Return program help documentation.
+   *
+   * @param {{ error: boolean }} [contextOptions] - pass {error:true} to wrap for stderr instead of stdout
+   * @return {string}
+   */
+  helpInformation(contextOptions) {
+    const helper = this.createHelp();
+    const context = this._getOutputContext(contextOptions);
+    helper.prepareContext({
+      error: context.error,
+      helpWidth: context.helpWidth,
+      outputHasColors: context.hasColors
+    });
+    const text = helper.formatHelp(this, helper);
+    if (context.hasColors) return text;
+    return this._outputConfiguration.stripColor(text);
+  }
+  /**
+   * @typedef HelpContext
+   * @type {object}
+   * @property {boolean} error
+   * @property {number} helpWidth
+   * @property {boolean} hasColors
+   * @property {function} write - includes stripColor if needed
+   *
+   * @returns {HelpContext}
+   * @private
+   */
+  _getOutputContext(contextOptions) {
+    contextOptions = contextOptions || {};
+    const error62 = !!contextOptions.error;
+    let baseWrite;
+    let hasColors;
+    let helpWidth;
+    if (error62) {
+      baseWrite = (str) => this._outputConfiguration.writeErr(str);
+      hasColors = this._outputConfiguration.getErrHasColors();
+      helpWidth = this._outputConfiguration.getErrHelpWidth();
+    } else {
+      baseWrite = (str) => this._outputConfiguration.writeOut(str);
+      hasColors = this._outputConfiguration.getOutHasColors();
+      helpWidth = this._outputConfiguration.getOutHelpWidth();
+    }
+    const write = (str) => {
+      if (!hasColors) str = this._outputConfiguration.stripColor(str);
+      return baseWrite(str);
+    };
+    return { error: error62, write, hasColors, helpWidth };
+  }
+  /**
+   * Output help information for this command.
+   *
+   * Outputs built-in help, and custom text added using `.addHelpText()`.
+   *
+   * @param {{ error: boolean } | Function} [contextOptions] - pass {error:true} to write to stderr instead of stdout
+   */
+  outputHelp(contextOptions) {
+    let deprecatedCallback;
+    if (typeof contextOptions === "function") {
+      deprecatedCallback = contextOptions;
+      contextOptions = void 0;
+    }
+    const outputContext = this._getOutputContext(contextOptions);
+    const eventContext = {
+      error: outputContext.error,
+      write: outputContext.write,
+      command: this
+    };
+    this._getCommandAndAncestors().reverse().forEach((command) => command.emit("beforeAllHelp", eventContext));
+    this.emit("beforeHelp", eventContext);
+    let helpInformation = this.helpInformation({ error: outputContext.error });
+    if (deprecatedCallback) {
+      helpInformation = deprecatedCallback(helpInformation);
+      if (typeof helpInformation !== "string" && !Buffer.isBuffer(helpInformation)) {
+        throw new Error("outputHelp callback must return a string or a Buffer");
+      }
+    }
+    outputContext.write(helpInformation);
+    if (this._getHelpOption()?.long) {
+      this.emit(this._getHelpOption().long);
+    }
+    this.emit("afterHelp", eventContext);
+    this._getCommandAndAncestors().forEach(
+      (command) => command.emit("afterAllHelp", eventContext)
+    );
+  }
+  /**
+   * You can pass in flags and a description to customise the built-in help option.
+   * Pass in false to disable the built-in help option.
+   *
+   * @example
+   * program.helpOption('-?, --help' 'show help'); // customise
+   * program.helpOption(false); // disable
+   *
+   * @param {(string | boolean)} flags
+   * @param {string} [description]
+   * @return {Command} `this` command for chaining
+   */
+  helpOption(flags, description) {
+    if (typeof flags === "boolean") {
+      if (flags) {
+        if (this._helpOption === null) this._helpOption = void 0;
+        if (this._defaultOptionGroup) {
+          this._initOptionGroup(this._getHelpOption());
+        }
+      } else {
+        this._helpOption = null;
+      }
+      return this;
+    }
+    this._helpOption = this.createOption(
+      flags ?? "-h, --help",
+      description ?? "display help for command"
+    );
+    if (flags || description) this._initOptionGroup(this._helpOption);
+    return this;
+  }
+  /**
+   * Lazy create help option.
+   * Returns null if has been disabled with .helpOption(false).
+   *
+   * @returns {(Option | null)} the help option
+   * @package
+   */
+  _getHelpOption() {
+    if (this._helpOption === void 0) {
+      this.helpOption(void 0, void 0);
+    }
+    return this._helpOption;
+  }
+  /**
+   * Supply your own option to use for the built-in help option.
+   * This is an alternative to using helpOption() to customise the flags and description etc.
+   *
+   * @param {Option} option
+   * @return {Command} `this` command for chaining
+   */
+  addHelpOption(option) {
+    this._helpOption = option;
+    this._initOptionGroup(option);
+    return this;
+  }
+  /**
+   * Output help information and exit.
+   *
+   * Outputs built-in help, and custom text added using `.addHelpText()`.
+   *
+   * @param {{ error: boolean }} [contextOptions] - pass {error:true} to write to stderr instead of stdout
+   */
+  help(contextOptions) {
+    this.outputHelp(contextOptions);
+    let exitCode = Number(process3.exitCode ?? 0);
+    if (exitCode === 0 && contextOptions && typeof contextOptions !== "function" && contextOptions.error) {
+      exitCode = 1;
+    }
+    this._exit(exitCode, "commander.help", "(outputHelp)");
+  }
+  /**
+   * // Do a little typing to coordinate emit and listener for the help text events.
+   * @typedef HelpTextEventContext
+   * @type {object}
+   * @property {boolean} error
+   * @property {Command} command
+   * @property {function} write
+   */
+  /**
+   * Add additional text to be displayed with the built-in help.
+   *
+   * Position is 'before' or 'after' to affect just this command,
+   * and 'beforeAll' or 'afterAll' to affect this command and all its subcommands.
+   *
+   * @param {string} position - before or after built-in help
+   * @param {(string | Function)} text - string to add, or a function returning a string
+   * @return {Command} `this` command for chaining
+   */
+  addHelpText(position, text) {
+    const allowedValues = ["beforeAll", "before", "after", "afterAll"];
+    if (!allowedValues.includes(position)) {
+      throw new Error(`Unexpected value for position to addHelpText.
+Expecting one of '${allowedValues.join("', '")}'`);
+    }
+    const helpEvent = `${position}Help`;
+    this.on(helpEvent, (context) => {
+      let helpStr;
+      if (typeof text === "function") {
+        helpStr = text({ error: context.error, command: context.command });
+      } else {
+        helpStr = text;
+      }
+      if (helpStr) {
+        context.write(`${helpStr}
+`);
+      }
+    });
+    return this;
+  }
+  /**
+   * Output help information if help flags specified
+   *
+   * @param {Array} args - array of options to search for help flags
+   * @private
+   */
+  _outputHelpIfRequested(args) {
+    const helpOption = this._getHelpOption();
+    const helpRequested = helpOption && args.find((arg) => helpOption.is(arg));
+    if (helpRequested) {
+      this.outputHelp();
+      this._exit(0, "commander.helpDisplayed", "(outputHelp)");
+    }
+  }
+};
+function incrementNodeInspectorPort(args) {
+  return args.map((arg) => {
+    if (!arg.startsWith("--inspect")) {
+      return arg;
+    }
+    let debugOption;
+    let debugHost = "127.0.0.1";
+    let debugPort = "9229";
+    let match;
+    if ((match = arg.match(/^(--inspect(-brk)?)$/)) !== null) {
+      debugOption = match[1];
+    } else if ((match = arg.match(/^(--inspect(-brk|-port)?)=([^:]+)$/)) !== null) {
+      debugOption = match[1];
+      if (/^\d+$/.test(match[3])) {
+        debugPort = match[3];
+      } else {
+        debugHost = match[3];
+      }
+    } else if ((match = arg.match(/^(--inspect(-brk|-port)?)=([^:]+):(\d+)$/)) !== null) {
+      debugOption = match[1];
+      debugHost = match[3];
+      debugPort = match[4];
+    }
+    if (debugOption && debugPort !== "0") {
+      return `${debugOption}=${debugHost}:${parseInt(debugPort) + 1}`;
+    }
+    return arg;
+  });
+}
+function useColor() {
+  if (process3.env.NO_COLOR || process3.env.FORCE_COLOR === "0" || process3.env.FORCE_COLOR === "false")
+    return false;
+  if (process3.env.FORCE_COLOR || process3.env.CLICOLOR_FORCE !== void 0)
+    return true;
+  return void 0;
+}
+
+// node_modules/commander/index.js
+var program = new Command();
+
+// src/serve/config.ts
+import { randomBytes } from "node:crypto";
+import { promises as fs12 } from "node:fs";
+import path12 from "node:path";
+var SERVE_FILE_NAME = "serve.json";
+var DEFAULT_PORT = 41733;
+var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
+function getServePath(opts = {}) {
+  return path12.join(path12.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
+}
+function parseServeConfig(raw) {
+  if (typeof raw !== "object" || raw === null) return void 0;
+  const { port, token, createdAt, allowedOrigins } = raw;
+  if (typeof token !== "string" || !TOKEN_RE3.test(token)) return void 0;
+  const config2 = {
+    port: typeof port === "number" && Number.isInteger(port) && port >= 0 && port <= 65535 ? port : DEFAULT_PORT,
+    token,
+    createdAt: typeof createdAt === "string" ? createdAt : (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (Array.isArray(allowedOrigins)) {
+    const origins = allowedOrigins.filter((o) => typeof o === "string" && o !== "*" && o.length > 0);
+    if (origins.length > 0) config2.allowedOrigins = origins;
+  }
+  return config2;
+}
+async function readServeConfig(opts = {}) {
+  let text;
+  try {
+    text = await fs12.readFile(getServePath(opts), "utf8");
+  } catch {
+    return void 0;
+  }
+  try {
+    return parseServeConfig(JSON.parse(text));
+  } catch {
+    return void 0;
+  }
+}
+async function writeServeConfig(config2, opts = {}) {
+  const target = getServePath(opts);
+  await fs12.mkdir(path12.dirname(target), { recursive: true });
+  const tmp = `${target}.tmp`;
+  await fs12.writeFile(tmp, `${JSON.stringify(config2, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+  await fs12.chmod(tmp, 384);
+  await fs12.rename(tmp, target);
+  return target;
+}
+function generateToken() {
+  return randomBytes(16).toString("hex");
+}
+async function ensureServeConfig(opts = {}) {
+  const existing = await readServeConfig(opts);
+  if (existing) return existing;
+  const config2 = { port: DEFAULT_PORT, token: generateToken(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+  await writeServeConfig(config2, opts);
+  return config2;
+}
+
+// src/serve/server.ts
+var MAX_BODY_BYTES = 1024 * 1024;
 var TERM_CATEGORIES = [
   "brand",
   "person",
@@ -51596,6 +57497,701 @@ var TERM_CATEGORIES = [
   "other"
 ];
 var TERM_SCOPES = ["global", "project"];
+var CwdField = external_exports.string().min(1).optional();
+var NormalizeBody = external_exports.object({
+  text: external_exports.string(),
+  dryRun: external_exports.boolean().optional(),
+  minConfidence: external_exports.number().min(0).max(1).optional(),
+  cwd: CwdField
+});
+var LearnBody = external_exports.object({
+  heard: external_exports.string(),
+  meant: external_exports.string(),
+  scope: external_exports.enum(TERM_SCOPES).optional(),
+  cwd: CwdField
+});
+var AddBody = external_exports.object({
+  canonical: external_exports.string().min(1),
+  aliases: external_exports.array(external_exports.string()).optional(),
+  phonetic: external_exports.string().optional(),
+  category: external_exports.enum(TERM_CATEGORIES).optional(),
+  notes: external_exports.string().optional(),
+  never: external_exports.array(external_exports.string()).optional(),
+  scope: external_exports.enum(TERM_SCOPES).optional(),
+  cwd: CwdField
+});
+
+// src/cli/cmd-serve.ts
+var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
+var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
+function line3(io, s = "") {
+  io.stdout(`${s}
+`);
+}
+function errorMessage4(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function storeOpts(opts) {
+  return opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {};
+}
+var defaultServeExec = (cmd, args) => new Promise((resolve2) => {
+  let stdout = "";
+  let stderr = "";
+  let child;
+  try {
+    child = spawn2(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    resolve2({ code: null, stdout: "", stderr: errorMessage4(err) });
+    return;
+  }
+  child.stdout?.setEncoding("utf8").on("data", (d) => {
+    stdout += d;
+  });
+  child.stderr?.setEncoding("utf8").on("data", (d) => {
+    stderr += d;
+  });
+  child.on("error", (err) => resolve2({ code: null, stdout, stderr: stderr || err.message }));
+  child.on("close", (code) => resolve2({ code, stdout, stderr }));
+});
+function defaultCliPath() {
+  return path13.join(path13.dirname(fileURLToPath3(import.meta.url)), "index.js");
+}
+function xmlEscape2(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function launchAgentPlist(nodePath, cliPath, logPath) {
+  const args = [nodePath, cliPath, "serve"].map((a) => `    <string>${xmlEscape2(a)}</string>`).join("\n");
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    "<dict>",
+    "  <key>Label</key>",
+    `  <string>${LAUNCH_AGENT_LABEL}</string>`,
+    "  <key>ProgramArguments</key>",
+    "  <array>",
+    args,
+    "  </array>",
+    "  <key>RunAtLoad</key>",
+    "  <true/>",
+    "  <key>KeepAlive</key>",
+    "  <true/>",
+    "  <key>StandardOutPath</key>",
+    `  <string>${xmlEscape2(logPath)}</string>`,
+    "  <key>StandardErrorPath</key>",
+    `  <string>${xmlEscape2(logPath)}</string>`,
+    "</dict>",
+    "</plist>",
+    ""
+  ].join("\n");
+}
+function unitQuote(s) {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+function systemdUnit(nodePath, cliPath) {
+  return [
+    "[Unit]",
+    "Description=lexicon serve (local HTTP API for @ashlr/lexicon)",
+    "After=default.target",
+    "",
+    "[Service]",
+    "Type=simple",
+    `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
+    "Restart=on-failure",
+    "RestartSec=2",
+    "",
+    "[Install]",
+    "WantedBy=default.target",
+    ""
+  ].join("\n");
+}
+function launchAgentPath(home) {
+  return path13.join(home, "Library", "LaunchAgents", `${LAUNCH_AGENT_LABEL}.plist`);
+}
+function launchAgentLogPath(home) {
+  return path13.join(home, "Library", "Logs", "lexicon", "serve.log");
+}
+function systemdUnitPath(home, env) {
+  const configHome = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim() !== "" ? env.XDG_CONFIG_HOME : path13.join(home, ".config");
+  return path13.join(configHome, "systemd", "user", SYSTEMD_UNIT_NAME);
+}
+async function runAndReport(exec, io, cmd, args) {
+  line3(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(" ")}`);
+  const result = await exec(cmd, args);
+  if (result.code !== 0) {
+    const detail = (result.stderr || result.stdout).trim();
+    io.stderr(`  exit ${result.code ?? "error"}${detail ? `: ${safeLines(detail)}` : ""}
+`);
+  }
+  return result;
+}
+async function runServeInstall(opts, io, deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const home = deps.home ?? os4.homedir();
+  const env = deps.env ?? process.env;
+  const exec = deps.exec ?? defaultServeExec;
+  const nodePath = deps.nodePath ?? process.execPath;
+  const cliPath = deps.cliPath ?? defaultCliPath();
+  await ensureServeConfig(storeOpts(opts));
+  if (platform === "darwin") {
+    const plistPath = launchAgentPath(home);
+    const logPath = launchAgentLogPath(home);
+    await fs13.mkdir(path13.dirname(plistPath), { recursive: true });
+    await fs13.mkdir(path13.dirname(logPath), { recursive: true });
+    await fs13.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath), "utf8");
+    line3(io, `wrote ${safe(plistPath)}`);
+    line3(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line3(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
+    const uid = deps.uid ?? process.getuid?.() ?? 501;
+    await exec("launchctl", ["bootout", `gui/${uid}/${LAUNCH_AGENT_LABEL}`]);
+    const bootstrap = await runAndReport(exec, io, "launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
+    if (bootstrap.code !== 0) {
+      const load = await runAndReport(exec, io, "launchctl", ["load", plistPath]);
+      if (load.code !== 0) {
+        io.stderr("lexicon: could not load the LaunchAgent; the plist is in place, load it manually or log out and in\n");
+        return 1;
+      }
+    }
+    line3(io, `installed ${LAUNCH_AGENT_LABEL}; check with: lexicon serve --status`);
+    return 0;
+  }
+  if (platform === "linux") {
+    const unitPath = systemdUnitPath(home, env);
+    await fs13.mkdir(path13.dirname(unitPath), { recursive: true });
+    await fs13.writeFile(unitPath, systemdUnit(nodePath, cliPath), "utf8");
+    line3(io, `wrote ${safe(unitPath)}`);
+    line3(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
+    const enable = await runAndReport(exec, io, "systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT_NAME]);
+    if (enable.code !== 0) {
+      io.stderr("lexicon: could not enable the unit; the file is in place, run `systemctl --user enable --now lexicon-serve.service` manually\n");
+      return 1;
+    }
+    line3(io, `installed ${SYSTEMD_UNIT_NAME}; check with: lexicon serve --status`);
+    return 0;
+  }
+  if (platform === "win32") {
+    line3(io, "lexicon serve --install is not automated on Windows. Create a Scheduled Task that runs at logon:");
+    line3(io);
+    line3(io, `  schtasks /Create /SC ONLOGON /TN "lexicon serve" /TR "\\"${nodePath}\\" \\"${cliPath}\\" serve"`);
+    line3(io);
+    line3(io, 'or use Task Scheduler: trigger "At log on", action "Start a program" with');
+    line3(io, `  program:   ${safe(nodePath)}`);
+    line3(io, `  arguments: "${safe(cliPath)}" serve`);
+    line3(io, "Nothing was written.");
+    return 0;
+  }
+  io.stderr(`lexicon: serve --install is not supported on ${platform}; run \`lexicon serve\` from your session startup instead
+`);
+  return 1;
+}
+
+// src/cli/cmd-setup.ts
+var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
+var SETUP_APPS = ["wispr", "superwhisper", "macos", "none"];
+var HARVEST_LIMIT2 = 10;
+var HARVEST_MIN_COUNT2 = 5;
+var SEEDED_TERMS = 3;
+var { bold: bold4, dim: dim4 } = styler(process.stdout);
+function errorMessage5(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function captureIO() {
+  const sink = {
+    out: "",
+    err: "",
+    stdout(s) {
+      sink.out += s;
+    },
+    stderr(s) {
+      sink.err += s;
+    }
+  };
+  return sink;
+}
+function lastLine(text) {
+  const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
+  return lines[lines.length - 1] ?? "";
+}
+function tildify(p, home) {
+  return p.startsWith(home + path14.sep) ? `~${p.slice(home.length)}` : p;
+}
+function isSetupClient(value) {
+  return SETUP_CLIENTS.includes(value);
+}
+function isSetupApp(value) {
+  return SETUP_APPS.includes(value);
+}
+function parseClientList(value) {
+  const out = [];
+  for (const raw of value.split(",")) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === "none") continue;
+    if (!isSetupClient(name)) {
+      throw new Error(`unknown client "${raw.trim()}" (expected one of: ${SETUP_CLIENTS.join(", ")}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+function findGitRoot3(start, exists) {
+  let dir = path14.resolve(start);
+  for (; ; ) {
+    if (exists(path14.join(dir, ".git"))) return dir;
+    const parent = path14.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function suggestCompany(packageName, remoteUrl) {
+  const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
+  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (remoteUrl) {
+    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
+    if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
+  }
+  return void 0;
+}
+async function readPackageName(cwd) {
+  try {
+    const raw = await fs14.readFile(path14.join(cwd, "package.json"), "utf8");
+    const pkg = JSON.parse(raw);
+    return typeof pkg.name === "string" ? pkg.name : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var defaultSetupExec = (file2, args) => execFileSync3(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+function tryExec(exec, file2, args) {
+  try {
+    const out = exec(file2, args).trim();
+    return out || void 0;
+  } catch {
+    return void 0;
+  }
+}
+var APP_BUNDLES = {
+  "claude-desktop": "Claude.app",
+  cursor: "Cursor.app",
+  vscode: "Visual Studio Code.app",
+  windsurf: "Windsurf.app"
+};
+var CLI_NAMES = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  vscode: "code",
+  cursor: "cursor",
+  windsurf: "windsurf"
+};
+function configDirFor(client, ctx) {
+  if (client === "claude") return path14.join(ctx.home, ".claude");
+  const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
+  return client === "vscode" ? path14.dirname(path14.dirname(file2)) : path14.dirname(file2);
+}
+async function detectClients(deps = {}, cwd = process.cwd()) {
+  const ctx = {
+    home: deps.home ?? os5.homedir(),
+    cwd,
+    platform: deps.platform ?? process.platform,
+    env: deps.env ?? process.env,
+    exists: deps.exists ?? existsSync5
+  };
+  const out = [];
+  for (const name of SETUP_CLIENTS) {
+    let evidence;
+    const dir = configDirFor(name, ctx);
+    if (ctx.exists(dir)) evidence = dir;
+    if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
+      const bundle = path14.join("/Applications", APP_BUNDLES[name]);
+      if (ctx.exists(bundle)) evidence = bundle;
+    }
+    if (!evidence && CLI_NAMES[name]) {
+      const bin = await findOnPath(CLI_NAMES[name], {
+        env: ctx.env,
+        platform: ctx.platform,
+        exists: async (candidate) => ctx.exists(candidate)
+      });
+      if (bin) evidence = bin;
+    }
+    out.push(evidence ? { name, detected: true, evidence } : { name, detected: false });
+  }
+  return out;
+}
+var APP_LABELS = {
+  wispr: { label: "Wispr Flow", where: "Wispr Flow > Dictionary > Import" },
+  superwhisper: { label: "Superwhisper", where: "Superwhisper > Settings > Replacements > Import" },
+  macos: { label: "macOS Text Replacement", where: "System Settings > Keyboard > Text Replacements (drag the file in)" }
+};
+function stepHeading(ctx, n, title) {
+  ctx.say(bold4(`${n}. ${title}`));
+}
+async function seedTerm(ctx, term) {
+  const result = await addTerm(term, { scope: "global", cwd: ctx.cwd });
+  const aliases = result.term.aliases.length > 0 ? safe(result.term.aliases.join(", ")) : dim4("(no aliases)");
+  ctx.say(`   ${result.created ? "added" : "merged"} ${bold4(safe(result.term.canonical))} (${term.category ?? "other"}): ${aliases}`);
+  if (result.created) ctx.summary.termsAdded.push(result.term.canonical);
+}
+async function stepLexicon(ctx) {
+  stepHeading(ctx, 1, "Global lexicon");
+  const global = resolvePaths({ cwd: ctx.cwd }).global;
+  ctx.summary.lexiconPath = global;
+  if (ctx.exists(global)) {
+    ctx.say(`   exists: ${safe(tildify(global, ctx.home))}`);
+  } else {
+    const captured = captureIO();
+    await runInit({ cwd: ctx.cwd }, captured);
+    ctx.say(`   created ${safe(tildify(global, ctx.home))}`);
+  }
+  const before = (await readLexiconFile(global, "global")).lexicon.terms.length;
+  if (before >= SEEDED_TERMS && !ctx.opts.reseed) {
+    ctx.say(dim4(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
+    return;
+  }
+  const gitName = ctx.opts.person ?? tryExec(ctx.exec, "git", ["config", "--global", "user.name"]);
+  let person = gitName;
+  if (ctx.prompter && gitName && !ctx.opts.person) {
+    person = await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true) ? gitName : void 0;
+  }
+  if (person) {
+    await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: "person", source: "user" });
+  } else {
+    ctx.say(dim4('   no person term (git user.name is unset; add one later: lexicon add "Your Name" --category person)'));
+  }
+  const suggestion = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+  let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
+  let phonetic = ctx.opts.phonetic;
+  if (ctx.prompter && !ctx.opts.company) {
+    company = (await ctx.prompter.ask("   Your company or product name (as you want it spelled; Enter to skip)", {
+      default: suggestion ?? ""
+    })).trim();
+  }
+  if (!company) {
+    ctx.say(dim4('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    return;
+  }
+  const aliases = suggestAliases(company);
+  if (ctx.prompter) {
+    if (aliases.length > 0) ctx.say(dim4(`   STT will likely write: ${safe(aliases.join(", "))}`));
+    if (!phonetic) {
+      phonetic = (await ctx.prompter.ask("   phonetic hint (e.g. ASH-ler, Enter for none)", { default: "" })).trim() || void 0;
+    }
+  }
+  const term = { canonical: company, aliases, category: "brand", source: "user" };
+  if (phonetic) term.phonetic = phonetic;
+  await seedTerm(ctx, term);
+  ctx.company = company;
+  while (ctx.prompter && await ctx.prompter.confirm("   add another term?", false)) {
+    const name = (await ctx.prompter.ask("   name (as you want it spelled; Enter to stop)", { default: "" })).trim();
+    if (!name) break;
+    const hint = (await ctx.prompter.ask("   phonetic hint (Enter for none)", { default: "" })).trim();
+    const categoryAnswer = (await ctx.prompter.ask("   category (brand|person|product|acronym|identifier|place|other)", { default: "brand" })).trim().toLowerCase();
+    const category = ["brand", "person", "product", "acronym", "identifier", "place", "other"].find(
+      (c) => c === categoryAnswer
+    );
+    const extra = { canonical: name, aliases: suggestAliases(name), category: category ?? "other", source: "user" };
+    if (hint) extra.phonetic = hint;
+    await seedTerm(ctx, extra);
+  }
+}
+async function stepHarvest(ctx) {
+  stepHeading(ctx, 2, "Repo harvest");
+  if (ctx.opts.harvest === false) {
+    ctx.say(dim4("   skipped (--no-harvest)"));
+    return;
+  }
+  const root = findGitRoot3(ctx.cwd, ctx.exists);
+  if (!root) {
+    ctx.say(dim4("   not a git repository; run `lexicon harvest --add` inside one later"));
+    return;
+  }
+  const harvest = ctx.deps.harvest ?? harvestRepo;
+  let candidates;
+  try {
+    candidates = await harvest(root, { limit: HARVEST_LIMIT2, minCount: HARVEST_MIN_COUNT2 });
+  } catch (err) {
+    ctx.warn(`   harvest failed: ${safeLines(errorMessage5(err))}`);
+    return;
+  }
+  if (candidates.length === 0) {
+    ctx.say(dim4(`   nothing worth adding in ${safe(tildify(root, ctx.home))}`));
+    return;
+  }
+  if (ctx.prompter) {
+    ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
+    const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
+    ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
+    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path14.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, true)) {
+      ctx.say(dim4("   skipped; pick them one by one later with: lexicon harvest --add"));
+      return;
+    }
+  }
+  let created = 0;
+  let merged = 0;
+  let file2;
+  try {
+    for (const c of candidates) {
+      const term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
+      const result = await addTerm(term, { scope: "project", cwd: root });
+      file2 = result.file.path;
+      if (result.created) {
+        created += 1;
+        ctx.summary.termsAdded.push(result.term.canonical);
+      } else merged += 1;
+    }
+  } catch (err) {
+    if (err instanceof ProjectTrustError) {
+      ctx.warn(`   skipped: ${safeLines(err.message)}`);
+      return;
+    }
+    throw err;
+  }
+  ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2 ?? root, ctx.home))} (trusted)`);
+}
+async function stepClients(ctx) {
+  stepHeading(ctx, 3, "Agent clients");
+  let chosen;
+  if (ctx.opts.clients !== void 0) {
+    chosen = parseClientList(ctx.opts.clients);
+    if (chosen.length === 0) {
+      ctx.say(dim4("   skipped (--clients none)"));
+      return;
+    }
+  } else {
+    const detected = (await detectClients({ ...ctx.deps, home: ctx.home }, ctx.cwd)).filter((c) => c.detected);
+    if (detected.length === 0) {
+      ctx.say(dim4(`   none detected; later: lexicon install <${SETUP_CLIENTS.join("|")}> --apply`));
+      return;
+    }
+    if (ctx.prompter) {
+      chosen = await ctx.prompter.choose(
+        "   install the lexicon MCP server (and hooks) into:",
+        detected.map((c) => ({ label: `${c.name}  ${dim4(safe(tildify(c.evidence ?? "", ctx.home)))}`, value: c.name })),
+        { multi: true }
+      );
+      if (chosen.length === 0) {
+        ctx.say(dim4("   skipped"));
+        return;
+      }
+    } else {
+      chosen = detected.map((c) => c.name);
+    }
+  }
+  const install = ctx.deps.installClient ?? ((client, opts, io) => runInstall(client, opts, io, {
+    platform: ctx.platform,
+    env: ctx.env,
+    ...ctx.deps.cliDir ? { cliDir: ctx.deps.cliDir } : {}
+  }));
+  for (const client of chosen) {
+    const captured = captureIO();
+    const opts = { apply: true, cwd: ctx.cwd, ...ctx.homeOverridden ? { home: ctx.home } : {} };
+    let code;
+    let detail;
+    try {
+      code = await install(client, opts, captured);
+      detail = lastLine(captured.out) || lastLine(captured.err);
+    } catch (err) {
+      code = 1;
+      detail = errorMessage5(err);
+    }
+    if (code === 0) {
+      ctx.summary.clients.push({ name: client, status: "installed", detail });
+      ctx.say(`   ${client}: installed ${dim4(safe(detail))}`);
+    } else {
+      const failure2 = lastLine(captured.err) || detail || `exit ${code}`;
+      ctx.summary.clients.push({ name: client, status: "failed", detail: failure2 });
+      ctx.warn(`   ${client}: failed ${safe(failure2)}`);
+      ctx.warn(`   (retry with: lexicon install ${client} --apply)`);
+    }
+  }
+}
+async function stepServe(ctx) {
+  stepHeading(ctx, 4, "Local API (lexicon serve)");
+  if (ctx.opts.serve === false) {
+    ctx.say(dim4("   skipped (--no-serve)"));
+    return;
+  }
+  const supported = ctx.platform === "darwin" || ctx.platform === "linux";
+  if (!supported) {
+    ctx.say(dim4(`   not automated on ${ctx.platform}; see: lexicon serve --install`));
+    return;
+  }
+  if (ctx.prompter) {
+    const ok = await ctx.prompter.confirm(
+      "   install the local API (browser extension, Claude Desktop, menu bar app) as a login service?",
+      true
+    );
+    if (!ok) {
+      ctx.say(dim4("   skipped; later: lexicon serve --install"));
+      return;
+    }
+  }
+  const install = ctx.deps.installServe ?? ((opts, io) => {
+    const serveDeps = { platform: ctx.platform, env: ctx.env };
+    if (ctx.homeOverridden) serveDeps.home = ctx.home;
+    return runServeInstall(opts, io, serveDeps);
+  });
+  const captured = captureIO();
+  let code;
+  try {
+    code = await install({ cwd: ctx.cwd }, captured);
+  } catch (err) {
+    code = 1;
+    captured.err += `${errorMessage5(err)}
+`;
+  }
+  if (code === 0) {
+    ctx.summary.serve = "installed";
+    ctx.say(`   installed ${dim4(safe(lastLine(captured.out)))}`);
+  } else {
+    ctx.summary.serve = "failed";
+    ctx.warn(`   failed ${safe(lastLine(captured.err) || lastLine(captured.out))}`);
+    ctx.warn("   (retry with: lexicon serve --install)");
+  }
+}
+async function stepExport(ctx) {
+  stepHeading(ctx, 5, "Dictation app");
+  let app;
+  if (ctx.opts.app !== void 0) {
+    const value = ctx.opts.app.trim().toLowerCase();
+    if (!isSetupApp(value)) throw new Error(`unknown app "${ctx.opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
+    app = value;
+  } else if (ctx.prompter) {
+    const choices = [
+      ...Object.keys(APP_LABELS).map((k) => ({ label: APP_LABELS[k].label, value: k })),
+      { label: "none / something else", value: "none" }
+    ];
+    [app] = await ctx.prompter.choose("   which dictation app do you use?", choices);
+  } else {
+    app = "none";
+  }
+  if (!app || app === "none") {
+    ctx.say(dim4("   skipped; later: lexicon export wispr|superwhisper|macos --out <file>"));
+    return;
+  }
+  const format = app;
+  const loaded = await loadLexicon({ cwd: ctx.cwd });
+  const text = exportLexicon(loaded.merged, format);
+  const desktop = path14.join(ctx.home, "Desktop");
+  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path14.dirname(ctx.summary.lexiconPath));
+  const file2 = path14.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  await fs14.mkdir(dir, { recursive: true });
+  await fs14.writeFile(file2, text, "utf8");
+  ctx.summary.exports.push({ format, path: file2 });
+  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${loaded.merged.terms.length} terms)`);
+  ctx.say(`   import it in ${APP_LABELS[app].where}`);
+}
+function printSummary(ctx) {
+  const s = ctx.summary;
+  ctx.say();
+  ctx.say(bold4("Done."));
+  ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
+  ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(", ")) : dim4("none")}`);
+  const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
+  const failed = s.clients.filter((c) => c.status === "failed").map((c) => c.name);
+  ctx.say(
+    `   clients: ${installed.length > 0 ? installed.join(", ") : dim4("none")}${failed.length > 0 ? ` (failed: ${failed.join(", ")})` : ""}`
+  );
+  ctx.say(`   local API: ${s.serve}`);
+  ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim4("none")}`);
+  ctx.say();
+  ctx.say(bold4("Next:"));
+  const company = ctx.company;
+  ctx.say(`   1. Open Claude Code and dictate a sentence${company ? ` with "${safe(company)}" in it` : ""}; the hook fixes it before Claude reads it.`);
+  ctx.say("   2. After a week: lexicon suggest (finds names you keep correcting) and lexicon stats.");
+  ctx.say("   3. Local push-to-talk: lexicon voice --list-devices, then lexicon voice --copy.");
+}
+async function runSetup(opts, io, deps = {}) {
+  const cwd = path14.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? path14.resolve(opts.home) : deps.home ?? os5.homedir();
+  if (opts.clients !== void 0) parseClientList(opts.clients);
+  if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
+    throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
+  }
+  const interactive = !opts.yes && !opts.json && (deps.isInteractive ?? isInteractive)();
+  const ownPrompter = interactive && !deps.createPrompter;
+  const prompter = interactive ? (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))() : void 0;
+  const say = (s = "") => {
+    if (opts.json) io.stderr(`${s}
+`);
+    else io.stdout(`${s}
+`);
+  };
+  const ctx = {
+    opts,
+    deps,
+    say,
+    homeOverridden: Boolean(opts.home || deps.home),
+    warn: (s) => io.stderr(`${s}
+`),
+    io,
+    cwd,
+    home,
+    platform: deps.platform ?? process.platform,
+    env: deps.env ?? process.env,
+    exists: deps.exists ?? existsSync5,
+    exec: deps.exec ?? defaultSetupExec,
+    summary: { lexiconPath: "", termsAdded: [], clients: [], serve: "skipped", exports: [] }
+  };
+  if (prompter) ctx.prompter = prompter;
+  say(bold4("lexicon setup"));
+  if (!interactive && !opts.yes && !opts.json) say(dim4("(no terminal: taking the defaults, as with --yes)"));
+  say();
+  try {
+    await stepLexicon(ctx);
+    say();
+    await stepHarvest(ctx);
+    say();
+    await stepClients(ctx);
+    say();
+    await stepServe(ctx);
+    say();
+    await stepExport(ctx);
+    printSummary(ctx);
+  } finally {
+    if (ownPrompter) prompter?.close();
+  }
+  if (opts.json) io.stdout(`${JSON.stringify(ctx.summary, null, 2)}
+`);
+  const failed = ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  return { code: failed ? 1 : 0, summary: ctx.summary };
+}
+
+// src/mcp/server.ts
+var SERVER_NAME = "lexicon";
+function bufferIO() {
+  let out = "";
+  let err = "";
+  return {
+    stdout: (s) => {
+      out += s;
+    },
+    stderr: (s) => {
+      err += s;
+    },
+    out: () => out,
+    err: () => err
+  };
+}
+function isRecord5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", "vscode", "claude-desktop"];
+var INSTALL_SCOPES = ["user", "project"];
+var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "text", "csv", "json"];
+var SUGGESTION_KINDS = ["alias", "term", "never", "stale"];
+var SERVE_HEALTH_URL = "http://127.0.0.1:41733/health";
+var TRUST_PREVIEW_ROWS = 25;
+var TERM_CATEGORIES2 = [
+  "brand",
+  "person",
+  "product",
+  "acronym",
+  "identifier",
+  "place",
+  "other"
+];
+var TERM_SCOPES2 = ["global", "project"];
 var EXPORT_FORMAT_VALUES = [
   "wispr",
   "superwhisper",
@@ -51614,41 +58210,65 @@ var EXPORT_FORMAT_VALUES = [
   "markdown"
 ];
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
+var ONBOARD_PROMPT = [
+  "Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:",
+  "1. Ask for my company or product names, spelled exactly as they should appear (capitalization and punctuation included), and how I pronounce each one.",
+  "2. Ask for the names of teammates or people I mention often, spelled the way they write them.",
+  "3. Ask which agent clients I use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI or VS Code.",
+  "4. Call the setup_lexicon tool with my company, my name and those clients. Tell me what it installed and where the lexicon file lives.",
+  "5. For every other name I gave you, call add_term without aliases so likely misspellings are generated, then show each term with its aliases on one line so I can veto any.",
+  "6. Finish with one sentence I can dictate to test it that contains two of the names, and tell me to try it in a new session.",
+  "Never install anything or trust a project file without telling me first. If a step fails, show me the error and continue with the rest."
+].join("\n");
 var SERVER_INSTRUCTIONS = [
   "Personal voice lexicon: the canonical spellings of names the user dictates and the misspellings STT produces for them.",
   "Read the lexicon://me resource once at session start and keep its canonical forms in mind for the whole session.",
   "Call normalize_transcript on any input that looks dictated (run-on prose, no code, a garbled proper noun) and act on its output.",
   "Call learn_correction whenever the user corrects a spelling ('it's Ashlr.AI not Ashler', 'I said X', or fixes a name you wrote) so it is corrected automatically next time.",
   "If a word looks like a garbled name and normalize_transcript did not change it, call suggest_canonical before guessing.",
-  "Never rewrite text inside code blocks, inline code, file paths, URLs or emails."
+  "Never rewrite text inside code blocks, inline code, file paths, URLs or emails.",
+  "If the lexicon is empty, offer to set it up: ask for the company/product spelling and the clients in use, then call setup_lexicon (or use the onboard prompt).",
+  "When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.",
+  "Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes."
 ].join("\n");
 function log(...args) {
   console.error(`[${SERVER_NAME}]`, ...args);
 }
-function errorMessage2(err) {
+function errorMessage6(err) {
   if (err instanceof Error) return err.message;
   return String(err);
 }
-function readPackageVersion() {
+function findPackage() {
   for (const rel of ["../../package.json", "../package.json"]) {
     try {
-      const raw = readFileSync(new URL(rel, import.meta.url), "utf8");
+      const url2 = new URL(rel, import.meta.url);
+      const raw = readFileSync2(url2, "utf8");
       const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") continue;
-      const { name, version: version2 } = parsed;
-      if (name === "@ashlr/lexicon" && typeof version2 === "string") return version2;
+      if (!isRecord5(parsed)) continue;
+      if (parsed.name === "@ashlr/lexicon" && typeof parsed.version === "string") {
+        return { root: dirname(fileURLToPath4(url2)), version: parsed.version };
+      }
     } catch {
     }
   }
+  return void 0;
+}
+function readPackageVersion() {
+  const pkg = findPackage();
+  if (pkg) return pkg.version;
   log("could not read package.json version");
   return "0.0.0";
+}
+function cliDirForInstall() {
+  const pkg = findPackage();
+  return pkg ? join(pkg.root, "dist", "cli") : void 0;
 }
 function textResult(payload) {
   const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   return { isError: false, content: [{ type: "text", text }] };
 }
 function errorResult(err) {
-  const message = errorMessage2(err);
+  const message = errorMessage6(err);
   log("tool error:", message);
   return { isError: true, content: [{ type: "text", text: message }] };
 }
@@ -51662,13 +58282,23 @@ async function guarded(fn) {
     return errorResult(err);
   }
 }
+function trustPreview(file2) {
+  const terms = file2.lexicon.terms;
+  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t) => ({
+    canonical: sanitizeForDisplay(t.canonical),
+    ...t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {},
+    aliasCount: t.aliases.length,
+    hasNotes: typeof t.notes === "string" && t.notes.trim() !== ""
+  }));
+  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
+}
 function filePathsInUse(loaded) {
   return {
     global: loaded.global.path,
     ...loaded.project ? { project: loaded.project.path } : {}
   };
 }
-function createServer(opts = {}) {
+function createServer2(opts = {}) {
   const cwd = opts.cwd ?? process.env.LEXICON_CWD ?? process.cwd();
   const load = () => loadLexicon({ cwd });
   const server = new McpServer(
@@ -51695,7 +58325,7 @@ function createServer(opts = {}) {
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
         await recordHits(canonicals, { cwd }).catch(
-          (err) => log("recordHits failed:", errorMessage2(err))
+          (err) => log("recordHits failed:", errorMessage6(err))
         );
       }
       return textResult({
@@ -51715,10 +58345,10 @@ function createServer(opts = {}) {
         canonical: external_exports.string().min(1).describe("The correct spelling, exactly as the user wants it written."),
         aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest."),
         phonetic: external_exports.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
-        category: external_exports.enum(TERM_CATEGORIES).optional(),
+        category: external_exports.enum(TERM_CATEGORIES2).optional(),
         notes: external_exports.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
         never: external_exports.array(external_exports.string()).optional().describe('Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS.'),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default, ~/.config/lexicon) or 'project' (.lexicon.yaml in the current repo).")
+        scope: external_exports.enum(TERM_SCOPES2).optional().describe("'global' (default, ~/.config/lexicon) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
     async ({ canonical, aliases, phonetic, category, notes, never: never2, scope }) => guarded(async () => {
@@ -51744,7 +58374,7 @@ function createServer(opts = {}) {
       description: "Delete a term (by canonical spelling, case-insensitive) from the user's lexicon.",
       inputSchema: {
         canonical: external_exports.string().min(1),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("Which lexicon file to remove it from. Defaults to the store's resolution order.")
+        scope: external_exports.enum(TERM_SCOPES2).optional().describe("Which lexicon file to remove it from. Defaults to the store's resolution order.")
       }
     },
     async ({ canonical, scope }) => guarded(async () => {
@@ -51759,7 +58389,7 @@ function createServer(opts = {}) {
       description: "List the user's lexicon terms (global + project merged). Optional case-insensitive substring filter over canonical spellings and aliases, and category filter.",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
-        category: external_exports.enum(TERM_CATEGORIES).optional()
+        category: external_exports.enum(TERM_CATEGORIES2).optional()
       }
     },
     async ({ query, category }) => guarded(async () => {
@@ -51800,8 +58430,8 @@ function createServer(opts = {}) {
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon.")
       }
     },
-    async ({ path: path4, limit, minCount, add }) => guarded(async () => {
-      const root = path4 ? resolve(cwd, path4) : cwd;
+    async ({ path: path15, limit, minCount, add }) => guarded(async () => {
+      const root = path15 ? resolve(cwd, path15) : cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -51824,7 +58454,7 @@ function createServer(opts = {}) {
             added += 1;
           } catch (err) {
             if (isProjectTrustError(err)) throw err;
-            failures.push({ canonical: c.canonical, error: errorMessage2(err) });
+            failures.push({ canonical: c.canonical, error: errorMessage6(err) });
           }
         }
       }
@@ -51843,7 +58473,7 @@ function createServer(opts = {}) {
       description: "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'.",
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_VALUES),
-        categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include these categories."),
+        categories: external_exports.array(external_exports.enum(TERM_CATEGORIES2)).optional().describe("Only include these categories."),
         limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported.")
       }
     },
@@ -51864,7 +58494,7 @@ function createServer(opts = {}) {
       inputSchema: {
         heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default; or wherever the term already lives) or 'project' (.lexicon.yaml in the current repo).")
+        scope: external_exports.enum(TERM_SCOPES2).optional().describe("'global' (default; or wherever the term already lives) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
     async ({ heard, meant, scope }) => guarded(async () => {
@@ -51908,6 +58538,263 @@ function createServer(opts = {}) {
     async () => guarded(async () => {
       const loaded = await load();
       return textResult(computeStats(loaded));
+    })
+  );
+  server.registerTool(
+    "lexicon_doctor",
+    {
+      title: "Diagnose the lexicon install",
+      description: "Diagnose the lexicon install: files, trust, hooks, MCP registration, clipboard, voice tools. Call when corrections are not happening or the user asks whether it is set up. Returns { ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }], paths, versions }; summarise the fails and warns for the user and offer the fix each message names.",
+      inputSchema: {}
+    },
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd })))
+  );
+  server.registerTool(
+    "install_client",
+    {
+      title: "Register the lexicon MCP server in an agent client",
+      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone.",
+      inputSchema: {
+        client: external_exports.enum(INSTALL_CLIENT_VALUES).describe("Which client to configure."),
+        apply: external_exports.boolean().optional().describe("false/omitted = preview only (default). true = write the config after the user confirmed."),
+        scope: external_exports.enum(INSTALL_SCOPES).optional().describe("'user' (default: the user-level config) or 'project' (the config inside the current repo, e.g. ./.cursor/mcp.json).")
+      }
+    },
+    async ({ client, apply, scope }) => guarded(async () => {
+      const io = bufferIO();
+      const cliDir = cliDirForInstall();
+      const code = await runInstall(
+        client,
+        { cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
+        io,
+        cliDir !== void 0 ? { cliDir } : {}
+      );
+      const stderr = io.err().trim();
+      return textResult({
+        client,
+        scope: scope ?? "user",
+        applied: apply === true,
+        ok: code === 0,
+        output: io.out().trimEnd(),
+        ...stderr ? { stderr } : {},
+        ...apply === true ? {} : { next: "Show this to the user; call again with apply: true once they confirm." }
+      });
+    })
+  );
+  server.registerTool(
+    "trust_project",
+    {
+      title: "Inspect or approve a project lexicon",
+      description: "Manage trust for a repo's .lexicon.yaml, which is merged only after the user approves it (it can inject text into every session). action 'status' returns the trust state plus a compact preview (canonicals, first alias, counts) of the file; 'trust' approves the file at its current content and returns the same preview; 'untrust' revokes it. Always call 'status' first, show the user the preview and ask; call 'trust' only after they say yes. Never trust a file the user has not seen.",
+      inputSchema: {
+        action: external_exports.enum(["status", "trust", "untrust"]),
+        path: external_exports.string().optional().describe("Lexicon file to act on. Defaults to the project .lexicon.yaml resolved from the server working directory.")
+      }
+    },
+    async ({ action, path: path15 }) => guarded(async () => {
+      const filePath = path15 ? resolve(cwd, path15) : resolvePaths({ cwd }).project;
+      const registry2 = getTrustPath({ cwd });
+      if (action === "status") {
+        const base = { action, registry: registry2, trustAll: trustAllEnabled(), trusted: await listTrusted({ cwd }) };
+        if (!filePath) return textResult({ ...base, status: "none", note: `no project .lexicon.yaml found from ${cwd}` });
+        let file3;
+        try {
+          file3 = await readLexiconFile(filePath, "project");
+        } catch (err) {
+          return textResult({ ...base, path: filePath, status: "invalid", error: errorMessage6(err) });
+        }
+        if (!file3.exists) return textResult({ ...base, path: filePath, status: "missing" });
+        const status = await isTrusted(file3, { cwd });
+        return textResult({ ...base, path: filePath, status, ...trustPreview(file3) });
+      }
+      if (!filePath) throw new Error(`no project .lexicon.yaml found from ${cwd}; pass a path`);
+      if (action === "untrust") {
+        const removed = await untrustProject(filePath, { cwd });
+        return textResult({
+          action,
+          path: filePath,
+          removed,
+          registry: registry2,
+          summary: removed ? `untrusted ${filePath}; it will no longer be merged` : `${filePath} was not trusted; nothing to do`
+        });
+      }
+      let file2;
+      try {
+        file2 = await readLexiconFile(filePath, "project");
+      } catch (err) {
+        throw new Error(`refusing to trust an invalid lexicon: ${errorMessage6(err)}`);
+      }
+      if (!file2.exists) throw new Error(`file does not exist: ${filePath}`);
+      const before = await isTrusted(file2, { cwd });
+      const entry = await trustProject(filePath, { cwd });
+      const verb = before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
+      return textResult({
+        action,
+        path: filePath,
+        previousStatus: before,
+        status: "trusted",
+        result: verb,
+        sha256: entry.sha256.slice(0, 12),
+        trustedAt: entry.trustedAt,
+        registry: registry2,
+        ...trustPreview(file2),
+        note: "Merged into the lexicon until its content changes; then it must be trusted again."
+      });
+    })
+  );
+  server.registerTool(
+    "import_dictionary",
+    {
+      title: "Import an existing dictionary",
+      description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it.",
+      inputSchema: {
+        path: external_exports.string().optional().describe("File to import. Its extension helps auto-detection."),
+        content: external_exports.string().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine."),
+        format: external_exports.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
+        scope: external_exports.enum(TERM_SCOPES2).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
+        dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")
+      }
+    },
+    async ({ path: path15, content, format, scope, dryRun }) => guarded(async () => {
+      if (path15 === void 0 && content === void 0) throw new Error("pass path or content");
+      const io = bufferIO();
+      const code = await runImport(
+        path15 ?? "-",
+        { cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
+        io,
+        content !== void 0 ? async () => content : void 0
+      );
+      if (code !== 0) throw new Error(io.err().trim() || `import failed (exit ${code})`);
+      const out = io.out().trim();
+      let report;
+      try {
+        report = JSON.parse(out);
+      } catch {
+        report = { output: out };
+      }
+      const stderr = io.err().trim();
+      return textResult(isRecord5(report) ? { ...report, ...stderr ? { stderr } : {} } : report);
+    })
+  );
+  server.registerTool(
+    "suggest_terms",
+    {
+      title: "Propose lexicon improvements",
+      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence.",
+      inputSchema: {
+        cwd: external_exports.string().optional().describe("Repository to scan for evidence. Defaults to the server working directory."),
+        limit: external_exports.number().int().positive().optional().describe("Max suggestions to return.")
+      }
+    },
+    async ({ cwd: cwdArg, limit }) => guarded(async () => {
+      const root = cwdArg ? resolve(cwd, cwdArg) : cwd;
+      const loaded = await loadLexicon({ cwd: root });
+      const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
+        log("loadVoiceHistory failed:", errorMessage6(err));
+        return [];
+      });
+      const suggestions = await suggestTerms({ loaded, history, cwd: root, ...limit !== void 0 ? { limit } : {} });
+      return textResult(suggestions);
+    })
+  );
+  server.registerTool(
+    "apply_suggestion",
+    {
+      title: "Apply one suggestion",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term. Pass the suggestion object back as received.",
+      inputSchema: {
+        suggestion: external_exports.object({
+          kind: external_exports.enum(SUGGESTION_KINDS),
+          canonical: external_exports.string().min(1),
+          alias: external_exports.string().optional(),
+          aliases: external_exports.array(external_exports.string()).optional(),
+          category: external_exports.enum(TERM_CATEGORIES2).optional(),
+          reason: external_exports.string().optional(),
+          confidence: external_exports.number().optional(),
+          evidence: external_exports.array(external_exports.string()).optional(),
+          count: external_exports.number().optional()
+        }),
+        scope: external_exports.enum(TERM_SCOPES2).optional().describe("Where to write: 'global' (default) or 'project'.")
+      }
+    },
+    async ({ suggestion, scope }) => guarded(async () => {
+      const { kind, canonical } = suggestion;
+      const alias = suggestion.alias?.trim();
+      const storeOpts2 = { cwd, ...scope !== void 0 ? { scope } : {} };
+      if (kind === "stale") {
+        const removed = await removeTerm(canonical, storeOpts2);
+        return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
+      }
+      if ((kind === "alias" || kind === "never") && !alias) throw new Error(`a "${kind}" suggestion needs an alias`);
+      const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
+      const aliases = kind === "never" ? [] : kind === "alias" && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
+      const term = {
+        canonical,
+        aliases,
+        source: "user",
+        ...kind === "term" && suggestion.category !== void 0 ? { category: suggestion.category } : {},
+        ...kind === "never" && alias ? { never: [alias] } : {},
+        ...scope !== void 0 ? { scope } : {}
+      };
+      const saved = await addTerm(term, storeOpts2);
+      const summary = kind === "alias" ? `"${alias}" -> "${saved.term.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${saved.term.canonical}"` : `added "${saved.term.canonical}" (${saved.term.aliases.length} alias${saved.term.aliases.length === 1 ? "" : "es"})`;
+      return textResult({ kind, canonical: saved.term.canonical, term: saved.term, path: saved.file.path, created: saved.created, summary });
+    })
+  );
+  server.registerTool(
+    "setup_lexicon",
+    {
+      title: "One-shot onboarding",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally start the local API. Ask the user for their company/product spelling and which clients they use, then call this. Runs non-interactively and returns a SetupSummary; tell the user what was installed and where the lexicon lives.",
+      inputSchema: {
+        company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
+        person: external_exports.string().optional().describe("The user's own name as they write it."),
+        clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in. Omit to let setup pick the ones it detects."),
+        serve: external_exports.boolean().optional().describe("Also install the local API (`lexicon serve`) as a login service.")
+      }
+    },
+    async ({ company, person, clients, serve }) => guarded(async () => {
+      const io = bufferIO();
+      const cliDir = cliDirForInstall();
+      const { code, summary } = await runSetup(
+        {
+          cwd,
+          yes: true,
+          json: true,
+          ...company !== void 0 ? { company } : {},
+          ...person !== void 0 ? { person } : {},
+          // runSetup takes the CLI's comma-separated form; an empty list means "none".
+          ...clients !== void 0 ? { clients: clients.length > 0 ? clients.join(",") : "none" } : {},
+          ...serve !== void 0 ? { serve } : {}
+        },
+        io,
+        cliDir !== void 0 ? { cliDir } : {}
+      );
+      const stderr = io.err().trim();
+      return textResult({ ok: code === 0, summary, ...stderr ? { stderr } : {} });
+    })
+  );
+  server.registerTool(
+    "serve_status",
+    {
+      title: "Local API status",
+      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1:41733. Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.",
+      inputSchema: {}
+    },
+    async () => guarded(async () => {
+      try {
+        const res = await fetch(SERVE_HEALTH_URL, { signal: AbortSignal.timeout(1500) });
+        if (!res.ok) return textResult({ up: false, url: SERVE_HEALTH_URL, status: res.status });
+        const body = await res.json();
+        return textResult({ up: true, url: SERVE_HEALTH_URL, ...isRecord5(body) ? body : { body } });
+      } catch (err) {
+        return textResult({
+          up: false,
+          url: SERVE_HEALTH_URL,
+          error: errorMessage6(err),
+          hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+        });
+      }
     })
   );
   server.registerResource(
@@ -51956,12 +58843,12 @@ Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrust
     },
     async () => {
       const loaded = await load();
-      const snippet = exportLexicon(loaded.merged, "claude-md");
+      const snippet2 = exportLexicon(loaded.merged, "claude-md");
       return {
         messages: [
           {
             role: "user",
-            content: { type: "text", text: `${snippet.trimEnd()}
+            content: { type: "text", text: `${snippet2.trimEnd()}
 
 ${VOICE_CONTEXT_INSTRUCTION}` }
           }
@@ -51969,10 +58856,20 @@ ${VOICE_CONTEXT_INSTRUCTION}` }
       };
     }
   );
+  server.registerPrompt(
+    "onboard",
+    {
+      title: "Set up the voice lexicon",
+      description: "Walk a new user through onboarding: collect the names STT gets wrong, register the server in their clients with setup_lexicon, add the names, and give them a test sentence."
+    },
+    async () => ({
+      messages: [{ role: "user", content: { type: "text", text: ONBOARD_PROMPT } }]
+    })
+  );
   return server;
 }
 async function main() {
-  const server = createServer();
+  const server = createServer2();
   const transport = new StdioServerTransport();
   const shutdown = () => {
     server.close().finally(() => process.exit(0));
@@ -51986,18 +58883,18 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return realpathSync(resolve(entry)) === realpathSync(fileURLToPath(import.meta.url));
+    return realpathSync(resolve(entry)) === realpathSync(fileURLToPath4(import.meta.url));
   } catch {
     return false;
   }
 }
 if (isMainModule()) {
   main().catch((err) => {
-    log("fatal:", errorMessage2(err));
+    log("fatal:", errorMessage6(err));
     process.exit(1);
   });
 }
 export {
-  createServer,
+  createServer2 as createServer,
   main
 };

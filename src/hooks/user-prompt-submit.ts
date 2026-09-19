@@ -6,7 +6,9 @@
  * - `SessionStart`: prints the claude-md export of the merged lexicon as
  *   additionalContext (capped, see SESSION_CONTEXT_MAX_CHARS) so the model
  *   knows the user's spellings once per session even if it never reads
- *   `lexicon://me`. Prints nothing when the lexicon is empty.
+ *   `lexicon://me`. When the lexicon is empty it instead prints, at most once
+ *   per 24 hours (state in `<config dir>/onboard-note.json`), a one-line note
+ *   asking the model to offer setup; otherwise nothing.
  * - `UserPromptSubmit`: normalizes the prompt against the lexicon resolved
  *   from the payload's `cwd` and - only when something changed - prints
  *   additionalContext telling the agent which corrections to apply. When the
@@ -20,8 +22,8 @@
  * The hook must never fail the user's prompt: every error path prints nothing
  * and exits 0.
  */
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { promises as fs, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
@@ -55,6 +57,53 @@ interface HookOutput {
 
 /** Upper bound for the SessionStart context; longer tables are truncated with a pointer to lexicon://me. */
 export const SESSION_CONTEXT_MAX_CHARS = 4000;
+
+/** State file (next to the global lexicon) recording when the empty-lexicon onboarding note was last emitted. */
+export const ONBOARD_NOTE_FILE = 'onboard-note.json';
+
+/** Minimum gap between two onboarding notes. */
+export const ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/** What SessionStart injects when the merged lexicon has no terms (once per ONBOARD_NOTE_INTERVAL_MS). */
+export const ONBOARD_NOTE =
+  "The user's voice lexicon is empty. If they dictate, offer to set it up: ask for their company/product spelling and run the lexicon setup_lexicon tool (or the onboard prompt).";
+
+/** `<dirname(globalPath)>/onboard-note.json`. */
+export function onboardNotePath(globalPath: string): string {
+  return join(dirname(globalPath), ONBOARD_NOTE_FILE);
+}
+
+interface OnboardNoteState {
+  lastNotedAt: string;
+}
+
+/**
+ * True when the onboarding note should be emitted now: no state file, an
+ * unreadable one, or a `lastNotedAt` older than the interval. On true the
+ * timestamp is written first (best effort, mkdir -p), so a burst of sessions
+ * still produces one note. Never throws.
+ */
+export async function shouldEmitOnboardNote(globalPath: string, now: number = Date.now()): Promise<boolean> {
+  const file = onboardNotePath(globalPath);
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    const last = typeof parsed === 'object' && parsed !== null ? (parsed as Partial<OnboardNoteState>).lastNotedAt : undefined;
+    const lastMs = typeof last === 'string' ? Date.parse(last) : Number.NaN;
+    if (Number.isFinite(lastMs) && now - lastMs < ONBOARD_NOTE_INTERVAL_MS) return false;
+  } catch {
+    // missing or unreadable: treat as never noted
+  }
+  const state: OnboardNoteState = { lastNotedAt: new Date(now).toISOString() };
+  try {
+    await fs.mkdir(dirname(file), { recursive: true });
+    await fs.writeFile(file, `${JSON.stringify(state)}\n`, 'utf8');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[lexicon hook] onboard-note: ${message}\n`);
+  }
+  return true;
+}
 
 /** Builds the note handed to the agent for a changed prompt. */
 export function formatAdditionalContext(result: NormalizeResult): string {
@@ -254,10 +303,15 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
   const loaded = await loadLexicon({ cwd });
-  if (loaded.merged.terms.length === 0) return '';
+  const skippedNote = formatSkippedProjectNote(loaded);
+
+  if (loaded.merged.terms.length === 0) {
+    // Nothing to inject; nudge the model to offer onboarding, but not every session.
+    if (!(await shouldEmitOnboardNote(loaded.global.path))) return '';
+    return emit('SessionStart', skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
+  }
 
   const parts: string[] = [truncateSessionContext(exportLexicon(loaded.merged, 'claude-md').trimEnd())];
-  const skippedNote = formatSkippedProjectNote(loaded);
   if (skippedNote) parts.push(skippedNote);
   return emit('SessionStart', parts);
 }
@@ -272,8 +326,9 @@ export async function runUserPromptSubmitHook(input: string, opts: HookOptions =
 }
 
 /**
- * Returns the JSON string to print for a SessionStart payload, or '' when the
- * merged lexicon has no terms.
+ * Returns the JSON string to print for a SessionStart payload: the lexicon
+ * table, or the onboarding note when the lexicon is empty (at most once per
+ * 24 h), or '' otherwise.
  */
 export async function runSessionStartHook(input: string, opts: HookOptions = {}): Promise<string> {
   return sessionStart(parseInput(input), opts);

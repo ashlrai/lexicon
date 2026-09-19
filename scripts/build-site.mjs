@@ -5,6 +5,7 @@
  *   site/dist/app.js      <- site/app.ts (esbuild, browser, esm, minified)
  *   site/dist/index.html  <- site/index.html (copied)
  *   site/dist/styles.css  <- site/styles.css (copied)
+ *   site/dist/install.sh  <- scripts/install.sh (copied; the curl | sh one-liner)
  *
  * The app imports only the browser-safe core modules (schema, matcher,
  * normalize, suggest, exporters) and the `yaml` package; store/harvest/trust
@@ -49,10 +50,12 @@ if (nodeBuiltins) {
 for (const name of ['index.html', 'styles.css']) {
   copyFileSync(resolve(root, 'site', name), resolve(outdir, name));
 }
+// The install one-liner: curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+copyFileSync(resolve(root, 'scripts', 'install.sh'), resolve(outdir, 'install.sh'));
 // Tell GitHub Pages not to run Jekyll over the output.
 copyFileSync(resolve(root, 'site', '.nojekyll'), resolve(outdir, '.nojekyll'));
 
-for (const name of ['app.js', 'index.html', 'styles.css']) {
+for (const name of ['app.js', 'index.html', 'styles.css', 'install.sh']) {
   const kb = (statSync(resolve(outdir, name)).size / 1024).toFixed(1);
   process.stdout.write(`site/dist/${name}  ${kb} KB\n`);
 }
