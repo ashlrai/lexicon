@@ -1,6 +1,6 @@
 # MCP server reference
 
-Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Eighteen tools, two resources, two prompts.
+Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Nineteen tools, two resources, two prompts.
 
 Registering it in a client is one command: see [CLIENTS.md](CLIENTS.md). Point any other MCP client at the stdio server directly:
 
@@ -37,6 +37,7 @@ The agent calls `normalize_transcript` on dictated input and reads `lexicon://me
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
 | `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, text, CSV or JSON dictionary |
 | `list_packs` | none | The starter packs in `packs/`, their size and which are installed. See [PACKS.md](PACKS.md) |
+| `add_pack` | `name`, `scope?` | Install a starter pack into the global or project lexicon. See [PACKS.md](PACKS.md) |
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
 | `apply_suggestion` | `suggestion`, `scope?` | Applies one suggestion from `suggest_terms`, passed back as received |
 | `setup_lexicon` | `company?`, `person?`, `clients?`, `serve?`, `apply?` | Without `apply` returns a plan computed by a dry run (what it would seed and harvest, the clients it detected, whether it would install the login service) and writes nothing. With `apply: true` runs `lexicon setup` non-interactively for exactly the `clients` given (omitted = none) and installs the local API only with `serve: true`; returns the `SetupSummary` |

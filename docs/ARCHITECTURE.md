@@ -53,7 +53,7 @@ src/
   hooks/
     user-prompt-submit.ts   Claude Code hook for SessionStart and UserPromptSubmit (lexicon hook)
   mcp/
-    server.ts               stdio MCP server "lexicon": 17 tools, 2 resources, 2 prompts (bin: lexicon-mcp)
+    server.ts               stdio MCP server "lexicon": 19 tools, 2 resources, 2 prompts (bin: lexicon-mcp)
 
 plugin/
   mcp-server.mjs            esbuild bundle of src/mcp/server.ts, every dependency inlined (committed)

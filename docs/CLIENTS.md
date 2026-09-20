@@ -105,7 +105,7 @@ lexicon install codex --apply    # write it
 
 ## Any MCP client
 
-See [MCP.md](MCP.md) for the stdio config, the eighteen tools, the two resources and the two prompts.
+See [MCP.md](MCP.md) for the stdio config, the nineteen tools, the two resources and the two prompts.
 
 ## ChatGPT, Claude.ai, Grok and other browser chats
 

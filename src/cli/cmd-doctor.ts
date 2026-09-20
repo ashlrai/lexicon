@@ -5,15 +5,16 @@
  * list of checks. `runDoctorReport` returns the structured report (the MCP
  * `lexicon_doctor` tool returns it verbatim); `runDoctor` renders it.
  */
-import { existsSync, promises as fs, readFileSync } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
 import { WHISPER_BIN_NAMES, installHint } from '../voice/process.js';
 import { findOnPathSync, locateToolSync } from '../util/which.js';
-import { isRecord, readJsonFile } from '../util/json.js';
+import { readJsonFile } from '../util/json.js';
 import { errorMessage } from '../util/errors.js';
+import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
 import type { LexiconFile, Term, TermScope } from '../core/index.js';
 import {
@@ -80,18 +81,6 @@ export interface DoctorReport {
   };
 }
 
-function readCliPackageVersion(): string {
-  for (const rel of ['../../package.json', '../package.json']) {
-    try {
-      const raw = readFileSync(new URL(rel, import.meta.url), 'utf8');
-      const parsed: unknown = JSON.parse(raw);
-      if (isRecord(parsed) && parsed.name === '@ashlr/lexicon' && typeof parsed.version === 'string') return parsed.version;
-    } catch {
-      // try the next candidate
-    }
-  }
-  return '0.0.0';
-}
 
 interface LoginServiceProbe {
   platform: NodeJS.Platform;
@@ -363,6 +352,6 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
       settings: settingsPath,
       installedPlugins: installedPluginsPath,
     },
-    versions: { lexicon: readCliPackageVersion(), node: process.version, platform },
+    versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform },
   };
 }

@@ -7,7 +7,7 @@ agent sees them. Not a dictation app. Ground truth for every doc is the code;
 
 ## Layout
 - `src/core/` pure library: `types.ts` (contract), `schema.ts`, `store.ts` (YAML files, project-write trust gate), `trust.ts` (trust.json registry), `matcher.ts` (alias > phonetic > fuzzy), `normalize.ts`, `suggest.ts`, `learn.ts` (parseCorrection, learnCorrection, suggestCanonicalFor), `stats.ts`, `harvest.ts`, `exporters/` (15 formats), `importers/` (7 formats + auto). `index.ts` is the only cross-module import path.
-- `src/mcp/server.ts` stdio MCP server (bin `lexicon-mcp`): 17 tools, 2 resources, 2 prompts (`voice-context`, `onboard`). stderr logging only.
+- `src/mcp/server.ts` stdio MCP server (bin `lexicon-mcp`): 19 tools, 2 resources, 2 prompts (`voice-context`, `onboard`). stderr logging only.
 - `src/hooks/user-prompt-submit.ts` Claude Code hook for `UserPromptSubmit` (injects corrections as additionalContext, flags "it's X not Y" corrections for `learn_correction`, never rewrites the prompt or writes to the lexicon) and `SessionStart` (injects the claude-md export, capped at 4000 chars). `runHook` dispatches on `hook_event_name`.
 - `plugin/mcp-server.mjs`, `plugin/hook.mjs` committed esbuild bundles that `.mcp.json` and `hooks/hooks.json` point at. `dist/` stays untracked.
 - `src/cli/` commander CLI (bin `lexicon`, 25 commands): `index.ts` only wires commander; handlers in `commands.ts` and `cmd-import.ts`, `cmd-install.ts`, `cmd-trust.ts`, `cmd-learn.ts`, `cmd-review.ts` (interactive harvest/review/edit), `cmd-serve.ts` (local HTTP API), `cmd-voice.ts` (whisper.cpp push-to-talk), `cmd-setup.ts` (onboarding wizard), `cmd-suggest.ts` (suggestions from history and hits); `prompt.ts` is the readline prompter.

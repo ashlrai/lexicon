@@ -10,8 +10,8 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runSuggest } from '../src/cli/cmd-suggest.js';
 import type { SuggestDeps } from '../src/cli/cmd-suggest.js';
-import type { IO } from '../src/cli/commands.js';
 import type { PromptChoice, Prompter } from '../src/cli/prompt.js';
+import { makeIO } from './helpers.js';
 import {
   AUTO_APPLY_CONFIDENCE,
   ProjectTrustError,
@@ -422,21 +422,14 @@ describe('loadVoiceHistory', () => {
 // runSuggest (CLI) against mocked collaborators
 // ---------------------------------------------------------------------------
 
-function makeIO(): IO & { out: string; err: string } {
-  const sink = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      sink.out += s;
-    },
-    stderr(s: string) {
-      sink.err += s;
-    },
-  };
-  return sink;
-}
 
-function scripted(answers: string[]): Prompter & { asked: string[]; closed: boolean } {
+/**
+ * A deliberately more forgiving prompter than the shared `scripted`: running
+ * out of answers returns the default instead of throwing, and `choose` always
+ * takes the first option. These suites drive `--apply` loops whose prompt count
+ * depends on the suggestions, so they cannot script an exact sequence.
+ */
+function lenientPrompter(answers: string[]): Prompter & { asked: string[]; closed: boolean } {
   const queue = [...answers];
   const fake = {
     asked: [] as string[],
@@ -573,7 +566,7 @@ describe('runSuggest', () => {
     const store = mockStore();
     const io = makeIO();
     // versal: y, Siobhan: n, ashlur: a (applies it and the never), stale: asked separately -> y
-    const prompter = scripted(['y', 'n', 'a', 'y']);
+    const prompter = lenientPrompter(['y', 'n', 'a', 'y']);
     expect(await runSuggest({ apply: true }, io, { ...store.deps, prompter })).toBe(0);
     expect(store.added.map((a) => [a.term.canonical, a.term.aliases, a.term.never])).toEqual([
       ['Vercel', ['versal'], undefined],
@@ -594,14 +587,14 @@ describe('runSuggest', () => {
   it('--apply: q stops, Enter keeps a term (default n for stale) and applies the rest (default y)', async () => {
     const store = mockStore();
     const io = makeIO();
-    const prompter = scripted(['', 'q']);
+    const prompter = lenientPrompter(['', 'q']);
     expect(await runSuggest({ apply: true }, io, { ...store.deps, prompter })).toBe(0);
     expect(store.added.map((a) => a.term.canonical)).toEqual(['Vercel']);
     expect(io.out).toContain('applied 1 suggestion, skipped 4');
 
     const store2 = mockStore([FIXED[4]]);
     const io2 = makeIO();
-    expect(await runSuggest({ apply: true }, io2, { ...store2.deps, prompter: scripted(['']) })).toBe(0);
+    expect(await runSuggest({ apply: true }, io2, { ...store2.deps, prompter: lenientPrompter(['']) })).toBe(0);
     expect(store2.removed).toEqual([]);
     expect(io2.out).toContain('applied 0 suggestions, skipped 1');
   });

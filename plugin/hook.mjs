@@ -7488,7 +7488,7 @@ var require_mod = __commonJS({
       }
       return score;
     };
-    var distance3 = function(a, b) {
+    var distance4 = function(a, b) {
       if (a.length < b.length) {
         var tmp = b;
         b = a;
@@ -7502,12 +7502,12 @@ var require_mod = __commonJS({
       }
       return myers_x(a, b);
     };
-    exports.distance = distance3;
+    exports.distance = distance4;
     var closest = function(str, arr) {
       var min_distance = Infinity;
       var min_index = 0;
       for (var i = 0; i < arr.length; i++) {
-        var dist = distance3(str, arr[i]);
+        var dist = distance4(str, arr[i]);
         if (dist < min_distance) {
           min_distance = dist;
           min_index = i;
@@ -28279,7 +28279,7 @@ function doubleMetaphone(value) {
 }
 
 // src/core/matcher.ts
-var import_fastest_levenshtein = __toESM(require_mod(), 1);
+var import_fastest_levenshtein2 = __toESM(require_mod(), 1);
 
 // src/core/stoplist.ts
 var WORDS = `
@@ -31671,7 +31671,7 @@ function freeze(set2) {
 }
 var STOPLIST = freeze(new Set(WORDS.split("\n").filter((w) => w.length > 0)));
 
-// src/core/matcher.ts
+// src/core/matcher/tuning.ts
 var DEFAULT_MIN_CONFIDENCE = 0.82;
 var MAX_WINDOW = 5;
 var PHONETIC_BASE = 0.9;
@@ -31703,6 +31703,9 @@ can could may might must shall should will would
 not no yes there here now when where why how
 `.split(/\s+/).filter((w) => w.length > 0)
 );
+
+// src/core/matcher/text.ts
+var import_fastest_levenshtein = __toESM(require_mod(), 1);
 var ASCII_FOLD = {
   \u00F8: "o",
   \u00D8: "O",
@@ -31774,6 +31777,80 @@ function similarity(a, b) {
   const d = max <= OSA_MAX_LENGTH ? osaDistance(a, b) : (0, import_fastest_levenshtein.distance)(a, b);
   return 1 - d / max;
 }
+
+// src/core/matcher/tokenize.ts
+var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
+var TRAILING_PUNCT_RE = /[.'’\-]+$/u;
+var POSSESSIVE_RE = /['’][sS]$/u;
+var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
+var INLINE_CODE_RE = /`[^`\n]*`/g;
+var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
+var WWW_RE = /\bwww\.\S+/gi;
+var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
+function collectRanges(text) {
+  const ranges = [];
+  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].length === 0) {
+        re.lastIndex++;
+        continue;
+      }
+      ranges.push({ start: m.index, end: m.index + m[0].length });
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  return ranges;
+}
+function tokenize(text, skipCode) {
+  const ranges = skipCode ? collectRanges(text) : [];
+  const tokens = [];
+  const draft = [];
+  let rangeIdx = 0;
+  TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = TOKEN_RE.exec(text)) !== null) {
+    let raw = m[0];
+    const start = m.index;
+    const trimmed = raw.replace(TRAILING_PUNCT_RE, "");
+    if (trimmed.length === 0) continue;
+    raw = trimmed;
+    const end = start + raw.length;
+    while (rangeIdx < ranges.length && ranges[rangeIdx].end <= start) rangeIdx++;
+    let skipped = false;
+    for (let i = rangeIdx; i < ranges.length && ranges[i].start < end; i++) {
+      if (ranges[i].end > start) {
+        skipped = true;
+        break;
+      }
+    }
+    let base = raw;
+    if (POSSESSIVE_RE.test(raw) && raw.length > 2) {
+      base = raw.slice(0, -2);
+    }
+    draft.push({
+      text: raw,
+      start,
+      end,
+      base,
+      baseEnd: start + base.length,
+      textLower: foldLower(raw),
+      baseLower: foldLower(base),
+      skipped
+    });
+  }
+  for (let i = 0; i < draft.length; i++) {
+    const t = draft[i];
+    const next = draft[i + 1];
+    const joinsNext = next !== void 0 && /^\s+$/.test(text.slice(t.end, next.start));
+    tokens.push({ ...t, joinsNext });
+  }
+  return tokens;
+}
+
+// src/core/matcher/build.ts
 function push(map2, key, value) {
   const list = map2.get(key);
   if (list) list.push(value);
@@ -31884,76 +31961,8 @@ function buildIndex(lexicon) {
     never: never2
   };
 }
-var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-var TRAILING_PUNCT_RE = /[.'’\-]+$/u;
-var POSSESSIVE_RE = /['’][sS]$/u;
-var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
-var INLINE_CODE_RE = /`[^`\n]*`/g;
-var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
-var WWW_RE = /\bwww\.\S+/gi;
-var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
-var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
-function collectRanges(text) {
-  const ranges = [];
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      if (m[0].length === 0) {
-        re.lastIndex++;
-        continue;
-      }
-      ranges.push({ start: m.index, end: m.index + m[0].length });
-    }
-  }
-  ranges.sort((a, b) => a.start - b.start);
-  return ranges;
-}
-function tokenize(text, skipCode) {
-  const ranges = skipCode ? collectRanges(text) : [];
-  const tokens = [];
-  const draft = [];
-  let rangeIdx = 0;
-  TOKEN_RE.lastIndex = 0;
-  let m;
-  while ((m = TOKEN_RE.exec(text)) !== null) {
-    let raw = m[0];
-    const start = m.index;
-    const trimmed = raw.replace(TRAILING_PUNCT_RE, "");
-    if (trimmed.length === 0) continue;
-    raw = trimmed;
-    const end = start + raw.length;
-    while (rangeIdx < ranges.length && ranges[rangeIdx].end <= start) rangeIdx++;
-    let skipped = false;
-    for (let i = rangeIdx; i < ranges.length && ranges[i].start < end; i++) {
-      if (ranges[i].end > start) {
-        skipped = true;
-        break;
-      }
-    }
-    let base = raw;
-    if (POSSESSIVE_RE.test(raw) && raw.length > 2) {
-      base = raw.slice(0, -2);
-    }
-    draft.push({
-      text: raw,
-      start,
-      end,
-      base,
-      baseEnd: start + base.length,
-      textLower: foldLower(raw),
-      baseLower: foldLower(base),
-      skipped
-    });
-  }
-  for (let i = 0; i < draft.length; i++) {
-    const t = draft[i];
-    const next = draft[i + 1];
-    const joinsNext = next !== void 0 && /^\s+$/.test(text.slice(t.end, next.start));
-    tokens.push({ ...t, joinsNext });
-  }
-  return tokens;
-}
+
+// src/core/matcher.ts
 var REASON_RANK = { alias: 0, phonetic: 1, fuzzy: 2 };
 var GLUE_BEFORE = /* @__PURE__ */ new Set(["@", "/", "#", ":", "\\", "~", "_", "-"]);
 var GLUE_AFTER = /* @__PURE__ */ new Set(["/", "\\", "_"]);
@@ -32093,7 +32102,7 @@ function findBest(view, index, opts) {
         const bar = barFor(e.termIndex, view.plainWord);
         const a = e.term.caseSensitive ? view.norm : view.normLower;
         const b = e.term.caseSensitive ? e.norm : e.normLower;
-        if (1 - Math.ceil((0, import_fastest_levenshtein.distance)(a, b) / 2) / max < bar) continue;
+        if (1 - Math.ceil((0, import_fastest_levenshtein2.distance)(a, b) / 2) / max < bar) continue;
         const sim = similarity(a, b);
         if (sim < bar) continue;
         const soFar = current();
@@ -32533,7 +32542,7 @@ function parseCorrection(text) {
 }
 
 // src/core/suggestTerms.ts
-var import_fastest_levenshtein2 = __toESM(require_mod(), 1);
+var import_fastest_levenshtein3 = __toESM(require_mod(), 1);
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var FUNCTION_WORDS2 = new Set(
   `a an the and or but nor so yet if then than because although while whether unless

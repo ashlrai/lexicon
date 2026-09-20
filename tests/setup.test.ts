@@ -22,56 +22,9 @@ import type { SetupDeps, SetupOptions, SetupPlan, SetupSummary } from '../src/cl
 import type { InstallOptions } from '../src/cli/cmd-install.js';
 import { runServeInstall } from '../src/cli/cmd-serve.js';
 import type { ServeDeps } from '../src/cli/cmd-serve.js';
-import type { IO } from '../src/cli/commands.js';
-import type { PromptChoice, Prompter } from '../src/cli/prompt.js';
+import { makeIO, scripted } from './helpers.js';
 
-function makeIO(): IO & { out: string; err: string } {
-  const io = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      io.out += s;
-    },
-    stderr(s: string) {
-      io.err += s;
-    },
-  };
-  return io;
-}
 
-type Answer = string | number | number[];
-function scripted(answers: Answer[]): Prompter & { asked: string[]; closed: boolean } {
-  const queue = [...answers];
-  const next = (question: string): Answer => {
-    if (queue.length === 0) throw new Error(`no scripted answer for: ${question}`);
-    return queue.shift() as Answer;
-  };
-  const fake = {
-    asked: [] as string[],
-    closed: false,
-    async ask(question: string, opts?: { default?: string }): Promise<string> {
-      fake.asked.push(question);
-      const a = String(next(question));
-      return a === '' && opts?.default !== undefined ? opts.default : a;
-    },
-    async confirm(question: string, def = false): Promise<boolean> {
-      fake.asked.push(question);
-      const a = String(next(question)).toLowerCase();
-      return a === '' ? def : a.startsWith('y');
-    },
-    async choose<T>(question: string, choices: PromptChoice<T>[], opts?: { multi?: boolean }): Promise<T[]> {
-      fake.asked.push(question);
-      const a = next(question);
-      const idx = Array.isArray(a) ? a : [Number(a)];
-      if (!opts?.multi && idx.length !== 1) throw new Error('single choice expects one index');
-      return idx.map((i) => choices[i - 1].value);
-    },
-    close(): void {
-      fake.closed = true;
-    },
-  };
-  return fake;
-}
 
 let home: string;
 let cwd: string;

@@ -13,24 +13,11 @@ import {
   upsertTomlTable,
 } from '../src/cli/cmd-install.js';
 import type { InstallDeps, InstallOptions } from '../src/cli/cmd-install.js';
-import type { IO } from '../src/cli/commands.js';
+import { makeIO } from './helpers.js';
 
 const CLI_DIR = '/opt/lexicon/dist/cli';
 const SERVER = path.resolve(CLI_DIR, '../mcp/server.js');
 
-function makeIO(): IO & { out: string; err: string } {
-  const io = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      io.out += s;
-    },
-    stderr(s: string) {
-      io.err += s;
-    },
-  };
-  return io;
-}
 
 let home: string;
 let cwd: string;

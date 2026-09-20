@@ -28,8 +28,8 @@ import {
 } from '../src/core/index.js';
 import { STOPLIST } from '../src/core/stoplist.js';
 import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackShow } from '../src/cli/cmd-pack.js';
-import type { IO } from '../src/cli/commands.js';
 import { Command } from 'commander';
+import { makeIO } from './helpers.js';
 
 const PACK_NAMES = ['ai', 'business', 'developer', 'voice-tools'];
 
@@ -69,19 +69,6 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
   Fireflies: ['fire flies'],
 };
 
-function makeIO(): IO & { out: string; err: string } {
-  const io = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      io.out += s;
-    },
-    stderr(s: string) {
-      io.err += s;
-    },
-  };
-  return io;
-}
 
 // ---------------------------------------------------------------------------
 // The shipped packs

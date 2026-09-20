@@ -111,21 +111,8 @@ import {
   runPath,
   runRemove,
 } from '../src/cli/commands.js';
-import type { IO } from '../src/cli/commands.js';
+import { makeIO } from './helpers.js';
 
-function makeIO(): IO & { out: string; err: string } {
-  const sink = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      sink.out += s;
-    },
-    stderr(s: string) {
-      sink.err += s;
-    },
-  };
-  return sink;
-}
 
 beforeEach(() => {
   state.projectPath = undefined;
@@ -239,6 +226,9 @@ describe('list', () => {
     const io = makeIO();
     expect(await runList({}, io)).toBe(0);
     expect(io.out).not.toContain(ESC);
+    // The exact spacing is the assertion: renderTable must sanitize each cell
+    // BEFORE measuring it, or the escape sequences would inflate the column
+    // width and the table would come out ragged.
     const lines = io.out.split('\n');
     expect(lines[2]).toBe('Evil       eevil, evel  brand     1');
     expect(lines[3]).toBe('Ashlr.AI   Ashler       brand     3');

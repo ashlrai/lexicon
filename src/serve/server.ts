@@ -19,7 +19,6 @@
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
 import { timingSafeEqual } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { z } from 'zod';
@@ -64,6 +63,7 @@ import {
 } from './config.js';
 import type { ServeConfig } from './config.js';
 import { errorMessage } from '../util/errors.js';
+import { packageVersion } from '../util/package.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -247,19 +247,6 @@ function isProjectTrustError(err: unknown): boolean {
   return err instanceof Error && err.name === 'ProjectTrustError';
 }
 
-function readPackageVersion(): string {
-  try {
-    const raw = readFileSync(new URL('../../package.json', import.meta.url), 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      const { name, version } = parsed as { name?: unknown; version?: unknown };
-      if (name === '@ashlr/lexicon' && typeof version === 'string') return version;
-    }
-  } catch {
-    // fall through
-  }
-  return '0.0.0';
-}
 
 function issuesMessage(err: z.ZodError): string {
   return err.issues.map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message)).join('; ');
@@ -460,7 +447,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   const globalPath = opts.globalPath;
   const storeOpts = globalPath !== undefined ? { globalPath } : {};
   const log = opts.log ?? ((line: string) => process.stderr.write(`${line}\n`));
-  const version = opts.version ?? readPackageVersion();
+  const version = opts.version ?? packageVersion(import.meta.url);
   const reloadMs = opts.reloadMs ?? LEXICON_RELOAD_MS;
   const maxConcurrent = opts.maxConcurrent ?? MAX_CONCURRENT_REQUESTS;
 

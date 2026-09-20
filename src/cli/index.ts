@@ -3,8 +3,8 @@
  * `lexicon` CLI. Only commander wiring lives here; the behaviour is in
  * ./commands.ts so it can be unit-tested without spawning a process.
  */
-import { readFileSync } from 'node:fs';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { packageVersion } from '../util/package.js';
 import { parseBackendName, runDaemonCommand } from '../daemon/clipboard.js';
 import { registerImportCommands } from './cmd-import.js';
 import { registerInstallCommands } from './cmd-install.js';
@@ -41,16 +41,6 @@ import type {
   RemoveOptions,
 } from './commands.js';
 
-function readVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
-      version?: string;
-    };
-    return pkg.version ?? '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-}
 
 interface DaemonCliOptions {
   interval: number;
@@ -74,7 +64,7 @@ const io = processIO;
 program
   .name('lexicon')
   .description('Personal lexicon for voice-to-agents: fixes the words STT gets wrong before your agent sees them.')
-  .version(readVersion())
+  .version(packageVersion(import.meta.url))
   .option('--cwd <dir>', 'directory used to find the project .lexicon.yaml (default: current directory)')
   .exitOverride()
   .showHelpAfterError('(use --help for usage)');

@@ -4,16 +4,14 @@
  * discovery. Split out of server.ts so each `tools/*.ts` module can be read on
  * its own; server.ts keeps the resources, the prompts and the wiring.
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { sanitizeForDisplay } from '../core/index.js';
 import type { ImportFormat, LexiconFile, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { errorMessage } from '../util/errors.js';
-import { isRecord } from '../util/json.js';
+import { findPackageRoot, packageVersion } from '../util/package.js';
 
 /**
  * Everything a tool handler needs from the server it is registered on. `load`
@@ -84,23 +82,8 @@ interface PackageInfo {
 }
 
 export function findPackage(): PackageInfo | undefined {
-  // dist/mcp/server.js and src/mcp/server.ts sit two levels below package.json;
-  // the self-contained plugin/mcp-server.mjs bundle sits one level below it.
-  // The name check keeps an unrelated package.json further up from being picked.
-  for (const rel of ['../../package.json', '../package.json']) {
-    try {
-      const url = new URL(rel, import.meta.url);
-      const raw = readFileSync(url, 'utf8');
-      const parsed: unknown = JSON.parse(raw);
-      if (!isRecord(parsed)) continue;
-      if (parsed.name === '@ashlr/lexicon' && typeof parsed.version === 'string') {
-        return { root: dirname(fileURLToPath(url)), version: parsed.version };
-      }
-    } catch {
-      // try the next candidate
-    }
-  }
-  return undefined;
+  const root = findPackageRoot(import.meta.url);
+  return root ? { root, version: packageVersion(import.meta.url) } : undefined;
 }
 
 export function readPackageVersion(): string {

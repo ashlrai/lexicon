@@ -9,38 +9,16 @@
  * src/, dist/ and plugin/ alike. No imports from the rest of the CLI, so the
  * doctor and the installers can share it without a cycle.
  */
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { isRecord } from '../util/json.js';
 import { findOnPathSync } from '../util/which.js';
+import { findPackageRoot } from '../util/package.js';
 
-export const PACKAGE_NAME = '@ashlr/lexicon';
+/** Re-exported from util/package.ts, which does the package.json walk. */
+export { PACKAGE_NAME, findPackageRoot } from '../util/package.js';
 
 /** Environment variable that overrides every other CLI location. */
 export const CLI_ENV_VAR = 'LEXICON_CLI';
-
-/**
- * The directory holding the `@ashlr/lexicon` package.json at or above
- * `from` (a file URL or a path), or undefined when none is found. The name
- * check keeps an unrelated package.json further up (a user's own project
- * when the package is vendored) from being picked.
- */
-export function findPackageRoot(from: string): string | undefined {
-  let dir = from.startsWith('file:') ? path.dirname(fileURLToPath(from)) : path.resolve(from);
-  for (;;) {
-    const candidate = path.join(dir, 'package.json');
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(candidate, 'utf8'));
-      if (isRecord(parsed) && parsed.name === PACKAGE_NAME) return dir;
-    } catch {
-      // not here; keep walking
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
 
 export interface CliEntryOptions {
   /** An explicit path wins over everything else (a caller that already knows). */

@@ -432,21 +432,8 @@ vi.mock('../src/core/store.js', async (importOriginal) => {
 });
 
 import { MAX_IMPORT_BYTES, runImport } from '../src/cli/cmd-import.js';
-import type { IO } from '../src/cli/commands.js';
+import { makeIO } from './helpers.js';
 
-function makeIO(): IO & { out: string; err: string } {
-  const sink = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      sink.out += s;
-    },
-    stderr(s: string) {
-      sink.err += s;
-    },
-  };
-  return sink;
-}
 
 describe('runImport', () => {
   beforeEach(() => {

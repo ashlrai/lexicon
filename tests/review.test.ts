@@ -10,68 +10,17 @@ import { parse as parseYaml } from 'yaml';
 import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest } from '../src/cli/commands.js';
-import type { IO } from '../src/cli/commands.js';
 import { askKey, splitList } from '../src/cli/prompt.js';
-import type { PromptChoice, Prompter } from '../src/cli/prompt.js';
+import type { Prompter } from '../src/cli/prompt.js';
 import { addTerm, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
+import { makeIO, scripted } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeIO(): IO & { out: string; err: string } {
-  const sink = {
-    out: '',
-    err: '',
-    stdout(s: string) {
-      sink.out += s;
-    },
-    stderr(s: string) {
-      sink.err += s;
-    },
-  };
-  return sink;
-}
 
-/**
- * A Prompter that answers from a queue. `ask`/`confirm` shift a string;
- * `choose` shifts an array of 1-based indices to select (multi) or a single
- * index (single). Every question is recorded for assertions.
- */
-type Answer = string | number | number[];
-function scripted(answers: Answer[]): Prompter & { asked: string[]; closed: boolean } {
-  const queue = [...answers];
-  const next = (question: string): Answer => {
-    if (queue.length === 0) throw new Error(`no scripted answer for: ${question}`);
-    return queue.shift() as Answer;
-  };
-  const fake = {
-    asked: [] as string[],
-    closed: false,
-    async ask(question: string, opts?: { default?: string }): Promise<string> {
-      fake.asked.push(question);
-      const a = String(next(question));
-      return a === '' && opts?.default !== undefined ? opts.default : a;
-    },
-    async confirm(question: string, def = false): Promise<boolean> {
-      fake.asked.push(question);
-      const a = String(next(question)).toLowerCase();
-      return a === '' ? def : a.startsWith('y');
-    },
-    async choose<T>(question: string, choices: PromptChoice<T>[], opts?: { multi?: boolean }): Promise<T[]> {
-      fake.asked.push(question);
-      const a = next(question);
-      const idx = Array.isArray(a) ? a : [Number(a)];
-      if (!opts?.multi && idx.length !== 1) throw new Error('single choice expects one index');
-      return idx.map((i) => choices[i - 1].value);
-    },
-    close(): void {
-      fake.closed = true;
-    },
-  };
-  return fake;
-}
 
 let tmp: string;
 let globalPath: string;

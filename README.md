@@ -9,6 +9,8 @@
 
 ![The live demo correcting a dictated sentence in the browser](docs/assets/demo.gif)
 
+**[lexicon.ashlr.ai](https://lexicon.ashlr.ai)** is the live demo, the benchmarks and the install commands.
+
 ```text
 You said:        "tell Ashlr.AI to deploy the Kubernetes auth service"
 STT heard:       "tell Ashler to deploy the Cooper Nettie's off service"
@@ -70,7 +72,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 ## What you get
 
-- **Eighteen MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` shows the file's terms before pinning it, and `import_dictionary` takes `dryRun`.
+- **Nineteen MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` shows the file's terms before pinning it, and `import_dictionary` takes `dryRun`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
 - **A CLI with 26 commands**, from `lexicon add` to `lexicon voice`.
 - **155 starter terms** in four packs (developer, AI, business, voice tools), one command each.
@@ -84,7 +86,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 |---|---|---|
 | Claude Code | Plugin, or MCP server plus two hooks that correct the prompt before the model reads it | [CLIENTS.md](docs/CLIENTS.md) |
 | Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop | `lexicon install <client> --apply` registers the MCP server | [CLIENTS.md](docs/CLIENTS.md) |
-| Any MCP client | stdio server, eighteen tools | [MCP.md](docs/MCP.md) |
+| Any MCP client | stdio server, nineteen tools | [MCP.md](docs/MCP.md) |
 | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe, Copilot | Browser extension: rewrites the composer when you press send | [EXTENSION.md](docs/EXTENSION.md) |
 | Any macOS app, any dictation tool | LexiconBar menu bar app: rewrites dictated text in the focused field through Accessibility, with an undo bubble | [MACOS-APP.md](docs/MACOS-APP.md) |
 | Shortcuts, Raycast, scripts, your own app | `lexicon serve`: loopback HTTP API on `127.0.0.1:41733` behind a bearer token | [LOCAL-API.md](docs/LOCAL-API.md) |
@@ -121,7 +123,7 @@ The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHIN
 | Page | What it covers |
 |---|---|
 | [CLI.md](docs/CLI.md) | Every command and flag, generated from `--help` |
-| [MCP.md](docs/MCP.md) | The MCP server: eighteen tools, two resources, two prompts |
+| [MCP.md](docs/MCP.md) | The MCP server: nineteen tools, two resources, two prompts |
 | [LEXICON-FILE.md](docs/LEXICON-FILE.md) | File locations, the term schema, settings, `never` |
 | [MATCHING.md](docs/MATCHING.md) | The three matching tiers and every guard against a false positive |
 | [EXPORTS.md](docs/EXPORTS.md) | Fifteen export formats and seven importers |
