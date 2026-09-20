@@ -441,7 +441,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     if (file.scope === 'project') await refreshTrust(file.path, store);
   }
   if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
-  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? ` — wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
   return 0;
 }
 

@@ -267,7 +267,7 @@ describe('review', () => {
     });
     expect(io.out).toContain('[2/4] Stale');
     expect(io.out).toContain('deleted Stale');
-    expect(io.out).toContain(`kept 3, deleted 1, edited 3 — wrote ${globalPath}`);
+    expect(io.out).toContain(`kept 3, deleted 1, edited 3. Wrote ${globalPath}`);
   });
 
   it('merges hits and terms written elsewhere while the review was running instead of overwriting them', async () => {
@@ -310,7 +310,7 @@ describe('review', () => {
     expect(written.terms.some((t) => t.canonical === 'Stale')).toBe(false);
     expect(written.terms[3]).toMatchObject({ canonical: 'Newcomer', aliases: ['new comer'] });
     expect(io.out).toContain('merged 4 changes made elsewhere during review');
-    expect(io.out).toContain(`kept 3, deleted 1, edited 1 — wrote ${globalPath}`);
+    expect(io.out).toContain(`kept 3, deleted 1, edited 1. Wrote ${globalPath}`);
   });
 
   it('does not report a merge when nothing changed on disk', async () => {

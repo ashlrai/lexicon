@@ -85,7 +85,7 @@ describe('lexicon stats (CLI)', () => {
 
   it('says so when no hits were recorded', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
-    expect(text).toContain('no hits recorded yet');
+    expect(text).toContain('no hits yet');
   });
 
   it('runStats --json reads the real lexicon files', async () => {

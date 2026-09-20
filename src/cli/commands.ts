@@ -386,7 +386,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
   }
 
   if (terms.length === 0) {
-    line(io, dim('no terms' + (opts.query || category ? ' match' : ' yet — try: lexicon add "Ashlr.AI" Ashler')));
+    line(io, dim('no terms' + (opts.query || category ? ' match' : ' yet. Try: lexicon add "Ashlr.AI" Ashler')));
   } else {
     const rows = terms.map((t) => [
       t.canonical,
