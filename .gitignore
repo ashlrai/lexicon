@@ -14,3 +14,4 @@ bench/audio/models/
 extension/dist/
 extension/dist-firefox/
 extension/*.zip
+.scratch/

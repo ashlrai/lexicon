@@ -10,6 +10,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { emptyLexicon, parseLexicon } from './schema.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import type {
   Lexicon,
   LexiconFile,
@@ -110,14 +112,19 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
     }
     text = await fs.readFile(filePath, 'utf8');
   } catch (err) {
-    if (isNotFound(err)) {
+    if (isEnoent(err)) {
       return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
     }
     throw err;
   }
   let raw: unknown;
   try {
-    raw = parseYaml(text);
+    // prettyErrors embeds up to ~80 characters of the offending source line,
+    // verbatim, in the thrown message. A project .lexicon.yaml is untrusted
+    // input that may be shown to an agent, so the reason is all we want: a
+    // deliberate syntax error after a line of instructions must not become a
+    // way to get that line quoted back into a model's context.
+    raw = parseYaml(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`Failed to parse lexicon YAML at ${filePath}: ${errorMessage(err)}`);
   }
@@ -135,16 +142,11 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
 }
 
 export async function writeLexiconFile(file: LexiconFile): Promise<void> {
-  const dir = path.dirname(file.path);
-  await fs.mkdir(dir, { recursive: true });
   const body = stringifyYaml(orderLexicon(file.lexicon), { lineWidth: 0 });
   const header = HEADER_COMMENT.split('\n')
     .map((line) => (line ? `# ${line}` : '#'))
     .join('\n');
-  const text = `${header}\n\n${body}`;
-  const tmp = `${file.path}.tmp`;
-  await fs.writeFile(tmp, text, 'utf8');
-  await fs.rename(tmp, file.path);
+  await writeFileAtomic(file.path, `${header}\n\n${body}`);
   file.exists = true;
 }
 
@@ -498,10 +500,3 @@ function dedupeCaseInsensitive(values: string[]): string[] {
   return out;
 }
 
-function isNotFound(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT';
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

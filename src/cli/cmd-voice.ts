@@ -4,9 +4,9 @@
  * ../voice/voice.ts so it can be tested without a microphone.
  */
 import { Command, InvalidArgumentError } from 'commander';
-import type { IO } from './commands.js';
 import { runVoice, runVoiceListDevices, runVoiceStatus, runVoiceToggle } from '../voice/voice.js';
 import type { VoiceOptions } from '../voice/voice.js';
+import type { IO } from './io.js';
 
 interface VoiceCliOptions {
   toggle?: boolean;

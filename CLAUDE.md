@@ -3,7 +3,7 @@
 Personal lexicon for voice-to-agents. Maps canonical spellings (Ashlr.AI) to what
 speech-to-text actually writes (Ashler, Ashlar) and rewrites transcripts before an
 agent sees them. Not a dictation app. Ground truth for every doc is the code;
-`CONTRACT.md` is the module API, `docs/ARCHITECTURE.md` the design.
+`docs/CONTRACT.md` is the module API, `docs/ARCHITECTURE.md` the design.
 
 ## Layout
 - `src/core/` pure library: `types.ts` (contract), `schema.ts`, `store.ts` (YAML files, project-write trust gate), `trust.ts` (trust.json registry), `matcher.ts` (alias > phonetic > fuzzy), `normalize.ts`, `suggest.ts`, `learn.ts` (parseCorrection, learnCorrection, suggestCanonicalFor), `stats.ts`, `harvest.ts`, `exporters/` (15 formats), `importers/` (7 formats + auto). `index.ts` is the only cross-module import path.
@@ -28,7 +28,7 @@ agent sees them. Not a dictation app. Ground truth for every doc is the code;
 ## Rules
 - Rebuild the plugin bundle (`npm run build:bundle`) before committing any change under `src/core`, `src/mcp`, `src/hooks`, `src/cli` (the MCP server imports CLI handlers) or a dependency bump, and commit `plugin/`. CI runs `npm run check:bundle` and fails on drift.
 - Run `npm run docs:cli` after changing any command or flag so `docs/CLI.md` matches `--help`.
-- Update `CONTRACT.md` when a public signature changes; update the README tables when a tool, format or command is added.
+- Update `docs/CONTRACT.md` when a public signature changes; update the README tables when a tool, format or command is added.
 
 ## Commands
 ```bash

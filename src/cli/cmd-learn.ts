@@ -3,24 +3,11 @@
  * command line (or from a pasted sentence) and report how the lexicon is used.
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
-import path from 'node:path';
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { renderTable, safe, safeLines } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
-
-function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
-}
-
-function resolveCwd(opts: CommonOptions): string {
-  return path.resolve(opts.cwd ?? process.cwd());
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+import { fail, line, renderTable, resolveCwd, safe } from './io.js';
+import type { CommonOptions, IO } from './io.js';
 
 function usageHint(io: IO): void {
   line(io, 'usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI');
@@ -84,8 +71,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
     return 0;
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    return 1;
+    return fail(io, err);
   }
 }
 
@@ -147,8 +133,7 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     }
     return 0;
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    return 1;
+    return fail(io, err);
   }
 }
 

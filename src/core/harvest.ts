@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
+import { isRecord } from '../util/json.js';
 
 const MAX_FILES = 5000;
 const MAX_FILE_BYTES = 512 * 1024;
@@ -733,6 +734,3 @@ function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}

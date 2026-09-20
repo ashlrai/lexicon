@@ -8,71 +8,33 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, promises as fs } from 'node:fs';
-import path from 'node:path';
 import type { Command } from 'commander';
 import {
   ProjectTrustError,
+  TERM_CATEGORIES,
   addTerm,
   emptyLexicon,
   isTrusted,
   readLexiconFile,
   refreshTrust,
   resolvePaths,
-  sanitizeForDisplay,
   writeLexiconFile,
 } from '../core/index.js';
 import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
-import type { CommonOptions, IO } from './commands.js';
-import { askKey, createPrompter, isInteractive, splitList, styler } from './prompt.js';
+import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
-
-const CATEGORIES: readonly TermCategory[] = [
-  'brand',
-  'person',
-  'product',
-  'acronym',
-  'identifier',
-  'place',
-  'other',
-];
-
-const { bold, dim } = styler(process.stdout);
-
-function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
-}
-
-function resolveCwd(opts: CommonOptions): string {
-  return path.resolve(opts.cwd ?? process.cwd());
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * Terminal-safe rendering of paths and lexicon-derived text (see
- * `safe` in commands.ts; defined again here because commands.ts imports this
- * module and a value import back would make the cycle a runtime one).
- */
-const safe: (s: string) => string = sanitizeForDisplay;
-
-function safeLines(s: string): string {
-  return s.split('\n').map(safe).join('\n');
-}
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
+import { errorMessage } from '../util/errors.js';
+import { bold, dim, line, plural, resolveCwd, safe, safeLines } from './io.js';
+import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
-  return (CATEGORIES as readonly string[]).includes(value);
+  return (TERM_CATEGORIES as readonly string[]).includes(value);
 }
 
 /** Ask for a category until a valid one (or the default) is given. */
 async function askCategory(prompter: Prompter, def: TermCategory): Promise<TermCategory> {
   for (;;) {
-    const answer = (await prompter.ask(`category (${CATEGORIES.join('|')})`, { default: def })).trim().toLowerCase();
+    const answer = (await prompter.ask(`category (${TERM_CATEGORIES.join('|')})`, { default: def })).trim().toLowerCase();
     if (isCategory(answer)) return answer;
     // Re-ask; the prompter shows the list in the question.
   }
@@ -346,7 +308,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   }
   const category = opts.category?.toLowerCase();
   if (category !== undefined && !isCategory(category)) {
-    throw new Error(`unknown category "${opts.category}" (expected one of: ${CATEGORIES.join(', ')})`);
+    throw new Error(`unknown category "${opts.category}" (expected one of: ${TERM_CATEGORIES.join(', ')})`);
   }
 
   const file = await pickFile(opts, cwd);

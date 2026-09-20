@@ -10,7 +10,7 @@
 
 - [ ] `npm run typecheck`, `npm run build` and `npm test` pass locally
 - [ ] Tests added or updated (`tests/*.test.ts`)
-- [ ] `CONTRACT.md` updated if a public signature changed
+- [ ] `docs/CONTRACT.md` updated if a public signature changed
 - [ ] `CHANGELOG.md` has a bullet under the next version
 - [ ] README updated if a command, flag, format or client changed
 - [ ] Relative imports end in `.js`; no `any` in exported signatures

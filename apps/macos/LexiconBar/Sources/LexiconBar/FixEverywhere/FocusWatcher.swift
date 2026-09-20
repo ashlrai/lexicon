@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import LexiconBarKit
 
 /// Follows the frontmost app and its focused text field through the
 /// Accessibility API. One `AXObserver` per app pid receives
@@ -17,6 +18,9 @@ final class FocusWatcher: @unchecked Sendable {
         let appName: String
         /// `AX.key` of the element; used for rate limits and undo.
         let key: String
+        /// The term in the field's own labels that made it look like it holds
+        /// a secret, read once when focus lands. nil for an ordinary field.
+        let secretHint: String?
 
         static func == (a: Field, b: Field) -> Bool { a.key == b.key && CFEqual(a.element, b.element) }
     }
@@ -38,6 +42,8 @@ final class FocusWatcher: @unchecked Sendable {
     private let ax: AXThread
     private var observers: [pid_t: AXObserver] = [:]
     private var observedElements: [pid_t: AXUIElement] = [:]
+    /// pids already given the `AXEnhancedUserInterface` nudge.
+    private var escalated: Set<pid_t> = []
     private var activeApp: FrontmostApp?
     private var current: Field?
     private var lastValue: String = ""
@@ -142,6 +148,7 @@ final class FocusWatcher: @unchecked Sendable {
             ax.remove(AXObserverGetRunLoopSource(observer))
         }
         observedElements[pid] = nil
+        escalated.remove(pid)
         if current?.pid == pid { setCurrent(nil, value: "") }
     }
 
@@ -164,6 +171,7 @@ final class FocusWatcher: @unchecked Sendable {
     private func refreshFocus(pid: pid_t) {
         let appElement = AXUIElementCreateApplication(pid)
         guard let focused = AX.element(appElement, kAXFocusedUIElementAttribute as String) else {
+            escalateAccessibility(pid: pid, appElement: appElement)
             setCurrent(nil, value: "")
             return
         }
@@ -173,9 +181,41 @@ final class FocusWatcher: @unchecked Sendable {
             return
         }
         let field = Field(element: focused, pid: pid, bundleID: activeApp?.bundleID, appName: activeApp?.name ?? "",
-                          key: AX.key(focused, pid: pid))
+                          key: AX.key(focused, pid: pid), secretHint: SecretFieldHeuristic.match(AX.hints(focused)))
         observe(element: focused, pid: pid)
         setCurrent(field, value: AX.value(focused) ?? "")
+    }
+
+    /// Some apps answer "no focused element" until an assistive client asks
+    /// them to build an Accessibility tree, and the two opt-in switches are
+    /// not the same one. Electron and most Chromium embedders take
+    /// `AXManualAccessibility`, which is set for every app in
+    /// `ensureObserver`. The Codex/ChatGPT desktop app rejects that one
+    /// (`kAXErrorAttributeUnsupported`) and stays dark: its whole window is
+    /// six nested empty `AXGroup`s and `AXFocusedUIElement` answers
+    /// `kAXErrorNoValue`. Writing `AXEnhancedUserInterface` — AppKit's own
+    /// switch, the one VoiceOver sets — wakes it, and the composer turns out
+    /// to be an ordinary writable `AXTextArea`.
+    ///
+    /// What actually wakes it is the *request*, not the attribute: the write
+    /// below reports `kAXErrorNotImplemented` on Codex and the tree appears
+    /// anyway, while the 500 ms focus poll had been reading the same app for
+    /// minutes without ever waking it. So this is not "set a flag" so much as
+    /// "knock the way an assistive client knocks", and the error code is
+    /// logged rather than acted on.
+    ///
+    /// It is still not done for every app on sight: where the attribute *is*
+    /// honoured, AppKit starts animating window frame changes while enhanced
+    /// mode is on, which is why window managers complain about it. Only an
+    /// app that has already told us it has no focused element gets the knock,
+    /// at most once per pid; an app that answers normally never sees it. The
+    /// 500 ms poll retries the focus read afterwards.
+    private func escalateAccessibility(pid: pid_t, appElement: AXUIElement) {
+        guard !escalated.contains(pid) else { return }
+        escalated.insert(pid)
+        let err = AX.set(appElement, "AXEnhancedUserInterface", bool: true)
+        NSLog("LexiconBar: %@ reported no focused element; enabling AXEnhancedUserInterface (%d)",
+              activeApp?.name ?? "pid \(pid)", err.rawValue)
     }
 
     /// Adds the value notification on the focused element itself (some apps

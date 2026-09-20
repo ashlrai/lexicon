@@ -21,6 +21,8 @@ import path from 'node:path';
 import { resolvePaths } from './store.js';
 import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
+import { writeFileAtomic } from '../util/atomic.js';
+import { formatJson } from '../util/json.js';
 
 export type TrustStatus = 'trusted' | 'untrusted' | 'changed';
 
@@ -126,13 +128,8 @@ export async function readTrustRegistry(opts: StoreOptions = {}): Promise<TrustR
   return { version: 1, trusted };
 }
 
-/** Atomic write (tmp + rename), mkdir -p, like store.ts. */
 export async function writeTrustRegistry(registry: TrustRegistry, opts: StoreOptions = {}): Promise<void> {
-  const target = getTrustPath(opts);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
-  await fs.rename(tmp, target);
+  await writeFileAtomic(getTrustPath(opts), formatJson(registry));
 }
 
 // ---------------------------------------------------------------------------

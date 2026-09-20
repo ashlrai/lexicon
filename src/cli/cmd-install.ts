@@ -11,12 +11,21 @@
  * `claude` delegates to runInstallClaude in ./commands.ts (which also merges
  * the UserPromptSubmit hook); the `install-claude` command remains as an alias.
  */
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { resolveIntegrationPaths, runInstallClaude, safe } from './commands.js';
-import type { CommonOptions, IO, InstallOutcome } from './commands.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
+import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
+import { bold, dim, green, indent, line, red, safe, safeLines, yellow } from './io.js';
+import type { CommonOptions, IO } from './io.js';
+import {
+  HOOK_EVENTS,
+  defaultExec,
+  hookConfigFor,
+  mergeHookIntoSettings,
+  resolveIntegrationPaths,
+} from './claude-settings.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,40 +96,6 @@ export interface InstallTarget {
 export interface MergeResult<T> {
   next: T;
   changed: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Output helpers (kept local: ./commands.ts does not export its formatters)
-// ---------------------------------------------------------------------------
-
-function paint(code: string): (s: string) => string {
-  return (s) => (process.stdout.isTTY ? `\x1b[${code}m${s}\x1b[0m` : s);
-}
-const bold = paint('1');
-const dim = paint('2');
-const green = paint('32');
-
-function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
-}
-
-function indent(s: string, prefix: string): string {
-  return s
-    .split('\n')
-    .map((l) => prefix + l)
-    .join('\n');
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isEnoent(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT';
 }
 
 function isInstallClient(value: string): value is InstallClient {
@@ -351,23 +326,18 @@ async function writeText(file: string, text: string): Promise<void> {
 }
 
 /** Apply a JSON target. Returns what happened for the report line. */
-async function applyJson(target: InstallTarget): Promise<'created' | 'updated' | 'unchanged'> {
-  const { text, existed } = await readText(target.file);
-  let current: unknown = {};
-  if (text.trim() !== '') {
-    try {
-      current = JSON.parse(text) as unknown;
-    } catch (err) {
-      throw new Error(`${target.file} is not valid JSON (${errorMessage(err)}); fix or remove it first`);
-    }
+async function applyJson(target: InstallTarget): Promise<InstallOutcome> {
+  const read = await readJsonFile(target.file);
+  if (read.error !== undefined) {
+    throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
   }
-  const { next, changed } = mergeServerIntoJson(current, target.key, target.entry);
+  const { next, changed } = mergeServerIntoJson(read.value ?? {}, target.key, target.entry);
   if (!changed) return 'unchanged';
-  await writeText(target.file, `${JSON.stringify(next, null, 2)}\n`);
-  return existed ? 'updated' : 'created';
+  await writeJsonFile(target.file, next);
+  return read.exists ? 'updated' : 'created';
 }
 
-async function applyToml(target: InstallTarget): Promise<'created' | 'updated' | 'unchanged'> {
+async function applyToml(target: InstallTarget): Promise<InstallOutcome> {
   const { text, existed } = await readText(target.file);
   const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
   if (!changed) return 'unchanged';
@@ -488,4 +458,99 @@ export function registerInstallCommands(program: Command, io: IO): void {
       const code = await runInstall(client, merged, io);
       if (code !== 0) process.exitCode = code;
     });
+}
+
+// ---------------------------------------------------------------------------
+// install claude: the MCP registration + the settings.json hooks
+// ---------------------------------------------------------------------------
+
+export interface InstallClaudeOptions extends CommonOptions {
+  apply?: boolean;
+  scope?: string;
+}
+
+/** What an installer did to one file; reported through `InstallClaudeDeps.onWritten` / `InstallDeps.onWritten`. */
+export type InstallOutcome = 'created' | 'updated' | 'unchanged';
+
+export interface InstallClaudeDeps {
+  /** Directory containing the built CLI (dist/cli). Default: the package root's dist/cli. */
+  cliDir?: string;
+  /** Claude settings file. Default ~/.claude/settings.json. */
+  settingsPath?: string;
+  exec?: (file: string, args: readonly string[]) => string;
+  /** Called once per config file touched under `--apply` (setup uses it for its summary). */
+  onWritten?: (file: string, outcome: InstallOutcome) => void;
+}
+
+export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
+
+export async function runInstallClaude(
+  opts: InstallClaudeOptions,
+  io: IO,
+  deps: InstallClaudeDeps = {},
+): Promise<number> {
+  const scope = opts.scope ?? 'user';
+  if (scope !== 'user' && scope !== 'project') {
+    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
+  const settingsPath = deps.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json');
+  const exec = deps.exec ?? defaultExec;
+  let failed = false;
+
+  // 1. MCP server registration ------------------------------------------------
+  const mcpArgs = ['mcp', 'add', '--scope', scope, 'lexicon', '--', 'node', serverPath];
+  line(io, bold('1. Register the MCP server'));
+  line(io, `   claude ${mcpArgs.map(quoteArg).join(' ')}`);
+  if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
+  if (opts.apply) {
+    if (!existsSync(serverPath)) {
+      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
+    }
+    try {
+      const out = exec('claude', mcpArgs).trim();
+      line(io, green(`   ${out || 'registered'}`));
+    } catch (err) {
+      failed = true;
+      line(io, red(`   failed: ${safeLines(errorMessage(err))}`));
+    }
+  }
+  line(io);
+
+  // 2. UserPromptSubmit + SessionStart hooks ----------------------------------------
+  // Always quoted: the path is embedded in a shell command string in settings.json.
+  const hookCommand = `node "${hookPath.replace(/(["\\$`])/g, '\\$1')}"`;
+  line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
+  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, 5, HOOK_EVENTS), null, 2), '   '));
+  if (opts.apply) {
+    const read = await readJsonFile(settingsPath);
+    if (read.error !== undefined) {
+      throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
+    }
+    const existed = read.exists;
+    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, 5, HOOK_EVENTS);
+    if (changed) {
+      await writeJsonFile(settingsPath, settings);
+      line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
+      deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
+    } else {
+      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+      deps.onWritten?.(settingsPath, 'unchanged');
+    }
+  }
+  line(io);
+
+  // 3. CLAUDE.md nudge ----------------------------------------------------------------
+  line(io, bold('3. Add to your CLAUDE.md'));
+  line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (!opts.apply) {
+    line(io);
+    line(io, dim('run again with --apply to perform steps 1 and 2'));
+  }
+  return failed ? 1 : 0;
+}
+
+function quoteArg(s: string): string {
+  return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, '\\$1')}"` : s;
 }

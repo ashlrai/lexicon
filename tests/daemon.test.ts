@@ -30,7 +30,6 @@ import {
   ExecError,
   createClipboardBackend,
   detectClipboardBackend,
-  findOnPath,
   powershellBackend,
 } from '../src/daemon/clipboard-backends.js';
 import type { ClipboardExec } from '../src/daemon/clipboard-backends.js';
@@ -472,46 +471,5 @@ describe('detectClipboardBackend', () => {
 
   it('unknown platform -> error', async () => {
     await expect(detectClipboardBackend('haiku' as NodeJS.Platform, {}, which())).rejects.toThrow(/does not support/);
-  });
-});
-
-describe('findOnPath', () => {
-  it('splits PATH with the platform delimiter and probes each dir', async () => {
-    const probed: string[] = [];
-    const exists = async (c: string) => {
-      probed.push(c);
-      return c === '/usr/local/bin/xclip';
-    };
-    expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '/usr/bin:/usr/local/bin' }, exists })).toBe('/usr/local/bin/xclip');
-    expect(probed).toEqual(['/usr/bin/xclip', '/usr/local/bin/xclip']);
-    expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '' }, exists })).toBeUndefined();
-  });
-
-  it('on win32 tries PATHEXT extensions (then the bare name) in every PATH entry', async () => {
-    const probed: string[] = [];
-    const exists = async (c: string) => {
-      probed.push(c);
-      return c === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE';
-    };
-    const env = { Path: 'C:\\Tools;C:\\Windows\\System32\\WindowsPowerShell\\v1.0', PATHEXT: '.COM;.EXE' };
-    expect(await findOnPath('powershell', { platform: 'win32', env, exists })).toBe(
-      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE',
-    );
-    expect(probed.slice(0, 5)).toEqual([
-      'C:\\Tools\\powershell.COM',
-      'C:\\Tools\\powershell.EXE',
-      'C:\\Tools\\powershell.com',
-      'C:\\Tools\\powershell.exe',
-      'C:\\Tools\\powershell',
-    ]);
-    // A name that already has an extension is probed as-is.
-    probed.length = 0;
-    await findOnPath('wl-copy.exe', { platform: 'win32', env, exists });
-    expect(probed).toEqual(['C:\\Tools\\wl-copy.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\wl-copy.exe']);
-  });
-
-  it('finds a real executable on this machine', async () => {
-    const node = await findOnPath('node');
-    expect(node).toBeDefined();
   });
 });

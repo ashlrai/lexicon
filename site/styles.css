@@ -658,7 +658,7 @@ mark.hit[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%
   color: var(--muted);
 }
 
-.privacy { font-weight: 600; color: var(--text); font-size: 15px; }
+.privacy { font-weight: 500; color: var(--text); font-size: 14px; line-height: 1.55; max-width: 74ch; margin: 0; }
 
 .bench {
   display: flex;

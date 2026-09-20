@@ -15,6 +15,7 @@
  * rather than rejected. See SECURITY.md.
  */
 import { z } from 'zod';
+import { TERM_CATEGORIES, TERM_SCOPES, TERM_SOURCES } from './types.js';
 import type { Lexicon } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -154,27 +155,11 @@ function WordList(maxItems: number, what: string) {
     );
 }
 
-export const TermCategorySchema = z.enum([
-  'brand',
-  'person',
-  'product',
-  'acronym',
-  'identifier',
-  'place',
-  'other',
-]);
+export const TermCategorySchema = z.enum(TERM_CATEGORIES);
 
-export const TermScopeSchema = z.enum(['global', 'project']);
+export const TermScopeSchema = z.enum(TERM_SCOPES);
 
-export const TermSourceSchema = z.enum([
-  'user',
-  'harvest:repo',
-  'harvest:git',
-  'harvest:package',
-  'import',
-  'learned',
-  'pack',
-]);
+export const TermSourceSchema = z.enum(TERM_SOURCES);
 
 export const TermSchema = z.object({
   canonical: NonEmptyWord,

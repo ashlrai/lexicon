@@ -18,24 +18,10 @@ import {
   suggestTerms,
 } from '../core/index.js';
 import type { LoadedLexicon, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
-import { renderTable, safe, safeLines } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
-import { askKey, createPrompter, isInteractive, styler } from './prompt.js';
+import { askKey, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
-
-const { bold, dim } = styler(process.stdout);
-
-function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
+import { bold, dim, fail, line, plural, renderTable, safe, safeLines, warnSkippedProject } from './io.js';
+import type { CommonOptions, IO } from './io.js';
 
 export interface SuggestCliOptions extends CommonOptions {
   json?: boolean;
@@ -171,18 +157,14 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   let suggestions: TermSuggestion[];
   try {
     loaded = await load(store);
-    if (loaded.skippedProject) {
-      const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
-      io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
-    }
+    warnSkippedProject(loaded, io);
     const input: SuggestInput = { loaded };
     if (harvestDir !== undefined) input.cwd = harvestDir;
     if (opts.limit !== undefined) input.limit = opts.limit;
     if (deps.now !== undefined) input.now = deps.now;
     suggestions = await suggest(input);
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    return 1;
+    return fail(io, err);
   }
 
   if (opts.json) {

@@ -2,7 +2,10 @@
  * Helpers shared by the importers. Internal to importers/; not re-exported
  * from core.
  */
+import { isTermCategory } from '../types.js';
 import type { Term, TermCategory } from '../types.js';
+export { isTermCategory } from '../types.js';
+export { isRecord } from '../../util/json.js';
 
 /** One parsed row before merging: a partial term plus where it came from. */
 export interface ImportRow {
@@ -19,20 +22,6 @@ export interface ImportSkip {
 export interface RawImport {
   rows: ImportRow[];
   skipped: ImportSkip[];
-}
-
-const CATEGORIES: readonly TermCategory[] = [
-  'brand',
-  'person',
-  'product',
-  'acronym',
-  'identifier',
-  'place',
-  'other',
-];
-
-export function isTermCategory(value: unknown): value is TermCategory {
-  return typeof value === 'string' && (CATEGORIES as readonly string[]).includes(value);
 }
 
 /** Normalize a free-text category cell: trimmed, lower-cased, else undefined. */
@@ -56,16 +45,4 @@ export function rowFor(
   if (extra.phonetic?.trim()) term.phonetic = extra.phonetic.trim();
   if (extra.notes?.trim()) term.notes = extra.notes.trim();
   return { row: { line, term } };
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** Count newlines before `offset` to turn a string index into a 1-based line. */
-export function lineAt(content: string, offset: number): number {
-  let line = 1;
-  const end = Math.min(offset, content.length);
-  for (let i = 0; i < end; i++) if (content.charCodeAt(i) === 10) line++;
-  return line;
 }

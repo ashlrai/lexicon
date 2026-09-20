@@ -4,15 +4,47 @@ import Foundation
 /// is a command, not a sentence) and password managers are excluded by
 /// default; the user can add or remove ids. Entries match a bundle id
 /// case-insensitively; a trailing `.*` matches a prefix (`com.jetbrains.*`).
+///
+/// Vendor prefixes are preferred over exact ids for the password managers.
+/// An exact list is wrong the moment a vendor ships a new bundle id — Keeper
+/// alone has shipped under `com.callpod.*` and `com.keepersecurity.*` — and
+/// being wrong here means reading a vault field and POSTing it to the local
+/// API. `SecretFieldHeuristic` is the second, id-independent guard for the
+/// managers that are not on any list.
 public struct AppExclusions: Equatable, Sendable {
     public static let defaults: [String] = [
+        // Terminals: a rewrite in a shell is a command, not a sentence.
         "com.apple.Terminal",
         "com.googlecode.iterm2",
         "dev.warp.Warp-Stable",
+        "dev.warp.Warp-Preview",
+        "com.mitchellh.ghostty",
+        "net.kovidgoyal.kitty",
+        "io.alacritty",
+        "com.github.wez.wezterm",
+        "co.zeit.hyper",
+        // Apple's own credential stores.
         "com.apple.Passwords",
-        "com.1password.1password",
-        "com.agilebits.onepassword7",
         "com.apple.keychainaccess",
+        // Password managers.
+        "com.1password.*",
+        "com.agilebits.*",
+        "com.bitwarden.*",
+        "com.dashlane.*",
+        "com.lastpass.*",
+        "org.keepassxc.*",
+        "com.kueppers.keepassx",
+        "com.nordpass.*",
+        "com.nordsecurity.*",
+        "in.sinew.*",
+        "me.proton.pass",
+        "me.proton.pass.*",
+        "com.callpod.*",
+        "com.keepersecurity.*",
+        "com.siber.*",
+        "com.markmcguill.strongbox.*",
+        "com.zoho.vault",
+        "com.roboform.*",
     ]
 
     public var bundleIDs: [String]

@@ -1,6 +1,6 @@
 # Architecture
 
-`@ashlr/lexicon` is one YAML file plus the ways to apply it: an MCP server, Claude Code hooks, a local HTTP API with a browser extension and a menu bar app on top, a local voice pipeline, a clipboard daemon, and exports into dictation apps. Everything below is written against [CONTRACT.md](../CONTRACT.md) and `src/core/types.ts`.
+`@ashlr/lexicon` is one YAML file plus the ways to apply it: an MCP server, Claude Code hooks, a local HTTP API with a browser extension and a menu bar app on top, a local voice pipeline, a clipboard daemon, and exports into dictation apps. Everything below is written against [CONTRACT.md](CONTRACT.md) and `src/core/types.ts`.
 
 ## Module map
 
@@ -38,7 +38,7 @@ src/
     history.ts              voice/history.jsonl (newest 1000 lines)
     voice.ts                runVoice, runVoiceToggle, runVoiceStatus, runVoiceListDevices; exit codes 0/1/2/3
   cli/
-    index.ts                commander wiring (bin: lexicon), 25 commands
+    index.ts                commander wiring (bin: lexicon), 26 commands
     commands.ts             init/add/remove/list/normalize/harvest/export/path/doctor/install-claude
     prompt.ts               dependency-free readline prompter used by the interactive commands
     cmd-import.ts           import

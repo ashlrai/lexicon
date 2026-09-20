@@ -12,8 +12,9 @@ import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
 import { resolveCliEntry } from './cli-entry.js';
-import { safe, safeLines } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
+import { errorMessage } from '../util/errors.js';
+import { fail, line, safe, safeLines, tildify } from './io.js';
+import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
   SYSTEMD_UNIT_NAME,
@@ -82,22 +83,8 @@ export interface ServeDeps {
   onListening?: (info: { port: number; url: string; token: string }) => void;
 }
 
-function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 function red(s: string, env: NodeJS.ProcessEnv): string {
   return process.stderr.isTTY && !env.NO_COLOR ? `\x1b[31m${s}\x1b[0m` : s;
-}
-
-/** `~/.config/lexicon/serve.json` when the path sits under the home directory. */
-function tildify(p: string, home: string): string {
-  const rel = path.relative(home, p);
-  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? `~/${rel.split(path.sep).join('/')}` : p;
 }
 
 function storeOpts(opts: ServeOptions): { globalPath?: string } {
@@ -335,8 +322,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   try {
     cliPath = resolveCliEntry({ env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    return 1;
+    return fail(io, err);
   }
   if (platform === 'darwin' || platform === 'linux') {
     // A service whose program does not exist would crash-loop under KeepAlive /
@@ -480,8 +466,7 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
   try {
     info = await server.start();
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    return 1;
+    return fail(io, err);
   }
   if (opts.json) {
     line(io, JSON.stringify({ url: info.url, port: info.port, host: info.host, token: info.token, configPath: info.configPath }));
@@ -524,8 +509,7 @@ export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {})
     if (opts.uninstall) return await runServeUninstall(opts, io, deps);
     return await runServeForeground(opts, io, deps);
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    return 1;
+    return fail(io, err);
   }
 }
 

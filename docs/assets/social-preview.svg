@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b0f14"/>
+      <stop offset="100%" stop-color="#101a1d"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0f766e" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <circle cx="1180" cy="-60" r="330" fill="#0f766e" opacity="0.10"/>
+  <circle cx="90" cy="690" r="280" fill="#2dd4bf" opacity="0.06"/>
+  <rect x="0" y="0" width="1280" height="6" fill="url(#glow)"/>
+
+  <!-- wordmark -->
+  <g transform="translate(96,96)">
+    <rect x="0" y="0" width="60" height="60" rx="15" fill="#0f766e"/>
+    <path d="M18 16 v28 h24" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="82" y="43" font-size="40" font-weight="700" fill="#f2f5f8" letter-spacing="-0.5">@ashlr/lexicon</text>
+  </g>
+
+  <!-- pitch -->
+  <text x="96" y="252" font-size="52" font-weight="700" fill="#ffffff" letter-spacing="-1.2">One file of the words</text>
+  <text x="96" y="316" font-size="52" font-weight="700" fill="#ffffff" letter-spacing="-1.2">speech-to-text gets wrong.</text>
+  <text x="96" y="372" font-size="27" font-weight="400" fill="#9aa6b2">Applied everywhere your voice lands: MCP, Claude Code, the browser, macOS.</text>
+
+  <!-- before / after card -->
+  <g transform="translate(96,424)">
+    <rect x="0" y="0" width="1088" height="132" rx="18" fill="#141c24" stroke="#233240" stroke-width="1.5"/>
+
+    <text x="40" y="52" font-size="17" font-weight="600" fill="#6b7784" letter-spacing="1.6">STT HEARD</text>
+    <text x="40" y="99" font-size="42" font-weight="600" fill="#7c8894" font-family="Menlo, Consolas, monospace">Ashler</text>
+    <line x1="38" y1="84" x2="197" y2="84" stroke="#f97066" stroke-width="4" stroke-linecap="round"/>
+
+    <path d="M292 84 h72" stroke="#5a6874" stroke-width="4" stroke-linecap="round"/>
+    <path d="M352 72 l16 12 l-16 12" fill="none" stroke="#5a6874" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="404" y="52" font-size="17" font-weight="600" fill="#2dd4bf" letter-spacing="1.6">YOUR AGENT READS</text>
+    <text x="404" y="99" font-size="42" font-weight="700" fill="#2dd4bf" font-family="Menlo, Consolas, monospace">Ashlr.AI</text>
+
+    <line x1="800" y1="34" x2="800" y2="98" stroke="#233240" stroke-width="1.5"/>
+    <text x="848" y="58" font-size="19" fill="#6b7784">proper nouns recovered</text>
+    <text x="848" y="100" font-size="34" font-weight="700" fill="#f2f5f8">41.9% <tspan fill="#5a6874" font-weight="400">&#8594;</tspan> 86.4%</text>
+  </g>
+</svg>

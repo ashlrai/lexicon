@@ -15,6 +15,9 @@ final class FixEngine: @unchecked Sendable {
         var minWords = 3
         var exclusions = AppExclusions()
         var maxFieldLength = 20_000
+        /// Silence that ends a streamed dictation run; see `BurstDetector`.
+        var runQuietMs = 1500
+        var maxRunMs = 12_000
         /// One API call per element per this many seconds.
         var rateLimit: TimeInterval = 0.3
     }
@@ -72,7 +75,7 @@ final class FixEngine: @unchecked Sendable {
             detector?.config = detectorConfig
             if wasEnabled, !config.enabled { detector = nil; settleGeneration += 1 }
             if !wasEnabled, config.enabled, let field {
-                detector = BurstDetector(initialText: AX.value(field.element) ?? "", config: detectorConfig)
+                detector = makeDetector(for: field, value: AX.value(field.element) ?? "")
             }
         }
     }
@@ -85,14 +88,34 @@ final class FixEngine: @unchecked Sendable {
     // MARK: AX thread
 
     private var detectorConfig: BurstDetector.Config {
-        BurstDetector.Config(settleMs: config.settleMs, minWords: config.minWords, maxFieldLength: config.maxFieldLength)
+        BurstDetector.Config(settleMs: config.settleMs, minWords: config.minWords,
+                             maxFieldLength: config.maxFieldLength,
+                             runQuietMs: config.runQuietMs, maxRunMs: config.maxRunMs)
     }
 
     private func fieldChanged(_ field: FocusWatcher.Field?, value: String) {
         self.field = field
         settleGeneration += 1
-        detector = field.map { _ in BurstDetector(initialText: value, config: detectorConfig) }
+        detector = field.flatMap { makeDetector(for: $0, value: value) }
         publishUndoAvailability(currentText: value)
+    }
+
+    /// A detector, unless this field is one we refuse outright.
+    ///
+    /// Both refusals are also re-checked in `handle` before anything is sent,
+    /// but deciding here means a field in a password manager is never even
+    /// accumulated: without a detector, `valueChanged` returns immediately and
+    /// no snapshot of what the user types into a vault is ever held.
+    private func makeDetector(for field: FocusWatcher.Field, value: String) -> BurstDetector? {
+        if config.exclusions.isExcluded(field.bundleID) {
+            log("not watching \(field.bundleID ?? field.appName): excluded")
+            return nil
+        }
+        if let hint = field.secretHint {
+            log("not watching this field in \(field.appName): it looks like it holds a secret (\(hint))")
+            return nil
+        }
+        return BurstDetector(initialText: value, config: detectorConfig)
     }
 
     private func valueChanged(_ field: FocusWatcher.Field, value: String) {
@@ -118,6 +141,18 @@ final class FixEngine: @unchecked Sendable {
         case .waiting:
             // A change landed after the timer was armed; the newer timer will fire.
             return
+        case .coalescing:
+            // Dictation is still streaming in. Nothing was decided and the
+            // detector kept the run pending, so ask again shortly — no value
+            // change is coming to re-arm the timer if the user has stopped
+            // speaking mid-run.
+            settleGeneration += 1
+            let generation = settleGeneration
+            ax.after(0.25) { [weak self] in
+                guard let self, generation == self.settleGeneration else { return }
+                self.settle()
+            }
+            return
         case .skipped(let why):
             log("skip in \(field.appName): \(why)")
         case .burst(let burst):
@@ -128,6 +163,13 @@ final class FixEngine: @unchecked Sendable {
     private func handle(_ burst: Burst, in field: FocusWatcher.Field) {
         if config.exclusions.isExcluded(field.bundleID) {
             log("skip: \(field.bundleID ?? field.appName) is excluded")
+            return
+        }
+        // The bundle-id list cannot know about every password manager; this
+        // catches a secret-looking field in any app, including one we have
+        // never heard of. Nothing about the burst is logged or sent.
+        if let hint = field.secretHint {
+            log("skip in \(field.appName): field looks like it holds a secret (\(hint))")
             return
         }
         if let last = lastRequestAt[field.key], now - last < config.rateLimit {

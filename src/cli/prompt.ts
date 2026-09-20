@@ -6,6 +6,7 @@
  */
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
+import { styler } from './io.js';
 
 export interface PromptChoice<T> {
   label: string;
@@ -31,12 +32,6 @@ export interface PrompterIO {
   output?: NodeJS.WritableStream;
 }
 
-/** Text styling that only emits escape codes when `output` is a terminal. */
-export interface Styler {
-  bold(s: string): string;
-  dim(s: string): string;
-}
-
 /** Thrown by a prompter when its input closes (EOF, ctrl-D) before an answer arrives. */
 export class PromptClosedError extends Error {
   constructor() {
@@ -47,15 +42,6 @@ export class PromptClosedError extends Error {
 
 function outputIsTTY(output: NodeJS.WritableStream | undefined): boolean {
   return Boolean((output as { isTTY?: boolean } | undefined)?.isTTY);
-}
-
-export function styler(output: NodeJS.WritableStream | undefined = process.stdout): Styler {
-  const tty = outputIsTTY(output);
-  const paint =
-    (code: string) =>
-    (s: string): string =>
-      tty ? `\x1b[${code}m${s}\x1b[0m` : s;
-  return { bold: paint('1'), dim: paint('2') };
 }
 
 /** True when both stdin and stdout are terminals, i.e. a human can answer prompts. */

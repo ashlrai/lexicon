@@ -19,8 +19,8 @@ import {
   untrustProject,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { renderTable, safe, safeLines } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
+import { renderTable, resolveCwd, safe, safeLines } from './io.js';
+import type { CommonOptions, IO } from './io.js';
 
 export interface TrustOptions extends CommonOptions {
   list?: boolean;
@@ -28,10 +28,6 @@ export interface TrustOptions extends CommonOptions {
 
 /** Max terms shown in the preview before "... and N more". */
 const PREVIEW_ROWS = 25;
-
-function resolveCwd(opts: CommonOptions): string {
-  return path.resolve(opts.cwd ?? process.cwd());
-}
 
 /** Explicit path (relative to cwd) or the project file resolved for cwd. */
 function resolveTarget(target: string | undefined, cwd: string): string | undefined {

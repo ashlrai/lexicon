@@ -4,14 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lexicon demo</title>
-  <meta name="description" content="Say your company name and watch it get fixed. @ashlr/lexicon rewrites what speech-to-text got wrong before your agent sees it. Runs entirely in the browser.">
+  <meta name="description" content="Say your company name and watch it get fixed. @ashlr/lexicon rewrites what speech-to-text got wrong before your agent sees it. The matcher runs entirely in your browser; your lexicon never leaves this page.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Cpath d='M10 9v14h12' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <!-- No remote stylesheets or fonts: the page must not send a visitor's IP to a third party. The font stacks in styles.css fall back to the system UI and mono faces. -->
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -58,6 +56,7 @@
         </button>
         <p id="interim" class="interim" aria-live="polite"></p>
       </div>
+      <p class="hint">Dictation uses your browser's own speech recognizer. In Chrome that is a cloud service: it streams your microphone audio to Google. The transcript it returns is then corrected here, on this page.</p>
       <p id="speech-note" class="hint"></p>
       <div class="settings">
         <label class="switch"><input type="checkbox" id="opt-phonetic"> <span>Phonetic</span></label>
@@ -175,7 +174,7 @@
 
   <footer class="site-footer">
     <div class="wrap">
-      <p class="privacy">Runs entirely in your browser. Nothing is sent anywhere.</p>
+      <p class="privacy">The matcher runs entirely in your browser. Your lexicon and your text never leave this page, and the page loads nothing from a third party. Dictation is the one exception: it uses your browser's speech recognizer, which in Chrome sends audio to Google.</p>
       <dl class="bench">
         <div><dt>proper nouns recovered</dt><dd><span class="before">5.1%</span> <span class="to">&rarr;</span> 96.5%</dd></div>
         <div><dt>clean prose wrongly changed</dt><dd>0 of 95</dd></div>

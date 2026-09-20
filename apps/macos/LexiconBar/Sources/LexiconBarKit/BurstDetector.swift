@@ -150,15 +150,26 @@ public final class BurstDetector {
         /// At least one event must insert this many units at once.
         public var minChunk: Int
         public var maxFieldLength: Int
+        /// Quiet needed to call a *streamed* run finished, as opposed to a
+        /// single insertion. Speech pauses are routinely longer than
+        /// `settleMs`, so a streamed phrase is only finished after a silence
+        /// longer than a pause between words.
+        public var runQuietMs: Int
+        /// Hard cap on how long one run may go on coalescing, so continuous
+        /// dictation is still corrected periodically instead of never.
+        public var maxRunMs: Int
 
         public init(settleMs: Int = 700, minWords: Int = 3, fewEvents: Int = 3, fewEventsMinChars: Int = 12,
-                    minChunk: Int = 4, maxFieldLength: Int = 20_000) {
+                    minChunk: Int = 4, maxFieldLength: Int = 20_000,
+                    runQuietMs: Int = 1500, maxRunMs: Int = 12_000) {
             self.settleMs = settleMs
             self.minWords = minWords
             self.fewEvents = fewEvents
             self.fewEventsMinChars = fewEventsMinChars
             self.minChunk = minChunk
             self.maxFieldLength = maxFieldLength
+            self.runQuietMs = runQuietMs
+            self.maxRunMs = maxRunMs
         }
 
         public static let `default` = Config()
@@ -167,6 +178,11 @@ public final class BurstDetector {
     public enum Outcome: Equatable, Sendable {
         /// Nothing pending, or not quiet long enough yet.
         case waiting
+        /// Dictation is still streaming in: word-sized insertions have been
+        /// arriving and the field has not been quiet long enough to call the
+        /// phrase finished. Nothing has been decided and `lastStable` has not
+        /// moved — ask again shortly.
+        case coalescing
         /// Pending changes were examined and dismissed; `lastStable` advanced.
         case skipped(String)
         case burst(Burst)
@@ -176,6 +192,9 @@ public final class BurstDetector {
     public private(set) var lastStable: String
     public private(set) var latest: String
     private var lastChangeAt: TimeInterval?
+    /// When the first change since `lastStable` arrived, so a coalescing run
+    /// can be capped by age as well as by silence.
+    private var runStartedAt: TimeInterval?
     private var eventCount = 0
     private var maxChunk = 0
 
@@ -192,9 +211,10 @@ public final class BurstDetector {
         guard text != latest else { return }
         let step = TextDiff.delta(from: latest, to: text)
         latest = text
-        if lastChangeAt == nil {
+        if lastChangeAt == nil, runStartedAt == nil {
             eventCount = 0
             maxChunk = 0
+            runStartedAt = time
         }
         eventCount += 1
         maxChunk = max(maxChunk, step.inserted)
@@ -222,18 +242,76 @@ public final class BurstDetector {
     /// text around it.
     public func settle(at time: TimeInterval, caretEnd: Int? = nil) -> Outcome {
         guard let lastChangeAt else { return .waiting }
-        guard (time - lastChangeAt) * 1000 >= Double(config.settleMs) - 0.5 else { return .waiting }
+        let quietMs = (time - lastChangeAt) * 1000
+        guard quietMs >= Double(config.settleMs) - 0.5 else { return .waiting }
         let text = latest
         let delta = TextDiff.delta(from: lastStable, to: text, caretEnd: caretEnd)
         let events = eventCount
         let chunk = maxChunk
+        let runAgeMs = runStartedAt.map { (time - $0) * 1000 } ?? 0
+        let verdict = evaluate(text: text, delta: delta, events: events, chunk: chunk)
+
+        // Streamed dictation (macOS dictation, Wispr Flow's streaming mode,
+        // an app's own microphone button) does not arrive as one insertion.
+        // It arrives a word at a time, and the gaps between spoken words are
+        // routinely longer than `settleMs` — so deciding at `settleMs` chops
+        // the phrase into single words, each of which is "too short" and is
+        // dropped. The whole sentence then goes uncorrected, which looks
+        // exactly like the feature not working.
+        //
+        // So: once a run has produced at least one word-sized insertion, keep
+        // it pending until the field has been quiet for `runQuietMs` — longer
+        // than a pause between words, shorter than the end of a sentence —
+        // rather than deciding at the first gap. `lastStable` does not move,
+        // so the words accumulate into one burst and are corrected together.
+        //
+        // Two things keep this from swallowing ordinary typing and pastes:
+        // key-by-key typing never produces a `minChunk`-sized insertion, so
+        // it is never a run and is still refused with "typed, not dictated";
+        // and a single insertion that already reads as a burst is a paste
+        // with nothing to wait for, so it fires at `settleMs` as before.
+        // Only a verdict that more speech could actually change is worth
+        // waiting on. "Too short" can grow into a burst; a burst that arrived
+        // as several insertions may still have words coming. A single
+        // insertion that already reads as a burst is a paste, with nothing to
+        // wait for, so it still fires at `settleMs`. Everything else —
+        // multi-paragraph, field too long, key-by-key typing, an insertion
+        // point we cannot locate — is refused now, because silence will not
+        // make it true.
+        let canGrow: Bool
+        switch verdict {
+        case .burst: canGrow = events > 1
+        case .tooShort: canGrow = true
+        case .refused: canGrow = false
+        }
+        if canGrow, quietMs < Double(config.runQuietMs), runAgeMs < Double(config.maxRunMs) {
+            return .coalescing
+        }
+
         // Whatever we decide, this is the new baseline.
         lastStable = text
         clearPending()
+        switch verdict {
+        case .burst(let burst): return .burst(burst)
+        case .tooShort(let why), .refused(let why): return .skipped(why)
+        }
+    }
 
-        guard delta.inserted > 0 else { return .skipped("nothing inserted") }
-        guard text.utf16.count <= config.maxFieldLength else { return .skipped("field longer than \(config.maxFieldLength)") }
-        guard var inserted = TextDiff.substring(text, utf16: delta.insertedRange) else { return .skipped("range out of bounds") }
+    /// What `settle` decided, before it decides whether to act on it.
+    private enum Verdict {
+        case burst(Burst)
+        /// Dictation-shaped, but not enough of it yet. More speech changes this.
+        case tooShort(String)
+        /// No amount of waiting changes this.
+        case refused(String)
+    }
+
+    /// The burst rules, with no side effects, so `settle` can look at the
+    /// answer and still leave the run pending.
+    private func evaluate(text: String, delta: TextDiff.Delta, events: Int, chunk: Int) -> Verdict {
+        guard delta.inserted > 0 else { return .refused("nothing inserted") }
+        guard text.utf16.count <= config.maxFieldLength else { return .refused("field longer than \(config.maxFieldLength)") }
+        guard var inserted = TextDiff.substring(text, utf16: delta.insertedRange) else { return .refused("range out of bounds") }
         // A trailing newline (dictation ending with "new line", or Return) stays
         // out of the burst so the rewrite never has to re-insert one.
         var range = delta.insertedRange
@@ -241,18 +319,18 @@ public final class BurstDetector {
             inserted.unicodeScalars.removeLast()
             range.length -= 1
         }
-        guard range.length > 0 else { return .skipped("nothing inserted") }
-        guard chunk >= config.minChunk else { return .skipped("typed, not dictated") }
+        guard range.length > 0 else { return .refused("nothing inserted") }
+        guard chunk >= config.minChunk else { return .refused("typed, not dictated") }
         let words = TextDiff.wordCount(inserted)
         let enough = words >= config.minWords || (events <= config.fewEvents && inserted.utf16.count >= config.fewEventsMinChars)
-        guard enough else { return .skipped("too short (\(words) words, \(inserted.utf16.count) units)") }
-        guard !BurstDetector.isMultiParagraph(inserted) else { return .skipped("multi-paragraph") }
+        guard enough else { return .tooShort("too short (\(words) words, \(inserted.utf16.count) units)") }
+        guard !BurstDetector.isMultiParagraph(inserted) else { return .refused("multi-paragraph") }
         // Last, because it is the only check whose answer is "this really does
         // look like a burst, but we cannot say where it went". Rewriting a
         // window we only guessed at splices the correction into the middle of
         // the user's own words, so there is nothing to do but leave it alone.
         guard !delta.isAmbiguous else {
-            return .skipped("insertion point is ambiguous (\(delta.slideLeft) left, \(delta.slideRight) right)")
+            return .refused("insertion point is ambiguous (\(delta.slideLeft) left, \(delta.slideRight) right)")
         }
         return .burst(Burst(range: range, text: inserted, fullText: text))
     }
@@ -266,6 +344,7 @@ public final class BurstDetector {
 
     private func clearPending() {
         lastChangeAt = nil
+        runStartedAt = nil
         eventCount = 0
         maxChunk = 0
     }

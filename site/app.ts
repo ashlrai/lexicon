@@ -570,9 +570,6 @@ function setupDictation(): void {
     }
   };
 
-  ui.speechNote.textContent =
-    'Uses your browser’s speech recognizer (Chrome sends audio to Google for this step). The page itself sends nothing.';
-
   ui.dictate.addEventListener('click', () => {
     if (listening) stop();
     else start();

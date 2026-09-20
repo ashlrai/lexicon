@@ -5,13 +5,12 @@
  * exit code; a `ProjectTrustError` on `--project` is reported like everywhere
  * else and never bypassed.
  */
-import path from 'node:path';
 import type { Command } from 'commander';
 import { ProjectTrustError, installPack, installedPacks, listPacks, loadPack, uninstallPack } from '../core/index.js';
 import { loadLexicon } from '../core/index.js';
-import type { InstallPackResult, PackInfo, TermScope, UninstallPackResult } from '../core/index.js';
-import { renderTable, safe, safeLines } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
+import type { InstallPackResult, TermScope, UninstallPackResult } from '../core/index.js';
+import { fail, line, renderTable, resolveCwd, safe } from './io.js';
+import type { CommonOptions, IO } from './io.js';
 
 export interface PackCliOptions extends CommonOptions {
   json?: boolean;
@@ -24,25 +23,8 @@ export interface PackDeps {
   dir?: string;
 }
 
-function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
-}
-
-function resolveCwd(opts: CommonOptions): string {
-  return path.resolve(opts.cwd ?? process.cwd());
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 function scopeOf(opts: PackCliOptions): TermScope {
   return opts.project ? 'project' : 'global';
-}
-
-function fail(io: IO, err: unknown): number {
-  io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-  return 1;
 }
 
 /** `lexicon pack list`: every pack with its size and whether it is installed. */

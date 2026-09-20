@@ -18,8 +18,9 @@ import {
   resolvePaths,
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
-import { readStdin, renderTable, safe } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
+import { renderTable, safe } from './io.js';
+import type { CommonOptions, IO } from './io.js';
+import { readStdin } from './commands.js';
 
 export interface ImportCliOptions extends CommonOptions {
   /** Import format; `auto` (default) sniffs the content. */

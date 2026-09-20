@@ -12,25 +12,13 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isRecord } from '../util/json.js';
+import { findOnPathSync } from '../util/which.js';
 
 export const PACKAGE_NAME = '@ashlr/lexicon';
 
 /** Environment variable that overrides every other CLI location. */
 export const CLI_ENV_VAR = 'LEXICON_CLI';
-
-/** Locate an executable on PATH (a tiny `which`). */
-export function whichBin(name: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const dirs = (env.PATH ?? '').split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    const candidate = path.join(dir, name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * The directory holding the `@ashlr/lexicon` package.json at or above
@@ -88,7 +76,7 @@ export function resolveCliEntry(opts: CliEntryOptions = {}): string {
   const built = root ? path.join(root, 'dist', 'cli', 'index.js') : undefined;
   if (built && existsSync(built)) return built;
 
-  const onPath = whichBin('lexicon', env);
+  const onPath = findOnPathSync('lexicon', { env });
   if (onPath) {
     let real = onPath;
     try {

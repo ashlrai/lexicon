@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Lexicon, NormalizeResult } from '../src/core/types.js';
 
 const state = vi.hoisted(() => ({
@@ -20,8 +20,10 @@ const FIXED_LEXICON: Lexicon = {
 };
 
 vi.mock('../src/core/index.js', async (importOriginal) => {
-  // Only the pure display sanitizer is real; everything that touches disk stays mocked.
-  const { sanitizeForDisplay } = await importOriginal<typeof import('../src/core/index.js')>();
+  // The core's plain data (the sanitizer, the TERM_CATEGORIES / EXPORT_FORMATS
+  // tuples) is real; everything that touches disk is replaced below.
+  const actual = await importOriginal<typeof import('../src/core/index.js')>();
+  const { sanitizeForDisplay } = actual;
   const lexicon: Lexicon = {
     version: 1,
     terms: [
@@ -48,6 +50,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     return { input: text, output, replacements, changed: output !== text };
   };
   return {
+    ...actual,
     normalize: vi.fn(normalize),
     diffSummary: vi.fn((r: NormalizeResult) =>
       r.replacements.map((x) => `"${x.original}" -> "${x.replacement}" (${x.reason}, ${x.confidence.toFixed(2)})`).join('\n'),

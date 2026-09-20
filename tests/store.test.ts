@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import type { Lexicon, LexiconFile, Term } from '../src/core/types.js';
 
-// schema.ts is owned by another agent and may still be a stub; use a light
-// passthrough so these tests only exercise store.ts.
+// A passthrough for schema.ts, so a failure here is a store.ts failure and not
+// a validation one. Schema validation has its own suite (schema.test.ts).
 vi.mock('../src/core/schema.js', () => ({
   parseLexicon: (raw: unknown): Lexicon => {
     const obj = (raw ?? {}) as Partial<Lexicon>;

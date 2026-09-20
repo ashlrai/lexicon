@@ -63,6 +63,7 @@ import {
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
+import { errorMessage } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -240,10 +241,6 @@ class HttpError extends Error {
     super(message);
     this.name = 'HttpError';
   }
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function isProjectTrustError(err: unknown): boolean {

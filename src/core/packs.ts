@@ -24,6 +24,8 @@ import { ProjectTrustError, addTerm, readLexiconFile, resolvePaths, writeLexicon
 import type { StoreOptions } from './store.js';
 import { isTrusted, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
+import { isRecord } from '../util/json.js';
 
 export const PACKS_DIR_NAME = 'packs';
 /** Lowercase letters, digits and dashes only: a file name and nothing else. */
@@ -95,10 +97,6 @@ const PackFileSchema = z.object({
   terms: z.array(z.unknown()).min(1, 'a pack needs at least one term'),
 });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
  * Walk up from `from` (a file URL or path) to the directory whose package.json
  * is `@ashlr/lexicon`. Works from src/core, dist/core and the plugin/ bundles.
@@ -126,20 +124,12 @@ export function packsDir(opts: PackOptions = {}): string {
   return path.join(root, PACKS_DIR_NAME);
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function isNotFound(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT';
-}
-
 async function packNames(dir: string): Promise<string[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch (err) {
-    if (isNotFound(err)) return [];
+    if (isEnoent(err)) return [];
     throw err;
   }
   return entries
@@ -191,12 +181,12 @@ export async function loadPack(name: string, opts: PackOptions = {}): Promise<Pa
   try {
     text = await fs.readFile(file, 'utf8');
   } catch (err) {
-    if (isNotFound(err)) throw new PackNotFoundError(name, await packNames(dir));
+    if (isEnoent(err)) throw new PackNotFoundError(name, await packNames(dir));
     throw err;
   }
   let raw: unknown;
   try {
-    raw = parseYaml(text);
+    raw = parseYaml(text, { prettyErrors: false }); // see readLexiconFile: never quote the source line back
   } catch (err) {
     throw new Error(`Invalid pack at ${file}: ${errorMessage(err)}`);
   }

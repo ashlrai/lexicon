@@ -18,6 +18,7 @@ import path from 'node:path';
 import { listAudioDevices, pickDevice } from './devices.js';
 import type { AudioDevice } from './devices.js';
 import type { ChildHandle, VoiceExec, VoiceSpawn } from './process.js';
+import { writeFileAtomic } from '../util/atomic.js';
 
 /** A forgotten `--toggle` must not fill the disk: ffmpeg stops on its own after this. */
 export const MAX_TOGGLE_SECONDS = 600;
@@ -63,14 +64,12 @@ export async function ensureVoiceDir(globalPath: string): Promise<string> {
 }
 
 /**
- * Atomic private write: tmp file created 0600, chmod (writeFile's mode only
- * applies on creation), rename over the target. Same pattern as serve.json.
+ * Atomic 0600 write. `unique` because two `lexicon voice --toggle` invocations
+ * can race for the recorder state file, and a shared `<target>.tmp` would let
+ * one clobber the other's half-written temp.
  */
 export async function writePrivateFile(file: string, data: string): Promise<void> {
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, data, { encoding: 'utf8', mode: VOICE_FILE_MODE });
-  await fs.chmod(tmp, VOICE_FILE_MODE);
-  await fs.rename(tmp, file);
+  await writeFileAtomic(file, data, { mode: VOICE_FILE_MODE, unique: true });
 }
 
 /**

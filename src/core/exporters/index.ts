@@ -2,6 +2,9 @@
  * Export the lexicon to the formats other tools understand (Wispr Flow,
  * Superwhisper, Whisper prompt, macOS text replacement, CLAUDE.md, ...).
  */
+import { EXPORT_FORMATS } from '../types.js';
+/** Declared in core/types.ts (next to the ExportFormat union it derives); re-exported here, where callers look for it. */
+export { EXPORT_FORMATS } from '../types.js';
 import type { ExportFormat, ExportOptions, Lexicon, Term } from '../types.js';
 import { exportAssemblyai } from './assemblyai.js';
 import { exportAzure } from './azure.js';
@@ -37,24 +40,6 @@ export {
   exportWhisperPrompt,
   exportWispr,
 };
-
-export const EXPORT_FORMATS: readonly ExportFormat[] = [
-  'wispr',
-  'superwhisper',
-  'whisper-prompt',
-  'macos',
-  'claude-md',
-  'csv',
-  'json',
-  'deepgram',
-  'espanso',
-  'assemblyai',
-  'azure',
-  'google',
-  'openai',
-  'text',
-  'markdown',
-];
 
 export const EXPORT_FORMAT_INFO: Record<ExportFormat, { description: string; ext: string }> = {
   'wispr': { description: 'Wispr Flow dictionary CSV', ext: 'csv' },

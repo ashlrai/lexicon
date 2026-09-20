@@ -16,7 +16,7 @@ export function looksLikeLexiconJson(value: unknown): boolean {
 export function parseJsonImport(content: string): RawImport {
   let raw: unknown;
   try {
-    raw = parseYaml(content.replace(/^﻿/, ''));
+    raw = parseYaml(content.replace(/^﻿/, ''), { prettyErrors: false }); // see readLexiconFile
   } catch (err) {
     throw new Error(`json: invalid JSON/YAML (${err instanceof Error ? err.message : String(err)})`);
   }

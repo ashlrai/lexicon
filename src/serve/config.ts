@@ -12,6 +12,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../core/index.js';
 import type { StoreOptions } from '../core/index.js';
+import { writeFileAtomic } from '../util/atomic.js';
+import { formatJson } from '../util/json.js';
+
+/** serve.json holds the API token, so it is owner-only. */
+const SERVE_FILE_MODE = 0o600;
 
 export const SERVE_FILE_NAME = 'serve.json';
 /** Fixed default so clients can find the server without discovery. */
@@ -73,15 +78,10 @@ export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeCon
   }
 }
 
-/** Atomic write (tmp + rename) with mode 0600; mkdir -p. Returns the path written. */
+/** Writes the token, so 0600. Returns the path written. */
 export async function writeServeConfig(config: ServeConfig, opts: StoreOptions = {}): Promise<string> {
   const target = getServePath(opts);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  // writeFile's mode only applies when the file is created; make it explicit.
-  await fs.chmod(tmp, 0o600);
-  await fs.rename(tmp, target);
+  await writeFileAtomic(target, formatJson(config), { mode: SERVE_FILE_MODE });
   return target;
 }
 

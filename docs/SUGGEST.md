@@ -116,7 +116,7 @@ candidates and stale removals never reach it.
    --never-hit`.
 
 `lexicon suggest --json` prints the same list as JSON (`TermSuggestion[]`,
-see `CONTRACT.md`) for scripts and for the MCP tool.
+see `CONTRACT.md` in this directory) for scripts and for the MCP tool.
 
 ## Privacy
 

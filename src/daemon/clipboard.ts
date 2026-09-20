@@ -17,11 +17,11 @@ import {
   createClipboardBackend,
   defaultClipboardExec,
   detectClipboardBackend,
-  findOnPath,
   isClipboardBackendName,
   CLIPBOARD_BACKEND_NAMES,
 } from './clipboard-backends.js';
 import type { ClipboardBackend, ClipboardBackendName, ClipboardExec } from './clipboard-backends.js';
+import { findOnPath } from '../util/which.js';
 
 /** Options shared by the loop and once modes. */
 export interface ClipboardCommonOptions {

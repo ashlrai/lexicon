@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import LexiconBarKit
 
 /// One thread for every Accessibility call. Reads, writes and the AXObserver
 /// run loop sources all live here, so they are serialized and a slow target
@@ -131,6 +132,21 @@ enum AX {
 
     static func value(_ element: AXUIElement) -> String? {
         string(element, kAXValueAttribute as String)
+    }
+
+    /// Every label an app hangs off a field, plus its window's title, for
+    /// `SecretFieldHeuristic`. Read once when focus lands, never per
+    /// keystroke: this is seven AX round trips into another process.
+    static func hints(_ element: AXUIElement) -> SecretFieldHeuristic.FieldHints {
+        SecretFieldHeuristic.FieldHints(
+            identifier: string(element, "AXIdentifier"),
+            placeholder: string(element, kAXPlaceholderValueAttribute as String),
+            title: string(element, kAXTitleAttribute as String),
+            roleDescription: string(element, kAXRoleDescriptionAttribute as String),
+            help: string(element, kAXHelpAttribute as String),
+            description: string(element, kAXDescriptionAttribute as String),
+            windowTitle: AX.element(element, kAXWindowAttribute as String).flatMap { AX.string($0, kAXTitleAttribute as String) }
+        )
     }
 
     /// Screen rect of the insertion point, for placing the correction bubble.

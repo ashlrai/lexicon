@@ -1,0 +1,33 @@
+{
+  "name": "lexicon-web",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Marketing site for Lexicon, the personal lexicon for voice-to-agents.",
+  "homepage": "https://lexicon.ashlr.ai",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "prebuild": "node scripts/build-demo-bundle.mjs",
+    "predev": "node scripts/build-demo-bundle.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.3.5",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "esbuild": "0.28.2",
+    "simple-icons": "16.31.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "yaml": "2.9.1"
+  }
+}

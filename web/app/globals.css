@@ -1,0 +1,274 @@
+@import "tailwindcss";
+
+/*
+ * Lexicon — "non-photo blue"
+ *
+ * Copy editors and animators marked up artwork in non-photo blue, a pale cyan
+ * the reproduction camera could not see: the marks did their job and then
+ * vanished from the final print. That is exactly what Lexicon does to a
+ * transcript, so it is the page's one accent. Red appears only as a
+ * spell-check squiggle, never as a fill.
+ *
+ * Type has three jobs, borrowed from a dictionary entry:
+ *   Newsreader      headwords and prose        (display, and italic respellings)
+ *   Instrument Sans interface, labels, buttons (a grotesque that is not Inter)
+ *   IBM Plex Mono   transcripts, YAML, data    (the engineering-document voice)
+ */
+
+@theme {
+  --color-ink:        #070a0f;
+  --color-ink-2:      #0d131c;
+  --color-ink-3:      #141c28;
+  --color-rule:       #1d2836;
+  --color-rule-soft:  #161f2b;
+  --color-paper:      #e6e9ee;
+  --color-paper-2:    #98a4b5;
+  --color-paper-3:    #5e6b7d;
+  --color-blue:       #a4dded;
+  --color-blue-deep:  #6fc2db;
+  --color-blue-dim:   #21414e;
+  --color-flag:       #e0654b;
+
+  --font-display: var(--font-newsreader), ui-serif, Georgia, serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root { color-scheme: dark; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+::selection { background: var(--color-blue); color: var(--color-ink); }
+
+:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------- structure */
+
+.shell {
+  width: 100%;
+  max-width: 76rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+@media (min-width: 768px) { .shell { padding-inline: 2.5rem; } }
+
+/*
+ * Sections are labelled, not numbered. A dictionary is a labelled reference,
+ * not a sequence, and nothing on this page is a step you take in order.
+ */
+.entry-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-paper-3);
+  margin-bottom: 1.75rem;
+}
+.entry-label::before {
+  content: "";
+  width: 1.5rem;
+  height: 1px;
+  background: var(--color-blue-deep);
+  flex: none;
+}
+
+.rule { border: 0; border-top: 1px solid var(--color-rule-soft); margin: 0; }
+
+/* ------------------------------------------------------------------- typography */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-optical-sizing: auto;
+  letter-spacing: -0.021em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+.h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.95rem, 1.2rem + 2.6vw, 3.1rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.lede {
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.1875rem);
+  line-height: 1.62;
+  color: var(--color-paper-2);
+  max-width: 34em;
+  text-wrap: pretty;
+}
+.respell {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--color-blue-deep);
+  letter-spacing: 0.01em;
+}
+.micro {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-paper-3);
+}
+
+/* --------------------------------------------------------------------- panels */
+
+.panel {
+  background: var(--color-ink-2);
+  border: 1px solid var(--color-rule);
+  border-radius: 10px;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6875rem 1rem;
+  border-bottom: 1px solid var(--color-rule);
+  min-height: 2.75rem;
+}
+
+/* -------------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.875rem;
+  padding-inline: 1.25rem;
+  border-radius: 7px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s, color 0.18s, transform 0.18s;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--color-blue); color: var(--color-ink); font-weight: 600; }
+.btn-primary:hover { background: #bde8f4; }
+.btn-ghost {
+  background: transparent;
+  color: var(--color-paper);
+  border-color: var(--color-rule);
+}
+.btn-ghost:hover { border-color: var(--color-blue-dim); background: var(--color-ink-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .btn:active { transition: none; transform: none; }
+}
+
+/* -------------------------------------------------- the mark, and its removal */
+
+/*
+ * A flagged span carries a spell-check squiggle: the one place red appears.
+ * A corrected span gets a non-photo-blue wash that sweeps through and fades,
+ * leaving clean text -- the mark that the camera never sees.
+ */
+.tok { position: relative; white-space: pre; }
+
+.tok-flagged {
+  text-decoration: underline wavy var(--color-flag);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.28em;
+  text-decoration-skip-ink: none;
+}
+
+.tok-swap { display: inline-grid; vertical-align: baseline; }
+.tok-swap > * { grid-area: 1 / 1; transition: opacity 0.28s var(--ease-out-quint); }
+.tok-raw { color: var(--color-paper-2); }
+.tok-fix { color: var(--color-paper); font-weight: 500; }
+
+.tok-wash {
+  position: absolute;
+  inset: -0.18em -0.3em;
+  border-radius: 3px;
+  background: var(--color-blue);
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.tok-wash-on { animation: wash 900ms var(--ease-out-quint) forwards; }
+@keyframes wash {
+  0%   { opacity: 0;    transform: scaleX(0); transform-origin: left; }
+  22%  { opacity: 0.26; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0;    transform: scaleX(1); transform-origin: left; }
+}
+
+.tok-annot {
+  position: absolute;
+  top: calc(100% + 0.45em);
+  left: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 0.78em;
+  line-height: 1;
+  color: var(--color-blue-deep);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.3s, transform 0.3s var(--ease-out-quint);
+}
+.tok-annot-on { opacity: 1; transform: translateY(0); }
+
+.word-in { animation: wordIn 260ms var(--ease-out-quint) both; }
+@keyframes wordIn {
+  from { opacity: 0; transform: translateY(0.18em); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tok-swap > *, .tok-annot { transition: none; }
+  .tok-wash-on, .word-in { animation: none; }
+  .tok-wash-on { opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------- misc */
+
+.link-quiet {
+  color: var(--color-paper-2);
+  text-decoration: underline;
+  text-decoration-color: var(--color-rule);
+  text-underline-offset: 0.22em;
+  transition: color 0.16s, text-decoration-color 0.16s;
+}
+.link-quiet:hover { color: var(--color-blue); text-decoration-color: var(--color-blue-deep); }
+
+.link-accent {
+  color: var(--color-blue);
+  text-decoration: underline;
+  text-decoration-color: var(--color-blue-dim);
+  text-underline-offset: 0.22em;
+}
+.link-accent:hover { text-decoration-color: var(--color-blue-deep); }

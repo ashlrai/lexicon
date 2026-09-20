@@ -5,7 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// suggest.ts is owned by another agent and may still be a stub.
+// Alias generation is suggest.ts's job and has its own suite; stubbing it keeps
+// these assertions about what harvestRepo finds, not what it suggests.
 vi.mock('../src/core/suggest.js', () => ({
   suggestAliases: (): string[] => [],
 }));

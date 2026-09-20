@@ -6,7 +6,10 @@ import type { DoctorReport, IO } from '../src/cli/commands.js';
 import type { SetupOptions, SetupPlan, SetupSummary } from '../src/cli/cmd-setup.js';
 import type { TermSuggestion } from '../src/core/suggestTerms.js';
 
-// The core is under construction in parallel; the server is tested against a fake.
+// The server is tested against a fake core: these assertions are about the tool
+// schemas, the argument plumbing and the result shapes, not about what the core
+// computes. The real core is exercised by its own suites (and, for the trust
+// tool's sanitizing, by mcp-trust-injection.test.ts, which mocks nothing).
 const fixtureLexicon: Lexicon = {
   version: 1,
   terms: [
@@ -58,7 +61,14 @@ const cli = vi.hoisted(() => ({
   runSetup: vi.fn(),
 }));
 
-vi.mock('../src/core/index.js', () => mocks);
+// The functions are faked; the core's plain data (the TERM_CATEGORIES /
+// TERM_SCOPES / EXPORT_FORMATS tuples the tool schemas build their zod enums
+// from) comes from the real module, so adding a constant to the core does not
+// silently break every tool in this file.
+vi.mock('../src/core/index.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ...mocks,
+}));
 vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport }));
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
 vi.mock('../src/cli/cmd-install.js', () => ({ runInstall: cli.runInstall }));

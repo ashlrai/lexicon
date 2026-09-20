@@ -4,9 +4,9 @@
  * spawn ffmpeg or whisper-cli.
  */
 import { spawn } from 'node:child_process';
-import { constants as fsConstants, existsSync, openSync, promises as fs } from 'node:fs';
-import path from 'node:path';
-import { findOnPath } from '../daemon/clipboard-backends.js';
+import { existsSync, openSync } from 'node:fs';
+import { locateTool } from '../util/which.js';
+import type { LocateOptions } from '../util/which.js';
 
 export interface ExecResult {
   /** Exit code, or null when the process was killed by a signal. */
@@ -165,62 +165,12 @@ export function defaultKill(pid: number, signal: NodeJS.Signals): void {
  * Directories searched after PATH. Hotkey launchers (Raycast, Hammerspoon,
  * Karabiner, launchd) often run with a minimal PATH that lacks Homebrew.
  */
-export const WELL_KNOWN_BIN_DIRS: readonly string[] = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
-
-export interface LocateOptions {
-  env?: NodeJS.ProcessEnv;
-  platform?: NodeJS.Platform;
-  /** Extra directories tried after PATH. Default `WELL_KNOWN_BIN_DIRS` on POSIX, none on win32. */
-  extraDirs?: readonly string[];
-  /** Existence/executability probe, injectable for tests. */
-  exists?: (candidate: string) => Promise<boolean>;
-}
-
 /**
- * Find the first of `names` on PATH (then in the well-known directories).
- * Returns the absolute path or undefined.
+ * PATH lookup lives in src/util/which.ts; re-exported here because this is
+ * where the voice pipeline's callers (and `lexicon doctor`) look for it.
  */
-export async function locateTool(names: readonly string[], opts: LocateOptions = {}): Promise<string | undefined> {
-  const platform = opts.platform ?? process.platform;
-  const env = opts.env ?? process.env;
-  const exists =
-    opts.exists ??
-    (async (candidate: string): Promise<boolean> => {
-      try {
-        await fs.access(candidate, platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-  for (const name of names) {
-    const onPath = await findOnPath(name, { env, platform, exists });
-    if (onPath) return onPath;
-  }
-  const extra = opts.extraDirs ?? (platform === 'win32' ? [] : WELL_KNOWN_BIN_DIRS);
-  for (const dir of extra) {
-    for (const name of names) {
-      const candidate = path.join(dir, platform === 'win32' ? `${name}.exe` : name);
-      if (await exists(candidate)) return candidate;
-    }
-  }
-  return undefined;
-}
-
-/** Synchronous variant for `lexicon doctor` (PATH plus the well-known dirs). */
-export function locateToolSync(names: readonly string[], env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string | undefined {
-  const dirs = [
-    ...(env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : ':').filter(Boolean),
-    ...(platform === 'win32' ? [] : WELL_KNOWN_BIN_DIRS),
-  ];
-  for (const dir of dirs) {
-    for (const name of names) {
-      const candidate = path.join(dir, platform === 'win32' ? `${name}.exe` : name);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return undefined;
-}
+export { WELL_KNOWN_BIN_DIRS, locateTool, locateToolSync } from '../util/which.js';
+export type { LocateOptions } from '../util/which.js';
 
 /** Names tried for whisper.cpp's CLI, in order; `LEXICON_WHISPER_BIN` wins over all of them. */
 export const WHISPER_BIN_NAMES: readonly string[] = ['whisper-cli', 'whisper-cpp'];

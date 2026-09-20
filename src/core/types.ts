@@ -3,25 +3,35 @@
  * Keep this file dependency-free (zod schemas live in schema.ts).
  */
 
-export type TermCategory =
-  | 'brand'
-  | 'person'
-  | 'product'
-  | 'acronym'
-  | 'identifier'
-  | 'place'
-  | 'other';
+/*
+ * The four closed vocabularies below are declared once, as `as const` tuples,
+ * and their union types are derived from them. Everything that needs the values
+ * at runtime -- the zod schemas in schema.ts, the MCP tool enums, the CLI's
+ * `--category` parsing, the importers -- reads these tuples, so adding a member
+ * is a one-line change and nothing can drift out of step with the type.
+ */
 
-export type TermScope = 'global' | 'project';
+export const TERM_CATEGORIES = ['brand', 'person', 'product', 'acronym', 'identifier', 'place', 'other'] as const;
+export type TermCategory = (typeof TERM_CATEGORIES)[number];
 
-export type TermSource =
-  | 'user'
-  | 'harvest:repo'
-  | 'harvest:git'
-  | 'harvest:package'
-  | 'import'
-  | 'learned'
-  | 'pack';
+export const TERM_SCOPES = ['global', 'project'] as const;
+export type TermScope = (typeof TERM_SCOPES)[number];
+
+export const TERM_SOURCES = [
+  'user',
+  'harvest:repo',
+  'harvest:git',
+  'harvest:package',
+  'import',
+  'learned',
+  'pack',
+] as const;
+export type TermSource = (typeof TERM_SOURCES)[number];
+
+/** True when `value` is one of the seven term categories. */
+export function isTermCategory(value: unknown): value is TermCategory {
+  return typeof value === 'string' && (TERM_CATEGORIES as readonly string[]).includes(value);
+}
 
 export interface Term {
   /** The correct spelling the user wants to see. e.g. "Ashlr.AI" */
@@ -165,22 +175,29 @@ export interface HarvestOptions {
   ignore?: string[];
 }
 
-export type ExportFormat =
-  | 'wispr'          // CSV: word,replacement  (Wispr Flow dictionary import)
-  | 'superwhisper'   // JSON replacements list
-  | 'whisper-prompt' // single line for Whisper initial_prompt (<= ~100 terms)
-  | 'macos'          // macOS Text Replacement plist
-  | 'claude-md'      // markdown snippet for CLAUDE.md / system prompt
-  | 'csv'            // generic canonical,alias
-  | 'json'           // raw lexicon JSON
-  | 'deepgram'       // JSON keywords array with boost
-  | 'espanso'        // espanso YAML matches
-  | 'assemblyai'     // JSON word_boost list
-  | 'azure'          // JSON phraseList (Azure Speech PhraseListGrammar)
-  | 'google'         // JSON adaptation phraseSets with boost
-  | 'openai'         // OpenAI transcription `prompt` line (same as whisper-prompt)
-  | 'text'           // plain "Canonical: alias1, alias2" lines (round-trips with the text importer)
-  | 'markdown';      // markdown bullet list for READMEs / wikis
+/**
+ * Export targets, in the order `lexicon export --list` prints them. One
+ * sentence of prose per format lives in `EXPORT_FORMAT_INFO`
+ * (core/exporters/index.ts), which is keyed by this type.
+ */
+export const EXPORT_FORMATS = [
+  'wispr',
+  'superwhisper',
+  'whisper-prompt',
+  'macos',
+  'claude-md',
+  'csv',
+  'json',
+  'deepgram',
+  'espanso',
+  'assemblyai',
+  'azure',
+  'google',
+  'openai',
+  'text',
+  'markdown',
+] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export interface ExportOptions {
   /** Only include these categories. */

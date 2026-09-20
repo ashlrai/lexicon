@@ -8,8 +8,8 @@
  * touch a real clipboard.
  */
 import { spawn } from 'node:child_process';
-import { constants as fsConstants, promises as fs } from 'node:fs';
-import path from 'node:path';
+import { findOnPath } from '../util/which.js';
+import { isEnoent } from '../util/errors.js';
 
 export interface ClipboardBackend {
   /** Stable identifier, also accepted by `lexicon daemon --backend <name>`. */
@@ -94,10 +94,6 @@ export function defaultClipboardExec(cmd: string, args: readonly string[], stdin
   });
 }
 
-function isMissingBinary(e: unknown): boolean {
-  return typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'ENOENT';
-}
-
 /**
  * Read helper shared by every backend: an empty or non-text clipboard makes
  * most tools exit non-zero (`wl-paste`: "Nothing is copied", `xclip`: "target
@@ -108,7 +104,7 @@ async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly stri
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isMissingBinary(e)) throw e;
+    if (isEnoent(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return '';
   }
@@ -186,57 +182,6 @@ export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, sh
       await exec(shell, ['-NoProfile', '-NonInteractive', '-Command', writeScript], payload);
     },
   };
-}
-
-export interface FindOnPathOptions {
-  env?: NodeJS.ProcessEnv;
-  platform?: NodeJS.Platform;
-  /** Existence/executability probe, injectable for tests. Default: fs.access. */
-  exists?: (candidate: string) => Promise<boolean>;
-}
-
-const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
-
-/**
- * Locate `bin` on PATH without spawning `which`/`where`. On Windows the
- * candidates are `bin` + each PATHEXT extension (then the bare name); on
- * POSIX the file must be executable.
- */
-export async function findOnPath(bin: string, opts: FindOnPathOptions = {}): Promise<string | undefined> {
-  const platform = opts.platform ?? process.platform;
-  const env = opts.env ?? process.env;
-  const win = platform === 'win32';
-  const p = win ? path.win32 : path.posix;
-  const exists =
-    opts.exists ??
-    (async (candidate: string): Promise<boolean> => {
-      try {
-        await fs.access(candidate, win ? fsConstants.F_OK : fsConstants.X_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-
-  const pathVar = env.PATH ?? env.Path ?? env.path ?? '';
-  const dirs = pathVar.split(win ? ';' : ':').filter(Boolean);
-  let names: string[];
-  if (win) {
-    const exts = (env.PATHEXT ?? DEFAULT_PATHEXT).split(';').filter(Boolean);
-    const hasExt = p.extname(bin) !== '';
-    names = hasExt ? [bin] : [...exts.map((ext) => bin + ext), ...exts.map((ext) => bin + ext.toLowerCase()), bin];
-    names = [...new Set(names)];
-  } else {
-    names = [bin];
-  }
-
-  for (const dir of dirs) {
-    for (const name of names) {
-      const candidate = p.join(dir, name);
-      if (await exists(candidate)) return candidate;
-    }
-  }
-  return undefined;
 }
 
 export const LINUX_INSTALL_HINT =
