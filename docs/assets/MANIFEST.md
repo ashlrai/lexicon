@@ -87,31 +87,46 @@ Never buttons."
 | | |
 |---|---|
 | Paths | `docs/assets/menubar.png`, `web/public/media/menubar.png` |
-| Dimensions | **776 × 1016** px (388 × 508 pt @2x Retina) |
-| Size | **103,245 B** (101 KB) |
+| Dimensions | **388 × 539** px (388 × 539 pt @1x) |
+| Size | **127,313 B** (124 KB) |
 
-The full LexiconBar status-bar menu, open: Push to talk (⌃⌥Space), Fix clipboard
-now (⌃⌥V), Fix everywhere (✓) with **Fix everywhere in TextEdit** (✓), Undo last
-fix (⌃⌥Z), Show the correction bubble (✓), Watch clipboard, the Local API row,
-Last correction, Set up Lexicon…, Open lexicon file, Stats…, Run doctor, Start at
-login, Preferences…, Quit.
+The LexiconBar menu bar icon and its menu, open. The 31 px strip along the top is
+the real macOS menu bar, with the LexiconBar `waveform` icon at the left in its
+selected state; below it the full menu: Push to talk (⌃⌥Space), Fix clipboard now
+(⌃⌥V), Fix everywhere (✓) with **Fix everywhere in Claude** (✓), Undo last fix
+(⌃⌥Z), Show the correction bubble (✓), Watch clipboard, the Local API row, Last
+correction, Set up Lexicon…, Open lexicon file, Stats…, Run doctor, Start at
+login, Preferences…, **Quit LexiconBar 0.5.1**.
 
-**Two things to know before you place this:**
+Reshot after the status icon was fixed, so this now shows what the previous
+version of this file could not: the icon actually in the menu bar. It replaces a
+776 × 1016 @2x capture of the menu panel alone.
 
-1. It is the **menu panel only** — the macOS menu bar strip above it is *not*
-   included, because the LexiconBar status icon does not currently render in the
-   menu bar on this machine (see Known issues). Frame it as "the LexiconBar menu",
-   not "the icon in your menu bar".
-2. The background is flat neutral grey (a window-buffer capture, so the menu's
-   usual translucency is not composited). That reads fine on a dark panel, but it
-   will not blend with a coloured background.
+**Three things to know before you place this:**
+
+1. It is **@1x, not @2x**. The menu bar that carries the status item is on this
+   machine's main display, a 1920 × 1080 external monitor with a backing scale of
+   1.0, so no 2x capture of it exists to take. The built-in Retina display shows a
+   second menu bar, but it drops the leftmost status items and LexiconBar is among
+   them, so the icon cannot be shot there at all. Place it at its natural size and
+   do not upscale it. To reshoot at @2x, run the app on a Mac whose **main**
+   display is Retina.
+2. The top strip also shows **other apps' status icons** to the right of ours.
+   LexiconBar sits at the left end of a row of about fifteen menu bar apps, and
+   the menu is wider than one icon, so a rectangle containing both our icon and
+   our menu necessarily contains its neighbours. No app menu titles (File, Edit,
+   View…) are included.
+3. The menu is **translucent**, so faint page content shows through it. What
+   shows through is the Lexicon marketing site itself.
 
 No private data is visible: `Last correction` is a collapsed submenu, and
-`Show API URL and token…` was never opened.
+`Show API URL and token…` was never opened. The bleed-through carries no personal
+content.
 
-**Alt text:** "The LexiconBar menu bar menu, showing Push to talk, Fix clipboard
-now, Fix everywhere enabled for TextEdit, the correction bubble toggle, and the
-local API running at login."
+**Alt text:** "The LexiconBar waveform icon in the macOS menu bar with its menu
+open, showing Push to talk, Fix clipboard now, Fix everywhere enabled for Claude,
+the correction bubble toggle, the local API running at login, and Quit LexiconBar
+0.5.1."
 
 ### `onboarding-words.png`
 
@@ -265,18 +280,28 @@ toast to freeze its 3 s timer, and capture. The toast is bottom-right, `#14201f`
 
 ## Known issues found while capturing
 
-1. **The LexiconBar status icon does not render in the menu bar.** The item is
-   live and reachable — Accessibility reports it at 33 × 24 pt and clicking it
-   opens the menu correctly — but nothing is drawn at that position, and it is
-   absent from the menu bar in a full-width capture (both displays checked). This
-   is why `menubar.png` is the menu panel alone. Worth investigating in
-   `AppDelegate`'s status-item setup (the icon is the SF Symbol `waveform`,
-   `isTemplate = true`) before launch, since it also means users cannot find the
-   app.
-2. **Version skew.** `menubar.png` reads **Quit LexiconBar 0.4.0** because the
-   built app at `apps/macos/build/LexiconBar.app` is 0.4.0, while the source and
-   the CLI are 0.5.1. Rebuild the app and re-shoot `menubar.png` if the launch
-   page claims 0.5.1.
+1. ~~**The LexiconBar status icon does not render in the menu bar.**~~
+   **Not a bug in the app.** The icon draws correctly; the capture conditions
+   hid it, in two independent ways. First, the machine's main display had a
+   fullscreen window on it, so its menu bar was slid out of view: every status
+   item on the Mac, LexiconBar's and fifteen other apps', reported a y of −59,
+   i.e. off the top of the screen. A brand-new status item built from scratch
+   with nothing but a plain text title was equally invisible under the same
+   conditions, which is what rules the app out. Second, the *other* display's
+   menu bar is narrower and drops its leftmost status items, and LexiconBar is
+   the leftmost one, so it is absent there too. Park the pointer against the top
+   edge of the main display to slide the menu bar down and the icon is plainly
+   there. `menubar.png` now shows it.
+
+   The app was hardened anyway, since an invisible menu bar app is worse than a
+   crashed one: `updateStatusIcon` now falls back from the SF Symbol to a
+   hand-drawn waveform and then to the text title `LB`, treats a zero-sized
+   image as a failure, and logs which path it took on every launch. Read it back
+   with `log show --predicate 'subsystem == "ai.ashlr.lexiconbar"' --last 5m`.
+2. ~~**Version skew.**~~ **Fixed.** The app takes its version from the root
+   `package.json` via `scripts/build-macos-app.sh`, which was always correct; the
+   0.4.0 reading came from a *running process* that predated the last repackage.
+   Rebuilt and relaunched, and `menubar.png` now reads **Quit LexiconBar 0.5.1**.
 3. **`remind` is fuzzy-matched to `Rewind` at 0.83.** Found while choosing demo
    copy: `lexicon normalize "remind mason white that ashler ships…"` turns *remind*
    into *Rewind*. A false positive on a very common English word — avoid "remind"

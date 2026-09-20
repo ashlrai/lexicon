@@ -2,6 +2,18 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## 0.5.2 (unreleased)
+
+### Fixed
+- **The LexiconBar status item can no longer end up invisible.** The reported "icon does not render in the menu bar" turned out not to be an app bug: on the machine it was found, the main display had a fullscreen window over it, so that display's menu bar was slid out of view and *every* status item on the Mac reported a y of −59, LexiconBar's and fifteen other apps' alike. A status item built from scratch with nothing but a plain text title was equally invisible under the same conditions, which is what rules the app out; the second display's narrower menu bar drops its leftmost items, and LexiconBar is the leftmost, so it was missing there too. The app is hardened regardless, because a menu bar app that draws nothing is worse than one that crashes: the user has no way to find it and concludes the install failed. `updateStatusIcon` now falls back from the SF Symbol to a hand-drawn waveform, and from there to the two-letter title `LB`, and treats a zero-sized image as a failure rather than handing it to the button.
+- `NSImage(systemSymbolName:)` returning nil for a renamed or withdrawn symbol on a future macOS would previously have left the button with no image *and* no title. It now always has one or the other.
+
+### Added
+- The status item logs which of its three drawing paths it took, at launch and again once AppKit has laid the button out, along with the button's frame and whether it holds any content at all. "I installed it and nothing appeared" is answerable from that line alone. It is `os.Logger` rather than `NSLog`, because `NSLog` hands the unified log one already-formatted string and the log redacts the whole line as `<private>`; read it back with `log show --predicate 'subsystem == "ai.ashlr.lexiconbar"' --last 5m`.
+
+### Changed
+- The Accessibility-not-granted line no longer uses an em-dash: "not granted (as of 8 seconds ago). Add LexiconBar.app under System Settings > Privacy & Security > Accessibility".
+
 ## 0.5.1 (2026-09-20)
 
 ### Fixed

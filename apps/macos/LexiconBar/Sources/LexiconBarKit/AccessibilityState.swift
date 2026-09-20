@@ -312,7 +312,7 @@ public struct AccessibilityReport: Equatable, Sendable {
             if state.axTrusted {
                 appLine = prefix + "trusted (as of \(ago))"
             } else {
-                appLine = prefix + "not granted (as of \(ago)) \u{2014} add LexiconBar.app under System Settings > Privacy & Security > Accessibility"
+                appLine = prefix + "not granted (as of \(ago)). Add LexiconBar.app under System Settings > Privacy & Security > Accessibility"
             }
         }
 

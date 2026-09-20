@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import os
 import ServiceManagement
 import LexiconBarKit
 
@@ -15,6 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case fixingClipboard
     }
 
+    /// Which of `updateStatusIcon`'s three drawing paths produced what is in
+    /// the menu bar right now. Logged at launch.
+    enum StatusIconSource: String {
+        case symbol
+        case drawn
+        case title
+    }
+
     private let settings = Settings()
     private let runner = CommandRunner()
     private lazy var cli = LexiconCLI(runner: runner)
@@ -23,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let cliStatus = CLIStatusModel()
 
     private var statusItem: NSStatusItem!
+    private var statusIconSource: StatusIconSource = .symbol
     private let menu = NSMenu()
     private var preferencesWindow: PreferencesWindowController?
     private var doctorWindow: TextWindowController?
@@ -120,10 +130,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // process the user actually launched — the one answer a `--status` run
         // from a terminal cannot give, because TCC attributes that check to
         // the terminal instead.
-        NSLog("LexiconBar %@ launched: status item visible=%d, bundled=%d, ax=%d, push-to-talk=%@",
-              Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
-              statusItem.isVisible ? 1 : 0, Notifier.isBundled ? 1 : 0,
-              accessibilityTrusted ? 1 : 0, settings.pushToTalkHotKey.displayString)
+        let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        AppDelegate.log.notice("LexiconBar \(shortVersion, privacy: .public) launched: status item visible=\(self.statusItem.isVisible, privacy: .public), bundled=\(Notifier.isBundled, privacy: .public), ax=\(self.accessibilityTrusted, privacy: .public), push-to-talk=\(self.settings.pushToTalkHotKey.displayString, privacy: .public)")
+        // Which drawing path the menu bar icon took, and whether anything is
+        // actually in it. Once now and once after AppKit has laid the button
+        // out, since only the second call sees a real frame.
+        logStatusItem("launch")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.logStatusItem("settled") }
     }
 
     /// Turns SIGTERM into a normal quit.
@@ -335,6 +348,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item)
     }
 
+    /// Draws the status item, and guarantees it is never blank.
+    ///
+    /// Three paths, tried in order: the SF Symbol for the current state, a
+    /// waveform drawn by hand if that symbol name is missing on this macOS,
+    /// and a short text title if even that produces nothing. A menu bar app
+    /// that draws nothing is worse than one that crashes, because the user has
+    /// no way to find it and concludes the install failed. `statusIconSource`
+    /// records which path ran; `logStatusItem` prints it at launch.
     private func updateStatusIcon() {
         guard let button = statusItem?.button else { return }
         let name: String
@@ -343,14 +364,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .recording: name = "waveform.badge.mic"
         case .transcribing: name = "waveform.badge.magnifyingglass"
         }
+        var source = StatusIconSource.symbol
         var image = NSImage(systemSymbolName: name, accessibilityDescription: "LexiconBar")
             ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "LexiconBar")
+        if image == nil {
+            image = AppDelegate.drawnWaveform()
+            source = .drawn
+        }
         if fixFlashing, let base = image { image = AppDelegate.badged(base) }
         image?.isTemplate = true
-        button.image = image
+        // A zero-sized image is as invisible as no image at all, so it counts
+        // as a failure here rather than being handed to the button.
+        if let image, image.size.width > 0, image.size.height > 0 {
+            button.image = image
+            button.title = ""
+            button.imagePosition = .imageOnly
+        } else {
+            button.image = nil
+            button.title = AppDelegate.fallbackTitle
+            button.imagePosition = .noImage
+            source = .title
+        }
+        statusIconSource = source
+        statusItem.isVisible = true
         button.contentTintColor = voiceState == .recording ? .systemRed : nil
         button.toolTip = voiceState == .recording ? "LexiconBar: recording" : "LexiconBar"
         button.appearsDisabled = !cli.isAvailable
+    }
+
+    /// The last resort: what the button says when no image can be produced.
+    /// Two letters, because the menu bar charges by the point.
+    private static let fallbackTitle = "LB"
+
+    /// `os.Logger` rather than `NSLog`, because NSLog hands the unified log one
+    /// already-formatted string and the log then redacts the whole line as
+    /// `<private>`. These lines exist to be read back off a user's machine with
+    /// `log show --predicate 'subsystem == "ai.ashlr.lexiconbar"'`, so every
+    /// field is marked public deliberately. Nothing here is personal: it is
+    /// geometry and a symbol name.
+    static let log = Logger(subsystem: "ai.ashlr.lexiconbar", category: "statusitem")
+
+    /// A waveform drawn by hand, for the case where the SF Symbol is missing
+    /// (a renamed or withdrawn symbol on some future macOS). Five rounded
+    /// bars, template so the menu bar tints it for light and dark exactly as
+    /// it tints the real symbol.
+    private static func drawnWaveform() -> NSImage {
+        let size = NSSize(width: 16, height: 16)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let heights: [CGFloat] = [4, 9, 14, 9, 4]
+            let barWidth: CGFloat = 1.6
+            let gap = (size.width - CGFloat(heights.count) * barWidth) / CGFloat(heights.count + 1)
+            NSColor.black.setFill()
+            for (index, height) in heights.enumerated() {
+                let x = gap + CGFloat(index) * (barWidth + gap)
+                let bar = NSRect(x: x, y: (size.height - height) / 2, width: barWidth, height: height)
+                NSBezierPath(roundedRect: bar, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// Reports what the status item actually became, and repairs it if it
+    /// somehow came out empty anyway.
+    ///
+    /// Run once at launch and once a beat later, after AppKit has laid the
+    /// button out: only the second call sees a real frame. "I installed it and
+    /// nothing appeared" is answerable from this line alone, which is why it is
+    /// logged on every launch rather than behind a debug flag.
+    private func logStatusItem(_ when: String) {
+        guard let button = statusItem?.button else {
+            AppDelegate.log.error("status item (\(when, privacy: .public)): NO BUTTON")
+            return
+        }
+        let hasContent = button.image != nil || !button.title.isEmpty
+        let frame = NSStringFromRect(button.frame)
+        AppDelegate.log.notice("status item (\(when, privacy: .public)): source=\(self.statusIconSource.rawValue, privacy: .public) image=\(button.image != nil, privacy: .public) title=\"\(button.title, privacy: .public)\" visible=\(self.statusItem.isVisible, privacy: .public) length=\(self.statusItem.length, privacy: .public) frame=\(frame, privacy: .public) \(hasContent ? "ok" : "BLANK", privacy: .public)")
+        guard !hasContent else { return }
+        button.image = nil
+        button.title = AppDelegate.fallbackTitle
+        button.imagePosition = .noImage
+        statusIconSource = .title
+        statusItem.isVisible = true
+        AppDelegate.log.error("status item (\(when, privacy: .public)): was blank, fell back to the title \"\(AppDelegate.fallbackTitle, privacy: .public)\"")
     }
 
     /// The status symbol with a small dot at the bottom right: "just fixed something".

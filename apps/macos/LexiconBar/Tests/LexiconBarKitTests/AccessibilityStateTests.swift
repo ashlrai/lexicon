@@ -240,7 +240,7 @@ final class AccessibilityStateTests: XCTestCase {
     func testAppNotGrantedLine() {
         let live = report(terminal: true, state: state(trusted: false), after: 61)
         XCTAssertEqual(live.appLine,
-                       "Accessibility (menu bar app): not granted (as of 1 minute ago) \u{2014} add LexiconBar.app under System Settings > Privacy & Security > Accessibility")
+                       "Accessibility (menu bar app): not granted (as of 1 minute ago). Add LexiconBar.app under System Settings > Privacy & Security > Accessibility")
         XCTAssertEqual(live.appTrusted, false)
         XCTAssertTrue(live.appRunning)
     }
