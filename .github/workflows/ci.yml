@@ -207,6 +207,10 @@ jobs:
           schtasks /Query /TN LexiconCI 2>$null
           if ($LASTEXITCODE -eq 0) { throw 'the task survived --uninstall' }
           Write-Host 'Scheduled Task created, verified and removed.'
+          # That last schtasks is *meant* to fail, and GitHub's pwsh wrapper
+          # ends the step with `exit $LASTEXITCODE`, so without this the step
+          # reports failure after printing success. Real failures throw above.
+          exit 0
 
       # --- the PowerShell clipboard backend --------------------------------
       # The unit tests inject a fake exec; this drives the real
@@ -232,6 +236,7 @@ jobs:
           if ($out -notmatch 'Ashlr\.AI') { throw 'the clipboard was not corrected' }
           if ($out -notmatch "`r`n") { throw 'CRLF was not preserved through the round trip' }
           if ($out -notmatch 'second line') { throw 'the second line was lost' }
+          exit 0
 
       # --- client config paths ---------------------------------------------
       # Writes each client's config into a scratch %USERPROFILE% and reads it
@@ -270,6 +275,7 @@ jobs:
             if ($body -notmatch 'lexicon') { throw "no lexicon entry in $f" }
             Write-Host "ok  $f"
           }
+          exit 0
 
       # --- voice, as far as a runner without a microphone can go ------------
       # Device enumeration and recording need real audio hardware, so they are
@@ -284,6 +290,9 @@ jobs:
           $out = node dist/cli/index.js voice --list-devices 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch 'winget install Gyan.FFmpeg') { throw 'the Windows ffmpeg install hint is missing' }
+          # `voice --list-devices` exits non-zero when ffmpeg is absent, which
+          # is exactly the path under test; the assertion above is the verdict.
+          exit 0
 
   # ---------------------------------------------------------------------------
   # Linux beyond the happy path: the X11 clipboard backends under a real X
