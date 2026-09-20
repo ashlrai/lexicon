@@ -8,11 +8,11 @@
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 ```
 
-The script checks for Node 20+, installs `@ashlr/lexicon` globally (from npm, or straight from GitHub at the latest tag when the package is not on the registry yet) and starts `lexicon setup`. Prefer `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`) or `npm i -g @ashlr/lexicon`? Then run `lexicon setup` yourself.
+The script checks for Node 20+, installs `@ashlr/lexicon` globally (from npm, falling back to GitHub at the latest tag if the registry is unreachable) and starts `lexicon setup`. Prefer `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`) or `npm i -g @ashlr/lexicon`? Then run `lexicon setup` yourself.
 
 ## 2. `lexicon setup`
 
-One interactive pass, six steps. Every step prints a one-line result and is safe to rerun (nothing is duplicated). `lexicon setup --yes` takes every default (add `--serve` if you also want the local API installed as a login service; `--yes` alone never creates one); `--dry-run` prints what a run would do and writes nothing; `--clients none`, `--no-packs`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--packs developer,ai` picks the starter packs without a prompt; `--json` prints a machine-readable summary.
+One interactive pass, six steps. Every step prints a one-line result and is safe to rerun (nothing is duplicated). `lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service are opt-in even then, so add `--packs developer,ai,voice-tools` for the starter packs, `--harvest` for the repo scan and `--serve` for the login service; `--dry-run` prints what a run would do and writes nothing; `--clients none`, `--no-packs`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--packs developer,ai` picks the starter packs without a prompt; `--json` prints a machine-readable summary.
 
 ```text
 $ lexicon setup

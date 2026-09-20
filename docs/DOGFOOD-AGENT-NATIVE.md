@@ -97,7 +97,7 @@ counters, and the parent session's own hooks also write it. Not attributable
 to these experiments.
 
 Claude Code defers MCP tool schemas here too: with a single MCP server (45
-tools total: 25 built-in, 17 lexicon, 3 MCP helpers) the model still spent one
+tools total: 25 built-in, 19 lexicon, 3 MCP helpers) the model still spent one
 `ToolSearch` turn before its first `mcp__lexicon__*` call in every experiment
 that used a tool.
 
@@ -271,7 +271,7 @@ claude -p "what should I add to my lexicon based on my dictation history? apply 
 
 Tool calls (5 turns, `duration_ms` 14797):
 
-1. `ToolSearch` (five lexicon tools at once)
+1. `ToolSearch` (five lexicon tools at once) <!-- check-facts:ignore: a single ToolSearch call, not the tool count -->
 2. `mcp__lexicon__suggest_terms {"limit":20}` -> `[{"kind":"alias","canonical":"Vercel","alias":"versal","reason":"corrected by guess 3 times; make it exact","confidence":0.9,"evidence":[...3 lines...],"count":3}]`
 3. `mcp__lexicon__lexicon_stats {}` (unrequested; harmless)
 4. `mcp__lexicon__apply_suggestion {"suggestion": <the object above, verbatim>}` -> `"versal" -> "Vercel" saved`
@@ -332,7 +332,7 @@ Acme Rocketry's aliases. Answer:
 > Got it - Acme Rocketry. Added "Acme Rocket tree" as an alias in your global lexicon, so it'll be corrected automatically from now on.
 > There wasn't anything else in your message for me to fix up - was there a task you wanted me to do with it?
 
-## 8. Latency: 17 extra tools cost nothing per prompt; the first call costs one turn
+## 8. Latency: 19 extra tools cost nothing per prompt; the first call costs one turn
 
 `say ok`, `settings-nohooks.json`, alternating without / with `--mcp-config`:
 

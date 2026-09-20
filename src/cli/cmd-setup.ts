@@ -13,8 +13,9 @@
  *   f. an export for the user's dictation app, written to ~/Desktop
  *   g. a summary card (or JSON with --json)
  *
- * Interactive on a terminal (prompt.ts); `--yes` takes every default, and
- * off a TTY without `--yes` the defaults are used as well. Four things are
+ * Interactive on a terminal (prompt.ts); `--yes` answers every prompt with
+ * its default, and off a TTY without `--yes` the defaults are used as well.
+ * "Default" is not "everything", though. Four things are
  * never done silently: the starter packs (step b, a hundred-odd global terms),
  * the repo harvest (step c) and the login service (step e) are performed under
  * `--yes` only with an explicit `--packs` / `--harvest` / `--serve` (a harvest

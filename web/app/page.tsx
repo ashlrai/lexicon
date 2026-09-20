@@ -100,8 +100,8 @@ function Hero({ stars }: { stars: number | null }) {
       </h1>
 
       <p className="lede mt-7 max-w-[46ch]">
-        Lexicon is one YAML file of the words you actually say — brands, people, products,
-        acronyms — applied to every transcript before an agent reads it. It is not a dictation
+        Lexicon is one YAML file of the words you actually say (brands, people, products,
+        acronyms), applied to every transcript before an agent reads it. It is not a dictation
         app. It sits between the one you already use and whatever you are talking to.
       </p>
 
@@ -178,7 +178,7 @@ function Problem() {
         <p className="lede mt-9 max-w-[52ch]">
           None of this is the recognizer’s fault. Every dictation app keeps a private dictionary to
           patch it, and none of those dictionaries help when the transcript is produced somewhere
-          else — which is exactly what happens when you talk to an agent.
+          else, which is exactly what happens when you talk to an agent.
         </p>
       </div>
     </section>
@@ -252,7 +252,7 @@ function Surfaces() {
           <Surface
             label="browser chats"
             title="Before you press send"
-            body="A browser extension that rewrites the composer in place on ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe — and on any other site you switch it on for."
+            body="A browser extension that rewrites the composer in place on ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe, and on any other site you switch it on for."
           >
             <Composer />
           </Surface>
@@ -260,7 +260,7 @@ function Surfaces() {
           <Surface
             label="any mac app"
             title="Wherever the cursor is"
-            body="A menu bar app that watches the focused text field through the Accessibility API and rewrites dictated text in place — in your editor, your mail client, your notes. Local push-to-talk with whisper.cpp is built in, and so is a loopback HTTP API if you would rather call it yourself."
+            body="A menu bar app that watches the focused text field through the Accessibility API and rewrites dictated text in place: in your editor, your mail client, your notes. Local push-to-talk with whisper.cpp is built in, and so is a loopback HTTP API if you would rather call it yourself."
           >
             <Flow
               rows={[
@@ -386,15 +386,15 @@ function Numbers() {
           <p>
             <span className="text-paper-2">How the audio rows were produced.</span> macOS
             text-to-speech, three voices, 110 sentences each, read into whisper.cpp. That is far
-            cleaner than a phone microphone — no room, no disfluency, no accent variation — so
+            cleaner than a phone microphone (no room, no disfluency, no accent variation), so
             expect lower raw recall on real speech. The “0 of 72” row counts ordinary prose only;
             six sentences in the corpus are deliberately adversarial and are excluded.
           </p>
           <p>
             <span className="text-paper-2">And the synthetic corpus.</span> On 398 cases sampled
             from known speech-to-text failures, term recall goes 5.1% to 96.5% with 0 of 95 clean
-            sentences changed. The 5.1% baseline is low by construction — the corpus is built from
-            failures — so it is not a general accuracy figure for any recognizer.
+            sentences changed. The 5.1% baseline is low by construction, because the corpus is
+            built from failures, so it is not a general accuracy figure for any recognizer.
           </p>
           <p>
             <a className="link-accent" href={`${BENCHMARK}#method`}>
@@ -428,15 +428,15 @@ function InstallSection() {
             </p>
             <div className="mt-8 flex flex-col gap-3 text-[0.88rem] text-paper-2">
               <p>
-                <span className="font-mono text-paper">lexicon setup</span> — first run, start to
+                <span className="font-mono text-paper">lexicon setup</span>: first run, start to
                 finish.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon pack add developer</span> — 155
+                <span className="font-mono text-paper">lexicon pack add developer</span>: 155
                 curated terms across four packs.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon export wispr</span> — push the same
+                <span className="font-mono text-paper">lexicon export wispr</span>: push the same
                 words into the dictation app you already use.
               </p>
             </div>
@@ -460,7 +460,7 @@ function OpenSource() {
             <h2 className="h2 max-w-[16ch]">MIT, and honest about the edges.</h2>
             <p className="lede mt-6">
               The matcher, the MCP server, the CLI, the extension and the macOS app are all in one
-              repository. Your lexicon is a plain YAML file you own — no account, no sync, no audio
+              repository. Your lexicon is a plain YAML file you own: no account, no sync, no audio
               ever leaves your machine.
             </p>
 
@@ -474,8 +474,10 @@ function OpenSource() {
                 <li>The macOS app is ad-hoc signed, not notarized.</li>
                 <li>Windows and Linux have the CLI and the MCP server, but no tray app.</li>
                 <li>
-                  Voice modes that never produce a text box — ChatGPT Voice, Gemini Live — are out
-                  of reach. Lexicon reads text, not audio.
+                  Voice modes that never produce a text box, such as ChatGPT Voice and Gemini
+                  Live, are out of reach: there is no transcript to correct. (<span
+                  className="font-mono">lexicon voice</span> does read audio, but it transcribes
+                  with your own local whisper.cpp rather than hooking someone else&rsquo;s voice mode.)
                 </li>
               </ul>
             </div>

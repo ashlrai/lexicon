@@ -42,7 +42,7 @@ const ROWS: Row[] = [
       { name: 'OpenAI Codex' },
       { name: 'VS Code' },
     ],
-    note: 'lexicon install writes the MCP server into each client’s own config file. Any other MCP client works too — lexicon install generic prints the block to paste.',
+    note: 'lexicon install writes the MCP server into each client’s own config file. Any other MCP client works too: lexicon install generic prints the block to paste.',
   },
   {
     label: 'browser chats',
@@ -74,7 +74,7 @@ const ROWS: Row[] = [
       { name: 'espanso' },
       { name: 'macOS Text Replacement' },
     ],
-    note: 'Fifteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts — it never calls their APIs, and seven importers read the dictionaries back out again.',
+    note: 'Fifteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and seven importers read the dictionaries back out again.',
   },
 ];
 

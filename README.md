@@ -1,11 +1,11 @@
-# @ashlr/lexicon
+# Lexicon
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
-**One YAML file of the words speech-to-text gets wrong, applied everywhere your voice lands.**
+**A personal lexicon for voice-to-agents.** One YAML file of the words speech-to-text gets wrong, applied everywhere your voice lands: MCP, Claude Code, the browser, macOS. The package is [`@ashlr/lexicon`](https://www.npmjs.com/package/@ashlr/lexicon); the command is `lexicon`.
 
 ![The live demo correcting a dictated sentence in the browser](docs/assets/demo.gif)
 
@@ -158,6 +158,7 @@ The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHIN
 | [AGENT-NATIVE.md](docs/AGENT-NATIVE.md) | The agent-as-UI design: which tool an agent calls when |
 | [DOGFOOD.md](docs/DOGFOOD.md), [DOGFOOD-AGENT-NATIVE.md](docs/DOGFOOD-AGENT-NATIVE.md) | Two live runs against the real Claude Code CLI, and the bugs they found |
 | [RELEASING.md](docs/RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
+| [LANDING.md](docs/LANDING.md) | The landing page at lexicon.ashlr.ai: what it claims, and how to deploy it |
 
 Also at the root: [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md).
 

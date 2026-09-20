@@ -61,9 +61,12 @@ npm run docs:cli        # regenerate docs/CLI.md from every command's --help
 npm run build:extension # extension/dist, extension/dist-firefox and the two zips
 npm run build:site      # the demo site (site/dist), including install.sh
 npm run check:links     # every relative link in README.md and docs/ resolves
+npm run check:facts     # every number the docs state (tool/command/format/pack/stoplist counts) matches the code
 ```
 
-CI runs `npm run typecheck`, `npm run build`, `npm run check:bundle`, `npm test`, a CLI/hook/MCP smoke test and `npm run build:extension` on Node 20, 22 and 24.
+CI runs `npm run typecheck`, `npm run build`, `npm run check:bundle`, `npm test`, a CLI/hook/MCP smoke test and `npm run build:extension` on Node 20, 22 and 24. A separate `docs` job runs `npm run check:links`, `npm run check:facts` and a `docs/CLI.md` drift check once.
+
+`check:facts` derives the real numbers rather than trusting the prose: it asks the built MCP server for its tools, resources and prompts over stdio, parses `lexicon --help` for the command count, and reads `EXPORT_FORMATS`, `IMPORT_FORMATS`, `packs/*.yaml` and `STOPLIST`. It then scans the markdown, the landing page and the manifests for a contradicting claim. A line whose number it misreads can opt out with a trailing `check-facts:ignore` comment; `node scripts/check-facts.mjs --list` prints the ground truth.
 
 Manual stdio check of the MCP server: `node dist/mcp/server.js`. Interactive check: `npx @modelcontextprotocol/inspector node dist/mcp/server.js`.
 
@@ -170,7 +173,7 @@ The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORM
 1. Create `src/core/importers/<format>.ts` exporting `parse<Format>Import(content: string): RawImport` (`rows` plus `skipped` with a 1-based line and a reason) and, when the format can be sniffed, a `looksLike<Format>(content)` predicate. Use `rowFor()` from `shared.ts` and `parseCsv()` from `csv-parse.ts` where they fit. Parsers must be linear-time; the CLI already caps input at 8 MB.
 2. Add the name to `ImportFormat` and `IMPORT_FORMATS` in `src/core/importers/index.ts`, describe it in `IMPORT_FORMAT_INFO`, register the parser in `PARSERS`, and add a detection step to `detectImportFormat()` (unambiguous structured markers first, extensions last).
 3. Add a test in `tests/importers.test.ts` with an exact fixture, including a malformed row that lands in `skipped`. If the format has an exporter, add a round-trip case.
-4. Add a row to the import table in `docs/EXPORTS.md`, update the count in `README.md`, and update the `lexicon import` help text in `src/cli/cmd-import.ts` and `src/cli/index.ts`, then run `npm run docs:cli`. Update the format count wherever it is stated ("seven").
+4. Add a row to the import table in `docs/EXPORTS.md`, update the count in `README.md`, and update the `lexicon import` help text in `src/cli/cmd-import.ts` and `src/cli/index.ts`, then run `npm run docs:cli`. Update the format count wherever it is stated ("seven"); `npm run check:facts` will tell you every place you missed.
 
 ## Adding a harvester source
 

@@ -93,7 +93,7 @@ export function LiveDemo() {
               <span className="text-paper-3">Loading the matcher…</span>
             ) : failed ? (
               <span className="text-paper-2">
-                The demo bundle did not load. The same matcher runs offline —{' '}
+                The demo bundle did not load. The same matcher runs offline.{' '}
                 <a className="link-accent" href="#install">
                   install the CLI
                 </a>{' '}
@@ -224,7 +224,7 @@ function OwnName({ core, onAdd }: { core: Core | null; onAdd: (lex: Lexicon) => 
         ) : (
           <p className="text-[0.78rem] leading-relaxed text-paper-3">
             {name.trim().length > 0 && core
-              ? 'No likely mis-spellings for that one — speech-to-text probably gets it right already.'
+              ? 'No likely mis-spellings for that one; speech-to-text probably gets it right already.'
               : 'Type a brand, product or surname. Lexicon guesses the spellings a recognizer will produce, then you add it once.'}
           </p>
         )}

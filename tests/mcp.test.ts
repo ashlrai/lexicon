@@ -239,7 +239,7 @@ function textOf(result: unknown): string {
 }
 
 describe('lexicon MCP server', () => {
-  it('lists the eighteen tools', async () => {
+  it('lists the nineteen tools', async () => {
     const { client, close } = await connect();
     try {
       const { tools } = await client.listTools();

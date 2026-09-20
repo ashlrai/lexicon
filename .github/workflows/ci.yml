@@ -79,3 +79,35 @@ jobs:
           name: lexicon-extension
           path: extension/dist
           if-no-files-found: error
+
+  # Documentation drift guards (issue #9). A job of its own rather than three
+  # more steps in the Node matrix, so each check runs once.
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Every relative link resolves
+        run: npm run check:links
+
+      - name: The numbers in the docs match the code
+        # Derives the MCP tool/resource/prompt counts from the built server over
+        # stdio, the command count from `lexicon --help`, and the format, pack,
+        # stoplist and test counts from the code, then fails on any doc that
+        # disagrees. Needs dist/, hence the build.
+        run: |
+          npm run build
+          npm run check:facts
+
+      - name: CLI reference is up to date
+        run: |
+          npm run docs:cli
+          git diff --exit-code --stat -- docs/CLI.md

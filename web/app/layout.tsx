@@ -36,8 +36,8 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   metadataBase: new URL('https://lexicon.ashlr.ai'),
   title: {
-    default: 'Lexicon — the words your dictation keeps getting wrong',
-    template: '%s — Lexicon',
+    default: 'Lexicon: the words your dictation keeps getting wrong',
+    template: '%s | Lexicon',
   },
   description: DESCRIPTION,
   applicationName: 'Lexicon',
@@ -50,13 +50,13 @@ export const metadata: Metadata = {
     type: 'website',
     url: 'https://lexicon.ashlr.ai',
     siteName: 'Lexicon',
-    title: 'Lexicon — the words your dictation keeps getting wrong',
+    title: 'Lexicon: the words your dictation keeps getting wrong',
     description: DESCRIPTION,
     images: [{ url: '/og.png', width: 1280, height: 640, alt: 'Lexicon' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Lexicon — the words your dictation keeps getting wrong',
+    title: 'Lexicon: the words your dictation keeps getting wrong',
     description: DESCRIPTION,
     images: ['/og.png'],
   },
