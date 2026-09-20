@@ -22,14 +22,47 @@ public enum TextDiff {
     /// The span of `new` that is not shared with `old`: the common prefix and
     /// suffix (in UTF-16 units, never overlapping) are stripped and what
     /// remains is the insertion. `removed` is the corresponding span of `old`.
+    ///
+    /// A prefix/suffix diff cannot always say *where* an insertion happened.
+    /// Pasting "ping ashler …" in front of a field that already reads
+    /// "ping Ashlr.AI …" shares the leading "ping ", so the stripped window
+    /// starts five units late and runs five units into the old text — a span
+    /// that is textually consistent but is not what was inserted. Rewriting
+    /// that window splices the correction into the middle of a word and leaves
+    /// the rest of the burst untouched. `slideLeft` / `slideRight` measure how
+    /// far the window could move and still produce `new`; `anchored` says the
+    /// caret pinned it, so the position is known rather than guessed.
     public struct Delta: Equatable, Sendable {
         public let location: Int
         public let inserted: Int
         public let removed: Int
+        /// Play in the insertion point, in UTF-16 units. Zero for a replacement.
+        public let slideLeft: Int
+        public let slideRight: Int
+        /// The caret picked `location` out of the possible positions.
+        public let anchored: Bool
+
+        public init(location: Int, inserted: Int, removed: Int,
+                    slideLeft: Int = 0, slideRight: Int = 0, anchored: Bool = false) {
+            self.location = location
+            self.inserted = inserted
+            self.removed = removed
+            self.slideLeft = slideLeft
+            self.slideRight = slideRight
+            self.anchored = anchored
+        }
+
         public var insertedRange: NSRange { NSRange(location: location, length: inserted) }
+
+        /// The insertion could have happened somewhere else and nothing pinned
+        /// it down. The caller must not rewrite a window it only guessed at.
+        public var isAmbiguous: Bool { !anchored && (slideLeft > 0 || slideRight > 0) }
     }
 
-    public static func delta(from old: String, to new: String) -> Delta {
+    /// `caretEnd` is the UTF-16 offset the insertion point sits at now. After
+    /// a paste or a dictation insert it is the end of what arrived, which is
+    /// what resolves an ambiguous window. Pass nil when it is unknown.
+    public static func delta(from old: String, to new: String, caretEnd: Int? = nil) -> Delta {
         let a = Array(old.utf16)
         let b = Array(new.utf16)
         var prefix = 0
@@ -38,7 +71,28 @@ public enum TextDiff {
         var suffix = 0
         let maxSuffix = maxPrefix - prefix
         while suffix < maxSuffix, a[a.count - 1 - suffix] == b[b.count - 1 - suffix] { suffix += 1 }
-        return Delta(location: prefix, inserted: b.count - prefix - suffix, removed: a.count - prefix - suffix)
+        let location = prefix
+        let inserted = b.count - prefix - suffix
+        let removed = a.count - prefix - suffix
+        guard removed == 0, inserted > 0 else {
+            return Delta(location: location, inserted: inserted, removed: removed)
+        }
+
+        // How far the window can slide while `new` stays the same: one unit to
+        // the left whenever the unit before the window equals the last unit in
+        // it, and one to the right whenever the unit after it equals the first.
+        var left = 0
+        while location - left > 0, b[location - left - 1] == b[location - left + inserted - 1] { left += 1 }
+        var right = 0
+        while location + inserted + right < b.count, b[location + right] == b[location + inserted + right] { right += 1 }
+
+        if let caretEnd, caretEnd - inserted >= location - left, caretEnd - inserted <= location + right {
+            let anchoredLocation = caretEnd - inserted
+            let shift = anchoredLocation - location
+            return Delta(location: anchoredLocation, inserted: inserted, removed: 0,
+                         slideLeft: left + shift, slideRight: right - shift, anchored: true)
+        }
+        return Delta(location: location, inserted: inserted, removed: 0, slideLeft: left, slideRight: right)
     }
 
     /// Substring of `text` by UTF-16 range; nil when the range does not fit.
@@ -160,11 +214,17 @@ public final class BurstDetector {
 
     /// Ask whether the pending changes form a burst. Call after `settleMs`
     /// of quiet; it is safe to call more often.
-    public func settle(at time: TimeInterval) -> Outcome {
+    ///
+    /// `caretEnd` is where the insertion point sits now (UTF-16 offset into
+    /// the field). It decides *which* of several textually identical windows
+    /// was the one that arrived; without it an ambiguous insertion is skipped
+    /// rather than guessed at, because rewriting the wrong window corrupts the
+    /// text around it.
+    public func settle(at time: TimeInterval, caretEnd: Int? = nil) -> Outcome {
         guard let lastChangeAt else { return .waiting }
         guard (time - lastChangeAt) * 1000 >= Double(config.settleMs) - 0.5 else { return .waiting }
         let text = latest
-        let delta = TextDiff.delta(from: lastStable, to: text)
+        let delta = TextDiff.delta(from: lastStable, to: text, caretEnd: caretEnd)
         let events = eventCount
         let chunk = maxChunk
         // Whatever we decide, this is the new baseline.
@@ -187,6 +247,13 @@ public final class BurstDetector {
         let enough = words >= config.minWords || (events <= config.fewEvents && inserted.utf16.count >= config.fewEventsMinChars)
         guard enough else { return .skipped("too short (\(words) words, \(inserted.utf16.count) units)") }
         guard !BurstDetector.isMultiParagraph(inserted) else { return .skipped("multi-paragraph") }
+        // Last, because it is the only check whose answer is "this really does
+        // look like a burst, but we cannot say where it went". Rewriting a
+        // window we only guessed at splices the correction into the middle of
+        // the user's own words, so there is nothing to do but leave it alone.
+        guard !delta.isAmbiguous else {
+            return .skipped("insertion point is ambiguous (\(delta.slideLeft) left, \(delta.slideRight) right)")
+        }
         return .burst(Burst(range: range, text: inserted, fullText: text))
     }
 

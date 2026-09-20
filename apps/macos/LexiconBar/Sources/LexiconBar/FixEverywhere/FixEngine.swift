@@ -110,7 +110,11 @@ final class FixEngine: @unchecked Sendable {
 
     private func settle() {
         guard config.enabled, let detector, let field else { return }
-        switch detector.settle(at: now) {
+        // Where the caret is now tells the detector which of several textually
+        // identical windows actually arrived. Without it a paste in front of
+        // text that starts the same way is located several units late.
+        let caret = AX.range(field.element, kAXSelectedTextRangeAttribute as String)
+        switch detector.settle(at: now, caretEnd: caret.map { $0.location + $0.length }) {
         case .waiting:
             // A change landed after the timer was armed; the newer timer will fire.
             return
@@ -190,11 +194,23 @@ final class FixEngine: @unchecked Sendable {
     ///  3. write the whole spliced `AXValue` (last resort; loses undo).
     /// `before` is the field value the plan was made from; nothing is written
     /// when the field no longer holds it.
+    ///
+    /// The two range strategies are gated on the app agreeing about *what* the
+    /// range covers: after selecting `plan.range` the selection is read back
+    /// and must hold exactly the text the plan replaces. A range that lands
+    /// even one unit off would otherwise splice the correction into the middle
+    /// of a word and drop the rest of the burst. When the app will not say, or
+    /// says something else, the whole-value write takes over — it is computed
+    /// from `before` alone and so cannot be misaligned.
     private func write(_ plan: RewritePlan.Plan, to element: AXUIElement, before: String, pid: pid_t) -> (strategy: String?, detail: String) {
         let selectAttr = kAXSelectedTextRangeAttribute as String
         let selectedTextAttr = kAXSelectedTextAttribute as String
         let valueAttr = kAXValueAttribute as String
         var notes: [String] = []
+
+        // The plan was made when the API answered; the field has been live
+        // since. Re-read it before touching anything.
+        guard (AX.value(element) ?? "") == before else { return (nil, "field changed before the write") }
 
         // Chromium applies AXSelectedTextRange asynchronously; poll briefly.
         let rangeErr = AX.set(element, selectAttr, range: plan.range)
@@ -207,6 +223,20 @@ final class FixEngine: @unchecked Sendable {
         }
         notes.append("range \(rangeErr.rawValue)\(selected ? "" : " not confirmed")")
 
+        // Does the app mean the same span we do?
+        if selected {
+            let held = AX.string(element, selectedTextAttr)
+            if held != plan.previousText {
+                notes.append(held == nil ? "selection unreadable" : "selection holds other text")
+                selected = false
+            }
+        }
+        // The selection round-trip took time; make sure the field is still the
+        // one the plan was computed from before the destructive write.
+        if selected, (AX.value(element) ?? "") != before {
+            return (nil, "field changed while selecting (\(notes.joined(separator: ", ")))")
+        }
+
         if selected {
             let textErr = AX.set(element, selectedTextAttr, string: plan.newText)
             if textErr == .success, verify(element, equals: plan.splicedFullText, within: 0.2) {
@@ -215,18 +245,23 @@ final class FixEngine: @unchecked Sendable {
             }
             notes.append("selectedText \(textErr.rawValue)")
             let after = AX.value(element) ?? ""
-            guard after == before else { return (nil, "field changed after the selection write (\(notes.joined(separator: ", ")))") }
+            guard after == before else {
+                // Something landed but not what was planned: stop here rather
+                // than write again on top of a field we no longer understand.
+                return (nil, "the selection write changed the field to something else; left alone (\(notes.joined(separator: ", ")))")
+            }
 
-            // Still selected and untouched: type over the selection.
+            // Still selected, still holding the right text, untouched: type over it.
             if watcher.activePID == pid, !plan.newText.contains(where: { $0.isNewline }),
-               AX.range(element, selectAttr) == plan.range {
+               AX.range(element, selectAttr) == plan.range,
+               AX.string(element, selectedTextAttr) == plan.previousText {
                 FixEngine.typeUnicode(plan.newText)
                 if verify(element, equals: plan.splicedFullText, within: 0.6) {
                     return ("keystrokes", notes.joined(separator: ", "))
                 }
                 notes.append("keystrokes not reflected")
                 guard (AX.value(element) ?? "") == before else {
-                    return (nil, "field changed after typing (\(notes.joined(separator: ", ")))")
+                    return (nil, "typing changed the field to something else; left alone (\(notes.joined(separator: ", ")))")
                 }
             } else {
                 notes.append("keystrokes skipped")

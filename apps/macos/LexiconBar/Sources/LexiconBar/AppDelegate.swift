@@ -389,8 +389,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         settings.$undoFixHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
         if settings.fixEverywhere, !accessibilityTrusted {
-            // The system prompt; the app keeps running and picks the grant up on the next check.
-            AX.requestTrust()
+            // Deliberately no system prompt here. Launching is not the user asking for one, and
+            // an ad-hoc signature is revoked by every rebuild, so prompting on launch means a
+            // dialog after every update. The menu and the onboarding window show the state, and
+            // "Grant Accessibility" there is the one place that asks. We just watch for the grant.
+            NSLog("LexiconBar: accessibility not granted; Fix everywhere is idle (menu: Set up Lexicon…)")
             Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] timer in
                 DispatchQueue.main.async {
                     guard let self else { timer.invalidate(); return }

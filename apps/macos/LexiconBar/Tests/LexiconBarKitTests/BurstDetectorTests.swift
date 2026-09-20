@@ -139,7 +139,10 @@ final class BurstDetectorTests: XCTestCase {
         XCTAssertEqual(TextDiff.delta(from: "abc", to: "abXYc"), .init(location: 2, inserted: 2, removed: 0))
         XCTAssertEqual(TextDiff.delta(from: "abc", to: "abc"), .init(location: 3, inserted: 0, removed: 0))
         XCTAssertEqual(TextDiff.delta(from: "", to: "abc"), .init(location: 0, inserted: 3, removed: 0))
-        XCTAssertEqual(TextDiff.delta(from: "aaa", to: "aaaa"), .init(location: 3, inserted: 1, removed: 0))
+        // One more "a" could have been inserted at any of the four positions;
+        // the window is reported with the play that makes it a guess.
+        XCTAssertEqual(TextDiff.delta(from: "aaa", to: "aaaa"),
+                       .init(location: 3, inserted: 1, removed: 0, slideLeft: 3, slideRight: 0))
         XCTAssertEqual(TextDiff.delta(from: "abc", to: "aXc"), .init(location: 1, inserted: 1, removed: 1))
         XCTAssertEqual(TextDiff.wordCount("  two   words \n"), 2)
     }

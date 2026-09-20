@@ -86,7 +86,7 @@ scripts/build-macos-app.sh
 open apps/macos/build/LexiconBar.app
 ```
 
-The script runs `swift build -c release` in `apps/macos/LexiconBar`, assembles `apps/macos/build/LexiconBar.app` (Info.plist with `LSUIElement`, the microphone and Apple Events usage strings, and `CFBundleShortVersionString` taken from `package.json`), renders an `.icns` from the SF Symbol "waveform" with `sips` and `iconutil`, ad-hoc signs the bundle (`codesign --sign -`) and zips it with `ditto`. `SKIP_ICON=1` skips the icon step.
+The script runs `swift build -c release` in `apps/macos/LexiconBar`, assembles `apps/macos/build/LexiconBar.app` (Info.plist with `LSUIElement`, the microphone and Apple Events usage strings, and `CFBundleShortVersionString` taken from `package.json`), renders an `.icns` from the SF Symbol "waveform" with `sips` and `iconutil`, codesigns the bundle (see [Signing](#signing-and-why-the-accessibility-grant-kept-disappearing)) and zips it with `ditto`. `SKIP_ICON=1` skips the icon step.
 
 For development, `swift build` and `swift run` inside `apps/macos/LexiconBar` also work; the bare binary shows the status item but has no bundle, so notifications and Start at login are disabled. `swift test` runs the pure tests (hotkey encoding, CLI output parsing, restart backoff, CLI discovery).
 
@@ -94,13 +94,87 @@ The `macOS app` GitHub workflow (`.github/workflows/macos-app.yml`) builds, test
 
 ### Opening an unsigned build
 
-The app is ad-hoc signed and not notarized. The first launch of a downloaded copy is blocked by Gatekeeper. Either right-click the app and choose Open, or clear the quarantine flag:
+The app is signed locally and not notarized. The first launch of a downloaded copy is blocked by Gatekeeper. Either right-click the app and choose Open, or clear the quarantine flag:
 
 ```bash
 xattr -d com.apple.quarantine apps/macos/build/LexiconBar.app
 ```
 
 A build made on the same Mac (via the script above) is not quarantined and opens normally.
+
+## Signing, and why the Accessibility grant kept disappearing
+
+The symptom is maddening and gives you no clue what is wrong: LexiconBar is listed under **System Settings > Privacy & Security > Accessibility**, its switch is on, and Fix everywhere does nothing. `--status` says `Accessibility (menu bar app): not granted`. Toggling the switch off and on changes nothing.
+
+### The trap
+
+macOS does not grant Accessibility to a *path*. It grants it to a **code signature**, stored as the app's designated requirement (DR) — a rule the app must keep satisfying every time it asks.
+
+An ad-hoc signature (`codesign --sign -`) has no certificate, so there is nothing durable to name the app by, and the DR falls back to the hash of the binary itself:
+
+```
+designated => cdhash H"acff8513…"
+```
+
+Every build produces a different binary, so every build has a different cdhash, so every build fails the rule the grant was given under. `tccd` says so in the unified log, if you know to look:
+
+```
+Failed to match existing code requirement for subject ai.ashlr.lexiconbar
+```
+
+The row in System Settings stays, and keeps its switch on, because it is still a row about "LexiconBar" — it just no longer describes the app on disk. The switch is UI state; the DR is the thing being checked. Nothing about the interface tells you they have come apart.
+
+### The one-time fix
+
+Toggling the row does not rebind the signature. Removing the row does:
+
+1. System Settings > Privacy & Security > Accessibility
+2. Select **LexiconBar**, click **−**
+3. Click **+** and add `apps/macos/build/LexiconBar.app`
+
+### Making it stick
+
+Do that once *after* creating a local signing identity, and it never has to be done again:
+
+```bash
+scripts/make-signing-identity.sh
+scripts/build-macos-app.sh
+```
+
+`make-signing-identity.sh` creates a self-signed code-signing certificate, `LexiconBar Local Signing` (RSA 2048, 10 years, `basicConstraints=critical,CA:false`, `extendedKeyUsage=codeSigning`). Builds signed with it get a DR that names the certificate instead of the bytes:
+
+```
+designated => identifier "ai.ashlr.lexiconbar" and certificate leaf = H"8f4eec66…"
+```
+
+The certificate does not change when the binary does, so this line is identical on every future build — which is exactly what the stored grant is checked against. `build-macos-app.sh` prints the cdhash and the DR on every build, so you can watch the cdhash move while the DR stays put.
+
+The script is idempotent: run it again and it reports the identity it already made. Without it the build still works, signs ad-hoc, and prints a warning saying the grant will break again.
+
+### Where the key lives
+
+The certificate and its private key go in a keychain of their own, `~/Library/Keychains/lexiconbar-signing.keychain-db`, whose password is generated and kept in `~/Library/Application Support/LexiconBar/signing-keychain.password` (mode 0600). That is what makes the whole thing non-interactive: `security set-key-partition-list` must be given the keychain's password or macOS puts up a dialog, and the login keychain's password is yours, not ours. A keychain we create has a password we can supply, so `codesign` never asks for anything. The keychain is added to your `security list-keychains -d user` search list, which is how `codesign` finds the identity, and `build-macos-app.sh` unlocks it before signing (it is locked again after a reboot).
+
+`security find-identity -v -p codesigning` will still report **0 valid identities**: `-v` means "valid" in the sense of "chains to a trusted root", and a self-signed certificate does not. That does not matter — `codesign` signs with it happily. To see it, drop the `-v`:
+
+```bash
+security find-identity -p codesigning     # 1) 8F4EEC66… "LexiconBar Local Signing" (CSSMERR_TP_NOT_TRUSTED)
+scripts/make-signing-identity.sh --show   # the same, with the DR it produces
+```
+
+### Removing it
+
+```bash
+security delete-identity -c "LexiconBar Local Signing" ~/Library/Keychains/lexiconbar-signing.keychain-db
+security delete-keychain ~/Library/Keychains/lexiconbar-signing.keychain-db
+rm -f ~/Library/Application\ Support/LexiconBar/signing-keychain.password
+```
+
+`delete-keychain` also drops it from the search list. Builds then go back to ad-hoc signing, with the warning and the remove-and-re-add dance that comes with it.
+
+### This is not a Developer ID
+
+Gatekeeper does not trust this certificate, and neither will anyone else's Mac. It solves one problem — TCC forgetting the app between local builds — and nothing else. Shipping to other people needs a real Developer ID certificate and notarization; see [RELEASING.md](RELEASING.md).
 
 ## Finding the CLI
 
@@ -169,6 +243,8 @@ apps/macos/build/LexiconBar.app/Contents/MacOS/LexiconBar --status --json
 which prints `apiReachable`, `serveOwnership` (`launchAgent` / `appChild` / `foreign` / `none`), `serveTitle`, the probe inputs and the Accessibility fields described below. One caveat on ownership: `appChild` can never appear there, because a child of the *running* app is invisible to a separate process.
 
 ## Accessibility, and why `--status` will not answer for it
+
+(If the grant is listed and switched on but the app still is not trusted, the problem is the code signature, not this: see [Signing, and why the Accessibility grant kept disappearing](#signing-and-why-the-accessibility-grant-kept-disappearing).)
 
 `AXIsProcessTrusted()` does not answer "is LexiconBar allowed to use Accessibility". It answers for the **responsible process**, and for anything started from a shell that is the terminal. A `--status` run from a terminal therefore inherits the terminal's grant, and a bare `.build/release/LexiconBar` — a binary that cannot hold a grant at all — will happily report `true` while the GUI-launched bundle is being denied.
 
