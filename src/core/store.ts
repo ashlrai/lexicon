@@ -12,6 +12,7 @@ import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { writeFileAtomic } from '../util/atomic.js';
+import { xdgConfigHome } from '../util/xdg.js';
 import type {
   Lexicon,
   LexiconFile,
@@ -26,6 +27,10 @@ export interface StoreOptions {
   cwd?: string;
   /** Explicit global lexicon path; overrides $LEXICON_PATH and XDG defaults. */
   globalPath?: string;
+  /** Environment consulted for $LEXICON_PATH and $XDG_CONFIG_HOME. Default process.env. */
+  env?: NodeJS.ProcessEnv;
+  /** Home directory for the XDG fallback. Default os.homedir(). */
+  home?: string;
 }
 
 export interface LoadOptions extends StoreOptions {
@@ -46,7 +51,7 @@ export const PROJECT_FILE_NAME = '.lexicon.yaml';
 export const MAX_LEXICON_BYTES = 2 * 1024 * 1024;
 
 const HEADER_COMMENT = [
-  'Lexicon — personal vocabulary for voice-to-agents.',
+  'Lexicon: personal vocabulary for voice-to-agents.',
   'canonical: the spelling you want; aliases: what STT actually hears.',
   '',
   'Each term may also carry: phonetic (pronunciation hint), category',
@@ -85,9 +90,9 @@ function findProjectFile(start: string): string | undefined {
 
 export function resolvePaths(opts: StoreOptions = {}): { global: string; project?: string } {
   const cwd = opts.cwd ?? process.cwd();
-  const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  const global =
-    opts.globalPath || process.env.LEXICON_PATH || path.join(configHome, 'lexicon', 'lexicon.yaml');
+  const env = opts.env ?? process.env;
+  const configHome = xdgConfigHome(env, opts.home ?? os.homedir());
+  const global = opts.globalPath || env.LEXICON_PATH || path.join(configHome, 'lexicon', 'lexicon.yaml');
   const project = findProjectFile(cwd);
   return project ? { global, project } : { global };
 }
