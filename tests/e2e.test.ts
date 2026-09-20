@@ -112,6 +112,10 @@ async function freshHome(label: string): Promise<TestHome> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    // USERPROFILE as well as HOME: os.homedir() reads USERPROFILE on Windows
+    // and ignores HOME, so a child process given only HOME would read the
+    // runner's real ~/.claude instead of this throwaway one.
+    USERPROFILE: home,
     XDG_CONFIG_HOME: configHome,
     LEXICON_PATH: globalPath,
   };
@@ -150,7 +154,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await Promise.all(created.map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(created.map((dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })));
 });
 
 // ---------------------------------------------------------------------------
@@ -474,7 +478,14 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: harvest', () => {
     }
     // ranked by count, descending
     for (let i = 1; i < candidates.length; i += 1) expect(candidates[i - 1].count).toBeGreaterThanOrEqual(candidates[i].count);
-    // node_modules is never scanned
+    // node_modules is never scanned. The identifiers inside the vendored file
+    // are what prove it: `somepkg` is only a directory name and harvest would
+    // never surface it anyway, so that assertion held even when the fixture
+    // was missing entirely. Read the file first so a fixture that is not
+    // there fails here rather than passing as a skip that never happened.
+    const vendored = await fs.readFile(path.join(FAKE_REPO, 'node_modules', 'somepkg', 'index.js'), 'utf8');
+    expect(vendored).toContain('IgnoredVendorThing');
+    expect(names.some((n) => /IgnoredVendorThing/i.test(n))).toBe(false);
     expect(names.some((n) => /somepkg/i.test(n))).toBe(false);
 
     const limited = await runCli(['harvest', FAKE_REPO, '--json', '--limit', '2'], { env: shared.env });
@@ -486,7 +497,9 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: harvest', () => {
     expect(r.code).toBe(0);
     expect(r.stdout.split('\n')[0]).toMatch(/^canonical\s+category\s+count\s+suggested aliases\s+evidence$/);
     expect(r.stdout).toContain('LexiconStore');
-    expect(r.stdout).toContain('src/claw.ts');
+    // harvest reports evidence with path.relative, so the separator is the
+    // host's: `src\claw.ts` on Windows.
+    expect(r.stdout).toContain(path.join('src', 'claw.ts'));
   });
 
   it('rejects a non-positive --limit and a missing path', async () => {

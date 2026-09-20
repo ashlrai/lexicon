@@ -4,9 +4,12 @@
  * touches the filesystem, so both can import it without a cycle.
  */
 import path from 'node:path';
+import { xdgConfigHome } from '../util/xdg.js';
 
 export const LAUNCH_AGENT_LABEL = 'ai.ashlr.lexicon.serve';
 export const SYSTEMD_UNIT_NAME = 'lexicon-serve.service';
+/** Task Scheduler task name on Windows (`schtasks /TN`). */
+export const SCHEDULED_TASK_NAME = 'Lexicon';
 
 /** Overrides the launchd label (tests and scratch installs on a machine where the real label is in use). */
 export const SERVE_LABEL_ENV_VAR = 'LEXICON_SERVE_LABEL';
@@ -15,6 +18,17 @@ export const SERVE_LABEL_ENV_VAR = 'LEXICON_SERVE_LABEL';
 export function serveLabel(env: NodeJS.ProcessEnv = process.env): string {
   const override = env[SERVE_LABEL_ENV_VAR]?.trim();
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : LAUNCH_AGENT_LABEL;
+}
+
+/**
+ * The Scheduled Task name: `$LEXICON_SERVE_LABEL` when set, else `Lexicon`.
+ * Shares the override with launchd so one env var renames a scratch install on
+ * every platform. A leading `\` would make schtasks read it as a folder path,
+ * and the label pattern already excludes one.
+ */
+export function scheduledTaskName(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[SERVE_LABEL_ENV_VAR]?.trim();
+  return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 
 export function launchAgentPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -26,8 +40,7 @@ export function launchAgentLogPath(home: string): string {
 }
 
 export function systemdUnitPath(home: string, env: NodeJS.ProcessEnv): string {
-  const configHome = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim() !== '' ? env.XDG_CONFIG_HOME : path.join(home, '.config');
-  return path.join(configHome, 'systemd', 'user', SYSTEMD_UNIT_NAME);
+  return path.join(xdgConfigHome(env, home), 'systemd', 'user', SYSTEMD_UNIT_NAME);
 }
 
 /**
@@ -41,6 +54,22 @@ export function programPathFromPlist(plist: string): string | undefined {
   if (!block) return undefined;
   const strings = [...block[1].matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => xmlUnescape(m[1]));
   return strings[1];
+}
+
+/**
+ * The program path a Scheduled Task runs, as `schtasks /Query /XML` prints it.
+ *
+ * This is the *CLI entry*, not the node binary: `<Command>` is node and
+ * `<Arguments>` is `"<cli>" serve`, exactly as the plist's ProgramArguments
+ * and the unit's ExecStart put node first and the entry second. The doctor
+ * compares this against the filesystem to catch a service left pointing at an
+ * uninstalled copy, so all three platforms have to mean the same thing by it.
+ */
+export function programPathFromTaskXml(xml: string): string | undefined {
+  const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml);
+  if (!args) return undefined;
+  const quoted = /"([^"]*)"/.exec(xmlUnescape(args[1]));
+  return quoted ? quoted[1] : undefined;
 }
 
 /** The program path a systemd unit runs: the second quoted word of `ExecStart=`. */

@@ -545,8 +545,14 @@ describe('runHook', () => {
         expect(await shouldEmitOnboardNote(globalPath, t0)).toBe(true);
         expect(await shouldEmitOnboardNote(globalPath, t0 + ONBOARD_NOTE_INTERVAL_MS - 1)).toBe(false);
         expect(await shouldEmitOnboardNote(globalPath, t0 + ONBOARD_NOTE_INTERVAL_MS)).toBe(true);
-        // A directory that cannot be created is not fatal: the note is still emitted.
-        expect(await shouldEmitOnboardNote('/dev/null/nope/lexicon.yaml', t0)).toBe(true);
+        // A directory that cannot be created is not fatal: the note is still
+        // emitted. The unwritable path is "a directory under an existing
+        // *file*", which fails on every platform -- `/dev/null/nope` does not
+        // exist on Windows, where mkdir would happily create C:\dev\null\nope
+        // on the runner's system drive and the test would assert nothing.
+        const blocker = path.join(dir, 'not-a-directory');
+        await fs.writeFile(blocker, '');
+        expect(await shouldEmitOnboardNote(path.join(blocker, 'nope', 'lexicon.yaml'), t0)).toBe(true);
       });
     });
 

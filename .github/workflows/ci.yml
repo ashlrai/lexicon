@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `ci/**` as well as main: a cross-platform matrix is only worth having if
+    # it can be run before the change reaches main, and a branch push is the
+    # cheapest way to get that without opening a pull request first.
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
 
@@ -14,14 +17,37 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # The portable suite: every platform, and the three supported Node majors on
+  # Linux so the matrix stays five jobs rather than nine. Node 22 is the version
+  # macOS and Windows run, because that is the floor for the jsdom extension
+  # suite (see vitest.config.ts) -- a Windows job on Node 20 would silently skip
+  # it and the Windows column would mean less than it appears to.
+  # ---------------------------------------------------------------------------
   test:
-    name: node ${{ matrix.node }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        include:
+          - { os: ubuntu-latest, node: 20 }
+          - { os: ubuntu-latest, node: 22 }
+          - { os: ubuntu-latest, node: 24 }
+          - { os: windows-latest, node: 22 }
+          - { os: macos-latest, node: 22 }
     steps:
+      # Before checkout, or it has already rewritten the worktree. Git for
+      # Windows sets core.autocrlf=true globally, which would hand every
+      # tracked text file to the build with CRLF endings -- and two CI gates
+      # here are `git diff --exit-code` against generated files written with
+      # LF. The repo has no .gitattributes to pin this, so the workflow does.
+      - name: Keep LF endings on Windows
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -36,6 +62,10 @@ jobs:
       - run: npm run build
 
       - name: Plugin bundle is up to date
+        # Git Bash rather than pwsh, so the one conditional reads the same as
+        # it does locally. `timeout`/`/dev/null` are what Git Bash cannot be
+        # trusted with; `git ls-files` and `[ -n ]` are fine.
+        shell: bash
         run: |
           npm run build:bundle
           git diff --exit-code --stat -- plugin
@@ -44,48 +74,45 @@ jobs:
 
       - run: npm test
 
-      - name: Smoke test the built CLI
-        env:
-          LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
-        run: |
-          out="$(node dist/cli/index.js normalize "ping ashler")"
-          echo "normalize -> $out"
-          echo "$out" | grep -q "Ashlr.AI"
+      # The e2e suite spawns the real CLI, the real hook and the real MCP
+      # server as child processes. `npm test` already includes it; this runs it
+      # again alone so a failure there is attributable at a glance rather than
+      # buried in 800 other results.
+      - name: End-to-end suite
+        run: npm run test:e2e
 
-      - name: Smoke test the bundled plugin hook
-        env:
-          LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
-        run: |
-          out="$(echo '{"hook_event_name":"UserPromptSubmit","prompt":"ping ashler"}' | node plugin/hook.mjs)"
-          echo "hook -> $out"
-          echo "$out" | grep -q "Ashlr.AI"
-          out="$(echo '{"hook_event_name":"SessionStart","source":"startup"}' | node plugin/hook.mjs)"
-          echo "$out" | grep -q '"hookEventName":"SessionStart"'
-
-      - name: Smoke test the MCP server starts
-        run: |
-          # The server must start and stay alive on stdio; kill it after a moment.
-          timeout 5 node dist/mcp/server.js < /dev/null > /dev/null 2> server.err || code=$?
-          # 124 = killed by timeout (server was healthy); 0 = clean EOF exit. Anything else is a crash.
-          if [ "${code:-0}" != "0" ] && [ "${code:-0}" != "124" ]; then cat server.err; exit 1; fi
+      - name: Smoke test the built CLI, the plugin hook and the MCP server
+        run: npm run smoke
 
       - name: Build the browser extension
         run: npm run build:extension
 
       - name: Upload the browser extension
-        if: matrix.node == 22
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         uses: actions/upload-artifact@v4
         with:
           name: lexicon-extension
           path: extension/dist
           if-no-files-found: error
 
-  # Documentation drift guards (issue #9). A job of its own rather than three
-  # more steps in the Node matrix, so each check runs once.
+  # ---------------------------------------------------------------------------
+  # Documentation drift guards. Split from the test matrix so each check runs
+  # once per platform that can meaningfully run it, rather than five times.
+  # ---------------------------------------------------------------------------
   docs:
-    name: docs
-    runs-on: ubuntu-latest
+    name: docs (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
+      - name: Keep LF endings on Windows
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -96,18 +123,255 @@ jobs:
       - run: npm ci
 
       - name: Every relative link resolves
+        # Runs on Windows too, but ubuntu is the authoritative result: NTFS is
+        # case-insensitive, so a link written `docs/cli.md` against the real
+        # `docs/CLI.md` resolves here and fails on Linux. The Windows run
+        # proves the script itself is portable, not that the links are right.
         run: npm run check:links
 
+      - name: CLI reference is up to date
+        # The interesting platform for this one is Windows: gen-cli-docs
+        # embeds the CLI's own --help output verbatim inside fenced blocks, and
+        # commander writes CRLF there. An un-normalized \r would be *committed
+        # content*, so this diff is the thing that catches it.
+        run: |
+          npm run docs:cli
+          git diff --exit-code --stat -- docs/CLI.md
+
       - name: The numbers in the docs match the code
-        # Derives the MCP tool/resource/prompt counts from the built server over
-        # stdio, the command count from `lexicon --help`, and the format, pack,
-        # stoplist and test counts from the code, then fails on any doc that
-        # disagrees. Needs dist/, hence the build.
+        # ubuntu only, deliberately: this derives the TypeScript test count by
+        # running the whole vitest suite, which the test matrix has already run
+        # on all three platforms. Doc drift is a property of the repo, not of
+        # the OS, so a second full run on Windows would cost ~5 minutes to
+        # assert the same numbers. The script itself is Windows-clean (it
+        # spawns vitest's ESM entry with process.execPath, not the npx shim).
+        if: matrix.os == 'ubuntu-latest'
         run: |
           npm run build
           npm run check:facts
 
-      - name: CLI reference is up to date
+  # ---------------------------------------------------------------------------
+  # Windows features that unit tests only ever exercise through injected fakes.
+  # Everything here uses the real schtasks, the real clipboard and a real
+  # scratch %USERPROFILE%.
+  # ---------------------------------------------------------------------------
+  windows-integration:
+    name: windows integration
+    runs-on: windows-latest
+    steps:
+      - name: Keep LF endings on Windows
         run: |
-          npm run docs:cli
-          git diff --exit-code --stat -- docs/CLI.md
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      # --- lexicon serve --install -----------------------------------------
+      # The task is created, queried back out of the Task Scheduler store, and
+      # deleted in the same job. LEXICON_SERVE_LABEL keeps it off the name a
+      # real install would use.
+      - name: serve --install creates a Scheduled Task, --uninstall removes it
+        shell: pwsh
+        env:
+          LEXICON_SERVE_LABEL: LexiconCI
+          LEXICON_PATH: ${{ github.workspace }}\examples\lexicon.example.yaml
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node dist/cli/index.js serve --install
+          if ($LASTEXITCODE -ne 0) { throw "serve --install exited $LASTEXITCODE" }
+
+          # It must be in the store, and its action must point at this checkout.
+          $xml = schtasks /Query /TN LexiconCI /XML
+          if ($LASTEXITCODE -ne 0) { throw 'schtasks could not find the task that --install claimed to create' }
+          $xml = $xml -join "`n"
+          Write-Host $xml
+          if ($xml -notmatch '<LogonTrigger>') { throw 'the task has no logon trigger' }
+          if ($xml -notmatch [regex]::Escape('dist\cli\index.js')) { throw 'the task does not run this checkout' }
+
+          # The doctor must agree that it is installed and healthy.
+          $doctor = node dist/cli/index.js doctor 2>&1 | Out-String
+          Write-Host $doctor
+          if ($doctor -notmatch 'LexiconCI') { throw 'doctor does not see the Scheduled Task' }
+
+          node dist/cli/index.js serve --uninstall
+          if ($LASTEXITCODE -ne 0) { throw "serve --uninstall exited $LASTEXITCODE" }
+
+          schtasks /Query /TN LexiconCI 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'the task survived --uninstall' }
+          Write-Host 'Scheduled Task created, verified and removed.'
+
+      # --- the PowerShell clipboard backend --------------------------------
+      # The unit tests inject a fake exec; this drives the real
+      # Get-Clipboard/Set-Clipboard through `lexicon daemon --once`, including
+      # the CRLF round-trip the backend promises.
+      - name: clipboard daemon corrects the real Windows clipboard
+        shell: pwsh
+        env:
+          LEXICON_PATH: ${{ github.workspace }}\examples\lexicon.example.yaml
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node dist/cli/index.js daemon --which
+          if ($LASTEXITCODE -ne 0) { throw 'no clipboard backend detected on Windows' }
+
+          # Two lines with Windows endings: the backend normalizes to \n for
+          # the matcher and must put \r\n back on the way out.
+          Set-Clipboard -Value "ping ashler`r`nsecond line"
+          node dist/cli/index.js daemon --once
+          if ($LASTEXITCODE -ne 0) { throw "daemon --once exited $LASTEXITCODE" }
+
+          $out = Get-Clipboard -Raw
+          Write-Host ('clipboard now: ' + ($out -replace "`r", '\r' -replace "`n", '\n'))
+          if ($out -notmatch 'Ashlr\.AI') { throw 'the clipboard was not corrected' }
+          if ($out -notmatch "`r`n") { throw 'CRLF was not preserved through the round trip' }
+          if ($out -notmatch 'second line') { throw 'the second line was lost' }
+
+      # --- client config paths ---------------------------------------------
+      # Writes each client's config into a scratch %USERPROFILE% and reads it
+      # back, so the paths are checked against the filesystem rather than
+      # against our own constant.
+      - name: client configs land where each vendor documents on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scratch = Join-Path $env:RUNNER_TEMP 'lexhome'
+          New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+          $env:USERPROFILE = $scratch
+          $env:APPDATA = Join-Path $scratch 'AppData\Roaming'
+          $env:HOME = $scratch
+          $env:LEXICON_PATH = Join-Path $scratch 'lexicon.yaml'
+
+          node dist/cli/index.js install claude-desktop --apply
+          node dist/cli/index.js install cursor --apply
+          node dist/cli/index.js install vscode --apply
+          node dist/cli/index.js install codex --apply
+          node dist/cli/index.js install gemini --apply
+
+          # %APPDATA%\Claude\claude_desktop_config.json and
+          # %APPDATA%\Code\User\mcp.json are the documented Windows locations;
+          # the other three are `~`-relative, which is %USERPROFILE% here.
+          $expected = @(
+            (Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'),
+            (Join-Path $env:APPDATA 'Code\User\mcp.json'),
+            (Join-Path $scratch '.cursor\mcp.json'),
+            (Join-Path $scratch '.codex\config.toml'),
+            (Join-Path $scratch '.gemini\settings.json')
+          )
+          foreach ($f in $expected) {
+            if (-not (Test-Path $f)) { throw "missing: $f" }
+            $body = Get-Content $f -Raw
+            if ($body -notmatch 'lexicon') { throw "no lexicon entry in $f" }
+            Write-Host "ok  $f"
+          }
+
+      # --- voice, as far as a runner without a microphone can go ------------
+      # Device enumeration and recording need real audio hardware, so they are
+      # not attempted. What is checked is that the missing-tool path reports
+      # the Windows install hint rather than crashing. See docs/PLATFORMS.md.
+      - name: voice reports the Windows install hint when ffmpeg is absent
+        shell: pwsh
+        env:
+          LEXICON_FFMPEG_BIN: C:\nowhere\ffmpeg.exe
+          LEXICON_WHISPER_BIN: C:\nowhere\whisper-cli.exe
+        run: |
+          $out = node dist/cli/index.js voice --list-devices 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'winget install Gyan.FFmpeg') { throw 'the Windows ffmpeg install hint is missing' }
+
+  # ---------------------------------------------------------------------------
+  # Linux beyond the happy path: the X11 clipboard backends under a real X
+  # server, and the systemd unit we write validated by systemd itself.
+  # ---------------------------------------------------------------------------
+  linux-integration:
+    name: linux integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Install a display and the clipboard tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xclip xsel wl-clipboard systemd
+
+      # xclip and xsel need a display. xvfb-run gives them one, so these run
+      # for real instead of being skipped for want of an X server.
+      - name: clipboard daemon corrects the real clipboard under X11
+        env:
+          LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
+        run: |
+          set -euo pipefail
+          for backend in xclip xsel; do
+            echo "--- $backend ---"
+            xvfb-run -a --server-args='-screen 0 1024x768x24' bash -eu -c "
+              node dist/cli/index.js daemon --which --backend $backend
+              printf 'ping ashler\nsecond line' | $backend $([ $backend = xclip ] && echo '-selection clipboard -i' || echo '--clipboard --input')
+              node dist/cli/index.js daemon --once --backend $backend
+              out=\$($backend $([ $backend = xclip ] && echo '-selection clipboard -o' || echo '--clipboard --output'))
+              echo \"clipboard now: \$out\"
+              echo \"\$out\" | grep -q 'Ashlr.AI'
+              echo \"\$out\" | grep -q 'second line'
+            "
+          done
+
+      # WAYLAND_DISPLAY is what selects the wl backend, and there is no
+      # compositor on the runner, so this asserts detection and the error the
+      # user would actually see -- not a working Wayland clipboard.
+      - name: the Wayland backend is selected by WAYLAND_DISPLAY and fails honestly without a compositor
+        env:
+          LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
+        run: |
+          set -uo pipefail
+          out="$(WAYLAND_DISPLAY=wayland-0 DISPLAY= node dist/cli/index.js daemon --which 2>&1)" || true
+          echo "$out"
+          echo "$out" | grep -q 'wl-paste'
+          out="$(WAYLAND_DISPLAY=wayland-0 DISPLAY= node dist/cli/index.js daemon --once --backend wl 2>&1)" || true
+          echo "$out"
+          # A missing compositor must surface, not be swallowed as "empty clipboard".
+          echo "$out" | grep -Eqi 'wayland|compositor|display|wl-paste'
+
+      # `systemctl --user` has no session bus on a GitHub runner, so `--install`
+      # writes the unit and then fails to enable it. That is expected: what is
+      # verified here is that the unit file we write is one systemd accepts.
+      - name: the systemd user unit we write is valid
+        env:
+          LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
+        run: |
+          set -uo pipefail
+          node dist/cli/index.js serve --install || echo "--install exited non-zero (expected: no user session bus on the runner)"
+          unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/lexicon-serve.service"
+          test -f "$unit" || { echo "no unit written at $unit"; exit 1; }
+          cat "$unit"
+          # systemd-analyze verify is the authority on whether this parses and
+          # whether ExecStart points at something runnable.
+          systemd-analyze verify "$unit"
+          node dist/cli/index.js serve --uninstall || true
+
+      # XDG_CONFIG_HOME / XDG_DATA_HOME / XDG_STATE_HOME must actually move the
+      # files, and a relative value must be ignored per the spec.
+      - name: XDG_CONFIG_HOME moves the lexicon, and a relative value is ignored
+        run: |
+          set -euo pipefail
+          xdg="$RUNNER_TEMP/xdg"
+          mkdir -p "$xdg"
+          out="$(XDG_CONFIG_HOME="$xdg" node dist/cli/index.js path)"
+          echo "$out"
+          echo "$out" | grep -q "$xdg/lexicon/lexicon.yaml"
+          # The spec says a relative path is invalid and must be ignored.
+          out="$(XDG_CONFIG_HOME=relative/dir node dist/cli/index.js path)"
+          echo "$out"
+          echo "$out" | grep -q "$HOME/.config/lexicon/lexicon.yaml"

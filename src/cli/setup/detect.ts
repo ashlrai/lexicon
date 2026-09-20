@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { findOnPath } from '../../util/which.js';
 import type { IO } from '../io.js';
+import { claudeConfigDir } from '../claude-settings.js';
 import { configPathFor } from '../cmd-install.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './types.js';
 import type { DetectedClient, SetupApp, SetupClient, SetupDeps, SetupExec } from './types.js';
@@ -151,7 +152,7 @@ const CLI_NAMES: Partial<Record<SetupClient, string>> = {
 };
 
 export function configDirFor(client: SetupClient, ctx: DetectContext): string {
-  if (client === 'claude') return path.join(ctx.home, '.claude');
+  if (client === 'claude') return claudeConfigDir(ctx.env, ctx.home);
   const file = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
   // The client's own directory: ~/.codex, ~/.cursor, ~/.codeium/windsurf, ~/.gemini,
   // ~/Library/Application Support/Claude, ~/Library/Application Support/Code.

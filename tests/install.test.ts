@@ -29,8 +29,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await fs.rm(home, { recursive: true, force: true });
-  await fs.rm(cwd, { recursive: true, force: true });
+  await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const baseDeps = (platform: NodeJS.Platform = 'darwin'): InstallDeps => ({
@@ -270,9 +270,29 @@ describe('platform-specific paths', () => {
   });
 
   it('uses ~/.config on Linux for VS Code and Claude Desktop', () => {
+    // path.join, not a '/'-joined literal: configPathFor builds with the
+    // host's path flavour, so on a Windows runner these are backslash paths.
     const ctx = { home: '/home/me', cwd: '/repo', platform: 'linux' as const, env: {}, project: false };
-    expect(configPathFor('vscode', ctx)).toBe('/home/me/.config/Code/User/mcp.json');
-    expect(configPathFor('claude-desktop', ctx)).toBe('/home/me/.config/Claude/claude_desktop_config.json');
+    expect(configPathFor('vscode', ctx)).toBe(path.join('/home/me', '.config', 'Code', 'User', 'mcp.json'));
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('/home/me', '.config', 'Claude', 'claude_desktop_config.json'));
+  });
+
+  it('follows XDG_CONFIG_HOME for Claude Desktop but not for VS Code, which ignores it', () => {
+    // Claude Desktop reads $XDG_CONFIG_HOME on Linux; VS Code hardcodes
+    // $HOME/.config/Code (userDataProfile.ts) and never looks at the variable,
+    // so honouring it here would write a file VS Code does not read.
+    const ctx = { home: '/home/me', cwd: '/repo', platform: 'linux' as const, env: { XDG_CONFIG_HOME: '/xdg' }, project: false };
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('/xdg', 'Claude', 'claude_desktop_config.json'));
+    expect(configPathFor('vscode', ctx)).toBe(path.join('/home/me', '.config', 'Code', 'User', 'mcp.json'));
+  });
+
+  it('honours CODEX_HOME and GEMINI_CLI_HOME, which those CLIs document', () => {
+    const base = { home: '/home/me', cwd: '/repo', platform: 'linux' as const, project: false };
+    expect(configPathFor('codex', { ...base, env: { CODEX_HOME: '/alt/codex' } })).toBe(path.join('/alt/codex', 'config.toml'));
+    expect(configPathFor('codex', { ...base, env: {} })).toBe(path.join('/home/me', '.codex', 'config.toml'));
+    // GEMINI_CLI_HOME names the directory that *holds* .gemini, not .gemini.
+    expect(configPathFor('gemini', { ...base, env: { GEMINI_CLI_HOME: '/alt' } })).toBe(path.join('/alt', '.gemini', 'settings.json'));
+    expect(configPathFor('gemini', { ...base, env: {} })).toBe(path.join('/home/me', '.gemini', 'settings.json'));
   });
 });
 

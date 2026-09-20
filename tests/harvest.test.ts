@@ -39,7 +39,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await fs.rm(tmp, { recursive: true, force: true });
+  await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate | undefined {
@@ -108,6 +108,16 @@ describe('harvestRepo', () => {
   });
 
   it('ignores node_modules', async () => {
+    // Assert the fixture is really there before asserting it was skipped.
+    // It lives under a `node_modules/` path, so a contributor's *global*
+    // gitignore hid it from `git add` and it was never committed: CI cloned a
+    // fixture with no vendored file, harvest had nothing to skip, and this
+    // test passed without testing anything for as long as it has existed.
+    // Now tracked (git add -f), and this check fails loudly if it goes again.
+    const vendored = path.join(repo, 'node_modules', 'somepkg', 'index.js');
+    const body = await fs.readFile(vendored, 'utf8');
+    expect(body).toContain('IgnoredVendorThing');
+
     const candidates = await harvestRepo(repo, { minCount: 1 });
     expect(byName(candidates, 'IgnoredVendorThing')).toBeUndefined();
     expect(byName(candidates, 'IgnoredVendorThing2')).toBeUndefined();

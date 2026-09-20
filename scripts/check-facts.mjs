@@ -134,7 +134,7 @@ function cliCommands() {
   const start = help.indexOf('\nCommands:');
   if (start < 0) throw new Error('could not find the Commands: section in `lexicon --help`');
   const names = [];
-  for (const line of help.slice(start + 1).split('\n').slice(1)) {
+  for (const line of help.slice(start + 1).split(/\r?\n/).slice(1)) {
     // "  add [options] <canonical> [aliases...]  add a term, ..." -> "add"
     // "  remove|rm [options] <canonical>         remove a term"   -> "remove"
     const m = /^ {2}(\S+)/.exec(line);
@@ -208,8 +208,17 @@ function swiftTestCount() {
  */
 function vitestCount() {
   const out = path.join(mkdtempSync(path.join(tmpdir(), 'lexicon-facts-')), 'vitest.json');
+  // Spawn vitest's own ESM entry with this node, never the `npx` shim: on
+  // Windows `npx` exists only as `npx.cmd`, which execFileSync cannot resolve
+  // (no PATHEXT expansion) and which Node refuses to spawn without
+  // `shell: true` since the CVE-2024-27980 fix. Resolving the entry keeps the
+  // call identical on all three platforms.
+  const vitestEntry = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
+  if (!existsSync(vitestEntry)) {
+    throw new Error(`cannot count tests: ${vitestEntry} is missing (run npm ci)`);
+  }
   try {
-    execFileSync('npx', ['vitest', 'run', '--reporter=json', `--outputFile=${out}`], {
+    execFileSync(process.execPath, [vitestEntry, 'run', '--reporter=json', `--outputFile=${out}`], {
       cwd: root,
       encoding: 'utf8',
       timeout: 900_000,
@@ -387,7 +396,7 @@ function check(facts) {
   const problems = [];
   const agreed = [];
   for (const file of scanTargets()) {
-    const lines = readFileSync(path.join(root, file), 'utf8').split('\n');
+    const lines = readFileSync(path.join(root, file), 'utf8').split(/\r?\n/);
     const live = liveLineCount(file, lines);
     lines.forEach((line, i) => {
       if (i >= live) return;

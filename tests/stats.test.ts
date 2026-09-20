@@ -110,7 +110,7 @@ describe('lexicon stats (CLI)', () => {
     } finally {
       if (prev === undefined) delete process.env.LEXICON_PATH;
       else process.env.LEXICON_PATH = prev;
-      await fs.rm(tmp, { recursive: true, force: true });
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 });

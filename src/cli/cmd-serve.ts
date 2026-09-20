@@ -2,7 +2,7 @@
  * `lexicon serve`: run the local HTTP API (src/serve/server.ts), show its URL
  * and token, check whether it is up, open the extension pairing page
  * (`--pair`), or install it as a login service (launchd on macOS, a systemd
- * user unit on Linux; instructions on Windows).
+ * user unit on Linux, a Task Scheduler logon task on Windows).
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
@@ -18,14 +18,16 @@ import { fail, line, safe, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
+  SCHEDULED_TASK_NAME,
   SYSTEMD_UNIT_NAME,
   launchAgentLogPath,
   launchAgentPath,
+  scheduledTaskName,
   serveLabel,
   systemdUnitPath,
 } from './serve-paths.js';
 
-export { LAUNCH_AGENT_LABEL, SERVE_LABEL_ENV_VAR, SYSTEMD_UNIT_NAME, launchAgentLogPath, launchAgentPath, serveLabel, systemdUnitPath } from './serve-paths.js';
+export { LAUNCH_AGENT_LABEL, SCHEDULED_TASK_NAME, SERVE_LABEL_ENV_VAR, SYSTEMD_UNIT_NAME, launchAgentLogPath, launchAgentPath, programPathFromTaskXml, scheduledTaskName, serveLabel, systemdUnitPath } from './serve-paths.js';
 /** How long `--status` waits for /health. */
 export const STATUS_TIMEOUT_MS = 1_500;
 
@@ -280,6 +282,88 @@ export function launchAgentPlist(nodePath: string, cliPath: string, logPath: str
   ].join('\n');
 }
 
+/**
+ * The Task Scheduler document for `schtasks /Create /XML`.
+ *
+ * Why XML rather than the `/TR "..."` one-liner the old help text printed:
+ * `/TR` is a single opaque field holding a whole command line, and both the
+ * node binary and the CLI entry routinely sit under `C:\Program Files\...`,
+ * so the value must carry embedded quotes. Node's `spawn` re-quotes an argv
+ * element containing quotes by backslash-escaping them, schtasks does not
+ * understand `\"`, and the task ends up registered with a mangled command that
+ * only fails at the next logon. `<Command>` and `<Arguments>` are separate
+ * elements, so nothing has to survive two levels of quoting.
+ *
+ * `userId` binds the logon trigger to one account (the task otherwise fires
+ * for every user on the machine); `InteractiveToken` runs it in that user's
+ * desktop session without storing a password. `ExecutionTimeLimit PT0S`
+ * disables the default 72-hour kill, and `RestartOnFailure` is the nearest
+ * equivalent to launchd `KeepAlive` / systemd `Restart=on-failure`.
+ */
+export function scheduledTaskXml(nodePath: string, cliPath: string, userId?: string): string {
+  const principal = [
+    '  <Principals>',
+    '    <Principal id="Author">',
+    ...(userId ? [`      <UserId>${xmlEscape(userId)}</UserId>`] : []),
+    '      <LogonType>InteractiveToken</LogonType>',
+    '      <RunLevel>LeastPrivilege</RunLevel>',
+    '    </Principal>',
+    '  </Principals>',
+  ];
+  return [
+    '<?xml version="1.0" encoding="UTF-16"?>',
+    '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
+    '  <RegistrationInfo>',
+    '    <Description>lexicon serve (local HTTP API for @ashlr/lexicon)</Description>',
+    '  </RegistrationInfo>',
+    '  <Triggers>',
+    '    <LogonTrigger>',
+    '      <Enabled>true</Enabled>',
+    ...(userId ? [`      <UserId>${xmlEscape(userId)}</UserId>`] : []),
+    '    </LogonTrigger>',
+    '  </Triggers>',
+    ...principal,
+    '  <Settings>',
+    '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>',
+    '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>',
+    '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>',
+    '    <AllowHardTerminate>true</AllowHardTerminate>',
+    '    <StartWhenAvailable>false</StartWhenAvailable>',
+    '    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>',
+    '    <IdleSettings>',
+    '      <StopOnIdleEnd>false</StopOnIdleEnd>',
+    '      <RestartOnIdle>false</RestartOnIdle>',
+    '    </IdleSettings>',
+    '    <AllowStartOnDemand>true</AllowStartOnDemand>',
+    '    <Enabled>true</Enabled>',
+    '    <Hidden>false</Hidden>',
+    '    <RunOnlyIfIdle>false</RunOnlyIfIdle>',
+    '    <RestartOnFailure>',
+    '      <Interval>PT1M</Interval>',
+    '      <Count>3</Count>',
+    '    </RestartOnFailure>',
+    '    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>',
+    '    <Priority>7</Priority>',
+    '  </Settings>',
+    '  <Actions Context="Author">',
+    '    <Exec>',
+    `      <Command>${xmlEscape(nodePath)}</Command>`,
+    `      <Arguments>${xmlEscape(`"${cliPath}" serve`)}</Arguments>`,
+    '    </Exec>',
+    '  </Actions>',
+    '</Task>',
+    '',
+  ].join('\r\n');
+}
+
+/** `DOMAIN\\user` for the task principal, from the environment schtasks itself reads. */
+export function taskUserId(env: NodeJS.ProcessEnv): string | undefined {
+  const user = env.USERNAME?.trim();
+  if (!user) return undefined;
+  const domain = (env.USERDOMAIN ?? env.COMPUTERNAME)?.trim();
+  return domain ? `${domain}\\${user}` : user;
+}
+
 function unitQuote(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
@@ -337,10 +421,11 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     );
     return 1;
   }
-  if (platform === 'darwin' || platform === 'linux') {
+  if (platform === 'darwin' || platform === 'linux' || platform === 'win32') {
     // A service whose program does not exist would crash-loop under KeepAlive /
-    // Restart and, worse, replace a working install under the same label. Nothing
-    // is written and nothing is booted out until the path is known to exist.
+    // Restart / RestartOnFailure and, worse, replace a working install under the
+    // same label. Nothing is written and nothing is booted out until the path is
+    // known to exist.
     try {
       await fs.access(cliPath);
     } catch {
@@ -395,14 +480,27 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   }
 
   if (platform === 'win32') {
-    line(io, 'lexicon serve --install is not automated on Windows. Create a Scheduled Task that runs at logon:');
-    line(io);
-    line(io, `  schtasks /Create /SC ONLOGON /TN "lexicon serve" /TR "\\"${nodePath}\\" \\"${cliPath}\\" serve"`);
-    line(io);
-    line(io, 'or use Task Scheduler: trigger "At log on", action "Start a program" with');
-    line(io, `  program:   ${safe(nodePath)}`);
-    line(io, `  arguments: "${safe(cliPath)}" serve`);
-    line(io, 'Nothing was written.');
+    const taskName = scheduledTaskName(env);
+    const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env));
+    // schtasks /Create /XML rejects a UTF-8 document ("The task XML is
+    // malformed"); it wants UTF-16. The BOM is what makes it unambiguous.
+    const xmlPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-task-')), 'lexicon-serve.xml');
+    await fs.writeFile(xmlPath, Buffer.from(`\ufeff${xml}`, 'utf16le'));
+    try {
+      // /F replaces an existing task of the same name, which is what a
+      // re-install means; without it schtasks refuses and exits non-zero.
+      const created = await runAndReport(exec, io, 'schtasks', ['/Create', '/TN', taskName, '/XML', xmlPath, '/F']);
+      if (created.code !== 0) {
+        io.stderr(`lexicon: could not create the Scheduled Task "${safe(taskName)}"; nothing is installed\n`);
+        return 1;
+      }
+    } finally {
+      await fs.rm(path.dirname(xmlPath), { recursive: true, force: true });
+    }
+    line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
+    line(io, `  Command:   ${safe(nodePath)}`);
+    line(io, `  Arguments: "${safe(cliPath)}" serve`);
+    line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
 
@@ -445,7 +543,12 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
   }
 
   if (platform === 'win32') {
-    line(io, 'remove the Scheduled Task with:  schtasks /Delete /TN "lexicon serve" /F');
+    const taskName = scheduledTaskName(env);
+    const deleted = await runAndReport(exec, io, 'schtasks', ['/Delete', '/TN', taskName, '/F']);
+    // schtasks exits non-zero when the task is not there, which is the same
+    // "was not installed" case the other two platforms report rather than fail.
+    if (deleted.code === 0) line(io, `removed Scheduled Task ${safe(taskName)}`);
+    else line(io, `Scheduled Task ${safe(taskName)} was not installed`);
     return 0;
   }
 
@@ -557,7 +660,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')
     .option('--pair', `open http://127.0.0.1:${DEFAULT_PORT}/pair in your browser so the extension pairs itself, and exit`)
-    .option('--install', 'install as a login service (launchd on macOS, systemd --user on Linux)')
+    .option('--install', 'install as a login service (launchd on macOS, systemd --user on Linux, a Scheduled Task on Windows)')
     .option('--uninstall', 'remove the login service')
     .action(async (opts: ServeOptions) => done(await runServe({ ...opts, ...globals() }, io)));
 }

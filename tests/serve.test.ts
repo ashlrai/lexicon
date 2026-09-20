@@ -29,9 +29,14 @@ import {
   launchAgentPath,
   launchAgentLogPath,
   pairUrl,
+  programPathFromTaskXml,
   runServe,
+  scheduledTaskName,
+  scheduledTaskXml,
   systemdUnitPath,
+  taskUserId,
   LAUNCH_AGENT_LABEL,
+  SCHEDULED_TASK_NAME,
   SERVE_LABEL_ENV_VAR,
   SYSTEMD_UNIT_NAME,
 } from '../src/cli/cmd-serve.js';
@@ -112,10 +117,12 @@ beforeAll(async () => {
     'version: 1\nterms:\n  - canonical: HostileCorp\n    aliases: [hostyle]\n',
     'utf8',
   );
-  for (const key of ['HOME', 'XDG_CONFIG_HOME', 'LEXICON_PATH', 'LEXICON_TRUST_ALL']) {
+  for (const key of ['HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'LEXICON_PATH', 'LEXICON_TRUST_ALL']) {
     savedEnv[key] = process.env[key];
   }
   process.env.HOME = home;
+  // os.homedir() reads USERPROFILE on Windows and ignores HOME.
+  process.env.USERPROFILE = home;
   process.env.XDG_CONFIG_HOME = configHome;
   process.env.LEXICON_PATH = globalPath;
   delete process.env.LEXICON_TRUST_ALL;
@@ -133,7 +140,7 @@ afterAll(async () => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  await fs.rm(env.home, { recursive: true, force: true });
+  await fs.rm(env.home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 // ---------------------------------------------------------------------------
@@ -688,7 +695,7 @@ describe('lexicon serve (CLI)', () => {
       await expect(fs.access(plistPath)).rejects.toThrow();
       expect(io3.out.join('')).toContain(`removed ${plistPath}`);
     } finally {
-      await fs.rm(home, { recursive: true, force: true });
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 
@@ -726,7 +733,7 @@ describe('lexicon serve (CLI)', () => {
       expect(calls2[0]).toEqual(['systemctl', '--user', 'disable', '--now', SYSTEMD_UNIT_NAME]);
       await expect(fs.access(unitPath)).rejects.toThrow();
     } finally {
-      await fs.rm(home, { recursive: true, force: true });
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 
@@ -752,7 +759,7 @@ describe('lexicon serve (CLI)', () => {
       await expect(fs.access(systemdUnitPath(home, {}))).rejects.toThrow();
 
     } finally {
-      await fs.rm(home, { recursive: true, force: true });
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 
@@ -775,7 +782,7 @@ describe('lexicon serve (CLI)', () => {
       expect(plist).toContain(`<string>${cli}</string>`);
       expect(io.out.join('')).toContain(`ProgramArguments: /usr/local/bin/node ${cli} serve`);
     } finally {
-      await fs.rm(home, { recursive: true, force: true });
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 
@@ -806,25 +813,107 @@ describe('lexicon serve (CLI)', () => {
       expect(calls2[0]).toEqual(['launchctl', 'bootout', 'gui/501/ai.ashlr.lexicon.serve.test']);
       await expect(fs.access(plistPath)).rejects.toThrow();
     } finally {
-      await fs.rm(home, { recursive: true, force: true });
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 
-  it('--install on Windows prints Scheduled Task instructions and writes nothing', async () => {
+  it('--install on Windows registers a Scheduled Task with schtasks /Create /XML', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+    try {
+      const cli = await fakeCli(home);
+      const calls: string[][] = [];
+      const io = memIO();
+      const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+        platform: 'win32',
+        home,
+        env: { USERNAME: 'me', USERDOMAIN: 'BOX' },
+        exec: fakeExec(calls),
+        cliPath: cli,
+        nodePath: 'C:\\node\\node.exe',
+      });
+      expect(code).toBe(0);
+      expect(calls).toHaveLength(1);
+      const [cmd, ...args] = calls[0];
+      expect(cmd).toBe('schtasks');
+      // /XML rather than /TR: the command line holds two quoted absolute paths
+      // and /TR is a single field, so the quotes would have to survive Node's
+      // argv re-quoting and schtasks' own parsing. The XML keeps them apart.
+      expect(args.slice(0, 4)).toEqual(['/Create', '/TN', SCHEDULED_TASK_NAME, '/XML']);
+      expect(args[5]).toBe('/F');
+      const text = io.out.join('');
+      expect(text).toContain('created Scheduled Task Lexicon');
+      expect(text).toContain(`"${cli}" serve`);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  it('--install on Windows refuses a CLI path that does not exist, and runs nothing', async () => {
     const calls: string[][] = [];
     const io = memIO();
     const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
       platform: 'win32',
       home: 'C:\\Users\\me',
       exec: fakeExec(calls),
-      cliPath: 'C:\\lexicon\\dist\\cli\\index.js',
+      cliPath: 'C:\\nowhere\\dist\\cli\\index.js',
       nodePath: 'C:\\node\\node.exe',
     });
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(calls).toEqual([]);
-    const text = io.out.join('');
-    expect(text).toContain('schtasks /Create /SC ONLOGON');
-    expect(text).toContain('Nothing was written.');
+    expect(io.err.join('')).toContain('does not exist');
+  });
+
+  it('--uninstall on Windows deletes the task, and says so when there was none', async () => {
+    const ok: string[][] = [];
+    const io = memIO();
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: fakeExec(ok),
+    })).toBe(0);
+    expect(ok).toEqual([['schtasks', '/Delete', '/TN', 'Lexicon', '/F']]);
+    expect(io.out.join('')).toContain('removed Scheduled Task Lexicon');
+
+    const missing: string[][] = [];
+    const io2 = memIO();
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io2, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: fakeExec(missing, 1),
+    })).toBe(0);
+    expect(io2.out.join('')).toContain('was not installed');
+  });
+
+  it('the task XML round-trips its program path and binds the trigger to one user', () => {
+    const xml = scheduledTaskXml('C:\\Program Files\\nodejs\\node.exe', 'C:\\lex & co\\index.js', 'BOX\\me');
+    // The CLI entry, not the node binary -- the same thing the plist and the
+    // unit parsers return, so the doctor's "points at a missing file" check
+    // means one thing on all three platforms.
+    expect(programPathFromTaskXml(xml)).toBe('C:\\lex & co\\index.js');
+    expect(xml).toContain('<Command>C:\\Program Files\\nodejs\\node.exe</Command>');
+    expect(xml).toContain('<Arguments>&quot;C:\\lex &amp; co\\index.js&quot; serve</Arguments>');
+    expect(xml).toContain('<UserId>BOX\\me</UserId>');
+    expect(xml).toContain('<LogonTrigger>');
+    // Task Scheduler's default 72-hour kill would take the server down.
+    expect(xml).toContain('<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>');
+    // schtasks parses the document as UTF-16 and the declaration must say so.
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-16"?>')).toBe(true);
+    expect(xml).toContain('\r\n');
+    expect(programPathFromTaskXml('<Task/>')).toBeUndefined();
+    expect(programPathFromTaskXml('<Arguments>serve</Arguments>')).toBeUndefined();
+  });
+
+  it('taskUserId prefers DOMAIN\\user, falls back to the bare name, and gives up without one', () => {
+    expect(taskUserId({ USERNAME: 'me', USERDOMAIN: 'BOX' })).toBe('BOX\\me');
+    expect(taskUserId({ USERNAME: 'me', COMPUTERNAME: 'BOX' })).toBe('BOX\\me');
+    expect(taskUserId({ USERNAME: 'me' })).toBe('me');
+    expect(taskUserId({})).toBeUndefined();
+  });
+
+  it('the Scheduled Task name follows LEXICON_SERVE_LABEL, and rejects a name schtasks would misread', () => {
+    expect(scheduledTaskName({})).toBe('Lexicon');
+    expect(scheduledTaskName({ [SERVE_LABEL_ENV_VAR]: 'Lexicon.test' })).toBe('Lexicon.test');
+    expect(scheduledTaskName({ [SERVE_LABEL_ENV_VAR]: '\\Folder\\Task' })).toBe('Lexicon');
   });
 });
 
@@ -856,7 +945,7 @@ describe('packs and aliases routes', () => {
 
   afterAll(async () => {
     await srv2.stop();
-    await fs.rm(home2, { recursive: true, force: true });
+    await fs.rm(home2, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('GET /packs lists the shipped packs with an installed flag and needs a token', async () => {

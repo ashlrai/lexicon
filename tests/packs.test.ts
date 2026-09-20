@@ -195,7 +195,7 @@ describe('loadPack', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('rejects unknown and unsafe names before touching the filesystem', async () => {
@@ -250,8 +250,10 @@ describe('installPack / uninstallPack', () => {
     cwd = path.join(home, 'work');
     await fs.mkdir(cwd, { recursive: true });
     globalPath = path.join(home, '.config', 'lexicon', 'lexicon.yaml');
-    for (const key of ['HOME', 'XDG_CONFIG_HOME', 'LEXICON_PATH', 'LEXICON_TRUST_ALL']) savedEnv[key] = process.env[key];
+    for (const key of ['HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'LEXICON_PATH', 'LEXICON_TRUST_ALL']) savedEnv[key] = process.env[key];
     process.env.HOME = home;
+    // os.homedir() reads USERPROFILE on Windows and ignores HOME.
+    process.env.USERPROFILE = home;
     process.env.XDG_CONFIG_HOME = path.join(home, '.config');
     process.env.LEXICON_PATH = globalPath;
     delete process.env.LEXICON_TRUST_ALL;
@@ -262,7 +264,7 @@ describe('installPack / uninstallPack', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    await fs.rm(home, { recursive: true, force: true });
+    await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('adds every term with source pack, records the pack in settings, and is idempotent', async () => {

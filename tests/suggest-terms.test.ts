@@ -293,7 +293,7 @@ describe('suggestTerms: harvest (cwd)', () => {
     );
   });
   afterAll(async () => {
-    await fs.rm(repo, { recursive: true, force: true });
+    await fs.rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('adds harvest candidates as term suggestions below the auto-apply line, with the harvester aliases', async () => {
@@ -361,7 +361,7 @@ describe('loadVoiceHistory', () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-suggest-history-'));
   });
   afterAll(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('reads <config dir>/voice/history.jsonl next to the global lexicon and skips malformed lines', async () => {

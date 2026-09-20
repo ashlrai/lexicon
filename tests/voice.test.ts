@@ -11,7 +11,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import { expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -226,7 +226,7 @@ async function makeHarness(overrides: { platform?: NodeJS.Platform; missing?: st
 
 const harnesses: Harness[] = [];
 afterEach(async () => {
-  for (const h of harnesses.splice(0)) await fs.rm(h.dir, { recursive: true, force: true });
+  for (const h of harnesses.splice(0)) await fs.rm(h.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 async function harness(overrides?: Parameters<typeof makeHarness>[0]): Promise<Harness> {
   const h = await makeHarness(overrides);
@@ -847,15 +847,33 @@ describe('history', () => {
 
 describe('models and tools', () => {
   it('resolves names to ggml files, prefers the models dir, then the fallback dirs', () => {
-    const present = new Set(['/fallback/ggml-base.en.bin', '/cfg/models/ggml-tiny.en.bin']);
+    // Every expectation goes through path.join/path.resolve because
+    // resolveModel does: on a Windows runner these are backslash paths and
+    // path.resolve('/x/...') additionally gains a drive letter.
+    const CFG_MODELS = path.join('/cfg', 'models');
+    const FALLBACK = path.resolve('/fallback');
+    const present = new Set([path.join(FALLBACK, 'ggml-base.en.bin'), path.join(CFG_MODELS, 'ggml-tiny.en.bin')]);
     const exists = (p: string) => present.has(p);
-    const opts = { globalPath: '/cfg/lexicon.yaml', env: {}, fallbackDirs: ['/fallback'], exists };
-    expect(resolveModel('tiny.en', opts)).toEqual({ name: 'tiny.en', path: '/cfg/models/ggml-tiny.en.bin', present: true, url: modelUrl('tiny.en') });
-    expect(resolveModel('base.en', opts)).toMatchObject({ path: '/fallback/ggml-base.en.bin', present: true, foundIn: '/fallback' });
-    expect(resolveModel('small.en', opts)).toEqual({ name: 'small.en', path: '/cfg/models/ggml-small.en.bin', present: false, url: modelUrl('small.en') });
-    expect(resolveModel('/x/ggml-medium.bin', opts)).toEqual({ name: 'medium', path: '/x/ggml-medium.bin', present: false });
+    const opts = { globalPath: path.join('/cfg', 'lexicon.yaml'), env: {}, fallbackDirs: [FALLBACK], exists };
+    expect(resolveModel('tiny.en', opts)).toEqual({ name: 'tiny.en', path: path.join(CFG_MODELS, 'ggml-tiny.en.bin'), present: true, url: modelUrl('tiny.en') });
+    expect(resolveModel('base.en', opts)).toMatchObject({ path: path.join(FALLBACK, 'ggml-base.en.bin'), present: true, foundIn: FALLBACK });
+    expect(resolveModel('small.en', opts)).toEqual({ name: 'small.en', path: path.join(CFG_MODELS, 'ggml-small.en.bin'), present: false, url: modelUrl('small.en') });
+    const explicit = path.join('/x', 'ggml-medium.bin');
+    expect(resolveModel(explicit, opts)).toEqual({ name: 'medium', path: path.resolve(explicit), present: false });
     expect(modelFileName('base.en')).toBe('ggml-base.en.bin');
-    expect(resolveModel('base.en', { ...opts, env: { LEXICON_WHISPER_MODELS: '/fallback' } }).path).toBe('/fallback/ggml-base.en.bin');
+    expect(resolveModel('base.en', { ...opts, env: { LEXICON_WHISPER_MODELS: FALLBACK } }).path).toBe(path.join(FALLBACK, 'ggml-base.en.bin'));
+  });
+
+  it('expands a leading ~ against the real home on every platform, not $HOME', () => {
+    // process.env.HOME is undefined on Windows (it is USERPROFILE there), and
+    // the old `process.env.HOME ?? ''` silently produced a cwd-relative path.
+    expect(expandTilde('~/models/x.bin', '/home/me')).toBe(path.join('/home/me', 'models', 'x.bin'));
+    expect(expandTilde('~', '/home/me')).toBe('/home/me');
+    expect(expandTilde('/abs/x.bin', '/home/me')).toBe('/abs/x.bin');
+    expect(expandTilde('relative/x.bin', '/home/me')).toBe('relative/x.bin');
+    expect(resolveModel('~/m/ggml-tiny.bin', { globalPath: path.join('/cfg', 'lexicon.yaml'), env: {}, exists: () => false }).path).toBe(
+      path.resolve(path.join(os.homedir(), 'm', 'ggml-tiny.bin')),
+    );
   });
 
   it('locateWhisperCli honours LEXICON_WHISPER_BIN and falls back to PATH names', async () => {

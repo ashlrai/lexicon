@@ -55,6 +55,7 @@
     "check:links": "node scripts/check-links.mjs",
     "check:server-json": "node scripts/check-server-json.mjs",
     "check:facts": "node scripts/check-facts.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "prepublishOnly": "npm run build && npm run build:bundle && npm test",
     "build:site": "node scripts/build-site.mjs",
     "dev:site": "npm run build:site && node site/serve.mjs",

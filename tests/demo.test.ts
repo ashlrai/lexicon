@@ -105,7 +105,7 @@ describe('lexicon normalize with nothing set up', () => {
     else process.env.HOME = prevHome;
     if (prevLexiconPath === undefined) delete process.env.LEXICON_PATH;
     else process.env.LEXICON_PATH = prevLexiconPath;
-    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('stands in the example terms for text typed as arguments, and says so on stderr', async () => {

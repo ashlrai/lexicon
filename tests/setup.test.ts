@@ -35,8 +35,10 @@ beforeEach(async () => {
   home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-setup-home-'));
   cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-setup-cwd-'));
   globalPath = path.join(home, '.config', 'lexicon', 'lexicon.yaml');
-  for (const key of ['HOME', 'LEXICON_PATH', 'XDG_CONFIG_HOME']) savedEnv[key] = process.env[key];
+  for (const key of ['HOME', 'USERPROFILE', 'LEXICON_PATH', 'XDG_CONFIG_HOME']) savedEnv[key] = process.env[key];
   process.env.HOME = home;
+  // os.homedir() reads USERPROFILE on Windows and ignores HOME.
+  process.env.USERPROFILE = home;
   process.env.LEXICON_PATH = globalPath;
   delete process.env.XDG_CONFIG_HOME;
 });
@@ -46,8 +48,8 @@ afterEach(async () => {
     if (savedEnv[key] === undefined) delete process.env[key];
     else process.env[key] = savedEnv[key];
   }
-  await fs.rm(home, { recursive: true, force: true });
-  await fs.rm(cwd, { recursive: true, force: true });
+  await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 interface Fakes {
@@ -345,7 +347,7 @@ describe('runSetup --yes', () => {
 
     // A cliDir without a built index.js (the plugin bundle's "next to me" mistake): refused, nothing written, no bootout.
     const broken = path.join(home, 'plugin');
-    await fs.rm(path.join(home, 'Library'), { recursive: true, force: true });
+    await fs.rm(path.join(home, 'Library'), { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     const calls2: string[][] = [];
     const g = fakes({
       cliDir: broken,
@@ -553,7 +555,11 @@ describe('detectClients', () => {
     platform,
     home: '/home/u',
     env: { PATH: '/usr/local/bin:/opt/bin' },
-    exists: (p) => present.includes(p),
+    // detectClients probes config dirs and app bundles with the *host's*
+    // path.join (backslashes on a Windows runner) but probes PATH through
+    // which.ts, which uses the injected platform and so stays POSIX. Accept
+    // either spelling so the fixture reads the same on all three platforms.
+    exists: (p) => present.includes(p) || present.some((x) => path.join(x) === p),
   });
 
   it('finds clients by config dir, app bundle or CLI on PATH', async () => {
@@ -569,14 +575,15 @@ describe('detectClients', () => {
       ]),
       '/work',
     );
+    const j = (p: string) => path.join(p);
     expect(found.map((c) => [c.name, c.detected, c.evidence])).toEqual([
-      ['claude', true, '/home/u/.claude'],
+      ['claude', true, j('/home/u/.claude')],
       ['codex', true, '/opt/bin/codex'],
-      ['cursor', true, '/Applications/Cursor.app'],
-      ['windsurf', true, '/home/u/.codeium/windsurf'],
+      ['cursor', true, j('/Applications/Cursor.app')],
+      ['windsurf', true, j('/home/u/.codeium/windsurf')],
       ['gemini', true, '/usr/local/bin/gemini'],
-      ['claude-desktop', true, '/home/u/Library/Application Support/Claude'],
-      ['vscode', true, '/Applications/Visual Studio Code.app'],
+      ['claude-desktop', true, j('/home/u/Library/Application Support/Claude')],
+      ['vscode', true, j('/Applications/Visual Studio Code.app')],
     ]);
   });
 
@@ -586,7 +593,7 @@ describe('detectClients', () => {
     expect(none.map((c) => c.name)).toEqual([...SETUP_CLIENTS]);
     const linux = await detectClients(ctx(['/Applications/Cursor.app', '/home/u/.config/Code'], 'linux'), '/work');
     expect(linux.find((c) => c.name === 'cursor')?.detected).toBe(false);
-    expect(linux.find((c) => c.name === 'vscode')?.evidence).toBe('/home/u/.config/Code');
+    expect(linux.find((c) => c.name === 'vscode')?.evidence).toBe(path.join('/home/u/.config/Code'));
   });
 });
 

@@ -7,6 +7,7 @@
  * Face with a progress line. `--model <path>` is used as-is.
  */
 import { createWriteStream, existsSync, promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -54,6 +55,21 @@ export interface ResolvedModel {
   url?: string;
 }
 
+/**
+ * Expand a leading `~/` (and `~\\` on Windows) against the real home
+ * directory. `process.env.HOME` is undefined on Windows -- it is `USERPROFILE`
+ * there -- so the old `process.env.HOME ?? ''` silently turned
+ * `~/models/ggml-base.en.bin` into a *cwd-relative* path, and the model was
+ * reported missing wherever it actually was. `os.homedir()` answers on all
+ * three platforms.
+ */
+export function expandTilde(spec: string, home: string = os.homedir()): string {
+  if (spec === '~') return home;
+  if (spec.startsWith('~/')) return path.join(home, spec.slice(2));
+  if (process.platform === 'win32' && spec.startsWith('~\\')) return path.join(home, spec.slice(2));
+  return spec;
+}
+
 /** Looks like a filesystem path rather than a model name. */
 export function isModelPath(value: string): boolean {
   return value.endsWith('.bin') || value.includes('/') || value.includes('\\') || value.startsWith('.') || value.startsWith('~');
@@ -63,7 +79,7 @@ export function isModelPath(value: string): boolean {
 export function resolveModel(spec: string, opts: ResolveModelOptions): ResolvedModel {
   const exists = opts.exists ?? existsSync;
   if (isModelPath(spec)) {
-    const abs = path.resolve(spec.startsWith('~/') ? path.join(process.env.HOME ?? '', spec.slice(2)) : spec);
+    const abs = path.resolve(expandTilde(spec));
     const base = path.basename(abs);
     const name = base.replace(/^ggml-/, '').replace(/\.bin$/, '');
     return { name, path: abs, present: exists(abs) };

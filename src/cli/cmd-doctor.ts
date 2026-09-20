@@ -19,11 +19,21 @@ import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/
 import type { LexiconFile, Term, TermScope } from '../core/index.js';
 import {
   HOOK_EVENTS,
+  claudeConfigDir,
   defaultExec,
   findInstalledLexiconPlugin,
   settingsHasLexiconHook,
 } from './claude-settings.js';
-import { SYSTEMD_UNIT_NAME, launchAgentPath, programPathFromPlist, programPathFromUnit, serveLabel, systemdUnitPath } from './serve-paths.js';
+import {
+  SYSTEMD_UNIT_NAME,
+  launchAgentPath,
+  programPathFromPlist,
+  programPathFromTaskXml,
+  programPathFromUnit,
+  scheduledTaskName,
+  serveLabel,
+  systemdUnitPath,
+} from './serve-paths.js';
 import { dim, green, line, red, resolveCwd, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
@@ -140,8 +150,29 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
       loaded = false;
     }
     file = systemdUnitPath(home, env);
+  } else if (platform === 'win32') {
+    // No file on disk: a Scheduled Task lives in the Task Scheduler store, so
+    // `/Query /XML` is both the "is it registered" probe and the only way to
+    // read back the program it runs.
+    const taskName = scheduledTaskName(env);
+    name = `login service ${taskName}`;
+    let xml: string | undefined;
+    try {
+      xml = exec('schtasks', ['/Query', '/TN', taskName, '/XML']);
+      loaded = true;
+    } catch {
+      loaded = false;
+    }
+    if (xml !== undefined) program = programPathFromTaskXml(xml);
+    if (!loaded) {
+      return { level: 'info', message: 'no login service installed (optional; keeps the local API up: lexicon serve --install)' };
+    }
+    if (program !== undefined && !existsSync(program)) {
+      return { level: 'fail', message: `${name} points at a missing file: ${program} (${SERVE_REINSTALL_HINT})` };
+    }
+    return { level: 'ok', message: `${name} is registered and runs at logon` };
   } else {
-    return { level: 'info', message: `login service is not automated on ${platform} (lexicon serve --install prints the Scheduled Task command)` };
+    return { level: 'info', message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
   }
   let fileExists = false;
   try {
@@ -369,9 +400,9 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   }
 
   // --- Claude Code plugin / hooks -------------------------------------------------
-  const settingsPath = deps.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json');
+  const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
   const installedPluginsPath =
-    deps.installedPluginsPath ?? path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
+    deps.installedPluginsPath ?? path.join(claudeConfigDir(), 'plugins', 'installed_plugins.json');
   const settings = await readJsonFile(settingsPath);
   const installed = await readJsonFile(installedPluginsPath);
   if (settings.error) push('warn', `could not parse ${settingsPath}: ${settings.error}`);

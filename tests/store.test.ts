@@ -29,6 +29,7 @@ import {
   writeLexiconFile,
 } from '../src/core/store.js';
 import { getTrustPath, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
+import { xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
 
 let tmp: string;
 let globalPath: string;
@@ -50,7 +51,7 @@ afterEach(async () => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  await fs.rm(tmp, { recursive: true, force: true });
+  await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 async function makeRepo(): Promise<{ root: string; nested: string }> {
@@ -616,5 +617,55 @@ describe('findTerm', () => {
     const lexicon: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: [] }] };
     expect(findTerm(lexicon, 'ASHLR.ai')?.canonical).toBe('Ashlr.AI');
     expect(findTerm(lexicon, 'nope')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// XDG Base Directory resolution
+// ---------------------------------------------------------------------------
+
+describe('XDG base directories', () => {
+  const HOME = path.join(path.sep, 'home', 'me');
+
+  it('honours an absolute value for each of the three variables', () => {
+    const abs = path.join(path.sep, 'xdg');
+    expect(xdgConfigHome({ XDG_CONFIG_HOME: abs }, HOME)).toBe(abs);
+    expect(xdgDataHome({ XDG_DATA_HOME: abs }, HOME)).toBe(abs);
+    expect(xdgStateHome({ XDG_STATE_HOME: abs }, HOME)).toBe(abs);
+  });
+
+  it('falls back to the spec defaults when unset', () => {
+    expect(xdgConfigHome({}, HOME)).toBe(path.join(HOME, '.config'));
+    expect(xdgDataHome({}, HOME)).toBe(path.join(HOME, '.local', 'share'));
+    expect(xdgStateHome({}, HOME)).toBe(path.join(HOME, '.local', 'state'));
+  });
+
+  it('ignores an empty or whitespace-only value, as the spec requires', () => {
+    // "If $XDG_CONFIG_HOME is either not set or empty, a default equal to
+    // $HOME/.config should be used." Two call sites used `??`, which treats
+    // "" as set and produced a *relative* config path.
+    expect(xdgConfigHome({ XDG_CONFIG_HOME: '' }, HOME)).toBe(path.join(HOME, '.config'));
+    expect(xdgConfigHome({ XDG_CONFIG_HOME: '   ' }, HOME)).toBe(path.join(HOME, '.config'));
+    expect(xdgDataHome({ XDG_DATA_HOME: '' }, HOME)).toBe(path.join(HOME, '.local', 'share'));
+  });
+
+  it('ignores a relative value, as the spec requires', () => {
+    // "All paths set in these environment variables must be absolute. If an
+    // implementation encounters a relative path [...] it should consider the
+    // path invalid and ignore it."
+    expect(xdgConfigHome({ XDG_CONFIG_HOME: 'relative/dir' }, HOME)).toBe(path.join(HOME, '.config'));
+    expect(xdgStateHome({ XDG_STATE_HOME: '../up' }, HOME)).toBe(path.join(HOME, '.local', 'state'));
+  });
+
+  it('resolvePaths ignores a relative XDG_CONFIG_HOME rather than writing beside the cwd', () => {
+    process.env.XDG_CONFIG_HOME = 'relative/dir';
+    delete process.env.LEXICON_PATH;
+    expect(resolvePaths({ cwd: tmp }).global).toBe(path.join(os.homedir(), '.config', 'lexicon', 'lexicon.yaml'));
+  });
+
+  it('resolvePaths takes env and home as options rather than only reading the process', () => {
+    const home = path.join(path.sep, 'elsewhere');
+    expect(resolvePaths({ cwd: tmp, env: {}, home }).global).toBe(path.join(home, '.config', 'lexicon', 'lexicon.yaml'));
+    expect(resolvePaths({ cwd: tmp, env: { LEXICON_PATH: '/from/env.yaml' }, home }).global).toBe('/from/env.yaml');
   });
 });

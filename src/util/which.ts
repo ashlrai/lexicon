@@ -119,9 +119,14 @@ export async function locateTool(names: readonly string[], opts: LocateOptions =
     const onPath = await findOnPath(name, { env, platform, exists });
     if (onPath) return onPath;
   }
+  const p = win ? path.win32 : path.posix;
   for (const dir of extraDirsFor(opts, platform)) {
     for (const name of names) {
-      const candidate = path.join(dir, win ? `${name}.exe` : name);
+      // path.win32/path.posix rather than the host's `path`, to match the
+      // PATH scan above: with an injected `platform` the two loops otherwise
+      // join with different separators and a test that simulates Windows on a
+      // Mac gets one answer from findOnPath and another from here.
+      const candidate = p.join(dir, win ? `${name}.exe` : name);
       if (await exists(candidate)) return candidate;
     }
   }
@@ -138,9 +143,11 @@ export function locateToolSync(
     const onPath = findOnPathSync(name, { env, platform });
     if (onPath) return onPath;
   }
+  const win = platform === 'win32';
+  const p = win ? path.win32 : path.posix;
   for (const dir of extraDirsFor({}, platform)) {
     for (const name of names) {
-      const candidate = path.join(dir, platform === 'win32' ? `${name}.exe` : name);
+      const candidate = p.join(dir, win ? `${name}.exe` : name);
       if (existsSync(candidate)) return candidate;
     }
   }

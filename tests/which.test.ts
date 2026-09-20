@@ -70,11 +70,13 @@ describe('locateTool / locateToolSync', () => {
     await fs.mkdir(path.join(root, 'b'));
     await fs.writeFile(path.join(root, 'a', 'whisper-cpp'), '', { mode: 0o755 });
     await fs.writeFile(path.join(root, 'b', 'whisper-cli'), '', { mode: 0o755 });
-    env = { PATH: `${path.join(root, 'a')}:${path.join(root, 'b')}` };
+    // path.delimiter, not ':' -- on Windows the separator is ';' and a
+    // drive-letter colon would make `C:\...\a:C:\...\b` one bogus entry.
+    env = { PATH: [path.join(root, 'a'), path.join(root, 'b')].join(path.delimiter) };
   });
 
   afterAll(async () => {
-    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   it('prefers the first candidate name over an earlier PATH entry (async)', async () => {

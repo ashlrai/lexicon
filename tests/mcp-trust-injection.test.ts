@@ -60,8 +60,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.LEXICON_PATH;
-  await fs.rm(repo, { recursive: true, force: true });
-  await fs.rm(home, { recursive: true, force: true });
+  await fs.rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 /**
@@ -122,7 +122,11 @@ describe('trust_project never echoes an untrusted lexicon back', () => {
   it.each(['status', 'trust'] as const)(
     "strips control characters that arrive through the path rather than the content (%s)",
     async (action) => {
-      const nasty = await fs.mkdtemp(path.join(os.tmpdir(), `lexicon-inject-${ESC}[31m${RTL}PATHINJECT-`));
+      // Win32 forbids 0x00-0x1F in filenames, so the ESC cannot go in the
+      // directory name there; U+202E is legal on NTFS and is the half this
+      // test actually cares about (textResult already escapes C0, not U+202E).
+      const marker = process.platform === 'win32' ? `${RTL}PATHINJECT-` : `${ESC}[31m${RTL}PATHINJECT-`;
+      const nasty = await fs.mkdtemp(path.join(os.tmpdir(), `lexicon-inject-${marker}`));
       try {
         await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
         await fs.writeFile(path.join(nasty, '.lexicon.yaml'), HOSTILE_YAML, 'utf8');
@@ -131,7 +135,7 @@ describe('trust_project never echoes an untrusted lexicon back', () => {
         expect(text).not.toContain(ESC);
         expect(text).not.toContain(RTL);
       } finally {
-        await fs.rm(nasty, { recursive: true, force: true });
+        await fs.rm(nasty, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
       }
     },
   );

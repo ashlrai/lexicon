@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Lexicon, NormalizeResult } from '../src/core/types.js';
@@ -91,7 +92,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
 
 import * as core from '../src/core/index.js';
 import { findPackageRoot, resolveCliEntry } from '../src/cli/cli-entry.js';
-import { launchAgentPlist, systemdUnit } from '../src/cli/cmd-serve.js';
+import { launchAgentPlist, scheduledTaskXml, systemdUnit } from '../src/cli/cmd-serve.js';
 import {
   checkLoginService,
   mergeHookIntoSettings,
@@ -714,8 +715,8 @@ describe('resolveCliEntry', () => {
   it('finds dist/cli/index.js from the plugin bundle and from dist/, by walking up to the package.json', async () => {
     const { root, cli } = await fakePackage();
     // An unrelated package.json above the package must not win.
-    const fromPlugin = new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href;
-    const fromDist = new URL(`file://${path.join(root, 'dist', 'cli', 'cmd-serve.js')}`).href;
+    const fromPlugin = pathToFileURL(path.join(root, 'plugin', 'mcp-server.mjs')).href;
+    const fromDist = pathToFileURL(path.join(root, 'dist', 'cli', 'cmd-serve.js')).href;
     expect(resolveCliEntry({ moduleUrl: fromPlugin, env: {} })).toBe(cli);
     expect(resolveCliEntry({ moduleUrl: fromDist, env: {} })).toBe(cli);
     expect(findPackageRoot(fromPlugin)).toBe(root);
@@ -726,23 +727,34 @@ describe('resolveCliEntry', () => {
 
   it('prefers an explicit cliPath, then LEXICON_CLI, over the package lookup', async () => {
     const { root } = await fakePackage();
-    const fromPlugin = new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href;
+    const fromPlugin = pathToFileURL(path.join(root, 'plugin', 'mcp-server.mjs')).href;
     expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' } })).toBe('/elsewhere/index.js');
     expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' }, cliPath: '/explicit/index.js' })).toBe('/explicit/index.js');
     expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '   ' } })).toBe(path.join(root, 'dist', 'cli', 'index.js'));
   });
 
-  it('falls back to a lexicon binary on PATH (through its symlink) and otherwise throws a readable error', async () => {
+  it('falls back to a lexicon binary on PATH (through its symlink) and otherwise throws a readable error', async (ctx) => {
     const { root, cli } = await fakePackage(false);
     const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-noscope-'));
-    const fromNowhere = new URL(`file://${path.join(elsewhere, 'x.mjs')}`).href;
+    // Creating a symlink on Windows needs Developer Mode or
+    // SeCreateSymbolicLinkPrivilege. GitHub's windows-latest image has it, but
+    // a developer box often does not, and a hard skip would also hide the
+    // non-symlink half of this test. Probe once and skip only if it is denied.
+    try {
+      await fs.symlink(path.join(elsewhere, 'nothing'), path.join(elsewhere, 'probe'));
+      await fs.rm(path.join(elsewhere, 'probe'), { force: true });
+    } catch {
+      ctx.skip();
+      return;
+    }
+    const fromNowhere = pathToFileURL(path.join(elsewhere, 'x.mjs')).href;
     const bin = path.join(elsewhere, 'bin');
     await fs.mkdir(bin);
     // An unbuilt package: dist/cli/index.js is absent, so the PATH entry is next.
     await fs.writeFile(path.join(elsewhere, 'real-index.js'), '');
     await fs.symlink(path.join(elsewhere, 'real-index.js'), path.join(bin, 'lexicon'));
     expect(resolveCliEntry({ moduleUrl: fromNowhere, env: { PATH: bin } })).toBe(await fs.realpath(path.join(elsewhere, 'real-index.js')));
-    expect(resolveCliEntry({ moduleUrl: new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href, env: { PATH: bin } })).toBe(
+    expect(resolveCliEntry({ moduleUrl: pathToFileURL(path.join(root, 'plugin', 'mcp-server.mjs')).href, env: { PATH: bin } })).toBe(
       await fs.realpath(path.join(elsewhere, 'real-index.js')),
     );
     // A shell wrapper on PATH is not a Node script.
@@ -752,7 +764,7 @@ describe('resolveCliEntry', () => {
     expect(() => resolveCliEntry({ moduleUrl: fromNowhere, env: { PATH: wrapped } })).toThrow(/not a Node script.*LEXICON_CLI/);
     // Nothing anywhere.
     expect(() => resolveCliEntry({ moduleUrl: fromNowhere, env: { PATH: path.join(elsewhere, 'empty') } })).toThrow(/could not locate the lexicon CLI.*LEXICON_CLI/);
-    expect(() => resolveCliEntry({ moduleUrl: new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href, env: { PATH: '' } })).toThrow(
+    expect(() => resolveCliEntry({ moduleUrl: pathToFileURL(path.join(root, 'plugin', 'mcp-server.mjs')).href, env: { PATH: '' } })).toThrow(
       new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} does not exist`),
     );
   });
@@ -870,7 +882,39 @@ describe('doctor: login service', () => {
     expect(await checkLoginService({ platform: 'linux', env: {}, exec: active, home: h })).toMatchObject({ level: 'fail', message: expect.stringContaining(`points at a missing file: ${cli}`) });
     await fs.rm(unit);
     expect(await checkLoginService({ platform: 'linux', env: {}, exec: fail, home: h })).toMatchObject({ level: 'info' });
-    expect(await checkLoginService({ platform: 'win32', env: {}, exec: fail, home: h })).toMatchObject({ level: 'info', message: expect.stringContaining('not automated on win32') });
+    expect(await checkLoginService({ platform: 'win32', env: {}, exec: fail, home: h })).toMatchObject({
+      level: 'info',
+      message: expect.stringContaining('no login service installed'),
+    });
+    expect(await checkLoginService({ platform: 'freebsd', env: {}, exec: fail, home: h })).toMatchObject({
+      level: 'info',
+      message: expect.stringContaining('not automated on freebsd'),
+    });
+  });
+
+  it('win32: schtasks /Query /XML decides both whether the task exists and what it runs', async () => {
+    const h = await home();
+    const cli = path.join(h, 'dist', 'cli', 'index.js');
+    await fs.mkdir(path.dirname(cli), { recursive: true });
+    await fs.writeFile(cli, '');
+    const calls: string[][] = [];
+    const registered = (file: string, args: readonly string[]): string => {
+      calls.push([file, ...args]);
+      return scheduledTaskXml('C:\\node\\node.exe', cli, 'BOX\\me');
+    };
+    expect(await checkLoginService({ platform: 'win32', env: {}, exec: registered, home: h })).toEqual({
+      level: 'ok',
+      message: 'login service Lexicon is registered and runs at logon',
+    });
+    expect(calls).toEqual([['schtasks', '/Query', '/TN', 'Lexicon', '/XML']]);
+
+    // A task pointing at a deleted install is the Windows equivalent of a
+    // crash-looping LaunchAgent: it fails silently at every logon.
+    await fs.rm(cli);
+    expect(await checkLoginService({ platform: 'win32', env: {}, exec: registered, home: h })).toMatchObject({
+      level: 'fail',
+      message: expect.stringContaining(`points at a missing file: ${cli}`),
+    });
   });
 });
 
@@ -968,7 +1012,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(added.stdout).toContain('created Foo (project)');
       expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical: Foo');
     } finally {
-      await fs.rm(tmp, { recursive: true, force: true });
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   }, 30_000);
 });

@@ -10,6 +10,7 @@
  */
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../util/json.js';
@@ -18,6 +19,17 @@ import { findPackageRoot } from './cli-entry.js';
 
 /** Hook events the lexicon hook handles; `install-claude` registers both. */
 export const HOOK_EVENTS: readonly string[] = ['UserPromptSubmit', 'SessionStart'];
+
+/**
+ * Claude Code's config directory: `$CLAUDE_CONFIG_DIR` when set, else
+ * `~/.claude` -- which is `%USERPROFILE%\.claude` on Windows, since
+ * `os.homedir()` reads USERPROFILE there. Claude Code does not honour
+ * XDG_CONFIG_HOME, so neither do we.
+ */
+export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  return override ? override : path.join(home, '.claude');
+}
 
 /** Commands `install-claude` (any version) or the plugin register for the hook. */
 const LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;

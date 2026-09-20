@@ -19,10 +19,12 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
+import { xdgConfigHome } from '../util/xdg.js';
 import { bold, dim, green, indent, line, red, safe, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
+  claudeConfigDir,
   defaultExec,
   hookConfigFor,
   hookTimeoutFor,
@@ -139,19 +141,37 @@ function appData(ctx: PathContext): string {
   return ctx.env.APPDATA ?? path.join(ctx.home, 'AppData', 'Roaming');
 }
 
+/** `$CODEX_HOME` when set, else `~/.codex`. */
+function codexHome(ctx: PathContext): string {
+  const override = ctx.env.CODEX_HOME?.trim();
+  return override ? override : path.join(ctx.home, '.codex');
+}
+
+/** `$GEMINI_CLI_HOME/.gemini` when set, else `~/.gemini`. */
+function geminiHome(ctx: PathContext): string {
+  const override = ctx.env.GEMINI_CLI_HOME?.trim();
+  return path.join(override ? override : ctx.home, '.gemini');
+}
+
 /** The config file each client reads. Throws when the client has no project-level file. */
 export function configPathFor(client: Exclude<InstallClient, 'claude' | 'generic'>, ctx: PathContext): string {
   const { home, cwd, platform, project } = ctx;
   switch (client) {
     case 'codex':
-      return project ? path.join(cwd, '.codex', 'config.toml') : path.join(home, '.codex', 'config.toml');
+      // `CODEX_HOME` relocates the whole ~/.codex directory (documented, and
+      // Codex errors out when it points somewhere that does not exist).
+      return project ? path.join(cwd, '.codex', 'config.toml') : path.join(codexHome(ctx), 'config.toml');
     case 'cursor':
+      // Cursor documents only the `~/.cursor/mcp.json` form and honours no
+      // env override; `~` is %USERPROFILE% on Windows, which os.homedir() gives.
       return project ? path.join(cwd, '.cursor', 'mcp.json') : path.join(home, '.cursor', 'mcp.json');
     case 'windsurf':
       if (project) throw new Error('windsurf has no project-level MCP config; drop --project');
       return path.join(home, '.codeium', 'windsurf', 'mcp_config.json');
     case 'gemini':
-      return project ? path.join(cwd, '.gemini', 'settings.json') : path.join(home, '.gemini', 'settings.json');
+      // `GEMINI_CLI_HOME` moves the directory that holds `.gemini`, not the
+      // `.gemini` directory itself.
+      return project ? path.join(cwd, '.gemini', 'settings.json') : path.join(geminiHome(ctx), 'settings.json');
     case 'claude-desktop': {
       if (project) throw new Error('claude-desktop has no project-level MCP config; drop --project');
       if (platform === 'darwin') {
@@ -161,13 +181,16 @@ export function configPathFor(client: Exclude<InstallClient, 'claude' | 'generic
       // Linux is best effort: Anthropic documents only the macOS and Windows
       // paths, so follow the XDG variable when it is set rather than assuming
       // ~/.config.
-      return path.join(ctx.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'Claude', 'claude_desktop_config.json');
+      return path.join(xdgConfigHome(ctx.env, home), 'Claude', 'claude_desktop_config.json');
     }
     case 'vscode': {
       if (project) return path.join(cwd, '.vscode', 'mcp.json');
       if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
       if (platform === 'win32') return path.join(appData(ctx), 'Code', 'User', 'mcp.json');
-      return path.join(ctx.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'Code', 'User', 'mcp.json');
+      // Not XDG: VS Code hardcodes $HOME/.config/Code on Linux and ignores
+      // XDG_CONFIG_HOME (userDataProfile.ts). Honouring the variable here
+      // would write a file VS Code never reads.
+      return path.join(home, '.config', 'Code', 'User', 'mcp.json');
     }
   }
 }
@@ -452,7 +475,7 @@ export async function runInstall(
     const claudeOpts = { ...opts, scope: project ? 'project' : 'user' };
     const claudeDeps = {
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
-      ...(opts.home ? { settingsPath: path.join(home, '.claude', 'settings.json') } : {}),
+      ...(opts.home ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
     };
@@ -537,7 +560,7 @@ export async function runInstallClaude(
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const settingsPath = deps.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json');
+  const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
   const exec = deps.exec ?? defaultExec;
   let failed = false;
 

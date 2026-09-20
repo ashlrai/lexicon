@@ -39,7 +39,7 @@ afterEach(async () => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  await fs.rm(tmp, { recursive: true, force: true });
+  await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function file(p: string, exists = true): LexiconFile {
