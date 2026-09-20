@@ -680,7 +680,7 @@ describe('lexicon MCP server', () => {
           termCount: 2,
         });
         expect((payload.preview as unknown[]).length).toBe(2);
-        expect(mocks.trustProject).toHaveBeenCalledWith('/fake/repo/sub/.lexicon.yaml', { cwd: '/fake/repo' });
+        expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo' });
       } finally {
         await close();
       }

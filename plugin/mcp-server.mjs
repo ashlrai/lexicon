@@ -47582,6 +47582,8 @@ really
 reason
 reasonable
 reasons
+reboot
+reboots
 recall
 receive
 received
@@ -47598,6 +47600,8 @@ refactor
 refer
 reflect
 reform
+refund
+refunds
 refuse
 refused
 regard
@@ -47605,8 +47609,10 @@ region
 regions
 regular
 regularly
+rehire
 reject
 rejected
+relabel
 relate
 relation
 relative
@@ -47620,15 +47626,24 @@ relief
 relies
 religious
 reload
+reloads
 rely
 remain
 remains
 remarkable
 remember
 remembered
+remind
+reminded
+reminder
+reminders
+reminds
 remote
 remove
 removed
+rename
+renamed
+renames
 render
 rendered
 rent
@@ -47649,7 +47664,10 @@ requests
 require
 required
 research
+resend
+resent
 reserve
+reshape
 resolve
 resolved
 resource
@@ -47673,6 +47691,10 @@ reveal
 review
 reviewed
 reviews
+rewind
+rewinds
+rewrite
+rewrites
 rich
 rid
 ride
@@ -54686,7 +54708,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const serverLaunch = launchFor(serverPath, "mcp");
   const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
-  line(io, `   claude ${mcpArgs.map(quoteArg).join(" ")}`);
+  line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
@@ -54742,7 +54764,8 @@ async function runInstallClaude(opts, io, deps = {}) {
   }
   return failed ? 1 : 0;
 }
-function quoteArg(s) {
+function quoteArg(s, platform = process.platform) {
+  if (platform === "win32") return /[\s"]/.test(s) || path17.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 

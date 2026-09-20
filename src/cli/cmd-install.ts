@@ -568,7 +568,9 @@ export async function runInstallClaude(
   const serverLaunch = launchFor(serverPath, 'mcp');
   const mcpArgs = ['mcp', 'add', '--scope', scope, 'lexicon', '--', serverLaunch.command, ...serverLaunch.args];
   line(io, bold('1. Register the MCP server'));
-  line(io, `   claude ${mcpArgs.map(quoteArg).join(' ')}`);
+  // Arrow, not a bare reference: Array.map passes the index as the second
+  // argument, which would land in `platform`.
+  line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
   if (serverLaunch.viaNpx) line(io, dim('   (run from an npx cache, so the config calls npx rather than a path npm may delete)'));
   else if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
@@ -633,6 +635,15 @@ export async function runInstallClaude(
   return failed ? 1 : 0;
 }
 
-function quoteArg(s: string): string {
+/**
+ * Quote one argument of the printed `claude mcp add ...` line.
+ *
+ * Windows takes the same branch as launchCommandLine and for the same reason:
+ * a backslash there is the path separator, not an escape, so doubling it
+ * prints a command that the user copies and that then does not work. A
+ * Windows filename cannot hold a `"`, so quoting needs no escaping at all.
+ */
+function quoteArg(s: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') return /[\s"]/.test(s) || path.win32.isAbsolute(s) ? `"${s.replace(/"/g, '')}"` : s;
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, '\\$1')}"` : s;
 }
