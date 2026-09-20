@@ -7,8 +7,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "prebuild": "node scripts/build-demo-bundle.mjs",
-    "predev": "node scripts/build-demo-bundle.mjs",
+    "prebuild": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
+    "predev": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
