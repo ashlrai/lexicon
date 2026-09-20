@@ -101,9 +101,19 @@ lexicon voice --status                   # "recording since <time>" (exit 0) or 
 
 The first call spawns ffmpeg detached, writes
 `~/.config/lexicon/voice/recording.json` (`{ pid, wav, startedAt }`), prints
-`recording` and exits immediately. The second call sends SIGINT to that pid (ffmpeg
-finalizes the WAV header), waits up to 3 s, transcribes, outputs, and removes the
-state file and the WAV. A state file whose pid is gone is treated as "start". A
+`recording` and exits immediately. The second call stops that pid, waits up to 3 s,
+transcribes, outputs, and removes the state file and the WAV.
+
+Stopping differs by platform. On macOS and Linux the recorder gets SIGINT and ffmpeg
+finalizes the WAV header on its way out. Windows has no equivalent: Node maps every
+signal to `TerminateProcess`, and a detached recorder stopped by a different process
+shares no console, so there is nothing to deliver a real interrupt through. The
+recorder is killed outright and the header is left unfinalized. That is safe because
+ffmpeg runs with `-flush_packets 1`, so the audio is already on disk, and the
+transcriber validates the container and reads an unfinalized file rather than
+trusting the header. What Windows loses is the clean shutdown, not the recording.
+
+A state file whose pid is gone is treated as "start". A
 forgotten recording stops itself after 10 minutes. ffmpeg's stderr for a toggle
 recording goes to `voice/recorder.log`.
 

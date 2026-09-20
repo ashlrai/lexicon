@@ -31,7 +31,7 @@ namespace LexiconBar.FixEverywhere;
 ///
 /// UNVERIFIED: none of this has been run against a real provider.
 /// </summary>
-internal sealed class UiaField
+internal sealed class UiaField : IInspectableField
 {
     private readonly IUIAutomation _automation;
 
@@ -46,10 +46,13 @@ internal sealed class UiaField
 
     internal string AppName { get; }
 
-    /// <summary>The term in this field's own labels that made it look like it holds a secret, or null.</summary>
-    internal string? SecretHint { get; }
-
-    internal bool IsPassword { get; }
+    /// <summary>
+    /// This field's own labels and those of its window. Captured here, once,
+    /// because <see cref="FieldGate"/> needs them on every poll to decide
+    /// whether the value may be read — and because they are metadata, which is
+    /// exactly what may be looked at before that decision is made.
+    /// </summary>
+    internal FieldHints Hints { get; }
 
     private UiaField(
         IUIAutomation automation,
@@ -58,8 +61,7 @@ internal sealed class UiaField
         int processId,
         string processName,
         string appName,
-        string? secretHint,
-        bool isPassword)
+        FieldHints hints)
     {
         _automation = automation;
         Element = element;
@@ -67,15 +69,28 @@ internal sealed class UiaField
         ProcessId = processId;
         ProcessName = processName;
         AppName = appName;
-        SecretHint = secretHint;
-        IsPassword = isPassword;
+        Hints = hints;
     }
+
+    // The gate's view of this field: identity and labels for free, the value
+    // only through the one call it guards. Explicit implementations so the
+    // class keeps its `internal` surface for everything else.
+    string IInspectableField.ProcessName => ProcessName;
+
+    FieldHints IInspectableField.Hints => Hints;
+
+    string? IInspectableField.ReadValue(int limit) => ReadValue(limit);
 
     /// <summary>
     /// Builds a field from a focused element, or returns null when it is not
-    /// something we are willing to watch. Everything is read once, here, so
-    /// that a refused field is never touched again — in particular so that no
-    /// snapshot of a password manager's notes field is ever held in memory.
+    /// something we are willing to watch at all.
+    ///
+    /// Nothing here reads the field's <i>value</i>: only UIA's own metadata,
+    /// which is what <see cref="FieldGate"/> then decides on. A masked input is
+    /// refused outright, because there is no case in which we want one; every
+    /// other refusal (an excluded app, a secret-looking label) belongs to the
+    /// gate, which the watcher consults before its first
+    /// <see cref="ReadValue"/>.
     /// </summary>
     internal static UiaField? From(IUIAutomation automation, IUIAutomationElement element)
     {
@@ -113,13 +128,12 @@ internal sealed class UiaField
                 ClassName: Bstr.Consume(element.CurrentClassName),
                 WindowTitle: windowTitle);
 
-            string? secretHint = SecretFieldHeuristic.Match(hints);
             // The process name is what the exclusion list matches on and what
             // the user sees in the menu; the window title is only a hint for
             // the secret heuristic and changes as the user works.
             string appName = processName;
             string key = KeyFor(element, processId);
-            return new UiaField(automation, element, key, processId, processName, appName, secretHint, isPassword: false);
+            return new UiaField(automation, element, key, processId, processName, appName, hints);
         }
         catch (Exception ex) when (IsProviderFailure(ex))
         {
@@ -177,15 +191,7 @@ internal sealed class UiaField
             if (selection is null || selection.Length < 1) return null;
 
             IUIAutomationTextRange caret = selection.GetElement(0);
-            IUIAutomationTextRange probe = text.DocumentRange.Clone();
-            // Drag the probe's End back to where the selection starts; what is
-            // left is everything before the caret, and its length is the offset.
-            probe.MoveEndpointByRange(
-                TextPatternRangeEndpoint.TextPatternRangeEndpoint_End,
-                caret,
-                TextPatternRangeEndpoint.TextPatternRangeEndpoint_Start);
-
-            int start = (Bstr.Consume(probe.GetText(-1)) ?? string.Empty).Length;
+            int start = StartOffsetOf(text, caret);
             int selected = (Bstr.Consume(caret.GetText(-1)) ?? string.Empty).Length;
             return start + selected;
         }
@@ -193,6 +199,22 @@ internal sealed class UiaField
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Where <paramref name="range"/> starts, as a UTF-16 offset into the
+    /// document. A <c>TextPatternRange</c> carries no offsets, so the only way
+    /// to ask is to clone the document range, drag its End back to this range's
+    /// Start, and measure what is left in front.
+    /// </summary>
+    private static int StartOffsetOf(IUIAutomationTextPattern text, IUIAutomationTextRange range)
+    {
+        IUIAutomationTextRange probe = text.DocumentRange.Clone();
+        probe.MoveEndpointByRange(
+            TextPatternRangeEndpoint.TextPatternRangeEndpoint_End,
+            range,
+            TextPatternRangeEndpoint.TextPatternRangeEndpoint_Start);
+        return (Bstr.Consume(probe.GetText(-1)) ?? string.Empty).Length;
     }
 
     /// <summary>
@@ -342,6 +364,49 @@ internal sealed class UiaField
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// True when the field's selection is, right now, exactly
+    /// <paramref name="span"/> holding <paramref name="expected"/>.
+    ///
+    /// <see cref="SelectSpan"/> proves the selection took, but proving it costs
+    /// round trips, and between the last of those and the <c>SendInput</c> that
+    /// types over the selection there is a gap the user's own input can land
+    /// in. Home, End, an arrow key or a click elsewhere in the same field moves
+    /// or collapses the selection <b>without changing the field's text</b>, so
+    /// the caller's "is the whole value still what the plan was made from?"
+    /// check passes and the correction is typed wherever the caret went.
+    ///
+    /// So the caller asks this immediately before typing. It compares the
+    /// position as well as the text: in "add the item, add the item" the two
+    /// halves are textually identical, and a selection that slid from one to
+    /// the other would pass a text-only comparison.
+    ///
+    /// This narrows the window to the one call it cannot cover — <c>SendInput</c>
+    /// is itself non-interleaving, so nothing can land between this check and
+    /// the keystrokes except in the microseconds it takes to issue them.
+    /// </summary>
+    internal bool SelectionMatches(TextSpan span, string expected)
+    {
+        try
+        {
+            if (TextPattern() is not IUIAutomationTextPattern text) return false;
+
+            IUIAutomationTextRangeArray selection = text.GetSelection();
+            // Exactly one range: a provider answering several (a table, a
+            // multi-caret editor) is not a state to type into.
+            if (selection is null || selection.Length != 1) return false;
+
+            IUIAutomationTextRange range = selection.GetElement(0);
+            if (Bstr.Consume(range.GetText(-1)) != expected) return false;
+
+            return StartOffsetOf(text, range) == span.Location;
+        }
+        catch (Exception ex) when (IsProviderFailure(ex))
+        {
+            return false;
+        }
     }
 
     /// <summary>The whole-value write. Null when there is no writable ValuePattern.</summary>

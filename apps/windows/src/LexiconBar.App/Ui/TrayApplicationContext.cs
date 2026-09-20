@@ -199,7 +199,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Exclusions = new AppExclusions(_settings.Exclusions),
         });
 
-        _watcher.Configure(_settings.PollMs, _settings.MaxFieldLength);
+        // The watcher gets its own copy of the list, not a shared instance:
+        // AppExclusions is mutable, and the menu edits one while the UIA thread
+        // may be matching against the other.
+        _watcher.Configure(_settings.PollMs, _settings.MaxFieldLength, new AppExclusions(_settings.Exclusions));
         _clipboardTimer.Enabled = _settings.WatchClipboard;
 
         try

@@ -99,7 +99,11 @@ internal sealed class FixEngine
             }
             else if (!wasEnabled && config.Enabled && _field is UiaField field)
             {
-                _detector = MakeDetector(field, field.ReadValue(ReadLimit) ?? string.Empty);
+                // Refusal first, read second: the new config may be the one
+                // that excludes this very app.
+                _detector = Refusal(field) is string why
+                    ? Refuse(field, why)
+                    : new BurstDetector(field.ReadValue(ReadLimit) ?? string.Empty, config.Detector);
             }
         });
     }
@@ -122,27 +126,33 @@ internal sealed class FixEngine
     /// <summary>
     /// A detector, unless this field is one we refuse outright.
     ///
-    /// Both refusals are re-checked in <see cref="Handle"/> before anything is
-    /// sent, but deciding here means a field in a password manager is never
-    /// even accumulated: without a detector, <see cref="ValueChanged"/> returns
-    /// immediately and no snapshot of what the user types into a vault is ever
-    /// held in this process.
+    /// This is <b>defence in depth, not the guard itself</b>. The guard is in
+    /// <see cref="FocusWatcher"/>, which consults <see cref="FieldGate"/> before
+    /// it reads anything, so a refused field's text never reaches this class to
+    /// begin with — a value handed to this method has already been admitted.
+    /// What this check buys is the case where the two disagree: the engine's
+    /// config and the watcher's are pushed separately, so for the width of one
+    /// settings change the engine may hold a list the watcher has not got yet.
+    /// Refusing here too means the newer of the two always wins.
+    ///
+    /// The same check runs once more in <see cref="Handle"/>, immediately before
+    /// anything is sent to the local API.
     /// </summary>
-    private BurstDetector? MakeDetector(UiaField field, string value)
+    private BurstDetector? MakeDetector(UiaField field, string value) =>
+        Refusal(field) is string why ? Refuse(field, why) : new BurstDetector(value, _config.Detector);
+
+    /// <summary>
+    /// Why this field is one we will not act on, or null. The same call the
+    /// watcher gates its reads with, against this class's copy of the config.
+    /// </summary>
+    private string? Refusal(UiaField field) =>
+        FieldGate.Refuse(_config.Exclusions, field.ProcessName, field.Hints);
+
+    /// <summary>Logs the refusal and hands back "no detector", so callers read as one expression.</summary>
+    private static BurstDetector? Refuse(UiaField field, string why)
     {
-        if (_config.Exclusions.IsExcluded(field.ProcessName))
-        {
-            Log.Info($"not watching {field.ProcessName}: excluded");
-            return null;
-        }
-
-        if (field.SecretHint is string hint)
-        {
-            Log.Info($"not watching this field in {field.ProcessName}: it looks like it holds a secret ({hint})");
-            return null;
-        }
-
-        return new BurstDetector(value, _config.Detector);
+        Log.Info($"not watching this field in {field.ProcessName}: {why}");
+        return null;
     }
 
     private void ValueChanged(UiaField field, string value)
@@ -203,18 +213,12 @@ internal sealed class FixEngine
 
     private void Handle(Burst burst, UiaField field)
     {
-        if (_config.Exclusions.IsExcluded(field.ProcessName))
+        // The last of the three checks, and the one that matters most: this is
+        // the call that would put the text on the wire. Nothing about the burst
+        // is logged or sent when it refuses.
+        if (Refusal(field) is string why)
         {
-            Log.Info($"skip: {field.ProcessName} is excluded");
-            return;
-        }
-
-        // The process-name list cannot know about every password manager; this
-        // catches a secret-looking field in any app, including one nobody has
-        // heard of. Nothing about the burst is logged or sent.
-        if (field.SecretHint is string hint)
-        {
-            Log.Info($"skip in {field.ProcessName}: field looks like it holds a secret ({hint})");
+            Log.Info($"skip in {field.ProcessName}: {why}");
             return;
         }
 
@@ -255,6 +259,15 @@ internal sealed class FixEngine
     private void Apply(Burst burst, NormalizeResponse response, UiaField field, double started)
     {
         if (!_config.Enabled || !field.SameElementAs(_field) || _detector is not BurstDetector detector) return;
+
+        // The API round trip is the longest gap in the flow, and the user can
+        // exclude this app from the tray menu while it is open. Do not read the
+        // field, and do not write into it, if they did.
+        if (Refusal(field) is string why)
+        {
+            Log.Info($"skip in {field.ProcessName}: {why}");
+            return;
+        }
 
         string current = field.ReadValue(ReadLimit) ?? string.Empty;
         RewriteDecision decision = RewritePlanner.Make(
@@ -300,8 +313,9 @@ internal sealed class FixEngine
     /// <list type="number">
     /// <item><b>Select and type.</b> Select the burst span through
     ///   <c>TextPattern</c>, confirm the provider agrees about what that span
-    ///   holds, confirm the app is still in the foreground, then send the
-    ///   replacement as Unicode key events. This goes through the app's own
+    ///   holds, confirm the app is still in the foreground, confirm the
+    ///   selection is <i>still</i> that exact span, then send the replacement as
+    ///   Unicode key events. This goes through the app's own
     ///   editing path, so its undo stack, autocomplete and change events all
     ///   behave as if the user had typed it.</item>
     /// <item><b>Whole-value write.</b> <c>ValuePattern.SetValue</c> with the
@@ -318,7 +332,10 @@ internal sealed class FixEngine
     /// <paramref name="before"/> is the field value the plan was made from;
     /// nothing is written when the field no longer holds it — the guard is
     /// re-checked immediately before each destructive step, because the
-    /// selection round trip takes real time.
+    /// selection round trip takes real time. That comparison is of the field's
+    /// whole text, which is necessary and not sufficient: the user can move the
+    /// selection without changing a character of it, so the keystroke path also
+    /// re-reads the <i>selection</i> immediately before typing.
     ///
     /// UNVERIFIED: this ladder has never been run against a real provider. The
     /// ordering is the reasoned counterpart of the macOS one, not a measured one.
@@ -354,6 +371,17 @@ internal sealed class FixEngine
                 // Belt and braces: the planner already refuses this, because a
                 // synthesized Return in a chat composer sends the message.
                 notes.Add("replacement contains a newline, keystrokes skipped");
+            }
+            else if (!field.SelectionMatches(plan.Span, plan.PreviousText))
+            {
+                // The whole-text comparison above cannot see this. Home, End,
+                // an arrow key or a click elsewhere in the same field moves the
+                // selection while leaving every character where it was, and the
+                // keystrokes would then land at the caret instead of over the
+                // span. Verified last, immediately before SendInput, because
+                // everything above it — selecting, re-reading, the foreground
+                // check — takes round trips the user can type into.
+                notes.Add("selection moved after it was made, keystrokes skipped");
             }
             else if (Keyboard.Type(plan.NewText))
             {

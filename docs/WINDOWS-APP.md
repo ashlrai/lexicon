@@ -8,7 +8,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 
 > ## Read this first
 >
-> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, bubble content and placement) is covered by 144 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
+> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 158 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
 >
 > Before trusting it with anything you care about, run [the manual test script](#manual-test-script). It takes about ten minutes.
 
@@ -110,15 +110,19 @@ This is where Windows and macOS genuinely diverge, and it is the least certain p
 
 **UIA's `TextPattern` is read-only.** There is no equivalent of the Mac's "set `AXSelectedText` over the burst range", which is that app's preferred write. So the ladder here is:
 
-1. **Select and type.** Build a `TextPatternRange` over the burst span, read it back and confirm the provider means the same span we do, confirm the app is still in the foreground, then send the replacement as Unicode key events (`SendInput` with `KEYEVENTF_UNICODE`, no virtual key, so it is layout-independent). This goes through the app's own editing pipeline, so its undo stack works.
+1. **Select and type.** Build a `TextPatternRange` over the burst span, read it back and confirm the provider means the same span we do, confirm the app is still in the foreground, re-read the selection and confirm it is *still* exactly that span, then send the replacement as Unicode key events (`SendInput` with `KEYEVENTF_UNICODE`, no virtual key, so it is layout-independent). This goes through the app's own editing pipeline, so its undo stack works.
 2. **Whole-value write.** `ValuePattern.SetValue` with the spliced full text. Works in Win32 edits, WinForms and WPF text boxes, needs no foreground window, but it loses the app's undo stack and moves the caret to the end, which is why it is second, not first.
 3. **Backspace and retype.** Deliberately the narrowest path in the app: it only runs when the burst is unambiguously the tail of the field *and* the caret is sitting at the end of it *and* the app is in the foreground. It is the only path that destroys text without first proving the app agrees where that text is, so it refuses rather than guesses.
 
 Each step re-reads the field immediately before doing anything destructive, and verifies afterwards by re-reading again. A step that half-worked stops the ladder instead of writing again on top of a field we no longer understand.
 
+Re-reading the whole field is necessary and not sufficient, which is why step 1 checks the selection separately. Selecting the span takes several round trips, and in the gap before the keystrokes go out the user can press Home, End or an arrow key, or click somewhere else in the same field: the selection moves or collapses, **every character stays exactly where it was**, and a whole-text comparison sees nothing wrong. The correction would then be typed at the caret instead of over the span. So the selection is read back immediately before `SendInput` and compared by position as well as by text — "add the item, add the item" has two textually identical halves — and the write falls through to the value path rather than typing into the wrong place. `SendInput`'s guarantee that nothing interleaves covers only the call itself, never the gap in front of it.
+
 ## What it refuses to touch
 
 Three independent guards, because each one on its own has a hole.
+
+**All three are decided before the field's text is read, not after.** UI Automation will tell you a field's automation id, its labels, its class name, the title of its window and which executable owns it without ever touching its contents, and that metadata is all three guards need. Only a field that passes all three is asked for its value; a refused one is never read at all, so its text is never in this process's memory, where a crash dump or an attached debugger could reach it. (This is enforced in `FieldGate`, which `FocusWatcher` consults before its first read and again on every poll, because the exclusion list can change while the app it now covers still has focus. The same checks run once more before anything is sent to the local API and before anything is written back, as defence in depth rather than as the guard itself.)
 
 **1. `IsPassword`.** UIA's own answer for a masked input. Cheap, so it is checked first, and a field that says yes is never even watched.
 
@@ -135,7 +139,7 @@ Prefixes, because an exact list is wrong the moment a vendor renames an executab
 
 `password`, `passphrase`, `passcode`, `secret`, `token`, `api key`, `private key`, `seed`, `mnemonic`, `recovery`, `pin`, `cvv`, `cvc`, `security code`, `verification code`, `otp`, `totp`, `2fa`, `mfa`, `credential`, `keychain`, `vault`, `card number`, `account number`, `routing number`, `social security`.
 
-Matching is on **whole words** after splitting camel case and punctuation, so `apiKeyField` and `api_key` match but "shipping" never matches "pin" and an ordinary Notes field is left alone. A refused field is never watched at all (no value is read from it), and the log says `not watching this field in <app>: it looks like it holds a secret (<term>)`.
+Matching is on **whole words** after splitting camel case and punctuation, so `apiKeyField` and `api_key` match but "shipping" never matches "pin" and an ordinary Notes field is left alone. A refused field is never watched at all — its value is never fetched, not on the focus change, not on a UIA event, not on the poll — and the log says `not reading this field in <app>: the field's labels look like a secret (<term>)`.
 
 One known Windows hole: the classic **Credential Manager** control panel runs inside `rundll32.exe`, which cannot be excluded by name without excluding every other control panel applet. The label heuristic is what covers it, which is exactly the case that heuristic exists for.
 
@@ -202,10 +206,11 @@ The token is read lazily and re-read after any failure, so restarting the server
 
 - `dotnet build -c Release` succeeds for the whole solution, warnings-as-errors, on macOS.
 - `dotnet publish -r win-x64 --self-contained` produces a single 72 MB `LexiconBar.exe` (`PE32+ executable (GUI) x86-64`), cross-compiled from macOS.
-- **144 unit tests pass**, on macOS, covering:
+- **158 unit tests pass**, on macOS, covering:
   - the burst detector, ported case for case from `BurstDetectorTests.swift`: typing never fires, streamed dictation coalesces, a paste fires at the settle delay, the run cap, hard refusals, UTF-16 maths with emoji, CRLF;
   - the splice and alignment maths, ported from `BurstAlignmentTests.swift`, covering the ambiguous-window regression, caret anchoring, stale snapshots, multi-replacement splices, newline refusal, the undo ledger;
   - the secret-field heuristic, including the whole-word cases ("shipping" vs "pin") and a pinned known-miss for pluralized all-caps acronyms;
+  - the read gate, through a fake field that counts the times anything asked for its value: an excluded app's field, a secret-looking field in an app nobody excluded, and a field whose app the user excludes mid-focus are each refused with that count still at zero;
   - the exclusion list, bubble content and actions, bubble placement in Windows y-down coordinates including the flip and the clamps;
   - `serve.json` path resolution, credential parsing, the `normalize` response parser, settings round-trip, CLI discovery.
 - The CsWin32-generated UIA interfaces compile against the code that calls them, which is the reason for choosing CsWin32 over hand-written `[ComImport]` declarations: the vtable layout comes from Microsoft's own Win32 metadata, not from memory. A method out of order in a 60-method interface is a silent ABI bug that a Mac cannot catch.
@@ -223,6 +228,7 @@ Nothing below has been executed. It compiles; that is all anyone can say.
 | Caret offset | `FixEverywhere/UiaField.cs` `CaretEnd` | The clone-and-measure trick (`MoveEndpointByRange` then `GetText().Length`). **This is the highest-value unverified thing in the app.** Without a caret the detector refuses ambiguous bursts, so if it is wrong, dictation in front of similar text silently does nothing. |
 | Character units | `FixEverywhere/UiaField.cs` `SelectSpan` | That `TextUnit_Character` maps 1:1 to UTF-16 units in each provider. It is read back and compared before any write, so a mismatch should degrade to "not selectable" rather than corrupt, but that guard itself is untested. |
 | Writing | `FixEverywhere/FixEngine.cs` `Write` | The whole three-step ladder, its ordering, and every verification timeout in it (0.6 s / 0.3 s / 0.6 s). |
+| Selection re-check | `FixEverywhere/UiaField.cs` `SelectionMatches` | That `GetSelection` answers one range for an ordinary caret or selection, and that measuring its start offset agrees with the offsets `SelectSpan` selected by. If a provider disagrees, the keystroke path degrades to the whole-value write rather than typing in the wrong place — safe, but it would make step 1 useless in that app, so watch for "always writes via the value path". |
 | Synthesized input | `Interop/Keyboard.cs` | `SendInput` with `KEYEVENTF_UNICODE`; surrogate pairs as two events; the 400-event batch size; that a UIPI refusal shows up as "not reflected" rather than as a partial write. |
 | SAFEARRAY reads | `Interop/SafeArrays.cs` | Reading VT_I4 runtime ids and VT_R8 rectangles from `pvData`, and that `SafeArrayDestroy` frees them correctly. Pointer code, unrunnable here. |
 | BSTR lifetime | `Interop/SafeArrays.cs` `Bstr` | That every returned BSTR is freed exactly once and none is freed twice. A double free is a crash, not a leak. |
@@ -247,7 +253,7 @@ In the order I would bet on:
 5. **Balloon tips and the drawn icon at 150% DPI.** Cosmetic, near-certain to need a tweak.
 6. **`Text_TextChanged` not firing in Electron.** Expected; the poll is the mitigation, and the symptom is a slower correction, not a wrong one.
 
-The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 144 tests cover and it is the same logic that has been running on macOS.
+The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 158 tests cover and it is the same logic that has been running on macOS.
 
 ## Manual test script
 
@@ -329,7 +335,7 @@ Requirements: the **.NET 8 SDK**. No Visual Studio, no Windows.
 ```bash
 cd apps/windows
 dotnet build -c Release                      # whole solution
-dotnet test  -c Release                      # the 144 portable tests
+dotnet test  -c Release                      # the 158 portable tests
 dotnet publish src/LexiconBar.App/LexiconBar.App.csproj \
   -c Release -r win-x64 --self-contained -o artifacts/win-x64
 ```
@@ -362,7 +368,7 @@ The split is load-bearing, not cosmetic: **every rule that can corrupt a user's 
 
 ### CI
 
-`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 144 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
+`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 158 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
 
 ## Troubleshooting
 

@@ -22,7 +22,7 @@ import { writeFileAtomic } from '../util/atomic.js';
 
 /** A forgotten `--toggle` must not fill the disk: ffmpeg stops on its own after this. */
 export const MAX_TOGGLE_SECONDS = 600;
-/** How long `stopRecorder` waits for ffmpeg to finalize the WAV after SIGINT. */
+/** How long `stopRecorder` waits for ffmpeg to exit after the stop signal. */
 export const STOP_GRACE_MS = 3000;
 /**
  * A provisional state record (claimed, no pid yet) older than this is a start
@@ -209,11 +209,23 @@ export interface FfmpegArgsOptions {
   seconds?: number;
 }
 
-/** The ffmpeg argv; exported so tests can assert the capture format. */
+/**
+ * The ffmpeg argv; exported so tests can assert the capture format.
+ *
+ * `-flush_packets 1` is what makes an abruptly ended capture survive, and it is
+ * not cosmetic. ffmpeg's default output buffer is 256 KB, which at 16 kHz mono
+ * s16 is a little over eight seconds: a recorder that is terminated rather than
+ * asked to stop has written **nothing at all** to the file before then.
+ * Measured on macOS with ffmpeg 9.0.2 — a capture killed at 4 s left a 0-byte
+ * WAV, and one killed at 3 s with this flag left 3.5 s of audio that whisper.cpp
+ * read back happily. Windows has no way to ask ffmpeg to stop (see
+ * `stopRecorder`), so without this every `--toggle` recording shorter than
+ * ~8 s would be lost there. One write per packet, a handful per second.
+ */
 export function ffmpegRecordArgs(opts: FfmpegArgsOptions): string[] {
   const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-f', opts.input.format, '-i', opts.input.input];
   if (opts.seconds !== undefined && opts.seconds > 0) args.push('-t', String(opts.seconds));
-  args.push('-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', opts.wav);
+  args.push('-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-flush_packets', '1', '-y', opts.wav);
   return args;
 }
 
@@ -240,48 +252,165 @@ export interface StopRecorderOptions {
   kill: (pid: number, signal: NodeJS.Signals) => void;
   sleep?: (ms: number) => Promise<void>;
   graceMs?: number;
-  /** Skip the SIGINT because the recorder already received one (Ctrl-C in the foreground). */
+  /** Skip the stop signal because the recorder already received one (Ctrl-C in the foreground). */
   alreadySignalled?: boolean;
+  /** Defaults to `process.platform`; decides whether a graceful stop is even possible. */
+  platform?: NodeJS.Platform;
 }
 
 export interface StopResult {
-  /** True when ffmpeg exited within the grace period (the WAV header is finalized). */
+  /**
+   * True when ffmpeg was given the chance to write its trailer, so the WAV
+   * header holds the real sizes. False whenever the recorder was terminated
+   * instead — which on Windows is every stop this code issues.
+   */
   finalized: boolean;
-  /** True when SIGKILL had to be sent. */
+  /** True when the recorder outlived the grace period and had to be killed. */
   killed: boolean;
+  /**
+   * True when the platform gave ffmpeg no chance to flush. Not an error: the
+   * capture is on disk either way (see `-flush_packets` in `ffmpegRecordArgs`),
+   * it just keeps the provisional header ffmpeg wrote at the start.
+   */
+  abrupt: boolean;
 }
 
 /**
- * Ask ffmpeg to stop (SIGINT makes it flush and write the WAV header) and
- * wait up to `graceMs` for the process to disappear. A recorder that is still
- * alive afterwards is SIGKILLed; the WAV may then lack a valid header.
+ * Stop the recorder and wait up to `graceMs` for it to disappear.
+ *
+ * **This is graceful on POSIX and abrupt on Windows, and the difference is not
+ * ours to fix.** On macOS and Linux, SIGINT makes ffmpeg finish the file:
+ * it writes the trailer, patching the real RIFF and data sizes into the header.
+ * On Windows there is no signal delivery at all — `process.kill(pid, sig)`
+ * calls `TerminateProcess` for every signal including SIGINT, so ffmpeg is shot
+ * where it stands and never runs its trailer. The honest form of that is to
+ * send SIGKILL, which is what the platform is going to do anyway, and to report
+ * `finalized: false` rather than claim a flush that did not happen.
+ *
+ * The alternative — putting the child in its own group and posting a real
+ * `CTRL_C_EVENT` — does not work here and is not worth pretending about:
+ * `GenerateConsoleCtrlEvent` reaches only processes sharing the caller's
+ * console, Node has no binding for it, and a `--toggle` recorder is spawned
+ * `detached` (so libuv gives it `DETACHED_PROCESS`, i.e. no console) and is
+ * stopped by a *different* `lexicon voice` process on the next hotkey press.
+ * There is no console in common to signal through.
+ *
+ * What makes the abrupt stop acceptable is the capture side: with
+ * `-flush_packets 1` the audio is already on disk, so terminating ffmpeg costs
+ * at most the last partial packet and leaves a WAV whose header says
+ * "size unknown" (0xFFFFFFFF). whisper.cpp reads that file — verified against
+ * whisper-cli by feeding it exactly such a capture.
+ *
+ * UNVERIFIED on real Windows: the TerminateProcess behaviour is from Node's
+ * documented semantics, not from a run on a Windows box.
  */
 export async function stopRecorder(opts: StopRecorderOptions): Promise<StopResult> {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const graceMs = opts.graceMs ?? STOP_GRACE_MS;
-  if (!opts.isAlive(opts.pid)) return { finalized: true, killed: false };
-  if (!opts.alreadySignalled) opts.kill(opts.pid, 'SIGINT');
+  // A Ctrl-C the user typed is a real console event that Windows delivered to
+  // the whole process group, so the foreground recorder did get to flush; only
+  // a stop *we* issue is abrupt there.
+  const abrupt = (opts.platform ?? process.platform) === 'win32' && !opts.alreadySignalled;
+  if (!opts.isAlive(opts.pid)) return { finalized: true, killed: false, abrupt: false };
+  if (!opts.alreadySignalled) opts.kill(opts.pid, abrupt ? 'SIGKILL' : 'SIGINT');
   const deadline = Date.now() + graceMs;
   let waited = 0;
   while (opts.isAlive(opts.pid)) {
     if (Date.now() >= deadline) {
       opts.kill(opts.pid, 'SIGKILL');
       await sleep(50);
-      return { finalized: false, killed: true };
+      return { finalized: false, killed: true, abrupt };
     }
     const step = waited < 200 ? 20 : 50;
     await sleep(step);
     waited += step;
   }
-  return { finalized: true, killed: false };
+  return { finalized: !abrupt, killed: false, abrupt };
 }
 
-/** A WAV is usable once ffmpeg wrote more than its 44-byte header. */
-export async function wavHasAudio(wav: string): Promise<boolean> {
+/** What a capture on disk turned out to be. */
+export interface WavCheck {
+  /** True when the file is a WAV with audio in it. */
+  ok: boolean;
+  /** Why it is not, phrased for the user. Undefined when `ok`. */
+  reason?: string;
+  /** PCM bytes actually present on disk after the `data` chunk header. */
+  audioBytes: number;
+  /** True when the header carries real sizes, i.e. ffmpeg wrote its trailer. */
+  finalized: boolean;
+}
+
+/** ffmpeg's placeholder for a size it does not know yet. */
+const UNKNOWN_SIZE = 0xffff_ffff;
+/** `RIFF` + size + `WAVE`. */
+const RIFF_HEADER = 12;
+/** Enough to walk the chunks ffmpeg writes ahead of `data` (`fmt `, `LIST`/`INFO`). */
+const CHUNK_SCAN_BYTES = 4096;
+
+/**
+ * Look at a capture and say whether it is audio.
+ *
+ * The old check was `size > 44`, which is not a WAV check at all: a truncated
+ * or header-only file passes it and is then handed to whisper.cpp, which fails
+ * with "failed to read the frames of the audio data" — observed, by feeding
+ * whisper-cli a 78-byte header. Conversely a *valid* unfinalized capture cannot
+ * be judged by its declared sizes, because ffmpeg leaves them at 0xFFFFFFFF
+ * until its trailer runs, which on Windows it never does. So: check the
+ * container for real, then trust the bytes on disk rather than the header's
+ * opinion of how many there are.
+ */
+export async function inspectWav(wav: string): Promise<WavCheck> {
+  const miss = (reason: string): WavCheck => ({ ok: false, reason, audioBytes: 0, finalized: false });
+  let handle;
   try {
-    const st = await fs.stat(wav);
-    return st.size > 44;
+    handle = await fs.open(wav, 'r');
   } catch {
-    return false;
+    return miss('no file was written');
   }
+  try {
+    const size = (await handle.stat()).size;
+    if (size === 0) return miss('the recording is empty');
+    if (size < RIFF_HEADER) return miss('the recording is truncated');
+
+    const head = Buffer.alloc(Math.min(size, CHUNK_SCAN_BYTES));
+    await handle.read(head, 0, head.length, 0);
+    if (head.toString('latin1', 0, 4) !== 'RIFF' || head.toString('latin1', 8, 12) !== 'WAVE') {
+      return miss('the recording is not a WAV file');
+    }
+
+    // Walk the chunk list to `data`. Sizes here are ffmpeg's own and may be
+    // placeholders, so a chunk that claims to run past what we read ends the
+    // walk rather than seeking into nothing.
+    let offset = RIFF_HEADER;
+    while (offset + 8 <= head.length) {
+      const id = head.toString('latin1', offset, offset + 4);
+      const declared = head.readUInt32LE(offset + 4);
+      const body = offset + 8;
+      if (id === 'data') {
+        // The bytes that are really there. A finalized header's count is
+        // authoritative (ffmpeg may have written padding past it); an
+        // unfinalized one's is a placeholder, and the file length is the truth.
+        const onDisk = Math.max(0, size - body);
+        const known = declared !== 0 && declared !== UNKNOWN_SIZE;
+        const finalized = known && body + declared <= size;
+        const audioBytes = finalized ? Math.min(onDisk, declared) : onDisk;
+        if (audioBytes === 0) {
+          return { ...miss('the recording holds no audio (header only)'), finalized };
+        }
+        return { ok: true, audioBytes, finalized };
+      }
+      if (declared === UNKNOWN_SIZE) break;
+      offset = body + declared + (declared % 2);
+    }
+    return miss('the recording has no audio data chunk');
+  } catch {
+    return miss('the recording could not be read');
+  } finally {
+    await handle.close();
+  }
+}
+
+/** True when the capture is a WAV with audio in it. See `inspectWav` for why. */
+export async function wavHasAudio(wav: string): Promise<boolean> {
+  return (await inspectWav(wav)).ok;
 }

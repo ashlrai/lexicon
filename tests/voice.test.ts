@@ -20,12 +20,14 @@ import {
   claimState,
   ensureVoiceDir,
   ffmpegRecordArgs,
+  inspectWav,
   isStaleProvisional,
   readState,
   recorderLogPath,
   stateFilePath,
   stopRecorder,
   voiceDir,
+  wavHasAudio,
   writeState,
 } from '../src/voice/recorder.js';
 import { cleanTranscript, parseWhisperOutput, whisperArgs } from '../src/voice/transcribe.js';
@@ -43,6 +45,33 @@ import type { VoiceDeps, VoiceJsonResult, VoiceOptions } from '../src/voice/voic
 
 // ---------------------------------------------------------------------------
 // Fixtures
+
+/**
+ * A WAV as ffmpeg writes one: 16 kHz mono s16, a `fmt ` chunk, and a `data`
+ * chunk whose size is 0xFFFFFFFF until the trailer runs.
+ *
+ * `finalized: false` is what a capture looks like while it is still recording —
+ * and, on Windows, what it looks like for ever, because the recorder is
+ * terminated rather than asked to stop and never writes the trailer.
+ */
+function wavBytes(opts: { audioBytes: number; finalized: boolean; riff?: string }): Buffer {
+  const UNKNOWN = 0xffff_ffff;
+  const header = Buffer.alloc(44);
+  header.write(opts.riff ?? 'RIFF', 0, 'latin1');
+  header.writeUInt32LE(opts.finalized ? 36 + opts.audioBytes : UNKNOWN, 4);
+  header.write('WAVE', 8, 'latin1');
+  header.write('fmt ', 12, 'latin1');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(16_000, 24);
+  header.writeUInt32LE(32_000, 28); // byte rate
+  header.writeUInt16LE(2, 32); // block align
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'latin1');
+  header.writeUInt32LE(opts.finalized ? opts.audioBytes : UNKNOWN, 40);
+  return Buffer.concat([header, Buffer.alloc(opts.audioBytes, 7)]);
+}
 
 const AVFOUNDATION_LIST = `[AVFoundation indev @ 0x86b01c140] AVFoundation video devices:
 [AVFoundation indev @ 0x86b01c140] [0] MacBook Pro Camera
@@ -176,9 +205,13 @@ async function makeHarness(overrides: { platform?: NodeJS.Platform; missing?: st
     const pid = h.nextPid++;
     h.alive.add(pid);
     const wav = args[args.length - 1];
-    // ffmpeg would write the WAV as it records; write a header-plus-audio placeholder now.
+    // ffmpeg would write the WAV as it records: header first, samples as they
+    // arrive, real sizes only in the trailer. Write that, not 1000 zero bytes —
+    // the capture check reads the container now, and a placeholder that is not
+    // a WAV would make every one of these tests fail the way a broken
+    // recording does.
     mkdirSync(path.dirname(wav), { recursive: true });
-    writeFileSync(wav, Buffer.alloc(1000));
+    writeFileSync(wav, wavBytes({ audioBytes: 1000, finalized: false }));
     let resolveExit: (code: number | null) => void = () => undefined;
     const exited = new Promise<number | null>((res) => {
       resolveExit = (code) => {
@@ -347,10 +380,75 @@ describe('lexicon voice --toggle', () => {
         t += ms;
       },
       graceMs: 100,
+      platform: 'darwin',
     });
     expect(kills).toEqual(['SIGINT', 'SIGKILL']);
-    expect(result).toEqual({ finalized: false, killed: true });
+    expect(result).toEqual({ finalized: false, killed: true, abrupt: false });
     expect(t).toBeGreaterThan(0);
+  });
+
+  /**
+   * The Windows stop, told the truth. Node turns every signal into
+   * TerminateProcess there, so SIGINT would be a lie in both directions: it
+   * does not reach ffmpeg as an interrupt, and what comes back must not be
+   * reported as a finalized file.
+   */
+  it('on win32 terminates the recorder and does not claim the WAV was finalized', async () => {
+    const kills: string[] = [];
+    let alive = true;
+    const result = await stopRecorder({
+      pid: 4242,
+      isAlive: () => alive,
+      kill: (_pid, signal) => {
+        kills.push(signal);
+        alive = false;
+      },
+      sleep: async () => undefined,
+      platform: 'win32',
+    });
+    expect(kills).toEqual(['SIGKILL']);
+    expect(result).toEqual({ finalized: false, killed: false, abrupt: true });
+  });
+
+  /**
+   * The exception: a Ctrl-C the user typed is a real console event that Windows
+   * delivered to the whole process group, so the foreground recorder did get to
+   * flush. Nothing is sent, and nothing is claimed to be abrupt.
+   */
+  it('on win32 a user Ctrl-C is a genuine interrupt, so the stop is not abrupt', async () => {
+    const kills: string[] = [];
+    let alive = true;
+    const result = await stopRecorder({
+      pid: 4242,
+      isAlive: () => {
+        const was = alive;
+        alive = false;
+        return was;
+      },
+      kill: (_pid, signal) => kills.push(signal),
+      sleep: async () => undefined,
+      platform: 'win32',
+      alreadySignalled: true,
+    });
+    expect(kills).toEqual([]);
+    expect(result).toEqual({ finalized: true, killed: false, abrupt: false });
+  });
+
+  it('sends SIGINT and reports a finalized WAV off Windows', async () => {
+    const kills: string[] = [];
+    let alive = true;
+    const result = await stopRecorder({
+      pid: 4242,
+      isAlive: () => alive,
+      kill: (_pid, signal) => {
+        kills.push(signal);
+        alive = false;
+      },
+      sleep: async () => undefined,
+      platform: 'linux',
+    });
+    expect(kills).toEqual(['SIGINT']);
+    expect(result).toEqual({ finalized: true, killed: false, abrupt: false });
   });
 
   it('--status reports recording since <time> (0) or idle (1)', async () => {
@@ -797,7 +895,7 @@ describe('cleanTranscript', () => {
       '-m', '/m.bin', '-f', '/a.wav', '-l', 'en', '-nt', '-np', '-oj', '-of', '/o', '--prompt', 'A, B',
     ]);
     expect(ffmpegRecordArgs({ input: { format: 'avfoundation', input: ':default' }, wav: '/r.wav', seconds: 600 })).toEqual([
-      '-nostdin', '-hide_banner', '-loglevel', 'error', '-f', 'avfoundation', '-i', ':default', '-t', '600', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', '/r.wav',
+      '-nostdin', '-hide_banner', '-loglevel', 'error', '-f', 'avfoundation', '-i', ':default', '-t', '600', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-flush_packets', '1', '-y', '/r.wav',
     ]);
   });
 });
@@ -882,6 +980,95 @@ describe('models and tools', () => {
     expect(await locateWhisperCli({ env: { PATH: '/bin', LEXICON_WHISPER_BIN: '/nope' }, platform: 'darwin', exists, extraDirs: [] })).toBeUndefined();
     expect(await locateWhisperCli({ env: { PATH: '/bin' }, platform: 'darwin', exists, extraDirs: [] })).toBe('/bin/whisper-cpp');
     expect(installHint('win32')).toContain('winget');
+  });
+});
+
+/**
+ * What the capture check accepts, and what it stopped accepting.
+ *
+ * The old rule was `size > 44`, which asked nothing about the container: a
+ * truncated file, a header with no samples, or 1000 zero bytes all passed it
+ * and went to whisper.cpp, which answers "failed to read the frames of the
+ * audio data". The new rule reads the RIFF/WAVE structure — while still
+ * accepting a capture whose sizes ffmpeg never got to patch in, because that is
+ * every `--toggle` recording on Windows and whisper.cpp reads those fine.
+ */
+describe('capture validation', () => {
+  let dir = '';
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-wav-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  const write = async (name: string, bytes: Buffer): Promise<string> => {
+    const file = path.join(dir, name);
+    await fs.writeFile(file, bytes);
+    return file;
+  };
+
+  it('accepts a capture ffmpeg never finalized', async () => {
+    const wav = await write('unfinalized.wav', wavBytes({ audioBytes: 32_000, finalized: false }));
+
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(true);
+    expect(check.finalized).toBe(false);
+    // The header says "size unknown", so the bytes on disk are the answer.
+    expect(check.audioBytes).toBe(32_000);
+    expect(await wavHasAudio(wav)).toBe(true);
+  });
+
+  it('accepts a finalized capture and says so', async () => {
+    const wav = await write('finalized.wav', wavBytes({ audioBytes: 640, finalized: true }));
+
+    expect(await inspectWav(wav)).toEqual({ ok: true, audioBytes: 640, finalized: true });
+  });
+
+  it('rejects a header with no audio behind it', async () => {
+    const wav = await write('headeronly.wav', wavBytes({ audioBytes: 0, finalized: false }));
+
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(false);
+    expect(check.reason).toContain('no audio');
+    expect(await wavHasAudio(wav)).toBe(false);
+  });
+
+  it('rejects bytes that are not a WAV, however many there are', async () => {
+    // The old check passed this: it is 1000 bytes, and 1000 > 44.
+    const wav = await write('zeros.wav', Buffer.alloc(1000));
+
+    expect((await inspectWav(wav)).reason).toContain('not a WAV');
+    expect(await wavHasAudio(wav)).toBe(false);
+  });
+
+  it('rejects an empty file, a truncated header and a missing file', async () => {
+    expect((await inspectWav(await write('empty.wav', Buffer.alloc(0)))).reason).toContain('empty');
+    expect((await inspectWav(await write('stub.wav', Buffer.from('RIF')))).reason).toContain('truncated');
+    expect((await inspectWav(path.join(dir, 'nope.wav'))).reason).toContain('no file');
+  });
+
+  it('rejects a container that is not RIFF/WAVE', async () => {
+    const wav = await write('avi.wav', wavBytes({ audioBytes: 100, finalized: true, riff: 'RIFX' }));
+
+    expect((await inspectWav(wav)).ok).toBe(false);
+  });
+
+  it('walks past the chunks ffmpeg writes before the audio', async () => {
+    // ffmpeg puts a LIST/INFO chunk between `fmt ` and `data`; the walk has to
+    // step over it rather than give up at the first chunk that is not `data`.
+    const base = wavBytes({ audioBytes: 200, finalized: false });
+    const info = Buffer.alloc(8 + 12);
+    info.write('LIST', 0, 'latin1');
+    info.writeUInt32LE(12, 4);
+    info.write('INFOISFT', 8, 'latin1');
+    const wav = await write('listed.wav', Buffer.concat([base.subarray(0, 36), info, base.subarray(36)]));
+
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(true);
+    expect(check.audioBytes).toBe(200);
   });
 });
 

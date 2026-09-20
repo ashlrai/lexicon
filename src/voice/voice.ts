@@ -45,6 +45,7 @@ import {
   claimState,
   clearState,
   ensureVoiceDir,
+  inspectWav,
   isProvisional,
   isStaleProvisional,
   readState,
@@ -54,7 +55,6 @@ import {
   stateFilePath,
   stopRecorder,
   touchPrivateFile,
-  wavHasAudio,
   writeState,
 } from './recorder.js';
 import type { RecordingState } from './recorder.js';
@@ -409,6 +409,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
         isAlive: r.isAlive,
         kill: r.kill,
         alreadySignalled: why === 'sigint',
+        platform: r.platform,
         ...(deps.sleep ? { sleep: deps.sleep } : {}),
       });
     }
@@ -416,10 +417,11 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
   }
   const recordMs = r.clock() - t0;
 
-  if (!(await wavHasAudio(wav))) {
+  const capture = await inspectWav(wav);
+  if (!capture.ok) {
     const err = child.stderr().trim().split('\n').slice(-3).join('\n');
     io.stderr(
-      `lexicon voice: recording failed (no audio written)${err ? `: ${err}` : ''}\n` +
+      `lexicon voice: recording failed (${capture.reason})${err ? `: ${err}` : ''}\n` +
         (r.platform === 'darwin' ? '  Check that this terminal has Microphone permission: System Settings > Privacy & Security > Microphone.\n' : ''),
     );
     await fs.rm(wav, { force: true }).catch(() => undefined);
@@ -483,7 +485,7 @@ async function stopAndTranscribe(
   r: Resolved,
 ): Promise<number> {
   const startedAt = Date.parse(state.startedAt);
-  const stop = await stopRecorder({ pid: state.pid, isAlive: r.isAlive, kill: r.kill, ...(deps.sleep ? { sleep: deps.sleep } : {}) });
+  const stop = await stopRecorder({ pid: state.pid, isAlive: r.isAlive, kill: r.kill, platform: r.platform, ...(deps.sleep ? { sleep: deps.sleep } : {}) });
   const recordMs = Math.max(0, r.clock() - (Number.isFinite(startedAt) ? startedAt : r.clock()));
   await clearState(r.globalPath);
   if (stop.killed) r.log('recorder did not stop within 3s; killed (the WAV may be truncated)');
@@ -491,9 +493,13 @@ async function stopAndTranscribe(
   const tools = await requireTools(r, io, deps, { ffmpeg: false, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
 
-  if (!(await wavHasAudio(state.wav))) {
+  const capture = await inspectWav(state.wav);
+  if (!capture.ok) {
     io.stderr(
-      `lexicon voice: recording failed (no audio written to ${state.wav})\n` +
+      `lexicon voice: recording failed (${capture.reason}: ${state.wav})\n` +
+        // Windows cannot interrupt ffmpeg, only terminate it, so say so here
+        // rather than let the user hunt for a flush that was never possible.
+        (stop.abrupt ? '  On Windows the recorder is terminated rather than asked to stop; the last fraction of a second is lost.\n' : '') +
         (r.platform === 'darwin' ? '  Check that the app running this command has Microphone permission: System Settings > Privacy & Security > Microphone.\n' : '') +
         `  ffmpeg log: ${recorderLogPath(r.globalPath)}\n`,
     );
