@@ -1,5 +1,5 @@
 /**
- * The six steps of `lexicon setup`, in the order the wizard runs them. Each
+ * The seven steps of `lexicon setup`, in the order the wizard runs them. Each
  * takes the shared `Ctx`, prints its own one-line result through `ctx.say`,
  * and records what it did in `ctx.summary` -- or, under `--dry-run`, what it
  * would have done in `ctx.plan`, writing nothing. Every step is idempotent.

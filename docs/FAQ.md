@@ -1,10 +1,6 @@
-<!--
-  Generated from web/lib/site.ts by web/scripts/gen-faq-doc.mjs.
-  Edit the FAQ array there, then run: node web/scripts/gen-faq-doc.mjs
-  The same answers are rendered at https://lexicon.ashlr.ai#faq and served at https://lexicon.ashlr.ai/llms-full.txt.
--->
-
 # FAQ
+
+<!-- Generated from web/lib/site.ts by web/scripts/gen-faq-doc.mjs. Edit the FAQ array there and re-run it; the same answers are at https://lexicon.ashlr.ai#faq and /llms-full.txt. -->
 
 Plain answers about Lexicon, the personal lexicon for voice-to-agents. Each one
 stands on its own, so quoting a single answer somewhere else still makes sense.
@@ -54,3 +50,5 @@ Nothing. Lexicon is free and MIT-licensed, with no paid tier, no account and no 
 - [Security](../SECURITY.md): the threat model and the trust gate.
 - [Benchmark](BENCHMARK.md): the measurements, the method and what still fails.
 - Issues and questions: https://github.com/ashlrai/lexicon/issues
+
+Back to [the docs index](README.md).

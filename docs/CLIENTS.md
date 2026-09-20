@@ -112,7 +112,7 @@ Four clients have a discovery rule this command cannot check for you, so it prin
 - **Codex, `--project`.** A repo-local `.codex/config.toml` is loaded but *disabled* until you mark the project as trusted in Codex. The user-level `~/.codex/config.toml` has no such condition.
 - **VS Code, user scope.** VS Code keeps `mcp.json` per profile. The path above is the default profile of VS Code stable; on a custom profile, Insiders, or with `--user-data-dir`, run **MCP: Open User Configuration** in VS Code and paste the entry there. Workspace scope (`./.vscode/mcp.json`, via `--project`) has no such ambiguity and is the more reliable target.
 - **Gemini CLI.** If your `settings.json` sets `mcp.allowed`, add `"lexicon"` to that list or the server is skipped.
-- **Claude Desktop.** The config is read at launch only: quit the app completely and reopen. The Linux path is best effort (`$XDG_CONFIG_HOME/Claude/`, else `~/.config/Claude/`) — Anthropic documents only the macOS and Windows locations.
+- **Claude Desktop.** The config is read at launch only: quit the app completely and reopen. The Linux path is best effort (`$XDG_CONFIG_HOME/Claude/`, else `~/.config/Claude/`), because Anthropic documents only the macOS and Windows locations.
 
 ### Running without installing anything
 
@@ -156,6 +156,8 @@ The voice path is deliberately minimal. Wispr Flow and Superwhisper remain nicer
 
 ## See also
 
-- [MCP.md](MCP.md) — the tools, resources and prompts the server you just registered exposes.
-- [QUICKSTART.md](QUICKSTART.md) — the five-minute version, if you landed here first.
-- [TRUST.md](TRUST.md) — why a repo's `.lexicon.yaml` stays off until you approve it.
+- [MCP.md](MCP.md) documents the tools, resources and prompts the server you just registered exposes.
+- [TRUST.md](TRUST.md) explains why a repo's `.lexicon.yaml` stays off until you approve it.
+- [GROWING.md](GROWING.md) is what to do once it works: filling the lexicon without typing it.
+
+Back to [the docs index](README.md).

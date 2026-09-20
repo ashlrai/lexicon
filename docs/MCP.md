@@ -42,7 +42,7 @@ The agent calls `normalize_transcript` on dictated input and reads `lexicon://me
 | `add_pack` | `name`, `scope?` | Install a starter pack into the global or project lexicon. See [PACKS.md](PACKS.md) |
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
 | `apply_suggestion` | `suggestion`, `scope?` | Applies one suggestion from `suggest_terms`, passed back as received |
-| `setup_lexicon` | `company?`, `person?`, `clients?`, `serve?`, `apply?` | Without `apply` returns a plan computed by a dry run (what it would seed and harvest, the clients it detected, whether it would install the login service) and writes nothing. With `apply: true` runs `lexicon setup` non-interactively for exactly the `clients` given (omitted = none) and installs the local API only with `serve: true`; returns the `SetupSummary` |
+| `setup_lexicon` | `company?`, `person?`, `clients?`, `packs?`, `harvest?`, `serve?`, `apply?` | Without `apply` returns a plan computed by a dry run (what it would seed and harvest, the clients it detected, whether it would install the login service) and writes nothing. With `apply: true` runs `lexicon setup` non-interactively for exactly the `clients` given (omitted = none). The three that write a lot are each opt-in and separately confirmed: `packs` names the starter packs to install (omitted = none), `harvest: true` writes the repo names in `wouldHarvest` into the project `.lexicon.yaml` and trusts it, and `serve: true` installs the local API as a login service. Returns the `SetupSummary` |
 | `serve_status` | none | Whether the local API on `127.0.0.1:41733` is up, with its version and term count |
 
 ## Resources
@@ -69,6 +69,8 @@ Why these tools exist and how an agent is meant to chain them is in [AGENT-NATIV
 
 ## See also
 
-- [CLIENTS.md](CLIENTS.md) — registering the server in Claude Code, Codex, Cursor and the rest.
-- [AGENT-NATIVE.md](AGENT-NATIVE.md) — why these tools exist and how an agent is meant to chain them.
-- [AGENTS.md](AGENTS.md) — the procedural version, written to the agent rather than about it.
+- [AGENT-NATIVE.md](AGENT-NATIVE.md) explains why these tools exist and how an agent is meant to chain them.
+- [AGENTS.md](AGENTS.md) is the procedural version, written to the agent rather than about it.
+- [TRUST.md](TRUST.md) covers the gate every project-scope write goes through.
+
+Back to [the docs index](README.md).

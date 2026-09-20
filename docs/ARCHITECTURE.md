@@ -8,13 +8,22 @@ How the pieces fit and why they were built that way, for anyone about to change 
 
 ```text
 src/
+  util/                     the bottom layer: dependency-free, imported directly by everything above
+    errors.ts               errorMessage(): the message for anything thrown, without `any`
+    json.ts                 read/merge/write for the JSON configs this tool edits (settings.json, trust.json, serve.json)
+    which.ts                findOnPath(): locate an executable without spawning which/where
+    atomic.ts               write a temp sibling, then rename over the target
+    package.ts              findPackageRoot(), readPackageVersion()
+    xdg.ts                  XDG Base Directory resolution, in one place
   core/                     pure library, no CLI or MCP concerns
     types.ts                shared types; dependency-free
     schema.ts               zod schemas, parseLexicon(), LIMITS, invisible-character stripping
     store.ts                path resolution, YAML read/write, global+project merge,
                             addTerm / removeTerm / recordHits, the project-write trust gate
     trust.ts                trust registry (trust.json): isTrusted, trustProject, refreshTrust, listTrusted
-    matcher.ts              buildIndex(), findReplacements(), phoneticKey(), similarity(). Pure, no IO.
+    matcher.ts              the public face: buildIndex(), findReplacements(), phoneticKey(), similarity()
+    matcher/                its four parts: build (the index), text (folding, metaphone, edit distance),
+                            tokenize (windows, and the code/URL/path spans to leave alone), tuning (every threshold)
     stoplist.ts             STOPLIST: 3376 common English words that block phonetic and fuzzy guesses
     normalize.ts            normalize() applies replacements; diffSummary()
     suggest.ts              suggestAliases(): likely STT misspellings of a canonical
@@ -22,6 +31,8 @@ src/
     learn.ts                parseCorrection(), learnCorrection(), suggestCanonicalFor()
     stats.ts                computeStats(): counts, top terms, never-hit terms
     harvest.ts              harvestRepo(): candidate terms from a codebase
+    packs.ts                listPacks(), loadPack(), installPack(): the curated lexicons in packs/*.yaml
+    demo.ts                 demonstrate(): the before/after pair the setup wizard and the site both show
     exporters/              exportLexicon(), one file per format (15)
     importers/              importLexicon(), detectImportFormat(), one file per format (7)
     index.ts                the only cross-module import path; the npm package entry point
@@ -30,7 +41,7 @@ src/
     clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) + PATH detection
   serve/
     config.ts               serve.json: port, bearer token (0600), allowedOrigins; isOriginAllowed()
-    server.ts               createServer(): node:http, 7 endpoints, auth, CORS, body caps, per-cwd lexicon cache
+    server.ts               createServer(): node:http, 11 endpoints, auth, CORS, body caps, per-cwd lexicon cache
   voice/
     process.ts              locate ffmpeg / whisper-cli, exec and detached spawn, install hints
     devices.ts              audio input device listing (avfoundation, pulse/alsa, dshow)
@@ -41,17 +52,24 @@ src/
     voice.ts                runVoice, runVoiceToggle, runVoiceStatus, runVoiceListDevices; exit codes 0/1/2/3
   cli/
     index.ts                commander wiring (bin: lexicon), 25 commands
-    commands.ts             init/add/remove/list/normalize/harvest/export/path/doctor/install-claude
+    cli-entry.ts            package name, $LEXICON_CLI, resolveCliEntry(): which file the installers point at
+    io.ts                   the IO seam every handler writes through, plus bold/dim/safe/renderTable
     prompt.ts               dependency-free readline prompter used by the interactive commands
+    claude-settings.ts      merging hooks into Claude Code's settings.json
+    serve-paths.ts          launchd plist and systemd unit paths for lexicon serve --install
+    commands.ts             a facade: init/add/remove/list/normalize/harvest/export/path, and re-exports of the rest
+    cmd-doctor.ts           doctor
     cmd-import.ts           import
     cmd-install.ts          install [client]
     cmd-trust.ts            trust, untrust
     cmd-learn.ts            learn, stats
+    cmd-pack.ts             pack list/add/remove/show
     cmd-review.ts           the interactive walkthroughs: harvest --add, review, edit
-    cmd-serve.ts            serve (foreground, --show, --status, --install/--uninstall)
+    cmd-serve.ts            serve (foreground, --show, --status, --pair, --install/--uninstall)
     cmd-voice.ts            voice
     cmd-suggest.ts          suggest
-    cmd-setup.ts            setup: the six-step wizard, built on the installers above
+    cmd-setup.ts            setup: the seven-step wizard, built on the installers above
+    setup/                  its parts: types (the vocabulary), detect (machine probing), steps (the steps themselves)
   hooks/
     user-prompt-submit.ts   Claude Code hook for SessionStart and UserPromptSubmit (lexicon hook)
   mcp/
@@ -84,7 +102,7 @@ tests/                      vitest, one file per module, e2e.test.ts for subproc
 bench/                      accuracy benchmarks: synthetic corpus and real audio through whisper.cpp
 ```
 
-Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Siblings import each other only through `../core/index.js`. `src/core` never imports from `cli`, `mcp`, `hooks`, `daemon`, `serve` or `voice`. The MCP server imports CLI handlers (`runDoctorReport`, `runInstall`, `runImport`, `runSetup`) statically so the agent-native tools and the terminal share one code path; nothing in the static graph may also be dynamic-imported, or esbuild lazy-wraps the shared subgraph and the plugin bundle fails to load.
+Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Siblings import each other only through `../core/index.js`; `src/util/` is the one documented exception, imported directly by path from every layer because it sits below all of them and imports nothing back. `src/core` never imports from `cli`, `mcp`, `hooks`, `daemon`, `serve` or `voice`. The MCP server imports CLI handlers (`runDoctorReport`, `runInstall`, `runImport`, `runSetup`) statically so the agent-native tools and the terminal share one code path; nothing in the static graph may also be dynamic-imported, or esbuild lazy-wraps the shared subgraph and the plugin bundle fails to load.
 
 ## Data flow
 
@@ -316,6 +334,8 @@ The setup, install, trust, import and suggestion tools let an agent change files
 
 ## See also
 
-- [CONTRACT.md](CONTRACT.md) — the exported API of every module named above.
-- [AGENT-NATIVE.md](AGENT-NATIVE.md) — the design of the tools an agent calls.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — setup, the test layout, and how to add a format or a pack.
+- [CONTRACT.md](CONTRACT.md) has the exported API of every module named above.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) covers setup, the test layout, and how to add a format or a pack.
+- [DOGFOOD.md](DOGFOOD.md) is this design run against the real Claude Code CLI, and what broke.
+
+Back to [the docs index](README.md).

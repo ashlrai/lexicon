@@ -100,7 +100,7 @@ export function renderStats(stats: LexiconStats): string {
 
   out.push('top terms');
   if (stats.topTerms.length === 0) {
-    out.push('  (no hits recorded yet — hits are counted when normalize_transcript or the hook fixes something)');
+    out.push('  (no hits recorded yet: hits are counted when normalize_transcript or the hook fixes something)');
   } else {
     out.push(
       renderTable(

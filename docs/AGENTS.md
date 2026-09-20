@@ -190,3 +190,11 @@ threat model: [SECURITY.md](../SECURITY.md).
 - [AGENT-NATIVE.md](AGENT-NATIVE.md) - how to chain them, with worked dialogues.
 - [CLIENTS.md](CLIENTS.md) - per-client detail and what the hooks do.
 - [FAQ.md](FAQ.md) - answers to quote at a user who asks why this happens.
+
+## See also
+
+- [AGENT-NATIVE.md](AGENT-NATIVE.md) is the design behind the tools this checklist calls.
+- [TRUST.md](TRUST.md) covers the one thing never to do on someone's behalf without asking first.
+- [LEXICON-FILE.md](LEXICON-FILE.md) is the file everything here writes into.
+
+Back to [the docs index](README.md).

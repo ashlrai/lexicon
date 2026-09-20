@@ -2,7 +2,7 @@
 
 `web/` is the marketing site for Lexicon, deployed at
 **<https://lexicon.ashlr.ai>**. It is a Next.js App Router app, TypeScript,
-Tailwind v4, and nothing else — the dependency list is deliberately short.
+Tailwind v4, and nothing else. The dependency list is deliberately short.
 
 It is a separate npm package from the root project. Nothing in `web/` is
 published to npm, and the root `package.json` does not reference it.
@@ -39,7 +39,7 @@ into `web/lib/generated/` (gitignored, rebuilt on every build):
 
 | File | What it is |
 | --- | --- |
-| `lexicon-core.js` | `lib/demo-entry.ts` bundled by esbuild — `normalize`, `suggestAliases` and `DEFAULT_MIN_CONFIDENCE` straight out of `src/core`. 41 KB. |
+| `lexicon-core.js` | `lib/demo-entry.ts` bundled by esbuild: `normalize`, `suggestAliases` and `DEFAULT_MIN_CONFIDENCE` straight out of `src/core`. 41 KB. |
 | `lexicon-core.d.ts` | Hand-written types for the above, so the app type-checks. |
 | `demo-lexicon.json` | The four starter packs (155 terms) plus the `Ashlr.AI` entry from `examples/lexicon.example.yaml`, parsed from the same YAML the CLI ships. |
 | `brand-icons.json` | Monochrome SVG paths from `simple-icons` for the "works with" wall. |
@@ -48,7 +48,7 @@ This mirrors `scripts/build-site.mjs` at the repo root, which does the same job
 for the GitHub Pages demo. Three things are worth knowing:
 
 **`schema.js` is deliberately excluded.** Importing it pulls in zod, which took
-the browser bundle from 41 KB to 486 KB — 445 KB to validate one fixed file. The
+the browser bundle from 41 KB to 486 KB, which is 445 KB to validate one fixed file. The
 build script now validates `demo-lexicon.json` on the server, with the project's
 real `parseLexicon`, and ships plain JSON. A pack that stops matching the schema
 still fails the build.
@@ -101,7 +101,7 @@ alone, and Next type-checks the whole project.
 
 ### Switching to git-triggered deploys
 
-The project is currently **not** connected to a git repository — `vercel link`
+The project is currently **not** connected to a git repository, so `vercel link`
 connects one automatically, and it was disconnected on purpose, because a push
 would otherwise build from the repository root, where there is no Next app.
 
@@ -132,7 +132,7 @@ If that wildcard is ever removed, the record to recreate is:
 | `CNAME` | `lexicon` | `bb58f57d4850e5d5.vercel-dns-016.com.` | **off** (DNS only) |
 
 `cname.vercel-dns.com.` also works as the value. The Cloudflare proxy must stay
-off — Vercel returns `disableProxy: true` for this record, and an orange-cloud
+off: Vercel returns `disableProxy: true` for this record, and an orange-cloud
 proxy breaks certificate issuance.
 
 Verify with:
@@ -149,7 +149,7 @@ curl -sI https://lexicon.ashlr.ai | head -1
 
 The "works with" wall is nominative use: it states what Lexicon is compatible
 with. It is never framed as endorsement. The section headings say "Lexicon
-corrects what you dictate into" and "Works wherever you talk to an agent" —
+corrects what you dictate into" and "Works wherever you talk to an agent",
 never "Trusted by" or "Partners", which would be false.
 
 The rules applied, in `web/components/WorksWith.tsx`:
@@ -167,14 +167,14 @@ a partnership. Currently: Claude Code, Claude, Cursor, Windsurf, Gemini,
 Perplexity, Poe, Deepgram, Google Cloud, Chrome, Firefox, GitHub, Anthropic.
 
 **Where `simple-icons` does not ship a path, the product name is set as text.**
-This is not a workaround — `simple-icons` removes marks when the owner asks, so
+This is not a workaround. `simple-icons` removes marks when the owner asks, so
 its absence is a signal not to reproduce the mark. Set as words for this reason:
 ChatGPT, OpenAI Codex, Microsoft Copilot, VS Code, Azure Speech, Grok. Also set
 as words because `simple-icons` simply has no entry: Wispr Flow, Superwhisper,
 Whisper, AssemblyAI, espanso.
 
 **Only shipped integrations are listed.** Every entry was verified against the
-repository — `extension/manifest.json` and `extension/src/adapters.ts` for the
+repository: `extension/manifest.json` and `extension/src/adapters.ts` for the
 chat sites, `INSTALL_CLIENTS` in `src/cli/cmd-install.ts` for the agent clients,
 `src/core/exporters/` for the speech vendors. Ollama and Slack appear in the
 starter packs as *vocabulary terms* and are not integrations, so neither is on
@@ -221,7 +221,7 @@ The direction is called *non-photo blue*. Copy editors and animators marked up
 artwork in a pale cyan the reproduction camera could not see, so the marks did
 their job and vanished from the final print. That is what Lexicon does to a
 transcript, and it is the page's one accent (`#a4dded`). Red appears in exactly
-one role — a spell-check squiggle under a word the matcher has flagged — and
+one role, a spell-check squiggle under a word the matcher has flagged, and
 never as a fill.
 
 Type has three jobs, borrowed from the structure of a dictionary entry:
@@ -242,3 +242,10 @@ the idea.
 The hero animation degrades to a static before/after under
 `prefers-reduced-motion: reduce`. That same markup is what the server renders,
 so it is also the no-JavaScript and pre-hydration state.
+
+## See also
+
+- [DISTRIBUTION.md](DISTRIBUTION.md) covers the directories that link to this site.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) covers running and changing `web/` locally.
+
+Back to [the docs index](README.md).

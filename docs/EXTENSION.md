@@ -10,13 +10,32 @@ You press Enter. The extension rewrites the box to
 shows a toast listing both fixes (with Undo), then sends.
 ```
 
+## Get it
+
+Every release attaches both builds. Download the one for your browser from the
+[latest release](https://github.com/ashlrai/lexicon/releases/latest):
+
+| Browser | Asset | Unzip to |
+|---|---|---|
+| Chrome, Edge, Brave | `lexicon-extension.zip` | any folder you will keep |
+| Firefox | `lexicon-extension-firefox.zip` | any folder you will keep |
+
+Unzip it somewhere permanent, because Chrome loads an unpacked extension from
+that path on every start and will drop it if the folder moves. Then follow
+[Install (unpacked)](#install-unpacked), picking the unzipped folder in place of
+`extension/dist`.
+
+There is no Chrome Web Store or AMO listing yet, so unpacked is the only route
+for now. Building it yourself is the alternative, and the one to take if you are
+changing the extension.
+
 ## Build
 
 ```bash
 npm run build:extension
 ```
 
-Produces `extension/dist` (Chromium), `extension/dist-firefox` (same files, Firefox manifest) and, when `zip` is on the PATH, `extension/lexicon-extension.zip` and `extension/lexicon-extension-firefox.zip`. CI builds it on every push and uploads `extension/dist` as the `lexicon-extension` artifact, so you can download it from the Actions run without a checkout.
+Produces `extension/dist` (Chromium), `extension/dist-firefox` (same files, Firefox manifest) and, when `zip` is on the PATH, `extension/lexicon-extension.zip` and `extension/lexicon-extension-firefox.zip`, which are the two assets the release attaches. CI also builds it on every push and uploads `extension/dist` as the `lexicon-extension` artifact, so a reviewer can pull an unreleased build straight from the Actions run.
 
 What is in `dist`:
 
@@ -36,17 +55,20 @@ The build fails if a `node:` builtin reaches any bundle, or if a bundle other th
 
 ## Install (unpacked)
 
+Below, "the extension folder" means whatever you unzipped from the release, or
+`extension/dist` (`extension/dist-firefox` for Firefox) in a checkout you built.
+
 Chrome, Edge, Brave:
 
 1. Open `chrome://extensions` (`edge://extensions`, `brave://extensions`).
 2. Turn on **Developer mode** (top right).
-3. **Load unpacked** and pick `extension/dist`.
+3. **Load unpacked** and pick the extension folder.
 4. Pin the "Lexicon" toolbar icon if you want the popup handy.
 
 Firefox (temporary add-on; it is unloaded when Firefox quits):
 
 1. Open `about:debugging#/runtime/this-firefox`.
-2. **Load Temporary Add-on...** and pick `extension/dist-firefox/manifest.json`.
+2. **Load Temporary Add-on...** and pick `manifest.json` inside the extension folder.
 
 ## Pair with the local API
 
@@ -161,6 +183,8 @@ The tests cover the DOM logic; a real browser is still needed for the editor int
 
 ## See also
 
-- [LOCAL-API.md](LOCAL-API.md) — the `lexicon serve` API the extension talks to, its routes and its token.
-- [CLIENTS.md](CLIENTS.md) — the same job for agent clients that can run a hook or an MCP server.
-- [MATCHING.md](MATCHING.md) — what the corrections in the composer are actually doing.
+- [MACOS-APP.md](MACOS-APP.md) does the same job outside the browser, in any macOS app.
+- [LOCAL-API.md](LOCAL-API.md) is the `lexicon serve` API the extension talks to, its routes and its token.
+- [MATCHING.md](MATCHING.md) explains what the corrections in the composer are actually doing.
+
+Back to [the docs index](README.md).

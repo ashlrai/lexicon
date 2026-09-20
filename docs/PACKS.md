@@ -50,6 +50,8 @@ Pack files are read from the package's `packs/` directory only, and the name is 
 
 ## See also
 
-- [GROWING.md](GROWING.md) — the other three ways terms get in: your repo, your corrections, your voice history.
-- [LEXICON-FILE.md](LEXICON-FILE.md) — the schema a pack file follows.
-- [BENCHMARK.md](BENCHMARK.md) — the precision numbers the alias rule above is written against.
+- [GROWING.md](GROWING.md) covers the other three ways terms get in: your repo, your corrections, your voice history.
+- [LEXICON-FILE.md](LEXICON-FILE.md) is the schema a pack file follows.
+- [BENCHMARK.md](BENCHMARK.md) has the precision numbers the alias rule above is written against.
+
+Back to [the docs index](README.md).

@@ -88,6 +88,8 @@ If `Ashlr.AI` already exists (as a canonical or an alias) the heard form becomes
 
 ## See also
 
-- [SUGGEST.md](SUGGEST.md) — the deep version of the suggestions step above.
-- [PACKS.md](PACKS.md) — the fastest hundred-odd terms, if you are starting from nothing.
-- [CLI.md](CLI.md) — full flags for `harvest`, `learn`, `stats`, `review` and `suggest`.
+- [SUGGEST.md](SUGGEST.md) is the deep version of the suggestions step above.
+- [LEXICON-FILE.md](LEXICON-FILE.md) is what all four of these write into.
+- [MATCHING.md](MATCHING.md) explains which of the terms you just added will actually fire.
+
+Back to [the docs index](README.md).

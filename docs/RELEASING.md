@@ -59,7 +59,7 @@ Every upload uses `--clobber`, so re-running a failed job replaces its own asset
 
 ### Signing for other people
 
-`LexiconBar.app.zip` is signed ad-hoc and not notarized, so on someone else's Mac it is an unidentified developer: Gatekeeper blocks the first launch (right-click > Open, or `xattr -d com.apple.quarantine`), and its Accessibility grant is bound to a cdhash that changes with every release, so each update silently loses the grant until the user removes the row in System Settings and adds the app again. The local `LexiconBar Local Signing` certificate (`scripts/make-signing-identity.sh`, see [MACOS-APP.md](MACOS-APP.md#signing-and-why-the-accessibility-grant-kept-disappearing)) fixes that on the machine that made it and nowhere else — it is not distributable.
+`LexiconBar.app.zip` is signed ad-hoc and not notarized, so on someone else's Mac it is an unidentified developer: Gatekeeper blocks the first launch (right-click > Open, or `xattr -d com.apple.quarantine`), and its Accessibility grant is bound to a cdhash that changes with every release, so each update silently loses the grant until the user removes the row in System Settings and adds the app again. The local `LexiconBar Local Signing` certificate (`scripts/make-signing-identity.sh`, see [MACOS-APP.md](MACOS-APP.md#signing-and-why-the-accessibility-grant-kept-disappearing)) fixes that on the machine that made it and nowhere else. It is not distributable.
 
 The real answer for shipping is a **Developer ID Application** certificate from the Apple Developer Program plus notarization: sign with `codesign --options runtime --sign "Developer ID Application: …"`, submit with `xcrun notarytool submit --wait`, then `xcrun stapler staple LexiconBar.app`. That gives a designated requirement anchored to Apple and the team id, which is stable across every release, so a user grants Accessibility once and updates keep it. In CI the certificate and its password go in repository secrets and are imported into a temporary keychain for the run; `LEXICONBAR_SIGN_IDENTITY` already lets `scripts/build-macos-app.sh` use whatever identity name is available. Until then, the README and the release notes should say the app is unsigned.
 
@@ -113,6 +113,8 @@ Patch releases follow the same steps with `npm version patch`. If a job fails af
 
 ## See also
 
-- [DISTRIBUTION.md](DISTRIBUTION.md) — where to list a release once it is out.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — the checks that must already be green before you start.
-- [CHANGELOG.md](../CHANGELOG.md) — the file step 1 dates.
+- [LANDING.md](LANDING.md) is the site whose install links go live with the assets.
+- [DISTRIBUTION.md](DISTRIBUTION.md) covers where to list a release once it is out.
+- [CHANGELOG.md](../CHANGELOG.md) is the file step 1 dates.
+
+Back to [the docs index](README.md).

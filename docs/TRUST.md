@@ -26,6 +26,8 @@ Every field is length-capped and stripped of zero-width and bidi characters at p
 
 ## See also
 
-- [LEXICON-FILE.md](LEXICON-FILE.md) — what a project `.lexicon.yaml` may contain.
-- [MCP.md](MCP.md) — `trust_project`, the agent-facing version of the commands above.
-- [SECURITY.md](../SECURITY.md) — the full threat model.
+- [MATCHING.md](MATCHING.md) covers what a trusted project file then does to your text.
+- [ARCHITECTURE.md](ARCHITECTURE.md) shows where this gate sits in the store.
+- [SECURITY.md](../SECURITY.md) is the full threat model.
+
+Back to [the docs index](README.md).

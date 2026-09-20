@@ -57,7 +57,7 @@ Then open Claude Code and say a sentence with your company name in it. Done.
 The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. Every step is optional and safe to rerun, and `lexicon setup --dry-run` prints the whole plan without writing anything.
 
 <details>
-<summary>What <code>lexicon setup</code> does, step by step</summary>
+<summary>What <code>lexicon setup</code> does, in seven numbered steps</summary>
 
 1. Seeds the lexicon with your name and your company, with the misspellings STT will produce for each.
 2. Offers the starter packs as a checklist.

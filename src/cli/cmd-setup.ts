@@ -1,5 +1,5 @@
 /**
- * `lexicon setup`: the one command a new user runs. Walks through eight steps,
+ * `lexicon setup`: the one command a new user runs. Walks through seven steps,
  * each printing a one-line result, and never re-implements an installer:
  *
  *   a. global lexicon (runInit) seeded with the git user as a person term and
