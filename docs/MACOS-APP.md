@@ -48,7 +48,9 @@ With **Fix everywhere** on (the default), LexiconBar corrects dictated text in t
 
 How it works: an `AXObserver` per app watches `kAXFocusedUIElementChanged` and `kAXValueChanged`, with a 500 ms poll for apps that post neither reliably. An insertion big enough to be dictation (at least `fixEverywhere.minWords` words, default 3) and quiet for the settle delay (`fixEverywhere.settleMs`, default 700 ms) becomes a *burst*; typing key by key never is. The burst goes to `POST /normalize` on the local API, and the corrected span is written back into the field, verified by re-reading it. Three strategies are tried in order: set `AXSelectedText` over the burst range (Cocoa text views, keeps the app's own undo stack); select the range and post the replacement as unicode key events (Chromium and Electron accept the selection but ignore `AXSelectedText`); write the whole spliced `AXValue` (last resort, loses undo). Nothing is written if the field changed underneath in the meantime.
 
-- **Permission**: needs LexiconBar under System Settings > Privacy & Security > Accessibility. Rebuilding the app changes its code signature, which revokes the grant — macOS asks again on the next launch. The menu shows "Needs Accessibility permission" until it is granted.
+- **Permission**: needs LexiconBar under System Settings > Privacy & Security > Accessibility. The menu shows "Needs Accessibility permission" until it is granted.
+
+  Rebuilding the app changes its ad-hoc code signature, and the grant is bound to the *old* one. The row stays in the list with its switch still on, and it no longer authorises anything: TCC logs `Failed to match existing code requirement for subject ai.ashlr.lexiconbar` and denies with `auth_value=0`. **Toggling that row off and on does not help** — it keeps the stored signature. Select LexiconBar, remove it with **−**, then add the rebuilt `.app` again. `--status` will say `not granted` throughout, which is how to tell this apart from the app simply not asking.
 - **Per-app exclusions**: the menu has "Fix everywhere in `<frontmost app>`", and Preferences has the full list. Terminals (`com.apple.Terminal`, iTerm2, Warp) and password managers are excluded by default: a rewrite in a shell is a command, not a sentence. A trailing `.*` matches a prefix (`com.jetbrains.*`); ids are matched case-insensitively.
 - **Undo**: ⌃⌥Z, the menu's "Undo last fix", or the bubble's Undo button. It only applies while the same field still holds exactly the corrected text; edit on and the offer goes away.
 - **Limitations**: apps with no Accessibility text support are invisible to it (nothing is corrected, nothing breaks). Secure text fields are refused by subrole and by a role description containing "secure" or "password". Fields over 20,000 characters are skipped, as are multi-paragraph bursts and any rewrite that would introduce a newline the burst did not have (in a chat composer that would send the message). One API call per field per 300 ms.
@@ -164,13 +166,45 @@ To see the answer without opening the menu:
 apps/macos/build/LexiconBar.app/Contents/MacOS/LexiconBar --status --json
 ```
 
-which prints `axTrusted`, `apiReachable`, `serveOwnership` (`launchAgent` / `appChild` / `foreign` / `none`), `serveTitle` and the probe inputs. Two caveats: `appChild` can never appear there, because a child of the *running* app is invisible to a separate process; and `axTrusted` answers for that invocation, not for the app. macOS attributes a TCC check to the *responsible process*, so a `--status` run from a terminal inherits the terminal's Accessibility grant and can report `true` while the Finder-launched app is denied. For the app's own answer, launch it and read its log line:
+which prints `apiReachable`, `serveOwnership` (`launchAgent` / `appChild` / `foreign` / `none`), `serveTitle`, the probe inputs and the Accessibility fields described below. One caveat on ownership: `appChild` can never appear there, because a child of the *running* app is invisible to a separate process.
+
+## Accessibility, and why `--status` will not answer for it
+
+`AXIsProcessTrusted()` does not answer "is LexiconBar allowed to use Accessibility". It answers for the **responsible process**, and for anything started from a shell that is the terminal. A `--status` run from a terminal therefore inherits the terminal's grant, and a bare `.build/release/LexiconBar` — a binary that cannot hold a grant at all — will happily report `true` while the GUI-launched bundle is being denied.
+
+So it does not report it. From a terminal, `--status` says:
 
 ```
-log show --last 5m --predicate 'process == "LexiconBar"' --info | grep kTCCServiceAccessibility -A1
+Accessibility: cannot be checked from a terminal (this process inherits the terminal's grant). The menu bar app's own state is in Set up Lexicon.
 ```
 
-an `auth_value` of `2` is granted, `0` is denied.
+and `--status --json` gives `"axTrusted": null`, with the inherited value kept as `"axTrustedRaw"` and the reason as `"axTrustedNote"`. Launched by the window server (`open`, a double-click, a login item) it answers for itself as before, `Accessibility: trusted` or `not trusted`. "From a terminal" means *no launchd parent, or a controlling terminal*: a script, a CI job and an agent harness all run without a TTY and still inherit the shell's grant, so the parent-process check is what actually decides.
+
+The answer that matters comes from the running app, which writes its own state to `~/Library/Application Support/LexiconBar/state.json` (mode 0600, written atomically) at launch, when the focus watcher starts or stops, when the grant changes under it, and every 30 s otherwise:
+
+```json
+{ "axTrusted": false, "pid": 92830, "running": true, "updatedAt": "2026-09-20T03:32:31Z", "version": "0.4.0" }
+```
+
+`--status` reads it and prints a second line — this is the one to believe, and the one an agent should parse (`axAppTrusted`):
+
+| State file | Second line |
+| --- | --- |
+| fresh, granted | `Accessibility (menu bar app): trusted (as of 8 seconds ago)` |
+| fresh, denied | `Accessibility (menu bar app): not granted (as of 8 seconds ago) — add LexiconBar.app under …` |
+| written on quit | `Accessibility (menu bar app): not running (it quit 4 seconds ago)` |
+| older than 5 minutes | `Accessibility (menu bar app): not running (last heartbeat 9 minutes ago)` |
+| missing | `Accessibility (menu bar app): not running (no state file at …)` |
+
+The exit code follows whichever answer is real: the process's own when it was launched by the window server, otherwise the running app's, and 1 when nothing credible says yes.
+
+The unified log still has the underlying decision if you want to see TCC itself refuse:
+
+```
+log show --last 5m --predicate 'process == "tccd"' --info | grep -B20 'AUTHREQ_RESULT' | grep -A6 lexiconbar
+```
+
+`auth_value=2` is granted, `auth_value=0` is denied. `auth_reason=5` next to `Failed to match existing code requirement for subject ai.ashlr.lexiconbar` is the signature trap described under [Fix everywhere](#fix-everywhere): the grant exists but is bound to a different build.
 
 ## Known limitations
 

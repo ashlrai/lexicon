@@ -54,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var fixFlashTimer: Timer?
     private var fixFlashing = false { didSet { updateStatusIcon() } }
     private var accessibilityTrusted = AX.isTrusted
+    /// Rate limit on the state file (see `writeAccessibilityState`).
+    private var accessibilityStateThrottle = AccessibilityStateThrottle()
+    private var accessibilityStateTimer: Timer?
+    private var sigtermSource: DispatchSourceSignal?
 
     private var voiceState: VoiceState = .idle { didSet { updateStatusIcon() } }
     private var lastReplacements: [Replacement] = []
@@ -104,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         registerHotKeys()
         detectCLI()
+        installTerminationHandler()
         startFixEverywhere()
         bubble.onAction = { [weak self] action, line in self?.bubbleAction(action, line: line) }
         // First launch, or `--onboard` on any launch. Deferred a beat so the
@@ -121,11 +126,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               accessibilityTrusted ? 1 : 0, settings.pushToTalkHotKey.displayString)
     }
 
+    /// Turns SIGTERM into a normal quit.
+    ///
+    /// AppKit runs `applicationWillTerminate` for the Quit menu item but not
+    /// for a signal, so `kill` and a logout used to take the app down without
+    /// any of its cleanup: the `lexicon daemon` and `lexicon serve` children
+    /// outlived it, and the Accessibility state file was left claiming the
+    /// app was still up until it aged out five minutes later. Ignoring the
+    /// default disposition and handling it on the main queue routes both
+    /// cases through the same path the menu item uses.
+    private func installTerminationHandler() {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler { NSApp.terminate(nil) }
+        source.resume()
+        sigtermSource = source
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         bubble.dismiss()
         statusPollTimer?.invalidate()
         fixFlashTimer?.invalidate()
         focusWatcher.stop()
+        accessibilityStateTimer?.invalidate()
+        // The watcher has stopped, so the last record says so: a `--status`
+        // run a second later reports the app as gone rather than waiting out
+        // the five-minute staleness window with a stale "trusted".
+        writeAccessibilityState(force: true, running: false)
         hotKeys.unregisterAll()
         daemon.terminateChild()
         server.terminateChild()
@@ -346,6 +373,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fixEngine.onEvent = { [weak self] event in self?.handleFixEvent(event) }
         pushFixConfig()
         focusWatcher.start()
+        // The watcher is up: publish what this process — the one the user
+        // actually launched — sees, and keep republishing it so a reader can
+        // tell a running app from a dead one.
+        writeAccessibilityState(force: true)
+        accessibilityStateTimer = Timer.scheduledTimer(withTimeInterval: AccessibilityStateStore.heartbeat,
+                                                       repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.writeAccessibilityState() }
+        }
         for publisher in [settings.$fixEverywhere.dropFirst().map { _ in () }.eraseToAnyPublisher(),
                           settings.$fixSettleMs.dropFirst().map { _ in () }.eraseToAnyPublisher(),
                           settings.$fixMinWords.dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -362,6 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     if AX.isTrusted {
                         self.accessibilityTrusted = true
                         timer.invalidate()
+                        self.writeAccessibilityState(force: true)
                         NSLog("LexiconBar: Accessibility granted")
                     }
                 }
@@ -421,6 +457,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if settings.fixEverywhere, !AX.isTrusted { AX.requestTrust() }
         if !settings.fixEverywhere { bubble.dismiss() }
         accessibilityTrusted = AX.isTrusted
+        writeAccessibilityState(force: true)
+    }
+
+    /// Publishes this process's Accessibility answer to
+    /// `~/Library/Application Support/LexiconBar/state.json`.
+    ///
+    /// `AXIsProcessTrusted()` is only meaningful in the process the window
+    /// server launched, and a terminal cannot ask that process anything. So
+    /// the app writes the answer down: on launch, when the focus watcher
+    /// starts or stops, when the grant changes under it, and otherwise once
+    /// every `AccessibilityStateStore.heartbeat` seconds, which is also what
+    /// lets a reader tell "running and denied" from "not running at all".
+    /// `--status` reads it; nothing else depends on it, so a failed write is
+    /// logged and dropped.
+    private func writeAccessibilityState(force: Bool = false, running: Bool = true) {
+        let trusted = AX.isTrusted
+        if running { accessibilityTrusted = trusted }
+        let now = Date()
+        guard accessibilityStateThrottle.shouldWrite(trusted: trusted, now: now, force: force) else { return }
+        let state = AccessibilityState(
+            axTrusted: trusted,
+            pid: ProcessInfo.processInfo.processIdentifier,
+            updatedAt: now,
+            running: running,
+            version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+        do {
+            try AccessibilityStateStore.write(state)
+        } catch {
+            NSLog("LexiconBar: could not write %@: %@",
+                  AccessibilityStateStore.displayPath(), error.localizedDescription)
+        }
     }
 
     @objc private func toggleShowBubble() {

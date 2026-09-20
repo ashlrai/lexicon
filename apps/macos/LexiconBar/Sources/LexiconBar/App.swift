@@ -8,7 +8,10 @@ import LexiconBarKit
 //
 // Two launch arguments run without the UI and exit:
 //   --status          prints Accessibility trust and local API reachability; exit 0 when both are fine
-//                     (`--status --json` prints the same facts as one JSON object)
+//                     (`--status --json` prints the same facts as one JSON object).
+//                     Run from a terminal it refuses to answer for Accessibility
+//                     itself and reports the running menu bar app's own state
+//                     instead (see `printStatus`).
 //   --start-at-login  registers the app as a login item (packaged .app only); exit 0 on success
 // One more runs the app normally and opens a window:
 //   --onboard         opens the first-run setup window (also shown once on a fresh install)
@@ -27,18 +30,40 @@ enum LexiconBarMain {
         app.run()
     }
 
+    /// True when this invocation came from a shell rather than from the window
+    /// server, and its `AXIsProcessTrusted()` therefore answers for somebody
+    /// else. The rule itself lives in `AccessibilityReport` so it can be
+    /// tested; this only gathers the two facts it needs.
+    private static var isTerminalLaunched: Bool {
+        let hasTTY = isatty(STDIN_FILENO) == 1 || isatty(STDOUT_FILENO) == 1 || isatty(STDERR_FILENO) == 1
+        return AccessibilityReport.isTerminalLaunched(parentPID: getppid(), hasTTY: hasTTY)
+    }
+
     /// `--status`, and `--status --json` for anything that wants to assert on
     /// it. Run it through the *bundle* (`LexiconBar.app/Contents/MacOS/
     /// LexiconBar --status --json`) rather than the bare `swift build` binary:
     /// Accessibility is granted per code signature, so the two have separate
-    /// grants. Even then macOS attributes a permission check to the
-    /// *responsible process*, which for a terminal-spawned child is the
-    /// terminal, so `axTrusted` here answers "can this invocation use AX",
-    /// which is not always the same answer the Finder-launched app gets.
-    /// `bundlePath` and `executablePath` are reported so it is at least clear
-    /// which binary answered; the running app logs its own `ax=` at launch.
+    /// grants.
+    ///
+    /// Even then, `AXIsProcessTrusted()` answers for the *responsible
+    /// process*, which for anything started from a shell is the terminal. A
+    /// `--status` run therefore used to inherit the terminal's grant and
+    /// print "Accessibility: trusted" while the GUI-launched app was being
+    /// denied — the opposite of the truth, to the one person most likely to
+    /// be reading it. So a terminal-launched run now reports `axTrusted` as
+    /// null and keeps the inherited value as `axTrustedRaw`, and the answer
+    /// that matters comes from the state file the running app writes
+    /// (`AccessibilityStateStore`). `bundlePath` and `executablePath` are
+    /// reported so it is at least clear which binary answered.
     private static func printStatus(json: Bool) -> Int32 {
-        let trusted = AX.isTrusted
+        let terminalLaunched = isTerminalLaunched
+        let report = AccessibilityReport.make(
+            rawTrusted: AX.isTrusted,
+            terminalLaunched: terminalLaunched,
+            state: AccessibilityStateStore.read(),
+            now: Date(),
+            statePath: AccessibilityStateStore.displayPath())
+        let trusted = report.effectiveTrusted
         let client = NormalizeClient()
         let port = client.credentials()?.port ?? ServeOwnership.defaultPort
         var terms: Int?
@@ -66,7 +91,14 @@ enum LexiconBarMain {
 
         if json {
             var object: [String: Any] = [
-                "axTrusted": trusted,
+                // null from a terminal: this process genuinely cannot know.
+                "axTrusted": report.processTrusted as Any? ?? NSNull(),
+                "axTrustedRaw": report.rawTrusted,
+                "terminalLaunched": report.terminalLaunched,
+                "axAppTrusted": report.appTrusted as Any? ?? NSNull(),
+                "axAppRunning": report.appRunning,
+                "axAppStatePath": AccessibilityStateStore.displayPath(),
+                "axAppStatus": report.appLine,
                 "apiReachable": reachable,
                 "apiPort": port,
                 "tokenFound": token,
@@ -81,18 +113,21 @@ enum LexiconBarMain {
                 "servePlistExists": probe.plistExists,
                 "serveLabel": probe.label,
             ]
+            if let note = report.note { object["axTrustedNote"] = note }
+            if let age = report.stateAge { object["axAppStateAge"] = (age * 10).rounded() / 10 }
             if let programPath = probe.programPath { object["serveProgramPath"] = programPath }
             if let terms { object["apiTerms"] = terms }
             if let apiError { object["apiError"] = apiError }
             if let version { object["version"] = version }
             if let identifier = Bundle.main.bundleIdentifier { object["bundleIdentifier"] = identifier }
             let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]))
-                ?? Data("{\"axTrusted\":\(trusted)}".utf8)
+                ?? Data("{\"axTrusted\":null,\"axAppTrusted\":\(report.appTrusted.map(String.init) ?? "null")}".utf8)
             print(String(decoding: data, as: UTF8.self))
             return trusted && reachable && token ? 0 : 1
         }
 
-        print("Accessibility: \(trusted ? "trusted" : "not trusted (System Settings > Privacy & Security > Accessibility)")")
+        print(report.processLine)
+        print(report.appLine)
         if let terms {
             print("Local API: reachable at http://127.0.0.1:\(port) (\(terms) terms)")
         } else {

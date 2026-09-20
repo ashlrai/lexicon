@@ -159,7 +159,12 @@ private struct WelcomeStep: View {
                     okText: "Accessibility is granted",
                     badText: "Accessibility is not granted yet \u{2014} corrections in other apps need it",
                     actionTitle: "Grant Accessibility",
-                    action: { model.grantAccessibility() }
+                    action: { model.grantAccessibility() },
+                    // A rebuilt app has a new code signature, and macOS binds
+                    // the grant to the old one. The switch in the list stays
+                    // on and stops meaning anything, which looks exactly like
+                    // a bug in this app.
+                    hint: "If LexiconBar is already switched on there, select it, remove it with \u{2212}, then add it again: an app that was rebuilt has a new signature and the old entry no longer matches it."
                 )
                 StatusLine(
                     ok: model.apiReachable,
