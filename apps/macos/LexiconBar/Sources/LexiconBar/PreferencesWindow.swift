@@ -7,7 +7,7 @@ import LexiconBarKit
 @MainActor
 final class PreferencesWindowController: NSWindowController {
     init(settings: Settings, status: CLIStatusModel) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.title = "LexiconBar Preferences"
@@ -79,15 +79,30 @@ struct PreferencesView: View {
                 .pickerStyle(.radioGroup)
             }
 
+            Section("Fix everywhere") {
+                Toggle("Correct dictated text in any app", isOn: $settings.fixEverywhere)
+                Text("Watches the focused text field through Accessibility. When a dictation tool drops in a phrase, the phrase is sent to `lexicon serve` and rewritten in place once it has settled. Typing key by key is never touched.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Settle delay")
+                    Slider(value: $settings.fixSettleMs, in: Settings.settleRange, step: 50)
+                    Text("\(Int(settings.fixSettleMs)) ms").monospacedDigit().frame(width: 64, alignment: .trailing)
+                }
+                Stepper("Minimum words: \(settings.fixMinWords)", value: $settings.fixMinWords, in: Settings.minWordsRange)
+                Toggle("Notify on each fix", isOn: $settings.fixNotify)
+                ExcludedAppsEditor(bundleIDs: $settings.fixExcludedApps)
+            }
+
             Section("Hotkeys") {
                 HotKeyRow(title: "Push to talk", hotKey: $settings.pushToTalkHotKey)
                 HotKeyRow(title: "Fix clipboard now", hotKey: $settings.fixClipboardHotKey)
-                Text("Click a field and press the new combination. Escape cancels. Hotkeys work without Accessibility permission; pasting needs it.")
+                HotKeyRow(title: "Undo last fix", hotKey: $settings.undoFixHotKey)
+                Text("Click a field and press the new combination. Escape cancels. Hotkeys work without Accessibility permission; pasting and Fix everywhere need it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
+        .frame(width: 560)
         .padding(.bottom, 8)
     }
 
@@ -103,6 +118,65 @@ struct PreferencesView: View {
             settings.cliPath = url.path
             status.redetect?()
         }
+    }
+}
+
+/// The bundle ids "Fix everywhere" stays out of. Add by typing an id or
+/// picking an app (its Info.plist supplies the id); remove with the minus.
+struct ExcludedAppsEditor: View {
+    @Binding var bundleIDs: [String]
+    @State private var newID = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Excluded apps").font(.subheadline)
+            if bundleIDs.isEmpty {
+                Text("None. Terminals and password managers are excluded by default; click Reset to restore that list.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(bundleIDs, id: \.self) { id in
+                HStack {
+                    Text(id).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button { bundleIDs.removeAll { $0 == id } } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                        .help("Allow Fix everywhere in this app again")
+                }
+            }
+            HStack {
+                TextField("com.example.app or com.example.*", text: $newID)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addTyped)
+                Button("Add", action: addTyped).disabled(newID.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Choose app\u{2026}", action: chooseApp)
+                Button("Reset") { bundleIDs = AppExclusions.defaults }
+            }
+            Text("A trailing `.*` matches a prefix. Bundle ids are matched case-insensitively.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func addTyped() {
+        var exclusions = AppExclusions(bundleIDs: bundleIDs)
+        exclusions.exclude(newID)
+        bundleIDs = exclusions.bundleIDs
+        newID = ""
+    }
+
+    private func chooseApp() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.message = "Pick the apps Fix everywhere should leave alone"
+        guard panel.runModal() == .OK else { return }
+        var exclusions = AppExclusions(bundleIDs: bundleIDs)
+        for url in panel.urls {
+            if let id = Bundle(url: url)?.bundleIdentifier { exclusions.exclude(id) }
+        }
+        bundleIDs = exclusions.bundleIDs
     }
 }
 

@@ -9,7 +9,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, readLexiconFile } from '../src/core/index.js';
+import { addTerm, readLexiconFile, suggestAliases } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -410,7 +410,7 @@ describe('CORS', () => {
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe('chrome-extension://abcdef');
     expect(res.headers.get('access-control-allow-headers')).toBe('Authorization, Content-Type');
-    expect(res.headers.get('access-control-allow-methods')).toBe('GET, POST');
+    expect(res.headers.get('access-control-allow-methods')).toBe('GET, POST, DELETE');
     const real = await api('POST', '/normalize', { text: 'hi', dryRun: true }, { Origin: 'moz-extension://xyz' });
     expect(real.headers.get('access-control-allow-origin')).toBe('moz-extension://xyz');
   });
@@ -825,5 +825,130 @@ describe('lexicon serve (CLI)', () => {
     const text = io.out.join('');
     expect(text).toContain('schtasks /Create /SC ONLOGON');
     expect(text).toContain('Nothing was written.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// packs + aliases (own server and lexicon so the term counts above stay put)
+// ---------------------------------------------------------------------------
+
+describe('packs and aliases routes', () => {
+  let home2: string;
+  let globalPath2: string;
+  let cwd2: string;
+  let srv2: LexiconHttpServer;
+  let info2: ServeStartInfo;
+
+  async function api2(method: string, route: string, body?: unknown, extra: Record<string, string> = {}): Promise<Response> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${info2.token}`, ...extra };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    return fetch(`${info2.url}${route}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+  }
+
+  beforeAll(async () => {
+    home2 = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-packs-')));
+    globalPath2 = path.join(home2, 'lexicon', 'lexicon.yaml');
+    cwd2 = path.join(home2, 'work');
+    await fs.mkdir(cwd2, { recursive: true });
+    srv2 = createServer({ port: 0, cwd: cwd2, globalPath: globalPath2, quiet: true, reloadMs: 0 });
+    info2 = await srv2.start();
+  });
+
+  afterAll(async () => {
+    await srv2.stop();
+    await fs.rm(home2, { recursive: true, force: true });
+  });
+
+  it('GET /packs lists the shipped packs with an installed flag and needs a token', async () => {
+    expect((await fetch(`${info2.url}/packs`)).status).toBe(401);
+    const res = await api2('GET', '/packs');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { packs: { name: string; title: string; terms: number; aliases: number; installed: boolean; path: string }[]; installed: string[] };
+    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'developer', 'voice-tools']);
+    expect(body.packs.every((p) => p.installed === false && p.terms > 0 && p.aliases > 0 && p.path.endsWith('.yaml'))).toBe(true);
+    expect(body.installed).toEqual([]);
+    expect((await api2('POST', '/packs', {})).status).toBe(405);
+  });
+
+  it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {
+    const first = await api2('POST', '/packs/developer');
+    expect(first.status).toBe(200);
+    const installed = (await first.json()) as { pack: { name: string }; added: number; merged: number; path: string; scope: string };
+    expect(installed.pack.name).toBe('developer');
+    expect(installed.added).toBeGreaterThan(50);
+    expect(installed.merged).toBe(0);
+    expect(installed.path).toBe(globalPath2);
+    expect(installed.scope).toBe('global');
+    expect((await readLexiconFile(globalPath2, 'global')).lexicon.settings?.packs).toEqual(['developer']);
+
+    const list = (await (await api2('GET', '/packs')).json()) as { packs: { name: string; installed: boolean }[]; installed: string[] };
+    expect(list.installed).toEqual(['developer']);
+    expect(list.packs.find((p) => p.name === 'developer')?.installed).toBe(true);
+    const health = (await (await fetch(`${info2.url}/health`)).json()) as { terms: number };
+    expect(health.terms).toBe(installed.added);
+
+    const again = (await (await api2('POST', '/packs/developer', {})).json()) as { added: number; merged: number };
+    expect(again).toMatchObject({ added: 0, merged: installed.added });
+
+    // The new terms are live for /normalize right away.
+    const norm = await api2('POST', '/normalize', { text: 'deploy to cuban eats on versal with superbase' });
+    expect(((await norm.json()) as NormalizeResult).output).toBe('deploy to Kubernetes on Vercel with Supabase');
+
+    const removed = await api2('DELETE', '/packs/developer');
+    expect(removed.status).toBe(200);
+    const body = (await removed.json()) as { pack: { name: string }; removed: string[]; kept: string[]; files: string[] };
+    expect(body.pack.name).toBe('developer');
+    // Kubernetes, Vercel and Supabase got hits from the normalize above and stay.
+    expect(body.kept.sort()).toEqual(['Kubernetes', 'Supabase', 'Vercel']);
+    expect(body.removed).toHaveLength(installed.added - 3);
+    expect(body.files).toEqual([globalPath2]);
+    expect(((await (await api2('GET', '/packs')).json()) as { installed: string[] }).installed).toEqual([]);
+  });
+
+  it('404 for an unknown pack, 405 for GET on a pack, 400 for a bad scope or body', async () => {
+    const missing = await api2('POST', '/packs/nope');
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: expect.stringContaining('unknown pack "nope"') });
+    expect((await api2('DELETE', '/packs/nope')).status).toBe(404);
+    // Names that fail the route pattern never reach the loader.
+    expect((await api2('POST', '/packs/..%2Fdeveloper')).status).toBe(404);
+    expect((await api2('POST', '/packs/Developer')).status).toBe(404);
+    expect((await api2('GET', '/packs/developer')).status).toBe(405);
+    expect((await api2('DELETE', '/packs/developer?scope=nope')).status).toBe(400);
+    expect((await api2('POST', '/packs/developer', { scope: 'nope' })).status).toBe(400);
+  });
+
+  it('project scope through the same trust gate', async () => {
+    const repo = path.join(home2, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const res = await api2('POST', '/packs/voice-tools', { scope: 'project', cwd: repo });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { path: string }).path).toBe(path.join(repo, '.lexicon.yaml'));
+    const listed = (await (await api2('GET', `/packs?cwd=${encodeURIComponent(repo)}`)).json()) as { installed: string[] };
+    expect(listed.installed).toEqual(['voice-tools']);
+    await fs.appendFile(path.join(repo, '.lexicon.yaml'), '# hand edit\n');
+    const refused = await api2('POST', '/packs/ai', { scope: 'project', cwd: repo });
+    expect(refused.status).toBe(403);
+    expect((await api2('DELETE', `/packs/voice-tools?cwd=${encodeURIComponent(repo)}`)).status).toBe(403);
+  });
+
+  it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {
+    const res = await api2('GET', `/aliases?canonical=${encodeURIComponent('Ashlr.AI')}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { canonical: string; aliases: string[] };
+    expect(body.canonical).toBe('Ashlr.AI');
+    expect(body.aliases).toEqual(suggestAliases('Ashlr.AI'));
+    expect(body.aliases).toContain('Ashler');
+    expect((await api2('GET', '/aliases')).status).toBe(400);
+    expect((await api2('GET', '/aliases?canonical=%20')).status).toBe(400);
+    expect((await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).status).toBe(400);
+    expect((await api2('POST', '/aliases', { canonical: 'x' })).status).toBe(405);
+    expect((await fetch(`${info2.url}/aliases?canonical=x`)).status).toBe(401);
+  });
+
+  it('preflight for an extension origin advertises DELETE', async () => {
+    const res = await fetch(`${info2.url}/packs/developer`, { method: 'OPTIONS', headers: { Origin: 'chrome-extension://abc' } });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-methods')).toBe('GET, POST, DELETE');
   });
 });

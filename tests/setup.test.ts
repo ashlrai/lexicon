@@ -361,7 +361,8 @@ describe('runSetup --yes', () => {
     expect(again.io.out).toContain('already present: Ashlr.AI (brand)');
     const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'ashlr.ai', person: 'MASON WYATT', reseed: true }, f);
     expect(planned.plan?.wouldSeed).toEqual([]);
-    expect(planned.plan?.wouldHarvest).toEqual(['Playwright']);
+    // the developer pack already covers Playwright, so the planned harvest leaves it out
+    expect(planned.plan?.wouldHarvest).toEqual([]);
   });
 
   it('hands the serve installer the CLI next to deps.cliDir, and the plist it writes points at an existing dist/cli/index.js', async () => {
@@ -429,7 +430,7 @@ describe('runSetup --yes', () => {
     const { summary, io } = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, f);
     const parsed = JSON.parse(io.out) as SetupSummary;
     expect(parsed).toEqual(summary);
-    expect(Object.keys(parsed).sort()).toEqual(['clients', 'exports', 'lexiconPath', 'serve', 'termsAdded']);
+    expect(Object.keys(parsed).sort()).toEqual(['clients', 'exports', 'lexiconPath', 'packs', 'serve', 'termsAdded']);
     expect(io.err).toContain('lexicon setup');
     expect(io.err).toContain('claude: installed');
   });
@@ -461,7 +462,8 @@ describe('runSetup --dry-run', () => {
       lexiconPath: globalPath,
       lexiconExists: false,
       wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],
-      wouldHarvest: ['Playwright'],
+      wouldInstallPacks: ['developer', 'ai', 'voice-tools'],
+      wouldHarvest: [],
       detectedClients: ['claude', 'codex', 'cursor'],
       wouldInstallClients: ['claude', 'codex', 'cursor'],
       wouldInstallServe: true,
@@ -473,10 +475,11 @@ describe('runSetup --dry-run', () => {
     expect(existsSync(exportDir)).toBe(false);
     expect(f.installed).toEqual([]);
     expect(f.serveCalls).toBe(0);
-    expect(summary).toEqual({ lexiconPath: globalPath, termsAdded: [], clients: [], serve: 'skipped', exports: [] });
+    expect(summary).toEqual({ lexiconPath: globalPath, termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] });
     expect(io.out).toContain('lexicon setup (dry run)');
     expect(io.out).toContain('would create ~/.config/lexicon/lexicon.yaml');
-    expect(io.out).toContain('would add 1 name to');
+    // the developer pack covers the only candidate, so the harvest has nothing left
+    expect(io.out).toContain('nothing worth adding in');
     expect(io.out).toContain('Playwright');
     expect(io.out).toContain('Plan (nothing written)');
     expect(io.err).toBe('');
@@ -513,7 +516,7 @@ describe('runSetup --dry-run', () => {
 });
 
 describe('runSetup interactive', () => {
-  it('walks every prompt: person, company, phonetic, another term, harvest, clients, serve, app', async () => {
+  it('walks every prompt: person, company, phonetic, another term, packs, harvest, clients, serve, app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');
     const p = scripted([
@@ -525,6 +528,8 @@ describe('runSetup interactive', () => {
       '', // phonetic
       'product', // category
       'n', // add another term?
+      [], // starter packs checklist: none
+      'n', // also add business?
       'n', // add harvest candidates? -> skipped
       [1], // clients checklist: pick the first detected (claude)
       'y', // install serve?
@@ -554,22 +559,25 @@ describe('runSetup interactive', () => {
     expect(p.closed).toBe(false); // the caller owns an injected prompter
   });
 
-  it('Enter everywhere takes the defaults: person yes, suggested company, harvest yes, all clients, serve yes, first app', async () => {
+  it('Enter everywhere takes the defaults: person yes, suggested company, default packs, harvest yes, all clients, serve yes, first app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');
-    const p = scripted(['', '', '', '', '', [1, 2], '', 1]);
+    // The packs checklist starts with developer, ai and voice-tools checked; business is a separate no-by-default question.
+    const p = scripted(['', '', '', '', [1, 2, 3], '', '', [1, 2], '', 1]);
     const f = fakes(
       {
         isInteractive: () => true,
         createPrompter: () => p,
         harvest: async () => [
-          { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: [], count: 9, suggestedAliases: [] },
+          { canonical: 'LexiconStore', category: 'identifier', source: 'harvest:repo', evidence: [], count: 9, suggestedAliases: [] },
         ],
       },
       [path.join(home, '.claude'), '/Applications/Cursor.app'],
     );
     const { summary } = await run({ exportDir }, f);
-    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'ashlrai', 'Playwright']);
+    expect(summary.packs.map((x) => x.name)).toEqual(['developer', 'ai', 'voice-tools']);
+    expect(summary.packs.every((x) => x.added > 0 && x.merged === 0)).toBe(true);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'ashlrai', 'LexiconStore']);
     expect(f.installed.map((i) => i.client)).toEqual(['claude', 'cursor']);
     expect(summary.serve).toBe('installed');
     expect(summary.exports[0]?.format).toBe('wispr');
@@ -685,5 +693,171 @@ describe('helpers', () => {
     registerSetupCommands(program2, io2);
     await program2.parseAsync(['setup', '--yes', '--json', '--clients', 'none', '--no-serve', '--company', 'Acme', '--home', home, '--cwd', cwd], { from: 'user' });
     expect(io2.err).toContain('skipped (not requested); add --harvest');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Starter packs (step 2)
+// ---------------------------------------------------------------------------
+
+describe('runSetup starter packs', () => {
+  it('--packs installs exactly the listed packs into the global lexicon and reports them apart from termsAdded', async () => {
+    const f = fakes();
+    const { code, summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer, ai' }, f);
+    expect(code).toBe(0);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    expect(summary.packs.map((p) => p.name)).toEqual(['developer', 'ai']);
+    expect(summary.packs.every((p) => p.added > 0 && p.merged === 0)).toBe(true);
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.settings?.packs).toEqual(['developer', 'ai']);
+    expect(file.lexicon.terms.filter((t) => t.source === 'pack')).toHaveLength(summary.packs.reduce((n, p) => n + p.added, 0));
+    expect(file.lexicon.terms.find((t) => t.canonical === 'Kubernetes')?.source).toBe('pack');
+    expect(io.out).toContain('2. Starter packs');
+    expect(io.out).toMatch(/installed developer: \d+ added, 0 merged/);
+    expect(io.out).toContain('3. Repo harvest');
+    expect(io.err).toBe('');
+
+    // A second run with the same list re-adds nothing and says why.
+    const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,ai,business' }, f);
+    expect(again.summary.packs.map((p) => p.name)).toEqual(['business']);
+    expect(again.io.out).toContain('already installed: developer');
+    expect(again.io.out).toContain('already installed: ai');
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.settings?.packs).toEqual(['developer', 'ai', 'business']);
+  });
+
+  it('--yes without --packs installs nothing and says how to; --no-packs and --packs none skip quietly', async () => {
+    const f = fakes();
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(summary.packs).toEqual([]);
+    expect(io.out).toContain('skipped (not requested); add --packs developer,ai,voice-tools');
+    expect(await fs.readFile(globalPath, 'utf8')).not.toContain('packs:');
+
+    const off = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: false }, f);
+    expect(off.io.out).toContain('skipped (--no-packs)');
+    const none = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'none' }, f);
+    expect(none.io.out).toContain('skipped (--packs none)');
+    expect(none.summary.packs).toEqual([]);
+  });
+
+  it('rejects an unknown pack before anything is written', async () => {
+    const f = fakes();
+    await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, business, developer, voice-tools, none\)/);
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('a dry run lists the defaults (or the --packs list) in wouldInstallPacks, installs nothing and keeps pack names out of wouldHarvest', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: [], count: 9, suggestedAliases: [] },
+        { canonical: 'LexiconStore', category: 'identifier', source: 'harvest:repo', evidence: [], count: 6, suggestedAliases: [] },
+      ],
+    });
+    const defaults = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(defaults.plan?.wouldInstallPacks).toEqual(['developer', 'ai', 'voice-tools']);
+    expect(defaults.plan?.wouldHarvest).toEqual(['LexiconStore']);
+    expect(defaults.io.out).toContain('would install: developer');
+    expect(defaults.io.out).toContain('pass --packs <list>');
+    expect(defaults.io.out).toContain('already in the global lexicon: Playwright');
+    expect(defaults.io.out).toContain('would install packs: developer, ai, voice-tools');
+    expect(existsSync(globalPath)).toBe(false);
+
+    const picked = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'business' }, f);
+    expect(picked.plan?.wouldInstallPacks).toEqual(['business']);
+    expect(picked.plan?.wouldHarvest).toEqual(['Playwright', 'LexiconStore']);
+    const off = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: false }, f);
+    expect(off.plan?.wouldInstallPacks).toEqual([]);
+    expect(off.io.out).toContain('skipped (--no-packs)');
+    expect(off.io.out).toContain('would install packs: none');
+  });
+
+  it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {
+    const calls: { name: string; opts: unknown }[] = [];
+    const f = fakes({
+      listPacks: async () => [
+        { name: 'developer', title: 'Dev', description: 'd', version: 1, terms: 2, aliases: 3, path: '/fake/developer.yaml' },
+        { name: 'custom', title: 'Custom', description: 'c', version: 1, terms: 1, aliases: 1, path: '/fake/custom.yaml' },
+      ],
+      installPack: async (name, opts) => {
+        calls.push({ name, opts });
+        return { pack: { name, title: 'x', description: '', version: 1, terms: 2, aliases: 3, path: '/fake' }, added: 2, merged: 0, path: globalPath, scope: 'global' };
+      },
+    });
+    const { summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'custom,developer' }, f);
+    expect(calls).toEqual([
+      { name: 'custom', opts: { cwd, scope: 'global' } },
+      { name: 'developer', opts: { cwd, scope: 'global' } },
+    ]);
+    expect(summary.packs).toEqual([
+      { name: 'custom', added: 2, merged: 0 },
+      { name: 'developer', added: 2, merged: 0 },
+    ]);
+    await expect(run({ yes: true, clients: 'none', packs: 'ai' }, f)).rejects.toThrow(/unknown pack "ai" \(expected one of: developer, custom, none\)/);
+    // Only the defaults that exist are offered in a plan.
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(planned.plan?.wouldInstallPacks).toEqual(['developer']);
+  });
+
+  it('interactive: the checklist shows the default packs checked and asks about the others one by one', async () => {
+    const calls: string[] = [];
+    const p = scripted([
+      'y', // person
+      'Ashlr.AI', // company
+      '', // phonetic
+      'n', // another term?
+      [1], // packs checklist: developer only
+      'y', // also add business?
+      [], // clients: none detected -> not asked; this answer is for serve
+      'n', // app: handled below
+    ]);
+    const f = fakes({
+      isInteractive: () => true,
+      createPrompter: () => p,
+      installPack: async (name) => {
+        calls.push(name);
+        return { pack: { name, title: 'x', description: '', version: 1, terms: 1, aliases: 1, path: '/fake' }, added: 1, merged: 0, path: globalPath, scope: 'global' };
+      },
+    });
+    // No git repo (no harvest prompt), no clients detected, serve prompt answered by '[]' -> confirm reads '' -> default yes.
+    p.asked.length = 0;
+    const { summary, io } = await run({ app: 'none', serve: false }, f);
+    expect(calls).toEqual(['developer', 'business']);
+    expect(summary.packs.map((x) => x.name)).toEqual(['developer', 'business']);
+    const checklist = p.asked.find((q) => q.includes('starter packs'));
+    expect(checklist).toBeDefined();
+    expect(p.asked.some((q) => q.includes('also add business'))).toBe(true);
+    expect(p.asked.some((q) => q.includes('also add developer'))).toBe(false);
+    expect(io.out).toContain('installed developer: 1 added, 0 merged');
+  });
+
+  it('interactive: an empty checklist and no to the rest skips the step', async () => {
+    const p = scripted(['y', 'Ashlr.AI', '', 'n', [], 'n']);
+    const f = fakes({ isInteractive: () => true, createPrompter: () => p });
+    const { summary, io } = await run({ app: 'none', serve: false }, f);
+    expect(summary.packs).toEqual([]);
+    expect(io.out).toContain('skipped; later: lexicon pack add developer');
+    expect(await fs.readFile(globalPath, 'utf8')).not.toContain('packs:');
+  });
+
+  it('registerSetupCommands wires --packs <list> and --no-packs', async () => {
+    const flags = new Command().exitOverride();
+    let seen: SetupOptions | undefined;
+    flags.command('setup').option('--packs <list>').option('--no-packs').action((o: SetupOptions) => {
+      seen = o;
+    });
+    await flags.parseAsync(['setup'], { from: 'user' });
+    expect(seen?.packs).toBeUndefined();
+    await flags.parseAsync(['setup', '--packs', 'developer,ai'], { from: 'user' });
+    expect(seen?.packs).toBe('developer,ai');
+    await flags.parseAsync(['setup', '--no-packs'], { from: 'user' });
+    expect(seen?.packs).toBe(false);
+
+    const io = makeIO();
+    const program = new Command().exitOverride().option('--cwd <dir>');
+    registerSetupCommands(program, io);
+    await program.parseAsync(['setup', '--yes', '--json', '--clients', 'none', '--no-serve', '--no-harvest', '--packs', 'voice-tools', '--company', 'Acme', '--home', home, '--cwd', cwd], { from: 'user' });
+    const parsed = JSON.parse(io.out) as SetupSummary;
+    expect(parsed.packs.map((x) => x.name)).toEqual(['voice-tools']);
+    expect(process.exitCode ?? 0).toBe(0);
   });
 });

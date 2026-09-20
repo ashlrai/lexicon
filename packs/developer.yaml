@@ -1,0 +1,251 @@
+# Starter pack: developer tooling. Installed with `lexicon pack add developer`.
+# Aliases are what speech-to-text engines actually write for these names. Where
+# the real-audio benchmark (bench/audio/results.md, docs/BENCHMARK.md) recorded
+# a spelling, it is here; the rest are the plausible splits and phoneme swaps
+# from bench/lexicon.yaml. Ordinary English words are never aliases (a term
+# that STT turns into a real word, such as Vercel -> "vessel", leaves that
+# spelling out on purpose). See docs/PACKS.md.
+name: developer
+title: Developer tools
+description: Infrastructure, languages, frameworks, hosting and the everyday SaaS a software team says out loud.
+version: 1
+terms:
+  # ---------------------------------------------------------- infrastructure
+  - canonical: Kubernetes
+    category: product
+    aliases: [cuban eats, cuban needs, cuba needs, cooper netties, kube or netties, kubernetties]
+    phonetic: koo-ber-NET-eez
+  - canonical: Docker
+    category: product
+    aliases: [dock her]
+  - canonical: PostgreSQL
+    category: product
+    aliases: [postgres, post gress, post gres, postgress, post grass, postgre sequel]
+  - canonical: Redis
+    category: product
+    aliases: [reddis, red iss, redd is, readis]
+  - canonical: Nginx
+    category: product
+    aliases: [engine x, engine ex, enginex, en jinx, n jinx]
+    phonetic: engine-X
+  - canonical: Terraform
+    category: product
+    aliases: [terra form, tera form]
+  - canonical: Kafka
+    category: product
+    aliases: [calf care, cough ka, kaf ka, cafca]
+  - canonical: Grafana
+    category: product
+    aliases: [gra fauna, graph fauna, gravana, grafauna]
+  - canonical: Prometheus
+    category: product
+    aliases: [promethius, pro metheus]
+  - canonical: SQLite
+    category: product
+    aliases: [sequel light, sequel lite, sq lite, sq light, ess queue lite, sequelite]
+  - canonical: Hetzner
+    category: brand
+    aliases: [hetsner, head sner, hetzena, tetsner]
+  - canonical: DigitalOcean
+    category: brand
+    aliases: [digital ocean]
+  - canonical: AWS
+    category: acronym
+    aliases: [a w s, ay double u ess]
+  - canonical: GCP
+    category: acronym
+    aliases: [g c p, gee see pee]
+  - canonical: Azure
+    category: brand
+    aliases: [azur, a zure, ashur]
+  - canonical: Cloudflare
+    category: brand
+    aliases: [cloud flare, cloudflair, cloud floor, cloudflour, cloudflow]
+  - canonical: Vercel
+    category: brand
+    aliases: [versal, versel, ver cell, vercell, versell]
+  - canonical: Netlify
+    category: brand
+    aliases: [net lify, netlifi, net lee fy]
+  - canonical: Heroku
+    category: brand
+    aliases: [her oku, heroko, hair oku]
+  - canonical: Supabase
+    category: brand
+    aliases: [superbase, super base, soup a base, supa base, soupabase, super bass]
+  - canonical: Neon
+    category: brand
+    aliases: [knee on, nee on]
+  - canonical: Upstash
+    category: brand
+    aliases: [up stash, upstache, up stache]
+
+  # ------------------------------------------------ protocols, formats, auth
+  - canonical: GraphQL
+    category: product
+    aliases: [graph q l, graph queue el, graph ql]
+    never: [graphical]
+  - canonical: tRPC
+    category: product
+    aliases: [t r p c, tea r p c, tea rpc, t rpc]
+  - canonical: OAuth
+    category: product
+    aliases: [oh auth, o auth, oh off, o off, oa auth]
+  - canonical: JWT
+    category: acronym
+    aliases: [jot, j w t, jay double u tee, jay w t]
+  - canonical: YAML
+    category: acronym
+    aliases: [yammel, yamel, yam l, yamble, yemil]
+  - canonical: JSON
+    category: acronym
+    aliases: [jay son, j s o n, jay sawn]
+
+  # ------------------------------------------------------ languages, tooling
+  - canonical: TypeScript
+    category: product
+    aliases: [type script, type skript]
+  - canonical: Python
+    category: product
+    aliases: [pie thon]
+  - canonical: Pydantic
+    category: product
+    aliases: [pie dantic, pie dentic, pi dantic]
+    never: [pedantic]
+    notes: whisper writes "pedantic"; that word is protected, so say "pie dantic" or fix it once
+  - canonical: FastAPI
+    category: product
+    aliases: [fast api, fast a p i, fastapo]
+  - canonical: Django
+    category: product
+    aliases: [jango, jango framework, d jango]
+  - canonical: Flask
+    category: product
+    aliases: []
+    never: [flask]
+    notes: the Python web framework
+  - canonical: NumPy
+    category: product
+    aliases: [num pie, numpie, num py]
+  - canonical: pandas
+    category: product
+    aliases: [pandas library]
+    never: [pandas]
+    notes: the dataframe library; say "pandas library" to force it
+  - canonical: Jupyter
+    category: product
+    aliases: [jupiter, jupyter notebook, jupiter notebook]
+  - canonical: Poetry
+    category: product
+    aliases: []
+    never: [poetry]
+    notes: the Python packaging tool
+  - canonical: pytest
+    category: product
+    aliases: [py test]
+  - canonical: Ruff
+    category: product
+    aliases: [ruf]
+  - canonical: Rust
+    category: product
+    aliases: []
+    never: [rust]
+    notes: the language
+  - canonical: Go
+    category: product
+    aliases: [golang, go lang]
+    notes: the language
+  - canonical: npm
+    category: product
+    aliases: [n p m, en pee em]
+  - canonical: pnpm
+    category: product
+    aliases: [p n p m, pee en pee em, pin pm]
+  - canonical: Vite
+    category: product
+    aliases: [veet, vee t, vight, veat, veed]
+  - canonical: Vitest
+    category: product
+    aliases: [vee test, vi test, v test, vitess]
+  - canonical: Playwright
+    category: product
+    aliases: [play write, playwrite]
+  - canonical: Prisma
+    category: product
+    aliases: [prizma, prism a, prismo]
+  - canonical: Drizzle
+    category: product
+    aliases: [drizzel, drizzl]
+  - canonical: Zod
+    category: product
+    aliases: [zawed, zaad, zahd]
+  - canonical: Next.js
+    category: product
+    aliases: [next js, next jay ess, nextjs, next jazz]
+  - canonical: Tailwind
+    category: product
+    aliases: [tail wind, tale wind, tailwin]
+  - canonical: GitHub
+    category: brand
+    aliases: [git hub, get hub]
+  - canonical: GitLab
+    category: brand
+    aliases: [git lab, get lab]
+  - canonical: VS Code
+    category: product
+    aliases: [v s code, vee ess code]
+  - canonical: Neovim
+    category: product
+    aliases: [neo vim, neo vem, knee o vim]
+  - canonical: Xcode
+    category: product
+    aliases: [x code, ex code]
+  - canonical: Homebrew
+    category: product
+    aliases: [home brew]
+
+  # ----------------------------------------------------------- SaaS a team uses
+  - canonical: Datadog
+    category: brand
+    aliases: [data dog]
+  - canonical: Sentry
+    category: brand
+    aliases: [sentri, sen tree]
+  - canonical: Stripe
+    category: brand
+    aliases: []
+    never: [stripe]
+  - canonical: Twilio
+    category: brand
+    aliases: [twill io, twilly o, twi leo]
+  - canonical: Auth0
+    category: brand
+    aliases: [auth zero, oath zero, auth 0, off zero]
+  - canonical: Clerk
+    category: brand
+    aliases: []
+    never: [clerk]
+    notes: the auth service
+  - canonical: Linear
+    category: brand
+    aliases: []
+    never: [linear]
+    notes: the issue tracker
+  - canonical: Jira
+    category: brand
+    aliases: [gira, jeera, jeer a]
+  - canonical: Figma
+    category: brand
+    aliases: [fig ma, figmuh]
+  - canonical: Notion
+    category: brand
+    aliases: []
+    never: [notion]
+  - canonical: Slack
+    category: brand
+    aliases: []
+    never: [slack]
+  - canonical: Zoom
+    category: brand
+    aliases: []
+    never: [zoom]

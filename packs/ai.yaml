@@ -1,0 +1,134 @@
+# Starter pack: AI models, labs, tooling and vocabulary. `lexicon pack add ai`.
+# Aliases follow the same rule as every pack: real STT spellings where the
+# benchmark recorded one ("and Tropic" for Anthropic, "Olima" for Ollama), plausible
+# splits elsewhere ("cloud code", "code x"), never an ordinary English word on its
+# own (Claude -> "cloud" is left out because "the cloud" is a sentence people say).
+name: ai
+title: AI models and tools
+description: Labs, models, frameworks, coding agents and the vocabulary of working with LLMs.
+version: 1
+terms:
+  # ------------------------------------------------------------ labs, models
+  - canonical: OpenAI
+    category: brand
+    aliases: [open a i, open eye]
+  - canonical: ChatGPT
+    category: product
+    aliases: [chat g p t, chat gpt, chat gbt, chat gp t]
+  - canonical: GPT
+    category: acronym
+    aliases: [g p t, gee pee tee, gbt]
+  - canonical: Anthropic
+    category: brand
+    aliases: [and tropic, and thropic, anthropik, an thropic]
+    phonetic: an-THROP-ik
+  - canonical: Claude
+    category: product
+    aliases: [claud, klaud]
+    phonetic: klawd
+  - canonical: Claude Code
+    category: product
+    aliases: [cloud code, clawed code, claud code]
+  - canonical: Gemini
+    category: product
+    aliases: [jeminy, gem in eye]
+  - canonical: Llama
+    category: product
+    aliases: [lama]
+    never: [llama]
+    notes: the Meta model family
+  - canonical: Mistral
+    category: brand
+    aliases: [mistrel, mist ral, miss trawl]
+  - canonical: DeepSeek
+    category: brand
+    aliases: [deep seek, deep sea k]
+  - canonical: Grok
+    category: product
+    aliases: [grock, grokk, groc]
+  - canonical: xAI
+    category: brand
+    aliases: [x a i, ex a i, x ai, ex ai]
+  - canonical: Hugging Face
+    category: brand
+    aliases: [huggingface, hug in face]
+  - canonical: Perplexity
+    category: brand
+    aliases: [per plexity]
+
+  # ---------------------------------------------------------- frameworks, infra
+  - canonical: PyTorch
+    category: product
+    aliases: [pie torch, py torch, pi torch]
+  - canonical: TensorFlow
+    category: product
+    aliases: [tensor flow, tenser flow]
+  - canonical: LangChain
+    category: product
+    aliases: [lang chain, lang chane, langshane, landshane]
+  - canonical: LlamaIndex
+    category: product
+    aliases: [llama index, lama index]
+  - canonical: Ollama
+    category: product
+    aliases: [oh llama, olama, olima, all emma, o llama]
+  - canonical: Whisper
+    category: product
+    aliases: [wisper]
+    notes: the OpenAI speech model
+  - canonical: Deepgram
+    category: brand
+    aliases: [deep gram, deep graham]
+  - canonical: ElevenLabs
+    category: brand
+    aliases: [eleven labs, eleven laps, 11 labs]
+
+  # ---------------------------------------------------------- coding agents
+  - canonical: Cursor
+    category: product
+    aliases: []
+    notes: the editor
+  - canonical: Windsurf
+    category: product
+    aliases: [wind surf, wins surf]
+  - canonical: Codex
+    category: product
+    aliases: [code x, code ex]
+  - canonical: Copilot
+    category: product
+    aliases: [co pilot, coe pilot]
+
+  # ------------------------------------------------------------- vocabulary
+  - canonical: RAG
+    category: acronym
+    aliases: [r a g, are a gee]
+    notes: retrieval-augmented generation
+  - canonical: LLM
+    category: acronym
+    aliases: [l l m, el el em, ellen m]
+  - canonical: MCP
+    category: acronym
+    aliases: [em see pee, m c p, emcee pee]
+    notes: Model Context Protocol
+  - canonical: embeddings
+    category: other
+    aliases: [imbeddings, em beddings]
+  - canonical: fine-tuning
+    category: other
+    aliases: [fine tuning, finetuning, fine tuneing]
+  - canonical: tokenizer
+    category: other
+    aliases: [token izer, tokeniser, token iser]
+  - canonical: transformer
+    category: other
+    aliases: [trans former]
+    notes: the model architecture
+  - canonical: agentic
+    category: other
+    aliases: [agent ick, a gentic, agentik]
+  - canonical: inference
+    category: other
+    aliases: [in ference]
+  - canonical: context window
+    category: other
+    aliases: [context windo]

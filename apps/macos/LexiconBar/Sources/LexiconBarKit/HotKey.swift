@@ -16,6 +16,7 @@ public struct HotKey: Equatable, Hashable, Codable, Sendable {
     public static let keySpace: UInt32 = 49
     public static let keyV: UInt32 = 9
     public static let keyEscape: UInt32 = 53
+    public static let keyZ: UInt32 = 6
 
     public var keyCode: UInt32
     public var modifiers: UInt32
@@ -29,6 +30,8 @@ public struct HotKey: Equatable, Hashable, Codable, Sendable {
     public static let defaultPushToTalk = HotKey(keyCode: keySpace, modifiers: control | option)
     /// Control+Option+V: fix clipboard now.
     public static let defaultFixClipboard = HotKey(keyCode: keyV, modifiers: control | option)
+    /// Control+Option+Z: undo the last "Fix everywhere" rewrite.
+    public static let defaultUndoFix = HotKey(keyCode: keyZ, modifiers: control | option)
 
     /// A small set of presets offered in Preferences next to the recorder.
     public static let presets: [HotKey] = [

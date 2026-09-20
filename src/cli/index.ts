@@ -15,6 +15,7 @@ import { registerVoiceCommands } from './cmd-voice.js';
 import { registerSetupCommands } from './cmd-setup.js';
 import { registerSuggestCommands } from './cmd-suggest.js';
 import { registerReviewCommands } from './cmd-review.js';
+import { registerPackCommands } from './cmd-pack.js';
 import {
   processIO,
   runAdd,
@@ -243,6 +244,7 @@ registerVoiceCommands(program, io);
 registerSetupCommands(program, io);
 registerSuggestCommands(program, io);
 registerReviewCommands(program, io);
+registerPackCommands(program, io);
 
 try {
   await program.parseAsync(process.argv);

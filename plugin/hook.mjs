@@ -27249,7 +27249,8 @@ var TermSourceSchema = external_exports.enum([
   "harvest:git",
   "harvest:package",
   "import",
-  "learned"
+  "learned",
+  "pack"
 ]);
 var TermSchema = external_exports.object({
   canonical: NonEmptyWord,
@@ -27270,7 +27271,8 @@ var LexiconSettingsSchema = external_exports.object({
   phonetic: external_exports.boolean().optional(),
   fuzzy: external_exports.boolean().optional(),
   protectedWords: WordList(LIMITS.protectedWords, "protected words").optional(),
-  skipCode: external_exports.boolean().optional()
+  skipCode: external_exports.boolean().optional(),
+  packs: WordList(LIMITS.aliases, "packs").optional()
 });
 var LexiconSchema = external_exports.object({
   version: external_exports.literal(1).default(1),
@@ -27519,7 +27521,9 @@ function orderLexicon(lexicon) {
 function stripUndefined(obj) {
   const out = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (value !== void 0) out[key] = value;
+    if (value === void 0) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
   }
   return out;
 }
@@ -32530,6 +32534,17 @@ can could may might must shall should will would
 not no yes there here now when where why how`.split(/\s+/).filter((w) => w.length > 0)
 );
 var DIGITS_RE = new RegExp("^\\p{N}+$", "u");
+
+// src/core/packs.ts
+var import_yaml5 = __toESM(require_dist(), 1);
+var PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var PackFileSchema = external_exports.object({
+  name: external_exports.string().regex(PACK_NAME_RE, "pack name must be lowercase letters, digits and dashes"),
+  title: external_exports.string().trim().min(1).max(80),
+  description: external_exports.string().trim().max(300).default(""),
+  version: external_exports.literal(1).default(1),
+  terms: external_exports.array(external_exports.unknown()).min(1, "a pack needs at least one term")
+});
 
 // src/hooks/user-prompt-submit.ts
 var SESSION_CONTEXT_MAX_CHARS = 4e3;

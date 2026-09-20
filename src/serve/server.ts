@@ -9,7 +9,9 @@
  * extension: it carries the token in a <meta> tag and is served only to a
  * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
- * origins listed in `serve.json.allowedOrigins`, never `*`. Bodies are JSON,
+ * origins listed in `serve.json.allowedOrigins`, never `*`. `/packs` lists,
+ * installs (POST) and removes (DELETE) the starter packs and `/aliases`
+ * suggests spellings for an onboarding form. Bodies are JSON,
  * capped at 1 MB. The lexicon is re-read at most every 2 s per cwd and always
  * after a write; the trust gate applies exactly as everywhere else.
  *
@@ -27,23 +29,30 @@ import {
   computeStats,
   diffSummary,
   exportLexicon,
+  installPack,
+  installedPacks,
   isExportFormat,
   learnCorrection,
+  listPacks,
   loadLexicon,
   normalize,
   recordHits,
   resolvePaths,
   sanitizeForDisplay,
   suggestAliases,
+  uninstallPack,
 } from '../core/index.js';
 import type {
   ExportFormat,
+  InstallPackResult,
   LexiconStats,
   LoadedLexicon,
   NormalizeResult,
+  PackInfo,
   Term,
   TermCategory,
   TermScope,
+  UninstallPackResult,
 } from '../core/index.js';
 import {
   DEFAULT_HOST,
@@ -129,6 +138,18 @@ export interface LexiconResponse {
   skippedProject?: string;
 }
 
+export interface PacksResponse {
+  /** Every pack shipped with the package, with whether the loaded lexicon lists it. */
+  packs: (PackInfo & { installed: boolean })[];
+  /** Names from `settings.packs` of the global and (trusted) project files. */
+  installed: string[];
+}
+
+export interface AliasesResponse {
+  canonical: string;
+  aliases: string[];
+}
+
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const MAX_CONCURRENT_REQUESTS = 64;
 export const LEXICON_RELOAD_MS = 2_000;
@@ -202,6 +223,14 @@ const AddBody = z.object({
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
 });
+
+const PackBody = z.object({
+  scope: z.enum(TERM_SCOPES).optional(),
+  cwd: CwdField,
+});
+
+/** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
+const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 
 class HttpError extends Error {
   constructor(
@@ -298,9 +327,13 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
   });
 }
 
-async function readJson(req: http.IncomingMessage, cap: number): Promise<unknown> {
+/** Parse a JSON object body. With `optional`, an empty body reads as `{}` (routes whose fields are all optional). */
+async function readJson(req: http.IncomingMessage, cap: number, optional = false): Promise<unknown> {
   const text = await readBody(req, cap);
-  if (text.trim() === '') throw new HttpError(400, 'request body must be a JSON object');
+  if (text.trim() === '') {
+    if (optional) return {};
+    throw new HttpError(400, 'request body must be a JSON object');
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -535,6 +568,38 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     return computeStats(await load(cwd));
   }
 
+  async function handlePacks(cwd: string): Promise<PacksResponse> {
+    const [packs, loaded] = await Promise.all([listPacks(), load(cwd)]);
+    const installed = installedPacks(loaded);
+    return { packs: packs.map((p) => ({ ...p, installed: installed.includes(p.name) })), installed };
+  }
+
+  async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResult> {
+    const body = parseBody(PackBody, raw);
+    const cwd = resolveCwd(body.cwd);
+    const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
+    invalidate();
+    return result;
+  }
+
+  async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {
+    const cwd = resolveCwd(url.searchParams.get('cwd'));
+    const scopeParam = url.searchParams.get('scope');
+    const scope = TERM_SCOPES.find((s) => s === scopeParam);
+    if (scopeParam !== null && scope === undefined) throw new HttpError(400, `invalid scope "${sanitizeForDisplay(scopeParam)}" (global or project)`);
+    const result = await uninstallPack(name, { cwd, ...storeOpts, ...(scope !== undefined ? { scope } : {}) });
+    invalidate();
+    return result;
+  }
+
+  /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */
+  function handleAliases(url: URL): AliasesResponse {
+    const canonical = (url.searchParams.get('canonical') ?? '').trim();
+    if (!canonical) throw new HttpError(400, 'canonical query parameter is required');
+    if (canonical.length > 80) throw new HttpError(400, 'canonical must be at most 80 characters');
+    return { canonical, aliases: suggestAliases(canonical) };
+  }
+
   // ---- request pipeline --------------------------------------------------
 
   type Response =
@@ -599,6 +664,20 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
       return json(200, await handleStats(resolveCwd(url.searchParams.get('cwd'))));
     }
+    if (pathname === '/packs') {
+      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      return json(200, await handlePacks(resolveCwd(url.searchParams.get('cwd'))));
+    }
+    const packMatch = PACK_ROUTE_RE.exec(pathname);
+    if (packMatch) {
+      if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, true)));
+      if (method === 'DELETE') return json(200, await handleUninstallPack(packMatch[1], url));
+      throw new HttpError(405, 'use POST to install or DELETE to remove');
+    }
+    if (pathname === '/aliases') {
+      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      return json(200, handleAliases(url));
+    }
     const exportMatch = /^\/export\/([a-z-]+)$/.exec(pathname);
     if (exportMatch) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
@@ -613,6 +692,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   function statusFor(err: unknown): number {
     if (err instanceof HttpError) return err.status;
     if (isProjectTrustError(err)) return 403;
+    if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
     // learnCorrection / addTerm / parseLexicon throw plain Errors on bad input.
     if (err instanceof Error && !(err instanceof TypeError)) return 400;
     return 500;
@@ -651,7 +731,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (isOriginAllowed(origin, config?.allowedOrigins)) {
       cors['Access-Control-Allow-Origin'] = origin as string;
       cors['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
-      cors['Access-Control-Allow-Methods'] = 'GET, POST';
+      cors['Access-Control-Allow-Methods'] = 'GET, POST, DELETE';
       cors['Access-Control-Max-Age'] = '600';
       cors['Vary'] = 'Origin';
     }

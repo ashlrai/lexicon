@@ -1,0 +1,62 @@
+# Starter pack: dictation and meeting tools. `lexicon pack add voice-tools`.
+# The apps a voice-first user names most often, so a sentence about the tools
+# themselves ("switch superwhisper to the small model") comes out spelled right.
+# "whisper flow" and "Super Whisper" are what the real-audio benchmark recorded.
+name: voice-tools
+title: Voice and dictation tools
+description: Dictation apps, speech models and meeting recorders.
+version: 1
+terms:
+  - canonical: Wispr Flow
+    category: brand
+    aliases: [whisper flow, wisper flow, whisper flo, wispr flo]
+  - canonical: Superwhisper
+    category: brand
+    aliases: [super whisper, superwisper, super wisper]
+  - canonical: Aqua Voice
+    category: brand
+    aliases: [akwa voice, aqua voiced]
+  - canonical: MacWhisper
+    category: product
+    aliases: [mac whisper, mack whisper]
+  - canonical: HyperWhisper
+    category: product
+    aliases: [hyper whisper]
+  - canonical: whisper.cpp
+    category: product
+    aliases: [whisper cpp, whisper c p p, whisper see pee pee]
+  - canonical: Talon
+    category: product
+    aliases: [talen, tallon]
+    never: [talon]
+    notes: the voice control system
+  - canonical: Dragon
+    category: product
+    aliases: []
+    never: [dragon]
+    notes: Dragon NaturallySpeaking
+  - canonical: Otter.ai
+    category: brand
+    aliases: [otter a i, otter ai]
+  - canonical: Fireflies
+    category: brand
+    aliases: [fire flies]
+    notes: the meeting recorder
+  - canonical: Granola
+    category: brand
+    aliases: []
+    never: [granola]
+    notes: the meeting notes app
+  - canonical: Plaud
+    category: brand
+    aliases: [plawd]
+  - canonical: Limitless
+    category: brand
+    aliases: []
+    never: [limitless]
+    notes: the pendant and app
+  - canonical: Rewind
+    category: brand
+    aliases: []
+    never: [rewind]
+    notes: the recall app

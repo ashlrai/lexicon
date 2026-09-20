@@ -173,6 +173,7 @@ export const TermSourceSchema = z.enum([
   'harvest:package',
   'import',
   'learned',
+  'pack',
 ]);
 
 export const TermSchema = z.object({
@@ -196,6 +197,7 @@ export const LexiconSettingsSchema = z.object({
   fuzzy: z.boolean().optional(),
   protectedWords: WordList(LIMITS.protectedWords, 'protected words').optional(),
   skipCode: z.boolean().optional(),
+  packs: WordList(LIMITS.aliases, 'packs').optional(),
 });
 
 export const LexiconSchema = z.object({

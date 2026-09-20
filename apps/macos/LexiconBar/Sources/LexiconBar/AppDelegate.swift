@@ -31,6 +31,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var daemon: ChildProcessSupervisor!
     private var server: ChildProcessSupervisor!
 
+    // Fix everywhere: one AX thread shared by the watcher and the engine.
+    private let axThread = AXThread()
+    private lazy var focusWatcher = FocusWatcher(ax: axThread)
+    private lazy var fixEngine = FixEngine(ax: axThread, watcher: focusWatcher, client: NormalizeClient())
+    private var undoFixHotKeyID: UInt32?
+    private var undoAvailable = false
+    private var fixFlashTimer: Timer?
+    private var fixFlashing = false { didSet { updateStatusIcon() } }
+    private var accessibilityTrusted = AX.isTrusted
+
     private var voiceState: VoiceState = .idle { didSet { updateStatusIcon() } }
     private var lastReplacements: [Replacement] = []
     private var lastSummary: String?
@@ -61,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         registerHotKeys()
         detectCLI()
+        startFixEverywhere()
         NSLog("LexiconBar %@ launched: status item visible=%d, bundled=%d, push-to-talk=%@",
               Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
               statusItem.isVisible ? 1 : 0, Notifier.isBundled ? 1 : 0, settings.pushToTalkHotKey.displayString)
@@ -68,6 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         statusPollTimer?.invalidate()
+        fixFlashTimer?.invalidate()
+        focusWatcher.stop()
         hotKeys.unregisterAll()
         daemon.terminateChild()
         server.terminateChild()
@@ -124,6 +137,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         add(voiceState == .fixingClipboard ? "Fixing clipboard\u{2026}" : "Fix clipboard now (\(settings.fixClipboardHotKey.displayString))",
             #selector(fixClipboardNow), enabled: available && !busy)
+
+        menu.addItem(.separator())
+        addFixEverywhereItems()
 
         menu.addItem(.separator())
 
@@ -183,6 +199,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add("Quit LexiconBar\(version.map { " \($0)" } ?? "")", #selector(quit), enabled: true, key: "q")
     }
 
+    /// "Fix everywhere" block: master switch, per-app switch for the app that
+    /// was frontmost when the menu opened, undo, and a permission pointer.
+    private func addFixEverywhereItems() {
+        let master = add("Fix everywhere", #selector(toggleFixEverywhere), enabled: true)
+        master.state = settings.fixEverywhere ? .on : .off
+        master.toolTip = "Correct dictated text in the focused field of any app, about a second after it lands."
+        if let app = focusWatcher.frontmostApp, let bundleID = app.bundleID {
+            let excluded = settings.exclusions.isExcluded(bundleID)
+            let item = add("Fix everywhere in \(app.name)", #selector(toggleFixEverywhereForFrontmostApp), enabled: settings.fixEverywhere, indent: 1)
+            item.state = excluded ? .off : .on
+            item.representedObject = bundleID
+            item.toolTip = bundleID
+        }
+        let undo = add("Undo last fix (\(settings.undoFixHotKey.displayString))", #selector(undoLastFix), enabled: settings.fixEverywhere && undoAvailable, indent: 1)
+        undo.toolTip = "Puts the dictated text back if the field still holds the corrected text."
+        if settings.fixEverywhere, !accessibilityTrusted {
+            let hint = add("Needs Accessibility permission \u{2013} open System Settings", #selector(openAccessibilitySettings), enabled: true, indent: 1)
+            hint.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
+        }
+    }
+
     @discardableResult
     private func add(_ title: String, _ action: Selector, enabled: Bool, key: String = "", indent: Int = 0) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -211,8 +248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .recording: name = "waveform.badge.mic"
         case .transcribing: name = "waveform.badge.magnifyingglass"
         }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "LexiconBar")
+        var image = NSImage(systemSymbolName: name, accessibilityDescription: "LexiconBar")
             ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "LexiconBar")
+        if fixFlashing, let base = image { image = AppDelegate.badged(base) }
         image?.isTemplate = true
         button.image = image
         button.contentTintColor = voiceState == .recording ? .systemRed : nil
@@ -220,13 +258,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         button.appearsDisabled = !cli.isAvailable
     }
 
+    /// The status symbol with a small dot at the bottom right: "just fixed something".
+    private static func badged(_ symbol: NSImage) -> NSImage {
+        let size = NSSize(width: symbol.size.width + 4, height: symbol.size.height)
+        let image = NSImage(size: size, flipped: false) { rect in
+            symbol.draw(in: NSRect(x: 0, y: 0, width: symbol.size.width, height: symbol.size.height))
+            let d: CGFloat = 5
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: rect.maxX - d, y: 0, width: d, height: d)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    // MARK: Fix everywhere
+
+    private func startFixEverywhere() {
+        fixEngine.onEvent = { [weak self] event in self?.handleFixEvent(event) }
+        pushFixConfig()
+        focusWatcher.start()
+        for publisher in [settings.$fixEverywhere.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+                          settings.$fixSettleMs.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+                          settings.$fixMinWords.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+                          settings.$fixExcludedApps.dropFirst().map { _ in () }.eraseToAnyPublisher()] {
+            publisher.sink { [weak self] in self?.pushFixConfig() }.store(in: &cancellables)
+        }
+        settings.$undoFixHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
+        if settings.fixEverywhere, !accessibilityTrusted {
+            // The system prompt; the app keeps running and picks the grant up on the next check.
+            AX.requestTrust()
+            Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] timer in
+                DispatchQueue.main.async {
+                    guard let self else { timer.invalidate(); return }
+                    if AX.isTrusted {
+                        self.accessibilityTrusted = true
+                        timer.invalidate()
+                        NSLog("LexiconBar: Accessibility granted")
+                    }
+                }
+            }
+        }
+    }
+
+    private func pushFixConfig() {
+        var config = FixEngine.Config()
+        config.enabled = settings.fixEverywhere
+        config.settleMs = Int(settings.fixSettleMs)
+        config.minWords = settings.fixMinWords
+        config.exclusions = settings.exclusions
+        fixEngine.update(config)
+    }
+
+    private func handleFixEvent(_ event: FixEngine.Event) {
+        switch event {
+        case .fixed(let fix):
+            remember(replacements: fix.replacements, summary: fix.summary)
+            flashStatusIcon()
+            NSLog("LexiconBar fix: %@ in %@ via %@ in %d ms", fix.replacements.map(\.label).joined(separator: ", "), fix.appName, fix.strategy, fix.elapsedMs)
+            if settings.fixNotify {
+                let labels = fix.replacements.prefix(3).map(\.label).joined(separator: ", ")
+                let more = fix.replacements.count > 3 ? " +\(fix.replacements.count - 3)" : ""
+                notifier.post(title: "Fixed: \(labels)\(more)", body: "in \(fix.appName). \(settings.undoFixHotKey.displayString) undoes it.")
+            }
+        case .undone(let appName):
+            lastError = nil
+            if settings.fixNotify { notifier.post(title: "Undid the last fix", body: "in \(appName)") }
+        case .skipped(let why):
+            lastError = why
+        case .failed(let why):
+            // Logged by the engine; shown in the menu, never as a notification
+            // (a stopped `lexicon serve` would otherwise nag on every burst).
+            lastError = why
+        case .undoAvailable(let available):
+            undoAvailable = available
+        }
+    }
+
+    private func flashStatusIcon() {
+        fixFlashing = true
+        fixFlashTimer?.invalidate()
+        fixFlashTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async { self?.fixFlashing = false }
+        }
+    }
+
+    @objc private func toggleFixEverywhere() {
+        settings.fixEverywhere.toggle()
+        if settings.fixEverywhere, !AX.isTrusted { AX.requestTrust() }
+        accessibilityTrusted = AX.isTrusted
+    }
+
+    @objc private func toggleFixEverywhereForFrontmostApp(_ sender: NSMenuItem) {
+        guard let bundleID = sender.representedObject as? String else { return }
+        var exclusions = settings.exclusions
+        if exclusions.isExcluded(bundleID) { exclusions.include(bundleID) } else { exclusions.exclude(bundleID) }
+        settings.exclusions = exclusions
+    }
+
+    @objc private func undoLastFix() {
+        guard settings.fixEverywhere else { return }
+        fixEngine.undoLast()
+    }
+
+    @objc private func openAccessibilitySettings() {
+        AX.requestTrust()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     // MARK: hotkeys
 
     private func registerHotKeys() {
         if let id = pushToTalkHotKeyID { hotKeys.unregister(id) }
         if let id = fixClipboardHotKeyID { hotKeys.unregister(id) }
+        if let id = undoFixHotKeyID { hotKeys.unregister(id) }
         pushToTalkHotKeyID = hotKeys.register(settings.pushToTalkHotKey) { [weak self] in self?.togglePushToTalk() }
         fixClipboardHotKeyID = hotKeys.register(settings.fixClipboardHotKey) { [weak self] in self?.fixClipboardNow() }
+        undoFixHotKeyID = hotKeys.register(settings.undoFixHotKey) { [weak self] in self?.undoLastFix() }
         if pushToTalkHotKeyID == nil {
             lastError = "Could not register \(settings.pushToTalkHotKey.displayString); another app may own it."
         }

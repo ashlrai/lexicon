@@ -93,6 +93,7 @@ const setupSummary: SetupSummary = {
   termsAdded: ['Ashlr.AI', 'Mason Wyatt'],
   clients: [{ name: 'claude', status: 'installed' }, { name: 'cursor', status: 'skipped', detail: 'not found' }],
   serve: 'skipped',
+  packs: [{ name: 'developer', added: 58, merged: 2 }],
   exports: [{ format: 'claude-md', path: '/fake/global/lexicon.claude.md' }],
 };
 
@@ -105,6 +106,7 @@ const setupPlan: SetupPlan = {
   detectedClients: ['claude', 'cursor', 'codex'],
   wouldInstallClients: ['claude', 'cursor'],
   wouldInstallServe: false,
+  wouldInstallPacks: ['developer', 'ai'],
   wouldExport: [],
 };
 
@@ -227,7 +229,7 @@ function textOf(result: unknown): string {
 }
 
 describe('lexicon MCP server', () => {
-  it('lists the sixteen tools', async () => {
+  it('lists the eighteen tools', async () => {
     const { client, close } = await connect();
     try {
       const { tools } = await client.listTools();
@@ -251,6 +253,8 @@ describe('lexicon MCP server', () => {
           'apply_suggestion',
           'setup_lexicon',
           'serve_status',
+          'list_packs',
+          'add_pack',
         ].sort(),
       );
       const normalizeTool = tools.find((t) => t.name === 'normalize_transcript');

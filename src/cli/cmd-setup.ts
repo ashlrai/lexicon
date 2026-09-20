@@ -1,22 +1,25 @@
 /**
- * `lexicon setup`: the one command a new user runs. Walks through six steps,
+ * `lexicon setup`: the one command a new user runs. Walks through seven steps,
  * each printing a one-line result, and never re-implements an installer:
  *
  *   a. global lexicon (runInit) seeded with the git user as a person term and
  *      the company/product name (suggested from the cwd package scope or the
  *      git remote org) with suggested aliases and an optional phonetic hint
- *   b. repo harvest into the project lexicon (top 10, min-count 5)
- *   c. agent clients detected on this machine, installed via runInstall
- *   d. the local API as a login service via runServeInstall
- *   e. an export for the user's dictation app, written to ~/Desktop
- *   f. a summary card (or JSON with --json)
+ *   b. starter packs (core/packs.ts): a checklist with developer, ai and
+ *      voice-tools checked and business offered; `--packs a,b` / `--no-packs`
+ *   c. repo harvest into the project lexicon (top 10, min-count 5)
+ *   d. agent clients detected on this machine, installed via runInstall
+ *   e. the local API as a login service via runServeInstall
+ *   f. an export for the user's dictation app, written to ~/Desktop
+ *   g. a summary card (or JSON with --json)
  *
  * Interactive on a terminal (prompt.ts); `--yes` takes every default, and
- * off a TTY without `--yes` the defaults are used as well. Three things are
- * never done silently: the repo harvest (step b) and the login service (step
- * d) are performed under `--yes` only with an explicit `--harvest` / `--serve`
- * (a harvest is a write plus a trust decision, a service replaces whatever is
- * under its label), and `--dry-run` runs every detection and suggestion but
+ * off a TTY without `--yes` the defaults are used as well. Four things are
+ * never done silently: the starter packs (step b, a hundred-odd global terms),
+ * the repo harvest (step c) and the login service (step e) are performed under
+ * `--yes` only with an explicit `--packs` / `--harvest` / `--serve` (a harvest
+ * is a write plus a trust decision, a service replaces whatever is under its
+ * label), and `--dry-run` runs every detection and suggestion but
  * writes nothing, returning a `SetupPlan` of what a real run would do (the
  * MCP `setup_lexicon` tool previews with it; the plan lists the harvest
  * candidates either way so the caller can offer them). Every step is
@@ -33,17 +36,32 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { findOnPath } from '../daemon/clipboard-backends.js';
 import {
+  DEFAULT_PACKS,
   EXPORT_FORMAT_INFO,
   ProjectTrustError,
   addTerm,
   exportLexicon,
   harvestRepo,
+  installPack,
+  installedPacks,
+  listPacks,
   loadLexicon,
+  loadPack,
   readLexiconFile,
   resolvePaths,
   suggestAliases,
 } from '../core/index.js';
-import type { ExportFormat, HarvestCandidate, HarvestOptions, Term, TermCategory } from '../core/index.js';
+import type {
+  ExportFormat,
+  HarvestCandidate,
+  HarvestOptions,
+  InstallPackResult,
+  PackInfo,
+  StoreOptions,
+  Term,
+  TermCategory,
+  TermScope,
+} from '../core/index.js';
 import { INSTALL_CLIENTS, configPathFor, runInstall } from './cmd-install.js';
 import type { InstallClient, InstallOptions } from './cmd-install.js';
 import { runServeInstall } from './cmd-serve.js';
@@ -99,6 +117,16 @@ export interface SetupOptions extends CommonOptions {
    * MCP) undefined skips it: a login service is never created silently.
    */
   serve?: boolean;
+  /**
+   * `--packs <list>` / `--no-packs`: starter packs to install into the global
+   * lexicon (`lexicon pack add`). A comma-separated list (or `none`) installs
+   * exactly those; `false` skips the step without a prompt; undefined shows the
+   * checklist on a terminal (developer, ai, voice-tools checked) and installs
+   * nothing without one (`--yes`, no TTY, MCP): a pack is a hundred-odd terms
+   * and is never added silently. A dry run lists the defaults in
+   * `wouldInstallPacks` unless `packs === false`.
+   */
+  packs?: string | false;
   /** Run detection and suggestions only; write nothing and fill in `SetupPlan`. */
   dryRun?: boolean;
   /** Dictation app to export for: wispr|superwhisper|macos|none. */
@@ -120,9 +148,20 @@ export interface SetupClientResult {
   detail?: string;
 }
 
+export interface SetupPackResult {
+  name: string;
+  /** Terms created by the pack. */
+  added: number;
+  /** Terms that already existed and only gained aliases. */
+  merged: number;
+}
+
 export interface SetupSummary {
   lexiconPath: string;
+  /** Seeded and harvested terms created by this run (pack terms are counted in `packs`). */
   termsAdded: string[];
+  /** Starter packs installed by this run (a pack that was already installed is not listed). */
+  packs: SetupPackResult[];
   clients: SetupClientResult[];
   serve: 'installed' | 'skipped' | 'failed';
   exports: { format: string; path: string }[];
@@ -136,7 +175,14 @@ export interface SetupPlan {
   lexiconExists: boolean;
   /** Canonicals that would be seeded into the global lexicon (person, company). */
   wouldSeed: string[];
-  /** Repo names that would be added to the project lexicon. */
+  /**
+   * Starter packs that would be installed: the `--packs` list, else the
+   * defaults (developer, ai, voice-tools) a terminal would show checked, so a
+   * caller can offer them; empty under `--no-packs`. A non-interactive apply
+   * installs only an explicit `--packs` list.
+   */
+  wouldInstallPacks: string[];
+  /** Repo names that would be added to the project lexicon (names the packs cover are left out). */
   wouldHarvest: string[];
   /** Every client found on this machine, whether or not it would be installed. */
   detectedClients: string[];
@@ -177,6 +223,10 @@ export interface SetupDeps {
   installServe?: (opts: ServeOptions, io: IO, deps: ServeDeps) => Promise<number>;
   /** Repo scanner. Default harvestRepo. */
   harvest?: (root: string, opts: HarvestOptions) => Promise<HarvestCandidate[]>;
+  /** The starter packs on offer. Default listPacks (the package's packs/). */
+  listPacks?: () => Promise<PackInfo[]>;
+  /** Installs one pack. Default installPack. */
+  installPack?: (name: string, opts: StoreOptions & { scope: TermScope }) => Promise<InstallPackResult>;
 }
 
 export interface DetectedClient {
@@ -239,6 +289,20 @@ export function parseClientList(value: string): SetupClient[] {
     if (!name || name === 'none') continue;
     if (!isSetupClient(name)) {
       throw new Error(`unknown client "${raw.trim()}" (expected one of: ${SETUP_CLIENTS.join(', ')}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/** `a,b, c` or `none` -> validated pack list against the packs on offer. Throws on an unknown name. */
+export function parsePackList(value: string, available: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const raw of value.split(',')) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === 'none') continue;
+    if (!available.includes(name)) {
+      throw new Error(`unknown pack "${raw.trim()}" (expected one of: ${available.join(', ')}, none)`);
     }
     if (!out.includes(name)) out.push(name);
   }
@@ -390,6 +454,8 @@ interface Ctx {
   company?: string;
   /** Canonicals seeded (or found already present) in step 1; the harvest skips these. */
   seeded: string[];
+  /** Canonicals the packs of a dry run would add; the planned harvest leaves them out. */
+  packCanonicals: string[];
   summary: SetupSummary;
   /** Present under `dryRun`: every step records what it would do here instead of doing it. */
   plan?: SetupPlan;
@@ -548,9 +614,98 @@ async function stepLexicon(ctx: Ctx): Promise<void> {
   }
 }
 
-/** Step b: harvest the repo into the project lexicon. */
+/**
+ * Step b: the starter packs. On a terminal a checklist of the default packs
+ * (all checked) followed by one yes/no per remaining pack (default no); with
+ * `--packs` exactly that list; otherwise nothing, since a pack is a
+ * hundred-odd terms. A pack the file already lists is reported, not re-added.
+ */
+async function stepPacks(ctx: Ctx): Promise<void> {
+  stepHeading(ctx, 2, 'Starter packs');
+  if (ctx.opts.packs === false) {
+    ctx.say(dim('   skipped (--no-packs)'));
+    return;
+  }
+  let available: PackInfo[];
+  try {
+    available = await (ctx.deps.listPacks ?? listPacks)();
+  } catch (err) {
+    ctx.warn(`   could not read the packs: ${safeLines(errorMessage(err))}`);
+    return;
+  }
+  if (available.length === 0) {
+    ctx.say(dim('   no packs shipped with this install'));
+    return;
+  }
+  const byName = new Map(available.map((p) => [p.name, p]));
+  const describe = (name: string): string => {
+    const p = byName.get(name);
+    return p ? `${name} ${dim(`(${p.terms} terms)`)}` : name;
+  };
+  const explicit = typeof ctx.opts.packs === 'string' ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : undefined;
+  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name));
+
+  if (ctx.plan) {
+    const chosen = explicit ?? [...defaults];
+    ctx.plan.wouldInstallPacks = chosen;
+    if (chosen.length === 0) {
+      ctx.say(dim('   would install: none'));
+      return;
+    }
+    ctx.say(`   would install: ${chosen.map(describe).join(', ')}`);
+    if (explicit === undefined) ctx.say(dim('   (the defaults; pass --packs <list> to install them without a terminal)'));
+    for (const name of chosen) {
+      try {
+        ctx.packCanonicals.push(...(await loadPack(name)).lexicon.terms.map((t) => t.canonical));
+      } catch {
+        // the harvest preview just loses the overlap check
+      }
+    }
+    return;
+  }
+
+  let chosen: string[];
+  if (explicit !== undefined) {
+    chosen = explicit;
+    if (chosen.length === 0) {
+      ctx.say(dim('   skipped (--packs none)'));
+      return;
+    }
+  } else if (ctx.prompter) {
+    chosen = await ctx.prompter.choose(
+      '   add starter packs to the global lexicon (Enter keeps the checked ones):',
+      defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ''}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
+      { multi: true },
+    );
+    for (const p of available) {
+      if (defaults.includes(p.name)) continue;
+      if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
+    }
+    if (chosen.length === 0) {
+      ctx.say(dim('   skipped; later: lexicon pack add developer'));
+      return;
+    }
+  } else {
+    ctx.say(dim(`   skipped (not requested); add --packs ${defaults.join(',')} to install the defaults, or later: lexicon pack add <name>`));
+    return;
+  }
+
+  const installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+  const install = ctx.deps.installPack ?? installPack;
+  for (const name of chosen) {
+    if (installed.includes(name)) {
+      ctx.say(dim(`   already installed: ${name}`));
+      continue;
+    }
+    const result = await install(name, { cwd: ctx.cwd, scope: 'global' });
+    ctx.summary.packs.push({ name, added: result.added, merged: result.merged });
+    ctx.say(`   installed ${bold(name)}: ${result.added} added, ${result.merged} merged`);
+  }
+}
+
+/** Step c: harvest the repo into the project lexicon. */
 async function stepHarvest(ctx: Ctx): Promise<void> {
-  stepHeading(ctx, 2, 'Repo harvest');
+  stepHeading(ctx, 3, 'Repo harvest');
   if (ctx.opts.harvest === false) {
     ctx.say(dim('   skipped (--no-harvest)'));
     return;
@@ -575,7 +730,7 @@ async function stepHarvest(ctx: Ctx): Promise<void> {
   }
   // A name the global lexicon already covers (the git author seeded as the person term,
   // the company) would only show up as a duplicate in `lexicon doctor`.
-  const covered = [...(await globalCanonicals(ctx)), ...ctx.seeded, ...(ctx.plan?.wouldSeed ?? [])];
+  const covered = [...(await globalCanonicals(ctx)), ...ctx.seeded, ...(ctx.plan?.wouldSeed ?? []), ...ctx.packCanonicals];
   const skipped = candidates.filter((c) => covered.some((name) => sameName(name, c.canonical)));
   candidates = candidates.filter((c) => !skipped.includes(c));
   if (skipped.length > 0) ctx.say(dim(`   already in the global lexicon: ${safe(skipped.map((c) => c.canonical).join(', '))}`));
@@ -622,9 +777,9 @@ async function stepHarvest(ctx: Ctx): Promise<void> {
   ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file ?? root, ctx.home))} (trusted)`);
 }
 
-/** Step c: detect and install the agent clients. */
+/** Step d: detect and install the agent clients. */
 async function stepClients(ctx: Ctx): Promise<void> {
-  stepHeading(ctx, 3, 'Agent clients');
+  stepHeading(ctx, 4, 'Agent clients');
   if (ctx.plan) {
     // Always detect for the plan (it is what the caller needs to ask the user), even under --clients none.
     const detected = (await detectClients({ ...ctx.deps, home: ctx.home }, ctx.cwd)).filter((c) => c.detected);
@@ -704,9 +859,9 @@ async function stepClients(ctx: Ctx): Promise<void> {
   }
 }
 
-/** Step d: the local API as a login service. */
+/** Step e: the local API as a login service. */
 async function stepServe(ctx: Ctx): Promise<void> {
-  stepHeading(ctx, 4, 'Local API (lexicon serve)');
+  stepHeading(ctx, 5, 'Local API (lexicon serve)');
   if (ctx.opts.serve === false) {
     ctx.say(dim('   skipped (--no-serve)'));
     return;
@@ -760,9 +915,9 @@ async function stepServe(ctx: Ctx): Promise<void> {
   }
 }
 
-/** Step e: export for the dictation app. */
+/** Step f: export for the dictation app. */
 async function stepExport(ctx: Ctx): Promise<void> {
-  stepHeading(ctx, 5, 'Dictation app');
+  stepHeading(ctx, 6, 'Dictation app');
   let app: SetupApp | undefined;
   if (ctx.opts.app !== undefined) {
     const value = ctx.opts.app.trim().toLowerCase();
@@ -799,12 +954,13 @@ async function stepExport(ctx: Ctx): Promise<void> {
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 
-/** Step f (dry run): the plan card. */
+/** Step g (dry run): the plan card. */
 function printPlan(ctx: Ctx, p: SetupPlan): void {
   ctx.say();
   ctx.say(bold('Plan (nothing written).'));
   ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
   ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(', ')) : dim('nothing')}`);
+  ctx.say(`   would install packs: ${p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(', ') : dim('none')}`);
   ctx.say(`   would harvest: ${p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(', ')) : dim('nothing')}`);
   ctx.say(`   detected clients: ${p.detectedClients.length > 0 ? p.detectedClients.join(', ') : dim('none')}`);
   ctx.say(`   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')}`);
@@ -814,13 +970,14 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
   ctx.say(dim('   run again without --dry-run to apply.'));
 }
 
-/** Step f: the summary card. */
+/** Step g: the summary card. */
 function printSummary(ctx: Ctx): void {
   const s = ctx.summary;
   ctx.say();
   ctx.say(bold('Done.'));
   ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(', ')) : dim('none')}`);
+  ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(', ') : dim('none')}`);
   const installed = s.clients.filter((c) => c.status === 'installed').map((c) => c.name);
   const failed = s.clients.filter((c) => c.status === 'failed').map((c) => c.name);
   ctx.say(
@@ -855,6 +1012,7 @@ export async function runSetup(
   if (opts.app !== undefined && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(', ')})`);
   }
+  if (typeof opts.packs === 'string') parsePackList(opts.packs, (await (deps.listPacks ?? listPacks)()).map((p) => p.name));
   // A dry run never prompts: it reports the non-interactive defaults.
   const interactive = !opts.yes && !opts.json && !opts.dryRun && (deps.isInteractive ?? isInteractive)();
   const ownPrompter = interactive && !deps.createPrompter;
@@ -880,7 +1038,8 @@ export async function runSetup(
     exists: deps.exists ?? existsSync,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
-    summary: { lexiconPath: '', termsAdded: [], clients: [], serve: 'skipped', exports: [] },
+    packCanonicals: [],
+    summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] },
   };
   if (prompter) ctx.prompter = prompter;
   if (opts.dryRun) {
@@ -889,6 +1048,7 @@ export async function runSetup(
       lexiconPath: '',
       lexiconExists: false,
       wouldSeed: [],
+      wouldInstallPacks: [],
       wouldHarvest: [],
       detectedClients: [],
       wouldInstallClients: [],
@@ -902,6 +1062,8 @@ export async function runSetup(
   say();
   try {
     await stepLexicon(ctx);
+    say();
+    await stepPacks(ctx);
     say();
     await stepHarvest(ctx);
     say();
@@ -932,6 +1094,8 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
     .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')
     .option('--harvest', 'add the repo names to the project lexicon (with --yes it is skipped unless this is passed)')
+    .option('--packs <list>', 'comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools)')
+    .option('--no-packs', 'skip the starter packs (no prompt)')
     .option('--no-harvest', 'skip the repo harvest (no prompt)')
     .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
     .option('--no-serve', 'skip installing the local API login service (no prompt)')

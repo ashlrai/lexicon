@@ -162,7 +162,11 @@ const TERM_KEY_ORDER: (keyof Term)[] = [
   'hits',
 ];
 
-/** Produce a plain object with deterministic key order and no undefined values. */
+/**
+ * Drop `undefined` values and empty lists. The schema materializes an empty
+ * array for every optional word list (`protectedWords`, `packs`), so without
+ * this a plain `lexicon add` would litter a hand-edited file with `packs: []`.
+ */
 function orderLexicon(lexicon: Lexicon): Record<string, unknown> {
   const out: Record<string, unknown> = { version: lexicon.version };
   if (lexicon.settings && Object.keys(stripUndefined(lexicon.settings)).length > 0) {
@@ -186,7 +190,9 @@ function orderLexicon(lexicon: Lexicon): Record<string, unknown> {
 function stripUndefined<T extends object>(obj: T): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (value !== undefined) out[key] = value;
+    if (value === undefined) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
   }
   return out;
 }

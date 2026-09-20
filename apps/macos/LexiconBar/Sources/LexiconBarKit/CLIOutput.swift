@@ -238,8 +238,12 @@ public enum CLIOutput {
     }
 
     static func number(_ any: Any?) -> Double? {
-        if let b = any as? Bool { _ = b; return nil }
-        if let n = any as? NSNumber { return n.doubleValue }
+        if let n = any as? NSNumber {
+            // JSON `true`/`false` also bridge to NSNumber; only a real boolean is rejected
+            // (`any as? Bool` would also match the integer 1, dropping confidence 1.0).
+            if CFGetTypeID(n) == CFBooleanGetTypeID() { return nil }
+            return n.doubleValue
+        }
         if let s = any as? String, let d = Double(s) { return d }
         return nil
     }

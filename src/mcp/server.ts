@@ -24,8 +24,11 @@ import {
   exportLexicon,
   getTrustPath,
   harvestRepo,
+  installPack,
+  installedPacks,
   isTrusted,
   learnCorrection,
+  listPacks,
   listTrusted,
   loadLexicon,
   loadVoiceHistory,
@@ -175,7 +178,8 @@ const SERVER_INSTRUCTIONS = [
   'If a word looks like a garbled name and normalize_transcript did not change it, call suggest_canonical before guessing.',
   'Never rewrite text inside code blocks, inline code, file paths, URLs or emails.',
   "If the lexicon is empty, offer to set it up: ask for the company/product spelling, the user's own name and the clients in use, then call setup_lexicon (or use the onboard prompt).",
-  'setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted harvest and serve do nothing.',
+  'setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.',
+  'Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.',
   'When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.',
   'Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name.',
 ].join('\n');
@@ -861,8 +865,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
         "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. " +
         'Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. ' +
         'Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. ' +
-        'The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. ' +
+        'The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. ' +
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
+        'does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
         'Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.',
       inputSchema: {
@@ -872,6 +877,10 @@ export function createServer(opts: ServerOptions = {}): McpServer {
           .array(z.enum(INSTALL_CLIENT_VALUES))
           .optional()
           .describe('Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask).'),
+        packs: z
+          .array(z.string().regex(/^[a-z0-9-]+$/))
+          .optional()
+          .describe('Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in wouldInstallPacks so you can ask).'),
         harvest: z
           .boolean()
           .optional()
@@ -883,7 +892,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
           .describe('false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.'),
       },
     },
-    async ({ company, person, clients, harvest, serve, apply }) =>
+    async ({ company, person, clients, packs, harvest, serve, apply }) =>
       guarded(async () => {
         const io = bufferIO();
         const cliDir = cliDirForInstall();
@@ -897,6 +906,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
           // runSetup takes the CLI's comma-separated form. Omitted means "none" here, never
           // "every detected client": the plan names the detected ones and the model asks.
           clients: clients !== undefined && clients.length > 0 ? clients.join(',') : 'none',
+          // Same for the starter packs: only an explicit list installs any (runSetup with yes
+          // and no --packs installs none); omitted leaves the plan's default set for the model to offer.
+          ...(packs !== undefined ? { packs: packs.length > 0 ? packs.join(',') : 'none' } : {}),
           // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
           serve: serve === true,
           // So is the harvest (a project write plus a trust decision). The plan lists the
@@ -914,6 +926,54 @@ export function createServer(opts: ServerOptions = {}): McpServer {
           });
         }
         return textResult({ ok: code === 0, applied: true, summary, ...(stderr ? { stderr } : {}) });
+      }),
+  );
+
+  server.registerTool(
+    'list_packs',
+    {
+      title: 'List the starter term packs',
+      description:
+        'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
+        'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
+      inputSchema: {},
+    },
+    async () =>
+      guarded(async () => {
+        const [packs, loaded] = await Promise.all([listPacks(), load()]);
+        const installed = installedPacks(loaded);
+        return textResult({
+          packs: packs.map((p) => ({ name: p.name, title: p.title, description: p.description, terms: p.terms, aliases: p.aliases, installed: installed.includes(p.name) })),
+          installed,
+        });
+      }),
+  );
+
+  server.registerTool(
+    'add_pack',
+    {
+      title: 'Install a starter term pack',
+      description:
+        'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). ' +
+        'Adds the pack\'s terms with source "pack"; a term the user already has keeps its own spelling and aliases and only gains the pack\'s. Idempotent. ' +
+        'A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`.',
+      inputSchema: {
+        name: z.string().regex(/^[a-z0-9-]+$/).describe('Pack name from list_packs, e.g. developer.'),
+        scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
+      },
+    },
+    async ({ name, scope }) =>
+      guarded(async () => {
+        const result = await installPack(name, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        return textResult({
+          name: result.pack.name,
+          title: result.pack.title,
+          added: result.added,
+          merged: result.merged,
+          path: result.path,
+          scope: result.scope,
+          summary: `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
+        });
       }),
   );
 

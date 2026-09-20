@@ -1,0 +1,129 @@
+# Starter pack: startup and business vocabulary. `lexicon pack add business`.
+# Not installed by default: most of it is acronyms, and STT already gets those
+# right most of the time; the aliases cover the spelled-out and split forms
+# it produces when it does not. Aliases that are ordinary words are left out
+# (Deel -> "deal", Brex -> "bricks"); "sass" for SaaS is the one exception and
+# carries `never: [sauce]`.
+name: business
+title: Business and startup vocabulary
+description: Metrics, acronyms, fundraising terms and the SaaS a founder talks to every day.
+version: 1
+terms:
+  # ------------------------------------------------------------ metrics
+  - canonical: SaaS
+    category: acronym
+    aliases: [sass, sas, s a a s]
+    never: [sauce]
+  - canonical: ARR
+    category: acronym
+    aliases: [a r r, ay are are, ay ar ar]
+  - canonical: MRR
+    category: acronym
+    aliases: [m r r, em are are, em ar ar]
+  - canonical: CAC
+    category: acronym
+    aliases: [c a c, see ay see]
+  - canonical: LTV
+    category: acronym
+    aliases: [l t v, el tee vee]
+  - canonical: NPS
+    category: acronym
+    aliases: [n p s, en pee ess]
+  - canonical: OKR
+    category: acronym
+    aliases: [o k r, oh kay are]
+  - canonical: KPI
+    category: acronym
+    aliases: [k p i, kay pee eye, kay pee i]
+  - canonical: GTM
+    category: acronym
+    aliases: [g t m, gee tee em, jee tee em]
+  - canonical: PLG
+    category: acronym
+    aliases: [p l g, pee el gee]
+  - canonical: CRM
+    category: acronym
+    aliases: [c r m, see are em, see ar em]
+  - canonical: ERP
+    category: acronym
+    aliases: [e r p, ee are pee]
+  - canonical: B2B
+    category: acronym
+    aliases: [b to b, b 2 b, bee to bee]
+  - canonical: B2C
+    category: acronym
+    aliases: [b to c, b 2 c, bee to see]
+  - canonical: churn
+    category: other
+    aliases: []
+  - canonical: runway
+    category: other
+    aliases: []
+  - canonical: cap table
+    category: other
+    aliases: [captable]
+
+  # --------------------------------------------------------- fundraising
+  - canonical: YC
+    category: acronym
+    aliases: [y c, y combinator]
+    notes: Y Combinator
+  - canonical: VC
+    category: acronym
+    aliases: [v c, vee see]
+  - canonical: SAFE
+    category: acronym
+    aliases: [s a f e]
+    notes: simple agreement for future equity
+
+  # ---------------------------------------------------------------- SaaS
+  - canonical: HubSpot
+    category: brand
+    aliases: [hub spot]
+  - canonical: Salesforce
+    category: brand
+    aliases: []
+  - canonical: QuickBooks
+    category: brand
+    aliases: [quick books]
+  - canonical: Gusto
+    category: brand
+    aliases: [gust oh]
+  - canonical: Rippling
+    category: brand
+    aliases: [ripling, rippeling]
+  - canonical: Deel
+    category: brand
+    aliases: [dele, d eel]
+  - canonical: Mercury
+    category: brand
+    aliases: []
+    never: [mercury]
+    notes: the bank
+  - canonical: Brex
+    category: brand
+    aliases: [brecks]
+  - canonical: Ramp
+    category: brand
+    aliases: []
+    never: [ramp]
+    notes: the finance platform
+  - canonical: DocuSign
+    category: brand
+    aliases: [docu sign, doc you sign]
+  - canonical: Calendly
+    category: brand
+    aliases: [calendlee, calendar lee]
+  - canonical: Loom
+    category: brand
+    aliases: []
+    never: [loom]
+  - canonical: Webflow
+    category: brand
+    aliases: [web flow]
+  - canonical: Shopify
+    category: brand
+    aliases: [shop ify, shopifi]
+  - canonical: Squarespace
+    category: brand
+    aliases: [square space]

@@ -3270,8 +3270,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path17) {
-      let input2 = path17;
+    function removeDotSegments(path18) {
+      let input2 = path18;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -3680,8 +3680,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path17 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path17 && path17 !== "/" ? path17 : void 0;
+        const path18 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path18 && path18 !== "/" ? path18 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -7194,12 +7194,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs15, exportName) {
+    function addFormats(ajv, list, fs16, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs15[f]);
+        ajv.addFormat(f, fs16[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -7284,17 +7284,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path17) {
-      const ctrl = callVisitor(key, node2, visitor, path17);
+    function visit_(key, node2, visitor, path18) {
+      const ctrl = callVisitor(key, node2, visitor, path18);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path17, ctrl);
-        return visit_(key, ctrl, visitor, path17);
+        replaceNode(key, path18, ctrl);
+        return visit_(key, ctrl, visitor, path18);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path17 = Object.freeze(path17.concat(node2));
+          path18 = Object.freeze(path18.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path17);
+            const ci = visit_(i, node2.items[i], visitor, path18);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7305,13 +7305,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path17 = Object.freeze(path17.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path17);
+          path18 = Object.freeze(path18.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path18);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path17);
+          const cv = visit_("value", node2.value, visitor, path18);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7332,17 +7332,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path17) {
-      const ctrl = await callVisitor(key, node2, visitor, path17);
+    async function visitAsync_(key, node2, visitor, path18) {
+      const ctrl = await callVisitor(key, node2, visitor, path18);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path17, ctrl);
-        return visitAsync_(key, ctrl, visitor, path17);
+        replaceNode(key, path18, ctrl);
+        return visitAsync_(key, ctrl, visitor, path18);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path17 = Object.freeze(path17.concat(node2));
+          path18 = Object.freeze(path18.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path17);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path18);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7353,13 +7353,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path17 = Object.freeze(path17.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path17);
+          path18 = Object.freeze(path18.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path18);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path17);
+          const cv = await visitAsync_("value", node2.value, visitor, path18);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7386,23 +7386,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path17) {
+    function callVisitor(key, node2, visitor, path18) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path17);
+        return visitor(key, node2, path18);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path17);
+        return visitor.Map?.(key, node2, path18);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path17);
+        return visitor.Seq?.(key, node2, path18);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path17);
+        return visitor.Pair?.(key, node2, path18);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path17);
+        return visitor.Scalar?.(key, node2, path18);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path17);
+        return visitor.Alias?.(key, node2, path18);
       return void 0;
     }
-    function replaceNode(key, path17, node2) {
-      const parent = path17[path17.length - 1];
+    function replaceNode(key, path18, node2) {
+      const parent = path18[path18.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -8014,10 +8014,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path17, value) {
+    function collectionFromPath(schema, path18, value) {
       let v = value;
-      for (let i = path17.length - 1; i >= 0; --i) {
-        const k = path17[i];
+      for (let i = path18.length - 1; i >= 0; --i) {
+        const k = path18[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -8036,7 +8036,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path17) => path17 == null || typeof path17 === "object" && !!path17[Symbol.iterator]().next().done;
+    var isEmptyPath = (path18) => path18 == null || typeof path18 === "object" && !!path18[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -8066,11 +8066,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path17, value) {
-        if (isEmptyPath(path17))
+      addIn(path18, value) {
+        if (isEmptyPath(path18))
           this.add(value);
         else {
-          const [key, ...rest] = path17;
+          const [key, ...rest] = path18;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -8084,8 +8084,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path17) {
-        const [key, ...rest] = path17;
+      deleteIn(path18) {
+        const [key, ...rest] = path18;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -8099,8 +8099,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path17, keepScalar) {
-        const [key, ...rest] = path17;
+      getIn(path18, keepScalar) {
+        const [key, ...rest] = path18;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -8118,8 +8118,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path17) {
-        const [key, ...rest] = path17;
+      hasIn(path18) {
+        const [key, ...rest] = path18;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -8129,8 +8129,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path17, value) {
-        const [key, ...rest] = path17;
+      setIn(path18, value) {
+        const [key, ...rest] = path18;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -10645,9 +10645,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path17, value) {
+      addIn(path18, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path17, value);
+          this.contents.addIn(path18, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -10722,14 +10722,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path17) {
-        if (Collection.isEmptyPath(path17)) {
+      deleteIn(path18) {
+        if (Collection.isEmptyPath(path18)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path17) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path18) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -10744,10 +10744,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path17, keepScalar) {
-        if (Collection.isEmptyPath(path17))
+      getIn(path18, keepScalar) {
+        if (Collection.isEmptyPath(path18))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path17, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path18, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -10758,10 +10758,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path17) {
-        if (Collection.isEmptyPath(path17))
+      hasIn(path18) {
+        if (Collection.isEmptyPath(path18))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path17) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path18) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -10778,13 +10778,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path17, value) {
-        if (Collection.isEmptyPath(path17)) {
+      setIn(path18, value) {
+        if (Collection.isEmptyPath(path18)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path17), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path18), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path17, value);
+          this.contents.setIn(path18, value);
         }
       }
       /**
@@ -12745,9 +12745,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path17) => {
+    visit2.itemAtPath = (cst, path18) => {
       let item = cst;
-      for (const [field, index] of path17) {
+      for (const [field, index] of path18) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -12756,23 +12756,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path17) => {
-      const parent = visit2.itemAtPath(cst, path17.slice(0, -1));
-      const field = path17[path17.length - 1][0];
+    visit2.parentCollection = (cst, path18) => {
+      const parent = visit2.itemAtPath(cst, path18.slice(0, -1));
+      const field = path18[path18.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path17, item, visitor) {
-      let ctrl = visitor(item, path17);
+    function _visit(path18, item, visitor) {
+      let ctrl = visitor(item, path18);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path17.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path18.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -12783,10 +12783,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path17);
+            ctrl = ctrl(item, path18);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path17) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path18) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -14088,14 +14088,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs15 = this.flowScalar(this.type);
+              const fs16 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs15, sep: [] });
+                map2.items.push({ start, key: fs16, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs15);
+                this.stack.push(fs16);
               } else {
-                Object.assign(it, { key: fs15, sep: [] });
+                Object.assign(it, { key: fs16, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -14223,13 +14223,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs15 = this.flowScalar(this.type);
+              const fs16 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs15, sep: [] });
+                fc.items.push({ start: [], key: fs16, sep: [] });
               else if (it.sep)
-                this.stack.push(fs15);
+                this.stack.push(fs16);
               else
-                Object.assign(it, { key: fs15, sep: [] });
+                Object.assign(it, { key: fs16, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -14686,9 +14686,9 @@ var require_mod = __commonJS({
 });
 
 // src/mcp/server.ts
-import { readFileSync as readFileSync3, realpathSync as realpathSync2 } from "node:fs";
+import { readFileSync as readFileSync4, realpathSync as realpathSync2 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 
 // node_modules/zod/v3/helpers/util.js
 var util;
@@ -15064,8 +15064,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path17, errorMaps, issueData } = params;
-  const fullPath = [...path17, ...issueData.path || []];
+  const { data, path: path18, errorMaps, issueData } = params;
+  const fullPath = [...path18, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -15077,15 +15077,15 @@ var makeIssue = (params) => {
       message: issueData.message
     };
   }
-  let errorMessage7 = "";
+  let errorMessage8 = "";
   const maps = errorMaps.filter((m) => !!m).slice().reverse();
   for (const map2 of maps) {
-    errorMessage7 = map2(fullIssue, { data, defaultError: errorMessage7 }).message;
+    errorMessage8 = map2(fullIssue, { data, defaultError: errorMessage8 }).message;
   }
   return {
     ...issueData,
     path: fullPath,
-    message: errorMessage7
+    message: errorMessage8
   };
 };
 function addIssueToContext(ctx, issueData) {
@@ -15180,11 +15180,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path17, key) {
+  constructor(parent, value, path18, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path17;
+    this._path = path18;
     this._key = key;
   }
   get path() {
@@ -19138,10 +19138,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path17) {
-  if (!path17)
+function getElementAtPath(obj, path18) {
+  if (!path18)
     return obj;
-  return path17.reduce((acc, key) => acc?.[key], obj);
+  return path18.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -19481,11 +19481,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path17, issues) {
+function prefixIssues(path18, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path17);
+    iss.path.unshift(path18);
     return iss;
   });
 }
@@ -19935,16 +19935,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path17 = []) => {
+  const processError = (error63, path18 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path17, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else {
-        const fullpath = [...path17, ...issue2.path];
+        const fullpath = [...path18, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19983,17 +19983,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path17 = []) => {
+  const processError = (error63, path18 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path17, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else {
-        const fullpath = [...path17, ...issue2.path];
+        const fullpath = [...path18, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -20032,8 +20032,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path17 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path17) {
+  const path18 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path18) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -35548,11 +35548,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path17) {
-  if (path17.length === 0) {
+function getDotPath(path18) {
+  if (path18.length === 0) {
     return "object root";
   }
-  return path17.reduce((acc, seg, index) => {
+  return path18.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -37779,13 +37779,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path17 = ref.slice(1).split("/").filter(Boolean);
-  if (path17.length === 0) {
+  const path18 = ref.slice(1).split("/").filter(Boolean);
+  if (path18.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path17[0] === defsKey) {
-    const key = path17[1] === void 0 ? void 0 : decodeJSONPointerSegment(path17[1]);
+  if (path18[0] === defsKey) {
+    const key = path18[1] === void 0 ? void 0 : decodeJSONPointerSegment(path18[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -40071,19 +40071,19 @@ var getRefs = (options) => {
 };
 
 // node_modules/zod-to-json-schema/dist/esm/errorMessages.js
-function addErrorMessage(res, key, errorMessage7, refs) {
+function addErrorMessage(res, key, errorMessage8, refs) {
   if (!refs?.errorMessages)
     return;
-  if (errorMessage7) {
+  if (errorMessage8) {
     res.errorMessage = {
       ...res.errorMessage,
-      [key]: errorMessage7
+      [key]: errorMessage8
     };
   }
 }
-function setResponseValueAndErrors(res, key, value, errorMessage7, refs) {
+function setResponseValueAndErrors(res, key, value, errorMessage8, refs) {
   res[key] = value;
-  addErrorMessage(res, key, errorMessage7, refs);
+  addErrorMessage(res, key, errorMessage8, refs);
 }
 
 // node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
@@ -41394,8 +41394,8 @@ var Protocol = class {
                   if (queuedMessage.type === "response") {
                     resolver(message);
                   } else {
-                    const errorMessage7 = message;
-                    const error62 = new McpError(errorMessage7.error.code, errorMessage7.error.message, errorMessage7.error.data);
+                    const errorMessage8 = message;
+                    const error62 = new McpError(errorMessage8.error.code, errorMessage8.error.message, errorMessage8.error.data);
                     resolver(error62);
                   }
                 } else {
@@ -41490,25 +41490,25 @@ var Protocol = class {
     });
   }
   _resetTimeout(messageId) {
-    const info = this._timeoutInfo.get(messageId);
-    if (!info)
+    const info2 = this._timeoutInfo.get(messageId);
+    if (!info2)
       return false;
-    const totalElapsed = Date.now() - info.startTime;
-    if (info.maxTotalTimeout && totalElapsed >= info.maxTotalTimeout) {
+    const totalElapsed = Date.now() - info2.startTime;
+    if (info2.maxTotalTimeout && totalElapsed >= info2.maxTotalTimeout) {
       this._timeoutInfo.delete(messageId);
       throw McpError.fromError(ErrorCode.RequestTimeout, "Maximum total timeout exceeded", {
-        maxTotalTimeout: info.maxTotalTimeout,
+        maxTotalTimeout: info2.maxTotalTimeout,
         totalElapsed
       });
     }
-    clearTimeout(info.timeoutId);
-    info.timeoutId = setTimeout(info.onTimeout, info.timeout);
+    clearTimeout(info2.timeoutId);
+    info2.timeoutId = setTimeout(info2.onTimeout, info2.timeout);
     return true;
   }
   _cleanupTimeout(messageId) {
-    const info = this._timeoutInfo.get(messageId);
-    if (info) {
-      clearTimeout(info.timeoutId);
+    const info2 = this._timeoutInfo.get(messageId);
+    if (info2) {
+      clearTimeout(info2.timeoutId);
       this._timeoutInfo.delete(messageId);
     }
   }
@@ -41553,8 +41553,8 @@ var Protocol = class {
     this._progressHandlers.clear();
     this._taskProgressTokens.clear();
     this._pendingDebouncedNotifications.clear();
-    for (const info of this._timeoutInfo.values()) {
-      clearTimeout(info.timeoutId);
+    for (const info2 of this._timeoutInfo.values()) {
+      clearTimeout(info2.timeoutId);
     }
     this._timeoutInfo.clear();
     for (const controller of this._requestHandlerAbortControllers.values()) {
@@ -42686,23 +42686,23 @@ var Server = class extends Protocol {
       const wrappedHandler = async (request, extra) => {
         const validatedRequest = safeParse2(CallToolRequestSchema, request);
         if (!validatedRequest.success) {
-          const errorMessage7 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage7}`);
+          const errorMessage8 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage8}`);
         }
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
-            const errorMessage7 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage7}`);
+            const errorMessage8 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage8}`);
           }
           return taskValidationResult.data;
         }
         const validationResult = safeParse2(CallToolResultSchema, result);
         if (!validationResult.success) {
-          const errorMessage7 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage7}`);
+          const errorMessage8 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage8}`);
         }
         return validationResult.data;
       };
@@ -43196,12 +43196,12 @@ var McpServer = class {
    * @param errorMessage - The error message.
    * @returns The tool error result.
    */
-  createToolError(errorMessage7) {
+  createToolError(errorMessage8) {
     return {
       content: [
         {
           type: "text",
-          text: errorMessage7
+          text: errorMessage8
         }
       ],
       isError: true
@@ -43219,8 +43219,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(schemaToParse, args);
     if (!parseResult.success) {
       const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage7 = getParseErrorMessage(error62);
-      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage7}`);
+      const errorMessage8 = getParseErrorMessage(error62);
+      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage8}`);
     }
     return parseResult.data;
   }
@@ -43244,8 +43244,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(outputObj, result.structuredContent);
     if (!parseResult.success) {
       const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage7 = getParseErrorMessage(error62);
-      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage7}`);
+      const errorMessage8 = getParseErrorMessage(error62);
+      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage8}`);
     }
   }
   /**
@@ -43457,8 +43457,8 @@ var McpServer = class {
         const parseResult = await safeParseAsync2(argsObj, request.params.arguments);
         if (!parseResult.success) {
           const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-          const errorMessage7 = getParseErrorMessage(error62);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage7}`);
+          const errorMessage8 = getParseErrorMessage(error62);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage8}`);
         }
         const args = parseResult.data;
         const cb = prompt.callback;
@@ -44033,7 +44033,8 @@ var TermSourceSchema = external_exports.enum([
   "harvest:git",
   "harvest:package",
   "import",
-  "learned"
+  "learned",
+  "pack"
 ]);
 var TermSchema = external_exports.object({
   canonical: NonEmptyWord,
@@ -44054,17 +44055,18 @@ var LexiconSettingsSchema = external_exports.object({
   phonetic: external_exports.boolean().optional(),
   fuzzy: external_exports.boolean().optional(),
   protectedWords: WordList(LIMITS.protectedWords, "protected words").optional(),
-  skipCode: external_exports.boolean().optional()
+  skipCode: external_exports.boolean().optional(),
+  packs: WordList(LIMITS.aliases, "packs").optional()
 });
 var LexiconSchema = external_exports.object({
   version: external_exports.literal(1).default(1),
   terms: external_exports.array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
   settings: LexiconSettingsSchema.optional()
 });
-function formatPath(path17) {
-  if (path17.length === 0) return "(root)";
+function formatPath(path18) {
+  if (path18.length === 0) return "(root)";
   let out = "";
-  for (const seg of path17) {
+  for (const seg of path18) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -44343,7 +44345,9 @@ function orderLexicon(lexicon) {
 function stripUndefined(obj) {
   const out = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (value !== void 0) out[key] = value;
+    if (value === void 0) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
   }
   return out;
 }
@@ -52717,17 +52721,185 @@ async function suggestTerms(input2) {
   return merged.slice(0, limit);
 }
 
+// src/core/packs.ts
+var import_yaml5 = __toESM(require_dist2(), 1);
+import { promises as fs5, readFileSync } from "node:fs";
+import path5 from "node:path";
+import { fileURLToPath } from "node:url";
+var PACKS_DIR_NAME = "packs";
+var PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var DEFAULT_PACKS = ["developer", "ai", "voice-tools"];
+var PackNotFoundError = class extends Error {
+  pack;
+  constructor(name, available) {
+    super(`unknown pack "${name}" (available: ${available.length > 0 ? available.join(", ") : "none"})`);
+    this.name = "PackNotFoundError";
+    this.pack = name;
+  }
+};
+var PACKAGE_NAME = "@ashlr/lexicon";
+var PackFileSchema = external_exports.object({
+  name: external_exports.string().regex(PACK_NAME_RE, "pack name must be lowercase letters, digits and dashes"),
+  title: external_exports.string().trim().min(1).max(80),
+  description: external_exports.string().trim().max(300).default(""),
+  version: external_exports.literal(1).default(1),
+  terms: external_exports.array(external_exports.unknown()).min(1, "a pack needs at least one term")
+});
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function findPackageRoot(from = import.meta.url) {
+  let dir = from.startsWith("file:") ? path5.dirname(fileURLToPath(from)) : path5.resolve(from);
+  for (; ; ) {
+    try {
+      const parsed = JSON.parse(readFileSync(path5.join(dir, "package.json"), "utf8"));
+      if (isRecord3(parsed) && parsed.name === PACKAGE_NAME) return dir;
+    } catch {
+    }
+    const parent = path5.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function packsDir(opts = {}) {
+  if (opts.dir) return path5.resolve(opts.dir);
+  const root = findPackageRoot();
+  if (!root) throw new Error(`could not locate the ${PACKAGE_NAME} package root (no package.json above ${fileURLToPath(import.meta.url)})`);
+  return path5.join(root, PACKS_DIR_NAME);
+}
+function errorMessage2(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function isNotFound2(err) {
+  return typeof err === "object" && err !== null && err.code === "ENOENT";
+}
+async function packNames(dir) {
+  let entries;
+  try {
+    entries = await fs5.readdir(dir);
+  } catch (err) {
+    if (isNotFound2(err)) return [];
+    throw err;
+  }
+  return entries.filter((f) => f.endsWith(".yaml")).map((f) => f.slice(0, -".yaml".length)).filter((n) => PACK_NAME_RE.test(n)).sort();
+}
+function parsePack(raw, file2, expectedName) {
+  const head = PackFileSchema.safeParse(raw);
+  if (!head.success) {
+    const lines = head.error.issues.map((i) => `  - ${i.path.length > 0 ? i.path.join(".") : "(root)"}: ${i.message}`);
+    throw new Error(`Invalid pack at ${file2}:
+${lines.join("\n")}`);
+  }
+  if (head.data.name !== expectedName) {
+    throw new Error(`Invalid pack at ${file2}: name "${head.data.name}" does not match the file name "${expectedName}"`);
+  }
+  let lexicon;
+  try {
+    lexicon = parseLexicon({ version: head.data.version, terms: head.data.terms });
+  } catch (err) {
+    throw new Error(`Invalid pack at ${file2}: ${errorMessage2(err)}`);
+  }
+  const seen = /* @__PURE__ */ new Set();
+  for (const term of lexicon.terms) {
+    const key = term.canonical.toLowerCase();
+    if (seen.has(key)) throw new Error(`Invalid pack at ${file2}: "${term.canonical}" is listed twice`);
+    seen.add(key);
+  }
+  return {
+    name: head.data.name,
+    title: head.data.title,
+    description: head.data.description,
+    version: 1,
+    terms: lexicon.terms.length,
+    aliases: lexicon.terms.reduce((n, t) => n + t.aliases.length, 0),
+    path: file2,
+    lexicon
+  };
+}
+async function loadPack(name, opts = {}) {
+  const dir = packsDir(opts);
+  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, await packNames(dir));
+  const file2 = path5.join(dir, `${name}.yaml`);
+  let text;
+  try {
+    text = await fs5.readFile(file2, "utf8");
+  } catch (err) {
+    if (isNotFound2(err)) throw new PackNotFoundError(name, await packNames(dir));
+    throw err;
+  }
+  let raw;
+  try {
+    raw = (0, import_yaml5.parse)(text);
+  } catch (err) {
+    throw new Error(`Invalid pack at ${file2}: ${errorMessage2(err)}`);
+  }
+  return parsePack(raw, file2, name);
+}
+function info(pack) {
+  const { lexicon: _lexicon, ...rest } = pack;
+  return rest;
+}
+async function listPacks(opts = {}) {
+  const dir = packsDir(opts);
+  const out = [];
+  for (const name of await packNames(dir)) out.push(info(await loadPack(name, opts)));
+  return out;
+}
+function dedupe(values) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const v of values) {
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+function installedPacks(loaded) {
+  return dedupe([...loaded.global.lexicon.settings?.packs ?? [], ...loaded.project?.lexicon.settings?.packs ?? []]);
+}
+async function writePacksSetting(file2, packs, opts) {
+  const settings = { ...file2.lexicon.settings ?? {}, packs };
+  for (const [key, value] of Object.entries(settings)) {
+    if (value === void 0 || Array.isArray(value) && value.length === 0) delete settings[key];
+  }
+  if (Object.keys(settings).length > 0) file2.lexicon.settings = settings;
+  else delete file2.lexicon.settings;
+  await writeLexiconFile(file2);
+  if (file2.scope === "project") await refreshTrust(file2.path, opts);
+}
+async function installPack(name, opts = {}) {
+  const pack = await loadPack(name, opts);
+  const scope = opts.scope ?? "global";
+  const storeOpts2 = { ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {}, ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {} };
+  let added = 0;
+  let merged = 0;
+  let file2;
+  for (const term of pack.lexicon.terms) {
+    const incoming = { ...term, aliases: [...term.aliases], source: "pack" };
+    if (term.never) incoming.never = [...term.never];
+    const result = await addTerm(incoming, { ...storeOpts2, scope });
+    file2 = result.file;
+    if (result.created) added += 1;
+    else merged += 1;
+  }
+  if (!file2) throw new Error(`pack "${name}" has no terms`);
+  const packs = dedupe([...file2.lexicon.settings?.packs ?? [], name]);
+  await writePacksSetting(file2, packs, storeOpts2);
+  return { pack: info(pack), added, merged, path: file2.path, scope };
+}
+
 // src/cli/commands.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync5, promises as fs8, readFileSync as readFileSync2 } from "node:fs";
+import { existsSync as existsSync5, promises as fs9, readFileSync as readFileSync3 } from "node:fs";
 import os2 from "node:os";
-import path10 from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import path11 from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // src/daemon/clipboard-backends.ts
 import { spawn } from "node:child_process";
-import { constants as fsConstants, promises as fs5 } from "node:fs";
-import path5 from "node:path";
+import { constants as fsConstants, promises as fs6 } from "node:fs";
+import path6 from "node:path";
 var ExecError = class extends Error {
   constructor(cmd, exitCode, stderr) {
     super(`${cmd} exited with code ${exitCode ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
@@ -52855,10 +53027,10 @@ async function findOnPath(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? path5.win32 : path5.posix;
+  const p = win ? path6.win32 : path6.posix;
   const exists = opts.exists ?? (async (candidate) => {
     try {
-      await fs5.access(candidate, win ? fsConstants.F_OK : fsConstants.X_OK);
+      await fs6.access(candidate, win ? fsConstants.F_OK : fsConstants.X_OK);
       return true;
     } catch {
       return false;
@@ -52916,12 +53088,12 @@ async function detectClipboardBackend(platform = process.platform, env = process
 }
 
 // src/voice/models.ts
-import { createWriteStream, existsSync as existsSync2, promises as fs6 } from "node:fs";
-import path6 from "node:path";
-import { fileURLToPath } from "node:url";
+import { createWriteStream, existsSync as existsSync2, promises as fs7 } from "node:fs";
+import path7 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 var DEFAULT_MODEL = "base.en";
 var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-var REPO_MODELS_DIR = fileURLToPath(new URL("../../bench/audio/models/", import.meta.url));
+var REPO_MODELS_DIR = fileURLToPath2(new URL("../../bench/audio/models/", import.meta.url));
 function modelFileName(name) {
   return `ggml-${name}.bin`;
 }
@@ -52929,7 +53101,7 @@ function modelUrl(name) {
   return `${MODEL_BASE_URL}/${modelFileName(name)}`;
 }
 function modelsDir(globalPath, env = process.env) {
-  return env.LEXICON_WHISPER_MODELS || path6.join(path6.dirname(globalPath), "models");
+  return env.LEXICON_WHISPER_MODELS || path7.join(path7.dirname(globalPath), "models");
 }
 function isModelPath(value) {
   return value.endsWith(".bin") || value.includes("/") || value.includes("\\") || value.startsWith(".") || value.startsWith("~");
@@ -52937,59 +53109,59 @@ function isModelPath(value) {
 function resolveModel(spec, opts) {
   const exists = opts.exists ?? existsSync2;
   if (isModelPath(spec)) {
-    const abs = path6.resolve(spec.startsWith("~/") ? path6.join(process.env.HOME ?? "", spec.slice(2)) : spec);
-    const base = path6.basename(abs);
+    const abs = path7.resolve(spec.startsWith("~/") ? path7.join(process.env.HOME ?? "", spec.slice(2)) : spec);
+    const base = path7.basename(abs);
     const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
     return { name, path: abs, present: exists(abs) };
   }
   const file2 = modelFileName(spec);
-  const primary = path6.join(modelsDir(opts.globalPath, opts.env), file2);
+  const primary = path7.join(modelsDir(opts.globalPath, opts.env), file2);
   if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
   for (const dir of opts.fallbackDirs ?? [REPO_MODELS_DIR]) {
-    const candidate = path6.join(dir, file2);
+    const candidate = path7.join(dir, file2);
     if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
   return { name: spec, path: primary, present: false, url: modelUrl(spec) };
 }
 
 // src/cli/cli-entry.ts
-import { existsSync as existsSync3, readFileSync, realpathSync } from "node:fs";
-import path7 from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-var PACKAGE_NAME = "@ashlr/lexicon";
+import { existsSync as existsSync3, readFileSync as readFileSync2, realpathSync } from "node:fs";
+import path8 from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+var PACKAGE_NAME2 = "@ashlr/lexicon";
 var CLI_ENV_VAR = "LEXICON_CLI";
 function whichBin(name, env = process.env) {
-  const dirs = (env.PATH ?? "").split(path7.delimiter).filter(Boolean);
+  const dirs = (env.PATH ?? "").split(path8.delimiter).filter(Boolean);
   for (const dir of dirs) {
-    const candidate = path7.join(dir, name);
+    const candidate = path8.join(dir, name);
     if (existsSync3(candidate)) return candidate;
   }
   return void 0;
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function findPackageRoot(from) {
-  let dir = from.startsWith("file:") ? path7.dirname(fileURLToPath2(from)) : path7.resolve(from);
+function findPackageRoot2(from) {
+  let dir = from.startsWith("file:") ? path8.dirname(fileURLToPath3(from)) : path8.resolve(from);
   for (; ; ) {
-    const candidate = path7.join(dir, "package.json");
+    const candidate = path8.join(dir, "package.json");
     try {
-      const parsed = JSON.parse(readFileSync(candidate, "utf8"));
-      if (isRecord3(parsed) && parsed.name === PACKAGE_NAME) return dir;
+      const parsed = JSON.parse(readFileSync2(candidate, "utf8"));
+      if (isRecord4(parsed) && parsed.name === PACKAGE_NAME2) return dir;
     } catch {
     }
-    const parent = path7.dirname(dir);
+    const parent = path8.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function resolveCliEntry(opts = {}) {
-  if (opts.cliPath !== void 0 && opts.cliPath !== "") return path7.resolve(opts.cliPath);
+  if (opts.cliPath !== void 0 && opts.cliPath !== "") return path8.resolve(opts.cliPath);
   const env = opts.env ?? process.env;
   const override = env[CLI_ENV_VAR];
-  if (override !== void 0 && override.trim() !== "") return path7.resolve(override.trim());
-  const root = findPackageRoot(opts.moduleUrl ?? import.meta.url);
-  const built = root ? path7.join(root, "dist", "cli", "index.js") : void 0;
+  if (override !== void 0 && override.trim() !== "") return path8.resolve(override.trim());
+  const root = findPackageRoot2(opts.moduleUrl ?? import.meta.url);
+  const built = root ? path8.join(root, "dist", "cli", "index.js") : void 0;
   if (built && existsSync3(built)) return built;
   const onPath = whichBin("lexicon", env);
   if (onPath) {
@@ -53009,7 +53181,7 @@ function resolveCliEntry(opts = {}) {
 }
 
 // src/cli/serve-paths.ts
-import path8 from "node:path";
+import path9 from "node:path";
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
 var SERVE_LABEL_ENV_VAR = "LEXICON_SERVE_LABEL";
@@ -53018,14 +53190,14 @@ function serveLabel(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : LAUNCH_AGENT_LABEL;
 }
 function launchAgentPath(home, env = process.env) {
-  return path8.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return path9.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return path8.join(home, "Library", "Logs", "lexicon", "serve.log");
+  return path9.join(home, "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  const configHome = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim() !== "" ? env.XDG_CONFIG_HOME : path8.join(home, ".config");
-  return path8.join(configHome, "systemd", "user", SYSTEMD_UNIT_NAME);
+  const configHome = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim() !== "" ? env.XDG_CONFIG_HOME : path9.join(home, ".config");
+  return path9.join(configHome, "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -53044,8 +53216,8 @@ function xmlUnescape2(s) {
 }
 
 // src/voice/process.ts
-import { constants as fsConstants2, existsSync as existsSync4, openSync, promises as fs7 } from "node:fs";
-import path9 from "node:path";
+import { constants as fsConstants2, existsSync as existsSync4, openSync, promises as fs8 } from "node:fs";
+import path10 from "node:path";
 var MAX_OUTPUT2 = 16 * 1024 * 1024;
 var WELL_KNOWN_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 function locateToolSync(names, env = process.env, platform = process.platform) {
@@ -53055,7 +53227,7 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
   ];
   for (const dir of dirs) {
     for (const name of names) {
-      const candidate = path9.join(dir, platform === "win32" ? `${name}.exe` : name);
+      const candidate = path10.join(dir, platform === "win32" ? `${name}.exe` : name);
       if (existsSync4(candidate)) return candidate;
     }
   }
@@ -53236,16 +53408,16 @@ function safeLines(s) {
   return s.split("\n").map(safe).join("\n");
 }
 function resolveCwd(opts) {
-  return path10.resolve(opts.cwd ?? process.cwd());
+  return path11.resolve(opts.cwd ?? process.cwd());
 }
-function errorMessage2(err) {
+function errorMessage3(err) {
   return err instanceof Error ? err.message : String(err);
 }
 function findGitRoot2(start) {
-  let dir = path10.resolve(start);
+  let dir = path11.resolve(start);
   for (; ; ) {
-    if (existsSync5(path10.join(dir, ".git"))) return dir;
-    const parent = path10.dirname(dir);
+    if (existsSync5(path11.join(dir, ".git"))) return dir;
+    const parent = path11.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -53302,7 +53474,7 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? path10.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? path11.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   if (existsSync5(target)) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
     return 0;
@@ -53311,7 +53483,7 @@ async function runInit(opts, io) {
   lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
   const file2 = { path: target, scope, lexicon, exists: false };
   await writeLexiconFile(file2);
-  await fs8.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+  await fs9.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
   line(io, `created ${scope} lexicon: ${safe(target)}`);
   if (scope === "project") {
     await trustProject(target, { cwd });
@@ -53391,35 +53563,35 @@ var LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/
 async function readJsonFile(file2) {
   let raw;
   try {
-    raw = await fs8.readFile(file2, "utf8");
+    raw = await fs9.readFile(file2, "utf8");
   } catch (err) {
     if (typeof err === "object" && err !== null && err.code === "ENOENT") return { exists: false };
-    return { exists: true, error: errorMessage2(err) };
+    return { exists: true, error: errorMessage3(err) };
   }
   try {
     return { exists: true, value: raw.trim() === "" ? {} : JSON.parse(raw) };
   } catch (err) {
-    return { exists: true, error: errorMessage2(err) };
+    return { exists: true, error: errorMessage3(err) };
   }
 }
 function findInstalledLexiconPlugin(settings, installedPlugins) {
   const isLexicon = (id) => /^lexicon@/i.test(id);
-  if (isRecord4(installedPlugins) && isRecord4(installedPlugins.plugins)) {
+  if (isRecord5(installedPlugins) && isRecord5(installedPlugins.plugins)) {
     const id = Object.keys(installedPlugins.plugins).find(isLexicon);
     if (id) return id;
   }
-  if (isRecord4(settings) && isRecord4(settings.enabledPlugins)) {
+  if (isRecord5(settings) && isRecord5(settings.enabledPlugins)) {
     const id = Object.entries(settings.enabledPlugins).find(([k, v]) => isLexicon(k) && v === true)?.[0];
     if (id) return id;
   }
   return void 0;
 }
 function settingsHasLexiconHook(settings, event) {
-  if (!isRecord4(settings) || !isRecord4(settings.hooks)) return false;
+  if (!isRecord5(settings) || !isRecord5(settings.hooks)) return false;
   const groups = settings.hooks[event];
   if (!Array.isArray(groups)) return false;
   return groups.some(
-    (g) => isRecord4(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord4(h) && typeof h.command === "string" && LEXICON_HOOK_COMMAND.test(h.command))
+    (g) => isRecord5(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord5(h) && typeof h.command === "string" && LEXICON_HOOK_COMMAND.test(h.command))
   );
 }
 function defaultExec(file2, args) {
@@ -53428,9 +53600,9 @@ function defaultExec(file2, args) {
 function readCliPackageVersion() {
   for (const rel of ["../../package.json", "../package.json"]) {
     try {
-      const raw = readFileSync2(new URL(rel, import.meta.url), "utf8");
+      const raw = readFileSync3(new URL(rel, import.meta.url), "utf8");
       const parsed = JSON.parse(raw);
-      if (isRecord4(parsed) && parsed.name === "@ashlr/lexicon" && typeof parsed.version === "string") return parsed.version;
+      if (isRecord5(parsed) && parsed.name === "@ashlr/lexicon" && typeof parsed.version === "string") return parsed.version;
     } catch {
     }
   }
@@ -53466,7 +53638,7 @@ async function checkLoginService(probe) {
   }
   let fileExists = false;
   try {
-    const text = await fs8.readFile(file2, "utf8");
+    const text = await fs9.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch {
@@ -53503,7 +53675,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
     }
   } catch (err) {
-    push2("fail", `global lexicon: ${errorMessage2(err)}`);
+    push2("fail", `global lexicon: ${errorMessage3(err)}`);
   }
   if (paths.project) {
     try {
@@ -53519,7 +53691,7 @@ async function runDoctorReport(opts, deps = {}) {
         push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
-      push2("fail", `project lexicon: ${errorMessage2(err)}`);
+      push2("fail", `project lexicon: ${errorMessage3(err)}`);
     }
   } else {
     push2("info", "no project lexicon (.lexicon.yaml) found from " + cwd);
@@ -53571,8 +53743,8 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? path10.join(os2.homedir(), ".claude", "settings.json");
-  const installedPluginsPath = deps.installedPluginsPath ?? path10.join(os2.homedir(), ".claude", "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? path11.join(os2.homedir(), ".claude", "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? path11.join(os2.homedir(), ".claude", "plugins", "installed_plugins.json");
   const settings = await readJsonFile(settingsPath);
   const installed = await readJsonFile(installedPluginsPath);
   if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
@@ -53602,7 +53774,7 @@ async function runDoctorReport(opts, deps = {}) {
       else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
       else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install-claude --apply)");
     } catch (err) {
-      push2("warn", `could not run "claude mcp list": ${errorMessage2(err)}`);
+      push2("warn", `could not run "claude mcp list": ${errorMessage3(err)}`);
     }
   }
   checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os2.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
@@ -53610,7 +53782,7 @@ async function runDoctorReport(opts, deps = {}) {
     const backend = await detectClipboardBackend(platform, env, async (bin) => whichBin(bin, env) !== void 0);
     push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
   } catch (err) {
-    push2("warn", `no clipboard backend found (${errorMessage2(err)})`);
+    push2("warn", `no clipboard backend found (${errorMessage3(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
   const whisperCli = whisperOverride ? existsSync5(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
@@ -53638,7 +53810,7 @@ async function runDoctorReport(opts, deps = {}) {
     versions: { lexicon: readCliPackageVersion(), node: process.version, platform }
   };
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
@@ -53647,11 +53819,11 @@ function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
   return { hooks };
 }
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
-  const base = isRecord4(settings) ? structuredClone(settings) : {};
-  if (base.hooks !== void 0 && !isRecord4(base.hooks)) {
+  const base = isRecord5(settings) ? structuredClone(settings) : {};
+  if (base.hooks !== void 0 && !isRecord5(base.hooks)) {
     throw new Error("settings.hooks is not an object; refusing to overwrite it");
   }
-  const hooks = isRecord4(base.hooks) ? base.hooks : {};
+  const hooks = isRecord5(base.hooks) ? base.hooks : {};
   let changed = false;
   for (const event of events) {
     const existing = hooks[event];
@@ -53660,7 +53832,7 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
     }
     const groups = Array.isArray(existing) ? existing : [];
     const alreadyPresent = groups.some(
-      (g) => isRecord4(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord4(h) && h.command === command)
+      (g) => isRecord5(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord5(h) && h.command === command)
     );
     if (alreadyPresent) continue;
     groups.push({ hooks: [{ type: "command", command, timeout }] });
@@ -53671,17 +53843,17 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
   return { settings: base, changed };
 }
 function resolveIntegrationPaths(cliDir) {
-  const pkgRoot = cliDir === void 0 ? findPackageRoot(import.meta.url) : void 0;
-  const dir = cliDir ?? (pkgRoot ? path10.join(pkgRoot, "dist", "cli") : path10.dirname(fileURLToPath3(import.meta.url)));
-  const root = path10.resolve(dir, "..", "..");
-  const bundledServer = path10.join(root, "plugin", "mcp-server.mjs");
-  const bundledHook = path10.join(root, "plugin", "hook.mjs");
+  const pkgRoot = cliDir === void 0 ? findPackageRoot2(import.meta.url) : void 0;
+  const dir = cliDir ?? (pkgRoot ? path11.join(pkgRoot, "dist", "cli") : path11.dirname(fileURLToPath4(import.meta.url)));
+  const root = path11.resolve(dir, "..", "..");
+  const bundledServer = path11.join(root, "plugin", "mcp-server.mjs");
+  const bundledHook = path11.join(root, "plugin", "hook.mjs");
   if (existsSync5(bundledServer) && existsSync5(bundledHook)) {
     return { server: bundledServer, hook: bundledHook, bundled: true };
   }
   return {
-    server: path10.resolve(dir, "../mcp/server.js"),
-    hook: path10.resolve(dir, "../hooks/user-prompt-submit.js"),
+    server: path11.resolve(dir, "../mcp/server.js"),
+    hook: path11.resolve(dir, "../hooks/user-prompt-submit.js"),
     bundled: false
   };
 }
@@ -53692,7 +53864,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const settingsPath = deps.settingsPath ?? path10.join(os2.homedir(), ".claude", "settings.json");
+  const settingsPath = deps.settingsPath ?? path11.join(os2.homedir(), ".claude", "settings.json");
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", "node", serverPath];
@@ -53708,7 +53880,7 @@ async function runInstallClaude(opts, io, deps = {}) {
       line(io, green(`   ${out || "registered"}`));
     } catch (err) {
       failed = true;
-      line(io, red(`   failed: ${safeLines(errorMessage2(err))}`));
+      line(io, red(`   failed: ${safeLines(errorMessage3(err))}`));
     }
   }
   line(io);
@@ -53720,18 +53892,18 @@ async function runInstallClaude(opts, io, deps = {}) {
     let current = {};
     let existed = false;
     try {
-      const raw = await fs8.readFile(settingsPath, "utf8");
+      const raw = await fs9.readFile(settingsPath, "utf8");
       existed = true;
       current = raw.trim() === "" ? {} : JSON.parse(raw);
     } catch (err) {
       if (!(typeof err === "object" && err !== null && err.code === "ENOENT")) {
-        throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(errorMessage2(err))}`);
+        throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(errorMessage3(err))}`);
       }
     }
     const { settings, changed } = mergeHookIntoSettings(current, hookCommand, 5, HOOK_EVENTS);
     if (changed) {
-      await fs8.mkdir(path10.dirname(settingsPath), { recursive: true });
-      await fs8.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}
+      await fs9.mkdir(path11.dirname(settingsPath), { recursive: true });
+      await fs9.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}
 `, "utf8");
       line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
       deps.onWritten?.(settingsPath, existed ? "updated" : "created");
@@ -53757,8 +53929,8 @@ function indent(s, prefix) {
 }
 
 // src/cli/cmd-import.ts
-import { promises as fs9 } from "node:fs";
-import path11 from "node:path";
+import { promises as fs10 } from "node:fs";
+import path12 from "node:path";
 var SOURCES = ["user", "harvest:repo", "harvest:git", "harvest:package", "import", "learned"];
 var CATEGORIES2 = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
 function parseSource(value) {
@@ -53796,12 +53968,12 @@ async function defaultReadInput(file2, cwd) {
       throw err;
     }
   }
-  const resolved = path11.resolve(cwd, file2);
+  const resolved = path12.resolve(cwd, file2);
   try {
-    const stat = await fs9.stat(resolved);
+    const stat = await fs10.stat(resolved);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved}`);
     if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved, stat.size);
-    return await fs9.readFile(resolved, "utf8");
+    return await fs10.readFile(resolved, "utf8");
   } catch (err) {
     const code = err.code;
     if (code === "ENOENT") throw new Error(`file not found: ${resolved}`);
@@ -53819,7 +53991,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   }
   const source = parseSource(opts.source);
   const category = parseCategory(opts.category);
-  const cwd = path11.resolve(opts.cwd ?? process.cwd());
+  const cwd = path12.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
   const content = await readInput(file2, cwd);
@@ -53827,7 +53999,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
   const result = importLexicon(content, format, {
     ...source ? { source } : {},
-    ...file2 !== "-" ? { filename: path11.basename(file2) } : {}
+    ...file2 !== "-" ? { filename: path12.basename(file2) } : {}
   });
   if (category) {
     for (const term of result.terms) term.category ??= category;
@@ -53895,9 +54067,9 @@ function printReport(report, io) {
 }
 
 // src/cli/cmd-install.ts
-import { promises as fs10 } from "node:fs";
+import { promises as fs11 } from "node:fs";
 import os3 from "node:os";
-import path12 from "node:path";
+import path13 from "node:path";
 var INSTALL_CLIENTS = [
   "claude",
   "codex",
@@ -53921,10 +54093,10 @@ function line2(io, s = "") {
 function indent2(s, prefix) {
   return s.split("\n").map((l) => prefix + l).join("\n");
 }
-function errorMessage3(err) {
+function errorMessage4(err) {
   return err instanceof Error ? err.message : String(err);
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isEnoent(err) {
@@ -53937,33 +54109,33 @@ function resolveServerPath(cliDir) {
   return resolveIntegrationPaths(cliDir).server;
 }
 function appData(ctx) {
-  return ctx.env.APPDATA ?? path12.join(ctx.home, "AppData", "Roaming");
+  return ctx.env.APPDATA ?? path13.join(ctx.home, "AppData", "Roaming");
 }
 function configPathFor(client, ctx) {
   const { home, cwd, platform, project } = ctx;
   switch (client) {
     case "codex":
-      return project ? path12.join(cwd, ".codex", "config.toml") : path12.join(home, ".codex", "config.toml");
+      return project ? path13.join(cwd, ".codex", "config.toml") : path13.join(home, ".codex", "config.toml");
     case "cursor":
-      return project ? path12.join(cwd, ".cursor", "mcp.json") : path12.join(home, ".cursor", "mcp.json");
+      return project ? path13.join(cwd, ".cursor", "mcp.json") : path13.join(home, ".cursor", "mcp.json");
     case "windsurf":
       if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
-      return path12.join(home, ".codeium", "windsurf", "mcp_config.json");
+      return path13.join(home, ".codeium", "windsurf", "mcp_config.json");
     case "gemini":
-      return project ? path12.join(cwd, ".gemini", "settings.json") : path12.join(home, ".gemini", "settings.json");
+      return project ? path13.join(cwd, ".gemini", "settings.json") : path13.join(home, ".gemini", "settings.json");
     case "claude-desktop": {
       if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
       if (platform === "darwin") {
-        return path12.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+        return path13.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
-      if (platform === "win32") return path12.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return path12.join(home, ".config", "Claude", "claude_desktop_config.json");
+      if (platform === "win32") return path13.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return path13.join(home, ".config", "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
-      if (project) return path12.join(cwd, ".vscode", "mcp.json");
-      if (platform === "darwin") return path12.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return path12.join(appData(ctx), "Code", "User", "mcp.json");
-      return path12.join(home, ".config", "Code", "User", "mcp.json");
+      if (project) return path13.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return path13.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return path13.join(appData(ctx), "Code", "User", "mcp.json");
+      return path13.join(home, ".config", "Code", "User", "mcp.json");
     }
   }
 }
@@ -54024,12 +54196,12 @@ function deepEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 function mergeServerIntoJson(current, key, entry) {
-  const base = isRecord5(current) ? structuredClone(current) : {};
+  const base = isRecord6(current) ? structuredClone(current) : {};
   const existingMap = base[key];
-  if (existingMap !== void 0 && !isRecord5(existingMap)) {
+  if (existingMap !== void 0 && !isRecord6(existingMap)) {
     throw new Error(`"${key}" is not an object; refusing to overwrite it`);
   }
-  const servers = isRecord5(existingMap) ? existingMap : {};
+  const servers = isRecord6(existingMap) ? existingMap : {};
   if (deepEqual(servers.lexicon, entry)) {
     return { next: base, changed: false };
   }
@@ -54080,15 +54252,15 @@ ${block}
 }
 async function readText2(file2) {
   try {
-    return { text: await fs10.readFile(file2, "utf8"), existed: true };
+    return { text: await fs11.readFile(file2, "utf8"), existed: true };
   } catch (err) {
     if (isEnoent(err)) return { text: "", existed: false };
-    throw new Error(`could not read ${file2}: ${errorMessage3(err)}`);
+    throw new Error(`could not read ${file2}: ${errorMessage4(err)}`);
   }
 }
 async function writeText(file2, text) {
-  await fs10.mkdir(path12.dirname(file2), { recursive: true });
-  await fs10.writeFile(file2, text, "utf8");
+  await fs11.mkdir(path13.dirname(file2), { recursive: true });
+  await fs11.writeFile(file2, text, "utf8");
 }
 async function applyJson(target) {
   const { text, existed } = await readText2(target.file);
@@ -54097,7 +54269,7 @@ async function applyJson(target) {
     try {
       current = JSON.parse(text);
     } catch (err) {
-      throw new Error(`${target.file} is not valid JSON (${errorMessage3(err)}); fix or remove it first`);
+      throw new Error(`${target.file} is not valid JSON (${errorMessage4(err)}); fix or remove it first`);
     }
   }
   const { next, changed } = mergeServerIntoJson(current, target.key, target.entry);
@@ -54138,8 +54310,8 @@ function printGeneric(io, serverPath) {
 async function runInstall(client, opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? path12.resolve(opts.home) : os3.homedir();
-  const cwd = path12.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? path13.resolve(opts.home) : os3.homedir();
+  const cwd = path13.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
   if (scope !== "user" && scope !== "project") {
@@ -54160,7 +54332,7 @@ async function runInstall(client, opts, io, deps = {}) {
     const claudeOpts = { ...opts, scope: project ? "project" : "user" };
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: path12.join(home, ".claude", "settings.json") } : {},
+      ...opts.home ? { settingsPath: path13.join(home, ".claude", "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {}
     };
     return runInstallClaude(claudeOpts, io, claudeDeps);
@@ -54190,15 +54362,15 @@ async function runInstall(client, opts, io, deps = {}) {
 
 // src/cli/cmd-setup.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
-import { existsSync as existsSync6, promises as fs14 } from "node:fs";
+import { existsSync as existsSync6, promises as fs15 } from "node:fs";
 import os5 from "node:os";
-import path16 from "node:path";
+import path17 from "node:path";
 
 // src/cli/cmd-serve.ts
 import { spawn as spawn2 } from "node:child_process";
-import { promises as fs13 } from "node:fs";
+import { promises as fs14 } from "node:fs";
 import os4 from "node:os";
-import path15 from "node:path";
+import path16 from "node:path";
 
 // node_modules/commander/lib/error.js
 var CommanderError = class extends Error {
@@ -54353,8 +54525,8 @@ function humanReadableArgName(arg) {
 // node_modules/commander/lib/command.js
 import { EventEmitter } from "node:events";
 import childProcess from "node:child_process";
-import path13 from "node:path";
-import fs11 from "node:fs";
+import path14 from "node:path";
+import fs12 from "node:fs";
 import process3 from "node:process";
 import { stripVTControlCharacters as stripVTControlCharacters2 } from "node:util";
 
@@ -56322,7 +56494,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @param {string} subcommandName
    */
   _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-    if (fs11.existsSync(executableFile)) return;
+    if (fs12.existsSync(executableFile)) return;
     const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
     const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -56339,11 +56511,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
     args = args.slice();
     const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
     function findFile(baseDir, baseName) {
-      const localBin = path13.resolve(baseDir, baseName);
-      if (fs11.existsSync(localBin)) return localBin;
-      if (sourceExt.includes(path13.extname(baseName))) return void 0;
+      const localBin = path14.resolve(baseDir, baseName);
+      if (fs12.existsSync(localBin)) return localBin;
+      if (sourceExt.includes(path14.extname(baseName))) return void 0;
       const foundExt = sourceExt.find(
-        (ext) => fs11.existsSync(`${localBin}${ext}`)
+        (ext) => fs12.existsSync(`${localBin}${ext}`)
       );
       if (foundExt) return `${localBin}${foundExt}`;
       return void 0;
@@ -56355,21 +56527,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
     if (this._scriptPath) {
       let resolvedScriptPath;
       try {
-        resolvedScriptPath = fs11.realpathSync(this._scriptPath);
+        resolvedScriptPath = fs12.realpathSync(this._scriptPath);
       } catch {
         resolvedScriptPath = this._scriptPath;
       }
-      executableDir = path13.resolve(
-        path13.dirname(resolvedScriptPath),
+      executableDir = path14.resolve(
+        path14.dirname(resolvedScriptPath),
         executableDir
       );
     }
     if (executableDir) {
       let localFile = findFile(executableDir, executableFile);
       if (!localFile && !subcommand._executableFile && this._scriptPath) {
-        const legacyName = path13.basename(
+        const legacyName = path14.basename(
           this._scriptPath,
-          path13.extname(this._scriptPath)
+          path14.extname(this._scriptPath)
         );
         if (legacyName !== this._name) {
           localFile = findFile(
@@ -56380,7 +56552,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
       }
       executableFile = localFile || executableFile;
     }
-    const launchWithNode = sourceExt.includes(path13.extname(executableFile));
+    const launchWithNode = sourceExt.includes(path14.extname(executableFile));
     let proc;
     if (process3.platform !== "win32") {
       if (launchWithNode) {
@@ -57297,7 +57469,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @return {Command}
    */
   nameFromFilename(filename) {
-    this._name = path13.basename(filename, path13.extname(filename));
+    this._name = path14.basename(filename, path14.extname(filename));
     return this;
   }
   /**
@@ -57311,9 +57483,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @param {string} [path]
    * @return {(string|null|Command)}
    */
-  executableDir(path17) {
-    if (path17 === void 0) return this._executableDir;
-    this._executableDir = path17;
+  executableDir(path18) {
+    if (path18 === void 0) return this._executableDir;
+    this._executableDir = path18;
     return this;
   }
   /**
@@ -57570,13 +57742,13 @@ var program = new Command();
 
 // src/serve/config.ts
 import { randomBytes } from "node:crypto";
-import { promises as fs12 } from "node:fs";
-import path14 from "node:path";
+import { promises as fs13 } from "node:fs";
+import path15 from "node:path";
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
 var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
 function getServePath(opts = {}) {
-  return path14.join(path14.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
+  return path15.join(path15.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
 }
 function parseServeConfig(raw) {
   if (typeof raw !== "object" || raw === null) return void 0;
@@ -57596,7 +57768,7 @@ function parseServeConfig(raw) {
 async function readServeConfig(opts = {}) {
   let text;
   try {
-    text = await fs12.readFile(getServePath(opts), "utf8");
+    text = await fs13.readFile(getServePath(opts), "utf8");
   } catch {
     return void 0;
   }
@@ -57608,12 +57780,12 @@ async function readServeConfig(opts = {}) {
 }
 async function writeServeConfig(config2, opts = {}) {
   const target = getServePath(opts);
-  await fs12.mkdir(path14.dirname(target), { recursive: true });
+  await fs13.mkdir(path15.dirname(target), { recursive: true });
   const tmp = `${target}.tmp`;
-  await fs12.writeFile(tmp, `${JSON.stringify(config2, null, 2)}
+  await fs13.writeFile(tmp, `${JSON.stringify(config2, null, 2)}
 `, { encoding: "utf8", mode: 384 });
-  await fs12.chmod(tmp, 384);
-  await fs12.rename(tmp, target);
+  await fs13.chmod(tmp, 384);
+  await fs13.rename(tmp, target);
   return target;
 }
 function generateToken() {
@@ -57662,13 +57834,17 @@ var AddBody = external_exports.object({
   scope: external_exports.enum(TERM_SCOPES).optional(),
   cwd: CwdField
 });
+var PackBody = external_exports.object({
+  scope: external_exports.enum(TERM_SCOPES).optional(),
+  cwd: CwdField
+});
 
 // src/cli/cmd-serve.ts
 function line3(io, s = "") {
   io.stdout(`${s}
 `);
 }
-function errorMessage4(err) {
+function errorMessage5(err) {
   return err instanceof Error ? err.message : String(err);
 }
 function storeOpts(opts) {
@@ -57681,7 +57857,7 @@ var defaultServeExec = (cmd, args) => new Promise((resolve2) => {
   try {
     child = spawn2(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
-    resolve2({ code: null, stdout: "", stderr: errorMessage4(err) });
+    resolve2({ code: null, stdout: "", stderr: errorMessage5(err) });
     return;
   }
   child.stdout?.setEncoding("utf8").on("data", (d) => {
@@ -57762,13 +57938,13 @@ async function runServeInstall(opts, io, deps = {}) {
   try {
     cliPath = resolveCliEntry({ env, ...deps.cliPath !== void 0 ? { cliPath: deps.cliPath } : {} });
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage4(err))}
+    io.stderr(`lexicon: ${safeLines(errorMessage5(err))}
 `);
     return 1;
   }
   if (platform === "darwin" || platform === "linux") {
     try {
-      await fs13.access(cliPath);
+      await fs14.access(cliPath);
     } catch {
       io.stderr(
         `lexicon: refusing to install the login service: ${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js); nothing was written
@@ -57782,9 +57958,9 @@ async function runServeInstall(opts, io, deps = {}) {
     const label = serveLabel(env);
     const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
-    await fs13.mkdir(path15.dirname(plistPath), { recursive: true });
-    await fs13.mkdir(path15.dirname(logPath), { recursive: true });
-    await fs13.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), "utf8");
+    await fs14.mkdir(path16.dirname(plistPath), { recursive: true });
+    await fs14.mkdir(path16.dirname(logPath), { recursive: true });
+    await fs14.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), "utf8");
     line3(io, `wrote ${safe(plistPath)}`);
     line3(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     line3(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
@@ -57803,8 +57979,8 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
-    await fs13.mkdir(path15.dirname(unitPath), { recursive: true });
-    await fs13.writeFile(unitPath, systemdUnit(nodePath, cliPath), "utf8");
+    await fs14.mkdir(path16.dirname(unitPath), { recursive: true });
+    await fs14.writeFile(unitPath, systemdUnit(nodePath, cliPath), "utf8");
     line3(io, `wrote ${safe(unitPath)}`);
     line3(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
@@ -57839,7 +58015,7 @@ var HARVEST_LIMIT2 = 10;
 var HARVEST_MIN_COUNT2 = 5;
 var SEEDED_TERMS = 3;
 var { bold: bold4, dim: dim4 } = styler(process.stdout);
-function errorMessage5(err) {
+function errorMessage6(err) {
   return err instanceof Error ? err.message : String(err);
 }
 function captureIO() {
@@ -57860,7 +58036,7 @@ function lastLine(text) {
   return lines[lines.length - 1] ?? "";
 }
 function tildify(p, home) {
-  return p.startsWith(home + path16.sep) ? `~${p.slice(home.length)}` : p;
+  return p.startsWith(home + path17.sep) ? `~${p.slice(home.length)}` : p;
 }
 function isSetupClient(value) {
   return SETUP_CLIENTS.includes(value);
@@ -57880,11 +58056,23 @@ function parseClientList(value) {
   }
   return out;
 }
+function parsePackList(value, available) {
+  const out = [];
+  for (const raw of value.split(",")) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === "none") continue;
+    if (!available.includes(name)) {
+      throw new Error(`unknown pack "${raw.trim()}" (expected one of: ${available.join(", ")}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
 function findGitRoot3(start, exists) {
-  let dir = path16.resolve(start);
+  let dir = path17.resolve(start);
   for (; ; ) {
-    if (exists(path16.join(dir, ".git"))) return dir;
-    const parent = path16.dirname(dir);
+    if (exists(path17.join(dir, ".git"))) return dir;
+    const parent = path17.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -57900,7 +58088,7 @@ function suggestCompany(packageName, remoteUrl) {
 }
 async function readPackageName(cwd) {
   try {
-    const raw = await fs14.readFile(path16.join(cwd, "package.json"), "utf8");
+    const raw = await fs15.readFile(path17.join(cwd, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
     return typeof pkg.name === "string" ? pkg.name : void 0;
   } catch {
@@ -57931,9 +58119,9 @@ var CLI_NAMES = {
   windsurf: "windsurf"
 };
 function configDirFor(client, ctx) {
-  if (client === "claude") return path16.join(ctx.home, ".claude");
+  if (client === "claude") return path17.join(ctx.home, ".claude");
   const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
-  return client === "vscode" ? path16.dirname(path16.dirname(file2)) : path16.dirname(file2);
+  return client === "vscode" ? path17.dirname(path17.dirname(file2)) : path17.dirname(file2);
 }
 async function detectClients(deps = {}, cwd = process.cwd()) {
   const ctx = {
@@ -57949,7 +58137,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
     const dir = configDirFor(name, ctx);
     if (ctx.exists(dir)) evidence = dir;
     if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
-      const bundle = path16.join("/Applications", APP_BUNDLES[name]);
+      const bundle = path17.join("/Applications", APP_BUNDLES[name]);
       if (ctx.exists(bundle)) evidence = bundle;
     }
     if (!evidence && CLI_NAMES[name]) {
@@ -58085,8 +58273,86 @@ async function stepLexicon(ctx) {
     await seedTerm(ctx, extra);
   }
 }
+async function stepPacks(ctx) {
+  stepHeading(ctx, 2, "Starter packs");
+  if (ctx.opts.packs === false) {
+    ctx.say(dim4("   skipped (--no-packs)"));
+    return;
+  }
+  let available;
+  try {
+    available = await (ctx.deps.listPacks ?? listPacks)();
+  } catch (err) {
+    ctx.warn(`   could not read the packs: ${safeLines(errorMessage6(err))}`);
+    return;
+  }
+  if (available.length === 0) {
+    ctx.say(dim4("   no packs shipped with this install"));
+    return;
+  }
+  const byName = new Map(available.map((p) => [p.name, p]));
+  const describe3 = (name) => {
+    const p = byName.get(name);
+    return p ? `${name} ${dim4(`(${p.terms} terms)`)}` : name;
+  };
+  const explicit = typeof ctx.opts.packs === "string" ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : void 0;
+  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name));
+  if (ctx.plan) {
+    const chosen2 = explicit ?? [...defaults];
+    ctx.plan.wouldInstallPacks = chosen2;
+    if (chosen2.length === 0) {
+      ctx.say(dim4("   would install: none"));
+      return;
+    }
+    ctx.say(`   would install: ${chosen2.map(describe3).join(", ")}`);
+    if (explicit === void 0) ctx.say(dim4("   (the defaults; pass --packs <list> to install them without a terminal)"));
+    for (const name of chosen2) {
+      try {
+        ctx.packCanonicals.push(...(await loadPack(name)).lexicon.terms.map((t) => t.canonical));
+      } catch {
+      }
+    }
+    return;
+  }
+  let chosen;
+  if (explicit !== void 0) {
+    chosen = explicit;
+    if (chosen.length === 0) {
+      ctx.say(dim4("   skipped (--packs none)"));
+      return;
+    }
+  } else if (ctx.prompter) {
+    chosen = await ctx.prompter.choose(
+      "   add starter packs to the global lexicon (Enter keeps the checked ones):",
+      defaults.map((name) => ({ label: `${name}  ${dim4(safe(`${byName.get(name)?.title ?? ""}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
+      { multi: true }
+    );
+    for (const p of available) {
+      if (defaults.includes(p.name)) continue;
+      if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
+    }
+    if (chosen.length === 0) {
+      ctx.say(dim4("   skipped; later: lexicon pack add developer"));
+      return;
+    }
+  } else {
+    ctx.say(dim4(`   skipped (not requested); add --packs ${defaults.join(",")} to install the defaults, or later: lexicon pack add <name>`));
+    return;
+  }
+  const installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+  const install = ctx.deps.installPack ?? installPack;
+  for (const name of chosen) {
+    if (installed.includes(name)) {
+      ctx.say(dim4(`   already installed: ${name}`));
+      continue;
+    }
+    const result = await install(name, { cwd: ctx.cwd, scope: "global" });
+    ctx.summary.packs.push({ name, added: result.added, merged: result.merged });
+    ctx.say(`   installed ${bold4(name)}: ${result.added} added, ${result.merged} merged`);
+  }
+}
 async function stepHarvest(ctx) {
-  stepHeading(ctx, 2, "Repo harvest");
+  stepHeading(ctx, 3, "Repo harvest");
   if (ctx.opts.harvest === false) {
     ctx.say(dim4("   skipped (--no-harvest)"));
     return;
@@ -58105,10 +58371,10 @@ async function stepHarvest(ctx) {
   try {
     candidates = await harvest(root, { limit: HARVEST_LIMIT2, minCount: HARVEST_MIN_COUNT2 });
   } catch (err) {
-    ctx.warn(`   harvest failed: ${safeLines(errorMessage5(err))}`);
+    ctx.warn(`   harvest failed: ${safeLines(errorMessage6(err))}`);
     return;
   }
-  const covered = [...await globalCanonicals(ctx), ...ctx.seeded, ...ctx.plan?.wouldSeed ?? []];
+  const covered = [...await globalCanonicals(ctx), ...ctx.seeded, ...ctx.plan?.wouldSeed ?? [], ...ctx.packCanonicals];
   const skipped = candidates.filter((c) => covered.some((name) => sameName(name, c.canonical)));
   candidates = candidates.filter((c) => !skipped.includes(c));
   if (skipped.length > 0) ctx.say(dim4(`   already in the global lexicon: ${safe(skipped.map((c) => c.canonical).join(", "))}`));
@@ -58119,7 +58385,7 @@ async function stepHarvest(ctx) {
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
     ctx.say(
-      `   would add ${candidates.length} name${candidates.length === 1 ? "" : "s"} to ${safe(path16.join(tildify(root, ctx.home), ".lexicon.yaml"))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`
+      `   would add ${candidates.length} name${candidates.length === 1 ? "" : "s"} to ${safe(path17.join(tildify(root, ctx.home), ".lexicon.yaml"))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`
     );
     return;
   }
@@ -58127,7 +58393,7 @@ async function stepHarvest(ctx) {
     ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
     ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
-    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path16.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, true)) {
+    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path17.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, true)) {
       ctx.say(dim4("   skipped; pick them one by one later with: lexicon harvest --add"));
       return;
     }
@@ -58155,7 +58421,7 @@ async function stepHarvest(ctx) {
   ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2 ?? root, ctx.home))} (trusted)`);
 }
 async function stepClients(ctx) {
-  stepHeading(ctx, 3, "Agent clients");
+  stepHeading(ctx, 4, "Agent clients");
   if (ctx.plan) {
     const detected = (await detectClients({ ...ctx.deps, home: ctx.home }, ctx.cwd)).filter((c) => c.detected);
     ctx.plan.detectedClients = detected.map((c) => c.name);
@@ -58214,7 +58480,7 @@ async function stepClients(ctx) {
       detail = written.length > 0 ? written.join(", ") : lastLine(captured.out) || lastLine(captured.err);
     } catch (err) {
       code = 1;
-      detail = errorMessage5(err);
+      detail = errorMessage6(err);
     }
     if (code === 0) {
       ctx.summary.clients.push({ name: client, status: "installed", detail });
@@ -58228,7 +58494,7 @@ async function stepClients(ctx) {
   }
 }
 async function stepServe(ctx) {
-  stepHeading(ctx, 4, "Local API (lexicon serve)");
+  stepHeading(ctx, 5, "Local API (lexicon serve)");
   if (ctx.opts.serve === false) {
     ctx.say(dim4("   skipped (--no-serve)"));
     return;
@@ -58259,14 +58525,14 @@ async function stepServe(ctx) {
   const install = ctx.deps.installServe ?? runServeInstall;
   const serveDeps = { platform: ctx.platform, env: ctx.env };
   if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  if (ctx.deps.cliDir) serveDeps.cliPath = path16.join(ctx.deps.cliDir, "index.js");
+  if (ctx.deps.cliDir) serveDeps.cliPath = path17.join(ctx.deps.cliDir, "index.js");
   const captured = captureIO();
   let code;
   try {
     code = await install({ cwd: ctx.cwd }, captured, serveDeps);
   } catch (err) {
     code = 1;
-    captured.err += `${errorMessage5(err)}
+    captured.err += `${errorMessage6(err)}
 `;
   }
   if (code === 0) {
@@ -58279,7 +58545,7 @@ async function stepServe(ctx) {
   }
 }
 async function stepExport(ctx) {
-  stepHeading(ctx, 5, "Dictation app");
+  stepHeading(ctx, 6, "Dictation app");
   let app;
   if (ctx.opts.app !== void 0) {
     const value = ctx.opts.app.trim().toLowerCase();
@@ -58299,9 +58565,9 @@ async function stepExport(ctx) {
     return;
   }
   const format = app;
-  const desktop = path16.join(ctx.home, "Desktop");
-  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path16.dirname(ctx.summary.lexiconPath));
-  const file2 = path16.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  const desktop = path17.join(ctx.home, "Desktop");
+  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path17.dirname(ctx.summary.lexiconPath));
+  const file2 = path17.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
   if (ctx.plan) {
     ctx.plan.wouldExport.push({ format, path: file2 });
     ctx.say(`   would write ${safe(tildify(file2, ctx.home))} for ${APP_LABELS[app].label}`);
@@ -58309,8 +58575,8 @@ async function stepExport(ctx) {
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd });
   const text = exportLexicon(loaded.merged, format);
-  await fs14.mkdir(dir, { recursive: true });
-  await fs14.writeFile(file2, text, "utf8");
+  await fs15.mkdir(dir, { recursive: true });
+  await fs15.writeFile(file2, text, "utf8");
   ctx.summary.exports.push({ format, path: file2 });
   ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${loaded.merged.terms.length} terms)`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
@@ -58320,6 +58586,7 @@ function printPlan(ctx, p) {
   ctx.say(bold4("Plan (nothing written)."));
   ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? "" : dim4(" (would be created)")}`);
   ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(", ")) : dim4("nothing")}`);
+  ctx.say(`   would install packs: ${p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(", ") : dim4("none")}`);
   ctx.say(`   would harvest: ${p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(", ")) : dim4("nothing")}`);
   ctx.say(`   detected clients: ${p.detectedClients.length > 0 ? p.detectedClients.join(", ") : dim4("none")}`);
   ctx.say(`   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(", ") : dim4("none")}`);
@@ -58334,6 +58601,7 @@ function printSummary(ctx) {
   ctx.say(bold4("Done."));
   ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(", ")) : dim4("none")}`);
+  ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(", ") : dim4("none")}`);
   const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
   const failed = s.clients.filter((c) => c.status === "failed").map((c) => c.name);
   ctx.say(
@@ -58349,12 +58617,13 @@ function printSummary(ctx) {
   ctx.say("   3. Local push-to-talk: lexicon voice --list-devices, then lexicon voice --copy.");
 }
 async function runSetup(opts, io, deps = {}) {
-  const cwd = path16.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? path16.resolve(opts.home) : deps.home ?? os5.homedir();
+  const cwd = path17.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? path17.resolve(opts.home) : deps.home ?? os5.homedir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
   }
+  if (typeof opts.packs === "string") parsePackList(opts.packs, (await (deps.listPacks ?? listPacks)()).map((p) => p.name));
   const interactive = !opts.yes && !opts.json && !opts.dryRun && (deps.isInteractive ?? isInteractive)();
   const ownPrompter = interactive && !deps.createPrompter;
   const prompter = interactive ? (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))() : void 0;
@@ -58379,7 +58648,8 @@ async function runSetup(opts, io, deps = {}) {
     exists: deps.exists ?? existsSync6,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
-    summary: { lexiconPath: "", termsAdded: [], clients: [], serve: "skipped", exports: [] }
+    packCanonicals: [],
+    summary: { lexiconPath: "", termsAdded: [], packs: [], clients: [], serve: "skipped", exports: [] }
   };
   if (prompter) ctx.prompter = prompter;
   if (opts.dryRun) {
@@ -58388,6 +58658,7 @@ async function runSetup(opts, io, deps = {}) {
       lexiconPath: "",
       lexiconExists: false,
       wouldSeed: [],
+      wouldInstallPacks: [],
       wouldHarvest: [],
       detectedClients: [],
       wouldInstallClients: [],
@@ -58400,6 +58671,8 @@ async function runSetup(opts, io, deps = {}) {
   say();
   try {
     await stepLexicon(ctx);
+    say();
+    await stepPacks(ctx);
     say();
     await stepHarvest(ctx);
     say();
@@ -58435,7 +58708,7 @@ function bufferIO() {
     err: () => err
   };
 }
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", "vscode", "claude-desktop"];
@@ -58490,14 +58763,15 @@ var SERVER_INSTRUCTIONS = [
   "If a word looks like a garbled name and normalize_transcript did not change it, call suggest_canonical before guessing.",
   "Never rewrite text inside code blocks, inline code, file paths, URLs or emails.",
   "If the lexicon is empty, offer to set it up: ask for the company/product spelling, the user's own name and the clients in use, then call setup_lexicon (or use the onboard prompt).",
-  "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted harvest and serve do nothing.",
+  "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.",
+  "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
   "When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.",
   "Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
 ].join("\n");
 function log(...args) {
   console.error(`[${SERVER_NAME}]`, ...args);
 }
-function errorMessage6(err) {
+function errorMessage7(err) {
   if (err instanceof Error) return err.message;
   return String(err);
 }
@@ -58505,11 +58779,11 @@ function findPackage() {
   for (const rel of ["../../package.json", "../package.json"]) {
     try {
       const url2 = new URL(rel, import.meta.url);
-      const raw = readFileSync3(url2, "utf8");
+      const raw = readFileSync4(url2, "utf8");
       const parsed = JSON.parse(raw);
-      if (!isRecord6(parsed)) continue;
+      if (!isRecord7(parsed)) continue;
       if (parsed.name === "@ashlr/lexicon" && typeof parsed.version === "string") {
-        return { root: dirname(fileURLToPath4(url2)), version: parsed.version };
+        return { root: dirname(fileURLToPath5(url2)), version: parsed.version };
       }
     } catch {
     }
@@ -58531,7 +58805,7 @@ function textResult(payload) {
   return { isError: false, content: [{ type: "text", text }] };
 }
 function errorResult(err) {
-  const message = errorMessage6(err);
+  const message = errorMessage7(err);
   log("tool error:", message);
   return { isError: true, content: [{ type: "text", text: message }] };
 }
@@ -58588,7 +58862,7 @@ function createServer2(opts = {}) {
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
         await recordHits(canonicals, { cwd }).catch(
-          (err) => log("recordHits failed:", errorMessage6(err))
+          (err) => log("recordHits failed:", errorMessage7(err))
         );
       }
       return textResult({
@@ -58693,8 +58967,8 @@ function createServer2(opts = {}) {
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon.")
       }
     },
-    async ({ path: path17, limit, minCount, add }) => guarded(async () => {
-      const root = path17 ? resolve(cwd, path17) : cwd;
+    async ({ path: path18, limit, minCount, add }) => guarded(async () => {
+      const root = path18 ? resolve(cwd, path18) : cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -58717,7 +58991,7 @@ function createServer2(opts = {}) {
             added += 1;
           } catch (err) {
             if (isProjectTrustError(err)) throw err;
-            failures.push({ canonical: c.canonical, error: errorMessage6(err) });
+            failures.push({ canonical: c.canonical, error: errorMessage7(err) });
           }
         }
       }
@@ -58854,8 +59128,8 @@ function createServer2(opts = {}) {
         path: external_exports.string().optional().describe("Lexicon file to act on. Defaults to the project .lexicon.yaml resolved from the server working directory.")
       }
     },
-    async ({ action, path: path17 }) => guarded(async () => {
-      const filePath = path17 ? resolve(cwd, path17) : resolvePaths({ cwd }).project;
+    async ({ action, path: path18 }) => guarded(async () => {
+      const filePath = path18 ? resolve(cwd, path18) : resolvePaths({ cwd }).project;
       const registry2 = getTrustPath({ cwd });
       if (action === "status") {
         const base = { action, registry: registry2, trustAll: trustAllEnabled(), trusted: await listTrusted({ cwd }) };
@@ -58864,7 +59138,7 @@ function createServer2(opts = {}) {
         try {
           file3 = await readLexiconFile(filePath, "project");
         } catch (err) {
-          return textResult({ ...base, path: filePath, status: "invalid", error: errorMessage6(err) });
+          return textResult({ ...base, path: filePath, status: "invalid", error: errorMessage7(err) });
         }
         if (!file3.exists) return textResult({ ...base, path: filePath, status: "missing" });
         const status = await isTrusted(file3, { cwd });
@@ -58885,7 +59159,7 @@ function createServer2(opts = {}) {
       try {
         file2 = await readLexiconFile(filePath, "project");
       } catch (err) {
-        throw new Error(`refusing to trust an invalid lexicon: ${errorMessage6(err)}`);
+        throw new Error(`refusing to trust an invalid lexicon: ${errorMessage7(err)}`);
       }
       if (!file2.exists) throw new Error(`file does not exist: ${filePath}`);
       const before = await isTrusted(file2, { cwd });
@@ -58918,11 +59192,11 @@ function createServer2(opts = {}) {
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")
       }
     },
-    async ({ path: path17, content, format, scope, dryRun }) => guarded(async () => {
-      if (path17 === void 0 && content === void 0) throw new Error("pass path or content");
+    async ({ path: path18, content, format, scope, dryRun }) => guarded(async () => {
+      if (path18 === void 0 && content === void 0) throw new Error("pass path or content");
       const io = bufferIO();
       const code = await runImport(
-        path17 ?? "-",
+        path18 ?? "-",
         { cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
         io,
         content !== void 0 ? async () => content : void 0
@@ -58936,7 +59210,7 @@ function createServer2(opts = {}) {
         report = { output: out };
       }
       const stderr = io.err().trim();
-      return textResult(isRecord6(report) ? { ...report, ...stderr ? { stderr } : {} } : report);
+      return textResult(isRecord7(report) ? { ...report, ...stderr ? { stderr } : {} } : report);
     })
   );
   server.registerTool(
@@ -58953,7 +59227,7 @@ function createServer2(opts = {}) {
       const root = cwdArg ? resolve(cwd, cwdArg) : cwd;
       const loaded = await loadLexicon({ cwd: root });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
-        log("loadVoiceHistory failed:", errorMessage6(err));
+        log("loadVoiceHistory failed:", errorMessage7(err));
         return [];
       });
       const suggestions = await suggestTerms({ loaded, history, cwd: root, ...limit !== void 0 ? { limit } : {} });
@@ -59008,17 +59282,18 @@ function createServer2(opts = {}) {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
         clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
+        packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in wouldInstallPacks so you can ask)."),
         harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml (and trust it). Only after the user agreed; omitted = not harvested."),
         serve: external_exports.boolean().optional().describe("true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.")
       }
     },
-    async ({ company, person, clients, harvest, serve, apply }) => guarded(async () => {
+    async ({ company, person, clients, packs, harvest, serve, apply }) => guarded(async () => {
       const io = bufferIO();
       const cliDir = cliDirForInstall();
       const applied = apply === true;
@@ -59031,6 +59306,9 @@ function createServer2(opts = {}) {
         // runSetup takes the CLI's comma-separated form. Omitted means "none" here, never
         // "every detected client": the plan names the detected ones and the model asks.
         clients: clients !== void 0 && clients.length > 0 ? clients.join(",") : "none",
+        // Same for the starter packs: only an explicit list installs any (runSetup with yes
+        // and no --packs installs none); omitted leaves the plan's default set for the model to offer.
+        ...packs !== void 0 ? { packs: packs.length > 0 ? packs.join(",") : "none" } : {},
         // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
         serve: serve === true,
         // So is the harvest (a project write plus a trust decision). The plan lists the
@@ -59051,6 +59329,45 @@ function createServer2(opts = {}) {
     })
   );
   server.registerTool(
+    "list_packs",
+    {
+      title: "List the starter term packs",
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      inputSchema: {}
+    },
+    async () => guarded(async () => {
+      const [packs, loaded] = await Promise.all([listPacks(), load()]);
+      const installed = installedPacks(loaded);
+      return textResult({
+        packs: packs.map((p) => ({ name: p.name, title: p.title, description: p.description, terms: p.terms, aliases: p.aliases, installed: installed.includes(p.name) })),
+        installed
+      });
+    })
+  );
+  server.registerTool(
+    "add_pack",
+    {
+      title: "Install a starter term pack",
+      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`.",
+      inputSchema: {
+        name: external_exports.string().regex(/^[a-z0-9-]+$/).describe("Pack name from list_packs, e.g. developer."),
+        scope: external_exports.enum(TERM_SCOPES2).optional().describe("'global' (default) or 'project'.")
+      }
+    },
+    async ({ name, scope }) => guarded(async () => {
+      const result = await installPack(name, { cwd, ...scope !== void 0 ? { scope } : {} });
+      return textResult({
+        name: result.pack.name,
+        title: result.pack.title,
+        added: result.added,
+        merged: result.merged,
+        path: result.path,
+        scope: result.scope,
+        summary: `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? "" : "s"}, ${result.merged} merged into ${result.path}`
+      });
+    })
+  );
+  server.registerTool(
     "serve_status",
     {
       title: "Local API status",
@@ -59062,12 +59379,12 @@ function createServer2(opts = {}) {
         const res = await fetch(SERVE_HEALTH_URL, { signal: AbortSignal.timeout(1500) });
         if (!res.ok) return textResult({ up: false, url: SERVE_HEALTH_URL, status: res.status });
         const body = await res.json();
-        return textResult({ up: true, url: SERVE_HEALTH_URL, ...isRecord6(body) ? body : { body } });
+        return textResult({ up: true, url: SERVE_HEALTH_URL, ...isRecord7(body) ? body : { body } });
       } catch (err) {
         return textResult({
           up: false,
           url: SERVE_HEALTH_URL,
-          error: errorMessage6(err),
+          error: errorMessage7(err),
           hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
         });
       }
@@ -59159,14 +59476,14 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return realpathSync2(resolve(entry)) === realpathSync2(fileURLToPath4(import.meta.url));
+    return realpathSync2(resolve(entry)) === realpathSync2(fileURLToPath5(import.meta.url));
   } catch {
     return false;
   }
 }
 if (isMainModule()) {
   main().catch((err) => {
-    log("fatal:", errorMessage6(err));
+    log("fatal:", errorMessage7(err));
     process.exit(1);
   });
 }

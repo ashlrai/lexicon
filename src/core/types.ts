@@ -20,7 +20,8 @@ export type TermSource =
   | 'harvest:git'
   | 'harvest:package'
   | 'import'
-  | 'learned';
+  | 'learned'
+  | 'pack';
 
 export interface Term {
   /** The correct spelling the user wants to see. e.g. "Ashlr.AI" */
@@ -65,6 +66,11 @@ export interface LexiconSettings {
   protectedWords?: string[];
   /** Skip text inside `code spans`, ```fences```, URLs and emails. Default true. */
   skipCode?: boolean;
+  /**
+   * Names of the starter packs installed into this file (`lexicon pack add`).
+   * Maintained by core/packs.ts; `installedPacks()` reads it.
+   */
+  packs?: string[];
 }
 
 export interface Lexicon {

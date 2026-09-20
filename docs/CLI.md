@@ -33,6 +33,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon suggest [options]`](#lexicon-suggest) | suggest aliases, new terms, never-words and stale terms from your voice history |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
+| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools): list, add, remove, show |
 
 ## `lexicon`
 
@@ -73,6 +74,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
+  pack                                    starter term packs (developer, ai, business, voice-tools): list, add, remove, show
   help [command]                          display help for command
 ```
 
@@ -454,6 +456,10 @@ Options:
   --export-dir <dir>  where to write the dictation export (default: ~/Desktop)
   --harvest           add the repo names to the project lexicon (with --yes it
                       is skipped unless this is passed)
+  --packs <list>      comma-separated starter packs to install, or none
+                      (default: a checklist on a terminal, nothing with --yes;
+                      one of developer, ai, business, voice-tools)
+  --no-packs          skip the starter packs (no prompt)
   --no-harvest        skip the repo harvest (no prompt)
   --serve             install the local API login service (with --yes it is
                       skipped unless this is passed)
@@ -516,4 +522,24 @@ afterwards
 Options:
   --project   open the project .lexicon.yaml instead of the global file
   -h, --help  display help for command
+```
+
+## `lexicon pack`
+
+```text
+Usage: lexicon pack [options] [command]
+
+starter term packs (developer, ai, business, voice-tools): list, add, remove,
+show
+
+Options:
+  -h, --help                  display help for command
+
+Commands:
+  list|ls [options]           list the available packs and which are installed
+  add [options] <name...>     install one or more packs into the global lexicon
+                              (existing terms only gain aliases)
+  remove|rm [options] <name>  remove a pack; terms you edited since (hits, extra
+                              aliases) are kept
+  show [options] <name>       print the terms and aliases a pack contains
 ```
