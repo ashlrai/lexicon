@@ -72,10 +72,23 @@ final class FixEngine: @unchecked Sendable {
         ax.async { [self] in
             let wasEnabled = self.config.enabled
             self.config = config
+            // The watcher gates its own reads, so it needs the list too, and it
+            // needs it before anything below looks at `field`: excluding the
+            // app that has focus right now has to drop the cached text there
+            // and here in the same breath.
+            watcher.setExclusions(config.exclusions)
             detector?.config = detectorConfig
             if wasEnabled, !config.enabled { detector = nil; settleGeneration += 1 }
             if !wasEnabled, config.enabled, let field {
-                detector = makeDetector(for: field, value: AX.value(field.element) ?? "")
+                // Refusal first, read second: the config that just arrived may
+                // be the one that excludes this very app.
+                let read = FieldGate.read(field, exclusions: config.exclusions)
+                if let why = read.refusal {
+                    log("not watching this field in \(field.appName): \(why)")
+                    detector = nil
+                } else {
+                    detector = BurstDetector(initialText: read.value ?? "", config: detectorConfig)
+                }
             }
         }
     }
@@ -102,20 +115,30 @@ final class FixEngine: @unchecked Sendable {
 
     /// A detector, unless this field is one we refuse outright.
     ///
-    /// Both refusals are also re-checked in `handle` before anything is sent,
-    /// but deciding here means a field in a password manager is never even
-    /// accumulated: without a detector, `valueChanged` returns immediately and
-    /// no snapshot of what the user types into a vault is ever held.
+    /// This is **defence in depth, not the guard itself**. The guard is in
+    /// `FocusWatcher`, which asks `FieldGate` before it reads anything, so a
+    /// refused field's text never reaches this class to begin with: a value
+    /// handed to this method has already been admitted. What the check still
+    /// buys is the case where the two disagree. The watcher's copy of the list
+    /// and this class's are pushed together but held separately, and the
+    /// watcher decides on the labels it captured when focus landed, so
+    /// refusing here too means the stricter of the two always wins.
+    ///
+    /// The same check runs again in `handle`, immediately before anything is
+    /// sent to the local API, and again in `apply`, before anything is written
+    /// back.
     private func makeDetector(for field: FocusWatcher.Field, value: String) -> BurstDetector? {
-        if config.exclusions.isExcluded(field.bundleID) {
-            log("not watching \(field.bundleID ?? field.appName): excluded")
-            return nil
-        }
-        if let hint = field.secretHint {
-            log("not watching this field in \(field.appName): it looks like it holds a secret (\(hint))")
+        if let why = refusal(for: field) {
+            log("not watching this field in \(field.appName): \(why)")
             return nil
         }
         return BurstDetector(initialText: value, config: detectorConfig)
+    }
+
+    /// Why this field is one we will not act on, or nil. The same call the
+    /// watcher gates its reads with, against this class's copy of the config.
+    private func refusal(for field: FocusWatcher.Field) -> String? {
+        FieldGate.refuse(exclusions: config.exclusions, bundleID: field.bundleID, hints: field.hints)
     }
 
     private func valueChanged(_ field: FocusWatcher.Field, value: String) {
@@ -161,15 +184,11 @@ final class FixEngine: @unchecked Sendable {
     }
 
     private func handle(_ burst: Burst, in field: FocusWatcher.Field) {
-        if config.exclusions.isExcluded(field.bundleID) {
-            log("skip: \(field.bundleID ?? field.appName) is excluded")
-            return
-        }
-        // The bundle-id list cannot know about every password manager; this
-        // catches a secret-looking field in any app, including one we have
-        // never heard of. Nothing about the burst is logged or sent.
-        if let hint = field.secretHint {
-            log("skip in \(field.appName): field looks like it holds a secret (\(hint))")
+        // The second of the three checks, and the one that matters most: this
+        // is the call that would put the text on the wire. Nothing about the
+        // burst is logged or sent when it refuses.
+        if let why = refusal(for: field) {
+            log("skip in \(field.appName): \(why)")
             return
         }
         if let last = lastRequestAt[field.key], now - last < config.rateLimit {
@@ -196,6 +215,13 @@ final class FixEngine: @unchecked Sendable {
 
     private func apply(_ burst: Burst, response: NormalizeResponse, in field: FocusWatcher.Field, started: TimeInterval) {
         guard config.enabled, field == self.field, let detector else { return }
+        // The API round trip is the longest gap in the flow, and the user can
+        // exclude this app from the menu while it is open. Do not read the
+        // field, and do not write into it, if they did.
+        if let why = refusal(for: field) {
+            log("skip in \(field.appName): \(why)")
+            return
+        }
         let current = AX.value(field.element) ?? ""
         let plan: RewritePlan.Plan
         switch RewritePlan.make(burst: burst, response: response, currentFieldText: current, maxFieldLength: config.maxFieldLength) {

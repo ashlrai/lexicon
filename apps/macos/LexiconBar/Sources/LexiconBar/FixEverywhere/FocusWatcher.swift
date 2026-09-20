@@ -10,6 +10,12 @@ import LexiconBarKit
 /// AX thread covers apps that post neither reliably (some Electron builds).
 ///
 /// Callbacks run on the AX thread. `frontmostApp` is main-thread state for the menu.
+///
+/// Every path in here that would pull a field's text goes through `FieldGate`
+/// first, so an excluded app's field and a secret-looking field are never read
+/// at all: not on the focus change, not on a value-changed notification, not on
+/// the poll. That is the only place the refusal can live and still be true,
+/// because this class is what does the reading.
 final class FocusWatcher: @unchecked Sendable {
     struct Field: Equatable {
         let element: AXUIElement
@@ -18,9 +24,12 @@ final class FocusWatcher: @unchecked Sendable {
         let appName: String
         /// `AX.key` of the element; used for rate limits and undo.
         let key: String
-        /// The term in the field's own labels that made it look like it holds
-        /// a secret, read once when focus lands. nil for an ordinary field.
-        let secretHint: String?
+        /// This field's own labels and those of its window, read once when
+        /// focus lands. Captured here because `FieldGate` needs them on every
+        /// poll to decide whether the value may be read, and because they are
+        /// metadata, which is exactly what may be looked at before that
+        /// decision is made.
+        let hints: SecretFieldHeuristic.FieldHints
 
         static func == (a: Field, b: Field) -> Bool { a.key == b.key && CFEqual(a.element, b.element) }
     }
@@ -47,6 +56,20 @@ final class FocusWatcher: @unchecked Sendable {
     private var activeApp: FrontmostApp?
     private var current: Field?
     private var lastValue: String = ""
+    /// The list the gate matches on. Starts as the defaults rather than empty:
+    /// the watcher runs before any settings are pushed into it, and "no
+    /// exclusions yet" must never be the state something gets read in.
+    private var exclusions = AppExclusions()
+    /// The key of the field we last refused, so the log says so once rather
+    /// than twice a second, and so the poll does not re-read a refused field's
+    /// labels twice a second either.
+    private var refusedKey = ""
+    /// Which version of the exclusion list that refusal was made against.
+    /// Bumped whenever the list actually changes, which is what makes the
+    /// short circuit above safe: a refused field is re-examined as soon as the
+    /// user edits the list, and not before.
+    private var exclusionsVersion = 0
+    private var refusedVersion = -1
     private var pollTimer: DispatchSourceTimer?
     private var workspaceTokens: [NSObjectProtocol] = []
     private var running = false
@@ -176,14 +199,84 @@ final class FocusWatcher: @unchecked Sendable {
             return
         }
         if let current, CFEqual(current.element, focused) { return }
-        guard AX.isEditableText(focused) else {
+        // A refused field leaves `current` nil, so the poll comes back through
+        // here twice a second for as long as it holds focus. Nothing about the
+        // answer can have changed unless the user edited the exclusion list,
+        // and re-deciding costs the eight round trips `AX.hints` takes, so the
+        // refusal stands until it does.
+        let key = AX.key(focused, pid: pid)
+        if key == refusedKey, refusedVersion == exclusionsVersion { return }
+
+        guard AX.couldBeEditableText(focused) else {
             setCurrent(nil, value: "")
             return
         }
+        // Labels, not contents: `AX.hints` asks the tree what it says *about*
+        // the field, and that is everything the gate decides on.
         let field = Field(element: focused, pid: pid, bundleID: activeApp?.bundleID, appName: activeApp?.name ?? "",
-                          key: AX.key(focused, pid: pid), secretHint: SecretFieldHeuristic.match(AX.hints(focused)))
+                          key: key, hints: AX.hints(focused))
+
+        // The gate, before the first read. `FieldGate.read` does not call
+        // `readValue` at all for a field it refuses, so a vault's notes field
+        // never has its text in this process, not even for the instant it
+        // would take to decide we are not interested.
+        let read = FieldGate.read(field, exclusions: exclusions)
+        if let refusal = read.refusal {
+            refuse(field, refusal)
+            return
+        }
+        // nil is not a refusal. The element answered no string, so it is not
+        // the editable text field its metadata suggested; `couldBeEditableText`
+        // leaves that last check to the read itself.
+        guard let value = read.value else {
+            setCurrent(nil, value: "")
+            return
+        }
+        refusedKey = ""
         observe(element: focused, pid: pid)
-        setCurrent(field, value: AX.value(focused) ?? "")
+        setCurrent(field, value: value)
+    }
+
+    /// Forget a refused field: no value was read, and anything cached for the
+    /// field that held focus before it goes now too.
+    private func refuse(_ field: Field, _ why: String) {
+        if refusedKey != field.key || refusedVersion != exclusionsVersion {
+            NSLog("LexiconBar fix: not reading this field in %@: %@", field.appName, why)
+        }
+        refusedKey = field.key
+        refusedVersion = exclusionsVersion
+        setCurrent(nil, value: "")
+    }
+
+    /// Re-runs the gate against the field being watched and drops it when the
+    /// answer has changed. Pure string work over labels already in hand, with
+    /// no round trips at all, which is what lets it run the moment the list
+    /// changes rather than at the next focus change.
+    @discardableResult
+    private func dropCurrentIfRefused() -> Bool {
+        guard let field = current,
+              let why = FieldGate.refuse(exclusions: exclusions, bundleID: field.bundleID, hints: field.hints) else { return false }
+        refuse(field, why)
+        return true
+    }
+
+    /// Pushes the exclusion list the gate matches on. AX thread.
+    ///
+    /// The list arrives here and not only at `FixEngine` because this class is
+    /// what does the reading: excluding an app has to stop the reads, not just
+    /// the corrections. `AppExclusions` is a value type, so the watcher gets
+    /// its own copy and the menu can keep editing the settings' one.
+    func setExclusions(_ exclusions: AppExclusions) {
+        guard exclusions != self.exclusions else { return }
+        self.exclusions = exclusions
+        // A field we already refused has to be re-examined against the new
+        // list, so the user un-excluding the app they are typing in takes
+        // effect on the next poll rather than at the next focus change.
+        exclusionsVersion += 1
+        // The user can exclude the app that has focus right now, from the menu
+        // or from Preferences, while its text is in `lastValue`. Drop it at
+        // once rather than at the next focus change.
+        dropCurrentIfRefused()
     }
 
     /// Some apps answer "no focused element" until an assistive client asks
@@ -237,8 +330,18 @@ final class FocusWatcher: @unchecked Sendable {
         onFieldChanged?(field, value)
     }
 
+    /// The read behind both the value-changed notification and the poll. Both
+    /// are reads like any other, so both are the gate's decision and not only
+    /// the focus change: focus has not moved, but the exclusion list may have.
     private func readValue(of field: Field) {
-        guard let value = AX.value(field.element) else { return }
+        let read = FieldGate.read(field, exclusions: exclusions)
+        if let refusal = read.refusal {
+            refuse(field, refusal)
+            return
+        }
+        // The element stopped answering with a string: leave the cache alone
+        // and let the poll re-resolve focus.
+        guard let value = read.value else { return }
         guard value != lastValue else { return }
         lastValue = value
         onValueChanged?(field, value)
@@ -287,4 +390,12 @@ final class FocusWatcher: @unchecked Sendable {
         guard current == field else { return }
         lastValue = value
     }
+}
+
+/// The gate's view of a focused field: identity and labels for free, the value
+/// only through the one call it guards.
+extension FocusWatcher.Field: InspectableField {
+    /// The single Accessibility call that brings the user's own text into this
+    /// process. Nothing else in `Field` touches `AXValue`.
+    func readValue() -> String? { AX.value(element) }
 }

@@ -79,10 +79,16 @@ enum AX {
         return NSRange(location: cf.location, length: cf.length)
     }
 
-    static func hasAttribute(_ element: AXUIElement, _ attribute: String) -> Bool {
+    /// The attribute names an element exposes. One round trip, and it answers
+    /// names only: nothing here reads a value.
+    static func attributeNames(_ element: AXUIElement) -> [String] {
         var names: CFArray?
-        guard AXUIElementCopyAttributeNames(element, &names) == .success, let names = names as? [String] else { return false }
-        return names.contains(attribute)
+        guard AXUIElementCopyAttributeNames(element, &names) == .success, let names = names as? [String] else { return [] }
+        return names
+    }
+
+    static func hasAttribute(_ element: AXUIElement, _ attribute: String) -> Bool {
+        attributeNames(element).contains(attribute)
     }
 
     @discardableResult
@@ -113,21 +119,32 @@ enum AX {
         "\(pid):\(CFHash(element))"
     }
 
-    /// Text-like roles only. Secure fields are refused by subrole and by a
-    /// role description containing "secure". Anything else counts when it
-    /// exposes a string value plus a selected-text range (web and Electron
-    /// editables show up that way).
-    static func isEditableText(_ element: AXUIElement) -> Bool {
-        let role = string(element, kAXRoleAttribute as String) ?? ""
+    /// Whether this element is worth watching at all, decided on metadata
+    /// alone. Text-like roles count; anything else counts when it exposes a
+    /// value and a selected-text range, which is how web and Electron
+    /// editables show up.
+    ///
+    /// Deliberately does not touch `AXValue`. This used to be `isEditableText`
+    /// and settled the web-editable case by copying the value and checking it
+    /// was a string, which meant the user's text crossed into this process
+    /// before `FieldGate` had been asked anything about the field. The type
+    /// check is now the read itself: `AX.value` answers nil for a value that is
+    /// not a string, and that read only happens for a field the gate admitted.
+    ///
+    /// A masked input is refused here, earliest of all, the way UIA's
+    /// `IsPassword` is on Windows: there is no case in which we want one, so it
+    /// never reaches the gate.
+    static func couldBeEditableText(_ element: AXUIElement) -> Bool {
         let subrole = string(element, kAXSubroleAttribute as String) ?? ""
         if subrole == (kAXSecureTextFieldSubrole as String) { return false }
-        if let description = string(element, kAXRoleDescriptionAttribute as String),
-           description.range(of: "secure", options: .caseInsensitive) != nil { return false }
-        if let description = string(element, kAXRoleDescriptionAttribute as String),
-           description.range(of: "password", options: .caseInsensitive) != nil { return false }
+        if let description = string(element, kAXRoleDescriptionAttribute as String) {
+            if description.range(of: "secure", options: .caseInsensitive) != nil { return false }
+            if description.range(of: "password", options: .caseInsensitive) != nil { return false }
+        }
+        let role = string(element, kAXRoleAttribute as String) ?? ""
         if textRoles.contains(role) { return true }
-        guard let value = copy(element, kAXValueAttribute as String), CFGetTypeID(value) == CFStringGetTypeID() else { return false }
-        return hasAttribute(element, kAXSelectedTextRangeAttribute as String)
+        let names = attributeNames(element)
+        return names.contains(kAXValueAttribute as String) && names.contains(kAXSelectedTextRangeAttribute as String)
     }
 
     static func value(_ element: AXUIElement) -> String? {
