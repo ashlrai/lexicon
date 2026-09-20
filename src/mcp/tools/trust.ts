@@ -7,7 +7,17 @@
  * the directory it sits in, are attacker-controlled.
  */
 import { z } from 'zod';
-import { getTrustPath, isTrusted, listTrusted, readLexiconFile, resolvePaths, sanitizeForDisplay, trustAllEnabled, trustProject, untrustProject } from '../../core/index.js';
+import {
+  getTrustPath,
+  isTrusted,
+  listTrusted,
+  readLexiconFile,
+  resolvePaths,
+  sanitizeForDisplay,
+  trustAllEnabled,
+  trustProject,
+  untrustProject,
+} from '../../core/index.js';
 import type { LexiconFile } from '../../core/index.js';
 import { guarded, textResult, trustPreview } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';

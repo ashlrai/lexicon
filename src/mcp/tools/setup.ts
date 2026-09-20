@@ -3,7 +3,15 @@
  * client, the guided `setup_lexicon` flow, and whether `lexicon serve` is up.
  */
 import { z } from 'zod';
-import { INSTALL_CLIENT_VALUES, INSTALL_SCOPES, SERVE_HEALTH_URL, bufferIO, cliDirForInstall, guarded, textResult } from '../shared.js';
+import {
+  INSTALL_CLIENT_VALUES,
+  INSTALL_SCOPES,
+  SERVE_HEALTH_URL,
+  bufferIO,
+  cliDirForInstall,
+  guarded,
+  textResult,
+} from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
 import { errorMessage } from '../../util/errors.js';

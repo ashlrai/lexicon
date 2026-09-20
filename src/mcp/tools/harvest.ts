@@ -2,13 +2,24 @@
  * Mining new terms: scanning the repo for names worth adding, proposing
  * what the lexicon should learn next, and applying one of those proposals.
  */
-import { z } from 'zod';
-import { TERM_CATEGORIES, TERM_SCOPES, addTerm, harvestRepo, loadLexicon, loadVoiceHistory, removeTerm, suggestAliases, suggestTerms } from '../../core/index.js';
-import type { Term, VoiceHistoryEntry } from '../../core/index.js';
-import { SUGGESTION_KINDS, guarded, isProjectTrustError, log, textResult } from '../shared.js';
-import type { ToolRegistrar } from '../shared.js';
-import { errorMessage } from '../../util/errors.js';
 import { resolve } from 'node:path';
+import { z } from 'zod';
+import {
+  TERM_CATEGORIES,
+  TERM_SCOPES,
+  addTerm,
+  harvestRepo,
+  isProjectTrustError,
+  loadLexicon,
+  loadVoiceHistory,
+  removeTerm,
+  suggestAliases,
+  suggestTerms,
+} from '../../core/index.js';
+import type { Term, VoiceHistoryEntry } from '../../core/index.js';
+import { errorMessage } from '../../util/errors.js';
+import { SUGGESTION_KINDS, guarded, log, textResult } from '../shared.js';
+import type { ToolRegistrar } from '../shared.js';
 
 export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
   server.registerTool(

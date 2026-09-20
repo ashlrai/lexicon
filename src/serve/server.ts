@@ -37,6 +37,7 @@ import {
   normalize,
   recordHits,
   resolvePaths,
+  isProjectTrustError,
   sanitizeForDisplay,
   suggestAliases,
   uninstallPack,
@@ -243,9 +244,6 @@ class HttpError extends Error {
   }
 }
 
-function isProjectTrustError(err: unknown): boolean {
-  return err instanceof Error && err.name === 'ProjectTrustError';
-}
 
 
 function issuesMessage(err: z.ZodError): string {

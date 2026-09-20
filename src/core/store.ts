@@ -302,6 +302,16 @@ export class ProjectTrustError extends Error {
 }
 
 /**
+ * True for a `ProjectTrustError` (a project-scope write refused because the
+ * repo's .lexicon.yaml is unreviewed). Duck-typed by name rather than with
+ * `instanceof`, so it still holds when a caller is running against a mocked
+ * core or a second copy of this package.
+ */
+export function isProjectTrustError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'ProjectTrustError';
+}
+
+/**
  * Gate for every project-scope write. A file that does not exist yet may be
  * created (the user is authoring it, and writeAndTrust pins it). An existing
  * file must already be 'trusted' (registry match, LEXICON_TRUST_ALL, or inside

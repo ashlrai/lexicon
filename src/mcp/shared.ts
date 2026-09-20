@@ -114,14 +114,6 @@ function errorResult(err: unknown): CallToolResult {
   return { isError: true, content: [{ type: 'text', text: message }] };
 }
 
-/**
- * True for core's ProjectTrustError (a project-scope write refused because the
- * repo's .lexicon.yaml is unreviewed). Duck-typed by name so it also holds
- * when core is mocked in tests.
- */
-export function isProjectTrustError(err: unknown): boolean {
-  return err instanceof Error && err.name === 'ProjectTrustError';
-}
 
 /** Runs a tool body and converts any thrown error into an isError result. */
 export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult): Promise<CallToolResult> {

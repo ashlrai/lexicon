@@ -4,7 +4,21 @@
  * reaches for when a dictated word looks garbled.
  */
 import { z } from 'zod';
-import { EXPORT_FORMATS, TERM_CATEGORIES, TERM_SCOPES, addTerm, computeStats, diffSummary, exportLexicon, learnCorrection, normalize, recordHits, removeTerm, suggestAliases, suggestCanonicalFor } from '../../core/index.js';
+import {
+  EXPORT_FORMATS,
+  TERM_CATEGORIES,
+  TERM_SCOPES,
+  addTerm,
+  computeStats,
+  diffSummary,
+  exportLexicon,
+  learnCorrection,
+  normalize,
+  recordHits,
+  removeTerm,
+  suggestAliases,
+  suggestCanonicalFor,
+} from '../../core/index.js';
 import type { Term } from '../../core/index.js';
 import { filePathsInUse, guarded, log, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
