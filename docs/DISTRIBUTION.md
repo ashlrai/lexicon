@@ -210,7 +210,7 @@ Filing this needs a GitHub account; it can be Mason's or a project account.
 <https://mcpmarket.com/submit>
 
 A web form taking a GitHub repository URL, an email for the go-live notification and an
-optional "Try Now" link. Free queue is $0 with a stated **4–6 week** listing time and
+optional "Try Now" link. Free queue is $0 with a stated **4 to 6 week** listing time and
 standard placement. They sell a $29 one-time "Get Listed Now" for a 24-hour listing, an
 official badge and the Try Now link. **Take the free queue.**
 
@@ -334,9 +334,10 @@ replace this one on someone's machine.
 
 ## Order of operations
 
-1. Release `0.5.1` to npm carrying `mcpName`, then `mcp-publisher publish`. Everything
-   downstream benefits, and two of the forms want the registry name. Cut that release
-   through [RELEASING.md](RELEASING.md) rather than uploading assets by hand.
+1. `0.5.1` is on npm carrying `mcpName`, so the blocker is gone: run `mcp-publisher
+   publish`. Everything downstream benefits, and two of the forms want the registry
+   name. Cut any further release through [RELEASING.md](RELEASING.md) rather than
+   uploading assets by hand.
 2. Glama needs nothing further. The file is in the repo.
 3. Open the awesome-mcp-servers PR.
 4. Mason submits the Anthropic plugin directory form.

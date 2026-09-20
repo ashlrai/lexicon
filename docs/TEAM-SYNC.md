@@ -68,7 +68,7 @@ mysterious.
 ```
 
 Same directory, same permissions discipline and same atomic writes as
-`serve.json` (`src/util/atomic.ts`, `src/serve/config.ts`). `LEXICON_CONFIG`
+`serve.json` (`src/util/atomic.ts`, `src/serve/config.ts`). `LEXICON_PATH`
 and `XDG_CONFIG_HOME` keep working unchanged.
 
 ### Trust
@@ -109,9 +109,9 @@ Postgres. The whole dataset for a 500-seat customer is a few megabytes.
 | `org` | `id`, `name`, `slug`, `plan`, `seat_limit`, `created_at` |
 | `member` | `org_id`, `user_id`, `role` (`owner`/`admin`/`editor`/`member`), `status`, `invited_by` |
 | `term` | `id`, `org_id`, `canonical`, `aliases[]`, `phonetic`, `category`, `never[]`, `case_sensitive`, `enforced`, `version`, `created_by`, `updated_by`, `updated_at`, `deleted_at` |
-| `term_revision` | `term_id`, `actor_id`, `op` (`create`/`update`/`delete`), `before` jsonb, `after` jsonb, `at` — this table **is** the audit trail |
+| `term_revision` | `term_id`, `actor_id`, `op` (`create`/`update`/`delete`), `before` jsonb, `after` jsonb, `at`; this table **is** the audit trail |
 | `proposal` | `org_id`, `proposed_by`, `payload` jsonb, `state`, `decided_by`, `decided_at` |
-| `snapshot` | `org_id`, `version` int, `yaml` text, `built_at` — rebuilt on write, served on read |
+| `snapshot` | `org_id`, `version` int, `yaml` text, `built_at` (rebuilt on write, served on read) |
 | `device` | `id`, `user_id`, `name`, `token_hash`, `last_seen_at`, `revoked_at` |
 
 `term` is soft-deleted because the audit trail has to survive a deletion, and
@@ -182,17 +182,17 @@ needs to get to be worth doing:
 
 | Line | Monthly |
 | --- | --- |
-| Postgres (managed, small) | $25–70 |
-| API compute (serverless or one small instance) | $0–25 |
-| Identity vendor, Team tier only (magic link + social) | $0–25 |
-| Identity vendor, per SSO connection (Enterprise) | $100–150 per customer connection — **verify against a current quote** |
+| Postgres (managed, small) | $25-70 |
+| API compute (serverless or one small instance) | $0-25 |
+| Identity vendor, Team tier only (magic link + social) | $0-25 |
+| Identity vendor, per SSO connection (Enterprise) | $100-150 per customer connection; **verify against a current quote** |
 | Bandwidth | under $5. A 5,000-term snapshot is well under a megabyte and most requests are 304s |
-| Error tracking, uptime, logs | $0–50 |
+| Error tracking, uptime, logs | $0-50 |
 
-**Infrastructure is not the cost.** Call it $150–300/month to serve the first
-few hundred seats. The cost is one person's time: roughly six weeks to build
-v1, then a permanent on-call obligation and a support queue. Do not model this
-as a software margin business until the support load is measured.
+**Infrastructure is not the cost.** Call it $150 to $300/month to serve the
+first few hundred seats. The cost is one person's time: roughly six weeks to
+build v1, then a permanent on-call obligation and a support queue. Do not model
+this as a software margin business until the support load is measured.
 
 ---
 
@@ -236,7 +236,7 @@ and to offer a correction upward; it does not need to administer the org.
 `org_propose_term` is the interesting one. Today when a user says "it is
 Ashlr.AI, not Ashler", the agent calls `learn_correction` and the fix lands in
 one person's file. With an org, the agent can offer: "Added it for you. Your
-team does not have this term — propose it to them?" That is the moment the
+team does not have this term. Propose it to them?" That is the moment the
 product sells itself, and it is one tool call.
 
 ### The extension, the macOS app and the local API
@@ -253,7 +253,7 @@ The line matters, so it is drawn explicitly.
 
 **In the MIT repo, free forever:**
 
-- `lexicon remote add <url>` — pull a lexicon layer from *any* URL that serves
+- `lexicon remote add <url>` pulls a lexicon layer from *any* URL that serves
   the YAML, with an etag cache, offline fallback, `diff` before apply, and the
   full parse-time hardening. A raw GitHub URL, an S3 object, an internal file
   server, or our API: it does not care, and it needs no account.
@@ -279,7 +279,7 @@ the free tool never ships a disabled button.
 blueprint for someone else's server, the way Headscale is for Tailscale's
 control plane. That is accepted deliberately. The bet is that a handful of
 people will self-host, that they were never going to pay, and that what
-companies buy is the operation, the SSO, the audit trail and someone to call —
+companies buy is the operation, the SSO, the audit trail and someone to call,
 none of which a reimplementation supplies.
 
 ---
@@ -298,8 +298,8 @@ with something demonstrable.
 | 5 | Roles and proposals end to end, audit export, revocation, seat enforcement | An admin can approve what a member's agent proposed. |
 | 6 | Hardening, rate limits, backups with a *tested* restore, status page, docs, a real pilot org | One paying customer in production. |
 
-Enterprise is a separate three to four weeks — SSO, SCIM, the MDM package, the
-managed policy file, self-hosting — and **should not be started until a
+Enterprise is a separate three to four weeks (SSO, SCIM, the MDM package, the
+managed policy file, self-hosting) and **should not be started until a
 customer has signed something**. Building SSO on spec is the most common way a
 small team burns a month.
 
@@ -315,8 +315,10 @@ before six weeks of engineering does.
 
 ## See also
 
-- [COMMERCIAL.md](COMMERCIAL.md) — why this layer is the thing to sell, and what it should cost.
-- [ENTERPRISE.md](ENTERPRISE.md) — the same plan described for a buyer.
-- [TRUST.md](TRUST.md) — the trust gate this reuses for the remote layer.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — the module map `org` plugs into.
-- [SECURITY.md](../SECURITY.md) — the threat model the parse-time limits come from.
+- [COMMERCIAL.md](COMMERCIAL.md) explains why this layer is the thing to sell, and what it should cost.
+- [ENTERPRISE.md](ENTERPRISE.md) is the same plan described for a buyer.
+- [TRUST.md](TRUST.md) covers the trust gate this reuses for the remote layer.
+- [ARCHITECTURE.md](ARCHITECTURE.md) has the module map `org` plugs into.
+- [SECURITY.md](../SECURITY.md) is the threat model the parse-time limits come from.
+
+Back to [the docs index](README.md).

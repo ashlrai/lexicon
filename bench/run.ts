@@ -35,6 +35,7 @@ interface Args {
   fuzzy?: boolean;
   sweep: boolean;
   out: string;
+  outExplicit: boolean;
   corpus: string;
   lexicon: string;
   json: boolean;
@@ -60,6 +61,7 @@ function parseArgs(argv: string[]): Args {
     verbose: false,
     sweep: false,
     out: join(HERE, 'results.json'),
+    outExplicit: false,
     corpus: DEFAULT_CORPUS,
     lexicon: DEFAULT_LEXICON,
     json: false,
@@ -99,6 +101,7 @@ function parseArgs(argv: string[]): Args {
         break;
       case '--out':
         args.out = next();
+        args.outExplicit = true;
         break;
       case '--corpus':
         args.corpus = next();
@@ -259,6 +262,27 @@ function main(): void {
       const failing = results.filter((r) => !r.pass).length;
       console.log(`\n${failing} failing case(s); rerun with --verbose to list them.`);
     }
+  }
+
+  // bench/README.md tells contributors to commit results.json after every matcher change, so
+  // this file is read as the headline numbers for the default config. An ablation run used to
+  // overwrite it silently, which is how docs/BENCHMARK.md came to state a --no-phonetic figure
+  // as the default one. A run that overrides the config now refuses to touch the default path
+  // and makes the reader pass --out to say where the ablation belongs.
+  const overridden =
+    args.minConfidence !== undefined ||
+    args.phonetic !== undefined ||
+    args.fuzzy !== undefined ||
+    args.filter !== undefined ||
+    args.corpus !== DEFAULT_CORPUS ||
+    args.lexicon !== DEFAULT_LEXICON;
+
+  if (overridden && !args.outExplicit) {
+    console.error(
+      'not written: this run overrides the default config, so it is not the report that belongs ' +
+        `in ${relative(process.cwd(), args.out)}. Pass --out <file> to save it somewhere else.`,
+    );
+    return;
   }
 
   // Relative, not resolved: results.json is committed on every matcher change, and an

@@ -3,7 +3,7 @@
 `lexicon serve` runs a small HTTP server on `http://127.0.0.1:41733` so tools
 that cannot run a Claude Code hook or an MCP server can still correct dictated
 text: the browser extension, Claude Desktop, the Codex app, macOS Shortcuts,
-Raycast, Alfred, the menu bar app, or a `curl` in a script. It is loopback
+Raycast, Alfred, the [macOS menu bar app](MACOS-APP.md), the [Windows tray app](WINDOWS-APP.md), or a `curl` in a script. It is loopback
 only, protected by a bearer token, and applies the same merged lexicon and
 trust gate as every other surface.
 
@@ -12,12 +12,13 @@ lexicon serve                 # foreground, logs one line per request to stderr
 lexicon serve --show          # print the URL and token (manual fallback for the extension options page)
 lexicon serve --status        # is it up?
 lexicon serve --pair          # open http://127.0.0.1:41733/pair in the browser; the extension pairs itself
-lexicon serve --install       # start at login: launchd (macOS) or systemd --user (Linux)
+lexicon serve --install       # start at login: launchd (macOS), systemd --user (Linux), Scheduled Task (Windows)
 lexicon serve --uninstall
 ```
 
-`--install` writes `~/Library/LaunchAgents/ai.ashlr.lexicon.serve.plist` (or
-`~/.config/systemd/user/lexicon-serve.service`) whose program is the built CLI,
+`--install` writes `~/Library/LaunchAgents/ai.ashlr.lexicon.serve.plist` on
+macOS, `~/.config/systemd/user/lexicon-serve.service` on Linux, or a logon-
+triggered Scheduled Task on Windows, whose program is the built CLI,
 resolved by `resolveCliEntry()`: `$LEXICON_CLI` if set, else the package's
 `dist/cli/index.js` (found by walking up to the `@ashlr/lexicon` package.json,
 so it is the same file whether the installer runs from `dist/` or from the
@@ -47,7 +48,8 @@ always allowed; `*` is never honoured.
 
 ## Endpoints
 
-Eleven routes. Every request except `GET /health` and `GET /pair` needs
+Eleven routes, twelve rows below: `/packs/:name` takes both a POST and a DELETE.
+Every request except `GET /health` and `GET /pair` needs
 `Authorization: Bearer <token>`. Requests and responses are JSON
 (`Content-Type: application/json`) unless noted. Errors are
 `{ "error": "<message>" }`.

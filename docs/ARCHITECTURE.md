@@ -24,7 +24,7 @@ src/
     matcher.ts              the public face: buildIndex(), findReplacements(), phoneticKey(), similarity()
     matcher/                its four parts: build (the index), text (folding, metaphone, edit distance),
                             tokenize (windows, and the code/URL/path spans to leave alone), tuning (every threshold)
-    stoplist.ts             STOPLIST: 3376 common English words that block phonetic and fuzzy guesses
+    stoplist.ts             STOPLIST: 3398 common English words that block phonetic and fuzzy guesses
     normalize.ts            normalize() applies replacements; diffSummary()
     suggest.ts              suggestAliases(): likely STT misspellings of a canonical
     suggestTerms.ts         suggestTerms(): alias / term / never / stale proposals from voice history, hits and the repo
@@ -91,6 +91,11 @@ scripts/
   build-site.mjs            produces site/dist including install.sh
   gen-cli-docs.ts           produces docs/CLI.md from every command's --help
   install.sh                the curl | sh installer
+  make-signing-identity.sh  the reusable ad-hoc identity the macOS app is signed with
+  smoke.mjs                 runs the built CLI, hook and MCP server end to end (npm run smoke)
+  check-links.mjs           every relative markdown link and anchor resolves (npm run check:links)
+  check-facts.mjs           every number the docs state is re-derived from the code (npm run check:facts)
+  check-server-json.mjs     server.json agrees with package.json (npm run check:server-json)
 
 .claude-plugin/plugin.json  Claude Code plugin manifest
 .claude-plugin/marketplace.json  marketplace manifest (claude plugin marketplace add ashlrai/lexicon)
@@ -194,11 +199,11 @@ The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the t
                                                  scripts       hotkeys run `lexicon voice --toggle --json` / `lexicon daemon --once`
 ```
 
-`lexicon serve` is the bridge for everything that has neither hooks nor MCP. It is `node:http` only, binds loopback, needs a bearer token stored next to the global lexicon with mode 0600, and answers CORS only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (or exact origins in `serve.json.allowedOrigins`). Every endpoint goes through `loadLexicon()`, so the trust gate and hit counters are the same as the CLI; the lexicon is cached per `cwd` for 2 s and dropped after every write. `--install` registers it as a launchd LaunchAgent or a systemd user unit so it is up at login.
+`lexicon serve` is the bridge for everything that has neither hooks nor MCP. It is `node:http` only, binds loopback, needs a bearer token stored next to the global lexicon with mode 0600, and answers CORS only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (or exact origins in `serve.json.allowedOrigins`). Every endpoint goes through `loadLexicon()`, so the trust gate and hit counters are the same as the CLI; the lexicon is cached per `cwd` for 2 s and dropped after every write. `--install` registers it as a launchd LaunchAgent, a systemd user unit or a Windows Scheduled Task so it is up at login.
 
 The extension's content script intercepts Enter and the send button in the capture phase, asks the background worker for the correction, writes it back through the editor's own `insertText` path (ProseMirror, Lexical, Quill) or the React-safe setter (textareas), shows a toast with Undo, then re-dispatches the original event. The token lives in the worker only. When the API is down the worker falls back to an embedded copy of the lexicon compiled from YAML in extension storage, so a send is never blocked. Details in [EXTENSION.md](EXTENSION.md) and [LOCAL-API.md](LOCAL-API.md).
 
-LexiconBar is a thin native shell: every action is a CLI invocation, and the app parses the CLI's `--json` output. It supervises the daemon and the API as child processes with a restart policy and exposes the two hotkeys the CLI cannot register itself. See [MACOS-APP.md](MACOS-APP.md).
+LexiconBar is a thin native shell: every action is a CLI invocation, and the app parses the CLI's `--json` output. It supervises the daemon and the API as child processes with a restart policy and exposes the two hotkeys the CLI cannot register itself. See [MACOS-APP.md](MACOS-APP.md). `apps/windows/` is the C# port of the same design onto UI Automation, which talks to `POST /normalize` directly instead of shelling out to the CLI; its portable half is unit-tested and its UI Automation half has never been run. See [WINDOWS-APP.md](WINDOWS-APP.md), and [PLATFORMS.md](PLATFORMS.md) for what that means in practice.
 
 ### 5. Local voice pipeline
 
@@ -214,12 +219,14 @@ LexiconBar is a thin native shell: every action is a CLI invocation, and the app
 ### 6. Setup wizard and the suggestion loop
 
 ```text
-  install.sh | brew | npm  -->  lexicon setup  --> 1 seed global lexicon (name, company + suggested aliases)
-                                                   2 harvest repo -> .lexicon.yaml (created, therefore trusted)
-                                                   3 detect clients -> lexicon install <client> --apply
-                                                   4 lexicon serve --install (asks; under --yes only with --serve)
-                                                   5 lexicon export <app> -> ~/Desktop
-                                                   6 summary card (or --json SetupSummary)
+  install.sh | brew | npm  -->  lexicon setup  --> 1. Global lexicon (name, company + suggested aliases)
+                                                   2. Starter packs -> lexicon pack add <name>
+                                                   3. Repo harvest -> .lexicon.yaml (created, therefore trusted)
+                                                   4. Agent clients -> lexicon install <client> --apply
+                                                   5. Local API -> lexicon serve --install (asks; under --yes only with --serve)
+                                                   6. Dictation app -> lexicon export <app> -> ~/Desktop
+                                                   7. Does it work? -> normalize a sentence built from the terms just seeded
+                                                      then the summary card (or --json SetupSummary)
 
   lexicon voice / hooks / MCP / API / daemon  -->  hits + voice/history.jsonl  -->  lexicon suggest  -->  alias | term | never | stale
                                                                                     (or suggest_terms + apply_suggestion from the agent)
@@ -290,7 +297,7 @@ The `UserPromptSubmit` note only fires when a prompt changes, so a model that ne
 
 ### Bundle the plugin instead of committing dist
 
-`claude plugin install` clones the repo and runs nothing: no `npm install`, no build. The first version pointed `.mcp.json` at `dist/mcp/server.js`, which meant either committing `dist/` (and `node_modules/` transitively, since the server imports zod, yaml and the MCP SDK) or documenting a manual build step that every install would skip. Instead `scripts/build-bundle.mjs` runs esbuild over the two entry points and commits `plugin/mcp-server.mjs` and `plugin/hook.mjs` with every dependency inlined. Two files, unminified so they stay reviewable, and the only runtime requirement is Node 20. `dist/` stays untracked for the npm package and library types. CI rebuilds the bundles and fails on any diff so they cannot drift from `src/`. `lexicon install-claude` and `lexicon install <client>` point at the same bundles, so a plugin install, a manual install and an npm install all run identical code.
+`claude plugin install` clones the repo and runs nothing: no `npm install`, no build. The first version pointed `.mcp.json` at `dist/mcp/server.js`, which meant either committing `dist/` (and `node_modules/` transitively, since the server imports zod, yaml and the MCP SDK) or documenting a manual build step that every install would skip. Instead `scripts/build-bundle.mjs` runs esbuild over the two entry points and commits `plugin/mcp-server.mjs` and `plugin/hook.mjs` with every dependency inlined. Two files, unminified so they stay reviewable, and the only runtime requirement is Node 20. `dist/` stays untracked for the npm package and library types. CI rebuilds the bundles and fails on any diff so they cannot drift from `src/`. `lexicon install claude` and `lexicon install <client>` point at the same bundles, so a plugin install, a manual install and an npm install all run identical code.
 
 ### Trust gate, and refuse to write rather than launder
 
@@ -302,7 +309,7 @@ When a file is skipped the hooks and `lexicon://me` say so in one line, by path 
 
 ### The stoplist exists
 
-Phonetic and fuzzy matching are guesses. Without a guard, "sauce" becomes "SaaS", "off" becomes "auth", and "cube" becomes "Kubernetes" in a sentence about geometry. The built-in stoplist (`stoplist.ts`, 3376 common English words in their usual inflections, grown from a few hundred after `lacks` became `Locus` in production), plus `settings.protectedWords` and per-term `never`, makes those guesses conservative. Product names that double as words (`docker`, `neon`, `whisper`) are deliberately kept off it. Tokens under three characters are excluded from guessing entirely. `minConfidence` defaults to 0.82 for the same reason.
+Phonetic and fuzzy matching are guesses. Without a guard, "sauce" becomes "SaaS", "off" becomes "auth", and "cube" becomes "Kubernetes" in a sentence about geometry. The built-in stoplist (`stoplist.ts`, 3398 common English words in their usual inflections, grown from a few hundred after `lacks` became `Locus` in production), plus `settings.protectedWords` and per-term `never`, makes those guesses conservative. Product names that double as words (`docker`, `neon`, `whisper`) are deliberately kept off it. Tokens under three characters are excluded from guessing entirely. `minConfidence` defaults to 0.82 for the same reason.
 
 ### Explicit aliases override the stoplist
 

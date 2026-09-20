@@ -23,7 +23,7 @@ Yes, and in both directions. Lexicon runs after whatever produced the transcript
 
 ## Does Lexicon work in Slack, Mail, Notes and other Mac apps?
 
-Yes, through the macOS menu bar app. It watches the focused text field through the Accessibility API and rewrites dictated text in place, so it works in Slack, Mail, Notes, your editor, anywhere there is a text field, and you grant Accessibility permission once in System Settings > Privacy & Security. Local push-to-talk with whisper.cpp is built in, and so is a loopback HTTP API on 127.0.0.1 if you would rather call it from your own script. Windows and Linux have the CLI, the MCP server and the browser extension, but no tray app yet.
+Yes, through the macOS menu bar app. It watches the focused text field through the Accessibility API and rewrites dictated text in place, so it works in Slack, Mail, Notes, your editor, anywhere there is a text field, and you grant Accessibility permission once in System Settings > Privacy & Security. Local push-to-talk with whisper.cpp is built in, and so is a loopback HTTP API on 127.0.0.1 if you would rather call it from your own script. Windows and Linux have everything except this. The CLI, the MCP server, the Claude Code hooks and plugin, the local API, the clipboard daemon, the exports and the browser extension are all tested in CI on both. In-place correction is the gap: the Windows tray app is written and unit-tested but has never been run on Windows, and Linux has none at all. [PLATFORMS.md](PLATFORMS.md) breaks it down feature by feature.
 
 ## Is my text sent anywhere?
 

@@ -120,7 +120,27 @@ Four clients have a discovery rule this command cannot check for you, so it prin
 
 ## Any MCP client
 
-See [MCP.md](MCP.md) for the stdio config, the nineteen tools, the two resources and the two prompts.
+Anything that speaks MCP over stdio can be pointed at the server directly, with no
+`lexicon install` step:
+
+```json
+{
+  "mcpServers": {
+    "lexicon": {
+      "command": "lexicon-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+`lexicon-mcp` is on your PATH after `npm i -g @ashlr/lexicon`. From a checkout, use
+`"command": "node"` with `"args": ["/path/to/lexicon/plugin/mcp-server.mjs"]` instead;
+the bundle runs without a build. The same JSON is in
+[examples/mcp-config.json](../examples/mcp-config.json).
+
+[MCP.md](MCP.md) documents what the server answers once it is running: the nineteen
+tools, the two resources and the two prompts.
 
 ## ChatGPT, Claude.ai, Grok and other browser chats
 
@@ -138,16 +158,17 @@ Hooks and MCP only reach agents that support them. Everything else goes through 
 |---|---|
 | Shortcuts, Raycast, scripts, your own app | `lexicon serve`: a local HTTP API on `127.0.0.1:41733` with a bearer token. See [LOCAL-API.md](LOCAL-API.md) |
 | Local dictation without a dictation app | `lexicon voice`: ffmpeg records, whisper.cpp transcribes with your canonicals as prompt hints, the lexicon corrects. See [VOICE.md](VOICE.md) |
-| Any text field, any app | `lexicon daemon --once --paste` on a shortcut. See [DAEMON.md](DAEMON.md) |
+| Any text field, any app | `lexicon daemon --once` on a shortcut, plus `--paste` on macOS. See [DAEMON.md](DAEMON.md) |
 | Any app, any dictation tool, macOS | [LexiconBar](MACOS-APP.md) fixes dictated text in the focused field via Accessibility, and shows a bubble you can undo |
+| Any app, any dictation tool, Windows | [The tray app](WINDOWS-APP.md) does the same through UI Automation. Built and unit-tested, never run on Windows: read that page before trusting it |
 | Your dictation app's own dictionary | `lexicon export <format>`. See [EXPORTS.md](EXPORTS.md) |
 
 Start the pieces you want once:
 
 ```bash
-lexicon serve --install          # local API at login (launchd or systemd user unit)
+lexicon serve --install          # local API at login (launchd, a systemd user unit, or a Scheduled Task)
 lexicon serve --show             # URL and token to paste into the extension options
-lexicon voice --list-devices     # pick a microphone, then bind: lexicon voice --toggle --paste
+lexicon voice --list-devices     # pick a microphone, then bind: lexicon voice --toggle --paste (macOS; --copy elsewhere)
 npm run build:extension          # then Load unpacked: extension/dist
 scripts/build-macos-app.sh       # apps/macos/build/LexiconBar.app (hotkey, clipboard, voice, API)
 ```

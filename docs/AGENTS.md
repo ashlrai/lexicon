@@ -155,7 +155,13 @@ they judge whether it worked.
   correct.
 - Correcting audio. Lexicon never touches audio; `lexicon voice` transcribes with
   the user's own local whisper.cpp instead of hooking anyone else's voice mode.
-- A tray app on Windows or Linux. CLI, MCP server and browser extension only.
+- In-place correction on Linux. There is no tray app, so the clipboard daemon on a
+  hotkey is the whole answer there.
+- In-place correction on Windows, yet. The tray app exists and its logic is
+  unit-tested, but nothing in it has ever been run on Windows, so do not install
+  it for someone as though it works. Everything else does: CLI, MCP server,
+  hooks, plugin, local API, clipboard daemon, exports and the extension are all
+  tested in CI on Windows and Linux. See [PLATFORMS.md](PLATFORMS.md).
 - Installing the extension from a store. It ships as a release zip:
   <https://github.com/ashlrai/lexicon/releases/latest>.
 

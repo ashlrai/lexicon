@@ -1,6 +1,6 @@
 # Growing the lexicon
 
-Four ways terms get in after the first one: a starter pack, your repo, your corrections, and your own voice history.
+Four ways terms get in after the first one, and one way to take them out again: a starter pack, your repo, your corrections, your own voice history, and a review pass over what never fires.
 
 - [Starter packs](PACKS.md) are one command and 155 curated terms.
 - [Harvest your repo](#harvest-your-repo) mines the names already in your code.

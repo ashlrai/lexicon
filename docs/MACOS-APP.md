@@ -31,7 +31,7 @@ because each release is signed with a different ad-hoc identity.
 | Fix clipboard now (⌃⌥V) | `lexicon daemon --once [--paste]` | Corrects whatever is on the clipboard and, in paste mode, sends Cmd+V. |
 | Watch clipboard | `lexicon daemon --quiet` (child process) | Runs the clipboard watcher while checked. Restarted on unexpected exit after 5 s, at most 5 times in a row (a run longer than a minute resets the counter). Killed on quit. |
 | Local API | `lexicon serve` (child process) | Same supervision as above. "Show API URL and token" runs `lexicon serve --show`. |
-| Fix everywhere | the local API (`POST /normalize`) | Rewrites dictated text in the focused field of any app, through Accessibility. See [Fix everywhere](#fix-everywhere). |
+| Fix everywhere | the [local API](LOCAL-API.md) (`POST /normalize`) | Rewrites dictated text in the focused field of any app, through Accessibility. See [Fix everywhere](#fix-everywhere). |
 | Show the correction bubble | | Whether a fix puts a small panel near the caret. See [Correction bubble](#correction-bubble). |
 | Last correction | | Submenu with the `original → canonical` pairs from the most recent voice, clipboard or Fix-everywhere run. Clicking one copies the canonical spelling. |
 | Set up Lexicon… | the local API | Reopens the first-run window. See [First run](#first-run). |
@@ -39,7 +39,7 @@ because each release is signed with a different ad-hoc identity.
 | Stats… | `lexicon stats --json` | Term, alias and hit counts plus the top terms, in an alert. |
 | Run doctor | `lexicon doctor` | Output in a scrollable window. |
 | Start at login | `SMAppService.mainApp` | Only shown when running from the packaged `.app`. |
-| Preferences… | | CLI path, whisper model (`base.en` / `small.en`), paste vs copy, both hotkeys. |
+| Preferences… | | CLI path, whisper model (`base.en` / `small.en`), paste vs copy, all three hotkeys. |
 
 After each voice or clipboard run the app posts a notification such as "Corrected 2 words" listing the replacements. Notification permission is requested on first use; if you decline, the app stays quiet.
 
@@ -294,7 +294,7 @@ and `--status --json` gives `"axTrusted": null`, with the inherited value kept a
 The answer that matters comes from the running app, which writes its own state to `~/Library/Application Support/LexiconBar/state.json` (mode 0600, written atomically) at launch, when the focus watcher starts or stops, when the grant changes under it, and every 30 s otherwise:
 
 ```json
-{ "axTrusted": false, "pid": 92830, "running": true, "updatedAt": "2026-09-20T03:32:31Z", "version": "0.4.0" }
+{ "axTrusted": false, "pid": 92830, "running": true, "updatedAt": "2026-09-20T03:32:31Z", "version": "0.5.2" }
 ```
 
 `--status` reads it and prints a second line. This is the one to believe, and the one an agent should parse (`axAppTrusted`):

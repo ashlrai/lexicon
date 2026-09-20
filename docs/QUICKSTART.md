@@ -75,7 +75,7 @@ lexicon setup
 
 6. Dictation app
    which dictation app do you use?  1) Wispr Flow  2) Superwhisper  3) macOS Text Replacement  4) none
-   wrote ~/Desktop/lexicon-wispr.csv (6 terms)
+   wrote ~/Desktop/lexicon-wispr.csv (126 terms)
    import it in Wispr Flow > Dictionary > Import
 
 7. Does it work?
@@ -95,13 +95,13 @@ Step 7 is not a canned example: it takes the terms the run just seeded, writes t
 
 ## 3. Say a sentence in Claude Code
 
-Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and dictate something with your company name in it: "tell Ashler to ship it". The `UserPromptSubmit` hook rewrites it to `Ashlr.AI` before Claude reads it and tells Claude what changed. Corrections you make in chat ("it's Ashlr.AI, not Ashler") are learned via the `learn_correction` tool.
+Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and dictate something with your company name in it: "tell Ashler to ship it". The `UserPromptSubmit` hook rewrites it to `Ashlr.AI` before Claude reads it and tells Claude what changed. Corrections you make in chat ("it's Ashlr.AI, not Ashler") are learned via the [`learn_correction`](MCP.md#tools) tool.
 
 ## 4. Check it is working
 
 `lexicon normalize "tell Ashler to ship it"` prints `tell Ashlr.AI to ship it`; `lexicon stats` shows hits per term and never-hit terms.
 
-`lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper, and ends with the two lines that matter: a one-sentence verdict and the single next thing to do. Agents get the same two as the `summary` and `nextStep` fields of the `lexicon_doctor` tool, alongside `ready`, the boolean answer to "is this set up?".
+`lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper, and ends with the two lines that matter: a one-sentence verdict and the single next thing to do. Agents get the same two as the `summary` and `nextStep` fields of the [`lexicon_doctor`](MCP.md#tools) tool, alongside `ready`, the boolean answer to "is this set up?".
 
 ## Next
 

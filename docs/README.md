@@ -17,10 +17,12 @@ The short pitch, the benchmark headline and the install commands are in the
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
 | [PACKS.md](PACKS.md) | The four starter packs, what is in each, and how install and remove behave | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
+| [PLATFORMS.md](PLATFORMS.md) | What works on macOS, Windows and Linux, what is tested in CI, and what is not there at all | |
 
 ## Use it with
 
-One lexicon, applied wherever your voice lands. Pick your surface.
+One lexicon, applied wherever your voice lands. Pick your surface. Which of these
+exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 
 | Page | Surface | Also listed under |
 |---|---|---|
@@ -28,6 +30,7 @@ One lexicon, applied wherever your voice lands. Pick your surface.
 | [MCP.md](MCP.md) | Any MCP client: the stdio server's tools, resources and prompts | Reference |
 | [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser | |
 | [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |
+| [WINDOWS-APP.md](WINDOWS-APP.md) | The tray app: any Windows app, via UI Automation. Built and unit-tested, never yet run on Windows | |
 | [LOCAL-API.md](LOCAL-API.md) | The loopback HTTP API: the browser extension is its main client, then LexiconBar, Shortcuts, Raycast, Alfred and scripts | |
 | [VOICE.md](VOICE.md) | Local push-to-talk dictation with ffmpeg and whisper.cpp | |
 | [DAEMON.md](DAEMON.md) | Any text field on any OS, through the clipboard and a hotkey | |
@@ -79,6 +82,21 @@ Design notes and live records. You do not need these to use Lexicon.
 | [AGENT-NATIVE.md](AGENT-NATIVE.md) | The agent-as-UI design: which tool an agent calls when, and why each one previews first |
 | [DOGFOOD.md](DOGFOOD.md) | A live run of the hooks and MCP server against the real Claude Code CLI, and the bugs it found |
 | [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) | The same treatment for the agent-native onboarding tools |
+
+## Not built: commercial planning
+
+Nothing in this section describes software you can run. Lexicon is MIT-licensed
+and everything it does today is free; these three pages are the working papers
+for a paid tier that does not exist, kept in the open because deciding whether
+to sell, and what, is a decision the people using this deserve to watch. Each
+one says so at the top. If you came here to use Lexicon, you can skip all three
+and lose nothing.
+
+| Page | What it covers |
+|---|---|
+| [COMMERCIAL.md](COMMERCIAL.md) | Whether to charge at all, for what, and at what price. Its own conclusion is "do not sell yet" |
+| [ENTERPRISE.md](ENTERPRISE.md) | The same proposal written for someone evaluating it at a company, with the shipped part separated from the planned part |
+| [TEAM-SYNC.md](TEAM-SYNC.md) | The engineering scope for the one paid feature proposed: a hosted team lexicon layer. None of it is in `src/` |
 
 ## Also at the repository root
 

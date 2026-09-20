@@ -5,7 +5,7 @@ already have it. Written for Ashlr.AI, not for a customer; the buyer-facing
 version is [ENTERPRISE.md](ENTERPRISE.md).
 
 Prices researched 2026-09-20 against vendors' own pricing pages. Verify before
-quoting externally — this category re-prices often, and the secondary sources
+quoting externally; this category re-prices often, and the secondary sources
 about it are unusually wrong.
 
 ---
@@ -34,7 +34,7 @@ which is credibility with the small number of people who might try it first.
 
 **The order to do this in:**
 
-1. **Ship `lexicon remote` under MIT** — week 1 of
+1. **Ship `lexicon remote` under MIT.** Week 1 of
    [TEAM-SYNC.md](TEAM-SYNC.md#build-order). A lexicon layer pulled from any
    URL, free and unlimited. It makes free team sharing genuinely good, it is
    one week of work, and it is the honest foundation for charging later: you
@@ -44,7 +44,7 @@ which is credibility with the small number of people who might try it first.
    no feature promises. This costs nothing, breaks no promise, and produces the
    only input that matters.
 3. **Have five real conversations** with organizations of ten or more people
-   who dictate. Not "would you pay?" — *"show me how your team handles this
+   who dictate. Not "would you pay?" but *"show me how your team handles this
    today."* If fewer than three of the five have independently hacked together
    a way to share a word list, the Team product is a solution to a problem
    nobody has, and the right answer is to keep Lexicon free and get it adopted.
@@ -62,8 +62,8 @@ The rest of this document assumes the answer eventually becomes yes.
 
 ## What MIT gives away, permanently
 
-The code is published under MIT. Every version already released — 0.3.1,
-0.3.2, 0.5.0, 0.5.1 — carries that grant, and the grant is not coming back.
+The code is published under MIT. Every version already released, 0.1.0 through
+0.5.1, carries that grant, and the grant is not coming back.
 
 **What any company may do today, forever, without paying and without asking:**
 
@@ -135,7 +135,7 @@ reasons, in order of weight:
 
 **1. The licence is the distribution.** Lexicon reaches people through the MCP
 registry, Glama, the Anthropic plugin directory, awesome-lists, Homebrew and
-npm — and, most importantly, through an agent reading a registry entry and
+npm, and most importantly through an agent reading a registry entry and
 recommending it. Several of those channels are open-source-only by policy, and
 all of them are cheaper than any sales motion we could run.
 [DISTRIBUTION.md](DISTRIBUTION.md) lists eleven of them and nine are not yet
@@ -150,7 +150,7 @@ does not exist.
 [RESEARCH.md](RESEARCH.md#verdict) concludes: *"Do not raise on it. It is a
 utility, and its best outcome may be that platforms adopt the idea."* A
 source-available licence makes platform adoption impossible. If we no longer
-believe that thesis, change the thesis on purpose and in writing — do not
+believe that thesis, change the thesis on purpose and in writing; do not
 change it accidentally by changing the licence.
 
 **4. Cal.com is a fresh cautionary tale about where the boundary goes.**
@@ -163,7 +163,7 @@ warning that it is *"strictly recommended for personal, non-production use"*
 The lesson is not "open core fails"; it is that a boundary drawn at **features
 inside one binary** collapses under pressure, while a boundary drawn at a
 **hosted service** does not. Tailscale has kept its Linux and Android clients
-open for years while the coordination server — the actual business — stays
+open for years while the coordination server, the actual business, stays
 closed, and has publicly committed to
 [supporting Headscale](https://tailscale.com/blog/opensource), the open-source
 reimplementation of that server, as a complementary project.
@@ -177,7 +177,7 @@ was never MIT, rather than to claw back the client.
 
 A related question, since it comes up: should future versions ship under
 **Apache-2.0** instead, for its explicit irrevocability and patent grant? It
-would be a technically better licence. It is not worth doing now — the
+would be a technically better licence. It is not worth doing now: the
 practical risk it removes is near zero, and editing the LICENSE file is exactly
 the signal we are trying not to send. Keep it on the list for a future
 deliberate licence event, if there ever is one.
@@ -192,12 +192,12 @@ All read from the vendors' own pricing pages on 2026-09-20.
 
 | Vendor | Free tier | Paid | Shared/team dictionary | SSO |
 | --- | --- | --- | --- | --- |
-| [Wispr Flow](https://wisprflow.ai/pricing) | 2,000 words/week desktop, 1,000/week mobile | Pro **$15/mo**, **$12/seat/mo annual**; Growth $23 / **$18 annual**; Growth + Notetaker $33 / $26; Enterprise custom, annual only | **Yes, at Pro ($12)** — "shared dictionary and snippets" | **Growth, $18/seat** |
-| [superwhisper](https://superwhisper.com/#pricing) | Permanent, local Whisper models only, 2 modes; 3,000 words of Pro to start | Pro **$8.49/mo**, **$84.99/yr**, **$249.99 lifetime**; Enterprise seat-based, price unpublished | No team dictionary at all — custom vocabulary is on the *free* tier | Not published |
-| [Aqua Voice](https://aquavoice.com/pricing) | 1,000 words, one-time, not recurring | Pro **$8/seat/mo annual** ($10 monthly); Max $24 / $30; **Team (2–9 seats) $12/seat/mo annual** ($15 monthly); Business (10+) custom | **"Team-wide Dictionaries" is Business only** — 10+ seats, custom price, *not* in the $12 Team plan | Business, custom, 10+ seats |
+| [Wispr Flow](https://wisprflow.ai/pricing) | 2,000 words/week desktop, 1,000/week mobile | Pro **$15/mo**, **$12/seat/mo annual**; Growth $23 / **$18 annual**; Growth + Notetaker $33 / $26; Enterprise custom, annual only | **Yes, at Pro ($12)**: "shared dictionary and snippets" | **Growth, $18/seat** |
+| [superwhisper](https://superwhisper.com/#pricing) | Permanent, local Whisper models only, 2 modes; 3,000 words of Pro to start | Pro **$8.49/mo**, **$84.99/yr**, **$249.99 lifetime**; Enterprise seat-based, price unpublished | No team dictionary at all; custom vocabulary is on the *free* tier | Not published |
+| [Aqua Voice](https://aquavoice.com/pricing) | 1,000 words, one-time, not recurring | Pro **$8/seat/mo annual** ($10 monthly); Max $24 / $30; **Team (2-9 seats) $12/seat/mo annual** ($15 monthly); Business (10+) custom | **"Team-wide Dictionaries" is Business only** (10+ seats, custom price), *not* in the $12 Team plan | Business, custom, 10+ seats |
 | [Otter.ai](https://otter.ai/pricing) | 300 min/month; **custom vocabulary capped at 5 terms** | Pro $16.99 / **$8.33 annual**; Business $24 / **$19.99 annual**; Enterprise by demo | 800 names + 800 terms at Business ($19.99) | Enterprise, **100-seat minimum** |
 | [Talon Voice](https://talonvoice.com/) | The whole app, free | Optional Patreon: **$5 / $25 / $100 per month** | n/a | n/a |
-| Dragon / Nuance | — | **No longer purchasable per-seat.** Every consumer and professional Dragon URL now 404s or redirects to Microsoft's health-solutions pages, which publish no prices. It is an enterprise healthcare contract now. | — | — |
+| Dragon / Nuance | n/a | **No longer purchasable per-seat.** Every consumer and professional Dragon URL now 404s or redirects to Microsoft's health-solutions pages, which publish no prices. It is an enterprise healthcare contract now. | n/a | n/a |
 
 Four things fall out of that table:
 
@@ -212,7 +212,7 @@ Four things fall out of that table:
 
 The uncomfortable one: **Wispr Flow already ships a shared team dictionary at
 $12/seat.** Our answer has to be the project's original thesis, stated
-plainly — Wispr's dictionary corrects Wispr's transcripts. It does nothing for
+plainly: Wispr's dictionary corrects Wispr's transcripts. It does nothing for
 Claude Code's own speech recognition, for ChatGPT voice, for Cursor, or for a
 phone keyboard. The portable layer is the product; if that argument does not
 land, the Team tier does not either.
@@ -242,12 +242,12 @@ it is remarkably stable across six companies in four different categories.
 **Two refinements worth stealing:**
 
 - **Do not tax SSO.** [sso.tax](https://sso.tax/) documents 200+ vendors
-  gating SSO behind enormous multiples — Appsmith $15 → $2,500 (16,567%),
-  Railway $20 → $2,000, GitHub $4 → $21 — under the argument that *"security
-  shouldn't be a premium feature."* Tailscale includes SSO and SCIM in its
-  cheapest paid tier and earns goodwill for it. Since Wispr charges $18/seat
-  for SSO, including it at our lowest paid tier is both the right thing and a
-  sharp competitive position.
+  gating SSO behind enormous multiples: Appsmith $15 → $2,500 (16,567%),
+  Railway $20 → $2,000, GitHub $4 → $21. It does this under the argument
+  that *"security shouldn't be a premium feature."* Tailscale includes SSO and
+  SCIM in its cheapest paid tier and earns goodwill for it. Since Wispr charges
+  $18/seat for SSO, including it at our lowest paid tier is both the right
+  thing and a sharp competitive position.
 - **Sell log *retention*, not log *existence*.** PostHog's ladder is 7 days →
   2 months → 60 months, and Tailscale holds flow logs for its $18 tier while
   selling SSO at $8. Giving every paid customer an audit trail and charging
@@ -261,7 +261,7 @@ it is remarkably stable across six companies in four different categories.
 Three tiers. The boundary between them is **who operates the thing**, never
 which features a binary is willing to execute.
 
-### Free — MIT, forever, uncrippled
+### Free: MIT, forever, uncrippled
 
 **Status: shipped, except where noted.**
 
@@ -274,7 +274,7 @@ experience tomorrow:
   and seven importers, the importable library.
 - Sharing a lexicon by committing `.lexicon.yaml` to a repository, with the
   trust gate.
-- **`lexicon remote` — *planned, week 1*.** Pull a lexicon layer from any URL
+- **`lexicon remote`: *planned, week 1*.** Pull a lexicon layer from any URL
   you control: a raw GitHub file, an S3 object, an internal file server.
   Unlimited members, unlimited terms, no account. This is the part that matters
   most for the integrity of the whole model, and it must ship *before* anything
@@ -287,7 +287,7 @@ in the codebase and refuses to run.
 currently free becomes paid. New capabilities may be paid; existing ones never
 move.
 
-### Team — the hosted shared lexicon
+### Team (the hosted shared lexicon)
 
 **Status: entirely unbuilt.** Scope in [TEAM-SYNC.md](TEAM-SYNC.md).
 
@@ -300,8 +300,8 @@ What is in it, none of which is a binary refusing to run:
   *below* each person's own file so an admin push can never overwrite what
   someone typed for themselves.
 - Roles: owner, admin, editor, member.
-- Proposals — a member's agent can offer to push a correction it just learned up
-  to the team.
+- Proposals. A member's agent can offer to push a correction it just learned
+  up to the team.
 - An audit trail of every change, with 90-day retention.
 - **SSO (SAML and OIDC), included at this tier.**
 - Email support, best effort, no SLA.
@@ -319,8 +319,8 @@ What is in it, none of which is a binary refusing to run:
    support load as a $6 one and gets no procurement attention. The floor is set
    by support cost, not by willingness to pay.
 4. **It undercuts SSO by 3x.** Wispr's cheapest SSO is $18/seat. Ours is $6.
-5. **The deal sizes work out sane.** 20 seats is $1,440/year — self-serve only,
-   never worth a call. 200 seats is $14,400/year — a real contract. 1,000 seats
+5. **The deal sizes work out sane.** 20 seats is $1,440/year: self-serve only,
+   never worth a call. 200 seats is $14,400/year, a real contract. 1,000 seats
    is $72,000/year, which is a company.
 
 The 25% annual discount matches Cal.com's; five free seats is a little tighter
@@ -337,13 +337,13 @@ good ratio.
 a person who curates their own file already gets it. The honest Team argument
 is narrower and better: *the words your colleagues were never going to add.*
 The engineer will spend twenty minutes on a YAML file. The salesperson, the
-designer, the support rep and the new hire in week one will not — and they are
+designer, the support rep and the new hire in week one will not, and they are
 the ones sending your company's name out with a spelling mistake in it. A
 shared lexicon is the only version of this that reaches them. Sell that, and do
 not lean on the per-person time maths, because a sharp buyer will notice it
 argues for the free tier.
 
-### Enterprise — quoted, not listed
+### Enterprise: quoted, not listed
 
 **Status: entirely unbuilt, and several items should not be built until
 something is signed.**
@@ -352,14 +352,14 @@ Anchor at **$14 per user per month, annual**, with a **$12,000/year floor**.
 
 - Fleet deployment: signed and notarized macOS `.pkg` and a Windows MSI, a
   configuration profile, a managed policy file, silent enrolment.
-- Self-hosted or on-premise sync — a container image and a database you own.
+- Self-hosted or on-premise sync, a container image and a database you own.
 - Long audit retention and export.
 - SCIM provisioning.
 - Support with a written SLA and a named contact.
 - **Indemnification.** The one item on the list with no free substitute. Our
   position is unusually clean: a single copyright holder, no CLA gaps, and 98
   production dependencies of which 87 are MIT, 8 ISC, 2 BSD-3-Clause and 1
-  BSD-2-Clause — **no copyleft anywhere in what ships**.
+  BSD-2-Clause, with **no copyleft anywhere in what ships**.
 
 The floor matters more than the rate. Below roughly seventy seats, an
 enterprise deal costs a one-person company more in questionnaires, redlines and
@@ -376,18 +376,18 @@ lose a month.
 | | Free | Team | Enterprise |
 | --- | --- | --- | --- |
 | Price | $0 forever | $6/user/mo annual, $8 monthly | from $14/user/mo, $12k/yr floor |
-| Free seats | unlimited | first 5 | — |
+| Free seats | unlimited | first 5 | n/a |
 | Everything shipped today | ✓ | ✓ | ✓ |
 | Share via repo or any URL you host | ✓ | ✓ | ✓ |
-| Hosted shared lexicon | — | ✓ | ✓ |
-| Roles and proposals | — | ✓ | ✓ |
-| Audit trail | — | 90 days | long retention + export |
-| SSO (SAML/OIDC) | — | ✓ | ✓ |
-| SCIM | — | — | ✓ |
-| Fleet deployment and managed policy | — | — | ✓ |
-| Self-hosted sync | self-host any URL | — | ✓ managed |
+| Hosted shared lexicon | no | ✓ | ✓ |
+| Roles and proposals | no | ✓ | ✓ |
+| Audit trail | no | 90 days | long retention + export |
+| SSO (SAML/OIDC) | no | ✓ | ✓ |
+| SCIM | no | no | ✓ |
+| Fleet deployment and managed policy | no | no | ✓ |
+| Self-hosted sync | self-host any URL | no | ✓ managed |
 | Support | community | email, best effort | SLA + named contact |
-| Indemnification | — | — | ✓ |
+| Indemnification | no | no | ✓ |
 | **Built today** | **yes, except `remote`** | **no** | **no** |
 
 ---
@@ -408,7 +408,7 @@ Chrome or Firefox stores (unpacked install only), and the macOS app is ad-hoc
 signed and not notarized (Gatekeeper blocks first launch). Both matter for any
 fleet-deployment claim and neither may be described as fleet-ready.
 
-**Planned, not built — every single item:** `lexicon remote`; the hosted org
+**Planned, not built. Every single item:** `lexicon remote`; the hosted org
 lexicon; accounts, device login and orgs; roles; proposals; the audit trail;
 SSO; SCIM; the admin console; billing; signed and notarized installers; the
 MSI; the configuration profile; the managed policy file; self-hosted sync; any
@@ -421,7 +421,7 @@ SLA; indemnification as an executed contract term.
 **1. A competitor can fork the MIT core, and one specific competitor can afford
 to.** Wispr Flow raised a $280M Series B and already ships shared team
 dictionaries at $12/seat. Extending that to a portable API is not hard for
-them. Our defence is not the code — they do not need our code — it is being
+them. Our defence is not the code (they do not need our code); it is being
 the neutral layer that works with every recognizer including theirs, which a
 dictation vendor has a structural reason not to build.
 
@@ -432,8 +432,8 @@ going to pay.
 
 **3. The Team product has to be built and then operated forever.** Six weeks to
 a credible v1, and then a permanent on-call obligation held by one person.
-Infrastructure is cheap — call it $150–300/month for the first few hundred
-seats. Attention is not.
+Infrastructure is cheap: call it $150 to $300/month for the first few
+hundred seats. Attention is not.
 
 **4. Support consumes the founder.** Every enterprise conversation costs days
 of questionnaires and redlines. This is the real reason for the Enterprise
@@ -481,8 +481,10 @@ The full recommendation, including exact wording, is in
 
 ## See also
 
-- [ENTERPRISE.md](ENTERPRISE.md) — the same offering written for a buyer.
-- [TEAM-SYNC.md](TEAM-SYNC.md) — what has to be built for Team to be real.
-- [pricing-content.md](pricing-content.md) — the landing-page spec for the `web/` owner.
-- [RESEARCH.md](RESEARCH.md) — the market analysis this builds on, and the kill criteria.
-- [DISTRIBUTION.md](DISTRIBUTION.md) — the open-source channels the licence buys.
+- [ENTERPRISE.md](ENTERPRISE.md) is the same offering written for a buyer.
+- [TEAM-SYNC.md](TEAM-SYNC.md) scopes what has to be built for Team to be real.
+- [pricing-content.md](pricing-content.md) is the landing-page spec handed to the `web/` owner.
+- [RESEARCH.md](RESEARCH.md) has the market analysis this builds on, and the kill criteria.
+- [DISTRIBUTION.md](DISTRIBUTION.md) covers the open-source channels the licence buys.
+
+Back to [the docs index](README.md).

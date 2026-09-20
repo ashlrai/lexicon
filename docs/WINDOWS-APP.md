@@ -8,7 +8,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 
 > ## Read this first
 >
-> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic — burst detection, splice math, the secret-field heuristic, bubble content and placement — is covered by 144 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
+> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, bubble content and placement) is covered by 144 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
 >
 > Before trusting it with anything you care about, run [the manual test script](#manual-test-script). It takes about ten minutes.
 
@@ -36,7 +36,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 Four moving parts, in a straight line:
 
 1. A **focus watcher** follows the focused text field across every app, through UI Automation's `AutomationFocusChangedEvent`, plus `Text_TextChanged` and `ValueValueProperty` change events on whatever currently has focus, plus a 250 ms poll as a safety net.
-2. A **burst detector** decides whether what just arrived was dictated or typed. This is the part that had to be got exactly right, and it is ported line for line from the Mac app — see [Fix everywhere](#fix-everywhere).
+2. A **burst detector** decides whether what just arrived was dictated or typed. This is the part that had to be got exactly right, and it is ported line for line from the Mac app; see [Fix everywhere](#fix-everywhere).
 3. The burst goes to **`POST /normalize`** on the local API (`127.0.0.1:41733`), with the bearer token from `serve.json`.
 4. The corrected span is **written back into the field** and verified by re-reading it. Nothing is written if the field changed underneath in the meantime.
 
@@ -50,9 +50,11 @@ No installer. One file.
 LexiconBar.exe
 ```
 
+No release ships it yet. Get it from the `LexiconBar-win-x64` artifact on a green run of the `Windows app` workflow, or build it yourself: see [Build from source](#build-from-source), which cross-compiles from a Mac just as well as it builds on Windows.
+
 Double-click it. A waveform icon appears in the notification area and Fix everywhere is on. Nothing needs elevating, nothing is written outside your own profile, and there is no service.
 
-You also need `lexicon serve` running on the same machine — that is the process holding your lexicon. The Node CLI does not automate the Windows install, but it prints the command:
+You also need `lexicon serve` running on the same machine. That is the process holding your lexicon. One command registers it as a logon-triggered Scheduled Task so it is up whenever you are:
 
 ```
 lexicon serve --install
@@ -66,7 +68,7 @@ schtasks /Create /SC ONLOGON /TN "lexicon serve" /TR "\"C:\Program Files\nodejs\
 
 Use **Run doctor** in the tray menu to check the app can see it.
 
-To have LexiconBar itself start with Windows, use **Start at login** in the menu. It writes one value to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, which is also where Settings > Apps > Startup can turn it off — and if you turn it off there, the app respects that rather than putting it back.
+To have LexiconBar itself start with Windows, use **Start at login** in the menu. It writes one value to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, which is also where Settings > Apps > Startup can turn it off; if you turn it off there, the app respects that rather than putting it back.
 
 Settings live in `%APPDATA%\LexiconBar\settings.json`; the log is `%APPDATA%\LexiconBar\lexiconbar.log`.
 
@@ -96,8 +98,8 @@ The two hotkeys are registered with `RegisterHotKey`, which **fails rather than 
 An insertion becomes a **burst** when it is big enough to be dictation and the field has been quiet long enough to call it finished. The rules, and the reason each exists:
 
 - **Chunk size, not rate.** A burst requires at least one change event that inserted **four or more units at once**. Typing arrives one unit at a time no matter how fast or slow, so key-by-key typing is never a burst. Rate would have been the obvious rule and it is the wrong one: someone typing quickly looks exactly like dictation, and someone dictating slowly does not.
-- **Coalescing a streamed run.** Dictation does not always arrive as one insertion. Windows Voice Access streams a word at a time, and so does Wispr Flow, and the gaps between spoken words are routinely longer than the 700 ms settle delay. Deciding at the first gap chopped a sentence into single words, each of which was "too short" to correct — so a dictated sentence went through completely uncorrected, which looks exactly like the feature not working. A run that has produced at least one word-sized insertion is now held open until the field has been quiet for **1500 ms**, longer than a pause between words, and the words are corrected together as one burst. Continuous dictation is capped at **12 s** so it is still corrected periodically. A single insertion that already reads as a burst is a paste, with nothing to wait for, so it still fires at the settle delay.
-- **Anchoring the window to the caret.** This one ate somebody's paragraph on macOS. A prefix/suffix diff cannot always say *where* an insertion happened. Dictating "ping ashler about the…" into a field that already reads "ping Ashlr.AI about the…" shares the leading "ping ", so the naive diff reports the insertion five units late — a window that starts inside the new text and runs into the old. It is textually consistent, so every other guard passes, and the correction gets spliced into the middle of a word while the words outside the slid window are never corrected at all. The caret position resolves it. **When the caret cannot be read, an ambiguous insertion is refused rather than guessed at.**
+- **Coalescing a streamed run.** Dictation does not always arrive as one insertion. Windows Voice Access streams a word at a time, and so does Wispr Flow, and the gaps between spoken words are routinely longer than the 700 ms settle delay. Deciding at the first gap chopped a sentence into single words, each of which was "too short" to correct, so a dictated sentence went through completely uncorrected, which looks exactly like the feature not working. A run that has produced at least one word-sized insertion is now held open until the field has been quiet for **1500 ms**, longer than a pause between words, and the words are corrected together as one burst. Continuous dictation is capped at **12 s** so it is still corrected periodically. A single insertion that already reads as a burst is a paste, with nothing to wait for, so it still fires at the settle delay.
+- **Anchoring the window to the caret.** This one ate somebody's paragraph on macOS. A prefix/suffix diff cannot always say *where* an insertion happened. Dictating "ping ashler about the…" into a field that already reads "ping Ashlr.AI about the…" shares the leading "ping ", so the naive diff reports the insertion five units late: a window that starts inside the new text and runs into the old. It is textually consistent, so every other guard passes, and the correction gets spliced into the middle of a word while the words outside the slid window are never corrected at all. The caret position resolves it. **When the caret cannot be read, an ambiguous insertion is refused rather than guessed at.**
 - **Refusing a stale snapshot.** The field is live the whole time the API is answering. If it no longer holds exactly the text the burst was cut from, every offset we have is stale, and nothing is written.
 
 Tunables: `SettleMs` 700, `MinWords` 3, `MinChunk` 4, `RunQuietMs` 1500, `MaxRunMs` 12000, `MaxFieldLength` 20000. The first five are in Preferences.
@@ -109,7 +111,7 @@ This is where Windows and macOS genuinely diverge, and it is the least certain p
 **UIA's `TextPattern` is read-only.** There is no equivalent of the Mac's "set `AXSelectedText` over the burst range", which is that app's preferred write. So the ladder here is:
 
 1. **Select and type.** Build a `TextPatternRange` over the burst span, read it back and confirm the provider means the same span we do, confirm the app is still in the foreground, then send the replacement as Unicode key events (`SendInput` with `KEYEVENTF_UNICODE`, no virtual key, so it is layout-independent). This goes through the app's own editing pipeline, so its undo stack works.
-2. **Whole-value write.** `ValuePattern.SetValue` with the spliced full text. Works in Win32 edits, WinForms and WPF text boxes, needs no foreground window — and loses the app's undo stack and moves the caret to the end, which is why it is second, not first.
+2. **Whole-value write.** `ValuePattern.SetValue` with the spliced full text. Works in Win32 edits, WinForms and WPF text boxes, needs no foreground window, but it loses the app's undo stack and moves the caret to the end, which is why it is second, not first.
 3. **Backspace and retype.** Deliberately the narrowest path in the app: it only runs when the burst is unambiguously the tail of the field *and* the caret is sitting at the end of it *and* the app is in the foreground. It is the only path that destroys text without first proving the app agrees where that text is, so it refuses rather than guesses.
 
 Each step re-reads the field immediately before doing anything destructive, and verifies afterwards by re-reading again. A step that half-worked stops the ladder instead of writing again on top of a field we no longer understand.
@@ -129,15 +131,15 @@ Three independent guards, because each one on its own has a hole.
 
 Prefixes, because an exact list is wrong the moment a vendor renames an executable, and being wrong here means reading a vault field and POSTing it to an HTTP endpoint. **If your manager is not on the list, add it**: focus it and use "Fix everywhere in `<app>`", or edit the list in Preferences.
 
-**3. Fields whose labels suggest a secret.** The process list always lags reality, and `IsPassword` only protects the literal masked input — in any manager that is not on the list, the *ordinary* fields (an item's notes, a custom field, a TOTP seed box, a vault search field echoing a username) would otherwise be read and sent. So, independently of which app it is, a field is refused when its automation id, help text, name, localized control type, full description, class name — or the title of the window it sits in — contains one of:
+**3. Fields whose labels suggest a secret.** The process list always lags reality, and `IsPassword` only protects the literal masked input; in any manager that is not on the list, the *ordinary* fields (an item's notes, a custom field, a TOTP seed box, a vault search field echoing a username) would otherwise be read and sent. So, independently of which app it is, a field is refused when its automation id, help text, name, localized control type, full description, class name, or the title of the window it sits in contains one of:
 
 `password`, `passphrase`, `passcode`, `secret`, `token`, `api key`, `private key`, `seed`, `mnemonic`, `recovery`, `pin`, `cvv`, `cvc`, `security code`, `verification code`, `otp`, `totp`, `2fa`, `mfa`, `credential`, `keychain`, `vault`, `card number`, `account number`, `routing number`, `social security`.
 
-Matching is on **whole words** after splitting camel case and punctuation, so `apiKeyField` and `api_key` match but "shipping" never matches "pin" and an ordinary Notes field is left alone. A refused field is never watched at all — no value is read from it — and the log says `not watching this field in <app>: it looks like it holds a secret (<term>)`.
+Matching is on **whole words** after splitting camel case and punctuation, so `apiKeyField` and `api_key` match but "shipping" never matches "pin" and an ordinary Notes field is left alone. A refused field is never watched at all (no value is read from it), and the log says `not watching this field in <app>: it looks like it holds a secret (<term>)`.
 
 One known Windows hole: the classic **Credential Manager** control panel runs inside `rundll32.exe`, which cannot be excluded by name without excluding every other control panel applet. The label heuristic is what covers it, which is exactly the case that heuristic exists for.
 
-**The log never contains field text.** Only decisions about it — `skip in chrome: too short (1 words, 6 units)` is logged; the six units are not.
+**The log never contains field text.** Only decisions about it. `skip in chrome: too short (1 words, 6 units)` is logged; the six units are not.
 
 ## The correction bubble
 
@@ -149,9 +151,9 @@ After a fix, a small dark panel appears just below and left of the caret: up to 
 | **Never** | Records the original spelling under that term's `never` list, and undoes. | `POST /add {canonical, never: [original]}` |
 | **Add** | Promotes the original to an explicit alias. Shown **only** when the rewrite came from a phonetic or fuzzy guess. | `POST /learn {heard, meant}` |
 
-It fades in over ~120 ms and goes away after 4 seconds (0–30 in Preferences; 0 means until dismissed). Hovering pauses the countdown so it cannot vanish on the way to Undo.
+It fades in over ~120 ms and goes away after 4 seconds (0 to 30 in Preferences; 0 means until dismissed). Hovering pauses the countdown so it cannot vanish on the way to Undo.
 
-**It must never take keyboard focus** — you are mid-sentence, and a window that stole focus would swallow the next word and move focus away from the field the undo applies to. On Windows that takes three things agreeing: `WS_EX_NOACTIVATE`, `ShowWithoutActivation`, and answering `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`. Without the third, the first click is eaten activating the window and Undo needs two clicks. `WS_EX_TOOLWINDOW` keeps it out of Alt+Tab.
+**It must never take keyboard focus**: you are mid-sentence, and a window that stole focus would swallow the next word and move focus away from the field the undo applies to. On Windows that takes three things agreeing: `WS_EX_NOACTIVATE`, `ShowWithoutActivation`, and answering `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`. Without the third, the first click is eaten activating the window and Undo needs two clicks. `WS_EX_TOOLWINDOW` keeps it out of Alt+Tab.
 
 Placement comes from `TextPatternRange.GetBoundingRectangles()` over the selection, falling back to the Win32 caret via `GetGUIThreadInfo`, then to the element's own box, then to the mouse. The result is clamped to the working area of the monitor the caret is on, so it never lands under the taskbar, and flips above the caret when there is no room below.
 
@@ -173,7 +175,7 @@ with **no `win32` branch at all**, and `src/serve/config.ts` writes `serve.json`
 %USERPROFILE%\.config\lexicon\serve.json
 ```
 
-**not** `%APPDATA%\lexicon\serve.json`. LexiconBar honours `LEXICON_PATH` and `XDG_CONFIG_HOME` first, exactly as the CLI does, then that path, and then probes `%APPDATA%\lexicon\serve.json` and `%LOCALAPPDATA%\lexicon\serve.json` anyway — so that if the Node side ever grows a proper Windows branch, this app keeps working without a release. **Run doctor** prints which one it actually found.
+**not** `%APPDATA%\lexicon\serve.json`. LexiconBar honours `LEXICON_PATH` and `XDG_CONFIG_HOME` first, exactly as the CLI does, then that path, and then probes `%APPDATA%\lexicon\serve.json` and `%LOCALAPPDATA%\lexicon\serve.json` anyway, so that if the Node side ever grows a proper Windows branch, this app keeps working without a release. **Run doctor** prints which one it actually found.
 
 The token is read lazily and re-read after any failure, so restarting the server with a fresh token heals on the next burst rather than needing the tray app restarted.
 
@@ -182,17 +184,17 @@ The token is read lazily and re-read after any failure, so restarting the server
 | | macOS | Windows |
 | --- | --- | --- |
 | Accessibility API | AX (`AXObserver`, `AXUIElement`) | UI Automation (`IUIAutomation`, COM) |
-| Permission needed | Yes — Privacy & Security > Accessibility, and it is a recurring source of pain | **None.** Any process may be a UIA client. |
+| Permission needed | Yes: Privacy & Security > Accessibility, and it is a recurring source of pain | **None.** Any process may be a UIA client. |
 | Observers | One per process | One global focus handler, per-element handlers on the focused element |
 | App identity | Bundle id (`com.1password.*`) | Executable name (`1password*`) |
 | Preferred write | Set `AXSelectedText` over the range | Select the range, then type over it (`TextPattern` has no setter) |
 | Fallback write | Whole `AXValue` | Whole `ValuePattern`, then backspace-and-retype |
-| Clipboard actions | Shells out to `lexicon daemon` | Done in-process against `POST /normalize` — fewer moving parts, and the CLI is not on the hot path |
+| Clipboard actions | Shells out to `lexicon daemon` | Done in-process against `POST /normalize` (fewer moving parts, and the CLI is not on the hot path) |
 | Bubble y-axis | Origin bottom-left | Origin top-left |
 | Start at login | `SMAppService` | `HKCU\...\Run` |
 | Blocked by | Apps with no AX tree (VS Code, Cursor) | Elevated windows (UIPI), and apps with no UIA text provider |
 
-**The Windows version needs no permission grant**, which removes the single worst part of the macOS experience (the code-signature / TCC trap documented at length in [MACOS-APP.md](MACOS-APP.md#signing-and-why-the-accessibility-grant-kept-disappearing)). The trade is UIPI: a non-elevated LexiconBar cannot read or type into an elevated window, silently. That is why the manifest says `asInvoker` and not `requireAdministrator` — running the whole tray app elevated would mean reading the text of every elevated window on the machine, which is a much worse deal than not correcting text in an admin PowerShell.
+**The Windows version needs no permission grant**, which removes the single worst part of the macOS experience (the code-signature / TCC trap documented at length in [MACOS-APP.md](MACOS-APP.md#signing-and-why-the-accessibility-grant-kept-disappearing)). The trade is UIPI: a non-elevated LexiconBar cannot read or type into an elevated window, silently. That is why the manifest says `asInvoker` and not `requireAdministrator`: running the whole tray app elevated would mean reading the text of every elevated window on the machine, which is a much worse deal than not correcting text in an admin PowerShell.
 
 ## What is verified and what is not
 
@@ -201,14 +203,14 @@ The token is read lazily and re-read after any failure, so restarting the server
 - `dotnet build -c Release` succeeds for the whole solution, warnings-as-errors, on macOS.
 - `dotnet publish -r win-x64 --self-contained` produces a single 72 MB `LexiconBar.exe` (`PE32+ executable (GUI) x86-64`), cross-compiled from macOS.
 - **144 unit tests pass**, on macOS, covering:
-  - the burst detector, ported case for case from `BurstDetectorTests.swift` — typing never fires, streamed dictation coalesces, a paste fires at the settle delay, the run cap, hard refusals, UTF-16 maths with emoji, CRLF;
-  - the splice and alignment maths, ported from `BurstAlignmentTests.swift` — the ambiguous-window regression, caret anchoring, stale snapshots, multi-replacement splices, newline refusal, the undo ledger;
+  - the burst detector, ported case for case from `BurstDetectorTests.swift`: typing never fires, streamed dictation coalesces, a paste fires at the settle delay, the run cap, hard refusals, UTF-16 maths with emoji, CRLF;
+  - the splice and alignment maths, ported from `BurstAlignmentTests.swift`, covering the ambiguous-window regression, caret anchoring, stale snapshots, multi-replacement splices, newline refusal, the undo ledger;
   - the secret-field heuristic, including the whole-word cases ("shipping" vs "pin") and a pinned known-miss for pluralized all-caps acronyms;
   - the exclusion list, bubble content and actions, bubble placement in Windows y-down coordinates including the flip and the clamps;
   - `serve.json` path resolution, credential parsing, the `normalize` response parser, settings round-trip, CLI discovery.
-- The CsWin32-generated UIA interfaces compile against the code that calls them — which is the reason for choosing CsWin32 over hand-written `[ComImport]` declarations: the vtable layout comes from Microsoft's own Win32 metadata, not from memory. A method out of order in a 60-method interface is a silent ABI bug that a Mac cannot catch.
+- The CsWin32-generated UIA interfaces compile against the code that calls them, which is the reason for choosing CsWin32 over hand-written `[ComImport]` declarations: the vtable layout comes from Microsoft's own Win32 metadata, not from memory. A method out of order in a 60-method interface is a silent ABI bug that a Mac cannot catch.
 
-### Not verified — the precise list
+### Not verified: the precise list
 
 Nothing below has been executed. It compiles; that is all anyone can say.
 
@@ -218,8 +220,8 @@ Nothing below has been executed. It compiles; that is all anyone can say.
 | Threading model | `FixEverywhere/UiaThread.cs` | That an MTA worker thread receives UIA callbacks without a message pump, and that posting work out of a handler avoids the documented re-entrancy deadlock. |
 | Focus events | `FixEverywhere/FocusWatcher.cs` | That `AddFocusChangedEventHandler` fires for the apps we care about; that `Text_TextChanged` / `ValueValueProperty` subscriptions attach and detach cleanly; whether 250 ms is the right poll; whether the managed callback objects survive GC long enough (they are held in fields, but this is exactly the kind of thing that only shows up live). |
 | Reading text | `FixEverywhere/UiaField.cs` | `GetText(limit + 1)` capping; the `ValuePattern` fallback; whether `IsTextPatternAvailable` is trustworthy per app. |
-| Caret offset | `FixEverywhere/UiaField.cs` `CaretEnd` | The clone-and-measure trick (`MoveEndpointByRange` then `GetText().Length`). **This is the highest-value unverified thing in the app** — without a caret the detector refuses ambiguous bursts, so if it is wrong, dictation in front of similar text silently does nothing. |
-| Character units | `FixEverywhere/UiaField.cs` `SelectSpan` | That `TextUnit_Character` maps 1:1 to UTF-16 units in each provider. It is read back and compared before any write, so a mismatch should degrade to "not selectable" rather than corrupt — but that guard itself is untested. |
+| Caret offset | `FixEverywhere/UiaField.cs` `CaretEnd` | The clone-and-measure trick (`MoveEndpointByRange` then `GetText().Length`). **This is the highest-value unverified thing in the app.** Without a caret the detector refuses ambiguous bursts, so if it is wrong, dictation in front of similar text silently does nothing. |
+| Character units | `FixEverywhere/UiaField.cs` `SelectSpan` | That `TextUnit_Character` maps 1:1 to UTF-16 units in each provider. It is read back and compared before any write, so a mismatch should degrade to "not selectable" rather than corrupt, but that guard itself is untested. |
 | Writing | `FixEverywhere/FixEngine.cs` `Write` | The whole three-step ladder, its ordering, and every verification timeout in it (0.6 s / 0.3 s / 0.6 s). |
 | Synthesized input | `Interop/Keyboard.cs` | `SendInput` with `KEYEVENTF_UNICODE`; surrogate pairs as two events; the 400-event batch size; that a UIPI refusal shows up as "not reflected" rather than as a partial write. |
 | SAFEARRAY reads | `Interop/SafeArrays.cs` | Reading VT_I4 runtime ids and VT_R8 rectangles from `pvData`, and that `SafeArrayDestroy` frees them correctly. Pointer code, unrunnable here. |
@@ -232,15 +234,15 @@ Nothing below has been executed. It compiles; that is all anyone can say.
 | Registry | `StartupRegistration.cs` | The `Run` key write, and the quoting of a path with spaces. |
 | Single-file | `LexiconBar.App.csproj` | That COM interop, WinForms and the drawn icon all survive `PublishSingleFile` with compression. |
 
-**CI cannot close this gap.** A GitHub runner has no interactive desktop session: no focused element, no foreground window, no caret. `build-windows` in `apps/windows/build/windows-app.yml` compiles and packages; it does not and cannot test any of the above. Only a person at a real machine can.
+**CI cannot close this gap.** A GitHub runner has no interactive desktop session: no focused element, no foreground window, no caret. The `build-windows` job in `.github/workflows/windows-app.yml` compiles, tests and packages; it does not and cannot test any of the above. Only a person at a real machine can.
 
 ### Most likely to be wrong on first contact
 
 In the order I would bet on:
 
-1. **The caret offset** (`CaretEnd`). Clone-and-measure is the standard technique but the endpoint-dragging direction is easy to get backwards, and a wrong answer is *silent* — the detector just refuses ambiguous bursts and dictation into non-empty fields appears to do nothing. First thing to check if "it works in an empty Notepad but not in a real document".
+1. **The caret offset** (`CaretEnd`). Clone-and-measure is the standard technique but the endpoint-dragging direction is easy to get backwards, and a wrong answer is *silent*: the detector just refuses ambiguous bursts and dictation into non-empty fields appears to do nothing. First thing to check if "it works in an empty Notepad but not in a real document".
 2. **`TextUnit_Character` in Chromium.** If Chrome maps it to something other than a UTF-16 unit, `SelectSpan` fails its read-back and every write in Chrome falls through to the value path or to nothing. Likely to show as "works in Notepad, does nothing in Chrome".
-3. **The MTA callback delivery.** If UIA will not deliver events to an MTA thread without a pump, focus changes arrive only via the 250 ms poll — which mostly works, so the symptom is "feels laggy" rather than "broken", and it would be easy to misdiagnose.
+3. **The MTA callback delivery.** If UIA will not deliver events to an MTA thread without a pump, focus changes arrive only via the 250 ms poll, which mostly works, so the symptom is "feels laggy" rather than "broken", and it would be easy to misdiagnose.
 4. **The bubble stealing focus.** If `WM_MOUSEACTIVATE` is not enough, the first click on Undo is eaten. Annoying, very visible, easy to fix.
 5. **Balloon tips and the drawn icon at 150% DPI.** Cosmetic, near-certain to need a tweak.
 6. **`Text_TextChanged` not firing in Electron.** Expected; the poll is the mitigation, and the symptom is a slower correction, not a wrong one.
@@ -258,20 +260,20 @@ Ten minutes, on a real Windows machine. Do these in order; each one isolates a d
 3. Right-click it > **Run doctor**. Confirm:
    - `serve.json` names a real path (expect `C:\Users\<you>\.config\lexicon\serve.json`);
    - `local API` says `up, N terms`.
-   If either is wrong, stop here — nothing else can work.
-4. Turn on Windows Voice Access: **Win+Ctrl+S**. (Settings > Accessibility > Speech, first time — it downloads a model.)
+   If either is wrong, stop here; nothing else can work.
+4. Turn on Windows Voice Access: **Win+Ctrl+S**. (Settings > Accessibility > Speech, first time; it downloads a model.)
 
-**Test 1 — Notepad, the simplest possible provider**
+**Test 1: Notepad, the simplest possible provider**
 
 1. Open Notepad. Click in the document.
 2. Dictate: *"ping ashler about the cuban eats rollout on versal"*
 3. **Expect:** about a second after you stop, the text becomes *"ping Ashlr.AI about the Kubernetes rollout on Vercel"*, and a small dark bubble appears just below the caret saying **Fixed 3 words**.
-4. Click **Undo** on the bubble. **Expect:** the dictated text comes back, in one click, and the caret is still in Notepad — you should be able to keep typing immediately.
+4. Click **Undo** on the bubble. **Expect:** the dictated text comes back, in one click, and the caret is still in Notepad; you should be able to keep typing immediately.
 5. Press **Ctrl+Z**. **Expect:** Notepad's own undo works sensibly (this tells you the write went through the editing pipeline, not around it).
 
-> If step 3 does nothing, open **Run doctor** and read the recent log. `typed, not dictated` means the burst detector saw key-by-key input. `insertion point is ambiguous` means the caret read failed — see failure 1 above.
+> If step 3 does nothing, open **Run doctor** and read the recent log. `typed, not dictated` means the burst detector saw key-by-key input. `insertion point is ambiguous` means the caret read failed (see failure 1 above).
 
-**Test 2 — Notepad, dictating in front of existing text**
+**Test 2: Notepad, dictating in front of existing text**
 
 This is the regression that corrupted a paragraph on macOS. It is the single most important case.
 
@@ -280,41 +282,41 @@ This is the regression that corrupted a paragraph on macOS. It is the single mos
 3. Dictate: *"ping ashler about the cuban eats rollout on versal"*
 4. **Expect:** the dictated sentence is corrected, and the sentence you typed is **byte-for-byte untouched**. Read the whole line carefully.
 5. **A correct alternative outcome:** nothing happens at all, and the log says `insertion point is ambiguous`. That is the app refusing to guess, which is the designed behaviour when the caret cannot be read. It is a degradation, not a bug.
-6. **A failure:** the correction appears spliced into the middle of a word, or the typed sentence has changed. Stop and report it — that is the bug the whole caret-anchoring design exists to prevent.
+6. **A failure:** the correction appears spliced into the middle of a word, or the typed sentence has changed. Stop and report it: that is the bug the whole caret-anchoring design exists to prevent.
 
-**Test 3 — WordPad, a rich-text provider**
+**Test 3: WordPad, a rich-text provider**
 
 1. Open WordPad (`write.exe`). Type a sentence, press Enter, then dictate the phrase from Test 1 on the new line.
 2. **Expect:** the same correction; the first line untouched; no new blank lines.
-3. Dictate a phrase ending with *"new line"*. **Expect:** the correction lands and the line break is preserved — the trailing newline is deliberately kept out of the burst.
+3. Dictate a phrase ending with *"new line"*. **Expect:** the correction lands and the line break is preserved, because the trailing newline is deliberately kept out of the burst.
 
-**Test 4 — Chrome, a Chromium provider**
+**Test 4: Chrome, a Chromium provider**
 
 1. Open Chrome, go to any page with a big text box (a Gmail compose window, or `data:text/html,<textarea rows=10 cols=60>`).
 2. Dictate the phrase from Test 1.
 3. **Expect:** the same correction, possibly a beat slower.
-4. Check **Run doctor**'s log for the strategy used on the last fix — the `Last correction` submenu footer says `via keystrokes` or `via value`. Either is fine; `via value` means Chrome refused the selection and the whole-field write took over (undo will be coarser).
+4. Check **Run doctor**'s log for the strategy used on the last fix. The `Last correction` submenu footer says `via keystrokes` or `via value`. Either is fine; `via value` means Chrome refused the selection and the whole-field write took over (undo will be coarser).
 5. Now find a **password field** (any sign-in page). Click into it and type a few characters. **Expect:** the log says `not watching this field: UIA reports IsPassword`, and nothing is ever sent.
 
-**Test 5 — the Codex or Claude desktop app, an Electron provider**
+**Test 5: the Codex or Claude desktop app, an Electron provider**
 
 1. Open it and click into the message composer.
 2. Dictate the phrase from Test 1.
 3. **Expect:** the correction lands. Electron is the most likely place for it to fall through to the value write or to do nothing at all.
 4. **Critically:** confirm the message was **not sent**. The app refuses any rewrite that would introduce a newline the burst did not have, precisely because a synthesized Return in a chat composer sends the message. If a message ever sends itself, stop using it and report that first.
 
-**Test 6 — the refusals**
+**Test 6: the refusals**
 
 1. Open Windows Terminal or PowerShell. Dictate anything. **Expect:** nothing happens; the log says `not watching <app>: excluded`.
 2. Open your password manager. Click into an item's **Notes** field (not the password field) and type. **Expect:** the log says `it looks like it holds a secret (...)` or `excluded`, and nothing is read.
 3. Right-click the tray icon with Notepad focused. **Expect:** the menu shows **Fix everywhere in notepad**, checked. Uncheck it, dictate into Notepad, confirm nothing happens, then check it again.
 
-**Test 7 — the rest of the menu**
+**Test 7: the rest of the menu**
 
 1. Copy a sentence containing a misspelling onto the clipboard. **Fix clipboard now** (or Ctrl+Alt+V). Paste. **Expect:** corrected.
-2. **Open lexicon file** — opens your `lexicon.yaml`.
-3. **Start at login** — tick it, then check Settings > Apps > Startup shows LexiconBar. Untick it and confirm it disappears.
-4. **Quit** — the icon goes away and `LexiconBar.exe` is gone from Task Manager.
+2. **Open lexicon file** opens your `lexicon.yaml`.
+3. **Start at login**: tick it, then check Settings > Apps > Startup shows LexiconBar. Untick it and confirm it disappears.
+4. **Quit**. The icon goes away and `LexiconBar.exe` is gone from Task Manager.
 
 **What to send back if something fails**
 
@@ -347,26 +349,26 @@ Building a WinForms project off Windows works because of `<EnableWindowsTargetin
 apps/windows/
   LexiconBar.sln
   Directory.Build.props
-  src/LexiconBar.Core/        net8.0  — PORTABLE, TESTED. No UIA, no WinForms, no Win32.
-  src/LexiconBar.App/         net8.0-windows — the tray app. UNVERIFIED.
+  src/LexiconBar.Core/        net8.0. PORTABLE, TESTED. No UIA, no WinForms, no Win32.
+  src/LexiconBar.App/         net8.0-windows: the tray app. UNVERIFIED.
     Interop/                    SAFEARRAY, BSTR, SendInput
     FixEverywhere/              UiaThread, FocusWatcher, UiaField, FixEngine
     Ui/                         tray, bubble, preferences, hotkeys
-  tests/LexiconBar.Core.Tests/ net8.0  — xunit, headless
-  build/                       publish.sh, publish.ps1, windows-app.yml
+  tests/LexiconBar.Core.Tests/ net8.0, xunit, headless
+  build/                       publish.sh, publish.ps1
 ```
 
 The split is load-bearing, not cosmetic: **every rule that can corrupt a user's text lives in `LexiconBar.Core`**, which targets plain `net8.0` and may not reference UI Automation, WinForms or Win32. That is what makes it testable on a machine that cannot run the app.
 
 ### CI
 
-`apps/windows/build/windows-app.yml` is ready to be copied to `.github/workflows/windows-app.yml` — it was parked here because another agent was working in `.github/`. It runs the portable tests and the cross-build on Linux, and builds/publishes/uploads `LexiconBar.exe` on `windows-latest`.
+`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 144 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
 
 ## Troubleshooting
 
-**Nothing happens anywhere.** Run doctor. If `serve.json` is `NOT FOUND`, the CLI has never run on this machine — run `lexicon serve` once. If the API is `not reachable`, the server is not running.
+**Nothing happens anywhere.** Run doctor. If `serve.json` is `NOT FOUND`, the CLI has never run on this machine: run `lexicon serve` once. If the API is `not reachable`, the server is not running.
 
-**Nothing happens in one particular app.** Some apps expose no UIA text provider at all. The log says nothing because there is nothing to say — the focused element simply has neither `TextPattern` nor `ValuePattern`. Nothing breaks; that app is just invisible to it.
+**Nothing happens in one particular app.** Some apps expose no UIA text provider at all. The log says nothing because there is nothing to say; the focused element simply has neither `TextPattern` nor `ValuePattern`. Nothing breaks; that app is just invisible to it.
 
 **Nothing happens in an app running as administrator.** Expected, and deliberate. UIPI stops a non-elevated process from reading or typing into an elevated window. Running LexiconBar elevated would fix it and would also let it read every elevated window on the machine, which is not a trade worth making.
 
@@ -380,6 +382,8 @@ The split is load-bearing, not cosmetic: **every rule that can corrupt a user's 
 
 ## See also
 
-- [MACOS-APP.md](MACOS-APP.md) — the macOS app this is a port of, and the behaviour contract both share.
-- [LOCAL-API.md](LOCAL-API.md) — `POST /normalize` and the rest of the local API.
-- [DAEMON.md](DAEMON.md) — the clipboard watcher as a CLI command.
+- [MACOS-APP.md](MACOS-APP.md) is the macOS app this is a port of, and the behaviour contract both share.
+- [LOCAL-API.md](LOCAL-API.md) documents `POST /normalize` and the rest of the local API.
+- [DAEMON.md](DAEMON.md) covers the clipboard watcher as a CLI command.
+
+Back to [the docs index](README.md).

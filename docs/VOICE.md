@@ -165,16 +165,17 @@ return
 ### Latency
 
 Numbers from `docs/BENCHMARK.md` (macOS TTS clips, M5 Max, whisper.cpp with Metal):
-the four benchmark passes over 279 clips took 19 s (`base.en`), 25 s (`base.en` with
-prompt), 42 s (`small.en`) and 50 s (`small.en` with prompt), so roughly 0.07 s and
+the four benchmark passes over 330 clips took 19 s (`base.en`), 25 s (`base.en` with
+prompt), 42 s (`small.en`) and 50 s (`small.en` with prompt), so roughly 0.06 s and
 0.15 s of transcription per short sentence. On the 3 s check clip used while
 building this command, `base.en` transcribed in about 0.2 s and `small.en` in about
 0.35 s; `normalize()` is under 5 ms. Add ffmpeg start-up and the 3 s stop grace in
 toggle mode (usually well under 0.5 s in practice, ffmpeg exits as soon as it
 flushes). Expect a hotkey round trip of about one second with `base.en`.
 
-Accuracy from the same benchmark: `base.en` spelled 42% of lexicon terms right on its
-own, 67% with the prompt, 92% with prompt plus lexicon; `small.en` 46% / 76% / 96%.
+Accuracy from the same benchmark, over the 279 proper nouns in those clips: `base.en`
+spelled 42% of lexicon terms right on its own, 67% with the prompt, 92% with prompt
+plus lexicon (86% with the lexicon but no prompt); `small.en` 46% / 76% / 96%.
 `base.en` is the default because it is the fastest model that is good enough once
 the lexicon runs after it; switch to `small.en` if you dictate a lot of ordinary
 vocabulary Whisper gets wrong, since the lexicon cannot fix words it does not know.
@@ -188,6 +189,11 @@ vocabulary Whisper gets wrong, since the lexicon cannot fix words it does not kn
   "Kuper Nettie's" once and "Kubernettys" the next time. The lexicon catches the
   first (phonetic) and not the second. That is exactly what `history.jsonl` is for:
   `lexicon learn Kubernettys Kubernetes`.
+- The macOS capture path is the tested one. `-f pulse` (with the ALSA fallback) on
+  Linux and `-f dshow` on Windows are implemented and unit-tested with injected
+  processes, but neither has met a real microphone: no CI runner has audio hardware.
+  Expect to have to name your device with `--device` on those platforms, and see
+  [PLATFORMS.md](PLATFORMS.md).
 - `--paste` is macOS only (AppleScript Cmd+V). Elsewhere the text is copied and a
   notice is printed; wire the paste keystroke in the launcher as shown above.
 - No streaming: nothing appears until you stop. For long dictation a real dictation

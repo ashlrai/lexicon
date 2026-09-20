@@ -40,7 +40,7 @@ Method and full tables are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce 
 
 Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
 
-The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 15% (18 of 120) synthetic and 20% (18 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
+The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 12.5% (15 of 120) synthetic and 20% (18 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## Install
 
@@ -163,7 +163,7 @@ Non-goals: this is not a dictation app, and there are no hosted accounts and no 
 
 - Chrome Web Store and Firefox AMO listings for the extension. Today it installs from the release zip.
 - Notarized macOS app. LexiconBar is ad-hoc signed, so the first launch needs right-click and Open.
-- Windows and Linux tray app with the same push-to-talk and fix-clipboard actions.
+- Linux tray app with the same push-to-talk and fix-clipboard actions. The Windows one is built: see [docs/WINDOWS-APP.md](docs/WINDOWS-APP.md).
 - Non-English phonetics. Double metaphone is tuned for English; names in other languages fall back to fuzzy matching.
 - Real-microphone benchmark. The audio corpus is macOS text-to-speech read into whisper.cpp, not recorded speech.
 

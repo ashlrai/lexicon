@@ -20,24 +20,24 @@ the row says otherwise.
 |---|---|
 | term recall, raw STT (before) | **5.1%** (16/313) |
 | term recall, after lexicon | **96.5%** (302/313) |
-| term precision | 94.1% (302/322) |
-| term F1 | **95.1%** |
+| term precision | 95.0% (302/318) |
+| term F1 | **95.7%** |
 | sentence accuracy, positives | **94.2%** (262/278) |
 | sentence accuracy, positives excl. expected-hard | 99.6% (255/256) |
-| prose false-positive rate | **15.0%** (18/120) |
+| prose false-positive rate | **12.5%** (15/120) |
 | prose false-positive rate excl. expected-hard | **0.0%** (0/95) |
-| sentence accuracy, all cases | 91.5% (364/398) |
-| mean latency per case, `normalize()` incl. `buildIndex()` (warm) | 320 us |
-| mean latency per case, `findReplacements()` with prebuilt index (warm) | 63 us |
+| sentence accuracy, all cases | 92.2% (367/398) |
+| mean latency per case, `normalize()` incl. `buildIndex()` (warm) | about 290 us |
+| mean latency per case, `findReplacements()` with prebuilt index (warm) | about 55 us |
 
 The README-ready sentence, stated honestly:
 
 > On 313 dictated proper nouns the recognizer got 5% right; after the lexicon 96% are recovered
-> (term F1 95%). 94% of dictated sentences come out exactly right, 99.6% once the cases we
+> (term F1 96%). 94% of dictated sentences come out exactly right, 99.6% once the cases we
 > label as corpus ambiguities are excluded. Clean prose that merely sounds like a lexicon term
 > is left alone (0 of 95 sentences changed). The remaining damage is confined to the 25
 > adversarial negatives where the canonical itself is an English word (`drizzle`, `neon`,
-> `playwright`) or the user listed a phrase as an alias (`super base`, `jot`): 18 of those
+> `playwright`) or the user listed a phrase as an alias (`super base`, `jot`): 15 of those
 > change, which is the lexicon owner's call, not the matcher's.
 
 The corpus is sampled from STT failures, so "5% raw" is by construction and is not comparable to
@@ -62,6 +62,7 @@ Each row is the full benchmark re-run after one matcher change landed, default c
 | D. phonetic guards (key >= 3, window >= 4, no keys for spelled-out aliases, 0.88 bar for aliased plain words) | 94.2% | 96.5% | 1.1% | 15.8% |
 | D'. the 0.88 aliased plain-word bar applied to fuzzy as well | 94.2% | 96.5% | 0.0% | 15.0% |
 | E. diacritics folded in the exact pass; F. transposition-aware similarity | 94.2% | 96.5% | 0.0% | 15.0% |
+| G. 0.88 bar applied case-blind; initial-vowel guard; similarity floors tiered by key length; glue guard for `@`, `/` and `_`; mostly-stopword windows refused; stoplist additions | 94.2% | 96.5% | 0.0% | 12.5% |
 
 The one positive lost between C and D is `sas` -> SaaS (pos-128): SaaS keys to `SS`, two
 characters, and the key-length rule that removes 22 spurious hits also removes it. An explicit
@@ -74,14 +75,16 @@ Levenshtein.
 
 | config | positive sentence acc | term recall | term precision | term F1 | prose FP | prose FP excl. hard |
 |---|---|---|---|---|---|---|
-| default (phonetic + fuzzy) | 94.2% | 96.5% | 93.8% | 95.1% | 15.0% | 0.0% |
-| `--no-fuzzy` | 93.5% | 94.9% | 94.0% | 94.4% | 14.2% | 0.0% |
+| default (phonetic + fuzzy) | 94.2% | 96.5% | 95.0% | 95.7% | 12.5% | 0.0% |
+| `--no-fuzzy` | 93.5% | 94.9% | 95.2% | 95.0% | 11.7% | 0.0% |
 | `--no-phonetic` | 80.6% | 85.0% | 94.3% | 89.4% | 12.5% | 0.0% |
 | `--no-phonetic --no-fuzzy` (alias only) | 74.8% | 77.6% | 94.6% | 85.3% | 10.8% | 0.0% |
 
-Reading: the phonetic pass is worth 11.5 points of recall and now costs 2.5 points of prose FP,
-all of it on `expected-hard` sentences (`pedantic`, `graphical`, `tropic`, `email`). Fuzzy adds
-1.6 points of recall for one wrong hit (`llama` -> Ollama, expected-hard). Alias-only still
+Reading: the phonetic pass is worth 11.5 points of recall and, since the step G guards landed,
+costs nothing in prose false positives. It used to cost 2.5 points, all of it on `expected-hard`
+sentences (`pedantic`, `graphical`, `tropic`, `email`), and those are the cases the guards
+close. Fuzzy adds 1.6 points of recall for 0.8 points of prose FP, a single wrong hit
+(`llama` -> Ollama, expected-hard). Alias-only still
 changes 13 negatives, every one an `expected-hard` case where the canonical is a common word
 (`drizzle`, `neon`, `whisper`, `playwright`, `prometheus`, `docker`) or a user-listed alias
 collides with prose (`jot`, `jason`, `tail wind`, `super base`, `okay are`).
@@ -90,12 +93,12 @@ collides with prose (`jot`, `jason`, `tail wind`, `super base`, `okay are`).
 
 | minConfidence | positive acc | positive acc excl. hard | term recall | term precision | term F1 | prose FP | prose FP excl. hard |
 |---|---|---|---|---|---|---|---|
-| 0.70 | 94.2% | 99.6% | 96.5% | 93.5% | 95.0% | 15.8% | 1.1% |
-| 0.75 | 94.2% | 99.6% | 96.5% | 93.5% | 95.0% | 15.8% | 1.1% |
-| 0.80 | 94.2% | 99.6% | 96.5% | 93.8% | 95.1% | 15.0% | 0.0% |
-| **0.82** (default) | **94.2%** | **99.6%** | **96.5%** | 93.8% | **95.1%** | 15.0% | **0.0%** |
-| 0.85 | 91.7% | 96.9% | 93.9% | 93.9% | 93.9% | 14.2% | 0.0% |
-| 0.90 | 82.0% | 86.7% | 85.0% | 93.3% | 89.0% | 14.2% | 0.0% |
+| 0.70 | 94.2% | 99.6% | 96.5% | 94.7% | 95.6% | 13.3% | 1.1% |
+| 0.75 | 94.2% | 99.6% | 96.5% | 94.7% | 95.6% | 13.3% | 1.1% |
+| 0.80 | 94.2% | 99.6% | 96.5% | 95.0% | 95.7% | 12.5% | 0.0% |
+| **0.82** (default) | **94.2%** | **99.6%** | **96.5%** | 95.0% | **95.7%** | 12.5% | **0.0%** |
+| 0.85 | 91.7% | 96.9% | 93.9% | 95.1% | 94.5% | 11.7% | 0.0% |
+| 0.90 | 82.0% | 86.7% | 85.0% | 94.7% | 89.6% | 11.7% | 0.0% |
 | 0.95 | 75.5% | 80.5% | 78.3% | 94.6% | 85.7% | 10.8% | 0.0% |
 
 The curve is flat from 0.70 to 0.82 and falls off above it: the structural guards (key length,

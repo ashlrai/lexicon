@@ -1,7 +1,7 @@
 # Landing page: pricing content spec
 
 **For the agent that owns `web/`.** This file is copy and structure, not
-implementation. It does not prescribe components, layout or styling — the
+implementation. It does not prescribe components, layout or styling; the
 design direction in [LANDING.md](LANDING.md#design-notes) governs those.
 Nothing in `web/` was edited to produce this.
 
@@ -15,7 +15,7 @@ The reasoning behind every number is in [COMMERCIAL.md](COMMERCIAL.md).
 
 **1. Nothing here may be published in the present tense except what is
 shipped.** The Team and Enterprise tiers do not exist. Not partially, not in
-beta — no line of code. Every tier below carries a `SHIPPED` or `PLANNED`
+beta, not a line of code. Every tier below carries a `SHIPPED` or `PLANNED`
 marker. A `PLANNED` item may never appear on the page as a feature bullet
 without a visible "not yet built" treatment. If the marker is inconvenient for
 the layout, change the layout.
@@ -27,7 +27,7 @@ product that has not been started.
 
 ---
 
-## Phase A — ship this now
+## Phase A: ship this now
 
 A single short section, reachable from the nav as **Teams**, placed after the
 FAQ. No price table, no tier cards, no feature matrix, no waitlist form that
@@ -48,13 +48,13 @@ implies a launch date.
 > Everything on this page is MIT-licensed and yours: the matcher, the CLI, the
 > MCP server, the Claude Code plugin, the browser extension, the macOS app and
 > the local API. There is no paid tier, no account and no telemetry. That does
-> not change — nothing that is free today becomes paid later.
+> not change. Nothing that is free today becomes paid later.
 >
 > Teams can already share a vocabulary: commit `.lexicon.yaml` to a repository
 > and each person approves it once. That works now, costs nothing, and will
 > keep working.
 >
-> We are looking at whether a hosted shared lexicon is worth building — one
+> We are looking at whether a hosted shared lexicon is worth building: one
 > list your whole company pulls, including the people who never clone a
 > repository. It does not exist yet. If you are trying to do this across a
 > team, we would rather hear how you are handling it today than sell you
@@ -64,7 +64,7 @@ implies a launch date.
 
 A plain mailto link, not a form:
 
-> **[mason@ashlr.ai](mailto:mason@ashlr.ai)** — tell us how many people, which
+> **[mason@ashlr.ai](mailto:mason@ashlr.ai)**. Tell us how many people, which
 > agents and dictation tools they use, and what breaks.
 
 **No waitlist.** A waitlist implies a launch. A mailto implies a conversation,
@@ -80,12 +80,12 @@ which is the thing actually being asked for.
 ### Changes to existing content in Phase A
 
 **None.** The FAQ answers and the README stay exactly as they are, because they
-are still true. Hedging them now — before there is anything to sell — is itself
+are still true. Hedging them now, before there is anything to sell, is itself
 a bait-and-switch signal, and a reader who noticed would be right to.
 
 ---
 
-## Phase B — only when Team is running in production
+## Phase B: only when Team is running in production
 
 Publish this when an org can sign up, pay, invite someone and have terms land
 on their machine. Not when it is nearly done.
@@ -107,30 +107,30 @@ page's job is still the demo.
 
 ### Tier cards
 
-Three cards. Free is on the left and is the visual default — not a stub next to
+Three cards. Free is on the left and is the visual default, not a stub next to
 two bigger cards. It is the product.
 
 ---
 
-#### Card 1 — Free
+#### Card 1: Free
 
 **Price:** `$0` · *forever, MIT*
 
 **One line:** `Everything Lexicon does, on your own machines.`
 
-**Bullets** — every one of these is `SHIPPED` unless marked:
+**Bullets.** Every one of these is `SHIPPED` unless marked:
 
 - Unlimited terms, unlimited machines, unlimited people
-- The `lexicon` CLI — macOS, Linux and Windows
+- The `lexicon` CLI for macOS, Linux and Windows
 - The MCP server: nineteen tools, two resources, two prompts
 - Claude Code plugin, with `SessionStart` and `UserPromptSubmit` hooks
-- Browser extension for ChatGPT, Claude.ai, Gemini, Grok, Perplexity, Copilot and Poe
-- macOS menu bar app for any text field
+- Browser extension for ChatGPT, Claude.ai, Gemini, Grok, Perplexity, Copilot and Poe (not in the Chrome or Firefox stores yet; unpacked install)
+- macOS menu bar app for any text field (ad-hoc signed, not notarized)
 - Loopback HTTP API, and the matcher as a library
 - Fifteen export formats and seven importers, including Wispr Flow and Superwhisper
-- Four starter packs — 155 terms
+- Four starter packs, 155 terms
 - Share a lexicon by committing `.lexicon.yaml` to a repository
-- **`PLANNED`** Pull a shared lexicon from any URL you host yourself — unlimited
+- **`PLANNED`** Pull a shared lexicon from any URL you host yourself (unlimited)
 
 **Footnote under the card:**
 
@@ -140,7 +140,7 @@ two bigger cards. It is the product.
 
 ---
 
-#### Card 2 — Team
+#### Card 2: Team
 
 **Price:** `$6` per user / month · *billed annually. $8 month-to-month.*
 
@@ -151,20 +151,20 @@ two bigger cards. It is the product.
 **Bullets:**
 
 - A shared lexicon every member's machine pulls automatically
-- Your own file always wins — an admin can never overwrite what you typed
+- Your own file always wins; an admin can never overwrite what you typed
 - Roles: owner, admin, editor, member
 - Members propose terms; admins approve. Your agent can propose one it just learned
 - Audit trail of every change, 90 days
-- SSO — SAML and OIDC, included, not an upsell
+- SSO: SAML and OIDC, included, not an upsell
 - Email support
 
 **CTA:** `Start a team` → self-serve signup.
 
 ---
 
-#### Card 3 — Enterprise
+#### Card 3: Enterprise
 
-**Price:** `Talk to us` — no number on the page.
+**Price:** `Talk to us`. No number on the page.
 
 **One line:** `Fleet deployment, self-hosting, and a contract behind it.`
 
@@ -172,7 +172,7 @@ two bigger cards. It is the product.
 
 - Everything in Team
 - Signed and notarized installers, a configuration profile and a managed policy file for MDM
-- Self-hosted or on-premise sync — nothing leaves your network
+- Self-hosted or on-premise sync, so nothing leaves your network
 - SCIM provisioning
 - Long audit retention and export
 - Support with a written SLA and a named contact
@@ -188,7 +188,7 @@ Not a footnote. Full width, legible, directly below the cards:
 
 > **What is built, and what is not.** Everything in Free is shipped today
 > except pulling from a URL, which is marked. Team and Enterprise are new
-> products — we will tell you on the first call exactly which pieces are
+> products. We will tell you on the first call exactly which pieces are
 > running and which are in progress, and we will not describe a roadmap in the
 > present tense. The whole plan, including what it costs us to run, is public:
 > [COMMERCIAL.md](https://github.com/ashlrai/lexicon/blob/main/docs/COMMERCIAL.md).
@@ -205,7 +205,7 @@ These go in the `FAQ` array in `web/lib/site.ts`, which also generates
 style applies: each answer must stand alone when quoted, must not open with
 "it", and must state something checkable against the repository.
 
-### Rewrite in Phase B — *"What does Lexicon cost?"*
+### Rewrite in Phase B: *"What does Lexicon cost?"*
 
 The current answer says `no paid tier`. It becomes false the day Team ships.
 Replace it then, and not before:
@@ -217,10 +217,10 @@ Replace it then, and not before:
 > becomes paid later. Ashlr.AI separately runs a hosted shared lexicon for
 > organizations, at $6 per user per month with the first five people free,
 > which is a service we operate rather than a part of Lexicon held back from
-> you — a team that would rather host the same thing itself can point every
+> you; a team that would rather host the same thing itself can point every
 > machine at a lexicon file at any URL it controls, for nothing.
 
-### Rewrite in Phase B — *"Is my text sent anywhere?"*
+### Rewrite in Phase B: *"Is my text sent anywhere?"*
 
 The current answer says `no account, no sync`. The first clause stays true for
 the free tool; the second does not survive Team. The rewrite must keep the
@@ -232,39 +232,39 @@ strong claim where it is still strong:
 > outbound request anywhere in the codebase is `lexicon voice` downloading a
 > whisper.cpp model the first time you use local push-to-talk; audio itself
 > never leaves the machine. A team on a paid plan syncs its shared word list to
-> Ashlr.AI, and that is the word list only — no transcript, no audio and no
+> Ashlr.AI, and that is the word list only: no transcript, no audio and no
 > text you dictate is transmitted on any plan, because there is no code path
 > that could. The full threat model is in SECURITY.md.
 
 The load-bearing sentence is **"that is the word list only"**. Do not soften
-it, and do not drop the clause explaining why — a reader who has been told
+it, and do not drop the clause explaining why. A reader who has been told
 "nothing is sent" once will read any hedge as the retraction.
 
-### New in Phase B — *"What do I get for paying, if the code is free?"*
+### New in Phase B: *"What do I get for paying, if the code is free?"*
 
 > A service, not a licence. Lexicon is MIT-licensed, so any company may deploy
 > it on ten thousand machines commercially, for nothing, forever, and that
 > grant cannot be withdrawn from any version already published. What Ashlr.AI
 > sells is the part a licence cannot cover: a hosted shared lexicon with
 > identity, roles and an audit trail, support with an obligation behind it,
-> and — on Enterprise — indemnification, which the MIT licence explicitly
+> and (on Enterprise) indemnification, which the MIT licence explicitly
 > disclaims. If you would rather run it yourself, Lexicon can pull a shared
 > lexicon from any URL you host, and that path is free and unlimited.
 
-### New in Phase B — *"Can my company just self-host this?"*
+### New in Phase B: *"Can my company just self-host this?"*
 
 > Yes, and Lexicon is built so that you can. Point every machine at a lexicon
-> file at any URL you control — a raw GitHub file, an S3 object, an internal
-> file server — and your whole team shares one vocabulary with no account and
+> file at any URL you control (a raw GitHub file, an S3 object, an internal
+> file server), and your whole team shares one vocabulary with no account and
 > no seat limit. What the paid plans add is the part self-hosting does not give
 > you: who changed what and when, roles and approvals, SSO, and someone to
 > call. Enterprise can also run the full sync service inside your own network.
 
-### New in Phase B — *"What happens to my terms if Ashlr.AI disappears?"*
+### New in Phase B: *"What happens to my terms if Ashlr.AI disappears?"*
 
 > You keep them. Your vocabulary is a YAML file on your own disk, the engine is
-> MIT-licensed, and the licence is irrevocable for every version already
-> published. A team on a paid plan can export the shared lexicon at any time in
+> MIT-licensed, and every version already published stays MIT and cannot
+> practically be withdrawn. A team on a paid plan can export the shared lexicon at any time in
 > the same plain YAML format the free tool reads, so the exit is a download and
 > a file path, not a migration.
 
@@ -286,7 +286,7 @@ make room for a sales message.
   `web/lib` are all scanned, so a wrong tool or format count on the pricing
   page fails the build).
 - Do **not** add `Offer` or `Product` JSON-LD in Phase A. In Phase B, add it
-  only for tiers with a published price — never for Enterprise, which has none.
+  only for tiers with a published price, never for Enterprise, which has none.
 - The existing `DESCRIPTION` and `TAGLINE` stay as they are. Lexicon's
   one-line pitch is not "team vocabulary management", and the day it becomes
   that is the day the free tool stops being the point.
@@ -300,7 +300,7 @@ scope was edited; `README.md` and `LICENSE` belong to other owners.**
 
 ### `LICENSE` stays exactly as it is
 
-Yes — unchanged, unannotated, not dual-licensed. Do not add a commercial
+Yes. Unchanged, unannotated, not dual-licensed. Do not add a commercial
 exception, a "portions of this software" clause, or a pointer to a paid
 product. The file's value is that it is the plain, unmodified MIT text that a
 scanner, a registry and a lawyer all recognise in under a second. Every
@@ -310,7 +310,7 @@ sentence added to it costs more than it earns.
 
 Not now, and probably not ever in this repository. Every line of code here is
 MIT. A second licence file sitting beside `LICENSE` makes a reader stop and
-hunt for the carve-out — and there is no carve-out, so they are hunting for
+hunt for the carve-out, and there is no carve-out, so they are hunting for
 something that does not exist, which is a worse first impression than saying
 nothing.
 
@@ -326,7 +326,7 @@ in the commercial artifact, not in the free one.
 
 ### Do **not** add a `NOTICE` file
 
-`NOTICE` has a specific meaning in Apache-2.0 practice — attribution that
+`NOTICE` has a specific meaning in Apache-2.0 practice: attribution that
 redistributors must carry. In an MIT project it is decoration, and tooling that
 looks for it will draw wrong conclusions.
 
@@ -334,10 +334,10 @@ looks for it will draw wrong conclusions.
 
 Three places, in priority order:
 
-1. **`docs/COMMERCIAL.md`** — exists now. The complete reasoning, public on
+1. **`docs/COMMERCIAL.md`** exists now. The complete reasoning, public on
    purpose. A prospective customer reading the pricing rationale, the risks and
    the competitor table is a *good* outcome.
-2. **`docs/ENTERPRISE.md`** — exists now. The buyer-facing version.
+2. **`docs/ENTERPRISE.md`**: exists now. The buyer-facing version.
 3. **One paragraph in the README's License section**, added only in Phase B.
    Suggested text, for whoever owns `README.md`:
 
@@ -357,7 +357,7 @@ Three places, in priority order:
 ### The three statements that must change together
 
 These are currently true and become false the moment anything is sold. They
-must be updated in **one change, at the moment of launch** — not softened in
+must be updated in **one change, at the moment of launch**, not softened in
 advance, and not left stale afterwards.
 
 | Where | Current text | Why it breaks |
@@ -387,8 +387,8 @@ Four phrasings to use:
 - "nothing that is free today becomes paid later"
 - "every version already published stays MIT, and that grant cannot be
   withdrawn"
-- "a team that would rather host the same thing itself can, for nothing" —
-  **this is the strongest one available**, and it is only available because
+- "a team that would rather host the same thing itself can, for nothing" is
+  **the strongest one available**, and it is only available because
   `lexicon remote` ships free. It converts the whole question from "what are
   they holding back?" to "which do you prefer?". Protect it: the moment
   self-hosting is crippled to drive upgrades, every other sentence on this list
@@ -396,12 +396,12 @@ Four phrasings to use:
 
 Four phrasings to avoid:
 
-- "open core" — accurate as a category, and it primes a reader to look for the
+- "open core": accurate as a category, and it primes a reader to look for the
   removed parts.
-- "free tier" — implies the free thing is a sample of the paid thing. It is not;
+- "free tier" implies the free thing is a sample of the paid thing. It is not;
   it is the whole product.
-- "upgrade to unlock" — nothing is locked. Nothing may ever be locked.
-- "community edition" — signals a deliberately lesser version, which is exactly
+- "upgrade to unlock". Nothing is locked. Nothing may ever be locked.
+- "community edition" signals a deliberately lesser version, which is exactly
   what [Cal.com's `cal.diy`](https://cal.com/blog/cal-diy-open-source-to-closed-source)
   turned out to be, and readers in this space now recognise the pattern.
 
@@ -409,7 +409,9 @@ Four phrasings to avoid:
 
 ## See also
 
-- [COMMERCIAL.md](COMMERCIAL.md) — the reasoning, the comparables and the risks.
-- [ENTERPRISE.md](ENTERPRISE.md) — the buyer-facing document this page links to.
-- [TEAM-SYNC.md](TEAM-SYNC.md) — what has to exist before Phase B may ship.
-- [LANDING.md](LANDING.md) — the design direction and the rules about what may be published as a number.
+- [COMMERCIAL.md](COMMERCIAL.md) has the reasoning, the comparables and the risks.
+- [ENTERPRISE.md](ENTERPRISE.md) is the buyer-facing document this page links to.
+- [TEAM-SYNC.md](TEAM-SYNC.md) lists what has to exist before Phase B may ship.
+- [LANDING.md](LANDING.md) carries the design direction and the rules about what may be published as a number.
+
+Back to [the docs index](README.md).

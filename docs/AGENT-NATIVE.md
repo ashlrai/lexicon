@@ -84,8 +84,8 @@ from the plugin command) scripts the conversation:
 > → "tell Mason Wyatt the Entire.io checkpoint is ready". That is what I will
 > see from now on.
 
-Step 7 of the prompt is the one that matters: a setup that ends in a list of
-file paths has not been shown to work. `lexicon setup` does the same thing at
+The last exchange, the test dictation, is the one that matters: a setup that
+ends in a list of file paths has not been shown to work. `lexicon setup` does the same thing at
 the end of its own run.
 
 ## Tools

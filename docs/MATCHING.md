@@ -17,7 +17,7 @@ Checked before any replacement:
 - Text inside code spans, fences, URLs, emails and paths when `skipCode` is on, and names glued to an identifier (`@ashlr/lexicon`, `ashlr_core`, `#ashlr`) in every mode.
 - Tokens shorter than three characters, and metaphone keys shorter than three characters (`Zod`, `SSO`, `Neon`, `SaaS`), are only ever matched by exact alias. Spelled-out aliases such as `j w t` never get a phonetic key.
 - A phonetic or fuzzy window of two or more words never starts or ends on a function word (`to`, `is`, `a`, `the`), so `normalizeTranscript to` cannot swallow the `to`.
-- A lone lowercase word (`prism`, `email`, `gram`) matched by sound or spelling against a term that has explicit aliases must score at least 0.88, and a single-token phonetic candidate must also resemble the alias in spelling.
+- A lone word matched against a term that has explicit aliases must score at least 0.88. In the phonetic pass that bar applies whatever the case (`Inter` is held to it as much as `inter`), and the candidate must also resemble the alias in spelling; in the fuzzy pass only an all-lowercase token (`prism`, `email`, `gram`) is held to it.
 - A trailing possessive is kept: `ashler ai's` becomes `Ashlr.AI's`.
 
 **Explicit aliases always beat the stoplist.** If you list `off` as an alias for `auth`, "off" is rewritten. The stoplist exists to stop phonetic and fuzzy guessing, not to override what you wrote down. Use `never` if a term needs its own exceptions.
