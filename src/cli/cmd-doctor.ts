@@ -160,7 +160,16 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
   if (!loaded) {
     return { level: 'warn', message: `${name} is installed at ${file} but not loaded (${SERVE_REINSTALL_HINT})` };
   }
-  return { level: 'ok', message: `${name} loaded${program !== undefined ? ` (${program} exists)` : fileExists ? '' : ` (${file} not found; it was loaded from elsewhere)`}` };
+  if (!fileExists) {
+    // The label is loaded in this login session, but not from the file we were
+    // told to inspect, so we cannot say it is ours or that it is healthy. A
+    // green tick here claims more than we know -- and reads, to someone who
+    // never installed a service, as though setup had installed one anyway.
+    // Meaning first: `safe()` caps a rendered check at 200 characters, and the
+    // path is the long, skippable part.
+    return { level: 'info', message: `${name} is loaded, but not from this install (${SERVE_REINSTALL_HINT}; no service file at ${file})` };
+  }
+  return { level: 'ok', message: `${name} loaded${program !== undefined ? ` (${program} exists)` : ''}` };
 }
 
 /**

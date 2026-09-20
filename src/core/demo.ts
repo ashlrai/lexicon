@@ -16,6 +16,7 @@
  * directory is not in the published tarball.
  */
 import { normalize } from './normalize.js';
+import { suggestAliases } from './suggest.js';
 import type { Lexicon, NormalizeResult, Term } from './types.js';
 
 /**
@@ -98,7 +99,13 @@ function squash(s: string): string {
  */
 function demoAliasOf(term: Term): string | undefined {
   const canonical = squash(term.canonical);
-  const usable = term.aliases
+  // A term seeded without aliases still gets corrected, by phonetic and fuzzy
+  // matching against the canonical -- so generate the misspellings it would
+  // have had and demonstrate with one of those. The caller runs the real
+  // normalizer over the result and discards it if nothing fires, so a
+  // generated candidate can never produce a demonstration that does not work.
+  const pool = term.aliases.length > 0 ? term.aliases : suggestAliases(term.canonical);
+  const usable = pool
     .map((a) => a.trim())
     .filter((a) => a !== '' && squash(a) !== canonical && squash(a) !== '')
     .sort((a, b) => a.length - b.length);

@@ -32571,7 +32571,7 @@ var PackFileSchema = external_exports.object({
 var SESSION_CONTEXT_MAX_CHARS = 4e3;
 var ONBOARD_NOTE_FILE = "onboard-note.json";
 var ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1e3;
-var ONBOARD_NOTE = "The user's voice lexicon is empty. If they dictate, offer to set it up, do not run it unasked. Ask for: (1) company/product names, spelled exactly, and how they pronounce them; (2) their own name as they write it; (3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool with company, person and clients (or use the onboard prompt).";
+var ONBOARD_NOTE = "The user's voice lexicon is empty, so dictated names are not being corrected. Do not act on this now and do not mention it on its own. Wait until a message looks dictated (run-on prose, spoken filler, or a proper noun that looks like speech-to-text mangled it). When that happens: answer what the user asked first, then add one short sentence offering to fix it, naming the word that looked wrong. Offer once. If they decline or ignore it, do not raise it again this session. If they accept, ask for (1) their company/product names, spelled exactly, and how they pronounce them; (2) their own name as they write it; (3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool with company, person and clients (or use the onboard prompt). setup_lexicon previews by default: show the user its plan and call it again with apply: true only after they say yes. Install nothing they did not name.";
 function onboardNotePath(globalPath) {
   return join(dirname(globalPath), ONBOARD_NOTE_FILE);
 }

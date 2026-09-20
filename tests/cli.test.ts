@@ -449,8 +449,12 @@ describe('doctor', () => {
     expect(io.out).toContain('✓ global lexicon parses');
     expect(io.out).toContain('✓ lexicon MCP server is registered');
     expect(io.out).toContain('✓ clipboard backend: pbcopy');
-    // launchctl print "succeeded" (the fake exec answers everything) but no plist exists under this home.
-    expect(io.out).toContain('✓ login service ai.ashlr.lexicon.serve loaded (');
+    // launchctl print "succeeded" (the fake exec answers everything) but no plist
+    // exists under this home, so the service cannot be attributed to this install.
+    // That is an info line, not a green tick: a user who never installed a login
+    // service should not be told one is running for them.
+    expect(io.out).toContain('· login service ai.ashlr.lexicon.serve is loaded, but not from this install');
+    expect(io.out).not.toContain('✓ login service');
     expect(io.out).toContain('all checks passed');
   });
 
@@ -503,6 +507,66 @@ describe('runDoctorReport', () => {
     expect(report.versions.node).toBe(process.version);
     expect(report.versions.platform).toBe('linux');
     expect(report.versions.lexicon).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  /**
+   * The three fields an agent is told to read instead of the check list:
+   * "is lexicon set up for this user, and if not what is the one command
+   * that fixes it", answerable from one call.
+   */
+  describe('ready, summary and nextStep', () => {
+    it('is ready with a one-line "nothing to fix" step when terms exist and an agent is wired up', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+      await fs.writeFile(path.join(dir, 'claude'), '');
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
+      expect(report.ready).toBe(true);
+      expect(report.summary).toMatch(/set up and working/i);
+      expect(report.nextStep).toMatch(/Nothing to fix/);
+      expect(report.nextStep).not.toBe('');
+    });
+
+    it('is not ready, and names `lexicon setup`, when the lexicon has no terms', async () => {
+      vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
+      const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-nohooks-'));
+      const report = await runDoctorReport({}, {
+        platform: 'linux',
+        env: { PATH: '/nonexistent' },
+        exec: () => '',
+        settingsPath: path.join(empty, 'settings.json'),
+        installedPluginsPath: path.join(empty, 'installed_plugins.json'),
+      });
+      // Nothing *failed* -- an empty lexicon has nothing to fail -- which is
+      // exactly why `ok` is the wrong field for "is this set up".
+      expect(report.ok).toBe(true);
+      expect(report.ready).toBe(false);
+      expect(report.nextStep).toBe('Run: lexicon setup');
+    });
+
+    it('is not ready, and names the install command, when terms exist but nothing is wired up', async () => {
+      // Point the settings probes at files that do not exist, so the machine
+      // running the suite cannot make this look wired up.
+      const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-nohooks-'));
+      const report = await runDoctorReport({}, {
+        platform: 'linux',
+        env: { PATH: '/nonexistent' },
+        exec: () => '',
+        settingsPath: path.join(empty, 'settings.json'),
+        installedPluginsPath: path.join(empty, 'installed_plugins.json'),
+      });
+      expect(report.ready).toBe(false);
+      expect(report.summary).toMatch(/no agent is wired up/i);
+      expect(report.nextStep).toContain('lexicon install claude --apply');
+      // The old spelling is gone from every hint the doctor emits.
+      expect(JSON.stringify(report)).not.toContain('install-claude');
+    });
+
+    it('leads with the first failure, which carries its own fix', async () => {
+      vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { canonical: 'Ashler', aliases: [] }] }, exists: true });
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.ok).toBe(false);
+      expect(report.ready).toBe(false);
+      expect(report.nextStep).toMatch(/^Fix the first failure: /);
+    });
   });
 
   it('sets ok to false and includes the project path when a check fails', async () => {

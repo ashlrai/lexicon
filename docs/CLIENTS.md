@@ -33,9 +33,11 @@ The plugin is self-contained. `.mcp.json` and `hooks/hooks.json` run `plugin/mcp
 ### b. Manual
 
 ```bash
-lexicon install-claude          # print what would change
-lexicon install-claude --apply  # do it
+lexicon install claude          # print what would change
+lexicon install claude --apply  # do it
 ```
+
+(`lexicon install-claude` is a hidden alias of the same command, kept working for older scripts.)
 
 Without `--apply` it prints the three steps. With `--apply` it performs the first two:
 
@@ -92,16 +94,29 @@ lexicon install codex --apply    # write it
 
 | Client | Command | Writes |
 |---|---|---|
-| Claude Code | `lexicon install claude` | same as `install-claude` (MCP + hooks) |
+| Claude Code | `lexicon install claude` | `claude mcp add` + hooks in `~/.claude/settings.json` |
 | OpenAI Codex CLI | `lexicon install codex` | `~/.codex/config.toml` (`[mcp_servers.lexicon]`) |
 | Cursor | `lexicon install cursor` | `~/.cursor/mcp.json` |
 | Windsurf | `lexicon install windsurf` | `~/.codeium/windsurf/mcp_config.json` |
-| Gemini CLI | `lexicon install gemini` | `~/.gemini/settings.json` |
+| Gemini CLI | `lexicon install gemini` | `~/.gemini/settings.json` (top-level `mcpServers`) |
 | Claude Desktop | `lexicon install claude-desktop` | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows), `~/.config/Claude/claude_desktop_config.json` (Linux) |
-| VS Code | `lexicon install vscode` | `~/Library/Application Support/Code/User/mcp.json` (macOS), `~/.config/Code/User/mcp.json` (Linux), `%APPDATA%\Code\User\mcp.json` (Windows) |
+| VS Code | `lexicon install vscode` | `~/Library/Application Support/Code/User/mcp.json` (macOS), `~/.config/Code/User/mcp.json` (Linux), `%APPDATA%\Code\User\mcp.json` (Windows). Note: VS Code uses `servers`, not `mcpServers`, and each entry carries `"type": "stdio"` |
 | Anything else | `lexicon install` | prints the generic `mcpServers` snippet |
 
-`--project` (or `--scope project`) writes the repo-level file instead where the client has one: `./.codex/config.toml`, `./.cursor/mcp.json`, `./.gemini/settings.json`, `./.vscode/mcp.json`. Every client ends with the same hint: `lexicon export claude-md >> <rules file>` (`CLAUDE.md`, `AGENTS.md` for Codex, `.cursor/rules/`, `GEMINI.md`) so the model prefers the canonical spellings even when it does not call the tool.
+`--project` (or `--scope project`) writes the repo-level file instead where the client has one: `./.codex/config.toml`, `./.cursor/mcp.json`, `./.gemini/settings.json`, `./.vscode/mcp.json`. Windsurf and Claude Desktop have no project-level config and `--project` is refused for them. Every client ends with the same hint: `lexicon export claude-md >> <rules file>` (`CLAUDE.md`, `AGENTS.md` for Codex, `.cursor/rules/lexicon.mdc`, `GEMINI.md`, `.windsurfrules`, `.github/copilot-instructions.md`) so the model prefers the canonical spellings even when it does not call the tool.
+
+### Where writing the file is not quite enough
+
+Four clients have a discovery rule this command cannot check for you, so it prints a note after writing. They are not bugs in the config:
+
+- **Codex, `--project`.** A repo-local `.codex/config.toml` is loaded but *disabled* until you mark the project as trusted in Codex. The user-level `~/.codex/config.toml` has no such condition.
+- **VS Code, user scope.** VS Code keeps `mcp.json` per profile. The path above is the default profile of VS Code stable; on a custom profile, Insiders, or with `--user-data-dir`, run **MCP: Open User Configuration** in VS Code and paste the entry there. Workspace scope (`./.vscode/mcp.json`, via `--project`) has no such ambiguity and is the more reliable target.
+- **Gemini CLI.** If your `settings.json` sets `mcp.allowed`, add `"lexicon"` to that list or the server is skipped.
+- **Claude Desktop.** The config is read at launch only: quit the app completely and reopen. The Linux path is best effort (`$XDG_CONFIG_HOME/Claude/`, else `~/.config/Claude/`) — Anthropic documents only the macOS and Windows locations.
+
+### Running without installing anything
+
+`npx @ashlr/lexicon@latest setup` works, and installs nothing globally. When the CLI notices it is running from an npx cache (a directory npm deletes on its own schedule) it writes `npx -y @ashlr/lexicon@<version> mcp` into each client config instead of an absolute path, so the config keeps working after the cache is cleared. The Claude Code hook gets the same treatment with a wider timeout, because npx adds about a second per prompt. `npm i -g @ashlr/lexicon` and a rerun replaces both with direct paths and makes it instant. `lexicon serve --install` refuses to create a login service from an npx cache at all, since a launchd or systemd unit pointing into one would crash-loop.
 
 ## Any MCP client
 

@@ -1,6 +1,6 @@
 # CLI reference
 
-Generated from `lexicon --help` (v0.5.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.5.1) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -20,7 +20,6 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
-| [`lexicon install-claude [options]`](#lexicon-install-claude) | print (or with --apply, perform) the Claude Code MCP + hook setup |
 | [`lexicon import [options] <file> [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, text, csv, json) into the lexicon |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
 | [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview first) |
@@ -61,7 +60,6 @@ Commands:
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
-  install-claude [options]                print (or with --apply, perform) the Claude Code MCP + hook setup
   import [options] <file> [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, text, csv, json) into the lexicon
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
   trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview first)
@@ -258,20 +256,6 @@ Options:
   --backend <name>  force a clipboard backend: pbcopy|wl|xclip|xsel|powershell
   --which           print the detected clipboard backend and exit
   -h, --help        display help for command
-```
-
-## `lexicon install-claude`
-
-```text
-Usage: lexicon install-claude [options]
-
-print (or with --apply, perform) the Claude Code MCP + hook setup
-
-Options:
-  --apply          run `claude mcp add` and merge the hook into
-                   ~/.claude/settings.json
-  --scope <scope>  MCP registration scope: user|project (default: "user")
-  -h, --help       display help for command
 ```
 
 ## `lexicon import`

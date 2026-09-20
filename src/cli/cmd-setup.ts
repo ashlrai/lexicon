@@ -106,7 +106,10 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
  */
 function printNext(ctx: Ctx): void {
   const s = ctx.summary;
-  const name = ctx.company ?? s.demo?.terms[0];
+  // A name the user actually owns. `demo.terms` are the user's only when the
+  // demonstration did not fall back to the example lexicon -- naming
+  // "Ashlr.AI" to someone who has never heard of it would be nonsense.
+  const name = ctx.company ?? (s.demo && !s.demo.usedExample ? s.demo.terms[0] : undefined);
   const installed = s.clients.filter((c) => c.status === 'installed').map((c) => c.name);
   const where = installed.includes('claude') ? 'Claude Code' : (installed[0] ?? 'your agent');
   ctx.say();

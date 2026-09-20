@@ -2,6 +2,22 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## 0.5.1 (2026-09-20)
+
+### Fixed
+- `lexicon setup` run through `npx` wrote the npx cache path into every client config. npm garbage-collects that directory, so the configs would have broken silently weeks later. Setup now writes a pinned `npx -y @ashlr/lexicon@<version> mcp` instead, and `lexicon serve --install` refuses to create a launchd unit that points into a cache.
+- `npx @ashlr/lexicon normalize "ping ashler"` printed the input unchanged when no lexicon existed, demonstrating nothing. With no terms and text given as arguments it now falls back to a built-in example and says so. Piped input is still byte-exact.
+- `claude mcp add` failures reported "Command failed" with no reason, because stderr was discarded. An existing registration is now treated as success.
+- `lexicon doctor` showed a green tick for a login service it could not attribute to this install.
+
+### Added
+- `mcpName` in package.json, which the MCP registry requires to prove npm ownership.
+- Setup ends by showing a correction using the terms it just seeded, so the first run always ends in something visible.
+- `lexicon_doctor` returns `ready`, `summary` and `nextStep`, so an agent gets one relayable sentence instead of a checklist.
+
+### Changed
+- `install-claude` is now a hidden alias of `install claude`: one code path and one flag set.
+
 ## 0.5.0 (2026-09-20)
 
 ### Added

@@ -177,7 +177,7 @@ export const DOC_LINKS: { label: string; href: string; blurb: string }[] = [
   { label: 'Exports and imports', href: DOC('docs/EXPORTS.md'), blurb: 'Fifteen formats out, seven in.' },
   { label: 'Browser extension', href: DOC('docs/EXTENSION.md'), blurb: 'ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot, Poe.' },
   { label: 'macOS menu bar app', href: DOC('docs/MACOS-APP.md'), blurb: 'Any text field, via the Accessibility API.' },
-  { label: 'CLI reference', href: DOC('docs/CLI.md'), blurb: 'All twenty-six commands.' },
+  { label: 'CLI reference', href: DOC('docs/CLI.md'), blurb: 'All twenty-five commands.' },
   { label: 'Benchmark and method', href: BENCHMARK, blurb: 'The numbers, the corpus and what still fails.' },
   { label: 'Security and trust model', href: DOC('SECURITY.md'), blurb: 'What is local, and how project files are gated.' },
 ];

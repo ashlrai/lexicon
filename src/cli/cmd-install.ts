@@ -8,8 +8,10 @@
  * file is edited as text (one `[mcp_servers.lexicon]` block) so we do not
  * need a TOML library.
  *
- * `claude` delegates to runInstallClaude in ./commands.ts (which also merges
- * the UserPromptSubmit hook); the `install-claude` command remains as an alias.
+ * `claude` delegates to runInstallClaude below (which also merges the
+ * UserPromptSubmit and SessionStart hooks). `lexicon install claude` is the
+ * documented spelling; `lexicon install-claude` is a hidden alias kept for
+ * back-compat and forwards here (see index.ts).
  */
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -63,6 +65,12 @@ export interface InstallDeps {
   env?: NodeJS.ProcessEnv;
   /** Directory containing the built CLI (dist/cli). Default: the package root's dist/cli. */
   cliDir?: string;
+  /**
+   * Runs `claude mcp add` for the `claude` client; must throw on failure.
+   * Default `defaultExec`. Forwarded to `runInstallClaude` so a test can
+   * describe what the claude CLI did without one being on the machine.
+   */
+  exec?: (file: string, args: readonly string[]) => string;
   /** Called once per config file touched under `--apply` (setup uses it for its summary). */
   onWritten?: (file: string, outcome: InstallOutcome) => void;
 }
@@ -150,13 +158,16 @@ export function configPathFor(client: Exclude<InstallClient, 'claude' | 'generic
         return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
       }
       if (platform === 'win32') return path.join(appData(ctx), 'Claude', 'claude_desktop_config.json');
-      return path.join(home, '.config', 'Claude', 'claude_desktop_config.json');
+      // Linux is best effort: Anthropic documents only the macOS and Windows
+      // paths, so follow the XDG variable when it is set rather than assuming
+      // ~/.config.
+      return path.join(ctx.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'Claude', 'claude_desktop_config.json');
     }
     case 'vscode': {
       if (project) return path.join(cwd, '.vscode', 'mcp.json');
       if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
       if (platform === 'win32') return path.join(appData(ctx), 'Code', 'User', 'mcp.json');
-      return path.join(home, '.config', 'Code', 'User', 'mcp.json');
+      return path.join(ctx.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'Code', 'User', 'mcp.json');
     }
   }
 }
@@ -181,6 +192,28 @@ function rulesFileFor(client: InstallClient): string {
     default:
       return 'the agent’s rules or memory file';
   }
+}
+
+/**
+ * What writing the file does not guarantee, per client, when the vendor's own
+ * discovery rules have a condition we cannot check from here. Printed after
+ * the write so the user is not left wondering why a correct config is being
+ * ignored. Empty for the clients whose discovery is unconditional.
+ */
+function clientCaveat(client: InstallClient, project: boolean): string | undefined {
+  if (client === 'codex' && project) {
+    return 'Codex only reads a repo-local .codex/config.toml once you have marked this project as trusted; until then the file is loaded but disabled.';
+  }
+  if (client === 'vscode' && !project) {
+    return 'VS Code keeps this file per profile. The path above is the default profile of VS Code stable; if you use a custom profile or Insiders, run "MCP: Open User Configuration" in VS Code and paste the entry there instead.';
+  }
+  if (client === 'gemini') {
+    return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
+  }
+  if (client === 'claude-desktop') {
+    return 'Claude Desktop reads this only at launch: quit it completely and reopen.';
+  }
+  return undefined;
 }
 
 function labelFor(client: InstallClient): string {
@@ -421,6 +454,7 @@ export async function runInstall(
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
       ...(opts.home ? { settingsPath: path.join(home, '.claude', 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
+      ...(deps.exec ? { exec: deps.exec } : {}),
     };
     return runInstallClaude(claudeOpts, io, claudeDeps);
   }
@@ -440,6 +474,8 @@ export async function runInstall(
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
   }
+  const caveat = clientCaveat(name, project);
+  if (caveat !== undefined) line(io, dim(`   note: ${caveat}`));
   line(io);
 
   printExportHint(io, 2, name);
@@ -520,8 +556,16 @@ export async function runInstallClaude(
       const out = exec('claude', mcpArgs).trim();
       line(io, green(`   ${out || 'registered'}`));
     } catch (err) {
-      failed = true;
-      line(io, red(`   failed: ${safeLines(errorMessage(err))}`));
+      const message = errorMessage(err);
+      if (/already exists/i.test(message)) {
+        // `claude mcp add` refuses to overwrite an existing entry. That is the
+        // idempotent case, not a failure: every other writer here reports "already
+        // present, nothing changed" and carries on, so this one does too.
+        line(io, dim('   already registered with claude, nothing changed'));
+      } else {
+        failed = true;
+        line(io, red(`   failed: ${safeLines(message)}`));
+      }
     }
   }
   line(io);

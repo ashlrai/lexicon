@@ -78,6 +78,7 @@ terms:
     scope: project
     source: harvest:repo
     createdAt: 2026-09-19T20:35:00.822Z
+    hits: 1
   - canonical: TermScope
     aliases:
       - Term Scope

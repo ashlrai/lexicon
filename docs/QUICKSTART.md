@@ -2,17 +2,39 @@
 
 `@ashlr/lexicon` fixes the words speech-to-text gets wrong (Ashler -> Ashlr.AI) before your agent sees the prompt. This is the shortest path from nothing to "it just works in Claude Code".
 
-## 1. Install (one line)
+## 0. See it work first (no install, five seconds)
 
 ```bash
-curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+npx @ashlr/lexicon normalize "ping ashler about the cooper netties migration"
 ```
 
-The script checks for Node 20+, installs `@ashlr/lexicon` globally (from npm, falling back to GitHub at the latest tag if the registry is unreachable) and starts `lexicon setup`. Prefer `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`) or `npm i -g @ashlr/lexicon`? Then run `lexicon setup` yourself.
+```text
+lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+lexicon: run `lexicon setup` to build your own; nothing was written.
+ping Ashlr.AI about the Kubernetes migration
+```
+
+With no lexicon of your own, a sentence typed as arguments is corrected against the built-in example terms so you can see what the tool does before deciding to keep it. (Piped input is never touched by the example: `cat notes.md | lexicon normalize` passes through byte-exact until you have terms of your own.) Nothing is written, and nothing is installed globally — `npx` runs it from a cache.
+
+## 1. Install
+
+```bash
+npx @ashlr/lexicon@latest setup
+```
+
+That is the whole thing: no global install, and `setup` asks before it does anything that writes outside your lexicon. When it notices it is running from an npx cache it writes `npx -y @ashlr/lexicon@<version> mcp` into your client configs rather than a path npm will eventually delete, so what it sets up keeps working.
+
+If you would rather have it installed properly — it starts faster, and the Claude Code hook stops paying npx's ~1s per prompt:
+
+```bash
+npm i -g @ashlr/lexicon && lexicon setup
+```
+
+Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`), or `curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, which checks for Node 20+, installs globally and starts `lexicon setup` for you.
 
 ## 2. `lexicon setup`
 
-One interactive pass, six steps. Every step prints a one-line result and is safe to rerun (nothing is duplicated). `lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service are opt-in even then, so add `--packs developer,ai,voice-tools` for the starter packs, `--harvest` for the repo scan and `--serve` for the login service; `--dry-run` prints what a run would do and writes nothing; `--clients none`, `--no-packs`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--packs developer,ai` picks the starter packs without a prompt; `--json` prints a machine-readable summary.
+One interactive pass, seven steps, ending in a live correction. Every step prints a one-line result and is safe to rerun (nothing is duplicated). On a terminal the starter packs are offered as a checklist with the recommended ones already ticked — Enter accepts, or untick what you do not want. `lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service are opt-in even then, so add `--packs developer,ai,voice-tools` for the starter packs, `--harvest` for the repo scan and `--serve` for the login service; `--dry-run` prints what a run would do and writes nothing; `--clients none`, `--no-packs`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--packs developer,ai` picks the starter packs without a prompt; `--json` prints a machine-readable summary.
 
 ```text
 $ lexicon setup
@@ -58,11 +80,20 @@ Done.
    lexicon: ~/.config/lexicon/lexicon.yaml   terms added: Mason Wyatt, Ashlr.AI, Playwright, ...
    clients: claude, cursor   local API: installed   exports: ~/Desktop/lexicon-wispr.csv
 
-Next:
-   1. Open Claude Code and dictate a sentence with "Ashlr.AI" in it; the hook fixes it before Claude reads it.
-   2. After a week: lexicon suggest (finds names you keep correcting) and lexicon stats.
-   3. Local push-to-talk: lexicon voice --list-devices, then lexicon voice --copy.
+7. Does it work?
+   you dictate:  can you ask Mason Wiatt where the Ashler migration landed
+   your agent sees: can you ask Mason Wyatt where the Ashlr.AI migration landed
+   fixed: "Mason Wiatt" -> "Mason Wyatt", "Ashler" -> "Ashlr.AI"
+
+Done.
+   lexicon: ~/.config/lexicon/lexicon.yaml   terms added: Mason Wyatt, Ashlr.AI, Playwright, ...
+   clients: claude, cursor   local API: installed   exports: ~/Desktop/lexicon-wispr.csv
+
+Next: open Claude Code and dictate a sentence with "Ashlr.AI" in it. That is the whole thing.
+   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)
 ```
+
+Step 7 is not a canned example: it takes the terms the run just seeded, writes the sentence speech-to-text would have produced for them, and runs the real normalizer over it. If you skipped everything and the lexicon has nothing to show off, it falls back to the example terms and says so, so the run always ends with the product working.
 
 ## 3. Say a sentence in Claude Code
 
@@ -70,7 +101,9 @@ Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and d
 
 ## 4. Check it is working
 
-`lexicon normalize "tell Ashler to ship it"` prints `tell Ashlr.AI to ship it`; `lexicon stats` shows hits per term and never-hit terms; `lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper.
+`lexicon normalize "tell Ashler to ship it"` prints `tell Ashlr.AI to ship it`; `lexicon stats` shows hits per term and never-hit terms.
+
+`lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper, and ends with the two lines that matter: a one-sentence verdict and the single next thing to do. Agents get the same two as the `summary` and `nextStep` fields of the `lexicon_doctor` tool, alongside `ready` — the boolean answer to "is this set up?".
 
 ## Next
 

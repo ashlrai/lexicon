@@ -74,7 +74,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 - **Nineteen MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` shows the file's terms before pinning it, and `import_dictionary` takes `dryRun`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
-- **A CLI with 26 commands**, from `lexicon add` to `lexicon voice`.
+- **A CLI with 25 commands**, from `lexicon add` to `lexicon voice`.
 - **155 starter terms** in four packs (developer, AI, business, voice tools), one command each.
 - **Fifteen export formats** (Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON) and **seven importers** for the dictionary you already trained.
 - **Repo harvesting**, correction learning ("it's Ashlr.AI not Ashler"), usage stats, suggestions mined from your voice history, and a trust gate for project lexicons.

@@ -33,12 +33,27 @@ tools below call the same handlers, so the two never drift.
 The hook emits, at most once every 24 hours while the merged lexicon is empty
 (state in `<config dir>/onboard-note.json`):
 
-> The user's voice lexicon is empty. If they dictate, offer to set it up, do
-> not run it unasked. Ask for: (1) company/product names, spelled exactly, and
-> how they pronounce them; (2) their own name as they write it; (3) which
-> agent clients they use: Claude Code, Claude Desktop, Codex, Cursor,
-> Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool
-> with company, person and clients (or use the onboard prompt).
+> The user's voice lexicon is empty, so dictated names are not being
+> corrected. Do not act on this now and do not mention it on its own. Wait
+> until a message looks dictated (run-on prose, spoken filler, or a proper
+> noun that looks like speech-to-text mangled it). When that happens: answer
+> what the user asked first, then add one short sentence offering to fix it,
+> naming the word that looked wrong. Offer once. If they decline or ignore it,
+> do not raise it again this session. If they accept, ask for (1) their
+> company/product names, spelled exactly, and how they pronounce them; (2)
+> their own name as they write it; (3) which agent clients they use: Claude
+> Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then
+> call the lexicon setup_lexicon tool with company, person and clients (or use
+> the onboard prompt). setup_lexicon previews by default: show the user its
+> plan and call it again with apply: true only after they say yes. Install
+> nothing they did not name.
+
+The shape matters as much as the content. The note lands in a session the user
+started to do something else, so it is a standing instruction with a trigger
+rather than a task: wait for dictation, answer the real question first, offer
+once, and take silence as a no. The agent that quietly installs software
+nobody asked for and the agent that pitches on every message are the same
+failure.
 
 The `onboard` prompt (Claude Code: `/lexicon:onboard`, or `/lexicon setup`
 from the plugin command) scripts the conversation:
@@ -60,15 +75,39 @@ from the plugin command) scripts the conversation:
 > Entire.io: aliases "entire io", "entirely oh", "in tire dot io". Veto any?
 > **User:** fine.
 > **Agent:** Test it in a new session by dictating: "tell Mason Wyatt the
-> Entire.io checkpoint is ready".
+> Entire.io checkpoint is ready". Here is that sentence the way
+> speech-to-text would mangle it, run through the lexicon just now:
+> *calls `normalize_transcript { text: "tell Mason White the in tire dot io
+> checkpoint is ready" }`*
+> → "tell Mason Wyatt the Entire.io checkpoint is ready". That is what I will
+> see from now on.
+
+Step 7 of the prompt is the one that matters: a setup that ends in a list of
+file paths has not been shown to work. `lexicon setup` does the same thing at
+the end of its own run.
 
 ## Tools
 
 ### `lexicon_doctor {}`
 
-Returns `{ ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }],
+Answers "is lexicon set up for this user, and if not what is the single
+command that fixes it" in one call. Three fields carry that answer and are
+meant to be read on their own:
+
+- `ready` — true when corrections will actually happen: there are terms, and
+  an agent is wired up to use them. This, not `ok`, is the answer to "is it
+  set up". A lexicon with no terms and no integration fails no check, so `ok`
+  is true and nothing works.
+- `summary` — one sentence, safe to relay verbatim.
+- `nextStep` — the single thing to do next, already phrased as an instruction.
+  Always present; when nothing is broken it says so and names how to try it.
+
+Then `{ ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }],
 paths: { global, project?, trust, settings, installedPlugins }, versions:
-{ lexicon, node, platform } }`. Same checks as `lexicon doctor`, including
+{ lexicon, node, platform } }` for when detail is actually wanted. `lexicon
+doctor` in a terminal prints the same `summary` and `nextStep` under the
+check list, so the CLI and the agent never tell the user different things.
+Same checks as `lexicon doctor`, including
 the login service: on macOS `launchctl print gui/$UID/ai.ashlr.lexicon.serve`
 plus the plist's program path (`✓ login service ... loaded (<path> exists)`,
 `✗ login service ... points at a missing file: <path> (run: lexicon serve
@@ -77,11 +116,15 @@ plus the plist's program path (`✓ login service ... loaded (<path> exists)`,
 lexicon-serve.service` and the unit's `ExecStart`.
 
 > **User:** my names are not being fixed anymore
-> **Agent:** *calls `lexicon_doctor`*
-> Two things: the Claude Code hooks are not in ~/.claude/settings.json
-> (warn), and the MCP server is not registered with claude (fail). Everything
-> else passes: 36 terms, no conflicts, clipboard ok. Want me to preview the
-> Claude Code install?
+> **Agent:** *calls `lexicon_doctor`* → `ready: false`, `nextStep: "Fix the
+> first failure: lexicon MCP server not registered with claude (run: lexicon
+> install claude --apply)"`
+> You have 36 terms and no conflicts, but the MCP server is not registered
+> with claude, so nothing is reading them. One command fixes it — want me to
+> preview the Claude Code install?
+
+The agent relayed two fields and asked one question. It did not paste thirty
+checks, because it did not have to read them.
 
 ### `install_client { client, apply?, scope? }`
 

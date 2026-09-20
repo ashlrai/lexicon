@@ -52914,6 +52914,95 @@ async function installPack(name, opts = {}) {
   return { pack: info(pack), added, merged, path: file2.path, scope };
 }
 
+// src/core/demo.ts
+var DEMO_LEXICON = {
+  version: 1,
+  terms: [
+    {
+      canonical: "Ashlr.AI",
+      aliases: ["Ashler", "Ashlar", "Ashler AI", "Ashley our AI"],
+      phonetic: "ASH-ler",
+      category: "brand",
+      notes: 'Example term. Never write "Ashlar" (that is a masonry term).'
+    },
+    {
+      canonical: "Kubernetes",
+      aliases: ["Cooper Nettie's", "cube or netties"],
+      phonetic: "koo-ber-NET-eez",
+      category: "product"
+    },
+    {
+      canonical: "PostgreSQL",
+      aliases: ["postgres sequel", "post gress", "post gres"],
+      phonetic: "POST-gress",
+      category: "product"
+    },
+    {
+      canonical: "Pydantic",
+      aliases: ["pie dentic", "pie dantic"],
+      phonetic: "pie-DAN-tick",
+      category: "product"
+    },
+    {
+      canonical: "SaaS",
+      aliases: ["sass"],
+      category: "acronym",
+      never: ["sauce"]
+    }
+  ]
+};
+function squash2(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+function demoAliasOf(term) {
+  const canonical = squash2(term.canonical);
+  const pool = term.aliases.length > 0 ? term.aliases : suggestAliases(term.canonical);
+  const usable = pool.map((a) => a.trim()).filter((a) => a !== "" && squash2(a) !== canonical && squash2(a) !== "").sort((a, b) => a.length - b.length);
+  const distinct = usable.filter((a) => !canonical.includes(squash2(a)) && !squash2(a).includes(canonical));
+  return distinct[0] ?? usable[0];
+}
+function isPerson(term) {
+  return term.category === "person";
+}
+function sentenceFor(person, thing) {
+  if (person && thing) return `can you ask ${person} where the ${thing} migration landed`;
+  if (person) return `can you ask ${person} to take a look at this before standup`;
+  if (thing) return `can you check whether the ${thing} migration landed yet`;
+  return void 0;
+}
+function buildDemonstration(lexicon, opts = {}) {
+  const preferred = new Set((opts.prefer ?? []).map((c) => c.trim().toLowerCase()));
+  const rank2 = (t) => preferred.has(t.canonical.trim().toLowerCase()) ? 0 : 1;
+  const candidates = lexicon.terms.filter((t) => demoAliasOf(t) !== void 0).map((t, i) => ({ term: t, i })).sort((a, b) => rank2(a.term) - rank2(b.term) || a.i - b.i).map((e) => e.term);
+  if (candidates.length === 0) return void 0;
+  const person = candidates.find(isPerson);
+  const thing = candidates.find((t) => t !== person);
+  const personAlias = person ? demoAliasOf(person) : void 0;
+  const thingAlias = thing ? demoAliasOf(thing) : void 0;
+  const heard = sentenceFor(personAlias, thingAlias);
+  if (heard === void 0) return void 0;
+  const result = normalize(heard, lexicon);
+  if (!result.changed) return void 0;
+  return {
+    heard,
+    corrected: result.output,
+    result,
+    terms: result.replacements.map((r) => r.replacement),
+    usedExample: opts.usedExample ?? false
+  };
+}
+function demonstrate(lexicon, prefer = []) {
+  const own2 = buildDemonstration(lexicon, { prefer });
+  if (own2) return own2;
+  return buildDemonstration(DEMO_LEXICON, { usedExample: true }) ?? {
+    heard: "ping Ashler about it",
+    corrected: "ping Ashlr.AI about it",
+    result: { input: "ping Ashler about it", output: "ping Ashlr.AI about it", replacements: [], changed: true },
+    terms: ["Ashlr.AI"],
+    usedExample: true
+  };
+}
+
 // src/mcp/shared.ts
 import { join } from "node:path";
 
@@ -53026,7 +53115,7 @@ var registerTermTools = (server, { cwd, load }) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: "Rewrite a dictated/transcribed text using the user's personal lexicon (fixes STT misspellings of names, brands, acronyms, identifiers). Call this on any user message that came from voice/dictation or contains a word that looks like a garbled proper noun. Returns corrected text and the list of replacements.",
+      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently.",
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them (output === input)."),
@@ -53057,7 +53146,7 @@ var registerTermTools = (server, { cwd, load }) => {
     "add_term",
     {
       title: "Add a lexicon term",
-      description: `Save a canonical spelling to the user's lexicon so future dictation is corrected to it. Use when the user corrects you ("it's Ashlr.AI, not Ashler") - pass the misheard spelling as an alias. If aliases are omitted, likely STT misspellings are generated automatically. Merges aliases into an existing term with the same canonical.`,
+      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one.",
       inputSchema: {
         canonical: external_exports.string().min(1).describe("The correct spelling, exactly as the user wants it written."),
         aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest."),
@@ -53088,7 +53177,7 @@ var registerTermTools = (server, { cwd, load }) => {
     "remove_term",
     {
       title: "Remove a lexicon term",
-      description: "Delete a term (by canonical spelling, case-insensitive) from the user's lexicon.",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive). WHEN TO CALL: only when the user asks for a name to be forgotten, or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term, and the corrections it was making stop happening. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means.",
       inputSchema: {
         canonical: external_exports.string().min(1),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("Which lexicon file to remove it from. Defaults to the store's resolution order.")
@@ -53103,7 +53192,7 @@ var registerTermTools = (server, { cwd, load }) => {
     "list_terms",
     {
       title: "List lexicon terms",
-      description: "List the user's lexicon terms (global + project merged). Optional case-insensitive substring filter over canonical spellings and aliases, and category filter.",
+      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it.",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
         category: external_exports.enum(TERM_CATEGORIES).optional()
@@ -53159,7 +53248,7 @@ var registerTermTools = (server, { cwd, load }) => {
     "learn_correction",
     {
       title: "Learn from a spelling correction",
-      description: "Record that the user corrected a transcription: they said `meant` but the transcript/agent wrote `heard`. Call this whenever the user says things like 'it's Ashlr.AI not Ashler', 'I said X', or fixes a name you wrote. Adds `heard` as an alias so future dictation is corrected automatically.",
+      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it. Then get on with what the user actually asked for.',
       inputSchema: {
         heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -53181,7 +53270,7 @@ var registerTermTools = (server, { cwd, load }) => {
     "suggest_canonical",
     {
       title: "Suggest the canonical form of a garbled word",
-      description: "Given a word that looks like a garbled proper noun and was not corrected by normalize_transcript, return the closest existing lexicon terms so you can ask the user 'did you mean X?'.",
+      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term.',
       inputSchema: {
         heard: external_exports.string().min(1).describe("The suspicious word or phrase as it appeared in the transcript.")
       }
@@ -53218,7 +53307,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle (package names, PascalCase identifiers, git authors, README headings) and propose them as lexicon terms. Run this when entering a repo that has no .lexicon.yaml. With add:true the candidates are written to the project lexicon.",
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package names, PascalCase identifiers, git authors, README headings. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml and trusts that file. That is a write inside the user's repository plus a trust decision, so show the candidate list and get a yes first. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.",
       inputSchema: {
         path: external_exports.string().optional().describe("Repository root. Defaults to the server working directory."),
         limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
@@ -53632,8 +53721,32 @@ function resolveIntegrationPaths(cliDir) {
     bundled: false
   };
 }
+var NPX_CACHE_SEGMENT = /[\\/]_npx[\\/]/;
+function isVolatileEntry(p) {
+  return NPX_CACHE_SEGMENT.test(p);
+}
+function launchFor(entryPath, subcommand, version2) {
+  if (!isVolatileEntry(entryPath)) return { command: "node", args: [entryPath], viaNpx: false };
+  const v = version2 ?? packageVersion(import.meta.url);
+  const spec = v === UNKNOWN_VERSION ? PACKAGE_NAME2 : `${PACKAGE_NAME2}@${v}`;
+  return { command: "npx", args: ["-y", spec, subcommand], viaNpx: true };
+}
+function hookTimeoutFor(launch) {
+  return launch.viaNpx ? 15 : 5;
+}
+function launchCommandLine(launch) {
+  const quote = (s) => /[\s"'$`\\]/.test(s) || path12.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
+  return [launch.command, ...launch.args].map(quote).join(" ");
+}
 function defaultExec(file2, args) {
-  return execFileSync2(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "ignore"] });
+  try {
+    return execFileSync2(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    const text = (stream) => typeof stream === "string" ? stream.trim() : "";
+    const detail = text(err.stderr) || text(err.stdout);
+    if (!detail) throw err;
+    throw new Error(`${err instanceof Error ? err.message : String(err)}: ${detail.split("\n").slice(0, 3).join(" ")}`);
+  }
 }
 
 // src/cli/cmd-doctor.ts
@@ -53993,7 +54106,51 @@ async function checkLoginService(probe) {
   if (!loaded) {
     return { level: "warn", message: `${name} is installed at ${file2} but not loaded (${SERVE_REINSTALL_HINT})` };
   }
-  return { level: "ok", message: `${name} loaded${program2 !== void 0 ? ` (${program2} exists)` : fileExists ? "" : ` (${file2} not found; it was loaded from elsewhere)`}` };
+  if (!fileExists) {
+    return { level: "info", message: `${name} is loaded, but not from this install (${SERVE_REINSTALL_HINT}; no service file at ${file2})` };
+  }
+  return { level: "ok", message: `${name} loaded${program2 !== void 0 ? ` (${program2} exists)` : ""}` };
+}
+function summarize(checks, state) {
+  const fails = checks.filter((c) => c.level === "fail");
+  const warns = checks.filter((c) => c.level === "warn");
+  const counts = `${state.terms} term${state.terms === 1 ? "" : "s"}`;
+  const ready = state.terms > 0 && state.wired && fails.length === 0;
+  if (state.terms === 0) {
+    return {
+      ready: false,
+      summary: "Lexicon is not set up yet: there are no terms, so nothing will be corrected.",
+      nextStep: "Run: lexicon setup"
+    };
+  }
+  if (fails.length > 0) {
+    return {
+      ready: false,
+      summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? "" : "s"} failed: ${fails[0].message}`,
+      // Every failing message ends in its own "(run: ...)" hint, so the first
+      // failure carries its fix with it.
+      nextStep: `Fix the first failure: ${fails[0].message}`
+    };
+  }
+  if (!state.wired) {
+    return {
+      ready: false,
+      summary: `Lexicon has ${counts}, but no agent is wired up to use them yet.`,
+      nextStep: "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)"
+    };
+  }
+  if (state.untrustedProject) {
+    return {
+      ready: true,
+      summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
+      nextStep: 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
+    };
+  }
+  return {
+    ready: true,
+    summary: `Lexicon is set up and working: ${counts}, wired into your agent${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? "" : "s"} not configured` : ""}.`,
+    nextStep: "Nothing to fix. Dictate a sentence with one of your names in it and watch it come out spelled right."
+  };
 }
 async function runDoctorReport(opts, deps = {}) {
   const platform = deps.platform ?? process.platform;
@@ -54004,6 +54161,8 @@ async function runDoctorReport(opts, deps = {}) {
   const push2 = (level, message) => {
     checks.push({ level, message });
   };
+  let wired = false;
+  let untrustedProject = false;
   const paths = resolvePaths({ cwd });
   const files = [];
   try {
@@ -54026,8 +54185,10 @@ async function runDoctorReport(opts, deps = {}) {
         push2("ok", "project lexicon is trusted and merged");
         files.push(p);
       } else if (trust === "changed") {
+        untrustedProject = true;
         push2("warn", `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
       } else {
+        untrustedProject = true;
         push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
@@ -54090,15 +54251,17 @@ async function runDoctorReport(opts, deps = {}) {
   if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
   const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
   if (pluginId) {
+    wired = true;
     push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
       if (settingsHasLexiconHook(settings.value, event)) {
+        wired = true;
         push2("ok", `${event} hook found in ${settingsPath}`);
       } else {
         push2(
           "warn",
-          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install-claude --apply)`
+          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
         );
       }
     }
@@ -54110,9 +54273,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("ok", `claude CLI found: ${claudeBin}`);
     try {
       const out = exec("claude", ["mcp", "list"]);
-      if (/lexicon/i.test(out)) push2("ok", "lexicon MCP server is registered with claude");
-      else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
-      else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install-claude --apply)");
+      if (/lexicon/i.test(out)) {
+        wired = true;
+        push2("ok", "lexicon MCP server is registered with claude");
+      } else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
+      else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install claude --apply)");
     } catch (err) {
       push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
     }
@@ -54137,8 +54302,12 @@ async function runDoctorReport(opts, deps = {}) {
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject });
   return {
     ok: !checks.some((c) => c.level === "fail"),
+    ready: verdict.ready,
+    summary: verdict.summary,
+    nextStep: verdict.nextStep,
     checks,
     paths: {
       global: paths.global,
@@ -54192,13 +54361,13 @@ function configPathFor(client, ctx) {
         return path16.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
       if (platform === "win32") return path16.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return path16.join(home, ".config", "Claude", "claude_desktop_config.json");
+      return path16.join(ctx.env.XDG_CONFIG_HOME ?? path16.join(home, ".config"), "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
       if (project) return path16.join(cwd, ".vscode", "mcp.json");
       if (platform === "darwin") return path16.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
       if (platform === "win32") return path16.join(appData(ctx), "Code", "User", "mcp.json");
-      return path16.join(home, ".config", "Code", "User", "mcp.json");
+      return path16.join(ctx.env.XDG_CONFIG_HOME ?? path16.join(home, ".config"), "Code", "User", "mcp.json");
     }
   }
 }
@@ -54222,6 +54391,21 @@ function rulesFileFor(client) {
       return "the agent\u2019s rules or memory file";
   }
 }
+function clientCaveat(client, project) {
+  if (client === "codex" && project) {
+    return "Codex only reads a repo-local .codex/config.toml once you have marked this project as trusted; until then the file is loaded but disabled.";
+  }
+  if (client === "vscode" && !project) {
+    return 'VS Code keeps this file per profile. The path above is the default profile of VS Code stable; if you use a custom profile or Insiders, run "MCP: Open User Configuration" in VS Code and paste the entry there instead.';
+  }
+  if (client === "gemini") {
+    return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
+  }
+  if (client === "claude-desktop") {
+    return "Claude Desktop reads this only at launch: quit it completely and reopen.";
+  }
+  return void 0;
+}
 function labelFor(client) {
   switch (client) {
     case "codex":
@@ -54243,7 +54427,8 @@ function labelFor(client) {
   }
 }
 function targetFor(client, serverPath, ctx) {
-  const base = { command: "node", args: [serverPath] };
+  const launch = launchFor(serverPath, "mcp");
+  const base = { command: launch.command, args: launch.args };
   const file2 = configPathFor(client, ctx);
   const common = { client, label: labelFor(client), file: file2, rulesFile: rulesFileFor(client) };
   switch (client) {
@@ -54351,8 +54536,9 @@ function printExportHint(io, step, client) {
   line(io, dim("   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)"));
 }
 function printGeneric(io, serverPath) {
+  const launch = launchFor(serverPath, "mcp");
   line(io, bold("Generic MCP client configuration"));
-  line(io, indent(jsonSnippet("mcpServers", { command: "node", args: [serverPath] }), "   "));
+  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args }), "   "));
   line(io);
   line(io, bold("Supported clients"));
   for (const c of INSTALL_CLIENTS) {
@@ -54390,7 +54576,8 @@ async function runInstall(client, opts, io, deps = {}) {
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
       ...opts.home ? { settingsPath: path16.join(home, ".claude", "settings.json") } : {},
-      ...deps.onWritten ? { onWritten: deps.onWritten } : {}
+      ...deps.onWritten ? { onWritten: deps.onWritten } : {},
+      ...deps.exec ? { exec: deps.exec } : {}
     };
     return runInstallClaude(claudeOpts, io, claudeDeps);
   }
@@ -54408,6 +54595,8 @@ async function runInstall(client, opts, io, deps = {}) {
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
   }
+  const caveat = clientCaveat(name, project);
+  if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
   line(io);
   printExportHint(io, 2, name);
   if (!opts.apply) {
@@ -54426,34 +54615,47 @@ async function runInstallClaude(opts, io, deps = {}) {
   const settingsPath = deps.settingsPath ?? path16.join(os3.homedir(), ".claude", "settings.json");
   const exec = deps.exec ?? defaultExec;
   let failed = false;
-  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", "node", serverPath];
+  const serverLaunch = launchFor(serverPath, "mcp");
+  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
   line(io, `   claude ${mcpArgs.map(quoteArg).join(" ")}`);
-  if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
+  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
+  else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
-    if (!existsSync7(serverPath)) {
+    if (!serverLaunch.viaNpx && !existsSync7(serverPath)) {
       line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
       const out = exec("claude", mcpArgs).trim();
       line(io, green(`   ${out || "registered"}`));
     } catch (err) {
-      failed = true;
-      line(io, red(`   failed: ${safeLines(errorMessage(err))}`));
+      const message = errorMessage(err);
+      if (/already exists/i.test(message)) {
+        line(io, dim("   already registered with claude, nothing changed"));
+      } else {
+        failed = true;
+        line(io, red(`   failed: ${safeLines(message)}`));
+      }
     }
   }
   line(io);
-  const hookCommand = `node "${hookPath.replace(/(["\\$`])/g, "\\$1")}"`;
+  const hookLaunch = launchFor(hookPath, "hook");
+  const hookCommand = launchCommandLine(hookLaunch);
+  const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
   line(io, `   merge into ${safe(settingsPath)}:`);
-  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, 5, HOOK_EVENTS), null, 2), "   "));
+  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), "   "));
+  if (hookLaunch.viaNpx) {
+    line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
+    line(io, dim("    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)"));
+  }
   if (opts.apply) {
     const read = await readJsonFile(settingsPath);
     if (read.error !== void 0) {
       throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
     }
     const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, 5, HOOK_EVENTS);
+    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
       await writeJsonFile(settingsPath, settings);
       line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
@@ -58389,6 +58591,13 @@ async function runServeInstall(opts, io, deps = {}) {
   } catch (err) {
     return fail(io, err);
   }
+  if (isVolatileEntry(cliPath)) {
+    io.stderr(
+      `lexicon: refusing to install the login service: this copy is running from an npx cache (${safe(cliPath)}), which npm deletes. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written
+`
+    );
+    return 1;
+  }
   if (platform === "darwin" || platform === "linux") {
     try {
       await fs16.access(cliPath);
@@ -58885,6 +59094,27 @@ async function stepExport(ctx) {
   ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${loaded.merged.terms.length} terms)`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
+async function stepDemo(ctx) {
+  stepHeading(ctx, 7, "Does it work?");
+  let merged;
+  try {
+    merged = (await loadLexicon({ cwd: ctx.cwd })).merged;
+  } catch {
+    merged = { version: 1, terms: [] };
+  }
+  const demo = demonstrate(merged, ctx.seeded);
+  const summary = demo.result.replacements.map((r) => `"${safe(r.original)}" -> "${safe(r.replacement)}"`).join(", ");
+  ctx.say(`   you dictate:  ${safe(demo.heard)}`);
+  ctx.say(`   ${bold("your agent sees")}: ${bold(safe(demo.corrected))}`);
+  if (summary) ctx.say(dim(`   fixed: ${summary}`));
+  if (demo.usedExample) {
+    ctx.say(dim("   (that used the built-in example terms: your lexicon has no misspellings recorded yet)"));
+    ctx.say(dim('   add one now: lexicon add "Your Co" --suggest'));
+  }
+  const record2 = { heard: demo.heard, corrected: demo.corrected, terms: demo.terms, usedExample: demo.usedExample };
+  if (ctx.plan) ctx.plan.demo = record2;
+  else ctx.summary.demo = record2;
+}
 
 // src/cli/cmd-setup.ts
 function printPlan(ctx, p) {
@@ -58901,6 +59131,17 @@ function printPlan(ctx, p) {
   ctx.say();
   ctx.say(dim("   run again without --dry-run to apply."));
 }
+function printNext(ctx) {
+  const s = ctx.summary;
+  const name = ctx.company ?? (s.demo && !s.demo.usedExample ? s.demo.terms[0] : void 0);
+  const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
+  const where = installed.includes("claude") ? "Claude Code" : installed[0] ?? "your agent";
+  ctx.say();
+  ctx.say(
+    `${bold("Next:")} open ${safe(where)} and dictate a sentence with ${name ? `"${safe(name)}"` : "one of your names"} in it. That is the whole thing.`
+  );
+  ctx.say(dim("   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)"));
+}
 function printSummary(ctx) {
   const s = ctx.summary;
   ctx.say();
@@ -58915,12 +59156,7 @@ function printSummary(ctx) {
   );
   ctx.say(`   local API: ${s.serve}`);
   ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("none")}`);
-  ctx.say();
-  ctx.say(bold("Next:"));
-  const company = ctx.company;
-  ctx.say(`   1. Open Claude Code and dictate a sentence${company ? ` with "${safe(company)}" in it` : ""}; the hook fixes it before Claude reads it.`);
-  ctx.say("   2. After a week: lexicon suggest (finds names you keep correcting) and lexicon stats.");
-  ctx.say("   3. Local push-to-talk: lexicon voice --list-devices, then lexicon voice --copy.");
+  printNext(ctx);
 }
 async function runSetup(opts, io, deps = {}) {
   const cwd = path23.resolve(opts.cwd ?? process.cwd());
@@ -58987,6 +59223,8 @@ async function runSetup(opts, io, deps = {}) {
     await stepServe(ctx);
     say();
     await stepExport(ctx);
+    say();
+    await stepDemo(ctx);
     if (ctx.plan) printPlan(ctx, ctx.plan);
     else printSummary(ctx);
   } finally {
@@ -59003,8 +59241,8 @@ var registerSetupTools = (server, { cwd, load }) => {
   server.registerTool(
     "lexicon_doctor",
     {
-      title: "Diagnose the lexicon install",
-      description: "Diagnose the lexicon install: files, trust, hooks, MCP registration, clipboard, voice tools. Call when corrections are not happening or the user asks whether it is set up. Returns { ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }], paths, versions }; summarise the fails and warns for the user and offer the fix each message names.",
+      title: "Is the lexicon set up, and if not what fixes it",
+      description: "Answers \"is lexicon set up for this user, and what is the one command that fixes it\" in a single call. WHEN TO CALL: when corrections are not happening, when the user asks whether it is set up, or before you offer to set it up, so you know whether there is anything to offer. Safe and free to call unprompted: it only reads. WHAT IT CHANGES: nothing. It writes no files and installs nothing. READ THESE THREE FIELDS FIRST: `ready` (boolean: true means corrections will actually happen for this user -- there are terms and an agent is wired up to use them), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), `checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.",
       inputSchema: {}
     },
     async () => guarded(async () => textResult(await runDoctorReport({ cwd })))
@@ -59349,9 +59587,17 @@ var ONBOARD_PROMPT = [
   "3. Ask which agent clients I use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI or VS Code.",
   "4. Call setup_lexicon with my company, my name and those clients, show me its plan, and apply it only after I say yes. Tell me what it installed and where the lexicon file lives.",
   "5. For every other name I gave you, call add_term without aliases so likely misspellings are generated, then show each term with its aliases on one line so I can veto any.",
-  "6. Finish with one sentence I can dictate to test it that contains two of the names, and tell me to try it in a new session.",
+  "6. Offer the starter packs once (list_packs; say in one line what each contains) and add only the ones I pick.",
+  "7. Finish by proving it works: take one of my names, write the sentence I can dictate to test it containing two of the names, and run normalize_transcript on that sentence spelled the way speech-to-text would mangle it, so I can see the before and after. Then tell me to try it in a new session.",
   "Never install anything or trust a project file without telling me first. If a step fails, show me the error and continue with the rest."
 ].join("\n");
+var PROACTIVE_OFFER = [
+  "OFFERING SETUP UNPROMPTED: if a message looks dictated and contains a proper noun you do not recognise, and lexicon_doctor says ready is false,",
+  "you may offer to set this up on your own initiative -- but answer what the user actually asked first, then add at most one short sentence, once per session,",
+  'naming the word that looked wrong ("Ashler" looked like a name STT mangled -- want me to set up a lexicon so it comes out right?).',
+  "Do not offer twice, do not offer when the user is busy with something failing, and never run setup_lexicon with apply: true, install_client, add_pack or trust_project without an explicit yes.",
+  "If the user says no, drop it for the session and just keep calling normalize_transcript."
+].join(" ");
 var SERVER_INSTRUCTIONS = [
   "Personal voice lexicon: the canonical spellings of names the user dictates and the misspellings STT produces for them.",
   "Read the lexicon://me resource once at session start and keep its canonical forms in mind for the whole session.",
@@ -59360,6 +59606,8 @@ var SERVER_INSTRUCTIONS = [
   "If a word looks like a garbled name and normalize_transcript did not change it, call suggest_canonical before guessing.",
   "Never rewrite text inside code blocks, inline code, file paths, URLs or emails.",
   "If the lexicon is empty, offer to set it up: ask for the company/product spelling, the user's own name and the clients in use, then call setup_lexicon (or use the onboard prompt).",
+  'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
+  PROACTIVE_OFFER,
   "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.",
   "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
   "When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.",

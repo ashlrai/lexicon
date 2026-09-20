@@ -13,6 +13,7 @@ import {
   upsertTomlTable,
 } from '../src/cli/cmd-install.js';
 import type { InstallDeps, InstallOptions } from '../src/cli/cmd-install.js';
+import { hookTimeoutFor, isVolatileEntry, launchCommandLine, launchFor } from '../src/cli/claude-settings.js';
 import { makeIO } from './helpers.js';
 
 const CLI_DIR = '/opt/lexicon/dist/cli';
@@ -358,5 +359,92 @@ describe('generic, claude and the commander wiring', () => {
     expect(servers.lexicon.command).toBe('node');
     expect(servers.lexicon.args[0]).toMatch(/[\\/](plugin[\\/]mcp-server\.mjs|mcp[\\/]server\.js)$/);
     expect(io.out).toContain('created');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Running from an npx cache
+// ---------------------------------------------------------------------------
+
+/**
+ * `npx @ashlr/lexicon@latest setup` is the headline path, and it runs out of
+ * `~/.npm/_npx/<hash>/`, which npm garbage-collects. Writing that absolute
+ * path into Cursor's config would leave the user with an MCP server that
+ * works today and is gone next week, so every writer switches to an `npx`
+ * command that re-resolves the package instead.
+ */
+describe('installing from an npx cache', () => {
+  const NPX_CLI = '/Users/u/.npm/_npx/abc123/node_modules/@ashlr/lexicon/dist/cli';
+
+  it('detects a cache path and leaves a real install alone', () => {
+    expect(isVolatileEntry(`${NPX_CLI}/index.js`)).toBe(true);
+    expect(isVolatileEntry('/opt/homebrew/lib/node_modules/@ashlr/lexicon/dist/cli/index.js')).toBe(false);
+    expect(isVolatileEntry('/Users/u/code/lexicon/dist/cli/index.js')).toBe(false);
+  });
+
+  it('writes an npx command rather than a path npm may delete', () => {
+    const launch = launchFor(`${NPX_CLI}/../mcp/server.js`, 'mcp', '1.2.3');
+    expect(launch).toEqual({ command: 'npx', args: ['-y', '@ashlr/lexicon@1.2.3', 'mcp'], viaNpx: true });
+    // Pinned, not @latest: a config should keep behaving the way it did the day it was written.
+    expect(launch.args.join(' ')).not.toContain('@latest');
+  });
+
+  it('keeps `node <path>` for a real install', () => {
+    expect(launchFor('/opt/lexicon/dist/mcp/server.js', 'mcp', '1.2.3')).toEqual({
+      command: 'node',
+      args: ['/opt/lexicon/dist/mcp/server.js'],
+      viaNpx: false,
+    });
+  });
+
+  it('gives the hook room for npx to resolve, and quotes paths but not package specs', () => {
+    const viaNpx = launchFor(`${NPX_CLI}/../hooks/user-prompt-submit.js`, 'hook', '1.2.3');
+    const direct = launchFor('/opt/lexicon/dist/hooks/user-prompt-submit.js', 'hook', '1.2.3');
+    expect(hookTimeoutFor(direct)).toBe(5);
+    expect(hookTimeoutFor(viaNpx)).toBeGreaterThan(5);
+    expect(launchCommandLine(viaNpx)).toBe('npx -y @ashlr/lexicon@1.2.3 hook');
+    expect(launchCommandLine(direct)).toBe('node "/opt/lexicon/dist/hooks/user-prompt-submit.js"');
+  });
+
+  it('writes the npx form into a client config end to end', async () => {
+    const io = makeIO();
+    const code = await runInstall('cursor', { apply: true, home, cwd }, io, { cliDir: NPX_CLI, platform: 'darwin', env: {} });
+    expect(code).toBe(0);
+    const written = JSON.parse(await fs.readFile(path.join(home, '.cursor', 'mcp.json'), 'utf8')) as {
+      mcpServers: { lexicon: { command: string; args: string[] } };
+    };
+    expect(written.mcpServers.lexicon.command).toBe('npx');
+    expect(written.mcpServers.lexicon.args[0]).toBe('-y');
+    expect(written.mcpServers.lexicon.args.at(-1)).toBe('mcp');
+    // Nothing in the config may point into the cache directory.
+    expect(JSON.stringify(written)).not.toContain('_npx');
+  });
+});
+
+describe('claude registration is idempotent', () => {
+  it('reports an existing `claude mcp add` entry as unchanged rather than failed', async () => {
+    const io = makeIO();
+    const code = await runInstall('claude', { apply: true, home, cwd }, io, {
+      cliDir: CLI_DIR,
+      // What the real `claude mcp add` says the second time you run it.
+      exec: () => {
+        throw new Error('Command failed: claude mcp add: MCP server lexicon already exists in user config');
+      },
+    } as InstallDeps);
+    expect(code).toBe(0);
+    expect(io.out).toContain('already registered with claude, nothing changed');
+    expect(io.out).not.toContain('failed:');
+  });
+
+  it('still fails, with the reason, for a real error', async () => {
+    const io = makeIO();
+    const code = await runInstall('claude', { apply: true, home, cwd }, io, {
+      cliDir: CLI_DIR,
+      exec: () => {
+        throw new Error('Command failed: claude: not found');
+      },
+    } as InstallDeps);
+    expect(code).toBe(1);
+    expect(io.out).toContain('failed: Command failed: claude: not found');
   });
 });

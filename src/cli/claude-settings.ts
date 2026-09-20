@@ -226,8 +226,25 @@ export function launchCommandLine(launch: StdioLaunch): string {
   return [launch.command, ...launch.args].map(quote).join(' ');
 }
 
+/**
+ * Run a binary and return its stdout, throwing on failure.
+ *
+ * The child's stderr is captured rather than discarded, and folded into the
+ * thrown error: `execFileSync`'s own message is only "Command failed: <cmd>",
+ * which told a user whose `claude mcp add` failed precisely nothing. The
+ * reason ("MCP server lexicon already exists in user config") lives on the
+ * child's output, so that is what the caller gets to show.
+ */
 export function defaultExec(file: string, args: readonly string[]): string {
-  return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    const text = (stream: unknown): string => (typeof stream === 'string' ? stream.trim() : '');
+    const detail = text((err as { stderr?: unknown }).stderr) || text((err as { stdout?: unknown }).stdout);
+    if (!detail) throw err;
+    // First lines only: a failing CLI can be chatty, and this ends up on one terminal line.
+    throw new Error(`${err instanceof Error ? err.message : String(err)}: ${detail.split('\n').slice(0, 3).join(' ')}`);
+  }
 }
 
 /**
