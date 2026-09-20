@@ -6,6 +6,7 @@
  *   extension/dist/background.js   <- extension/src/background.ts (esm, imports ./core.js)
  *   extension/dist/options.js      <- extension/src/options.ts (esm, imports ./core.js)
  *   extension/dist/content.js      <- extension/src/content.ts (iife; no core needed)
+ *   extension/dist/pair.js         <- extension/src/pair.ts (iife; runs on http://127.0.0.1:41733/pair)
  *   extension/dist/popup.js        <- extension/src/popup.ts (iife)
  *   extension/dist/manifest.json   <- extension/manifest.json with the package version
  *   extension/dist/*.html, ui.css  <- extension/static/
@@ -64,16 +65,16 @@ await build({
   external: ['./core.js'],
 });
 
-// 3. Classic scripts: content script (must be non-module) and popup.
+// 3. Classic scripts: content scripts (must be non-module) and popup.
 await build({
   ...common,
-  entryPoints: { content: resolve(src, 'content.ts'), popup: resolve(src, 'popup.ts') },
+  entryPoints: { content: resolve(src, 'content.ts'), pair: resolve(src, 'pair.ts'), popup: resolve(src, 'popup.ts') },
   outdir,
   format: 'iife',
 });
 
 // Guard: no Node builtins and no accidental core duplication in content.js.
-for (const name of ['core.js', 'background.js', 'options.js', 'content.js', 'popup.js']) {
+for (const name of ['core.js', 'background.js', 'options.js', 'content.js', 'pair.js', 'popup.js']) {
   const code = readFileSync(resolve(outdir, name), 'utf8');
   const nodeBuiltins = code.match(/["']node:[a-z_/]+["']/g);
   if (nodeBuiltins) {
@@ -83,7 +84,7 @@ for (const name of ['core.js', 'background.js', 'options.js', 'content.js', 'pop
     throw new Error(`${name} requires a Node module; only import browser-safe core modules`);
   }
 }
-for (const name of ['background.js', 'options.js', 'content.js', 'popup.js']) {
+for (const name of ['background.js', 'options.js', 'content.js', 'pair.js', 'popup.js']) {
   const code = readFileSync(resolve(outdir, name), 'utf8');
   const usesCore = /from\s*["']\.\/core\.js["']/.test(code);
   if ((name === 'background.js' || name === 'options.js') && !usesCore) {
@@ -126,7 +127,7 @@ const zipped = zipDir(outdir, resolve(root, 'extension/lexicon-extension.zip')) 
   zipDir(outdirFirefox, resolve(root, 'extension/lexicon-extension-firefox.zip'));
 
 // Report.
-const files = ['core.js', 'background.js', 'content.js', 'popup.js', 'options.js', 'manifest.json'];
+const files = ['core.js', 'background.js', 'content.js', 'pair.js', 'popup.js', 'options.js', 'manifest.json'];
 for (const f of files) {
   const kb = (statSync(resolve(outdir, f)).size / 1024).toFixed(1).padStart(7);
   console.log(`${kb} KB  extension/dist/${f}`);

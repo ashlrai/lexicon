@@ -3,7 +3,7 @@
 import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { coerceSettings, errorMessage, STORAGE_KEYS } from './shared.js';
+import { coerceSettings, errorMessage, pairUrl, STORAGE_KEYS } from './shared.js';
 import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -15,6 +15,8 @@ function $<T extends HTMLElement>(id: string): T {
 
 const ui = {
   version: $<HTMLSpanElement>('version'),
+  pairState: $<HTMLParagraphElement>('pair-state'),
+  pairLink: $<HTMLAnchorElement>('pair-link'),
   baseUrl: $<HTMLInputElement>('baseUrl'),
   token: $<HTMLInputElement>('token'),
   toggleToken: $<HTMLButtonElement>('toggle-token'),
@@ -88,9 +90,24 @@ function renderSites(): void {
   }
 }
 
+/** "Paired" when a token is stored; the link always points at the current base URL's /pair. */
+function renderPairState(): void {
+  ui.pairLink.href = pairUrl(ui.baseUrl.value.trim() || settings.baseUrl);
+  if (settings.token) {
+    ui.pairState.textContent = `Paired with ${settings.baseUrl} (token stored).`;
+    ui.pairState.className = 'pair-state ok';
+    ui.pairLink.textContent = 'pair again';
+  } else {
+    ui.pairState.textContent = 'Not paired: no token stored.';
+    ui.pairState.className = 'pair-state warn';
+    ui.pairLink.textContent = 'pair in this browser';
+  }
+}
+
 function render(): void {
   ui.baseUrl.value = settings.baseUrl;
   ui.token.value = settings.token;
+  renderPairState();
   for (const input of modeInputs()) input.checked = input.value === settings.mode;
   ui.live.checked = settings.live;
   ui.yaml.value = settings.yaml;
@@ -127,6 +144,7 @@ async function save(): Promise<void> {
 
 ui.save.addEventListener('click', () => void save());
 ui.yaml.addEventListener('input', () => void validateYaml());
+ui.baseUrl.addEventListener('input', () => renderPairState());
 ui.toggleToken.addEventListener('click', () => {
   const show = ui.token.type === 'password';
   ui.token.type = show ? 'text' : 'password';
@@ -211,6 +229,19 @@ ui.anySite.addEventListener('change', () => {
   })().catch((err: unknown) => {
     ui.anySiteMsg.textContent = errorMessage(err);
   });
+});
+
+// Pairing happens in another tab (the /pair page); reflect it here without a reload.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[STORAGE_KEYS.settings]) return;
+  const next = coerceSettings(changes[STORAGE_KEYS.settings].newValue, defaultYaml);
+  if (next.token === settings.token && next.baseUrl === settings.baseUrl && next.mode === settings.mode) return;
+  settings = { ...settings, token: next.token, baseUrl: next.baseUrl, mode: next.mode };
+  ui.baseUrl.value = settings.baseUrl;
+  ui.token.value = settings.token;
+  for (const input of modeInputs()) input.checked = input.value === settings.mode;
+  renderPairState();
+  ui.saveMsg.textContent = settings.token ? 'Paired.' : '';
 });
 
 void (async () => {

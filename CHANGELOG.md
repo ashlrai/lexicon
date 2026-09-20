@@ -2,6 +2,19 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## 0.3.2 (2026-09-20)
+
+### Added
+- README demo GIF recorded on the live site (`docs/assets/demo.gif`).
+
+### Added
+- One-click pairing between the browser extension and the local API. `lexicon serve --pair` checks `/health`, then opens `http://127.0.0.1:41733/pair` in the default browser (`open` / `xdg-open` / `start`, no shell); the new `GET /pair` page carries the bearer token in `<meta name="lexicon-token">` (plus `lexicon-port` and `lexicon-version`) and the extension's new `pair.js` content script, registered for that URL only, reads it, proves it against `GET /stats` through the background worker, stores base URL, token and mode `api`, and writes "Paired with lexicon serve (N terms)" into the page. No extension after 3 seconds: the page shows install instructions. Pasting the token from `lexicon serve --show` into Options remains the manual fallback.
+- Extension Options shows the pairing state ("Paired with http://127.0.0.1:41733 (token stored)" or "Not paired") with a "pair in this browser" / "pair again" link to `/pair`, and reflects a pairing done in another tab without a reload. `extension/manifest.json` adds `http://localhost:41733/*` to `host_permissions`; `scripts/build-extension.mjs` bundles `pair.ts` as a classic script like `content.ts`.
+- `src/serve/server.ts` exports `PAIR_PATH`, `PAIR_META`, `PAIR_HEADERS`, `PAIR_INSTALL_HINT_MS`, `pairPageHtml()`, `isPairHost()`, `isLoopbackAddress()`; `src/cli/cmd-serve.ts` exports `runServePair()`, `pairUrl()`, `browserOpenCommand()`; `extension/src/shared.ts` gains the `pair` request, `PairReply`, `pairUrl()`, `pairableBaseUrl()`, `TOKEN_RE`, `PAIR_HOSTS`.
+
+### Security
+- `GET /pair` needs no bearer but is served only to a loopback peer whose `Host` header is exactly `127.0.0.1:<port>` or `localhost:<port>` (403 otherwise, which defeats DNS rebinding), with `Cache-Control: no-store`, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'` and `Referrer-Policy: no-referrer`; the page runs no script and makes no external request. The background worker refuses to pair with any base URL that is not plain `http://127.0.0.1:<port>` or `http://localhost:<port>` and stores nothing until `/stats` accepts the token. See SECURITY.md.
+
 ## 0.3.1 (2026-09-19)
 
 First release on the npm registry: `npm i -g @ashlr/lexicon`.

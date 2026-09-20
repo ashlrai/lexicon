@@ -14,7 +14,8 @@
 
     <section class="card">
       <h2>Local API</h2>
-      <p class="muted">Run <code>lexicon serve</code> on this machine, then <code>lexicon serve --show</code> prints the token. The extension only ever talks to 127.0.0.1.</p>
+      <p id="pair-state" class="pair-state"></p>
+      <p class="muted">Run <code>lexicon serve --pair</code> on this machine: it opens the pairing page and the extension stores the token itself. Or <a id="pair-link" href="http://127.0.0.1:41733/pair" target="_blank" rel="noopener">pair in this browser</a> while <code>lexicon serve</code> is running. Manual fallback: <code>lexicon serve --show</code> prints the token to paste below. The extension only ever talks to 127.0.0.1.</p>
       <div class="grid">
         <label>Base URL <input type="url" id="baseUrl" placeholder="http://127.0.0.1:41733" spellcheck="false"></label>
         <label>Token

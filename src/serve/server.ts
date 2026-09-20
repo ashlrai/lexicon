@@ -3,8 +3,11 @@
  * cannot run a hook or an MCP server (browser extension, Claude Desktop, the
  * Codex app, macOS Shortcuts, Raycast, the menu bar app).
  *
- * node:http only, no framework. Every request except `GET /health` needs
- * `Authorization: Bearer <token>` (token from serve.json, see ./config.ts).
+ * node:http only, no framework. Every request except `GET /health` and
+ * `GET /pair` needs `Authorization: Bearer <token>` (token from serve.json,
+ * see ./config.ts). `/pair` is the one-click pairing page for the browser
+ * extension: it carries the token in a <meta> tag and is served only to a
+ * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
  * origins listed in `serve.json.allowedOrigins`, never `*`. Bodies are JSON,
  * capped at 1 MB. The lexicon is re-read at most every 2 s per cwd and always
@@ -129,6 +132,18 @@ export interface LexiconResponse {
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const MAX_CONCURRENT_REQUESTS = 64;
 export const LEXICON_RELOAD_MS = 2_000;
+/** Path of the extension pairing page (`lexicon serve --pair` opens it). */
+export const PAIR_PATH = '/pair';
+/** `<meta name>` attributes the pairing page carries; extension/src/pair.ts reads the same names. */
+export const PAIR_META = { token: 'lexicon-token', port: 'lexicon-port', version: 'lexicon-version' } as const;
+/** How long the pairing page waits for the extension before it shows install instructions (CSS timer). */
+export const PAIR_INSTALL_HINT_MS = 3_000;
+/** Response headers on the pairing page beyond Content-Type and Cache-Control. */
+export const PAIR_HEADERS: Readonly<Record<string, string>> = {
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+  'Referrer-Policy': 'no-referrer',
+};
 /** Bounded so a client cycling `cwd` values cannot grow the cache without limit. */
 const MAX_CACHED_CWDS = 32;
 
@@ -304,6 +319,107 @@ interface CachedLexicon {
 }
 
 // ---------------------------------------------------------------------------
+// Pairing page
+// ---------------------------------------------------------------------------
+
+function htmlEscape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * True when `hostHeader` is exactly `127.0.0.1:<port>` or `localhost:<port>`.
+ * A browser sends the Host it navigated to, so a page on another origin that
+ * tricks the browser into resolving its own name to 127.0.0.1 (DNS rebinding)
+ * still arrives with its own Host and is refused.
+ */
+export function isPairHost(hostHeader: string | undefined, port: number): boolean {
+  if (!hostHeader) return false;
+  const h = hostHeader.trim().toLowerCase();
+  return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
+}
+
+/** `127.0.0.1`, `::1` and the IPv4-mapped `::ffff:127.x.x.x` forms. */
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const a = address.toLowerCase();
+  if (a === '::1') return true;
+  const v4 = a.startsWith('::ffff:') ? a.slice('::ffff:'.length) : a;
+  return v4.startsWith('127.');
+}
+
+export interface PairPageInput {
+  token: string;
+  port: number;
+  version: string;
+}
+
+/**
+ * The pairing page: no script (the CSP forbids it), inline CSS only, no
+ * external request. The extension's `pair.js` content script reads the three
+ * <meta> tags, pairs through its background worker and rewrites `#status`;
+ * a CSS animation reveals `#install` after PAIR_INSTALL_HINT_MS in case no
+ * extension is there to hide it.
+ */
+export function pairPageHtml(input: PairPageInput): string {
+  const token = htmlEscape(input.token);
+  const port = String(input.port);
+  const version = htmlEscape(input.version);
+  const delay = `${PAIR_INSTALL_HINT_MS / 1000}s`;
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta name="referrer" content="no-referrer">',
+    '<title>Pairing Lexicon</title>',
+    '<link rel="icon" href="data:,">',
+    `<meta name="${PAIR_META.token}" content="${token}">`,
+    `<meta name="${PAIR_META.port}" content="${port}">`,
+    `<meta name="${PAIR_META.version}" content="${version}">`,
+    '<style>',
+    ':root{color-scheme:light dark}',
+    'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f6f7f8;color:#1c1f22}',
+    '@media(prefers-color-scheme:dark){body{background:#131517;color:#e8eaed}}',
+    'main{max-width:34rem;padding:2rem 1.5rem;text-align:center}',
+    '.mark{display:inline-block;width:2.5rem;height:2.5rem;border-radius:.6rem;background:#0f766e;position:relative;margin-bottom:1rem}',
+    '.mark::before{content:"";position:absolute;left:36%;top:27%;width:11%;height:50%;background:#fff;border-radius:1px}',
+    '.mark::after{content:"";position:absolute;left:36%;top:66%;width:36%;height:11%;background:#fff;border-radius:1px}',
+    'h1{font-size:1.4rem;margin:0 0 .5rem}',
+    '#status{font-size:1.1rem;margin:.5rem 0 1rem}',
+    '#status.ok{color:#0f766e}',
+    '#status.error{color:#b42318}',
+    `#install{opacity:0;animation:reveal 0s ${delay} forwards;text-align:left;font-size:.95rem}`,
+    '@keyframes reveal{to{opacity:1}}',
+    'code{font:.9em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(127,127,127,.15);padding:.1em .35em;border-radius:.3em}',
+    'ol{padding-left:1.25rem}',
+    '.muted{opacity:.7;font-size:.85rem}',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<main>',
+    '<span class="mark" aria-hidden="true"></span>',
+    '<h1>Pairing Lexicon...</h1>',
+    '<p id="status" role="status" aria-live="polite">Waiting for the browser extension.</p>',
+    '<div id="install">',
+    '<p>The Lexicon extension did not answer. Install or enable it, then reload this page:</p>',
+    '<ol>',
+    '<li>Build it with <code>npm run build:extension</code> (or download <code>lexicon-extension.zip</code> from the release).</li>',
+    '<li>Open <code>chrome://extensions</code>, turn on <strong>Developer mode</strong>, click <strong>Load unpacked</strong> and pick <code>extension/dist</code>.</li>',
+    '<li>Firefox: <code>about:debugging#/runtime/this-firefox</code>, <strong>Load Temporary Add-on...</strong>, pick <code>extension/dist-firefox/manifest.json</code>.</li>',
+    '<li>Come back here, or run <code>lexicon serve --pair</code> again.</li>',
+    '</ol>',
+    '<p class="muted">Manual fallback: <code>lexicon serve --show</code> prints the token to paste into the extension\'s Options page.</p>',
+    '</div>',
+    `<p class="muted">lexicon serve ${version} on port ${port}</p>`,
+    '</main>',
+    '</body>',
+    '</html>',
+    '',
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // createServer
 // ---------------------------------------------------------------------------
 
@@ -421,10 +537,32 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   // ---- request pipeline --------------------------------------------------
 
-  type Response = { status: number; json: unknown } | { status: number; text: string; contentType: string };
+  type Response =
+    | { status: number; json: unknown; headers?: Record<string, string> }
+    | { status: number; text: string; contentType: string; headers?: Record<string, string> };
 
   function json(status: number, payload: unknown): Response {
     return { status, json: payload };
+  }
+
+  /**
+   * GET /pair: the token-bearing page, without bearer auth. Two gates instead:
+   * the socket must be a loopback one (a non-loopback `--host` never leaks the
+   * token to the network) and `Host` must name this server as 127.0.0.1 or
+   * localhost on the bound port (DNS rebinding arrives with another Host).
+   */
+  function pairPage(req: http.IncomingMessage): Response {
+    if (!config) throw new HttpError(503, 'server is starting');
+    if (!isLoopbackAddress(req.socket.remoteAddress)) throw new HttpError(403, 'the pairing page is served on the loopback interface only');
+    if (!isPairHost(req.headers.host, boundPort)) {
+      throw new HttpError(403, `the pairing page is served for Host 127.0.0.1:${boundPort} or localhost:${boundPort} only`);
+    }
+    return {
+      status: 200,
+      text: pairPageHtml({ token: config.token, port: boundPort, version }),
+      contentType: 'text/html; charset=utf-8',
+      headers: { ...PAIR_HEADERS },
+    };
   }
 
   async function route(req: http.IncomingMessage, url: URL): Promise<Response> {
@@ -432,6 +570,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
     if (method === 'GET' && pathname === '/health') return json(200, await health(resolveCwd(url.searchParams.get('cwd'))));
+    if (pathname === PAIR_PATH) {
+      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      return pairPage(req);
+    }
 
     if (!config || !tokenMatches(req.headers.authorization, config.token)) {
       throw new HttpError(401, 'missing or invalid bearer token (see: lexicon serve --show)');
@@ -477,7 +619,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   function send(res: http.ServerResponse, response: Response, extra: Record<string, string>): void {
-    const headers: Record<string, string> = { ...extra, 'Cache-Control': 'no-store' };
+    const headers: Record<string, string> = { ...extra, ...response.headers, 'Cache-Control': 'no-store' };
     if ('json' in response) {
       headers['Content-Type'] = 'application/json; charset=utf-8';
       res.writeHead(response.status, headers);

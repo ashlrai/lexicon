@@ -3,9 +3,14 @@
   "name": "Lexicon for voice chats",
   "version": "0.0.0",
   "description": "Fixes the brand, product and people names speech-to-text gets wrong in ChatGPT, Claude, Grok, Gemini, Perplexity and more, before the message is sent. Talks only to a lexicon server on 127.0.0.1 or runs fully offline.",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
   "host_permissions": [
     "http://127.0.0.1:41733/*",
+    "http://localhost:41733/*",
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
@@ -16,7 +21,9 @@
     "https://poe.com/*",
     "https://copilot.microsoft.com/*"
   ],
-  "optional_host_permissions": ["<all_urls>"],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -34,7 +41,19 @@
         "https://poe.com/*",
         "https://copilot.microsoft.com/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://127.0.0.1:41733/pair*",
+        "http://localhost:41733/pair*"
+      ],
+      "js": [
+        "pair.js"
+      ],
       "run_at": "document_idle"
     }
   ],

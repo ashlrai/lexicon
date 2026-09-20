@@ -25,6 +25,7 @@ What is in `dist`:
 | `core.js` | `extension/src/core.ts` | the browser-safe slice of `src/core` (schema, matcher, normalize, suggest) plus `yaml`; one ESM chunk shared by the worker and the options page |
 | `background.js` | `extension/src/background.ts` | module service worker; holds the token, does every fetch |
 | `content.js` | `extension/src/content.ts` | classic script injected into the chat sites; never sees the token |
+| `pair.js` | `extension/src/pair.ts` | classic script that runs only on `http://127.0.0.1:41733/pair` (and `localhost`); reads the token the server put in the page and hands it to the worker |
 | `popup.js`, `popup.html` | `extension/src/popup.ts` | toolbar popup |
 | `options.js`, `options.html` | `extension/src/options.ts` | options page |
 | `ui.css` | `extension/static/ui.css` | popup + options styling |
@@ -49,16 +50,22 @@ Firefox (temporary add-on; it is unloaded when Firefox quits):
 
 ## Pair with the local API
 
-The extension prefers the local server because that uses the same lexicon files, trust gate and hit counters as the CLI, the MCP server and the hook.
+The extension prefers the local server because that uses the same lexicon files, trust gate and hit counters as the CLI, the MCP server and the hook. Pairing is one command:
 
 ```bash
-lexicon serve            # starts http://127.0.0.1:41733
-lexicon serve --show     # prints the bearer token
+lexicon serve --install  # once: start the server at login (or run `lexicon serve` in a terminal)
+lexicon serve --pair     # opens http://127.0.0.1:41733/pair in your default browser
 ```
 
-Open the extension's **Options** (popup, top right, or the extension's details page), paste the token, click **Test connection**. The popup then reads "Local API" with the server version and term count.
+`--pair` checks that the server answers `/health`, then opens the pairing page with `open` (macOS), `xdg-open` (Linux) or `start` (Windows). The page says "Pairing Lexicon..." and carries the bearer token in a `<meta name="lexicon-token">` tag. The extension's `pair.js` content script, which runs only on that page, reads the token and asks the background worker to pair; the worker proves the token against `GET /stats` (a bearer route; `/health` needs no token so it proves nothing), stores the base URL and token, switches the mode to **Local API**, and the page changes to "Paired with lexicon serve (N terms)". If no extension answers within 3 seconds the page shows install instructions instead. Open the popup afterwards: it reads "Local API" with the server version and term count.
 
-Endpoints used, all on `127.0.0.1:41733`: `GET /health` (no auth), `POST /normalize`, `POST /learn`, `GET /lexicon` (bearer token). CORS on the server is granted only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (plus any exact origin listed in `serve.json.allowedOrigins`); a web page cannot call it.
+If the browser that opened is not the one with the extension, copy the URL into the right one, or click **pair in this browser** on the extension's Options page, which links to the same `/pair` URL. Options shows "Paired with http://127.0.0.1:41733 (token stored)" once a token is in place, and **pair again** if the token was rotated (delete `serve.json` and restart the server to rotate it).
+
+Manual fallback, for a browser profile the CLI cannot open: `lexicon serve --show` prints the token; paste it into **Options > Local API > Token** and click **Test connection**.
+
+What the pairing page is and is not: it is served without a token, but only to a loopback client whose `Host` header is exactly `127.0.0.1:<port>` or `localhost:<port>` (a DNS-rebinding page arrives with its own Host and gets 403), with `Cache-Control: no-store`, `X-Frame-Options: DENY`, a CSP of `default-src 'none'; style-src 'unsafe-inline'` (no script, no external request) and `Referrer-Policy: no-referrer`. It exposes nothing a local process could not already read from `serve.json`. See `SECURITY.md`.
+
+Endpoints used, all on `127.0.0.1:41733`: `GET /health` (no auth), `GET /pair` (no auth, Host-checked), `GET /stats` (pairing check), `POST /normalize`, `POST /learn`, `GET /lexicon` (bearer token). CORS on the server is granted only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (plus any exact origin listed in `serve.json.allowedOrigins`); a web page cannot call it.
 
 ## Modes
 
@@ -116,8 +123,8 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 
 ## Privacy
 
-- The only network destination is `http://127.0.0.1:41733`, declared as a host permission. There is no telemetry, no update check and no third-party request. The embedded mode makes no request at all.
-- The API token lives in `chrome.storage.local` and is used by the background worker only. Content scripts message the worker and receive results; the token is never exposed to page context.
+- The only network destination is `http://127.0.0.1:41733` (also reachable as `localhost:41733`), declared as a host permission. There is no telemetry, no update check and no third-party request. The embedded mode makes no request at all.
+- The API token lives in `chrome.storage.local` and is used by the background worker only. Content scripts on the chat sites message the worker and receive results; the token is never exposed to page context. The one content script that does see the token is `pair.js`, which runs only on the server's own `/pair` page (the page that printed the token) and forwards it to the worker over runtime messaging.
 - Text is sent to the local server only when you send a message (or on the live/precheck debounce while typing in a supported composer). Nothing is stored except the last five corrections shown in the popup and your settings.
 - Host permissions are limited to the listed chat sites plus loopback. "Any site" is opt-in and asks for `<all_urls>` at the moment you switch it on.
 
@@ -136,13 +143,13 @@ npx tsc -p extension/tsconfig.json --noEmit      # typecheck the extension sourc
 npx vitest run tests/extension.test.ts           # jsdom tests: adapters, rewrite, Enter/click, toast, embedded, routing
 ```
 
-The content script logic lives in `extension/src/content-core.ts` and takes its DOM and messaging channel as parameters; `content.ts` is the thin `chrome.*` wiring. Same split for `background-core.ts` / `background.ts`. Tests drive the cores under jsdom with a fake background and a mocked `chrome.runtime`.
+The content script logic lives in `extension/src/content-core.ts` and takes its DOM and messaging channel as parameters; `content.ts` is the thin `chrome.*` wiring. Same split for `background-core.ts` / `background.ts`. `pair.ts` exports `pairFromDocument({ doc, send })` and auto-runs only when `chrome.runtime.id` is set. Tests drive the cores under jsdom with a fake background and a mocked `chrome.runtime`.
 
 ### Manual checklist
 
 The tests cover the DOM logic; a real browser is still needed for the editor integrations. After `npm run build:extension` and Load unpacked:
 
-1. `lexicon serve` running, token pasted, **Test connection** shows the version. Popup reads "Local API".
+1. `lexicon serve` running, `lexicon serve --pair`: the tab reads "Paired with lexicon serve (N terms)". Options shows "Paired with http://127.0.0.1:41733 (token stored)"; **Test connection** shows the version. Popup reads "Local API". Also once with the token pasted by hand.
 2. ChatGPT: type `ping ashler`, press Enter. The box changes to `ping Ashlr.AI`, the toast lists the fix, the message is sent with the corrected text. Repeat with the send button. Repeat with Shift+Enter (newline, no correction).
 3. Claude.ai: same as 2. Check a two-paragraph message keeps both paragraphs.
 4. Gemini and Perplexity: same as 2 (Quill and Lexical editors).

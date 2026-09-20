@@ -57,3 +57,8 @@ textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-siz
 .sites .host { color: var(--muted); font-size: 12px; }
 .sticky { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border); }
 .sticky > * { max-width: 820px; }
+
+/* Options: pairing state line ("Paired" / "Not paired") */
+.pair-state { margin: 0 0 .5rem; font-weight: 600; }
+.pair-state.ok { color: #0f766e; }
+.pair-state.warn { color: #b45309; }

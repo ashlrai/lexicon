@@ -9,8 +9,9 @@ trust gate as every other surface.
 
 ```bash
 lexicon serve                 # foreground, logs one line per request to stderr
-lexicon serve --show          # print the URL and token (paste into the extension options page)
+lexicon serve --show          # print the URL and token (manual fallback for the extension options page)
 lexicon serve --status        # is it up?
+lexicon serve --pair          # open http://127.0.0.1:41733/pair in the browser; the extension pairs itself
 lexicon serve --install       # start at login: launchd (macOS) or systemd --user (Linux)
 lexicon serve --uninstall
 ```
@@ -46,13 +47,15 @@ always allowed; `*` is never honoured.
 
 ## Endpoints
 
-Every request except `GET /health` needs `Authorization: Bearer <token>`.
-Requests and responses are JSON (`Content-Type: application/json`) unless
-noted. Errors are `{ "error": "<message>" }`.
+Every request except `GET /health` and `GET /pair` needs
+`Authorization: Bearer <token>`. Requests and responses are JSON
+(`Content-Type: application/json`) unless noted. Errors are
+`{ "error": "<message>" }`.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth) |
+| GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback and `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`) |
 | POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary` |
 | POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path }` |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
@@ -61,9 +64,17 @@ noted. Errors are `{ "error": "<message>" }`.
 | GET | `/stats` | | `LexiconStats` |
 
 Status codes: 400 invalid JSON or a bad field, 401 missing or wrong token,
-403 a project-scope write into an untrusted `.lexicon.yaml`, 404 unknown
-route or export format, 405 wrong method, 413 body over 1 MB, 503 more than
-64 requests in flight.
+403 a project-scope write into an untrusted `.lexicon.yaml` or `/pair` with
+the wrong `Host` / a non-loopback client, 404 unknown route or export format,
+405 wrong method, 413 body over 1 MB, 503 more than 64 requests in flight.
+
+`/pair` is for `lexicon serve --pair`: the CLI confirms `/health`, opens the
+URL in the default browser, and the extension's content script on that page
+reads the token and stores it (see `docs/EXTENSION.md`). The page is plain
+HTML with inline CSS, no script and no external request, sent with
+`Cache-Control: no-store`, `X-Frame-Options: DENY`, `Content-Security-Policy:
+default-src 'none'; style-src 'unsafe-inline'` and `Referrer-Policy:
+no-referrer`. Nothing else consumes it.
 
 `cwd` picks which project `.lexicon.yaml` is considered (body field on POST,
 `?cwd=` on GET). It defaults to the directory the server was started in. An
@@ -194,4 +205,5 @@ Loopback only, bearer token stored 0600, CORS restricted to browser
 extensions (never `*`), no TLS because nothing leaves the machine, 1 MB body
 cap, 64 concurrent requests. Anyone who can read `serve.json` is already the
 same user and could edit the lexicon file directly; the API grants nothing
-beyond that. See `SECURITY.md`.
+beyond that. `/pair` hands the same token to a loopback browser tab whose
+`Host` names this server, which is the same boundary. See `SECURITY.md`.

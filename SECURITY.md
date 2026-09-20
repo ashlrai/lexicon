@@ -49,6 +49,25 @@ which `.lexicon.yaml` to consider, subject to trust) or bind other ports. A
 different user on the same machine cannot read the token (0600) and cannot use
 the API without it.
 
+**Pairing page (`GET /pair`, `lexicon serve --pair`).** This is the one route
+that returns the token without a bearer, so the extension can pair itself
+instead of a human pasting it. It stays inside the boundary above: the page is
+served only when the TCP peer is a loopback address and the `Host` header is
+exactly `127.0.0.1:<port>` or `localhost:<port>`, so a hostile web page that
+points its own DNS name at 127.0.0.1 (DNS rebinding) still arrives with its
+own `Host` and gets 403, and a non-loopback `--host` never exposes it to the
+network. A web page cannot read it cross-origin either (no CORS for web
+origins, and `default-src 'none'` on the page itself), cannot frame it
+(`X-Frame-Options: DENY`) and the browser does not cache it
+(`Cache-Control: no-store`) or leak its URL in a referrer
+(`Referrer-Policy: no-referrer`). The page runs no script and makes no
+external request; its only consumer is the extension's `pair.js` content
+script, which is registered for that one URL and forwards the token to the
+background worker, which proves it against `GET /stats` before storing it. What
+the page discloses is exactly what any process running as the same user can
+already read from `serve.json`; it discloses nothing to another user or another
+machine.
+
 **Browser extension.** The extension (`extension/`) reads the text of the chat
 composer on the supported sites and, when you press send, sends it to the local
 API or corrects it with an embedded copy of the lexicon. Its only network

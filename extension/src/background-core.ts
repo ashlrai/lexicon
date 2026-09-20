@@ -10,8 +10,10 @@ import {
   errorMessage,
   FETCH_TIMEOUT_MS,
   HEALTH_TTL_MS,
+  pairableBaseUrl,
   RECENT_LIMIT,
   STORAGE_KEYS,
+  TOKEN_RE,
 } from './shared.js';
 import type {
   Correction,
@@ -19,6 +21,7 @@ import type {
   LearnReply,
   Mode,
   NormalizeReply,
+  PairReply,
   Reply,
   Request,
   ServerHealth,
@@ -243,6 +246,30 @@ export function createBackground(deps: BackgroundDeps): Background {
     }
   }
 
+  /**
+   * Pairing: the /pair content script hands over the token it read from the
+   * page. The token is proven against a bearer route (GET /stats; /health
+   * needs no auth so it proves nothing) before anything is stored, then the
+   * settings switch to `api` with the new base URL and token.
+   */
+  async function pairReq(rawBaseUrl: string, rawToken: string): Promise<PairReply | Failure> {
+    const baseUrl = pairableBaseUrl(String(rawBaseUrl ?? ''));
+    if (!baseUrl) return { ok: false, error: 'Pairing works only with a lexicon serve on 127.0.0.1 or localhost.' };
+    const token = String(rawToken ?? '').trim();
+    if (!TOKEN_RE.test(token)) return { ok: false, error: 'The page carried no valid token; run `lexicon serve --pair` again.' };
+    const candidate: Settings = { ...(await getSettings()), baseUrl, token, mode: 'api' };
+    let terms: number;
+    try {
+      const stats = (await fetchJson(candidate, '/stats')) as { termCount?: unknown };
+      terms = typeof stats.termCount === 'number' ? stats.termCount : 0;
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+    await saveSettings({ baseUrl, token, mode: 'api' });
+    const h = await health(candidate, true);
+    return { ok: true, baseUrl, terms: h.health?.terms ?? terms, version: h.health?.version ?? '?' };
+  }
+
   async function handle(req: Request): Promise<Reply> {
     if (!req || typeof req !== 'object' || typeof (req as { type?: unknown }).type !== 'string') {
       return { ok: false, error: 'bad request' };
@@ -256,6 +283,8 @@ export function createBackground(deps: BackgroundDeps): Background {
         return learnReq(String(req.heard ?? ''), String(req.meant ?? ''));
       case 'sync':
         return syncReq();
+      case 'pair':
+        return pairReq(req.baseUrl, req.token);
       case 'anySite': {
         try {
           await deps.setAnySite?.(req.enabled === true);

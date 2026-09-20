@@ -5,16 +5,30 @@
  * injected deps so no launchctl/systemctl is ever spawned.
  */
 import { promises as fs } from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addTerm, readLexiconFile } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
-import { createServer, getServePath, isOriginAllowed, readServeConfig, DEFAULT_PORT } from '../src/serve/index.js';
+import {
+  createServer,
+  getServePath,
+  isLoopbackAddress,
+  isOriginAllowed,
+  isPairHost,
+  pairPageHtml,
+  readServeConfig,
+  DEFAULT_PORT,
+  PAIR_HEADERS,
+  PAIR_META,
+} from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 import {
+  browserOpenCommand,
   launchAgentPath,
   launchAgentLogPath,
+  pairUrl,
   runServe,
   systemdUnitPath,
   LAUNCH_AGENT_LABEL,
@@ -57,6 +71,22 @@ async function fakeCli(home: string, rel = 'opt/lexicon/dist/cli/index.js'): Pro
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, '#!/usr/bin/env node\n', 'utf8');
   return file;
+}
+
+/** Raw GET with an arbitrary Host header (undici's fetch silently replaces Host). */
+function rawGet(route: string, headers: Record<string, string>, method = 'GET'): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: info.port, path: route, method, headers }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d: string) => {
+        body += d;
+      });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 async function api(method: string, route: string, body?: unknown, extra: Record<string, string> = {}): Promise<Response> {
@@ -305,6 +335,69 @@ describe('GET /lexicon, /export/:format, /stats', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /pair (extension pairing page)
+// ---------------------------------------------------------------------------
+
+describe('GET /pair', () => {
+  it('serves the token in a <meta> tag to a loopback Host, with the hardening headers and no bearer', async () => {
+    const res = await fetch(`${info.url}/pair`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; style-src 'unsafe-inline'");
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    for (const [name, value] of Object.entries(PAIR_HEADERS)) expect(res.headers.get(name)).toBe(value);
+    const html = await res.text();
+    expect(html).toContain(`<meta name="${PAIR_META.token}" content="${info.token}">`);
+    expect(html).toContain(`<meta name="${PAIR_META.port}" content="${info.port}">`);
+    expect(html).toContain(`<meta name="${PAIR_META.version}" content="9.9.9">`);
+    expect(html).toContain('Pairing Lexicon');
+    expect(html).toContain('id="status"');
+    expect(html).toContain('id="install"');
+    // No script and no external request: the CSP forbids both.
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/https?:\/\//);
+  });
+
+  it('accepts Host localhost:<port> and refuses any other Host with 403', async () => {
+    const ok = await rawGet('/pair', { Host: `localhost:${info.port}` });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toContain(info.token);
+    for (const host of ['evil.example', `evil.example:${info.port}`, '127.0.0.1:1', 'localhost', `[::1]:${info.port}`]) {
+      const res = await rawGet('/pair', { Host: host });
+      expect(res.status, host).toBe(403);
+      const body = JSON.parse(res.body) as { error: string };
+      expect(body.error).toContain('Host');
+      expect(res.body).not.toContain(info.token);
+    }
+    // With the token the Host rule still applies: the page is not a bearer route.
+    const withToken = await rawGet('/pair', { Host: 'evil.example', Authorization: `Bearer ${info.token}` });
+    expect(withToken.status).toBe(403);
+    // Only GET.
+    expect((await fetch(`${info.url}/pair`, { method: 'POST' })).status).toBe(405);
+  });
+
+  it('isPairHost / isLoopbackAddress / pairPageHtml', () => {
+    expect(isPairHost('127.0.0.1:41733', 41733)).toBe(true);
+    expect(isPairHost('LOCALHOST:41733 ', 41733)).toBe(true);
+    expect(isPairHost('127.0.0.1:41733', 41734)).toBe(false);
+    expect(isPairHost('127.0.0.1', 41733)).toBe(false);
+    expect(isPairHost('evil.example:41733', 41733)).toBe(false);
+    expect(isPairHost(undefined, 41733)).toBe(false);
+    expect(isLoopbackAddress('127.0.0.1')).toBe(true);
+    expect(isLoopbackAddress('::1')).toBe(true);
+    expect(isLoopbackAddress('::ffff:127.0.0.1')).toBe(true);
+    expect(isLoopbackAddress('10.0.0.5')).toBe(false);
+    expect(isLoopbackAddress(undefined)).toBe(false);
+    // Attribute values are escaped, so a hostile version string cannot break out of the tag.
+    const html = pairPageHtml({ token: 'abc', port: 1, version: '1"><script>' });
+    expect(html).toContain('content="1&quot;&gt;&lt;script&gt;"');
+    expect(html).not.toContain('<script>');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CORS, limits, errors
 // ---------------------------------------------------------------------------
 
@@ -450,6 +543,55 @@ describe('lexicon serve (CLI)', () => {
     const io = memIO();
     expect(await runServe({ show: true, status: true, globalPath: env.globalPath }, io)).toBe(1);
     expect(io.err.join('')).toContain('only one of');
+    const io2 = memIO();
+    expect(await runServe({ pair: true, status: true, globalPath: env.globalPath }, io2)).toBe(1);
+    expect(io2.err.join('')).toContain('--pair');
+  });
+
+  it('--pair opens /pair in the default browser once /health answers', async () => {
+    const calls: string[][] = [];
+    const io = memIO();
+    const code = await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, io, {
+      platform: 'darwin',
+      exec: fakeExec(calls),
+    });
+    expect(code).toBe(0);
+    const url = `http://127.0.0.1:${info.port}/pair`;
+    expect(pairUrl(info.port)).toBe(url);
+    expect(calls).toEqual([['open', url]]);
+    expect(io.out.join('')).toContain(`opening ${url} in your browser`);
+    expect(io.err.join('')).toBe('');
+
+    // Linux and Windows openers, no shell interpolation of the URL.
+    const linux: string[][] = [];
+    expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, memIO(), { platform: 'linux', exec: fakeExec(linux) })).toBe(0);
+    expect(linux).toEqual([['xdg-open', url]]);
+    const win: string[][] = [];
+    expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, memIO(), { platform: 'win32', exec: fakeExec(win) })).toBe(0);
+    expect(win).toEqual([['cmd', '/c', 'start', '', url]]);
+    expect(browserOpenCommand(url, 'sunos' as NodeJS.Platform)).toBeUndefined();
+
+    // --json reports the URL and whether the opener ran.
+    const json = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec([]) })).toBe(0);
+    expect(JSON.parse(json.out.join(''))).toEqual({ up: true, url, opened: true });
+  });
+
+  it('--pair exits 1 with a start hint when the server is down, and when no browser opens', async () => {
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const calls: string[][] = [];
+    const down = memIO();
+    expect(await runServe({ pair: true, port: c.port, globalPath: env.globalPath }, down, { platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(calls).toEqual([]);
+    expect(down.err.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+    expect(down.err.join('')).toContain('lexicon serve --install');
+
+    const failed = memIO();
+    expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, failed, { platform: 'darwin', exec: fakeExec([], 1) })).toBe(1);
+    expect(failed.err.join('')).toContain('could not open a browser');
+    expect(failed.out.join('')).toContain(`http://127.0.0.1:${info.port}/pair`);
   });
 
   it('runs in the foreground until the signal fires and prints the listening line', async () => {

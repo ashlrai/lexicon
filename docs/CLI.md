@@ -1,6 +1,6 @@
 # CLI reference
 
-Generated from `lexicon --help` (v0.3.1) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.3.2) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -393,6 +393,8 @@ Options:
   --show         print the URL and bearer token (for the extension options page)
                  and exit
   --status       check whether the server is up and exit
+  --pair         open http://127.0.0.1:41733/pair in your browser so the
+                 extension pairs itself, and exit
   --install      install as a login service (launchd on macOS, systemd --user on
                  Linux)
   --uninstall    remove the login service

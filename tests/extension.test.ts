@@ -15,8 +15,9 @@ import { installContent } from '../extension/src/content-core.js';
 import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
-import { coerceSettings, hostKey, siteEnabled } from '../extension/src/shared.js';
-import type { Correction, NormalizeReply, Request, StatusReply } from '../extension/src/shared.js';
+import { pairFromDocument } from '../extension/src/pair.js';
+import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, PAIR_META } from '../extension/src/shared.js';
+import type { Correction, Failure, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 
 // import.meta.url is an http: URL under the jsdom environment; resolve from the repo root instead.
@@ -338,6 +339,19 @@ describe('embedded engine', () => {
 // ---------------------------------------------------------------------------
 
 describe('settings', () => {
+  it('pairableBaseUrl accepts loopback http origins only; pairUrl appends /pair', () => {
+    expect(pairableBaseUrl('http://127.0.0.1:41733')).toBe('http://127.0.0.1:41733');
+    expect(pairableBaseUrl('http://localhost:41733/')).toBe('http://localhost:41733');
+    expect(pairableBaseUrl('http://127.0.0.1:41733/pair')).toBeUndefined();
+    expect(pairableBaseUrl('http://127.0.0.1:41733?x=1')).toBeUndefined();
+    expect(pairableBaseUrl('http://evil.example:41733')).toBeUndefined();
+    expect(pairableBaseUrl('https://127.0.0.1:41733')).toBeUndefined();
+    expect(pairableBaseUrl('http://127.0.0.1')).toBeUndefined();
+    expect(pairableBaseUrl('http://user:pw@127.0.0.1:41733')).toBeUndefined();
+    expect(pairableBaseUrl('nope')).toBeUndefined();
+    expect(pairUrl('http://127.0.0.1:41733/')).toBe('http://127.0.0.1:41733/pair');
+  });
+
   it('coerces stored settings and honours per-site switches', () => {
     const s = coerceSettings({ baseUrl: 'http://127.0.0.1:41733/', mode: 'weird', sites: { 'chatgpt.com': false } }, 'yaml');
     expect(s.baseUrl).toBe('http://127.0.0.1:41733');
@@ -477,6 +491,122 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(reply.ok && reply.mode).toBe('embedded');
     expect(reply.ok && reply.fallback).toMatch(/401/);
     expect(reply.ok && reply.output).toBe('ping Ashlr.AI');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('pairing (/pair page content script + background)', () => {
+  const TOKEN = 'a'.repeat(32);
+
+  function pairPage(token = TOKEN, port = '41733'): void {
+    document.head.innerHTML =
+      `<meta name="${PAIR_META.token}" content="${token}">` +
+      `<meta name="${PAIR_META.port}" content="${port}">` +
+      `<meta name="${PAIR_META.version}" content="9.9.9">`;
+    document.body.innerHTML = '<h1>Pairing Lexicon...</h1><p id="status">Waiting for the browser extension.</p><div id="install">install it</div>';
+  }
+
+  afterEach(() => {
+    document.head.innerHTML = '';
+  });
+
+  it('the content script reads the meta tags, posts { type: "pair" } and reports success in #status', async () => {
+    pairPage();
+    const send = vi.fn(async (): Promise<PairReply> => ({ ok: true, baseUrl: 'http://localhost:41733', terms: 26, version: '9.9.9' }));
+    const outcome = await pairFromDocument({ doc: document, send });
+    // jsdom's location is http://localhost:3000/, so the base URL takes the page host and the meta port.
+    expect(send).toHaveBeenCalledWith({ type: 'pair', baseUrl: 'http://localhost:41733', token: TOKEN });
+    expect(outcome.ok).toBe(true);
+    const status = document.getElementById('status')!;
+    expect(status.textContent).toBe('Paired with lexicon serve (26 terms). You can close this tab.');
+    expect(status.className).toBe('ok');
+    expect(document.querySelector('h1')!.textContent).toBe('Paired');
+    // The extension is present, so the page's install instructions stay hidden.
+    expect(document.getElementById('install')!.hidden).toBe(true);
+  });
+
+  it('writes the background error into #status, and refuses a page without a token', async () => {
+    pairPage();
+    const send = vi.fn(async (): Promise<Failure> => ({ ok: false, error: 'API rejected the token (401). Re-copy it from `lexicon serve --show`.' }));
+    const outcome = await pairFromDocument({ doc: document, send });
+    expect(outcome.ok).toBe(false);
+    expect(document.getElementById('status')!.textContent).toContain('Pairing failed: API rejected the token (401)');
+    expect(document.getElementById('status')!.className).toBe('error');
+
+    const thrown = vi.fn(async (): Promise<PairReply> => {
+      throw new Error('extension messaging failed');
+    });
+    pairPage();
+    await pairFromDocument({ doc: document, send: thrown });
+    expect(document.getElementById('status')!.textContent).toBe('Pairing failed: extension messaging failed');
+
+    pairPage('');
+    const untouched = vi.fn(async (): Promise<PairReply> => ({ ok: true, baseUrl: '', terms: 0, version: '' }));
+    await pairFromDocument({ doc: document, send: untouched });
+    expect(untouched).not.toHaveBeenCalled();
+    expect(document.getElementById('status')!.textContent).toContain('no pairing token');
+  });
+
+  it('the background proves the token on GET /stats, then stores baseUrl, token and mode api', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      const auth = (init.headers as Record<string, string>).Authorization;
+      if (url.endsWith('/stats')) return auth === `Bearer ${TOKEN}` ? json({ termCount: 26, aliasCount: 40 }) : json({ error: 'bad token' }, 401);
+      if (url.endsWith('/health')) return json({ ok: true, version: '9.9.9', terms: 26 });
+      return json({ error: 'nope' }, 404);
+    });
+    const store: KeyValueStore & { data: Record<string, unknown> } = (() => {
+      const data: Record<string, unknown> = { settings: { mode: 'embedded', token: '', yaml: 'version: 1\nterms: []\n' } };
+      return {
+        data,
+        get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+        set: async (items) => {
+          Object.assign(data, items);
+        },
+      };
+    })();
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+
+    const reply = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733/', token: TOKEN });
+    expect(reply).toEqual({ ok: true, baseUrl: 'http://127.0.0.1:41733', terms: 26, version: '9.9.9' });
+    expect(calls[0].url).toBe('http://127.0.0.1:41733/stats');
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
+    const settings = await bg.getSettings();
+    expect(settings).toMatchObject({ baseUrl: 'http://127.0.0.1:41733', token: TOKEN, mode: 'api' });
+    // The embedded YAML and the rest of the settings survive pairing.
+    expect(settings.yaml).toBe('version: 1\nterms: []\n');
+    // Status now reports the API without a second /health round trip being required.
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.activeMode).toBe('api');
+    expect(status.tokenSet).toBe(true);
+  });
+
+  it('the background stores nothing when the server rejects the token or the URL is not loopback', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) }) as unknown as Response);
+    const data: Record<string, unknown> = { settings: { token: 'keep-me', baseUrl: 'http://127.0.0.1:41733', mode: 'api' } };
+    const store: KeyValueStore = {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+
+    const rejected = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'b'.repeat(32) });
+    expect(rejected).toMatchObject({ ok: false, error: expect.stringContaining('401') });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((data.settings as { token: string }).token).toBe('keep-me');
+
+    const hostile = await bg.handle({ type: 'pair', baseUrl: 'http://evil.example:41733', token: 'b'.repeat(32) });
+    expect(hostile).toMatchObject({ ok: false, error: expect.stringContaining('127.0.0.1 or localhost') });
+    const malformed = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'not-hex' });
+    expect(malformed).toMatchObject({ ok: false, error: expect.stringContaining('no valid token') });
+    // Neither of those touched the network.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((data.settings as { token: string }).token).toBe('keep-me');
   });
 });
 

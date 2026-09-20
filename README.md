@@ -13,6 +13,10 @@ STT heard:       "tell Ashler to deploy the Cooper Nettie's off service"
 Agent received:  "tell Ashlr.AI to deploy the Kubernetes auth service"
 ```
 
+![The live demo correcting a dictated sentence in the browser](docs/assets/demo.gif)
+
+[Try it in your browser](https://ashlrai.github.io/lexicon/): it runs the real matcher client-side.
+
 **Try it in 60 seconds**
 
 ```bash

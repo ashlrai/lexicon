@@ -1,7 +1,8 @@
 /**
  * `lexicon serve`: run the local HTTP API (src/serve/server.ts), show its URL
- * and token, check whether it is up, or install it as a login service
- * (launchd on macOS, a systemd user unit on Linux; instructions on Windows).
+ * and token, check whether it is up, open the extension pairing page
+ * (`--pair`), or install it as a login service (launchd on macOS, a systemd
+ * user unit on Linux; instructions on Windows).
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
@@ -9,7 +10,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { safe, safeLines } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
@@ -37,6 +38,8 @@ export interface ServeOptions extends CommonOptions {
   show?: boolean;
   /** GET /health and report up/down instead of serving. */
   status?: boolean;
+  /** Open the extension pairing page (GET /pair) in the default browser instead of serving. */
+  pair?: boolean;
   /** Install as a login service. */
   install?: boolean;
   /** Remove the login service. */
@@ -58,7 +61,7 @@ export interface ServeDeps {
   /** Home directory (LaunchAgents / Logs / .config live under it). Default os.homedir(). */
   home?: string;
   env?: NodeJS.ProcessEnv;
-  /** Runs launchctl / systemctl. Injectable for tests. */
+  /** Runs launchctl / systemctl and the `--pair` browser opener. Injectable for tests. */
   exec?: ServeExec;
   /**
    * Absolute path of the built CLI (dist/cli/index.js). Default:
@@ -170,6 +173,86 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
   }
   line(io, `lexicon serve is down at ${url}${reason ? ` (${safe(reason)})` : ''}`);
   line(io, 'start it with: lexicon serve      (or install it: lexicon serve --install)');
+  return 1;
+}
+
+// ---------------------------------------------------------------------------
+// --pair
+// ---------------------------------------------------------------------------
+
+/**
+ * The command that opens a URL in the default browser, per platform. No shell:
+ * the URL is an argument, never interpolated. On Windows `start` is a cmd.exe
+ * builtin, so it runs through `cmd /c start "" <url>` (the empty string is the
+ * window title `start` would otherwise take the URL for).
+ */
+export function browserOpenCommand(url: string, platform: NodeJS.Platform): { cmd: string; args: string[] } | undefined {
+  if (platform === 'darwin') return { cmd: 'open', args: [url] };
+  if (platform === 'win32') return { cmd: 'cmd', args: ['/c', 'start', '', url] };
+  if (platform === 'linux' || platform === 'freebsd' || platform === 'openbsd') return { cmd: 'xdg-open', args: [url] };
+  return undefined;
+}
+
+/** `http://127.0.0.1:<port>/pair`: always 127.0.0.1, which is what the extension's match pattern and the server's Host check expect. */
+export function pairUrl(port: number): string {
+  return `${serveUrl(port, DEFAULT_HOST)}${PAIR_PATH}`;
+}
+
+/**
+ * `lexicon serve --pair`: confirm the server is up (GET /health), then open
+ * `/pair` in the default browser. The extension's content script on that
+ * page reads the token and pairs itself; nothing is pasted by hand.
+ */
+export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
+  const platform = deps.platform ?? process.platform;
+  const exec = deps.exec ?? defaultServeExec;
+  const doFetch = deps.fetch ?? fetch;
+  const config = await ensureServeConfig(storeOpts(opts));
+  const port = opts.port ?? config.port;
+  const url = pairUrl(port);
+  const healthUrl = `${serveUrl(port, DEFAULT_HOST)}/health`;
+
+  let up = false;
+  let reason = '';
+  try {
+    const res = await doFetch(healthUrl, { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) });
+    if (!res.ok) reason = `HTTP ${res.status}`;
+    else up = ((await res.json()) as { ok?: unknown }).ok === true;
+  } catch (err) {
+    reason = errorMessage(err);
+  }
+  if (!up) {
+    if (opts.json) {
+      line(io, JSON.stringify({ up: false, url, reason }, null, 2));
+    } else {
+      io.stderr(`lexicon: lexicon serve is down at ${serveUrl(port, DEFAULT_HOST)}${reason ? ` (${safe(reason)})` : ''}\n`);
+      io.stderr('lexicon: start it with `lexicon serve` or `lexicon serve --install` first, then run `lexicon serve --pair` again\n');
+    }
+    return 1;
+  }
+
+  const opener = browserOpenCommand(url, platform);
+  let opened = false;
+  let openError = '';
+  if (!opener) {
+    openError = `no browser opener known for ${platform}`;
+  } else {
+    const result = await exec(opener.cmd, opener.args);
+    opened = result.code === 0;
+    if (!opened) openError = (result.stderr || result.stdout).trim() || `${opener.cmd} exited with ${result.code ?? 'an error'}`;
+  }
+
+  if (opts.json) {
+    line(io, JSON.stringify({ up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
+    return opened ? 0 : 1;
+  }
+  if (opened) {
+    line(io, `opening ${url} in your browser`);
+    line(io, 'the Lexicon extension pairs itself on that page; if nothing happens, open the URL by hand');
+    return 0;
+  }
+  io.stderr(`lexicon: could not open a browser (${safeLines(openError)})\n`);
+  line(io, `open this URL in the browser that has the Lexicon extension: ${url}`);
   return 1;
 }
 
@@ -428,14 +511,15 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
 }
 
 export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
-  const modes = [opts.show, opts.status, opts.install, opts.uninstall].filter(Boolean).length;
+  const modes = [opts.show, opts.status, opts.pair, opts.install, opts.uninstall].filter(Boolean).length;
   if (modes > 1) {
-    io.stderr('lexicon: use only one of --show, --status, --install, --uninstall\n');
+    io.stderr('lexicon: use only one of --show, --status, --pair, --install, --uninstall\n');
     return 1;
   }
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);
+    if (opts.pair) return await runServePair(opts, io, deps);
     if (opts.install) return await runServeInstall(opts, io, deps);
     if (opts.uninstall) return await runServeUninstall(opts, io, deps);
     return await runServeForeground(opts, io, deps);
@@ -475,6 +559,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .option('--quiet', 'do not log requests')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')
+    .option('--pair', `open http://127.0.0.1:${DEFAULT_PORT}/pair in your browser so the extension pairs itself, and exit`)
     .option('--install', 'install as a login service (launchd on macOS, systemd --user on Linux)')
     .option('--uninstall', 'remove the login service')
     .action(async (opts: ServeOptions) => done(await runServe({ ...opts, ...globals() }, io)));
