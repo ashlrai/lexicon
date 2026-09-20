@@ -1,0 +1,96 @@
+# MERGE TARGET: copy this file to `.github/workflows/windows-app.yml`.
+#
+# It is parked under apps/windows/build/ because another agent was working in
+# .github/ when it was written. Nothing else has to change to land it — it only
+# touches apps/windows/**.
+#
+# Two jobs on purpose:
+#
+#   `test-portable` runs on Linux and is the one that actually gates merges.
+#   Every rule that can corrupt a user's text lives in LexiconBar.Core, which
+#   targets plain net8.0, so it is testable without a Windows runner — and it
+#   proves the win-x64 publish still cross-compiles, which is how this app is
+#   built day to day on a Mac.
+#
+#   `build-windows` runs on windows-latest and produces the artifact a human
+#   downloads. It CANNOT test the UI Automation half: a GitHub runner has no
+#   interactive desktop session, so there is no focused element, no foreground
+#   window and no caret. Anything under src/LexiconBar.App/FixEverywhere/ is
+#   verified by a person on a real machine or not at all. See docs/WINDOWS-APP.md.
+name: Windows app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/windows/**'
+      - '.github/workflows/windows-app.yml'
+  pull_request:
+    paths:
+      - 'apps/windows/**'
+      - '.github/workflows/windows-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/windows
+
+jobs:
+  test-portable:
+    name: Core tests + cross-build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Unit tests
+        run: dotnet test tests/LexiconBar.Core.Tests/LexiconBar.Core.Tests.csproj -c Release --nologo
+
+      - name: Cross-build the tray app for win-x64
+        # Proves EnableWindowsTargeting still works, so the app can be built
+        # from a Mac without a Windows machine in the loop.
+        run: dotnet build src/LexiconBar.App/LexiconBar.App.csproj -c Release -r win-x64 --nologo
+
+  build-windows:
+    name: Publish LexiconBar.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build (release)
+        run: dotnet build LexiconBar.sln -c Release --nologo
+
+      - name: Unit tests
+        run: dotnet test LexiconBar.sln -c Release --nologo
+
+      - name: Publish self-contained single file
+        run: >-
+          dotnet publish src/LexiconBar.App/LexiconBar.App.csproj
+          -c Release -r win-x64 --self-contained
+          -o artifacts/win-x64 --nologo
+
+      - name: Check the artifact is one runnable file
+        shell: pwsh
+        run: |
+          Remove-Item artifacts/win-x64/*.pdb -Force -ErrorAction SilentlyContinue
+          $exe = Get-Item artifacts/win-x64/LexiconBar.exe
+          "LexiconBar.exe: {0:N1} MB" -f ($exe.Length / 1MB)
+          # Self-contained single-file should leave nothing else behind.
+          $extra = Get-ChildItem artifacts/win-x64 -Exclude LexiconBar.exe
+          if ($extra) { $extra; throw "unexpected files alongside LexiconBar.exe" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LexiconBar-win-x64
+          path: apps/windows/artifacts/win-x64/LexiconBar.exe
+          if-no-files-found: error

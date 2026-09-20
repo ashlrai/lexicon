@@ -1,0 +1,52 @@
+// CsWin32 generates the bindings for these from the official Win32 metadata,
+// which is the reason this app uses the raw UI Automation COM API rather than
+// hand-written [ComImport] declarations: the vtable layout comes from
+// Microsoft, not from my memory of uiautomationclient.h. Getting one method
+// out of order in a 60-method interface is a silent ABI bug that a Mac cannot
+// catch.
+
+// --- UI Automation ---------------------------------------------------------
+IUIAutomation
+IUIAutomationElement
+IUIAutomationElementArray
+IUIAutomationCacheRequest
+IUIAutomationTextPattern
+IUIAutomationTextRange
+IUIAutomationTextRangeArray
+IUIAutomationValuePattern
+IUIAutomationFocusChangedEventHandler
+IUIAutomationPropertyChangedEventHandler
+IUIAutomationEventHandler
+UIA_PATTERN_ID
+UIA_PROPERTY_ID
+UIA_EVENT_ID
+UIA_CONTROLTYPE_ID
+TreeScope
+TextUnit
+TextPatternRangeEndpoint
+SupportedTextSelection
+
+// --- Synthesized input (the fallback write path) ---------------------------
+SendInput
+INPUT
+KEYBDINPUT
+KEYBD_EVENT_FLAGS
+VIRTUAL_KEY
+
+// --- Window and caret geometry ---------------------------------------------
+GetForegroundWindow
+GetWindowThreadProcessId
+GetGUIThreadInfo
+GUITHREADINFO
+ClientToScreen
+GetAncestor
+GET_ANCESTOR_FLAGS
+
+// --- Hotkeys ---------------------------------------------------------------
+RegisterHotKey
+UnregisterHotKey
+HOT_KEY_MODIFIERS
+
+// --- COM memory ------------------------------------------------------------
+SafeArrayDestroy
+SysFreeString

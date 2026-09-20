@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Plain `net8.0`: these tests run on the Mac this was written on, on Linux
+       CI, and on Windows, because everything they cover is pure logic. The UI
+       Automation half of the app has no tests at all and cannot have any on a
+       headless runner; see docs/WINDOWS-APP.md. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LexiconBar.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/LexiconBar.Core/LexiconBar.Core.csproj" />
+  </ItemGroup>
+
+</Project>

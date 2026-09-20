@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="LexiconBar.app" />
+
+  <!-- asInvoker, never requireAdministrator. An elevated process cannot be
+       sent input by a non-elevated one and vice versa (UIPI), and running the
+       whole tray app elevated would mean reading the text of every elevated
+       window on the machine. The cost is that Fix everywhere does nothing in
+       an elevated app; that is the right trade and it is documented. -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and 11. -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <!-- DPI awareness is NOT set here: the WinForms SDK refuses to build a
+           project that sets it in both places, and it is set as
+           <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode> in the
+           .csproj instead. It has to be per-monitor v2, because the correction
+           bubble is positioned from caret rectangles that UI Automation reports
+           in physical pixels; a system-DPI-aware process would get them scaled
+           and the bubble would land in the wrong place on a second monitor. -->
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

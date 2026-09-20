@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Deliberately plain `net8.0`, not `net8.0-windows`: every rule that can
+       corrupt a user's text lives here, and it has to be runnable on the CI
+       box and on the Mac this was written on. Nothing in this assembly may
+       reference UI Automation, WinForms or Win32. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LexiconBar</RootNamespace>
+    <AssemblyName>LexiconBar.Core</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The word tokenizer behind the secret-field heuristic is internal but is
+         worth testing directly: it is where "shipping" must not match "pin". -->
+    <InternalsVisibleTo Include="LexiconBar.Core.Tests" />
+  </ItemGroup>
+
+</Project>
