@@ -96,7 +96,23 @@ The asset names are referenced by the README, the demo site (`site/index.html`) 
 
 The npm publish needs a repository secret named `NPM_TOKEN`: an npm Automation token, or a granular token with publish rights on the `@ashlr` scope. Provenance attestation uses the workflow's `id-token: write` permission, already set; nothing else to configure.
 
-If the secret is missing the release still gets its GitHub assets. Publish by hand afterwards with `npm publish --provenance --access public` from a clean checkout of the tag, or add the secret and re-run the `publish` job.
+If the secret is missing, the `Skipped npm publish` step says so and the run still succeeds: the GitHub release and every asset on it are produced either way. Only npm is left.
+
+**Publishing by hand: drop `--provenance`.** It is not an optional extra there, it is a hard error. `libnpmpublish` generates an attestation from the CI provider's OIDC token and nothing else, so outside GitHub Actions or GitLab CI it throws `EUSAGE: Automatic provenance generation not supported for provider: <name>` before it reaches the registry. This page said to publish by hand *with* that flag until 0.5.2.
+
+Publish the tarball the release already carries, rather than rebuilding from a checkout. It is the artifact CI produced and the one whose sha256 is in `SHA256SUMS`, so what reaches npm is the thing that was tested:
+
+```bash
+V=X.Y.Z
+gh release download "v$V" --repo ashlrai/lexicon --pattern "ashlr-lexicon-$V.tgz"
+shasum -a 256 "ashlr-lexicon-$V.tgz"            # must match SHA256SUMS on the release
+npm publish "./ashlr-lexicon-$V.tgz" --access public
+npm run check:server-json                        # now meaningful: the 404 is gone and mcpName is checked
+```
+
+Publishing a prebuilt tarball does not run `prepublishOnly`, which is correct here because CI already ran the build, the bundle and the tests to produce it.
+
+The release keeps its provenance attestation only if npm does the publish from the workflow, which means an `NPM_TOKEN` in repository secrets. That is a token that publishes without a second factor, so it is a real trade against a hardware key on the account, and it is the maintainer's call rather than this page's.
 
 ## 4. Update the Homebrew formula
 
