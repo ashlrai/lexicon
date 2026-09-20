@@ -4,6 +4,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## 0.3.1 (2026-09-19)
 
+First release on the npm registry: `npm i -g @ashlr/lexicon`.
+
 ### Fixed
 - Matcher: a window made of stoplist words plus one- or two-letter abbreviations ("ms window") is never matched phonetically or fuzzily; implicit split aliases such as "open ai" still match exactly.
 - `lexicon voice --toggle` start is atomic: the state file is claimed with an exclusive create before ffmpeg spawns, so two racing hotkey presses start one recorder (the second prints `recording` and exits 0); a start that dies before spawning leaves a provisional record that is replaced after 5 seconds.

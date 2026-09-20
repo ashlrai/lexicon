@@ -62,7 +62,7 @@ Pick one:
 |---|---|---|
 | Script | `curl -fsSL https://ashlrai.github.io/lexicon/install.sh \| sh` | Needs Node 20 or newer. Installs the CLI, then runs `lexicon setup`. `LEXICON_NO_SETUP=1` skips the wizard |
 | Homebrew | `brew install ashlrai/tap/lexicon` | macOS and Linux. Pulls in Node; recommends ffmpeg and whisper.cpp for `lexicon voice`. The formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap) |
-| npm | `npm i -g github:ashlrai/lexicon#v0.3.0` | Node 20 or newer. The package is not on the npm registry yet; this installs the tagged release from GitHub and builds on install (drop `#v0.3.0` for `main`). `npm i -g @ashlr/lexicon` will work once it is published |
+| npm | `npm i -g @ashlr/lexicon` | Node 20 or newer. Published on the npm registry with provenance. `npm i -g github:ashlrai/lexicon#v0.3.1` installs a tag straight from GitHub and builds on install |
 | Claude Code plugin | `claude plugin marketplace add ashlrai/lexicon` then `claude plugin install lexicon@ashlrai` | No Node install step, no CLI. See [Use with Claude Code](#use-with-claude-code) |
 
 After a Homebrew or npm install, run the wizard yourself. `lexicon setup` walks six steps: seed the global lexicon with your name and company, harvest the current repo, register the MCP server and hooks in the agent clients it detects, install the local API as a login service, export to your dictation app, and print a summary. Every step is safe to rerun. Or skip it and add a term by hand: the first argument is the canonical spelling, the rest are what STT actually produces.
@@ -600,7 +600,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 Everything the CLI, MCP server and hooks do is available as plain functions. `normalize()` is pure (text + lexicon in, result out); the store functions read and write the same YAML files the CLI uses.
 
 ```bash
-npm i github:ashlrai/lexicon#v0.3.0     # or @ashlr/lexicon once it is on npm
+npm i @ashlr/lexicon
 ```
 
 ```ts
@@ -710,7 +710,6 @@ Non-goals:
 
 Roadmap:
 
-- npm publish. Until then the install script, Homebrew and `npm i -g github:ashlrai/lexicon` all install from GitHub.
 - Chrome Web Store and Firefox AMO listings for the extension. Today it installs from the release zip.
 - Notarized macOS app. LexiconBar is ad-hoc signed, so the first launch needs right-click and Open.
 - Windows and Linux tray app with the same push-to-talk and fix-clipboard actions.
