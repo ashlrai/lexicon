@@ -4,7 +4,7 @@ How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the Gi
 
 ## 1. Bump the version
 
-Five files carry the version and must agree. `npm version` handles the first; edit the rest by hand in the same commit.
+Nine files carry the version and must agree. `npm version` handles the first; the rest are edited by hand in the same commit. This table has been wrong twice, and both times it shipped a skewed release, so treat anything not on it as a bug in this page rather than a file that does not matter. `grep -rn "$OLD_VERSION" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist .` before you commit is the check that catches a new carrier.
 
 | File | Field |
 |---|---|
@@ -12,17 +12,38 @@ Five files carry the version and must agree. `npm version` handles the first; ed
 | `.claude-plugin/plugin.json` | `version` |
 | `.claude-plugin/marketplace.json` | `plugins[0].version` |
 | `server.json` | `version` and `packages[0].version` (the MCP Registry reads both) |
+| `README.md` | the `github:ashlrai/lexicon#vX.Y.Z` install pin. It names a tag that must exist, so it cannot be left at whatever it said when it was written; `check:facts` fails the build on a stale one, which is why it is here rather than in your head |
+| `apps/windows/Directory.Build.props` | `<Version>`, the assembly version of the Windows tray app. Nothing derives it from `package.json` |
+| `docs/CLI.md` | not edited by hand: `npm run docs:cli` regenerates it and it carries the version in its header. The CI `docs` job runs the generator and diffs the result, so a skipped regeneration fails the build |
+| `packaging/homebrew/lexicon.rb` | `url` and `sha256`, in step 4 rather than here, because the sha256 does not exist until the tag does |
 | `CHANGELOG.md` | rename `## X.Y.Z (unreleased)` to `## X.Y.Z (YYYY-MM-DD)` |
 
+The extension manifest and `LexiconBar.app` read the version from `package.json` at build time, so they need no edit. `apps/windows` does not.
+
 ```bash
-npm version minor --no-git-tag-version      # or patch / major; writes package.json + lock
-# edit .claude-plugin/plugin.json, .claude-plugin/marketplace.json and server.json to the same version
+npm version patch --no-git-tag-version       # or minor / major; writes package.json + lock
+# edit .claude-plugin/plugin.json, .claude-plugin/marketplace.json, server.json,
+# the README install pin and apps/windows/Directory.Build.props to the same version
 # date the CHANGELOG heading
+npm run docs:cli                             # rewrites docs/CLI.md, including its version header
+
+# The gate, in the order CI runs it. Everything here is also a CI job, so a
+# failure now is a failure you would have got from the tag push anyway.
+npx tsc --noEmit
+npx vitest run
+npm run build && npm run build:bundle && npm run build:site && npm run build:extension
 npm run check:bundle                         # plugin/ bundles match src/ (CI fails on drift)
-npm run check:server-json                    # server.json schema + version agreement + npm mcpName
-npm run docs:cli                             # docs/CLI.md matches --help
-npm test
-git add -A
+npm run check:links
+npm run check:facts
+npm run check:server-json --offline          # see the note below before running it online
+( cd apps/macos/LexiconBar && swift test )
+
+# Stage by explicit path. `git add -A` has twice swept up another agent's
+# uncommitted work in this shared tree, and it is how the plugin bundle came
+# to be committed carrying source that the commit did not contain.
+git add package.json package-lock.json server.json CHANGELOG.md README.md \
+        .claude-plugin/plugin.json .claude-plugin/marketplace.json \
+        apps/windows/Directory.Build.props docs/CLI.md packaging/homebrew/lexicon.rb
 git commit -m "vX.Y.Z"
 git tag vX.Y.Z
 git push --follow-tags
@@ -30,7 +51,7 @@ git push --follow-tags
 
 The release workflow refuses to run when the tag does not match `package.json`, so a missed bump fails fast instead of publishing the wrong number.
 
-The extension manifest and `LexiconBar.app` read the version from `package.json` at build time, so they need no edit.
+**`check:server-json` cannot pass before the publish.** Its third check fetches `https://registry.npmjs.org/@ashlr/lexicon/<version>` and requires an `mcpName` there, which is a statement about a version that is by definition not published yet. Run it with `--offline` before the tag (schema plus version agreement, which are the parts you can be wrong about), and run it again without the flag after npm has the release, which is when its answer means something.
 
 ## 2. What the tag triggers
 
@@ -65,7 +86,7 @@ The real answer for shipping is a **Developer ID Application** certificate from 
 
 The asset names are referenced by the README, the demo site (`site/index.html`) and the Homebrew formula. Do not rename them without updating all three.
 
-`.github/workflows/macos-app.yml` is separate: it builds the same app on pushes that touch `apps/macos/**` and stores the zip as a workflow artifact for review, not as a release asset.
+`.github/workflows/macos-app.yml` is separate: it builds the same app on pushes that touch `apps/macos/**` and stores the zip as a workflow artifact for review, not as a release asset. `.github/workflows/windows-app.yml` does the same for `apps/windows/**`, and `LexiconBar.exe` is likewise an artifact rather than a release asset, because nothing in that app has been verified on a real Windows desktop yet.
 
 ## 3. NPM_TOKEN
 
@@ -77,12 +98,12 @@ If the secret is missing the release still gets its GitHub assets. Publish by ha
 
 The formula in `ashlrai/homebrew-tap` (`Formula/lexicon.rb`) installs from the release tarball and pins its sha256. After the `publish` job finishes:
 
+The formula builds from source: its `install` block runs `npm install` and `npm run build`, so it needs the **git source archive**, not the npm pack tarball on the release. `ashlr-lexicon-X.Y.Z.tgz` ships `dist/` and no `src/`, so a formula pinned to it cannot build and `SHA256SUMS` on the release is the wrong file to read the checksum out of. This page said otherwise until 0.5.2.
+
 ```bash
 V=X.Y.Z
-curl -fsSL -o /tmp/lexicon.tgz "https://github.com/ashlrai/lexicon/releases/download/v$V/ashlr-lexicon-$V.tgz"
-shasum -a 256 /tmp/lexicon.tgz
-# or read it from the release's SHA256SUMS:
-curl -fsSL "https://github.com/ashlrai/lexicon/releases/download/v$V/SHA256SUMS" | grep ashlr-lexicon
+curl -fsSL -o /tmp/lexicon-src.tar.gz "https://github.com/ashlrai/lexicon/archive/refs/tags/v$V.tar.gz"
+shasum -a 256 /tmp/lexicon-src.tar.gz
 ```
 
 In the formula set `url` to the new tarball URL and `sha256` to that value, then:
@@ -93,7 +114,15 @@ brew test lexicon
 brew audit --strict lexicon
 ```
 
-Commit and push the tap. `brew install ashlrai/tap/lexicon` picks it up on the next `brew update`.
+`packaging/homebrew/lexicon.rb` in this repo is the source of truth; `ashlrai/homebrew-tap` carries the same file as `Formula/lexicon.rb`. Update both in the same sitting or they drift, which is how the tap came to be two releases behind: 0.3.2 cannot parse a lexicon written by 0.5.x, so anyone who installed through brew and then ran `lexicon setup` had a broken tool.
+
+```bash
+git clone https://github.com/ashlrai/homebrew-tap /tmp/homebrew-tap
+cp packaging/homebrew/lexicon.rb /tmp/homebrew-tap/Formula/lexicon.rb
+cd /tmp/homebrew-tap && git add Formula/lexicon.rb && git commit -m "lexicon X.Y.Z" && git push
+```
+
+`brew install ashlrai/tap/lexicon` picks it up on the next `brew update`.
 
 ## 5. Check the first 60 seconds
 

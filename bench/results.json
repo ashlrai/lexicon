@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-20T04:56:02.373Z",
-  "lexicon": "/Users/masonwyatt/Desktop/dictation mcp/bench/lexicon.yaml",
-  "corpus": "/Users/masonwyatt/Desktop/dictation mcp/bench/corpus.jsonl",
+  "generatedAt": "2026-09-20T19:19:31.731Z",
+  "lexicon": "bench/lexicon.yaml",
+  "corpus": "bench/corpus.jsonl",
   "config": {
     "minConfidence": 0.82,
     "phonetic": true,
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 295.2693115577893,
-    "findReplacementsUs": 54.660979396984416,
+    "normalizeUs": 276.55022412060026,
+    "findReplacementsUs": 51.783606532664365,
     "rounds": 5
   },
   "failures": [

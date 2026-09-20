@@ -21,7 +21,7 @@ Requires the .NET 8 SDK. Does not require Visual Studio. Does not require Window
 | `src/LexiconBar.Core` | `net8.0` | **Tested.** Burst detection, splice maths, the secret-field heuristic, exclusions, bubble content and placement, `serve.json` discovery, settings. No UIA, no WinForms, no Win32 — that restriction is what makes it testable off Windows. |
 | `src/LexiconBar.App` | `net8.0-windows` | **Unverified.** UI Automation, `SendInput`, the tray, the bubble, hotkeys, the registry. Compiles; has never been run. |
 | `tests/LexiconBar.Core.Tests` | `net8.0` | xunit, headless, runs anywhere. |
-| `build/` | | `publish.sh`, `publish.ps1`, and `windows-app.yml` **to be copied to `.github/workflows/`**. |
+| `build/` | | `publish.sh` and `publish.ps1`. CI lives in `.github/workflows/windows-app.yml`. |
 
 ## The rule for contributors
 

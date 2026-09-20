@@ -12,7 +12,7 @@
       "displayName": "Lexicon",
       "source": "./",
       "description": "Personal voice lexicon for agents: fixes the names, brands and identifiers speech-to-text gets wrong (Ashler -> Ashlr.AI) before Claude acts on a dictated prompt.",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "author": {
         "name": "Ashlr.AI",
         "url": "https://github.com/ashlrai"

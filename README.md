@@ -120,6 +120,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 | Any text field, any OS | `lexicon daemon --once --paste` on a hotkey | [DAEMON.md](docs/DAEMON.md) |
 | Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Deepgram, Azure, Google | Export into their own dictionaries and biasing parameters | [EXPORTS.md](docs/EXPORTS.md) |
 | Your own STT pipeline | `npm i @ashlr/lexicon`, call `normalize()` between transcription and the model | [LIBRARY.md](docs/LIBRARY.md) |
+| Any of the above, on Windows or Linux | Which surfaces are tested in CI on each OS, which work but have never been run on real hardware, and which are not there at all | [PLATFORMS.md](docs/PLATFORMS.md) |
 
 ## How it works
 
@@ -154,7 +155,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap); `npm i -g github:ashlrai/lexicon#v0.5.1` installs a tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap); `npm i -g github:ashlrai/lexicon#v0.5.2` installs a tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 

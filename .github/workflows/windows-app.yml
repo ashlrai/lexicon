@@ -1,8 +1,4 @@
-# MERGE TARGET: copy this file to `.github/workflows/windows-app.yml`.
-#
-# It is parked under apps/windows/build/ because another agent was working in
-# .github/ when it was written. Nothing else has to change to land it — it only
-# touches apps/windows/**.
+# Builds and tests the Windows tray app under apps/windows/.
 #
 # Two jobs on purpose:
 #

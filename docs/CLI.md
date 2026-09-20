@@ -2,7 +2,7 @@
 
 Every command and flag, for when you know what you want to do and need the exact spelling. If you are still deciding, [QUICKSTART.md](QUICKSTART.md) and the task pages in [the docs index](README.md) are better starting points.
 
-Generated from `lexicon --help` (v0.5.1) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.5.2) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 

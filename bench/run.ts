@@ -8,7 +8,7 @@
  *   npm run bench -- --sweep              minConfidence 0.70..0.95 vs accuracy / false positives
  */
 import { writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CATEGORIES,
@@ -261,10 +261,13 @@ function main(): void {
     }
   }
 
+  // Relative, not resolved: results.json is committed on every matcher change, and an
+  // absolute path would publish the committer's home directory to a public repo.
+  const repoRoot = join(HERE, '..');
   const payload = {
     generatedAt: new Date().toISOString(),
-    lexicon: args.lexicon,
-    corpus: args.corpus,
+    lexicon: relative(repoRoot, args.lexicon),
+    corpus: relative(repoRoot, args.corpus),
     ...summary,
     ...(sweepRows ? { sweep: sweepRows } : {}),
     failures: results.filter((r) => !r.pass),
