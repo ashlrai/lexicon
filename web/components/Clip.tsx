@@ -15,6 +15,15 @@ import { Shot } from './Shot';
  * cannot stop a video, so this is done here, on mount and again whenever the
  * preference changes, rather than by shipping a different element and hoping
  * the guess was right at hydration.
+ *
+ * Playback is also tied to whether the element is on screen, and that is not a
+ * nicety. Every clip on this page mounts far below the fold, and Chrome stops
+ * an autoplaying muted video that is not visible: measured on the deployed
+ * page, the recording ran about a sixth of a second at load and then sat
+ * paused on that frame, still paused once it was scrolled into view, because
+ * nothing here asked it to start again. An IntersectionObserver is what makes
+ * `autoPlay` mean what it says for an element nobody has scrolled to yet, and
+ * it stops the clip again on the way out rather than looping off screen.
  */
 export function Clip({
   mp4,
@@ -40,6 +49,10 @@ export function Clip({
     if (!video) return;
 
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    // Assumed on screen until an observer says otherwise, so a browser without
+    // IntersectionObserver still plays rather than sitting on a still frame.
+    let onScreen = true;
+
     const apply = () => {
       if (query.matches) {
         video.loop = false;
@@ -51,20 +64,41 @@ export function Clip({
         } catch {
           /* not seekable yet; the loadeddata pass below catches it */
         }
-      } else {
-        video.loop = true;
+        return;
+      }
+
+      video.loop = true;
+      if (onScreen) {
         void video.play().catch(() => {
           /* a browser that refuses autoplay shows the first frame, which is fine */
         });
+      } else if (!video.paused) {
+        video.pause();
       }
     };
 
     apply();
     video.addEventListener('loadeddata', apply);
     query.addEventListener('change', apply);
+
+    // A margin, so the clip is already running by the time it is properly in
+    // view rather than starting from black under the reader's eye.
+    const observer =
+      typeof IntersectionObserver === 'undefined'
+        ? undefined
+        : new IntersectionObserver(
+            (entries) => {
+              for (const entry of entries) onScreen = entry.isIntersecting;
+              apply();
+            },
+            { rootMargin: '150px' },
+          );
+    observer?.observe(video);
+
     return () => {
       video.removeEventListener('loadeddata', apply);
       query.removeEventListener('change', apply);
+      observer?.disconnect();
     };
   }, []);
 

@@ -186,19 +186,28 @@ rmSync(validatorPath, { force: true });
 /* ---------------------------------------------------------------- brand icons */
 
 /**
- * simple-icons slugs for the "works with" wall. The SVG paths are CC0; the
- * trademarks are not. Rendered monochrome in the page's neutral foreground,
- * never in the accent colour, never locked up with a Lexicon mark.
+ * simple-icons slugs for the "works with" wall and the platform row. The SVG
+ * paths are CC0; the trademarks are not. Rendered monochrome in the page's
+ * neutral foreground, never in the accent colour, never locked up with a
+ * Lexicon mark.
  *
  * Deliberately absent: Apple. Apple's Identity Guidelines forbid using the
  * Apple logo to indicate compatibility, so macOS, Mac and iPhone are set as
- * words in the page's own type. Also absent: Wispr Flow and Superwhisper,
- * which simple-icons does not carry, so they are set as words too.
+ * words in the page's own type, and the macOS platform tile gets a laptop we
+ * drew ourselves. Windows is absent from simple-icons entirely, and its own
+ * guidelines name compatibility-signalling as a use the logo is not for, so
+ * that tile gets a monitor we drew ourselves. Also absent: Wispr Flow and
+ * Superwhisper, which simple-icons does not carry, so they are set as words.
+ *
+ * 'linux' is Tux, and it is the one mascot here that is affirmatively
+ * licensed: Larry Ewing grants use and modification on condition of credit,
+ * which the page footer carries verbatim. web/public/brands/MANIFEST.md has
+ * the per-brand verdicts and the URLs they came from.
  */
 const slugs = [
   'claudecode', 'claude', 'anthropic', 'googlegemini', 'cursor', 'windsurf',
   'perplexity', 'poe', 'googlechrome', 'firefoxbrowser', 'deepgram',
-  'googlecloud', 'github',
+  'googlecloud', 'github', 'linux',
 ];
 const icons = {};
 const simpleIcons = await import('simple-icons');

@@ -1,10 +1,14 @@
+import { Clip } from '@/components/Clip';
 import { CommandLine } from '@/components/Copy';
 import { CorrectionProof } from '@/components/CorrectionProof';
 import { Faq } from '@/components/Faq';
 import { Install } from '@/components/Install';
 import { LiveDemo } from '@/components/LiveDemo';
+import { Platforms } from '@/components/Platforms';
+import { Frame, Shot } from '@/components/Shot';
 import { StructuredData } from '@/components/StructuredData';
 import { WorksWith } from '@/components/WorksWith';
+import { clip, shot } from '@/lib/media';
 import {
   BENCHMARK,
   DEMO,
@@ -18,6 +22,26 @@ import {
 } from '@/lib/site';
 
 export const revalidate = 3600;
+
+/*
+ * How wide each shot actually renders, so the browser fetches the right file
+ * rather than the widest one. `.shell` is 76rem including its own 2.5rem of
+ * padding, so a full-bleed figure inside it tops out at 1136px.
+ *
+ * Every one of these is below the fold, so every one of them is lazy. Nothing
+ * on this page carries `priority`: the only thing above the fold is the drawn
+ * CorrectionProof, which is markup rather than an image.
+ */
+const FULL = '(min-width: 1280px) 1136px, (min-width: 768px) calc(100vw - 5rem), calc(100vw - 2.5rem)';
+const HALF = '(min-width: 1280px) 558px, (min-width: 640px) 50vw, calc(100vw - 2.5rem)';
+/** Inside a Surface card: the column, less the card padding and the inset box. */
+const IN_CARD_HALF = '(min-width: 1280px) 490px, (min-width: 1024px) 45vw, calc(100vw - 6.5rem)';
+const IN_CARD_THIRD = '(min-width: 1280px) 297px, (min-width: 1024px) 28vw, calc(100vw - 6.5rem)';
+/** The install column, which is capped at 31rem. */
+const COLUMN = '(min-width: 1024px) 496px, (min-width: 640px) calc(100vw - 2.5rem), 34rem';
+/** A wide capture below `sm`, where <Wide> gives it a floor instead of the column. */
+const FULL_WIDE =
+  '(min-width: 1280px) 1136px, (min-width: 768px) calc(100vw - 5rem), (min-width: 640px) calc(100vw - 2.5rem), 34rem';
 
 /*
  * No `metadata` export here on purpose. Metadata merges shallowly per top-level
@@ -244,8 +268,49 @@ function Demo() {
           </p>
         </div>
         <LiveDemo />
+        <CliNormalize />
       </div>
     </section>
+  );
+}
+
+/*
+ * A capture too wide to read at phone width.
+ *
+ * Both terminal shots are about four times wider than they are tall. Scaled to
+ * fit a 390px screen they land around nine pixels of type, which turns the
+ * output they exist to show into a texture. Below `sm` they keep a legible
+ * floor and scroll sideways inside their own frame, which is what the code
+ * blocks elsewhere on this page already do. Above it the column is wide enough
+ * and the floor is dropped, so nothing scrolls that does not have to.
+ */
+function Wide({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[34rem] sm:min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/** The same matcher at the command line, for the reader who would rather see it there. */
+function CliNormalize() {
+  const png = shot('cli-normalize.png');
+  if (!png) return null;
+
+  return (
+    <div className="mt-12">
+      <Frame label="lexicon normalize --diff">
+        <Wide>
+          <Shot shot={png} sizes={FULL_WIDE} />
+        </Wide>
+      </Frame>
+      <p className="mt-4 max-w-[62ch] text-[0.85rem] leading-relaxed text-paper-3">
+        Nothing above is a browser trick. The same call is one command, and{' '}
+        <span className="font-mono text-paper-2">--diff</span> prints every replacement it made
+        above the line it produced, so you can see what it touched before you trust it with a
+        transcript.
+      </p>
+    </div>
   );
 }
 
@@ -258,8 +323,50 @@ function Coverage() {
         <span className="entry-label">coverage</span>
         <h2 className="h2 mb-12 max-w-[22ch]">Works wherever you talk to an agent.</h2>
         <WorksWith />
+        <YourWords />
       </div>
     </section>
+  );
+}
+
+/*
+ * The other half of coverage. The wall above is where Lexicon reaches; this is
+ * what it reaches with, and it is the part nobody else can ship for you: the
+ * setup wizard asks how your own name is spelled and guesses the ways a
+ * recognizer will get it wrong, then offers the packs for the vocabulary you
+ * share with everyone else in your field.
+ */
+function YourWords() {
+  const words = shot('onboarding-words.png');
+  const packs = shot('onboarding-packs.png');
+  if (!words && !packs) return null;
+
+  return (
+    <div className="mt-16 border-t border-rule-soft pt-12 sm:mt-20">
+      <span className="micro">your own words</span>
+      <h3 className="display mt-3 max-w-[26ch] text-[1.6rem]">
+        The vocabulary is yours before it is anybody else&rsquo;s.
+      </h3>
+      <p className="mt-4 max-w-[58ch] text-[0.92rem] leading-relaxed text-paper-2">
+        Setup asks for the names that matter to you, proposes the misspellings a recognizer is
+        likely to produce for each, and lets you switch off the ones you do not want. The starter
+        packs cover the rest: the tools, companies and acronyms everyone in your field says out
+        loud.
+      </p>
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:gap-5">
+        {words ? (
+          <Frame label="setup: your words">
+            <Shot shot={words} sizes={HALF} />
+          </Frame>
+        ) : null}
+        {packs ? (
+          <Frame label="setup: starter packs">
+            <Shot shot={packs} sizes={HALF} />
+          </Frame>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -275,6 +382,8 @@ function Surfaces() {
           The lexicon lives at <code className="font-mono text-[0.9em]">~/.config/lexicon/lexicon.yaml</code>,
           with an optional per-project file at the repo root. Everything below reads the same file.
         </p>
+
+        <FixInPlace />
 
         <div className="mt-12 grid gap-4 lg:grid-cols-3 lg:gap-5">
           <Surface
@@ -296,7 +405,7 @@ function Surfaces() {
             title="Before you press send"
             body="A browser extension that rewrites the composer in place on ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe, and on any other site you switch it on for."
           >
-            <Composer />
+            <ExtensionShot />
           </Surface>
 
           <Surface
@@ -313,8 +422,108 @@ function Surfaces() {
             />
           </Surface>
         </div>
+
+        <div className="mt-4 grid gap-4 lg:mt-5 lg:grid-cols-2 lg:gap-5">
+          <Surface
+            label="the correction bubble"
+            title="It tells you what it changed"
+            align="center"
+            body="Nothing is rewritten silently. A bubble appears beside the caret naming every word it swapped, with an Undo, and a Never that adds the word to your never list so it is left alone from then on."
+          >
+            <BubbleShot />
+          </Surface>
+
+          <Surface
+            label="the macos app"
+            title="A status item, not a window"
+            body="LexiconBar is a menu, and the menu is the whole interface: push to talk, fix the clipboard once, or leave fix everywhere switched on and forget about it. The loopback API and the login item are toggles in the same list."
+          >
+            <MenubarShot />
+          </Surface>
+        </div>
       </div>
     </section>
+  );
+}
+
+/*
+ * The strongest thing we have: a real recording of a dictated line rewriting
+ * itself in an ordinary text field, with the bubble naming the three words it
+ * changed. It gets the full column, above the three cards that explain it,
+ * because it makes the claim faster than the copy does.
+ *
+ * The mp4 is 1920x920, so it stays sharp at the 1136px this renders at. The
+ * GIF is half those pixels and a fraction of the value, which is why `clip()`
+ * keeps it only as the fallback for a browser that will not play the video.
+ */
+function FixInPlace() {
+  const recording = clip('fix-in-place');
+  if (!recording) return null;
+
+  return (
+    <figure className="panel m-0 mt-12 overflow-hidden">
+      <figcaption className="panel-head">
+        <span className="micro">fix everywhere</span>
+        <span className="micro">any macos text field</span>
+      </figcaption>
+      <div className="bg-ink-3">
+        <Clip {...recording} sizes={FULL} />
+      </div>
+      <p className="border-t border-rule px-5 py-4 text-[0.85rem] leading-relaxed text-paper-2 sm:px-5">
+        Three words the recognizer had never heard, corrected in the field that had focus. No
+        copying, no pasting, no second window to visit: the bubble beside the caret lists what
+        changed and offers to put it back.
+      </p>
+    </figure>
+  );
+}
+
+/*
+ * The browser surface, in a capture that does not exist yet.
+ *
+ * Taking it needs a toggle only the owner of the browser profile can flip, so
+ * until that happens the drawn composer stands in. The point of routing it
+ * through `shot()` now is that the real capture needs no code change to appear:
+ * drop the file in public/media and the next build swaps it in.
+ */
+function ExtensionShot() {
+  const png = shot('extension.png');
+  if (!png) return <Composer />;
+
+  return (
+    <div className="rounded-md border border-rule-soft bg-ink-3 p-3.5">
+      <Shot shot={png} sizes={IN_CARD_THIRD} className="rounded" />
+    </div>
+  );
+}
+
+function BubbleShot() {
+  const png = shot('bubble.png');
+  if (!png) return null;
+
+  return (
+    <div className="rounded-md border border-rule-soft bg-ink-3 p-3.5">
+      <Shot shot={png} sizes={IN_CARD_HALF} className="rounded" />
+    </div>
+  );
+}
+
+/*
+ * The one 1x asset on the page, and the only one with a hard ceiling.
+ *
+ * lib/media.ts has the long version: the menu bar carrying our status item is
+ * on a 1.0-scale display, so no 2x capture of it can be taken. 388px is its
+ * own pixel width. Let it run fluid to the column and it goes soft, so the max
+ * width is pinned here and `sizes` is told the truth about it.
+ */
+function MenubarShot() {
+  const png = shot('menubar.png');
+  if (!png) return null;
+
+  return (
+    <div className="rounded-md border border-rule-soft bg-ink-3 p-3.5">
+      <Shot shot={png} sizes="388px" className="mx-auto max-w-[388px] rounded" />
+    </div>
   );
 }
 
@@ -322,11 +531,21 @@ function Surface({
   label,
   title,
   body,
+  align = 'bottom',
   children,
 }: {
   label: string;
   title: string;
   body: string;
+  /*
+   * Where the artwork sits in the space the copy leaves over.
+   *
+   * Cards in a row are the same height, so a short picture beside a tall one
+   * gets the difference as dead space. Pushed to the bottom that reads as a
+   * gap; centred it reads as margin. The three-surface row keeps the bottom
+   * alignment, which is what makes its mock-ups line up with each other.
+   */
+  align?: 'bottom' | 'center';
   children: React.ReactNode;
 }) {
   return (
@@ -337,7 +556,7 @@ function Surface({
       <div className="flex flex-1 flex-col p-5">
         <h3 className="display mb-2.5 text-[1.35rem]">{title}</h3>
         <p className="mb-6 text-[0.88rem] leading-relaxed text-paper-2">{body}</p>
-        <div className="mt-auto">{children}</div>
+        <div className={align === 'center' ? 'my-auto' : 'mt-auto'}>{children}</div>
       </div>
     </div>
   );
@@ -489,6 +708,10 @@ function InstallSection() {
               * release is instead of pinning a tag that goes stale on the next one.
               */}
             <div className="mt-10 border-t border-rule-soft pt-7">
+              <Platforms />
+            </div>
+
+            <div className="mt-8 border-t border-rule-soft pt-7">
               <span className="micro mb-4 block">direct downloads</span>
               <ul className="flex flex-col gap-4">
                 {DOWNLOADS.map((d) => (
@@ -511,10 +734,43 @@ function InstallSection() {
               </p>
             </div>
           </div>
-          <Install />
+          {/*
+            * min-w-0 on the grid item as well as on the figure inside it. Both
+            * default to min-width:auto, so at phone width the column would
+            * otherwise be sized by the widest thing in it rather than by the
+            * grid, and the recording would push the whole page sideways.
+            */}
+          <div className="flex min-w-0 flex-col gap-8">
+            <Install />
+            <SetupRecording />
+          </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/*
+ * What the command above actually does, end to end. There is no mp4 for this
+ * one, so `clip()` hands back the GIF alone and <Clip> renders it as a still
+ * image; if a recording ever replaces it, nothing here has to change.
+ */
+function SetupRecording() {
+  /*
+   * min-w-0 because this figure is a flex item. Without it the flex box takes
+   * its width from the min-content of the <Wide> floor inside, grows past the
+   * column at phone width, and `overflow-hidden` on the frame clips the
+   * recording rather than letting it scroll.
+   */
+  const recording = clip('cli-setup');
+  if (!recording) return null;
+
+  return (
+    <Frame label="lexicon setup, start to finish" className="min-w-0">
+      <Wide>
+        <Clip {...recording} sizes={COLUMN} />
+      </Wide>
+    </Frame>
   );
 }
 
@@ -637,7 +893,7 @@ function OpenSource() {
                   on Firefox Add-ons yet.
                 </li>
                 <li>The macOS app is ad-hoc signed, not notarized.</li>
-                <li>Windows and Linux have the CLI and the MCP server, but no tray app.</li>
+                <li>Windows and Linux systems have the CLI and the MCP server, but no tray app.</li>
                 <li>
                   Voice modes that never produce a text box, such as ChatGPT Voice and Gemini
                   Live, are out of reach: there is no transcript to correct. (<span
@@ -788,11 +1044,26 @@ function Footer() {
           </a>
         </nav>
 
-        <p className="max-w-[80ch] text-[0.78rem] leading-relaxed text-paper-3">
-          All product names, logos and brands are the property of their respective owners. Their use
-          here indicates compatibility only, and does not imply endorsement, sponsorship or
-          affiliation. Lexicon is an independent open-source project from Ashlr.AI.
-        </p>
+        <div className="flex max-w-[80ch] flex-col gap-3 text-[0.78rem] leading-relaxed text-paper-3">
+          <p>
+            All product names, logos and brands are the property of their respective owners. Their
+            use here indicates compatibility only, and does not imply endorsement, sponsorship or
+            affiliation. Lexicon is an independent open-source project from Ashlr.AI.
+          </p>
+          {/*
+            * Ewing's grant is conditional on this credit, and the wording is his,
+            * so it is reproduced exactly rather than paraphrased. His original
+            * page at isc.tamu.edu now 404s, so the citation points at Commons.
+            */}
+          <p>
+            The penguin is Tux, the Linux mascot: Larry Ewing, lewing@isc.tamu.edu, created with
+            The GIMP. Used and modified with permission, from the{' '}
+            <a className="link-quiet" href="https://commons.wikimedia.org/wiki/File:Tux.svg">
+              copy on Wikimedia Commons
+            </a>
+            . The other marks on this page are the CC0 paths published by simple-icons.
+          </p>
+        </div>
       </div>
     </footer>
   );

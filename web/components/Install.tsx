@@ -16,7 +16,7 @@ const METHODS: Method[] = [
     id: 'script',
     label: 'Script',
     command: INSTALL_COMMANDS.script,
-    note: 'macOS and Linux. Checks for Node 20 or newer, installs the CLI, then runs the setup wizard, which writes your first lexicon and registers the MCP server with whichever agent clients it finds.',
+    note: 'macOS and Linux systems. Checks for Node 20 or newer, installs the CLI, then runs the setup wizard, which writes your first lexicon and registers the MCP server with whichever agent clients it finds.',
   },
   {
     id: 'npx',
@@ -28,7 +28,7 @@ const METHODS: Method[] = [
     id: 'brew',
     label: 'Homebrew',
     command: INSTALL_COMMANDS.brew,
-    note: 'macOS and Linux; pulls in Node for you. Then run lexicon setup to create the lexicon file and connect your agents.',
+    note: 'macOS and Linux systems; pulls in Node for you. Then run lexicon setup to create the lexicon file and connect your agents.',
   },
   {
     id: 'npm',

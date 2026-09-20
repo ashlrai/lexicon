@@ -25,42 +25,57 @@ type Declared = { alt: string; width: number; height: number };
  */
 const CATALOG = {
   'fix-in-place.mp4': {
-    alt: 'Dictated text in a Mac app being rewritten in place, with a small Lexicon bubble reporting the terms it replaced.',
+    alt: 'A TextEdit note in which the dictated line ‘ashler is shipping cuban eats support on versal next week’ rewrites itself to ‘Ashlr.AI is shipping Kubernetes support on Vercel next week’, with a bubble beside the caret listing the three fixes.',
     width: 1600,
     height: 900,
   },
   'fix-in-place.gif': {
-    alt: 'Dictated text in a Mac app being rewritten in place, with a small Lexicon bubble reporting the terms it replaced.',
+    alt: 'A TextEdit note in which the dictated line ‘ashler is shipping cuban eats support on versal next week’ rewrites itself to ‘Ashlr.AI is shipping Kubernetes support on Vercel next week’, with a bubble beside the caret listing the three fixes.',
     width: 1600,
     height: 900,
   },
   'bubble.png': {
-    alt: 'Lexicon’s correction bubble beside a Mac text field, naming the terms it replaced in the line just dictated.',
+    alt: 'Lexicon’s correction bubble reading ‘Fixed 3 words’, listing ashler corrected to Ashlr.AI, cuban eats to Kubernetes and versal to Vercel, with Undo and Never buttons.',
     width: 1200,
     height: 620,
   },
+  /*
+   * The one 1x asset, deliberately. The menu bar carrying our status item is on
+   * this Mac's main display, a 1920x1080 external at scale 1.0, so no 2x capture
+   * of it exists to take. Moving the menu bar to the Retina built-in does not fix
+   * it: that bar is narrower (1512pt against 1920pt) and drops its leftmost status
+   * items, and ours is the leftmost of about fifteen, so it would be cropped out
+   * rather than captured sharper. Render it at its natural 388px and never wider,
+   * or it goes soft: pass a max-width, do not let it run fluid to the column.
+   */
   'menubar.png': {
-    alt: 'Lexicon’s macOS menu bar dropdown, showing its status and the controls for the focused text field.',
+    alt: 'The LexiconBar waveform icon in the macOS menu bar with its menu open: push to talk, fix clipboard now, fix everywhere with a separate toggle for Claude, the correction bubble, the local API running at login, and Quit LexiconBar 0.5.1.',
     width: 900,
     height: 700,
   },
   'onboarding-words.png': {
-    alt: 'The Lexicon setup wizard in a terminal, asking how the user’s own name and company should be spelled.',
+    alt: 'Lexicon’s macOS setup window on the step ‘Your words’, showing the name Mason Wyatt with the suggested misspellings Mason Wiatt and Mason Wyat, both switched on, above a Try it box holding a dictated sentence.',
     width: 1400,
     height: 900,
   },
   'onboarding-packs.png': {
-    alt: 'The Lexicon setup wizard offering its starter packs of terms to install.',
+    alt: 'Lexicon’s starter pack picker with four cards: AI models and tools, Business and startup vocabulary, Developer tools, and Voice and dictation tools, each with its term count and an on/off switch.',
     width: 1400,
     height: 900,
   },
+  /*
+   * The alt describes the recording, which installs a subset of the starter
+   * packs rather than all of them. check-facts reads any count beside the word
+   * "packs" as a claim about how many exist, so the line opts out instead of
+   * being made wrong to satisfy the checker.
+   */
   'cli-setup.gif': {
-    alt: 'A terminal running lexicon setup end to end: it writes the lexicon file, asks for the user’s own words, and registers the MCP server with the agent clients it finds.',
+    alt: 'A terminal running lexicon setup through all seven steps (writing the lexicon file, installing three starter packs, registering the MCP server with five agent clients, exporting for dictation), ending by showing a dictated sentence corrected from Mason Wiatt and Ashler to Mason Wyatt and Ashlr.AI.', // check-facts:ignore
     width: 1200,
     height: 760,
   },
   'cli-normalize.png': {
-    alt: 'A terminal correcting a dictated sentence with Lexicon, each replacement listed underneath the corrected line.',
+    alt: 'A terminal running lexicon normalize --diff on two dictated sentences, each replacement listed above the corrected line it produced.',
     width: 1200,
     height: 680,
   },
