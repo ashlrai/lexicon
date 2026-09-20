@@ -12,10 +12,19 @@
  *   f. a summary card (or JSON with --json)
  *
  * Interactive on a terminal (prompt.ts); `--yes` takes every default, and
- * off a TTY without `--yes` the defaults are used as well. Every step is
+ * off a TTY without `--yes` the defaults are used as well. Three things are
+ * never done silently: the repo harvest (step b) and the login service (step
+ * d) are performed under `--yes` only with an explicit `--harvest` / `--serve`
+ * (a harvest is a write plus a trust decision, a service replaces whatever is
+ * under its label), and `--dry-run` runs every detection and suggestion but
+ * writes nothing, returning a `SetupPlan` of what a real run would do (the
+ * MCP `setup_lexicon` tool previews with it; the plan lists the harvest
+ * candidates either way so the caller can offer them). Every step is
  * idempotent: addTerm merges, the installers skip what is already there and
- * exports overwrite the same file. All process spawning and filesystem
- * probing goes through `SetupDeps` so tests never touch the machine.
+ * exports overwrite the same file; a person or company already in the global
+ * lexicon, or a harvest candidate already covered by a global term, is
+ * reported and not added again. All process spawning and filesystem probing
+ * goes through `SetupDeps` so tests never touch the machine.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
@@ -40,7 +49,7 @@ import type { InstallClient, InstallOptions } from './cmd-install.js';
 import { runServeInstall } from './cmd-serve.js';
 import type { ServeDeps, ServeOptions } from './cmd-serve.js';
 import { renderTable, runInit, safe, safeLines } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
+import type { CommonOptions, IO, InstallOutcome } from './commands.js';
 import { createPrompter, isInteractive, styler } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -76,10 +85,22 @@ export interface SetupOptions extends CommonOptions {
   person?: string;
   /** Pronunciation hint for the company term. */
   phonetic?: string;
-  /** `--no-harvest`: skip the repo harvest. */
+  /**
+   * `--harvest` / `--no-harvest`: add the repo's top names to the project
+   * lexicon. With a prompter, undefined shows the candidates and asks
+   * (default yes); without one (`--yes`, no TTY, MCP) undefined skips the
+   * write: a harvest is a write plus a trust decision and is never done
+   * silently. A dry run lists the candidates in the plan either way.
+   */
   harvest?: boolean;
-  /** `--no-serve`: skip the local API login service. */
+  /**
+   * `--serve` / `--no-serve`: install the local API login service. With a
+   * prompter, undefined asks (default yes); without one (`--yes`, no TTY,
+   * MCP) undefined skips it: a login service is never created silently.
+   */
   serve?: boolean;
+  /** Run detection and suggestions only; write nothing and fill in `SetupPlan`. */
+  dryRun?: boolean;
   /** Dictation app to export for: wispr|superwhisper|macos|none. */
   app?: string;
   /** Directory for the dictation export (default ~/Desktop, else the config dir). */
@@ -91,6 +112,11 @@ export interface SetupOptions extends CommonOptions {
 export interface SetupClientResult {
   name: string;
   status: 'installed' | 'skipped' | 'failed';
+  /**
+   * For `installed`: the config file(s) the installer wrote, comma separated,
+   * `(unchanged)` after one that already had the entry. For `failed`: the
+   * installer's last error line.
+   */
   detail?: string;
 }
 
@@ -100,6 +126,24 @@ export interface SetupSummary {
   clients: SetupClientResult[];
   serve: 'installed' | 'skipped' | 'failed';
   exports: { format: string; path: string }[];
+}
+
+/** What `runSetup` would do, computed by a dry run that writes nothing. */
+export interface SetupPlan {
+  plan: true;
+  lexiconPath: string;
+  /** False when the global lexicon would be created. */
+  lexiconExists: boolean;
+  /** Canonicals that would be seeded into the global lexicon (person, company). */
+  wouldSeed: string[];
+  /** Repo names that would be added to the project lexicon. */
+  wouldHarvest: string[];
+  /** Every client found on this machine, whether or not it would be installed. */
+  detectedClients: string[];
+  /** Clients that would get the MCP server (and hooks) written. */
+  wouldInstallClients: string[];
+  wouldInstallServe: boolean;
+  wouldExport: { format: string; path: string }[];
 }
 
 /** Runs a command and returns trimmed stdout; throws when it fails. */
@@ -118,10 +162,19 @@ export interface SetupDeps {
   cliDir?: string;
   isInteractive?: () => boolean;
   createPrompter?: () => Prompter;
-  /** Installs one client with `--apply`. Default runInstall. */
-  installClient?: (client: SetupClient, opts: InstallOptions, io: IO) => Promise<number>;
-  /** Installs the local API login service. Default runServeInstall. */
-  installServe?: (opts: ServeOptions, io: IO) => Promise<number>;
+  /**
+   * Installs one client with `--apply`. Default runInstall. `onWritten` is
+   * called for every config file the installer touched; the summary's
+   * `detail` is built from it (falling back to the installer's last line).
+   */
+  installClient?: (client: SetupClient, opts: InstallOptions, io: IO, onWritten: (file: string, outcome: InstallOutcome) => void) => Promise<number>;
+  /**
+   * Installs the local API login service. Default runServeInstall, called
+   * with `deps`: platform, env, home (when overridden) and `cliPath`
+   * (`<cliDir>/index.js` when `cliDir` is set; the installer resolves it
+   * otherwise and refuses a path that does not exist).
+   */
+  installServe?: (opts: ServeOptions, io: IO, deps: ServeDeps) => Promise<number>;
   /** Repo scanner. Default harvestRepo. */
   harvest?: (root: string, opts: HarvestOptions) => Promise<HarvestCandidate[]>;
 }
@@ -335,7 +388,11 @@ interface Ctx {
   homeOverridden: boolean;
   /** The company term seeded in step 1, for the summary card. */
   company?: string;
+  /** Canonicals seeded (or found already present) in step 1; the harvest skips these. */
+  seeded: string[];
   summary: SetupSummary;
+  /** Present under `dryRun`: every step records what it would do here instead of doing it. */
+  plan?: SetupPlan;
 }
 
 const APP_LABELS: Record<Exclude<SetupApp, 'none'>, { label: string; where: string }> = {
@@ -348,10 +405,38 @@ function stepHeading(ctx: Ctx, n: number, title: string): void {
   ctx.say(bold(`${n}. ${title}`));
 }
 
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** Canonicals already in the global lexicon (case-insensitive), so a seed never duplicates one. */
+async function globalCanonicals(ctx: Ctx): Promise<string[]> {
+  const global = resolvePaths({ cwd: ctx.cwd }).global;
+  if (!ctx.exists(global)) return [];
+  try {
+    return (await readLexiconFile(global, 'global')).lexicon.terms.map((t) => t.canonical);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Adds one term to the global lexicon unless a term with that canonical is
+ * already there (case-insensitive): then nothing is written and the existing
+ * spelling is reported, so `--person` equal to `git config user.name`, or a
+ * company the user already added, never shows up twice.
+ */
 async function seedTerm(ctx: Ctx, term: Term): Promise<void> {
+  const existing = (await globalCanonicals(ctx)).find((c) => sameName(c, term.canonical));
+  if (existing !== undefined) {
+    ctx.say(dim(`   already present: ${safe(existing)} (${term.category ?? 'other'})`));
+    ctx.seeded.push(existing);
+    return;
+  }
   const result = await addTerm(term, { scope: 'global', cwd: ctx.cwd });
   const aliases = result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(no aliases)');
   ctx.say(`   ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))} (${term.category ?? 'other'}): ${aliases}`);
+  ctx.seeded.push(result.term.canonical);
   if (result.created) ctx.summary.termsAdded.push(result.term.canonical);
 }
 
@@ -360,17 +445,46 @@ async function stepLexicon(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 1, 'Global lexicon');
   const global = resolvePaths({ cwd: ctx.cwd }).global;
   ctx.summary.lexiconPath = global;
-  if (ctx.exists(global)) {
+  if (ctx.plan) ctx.plan.lexiconPath = global;
+  const existed = ctx.exists(global);
+  if (existed) {
     ctx.say(`   exists: ${safe(tildify(global, ctx.home))}`);
+  } else if (ctx.plan) {
+    ctx.say(`   would create ${safe(tildify(global, ctx.home))}`);
   } else {
     const captured = captureIO();
     await runInit({ cwd: ctx.cwd }, captured);
     ctx.say(`   created ${safe(tildify(global, ctx.home))}`);
   }
+  if (ctx.plan) ctx.plan.lexiconExists = existed;
 
-  const before = (await readLexiconFile(global, 'global')).lexicon.terms.length;
+  const before = existed ? (await readLexiconFile(global, 'global')).lexicon.terms.length : 0;
   if (before >= SEEDED_TERMS && !ctx.opts.reseed) {
     ctx.say(dim(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
+    return;
+  }
+  if (ctx.plan) {
+    // Same defaults as the non-interactive path below, without the writes.
+    const person = ctx.opts.person ?? tryExec(ctx.exec, 'git', ['config', '--global', 'user.name']);
+    const company =
+      ctx.opts.company ??
+      suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+    const present = await globalCanonicals(ctx);
+    for (const [canonical, category] of [
+      [person, 'person'],
+      [company, 'brand'],
+    ] as const) {
+      if (!canonical) continue;
+      const already = present.find((c) => sameName(c, canonical));
+      if (already !== undefined || ctx.plan.wouldSeed.some((c) => sameName(c, canonical))) {
+        ctx.say(dim(`   already present: ${safe(already ?? canonical)} (${category})`));
+        continue;
+      }
+      ctx.plan.wouldSeed.push(canonical);
+      const aliases = suggestAliases(canonical);
+      ctx.say(`   would add ${bold(safe(canonical))} (${category}): ${aliases.length > 0 ? safe(aliases.join(', ')) : dim('(no aliases)')}`);
+    }
+    if (ctx.plan.wouldSeed.length === 0) ctx.say(dim('   nothing to seed (no git user.name, no company guess)'));
     return;
   }
 
@@ -446,6 +560,11 @@ async function stepHarvest(ctx: Ctx): Promise<void> {
     ctx.say(dim('   not a git repository; run `lexicon harvest --add` inside one later'));
     return;
   }
+  if (!ctx.plan && !ctx.prompter && ctx.opts.harvest !== true) {
+    // No terminal to show the candidates on: a project write is only made when asked for explicitly.
+    ctx.say(dim('   skipped (not requested); add --harvest to add repo names, or later: lexicon harvest --add'));
+    return;
+  }
   const harvest = ctx.deps.harvest ?? harvestRepo;
   let candidates: HarvestCandidate[];
   try {
@@ -454,8 +573,21 @@ async function stepHarvest(ctx: Ctx): Promise<void> {
     ctx.warn(`   harvest failed: ${safeLines(errorMessage(err))}`);
     return;
   }
+  // A name the global lexicon already covers (the git author seeded as the person term,
+  // the company) would only show up as a duplicate in `lexicon doctor`.
+  const covered = [...(await globalCanonicals(ctx)), ...ctx.seeded, ...(ctx.plan?.wouldSeed ?? [])];
+  const skipped = candidates.filter((c) => covered.some((name) => sameName(name, c.canonical)));
+  candidates = candidates.filter((c) => !skipped.includes(c));
+  if (skipped.length > 0) ctx.say(dim(`   already in the global lexicon: ${safe(skipped.map((c) => c.canonical).join(', '))}`));
   if (candidates.length === 0) {
     ctx.say(dim(`   nothing worth adding in ${safe(tildify(root, ctx.home))}`));
+    return;
+  }
+  if (ctx.plan) {
+    ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
+    ctx.say(
+      `   would add ${candidates.length} name${candidates.length === 1 ? '' : 's'} to ${safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'))}: ${safe(ctx.plan.wouldHarvest.join(', '))}`,
+    );
     return;
   }
   if (ctx.prompter) {
@@ -493,6 +625,20 @@ async function stepHarvest(ctx: Ctx): Promise<void> {
 /** Step c: detect and install the agent clients. */
 async function stepClients(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 3, 'Agent clients');
+  if (ctx.plan) {
+    // Always detect for the plan (it is what the caller needs to ask the user), even under --clients none.
+    const detected = (await detectClients({ ...ctx.deps, home: ctx.home }, ctx.cwd)).filter((c) => c.detected);
+    ctx.plan.detectedClients = detected.map((c) => c.name);
+    ctx.say(
+      detected.length > 0
+        ? `   detected: ${detected.map((c) => `${c.name} ${dim(safe(tildify(c.evidence ?? '', ctx.home)))}`).join(', ')}`
+        : dim('   none detected'),
+    );
+    const chosen = ctx.opts.clients !== undefined ? parseClientList(ctx.opts.clients) : detected.map((c) => c.name);
+    ctx.plan.wouldInstallClients = chosen;
+    ctx.say(chosen.length > 0 ? `   would install into: ${chosen.join(', ')}` : dim('   would install into: none'));
+    return;
+  }
   let chosen: SetupClient[];
   if (ctx.opts.clients !== undefined) {
     chosen = parseClientList(ctx.opts.clients);
@@ -523,20 +669,25 @@ async function stepClients(ctx: Ctx): Promise<void> {
 
   const install =
     ctx.deps.installClient ??
-    ((client: SetupClient, opts: InstallOptions, io: IO) =>
+    ((client: SetupClient, opts: InstallOptions, io: IO, onWritten: (file: string, outcome: InstallOutcome) => void) =>
       runInstall(client, opts, io, {
         platform: ctx.platform,
         env: ctx.env,
+        onWritten,
         ...(ctx.deps.cliDir ? { cliDir: ctx.deps.cliDir } : {}),
       }));
   for (const client of chosen) {
     const captured = captureIO();
     const opts: InstallOptions = { apply: true, cwd: ctx.cwd, ...(ctx.homeOverridden ? { home: ctx.home } : {}) };
+    const written: string[] = [];
+    const onWritten = (file: string, outcome: InstallOutcome): void => {
+      written.push(outcome === 'unchanged' ? `${tildify(file, ctx.home)} (unchanged)` : tildify(file, ctx.home));
+    };
     let code: number;
     let detail: string;
     try {
-      code = await install(client, opts, captured);
-      detail = lastLine(captured.out) || lastLine(captured.err);
+      code = await install(client, opts, captured, onWritten);
+      detail = written.length > 0 ? written.join(', ') : lastLine(captured.out) || lastLine(captured.err);
     } catch (err) {
       code = 1;
       detail = errorMessage(err);
@@ -565,7 +716,7 @@ async function stepServe(ctx: Ctx): Promise<void> {
     ctx.say(dim(`   not automated on ${ctx.platform}; see: lexicon serve --install`));
     return;
   }
-  if (ctx.prompter) {
+  if (ctx.prompter && ctx.opts.serve !== true) {
     const ok = await ctx.prompter.confirm(
       '   install the local API (browser extension, Claude Desktop, menu bar app) as a login service?',
       true,
@@ -574,18 +725,27 @@ async function stepServe(ctx: Ctx): Promise<void> {
       ctx.say(dim('   skipped; later: lexicon serve --install'));
       return;
     }
+  } else if (ctx.opts.serve !== true) {
+    // No terminal to ask on: a login service is only created when asked for explicitly.
+    ctx.say(dim('   skipped (not requested); add --serve to install it, or later: lexicon serve --install'));
+    return;
   }
-  const install =
-    ctx.deps.installServe ??
-    ((opts: ServeOptions, io: IO) => {
-      const serveDeps: ServeDeps = { platform: ctx.platform, env: ctx.env };
-      if (ctx.homeOverridden) serveDeps.home = ctx.home;
-      return runServeInstall(opts, io, serveDeps);
-    });
+  if (ctx.plan) {
+    ctx.plan.wouldInstallServe = true;
+    ctx.say('   would install the login service (lexicon serve --install)');
+    return;
+  }
+  const install = ctx.deps.installServe ?? runServeInstall;
+  const serveDeps: ServeDeps = { platform: ctx.platform, env: ctx.env };
+  if (ctx.homeOverridden) serveDeps.home = ctx.home;
+  // The MCP server passes the package's dist/cli (the bundle runs from plugin/, where
+  // "next to this module" would be plugin/index.js); runServeInstall resolves the path
+  // otherwise and refuses one that does not exist, so a broken plist is never written.
+  if (ctx.deps.cliDir) serveDeps.cliPath = path.join(ctx.deps.cliDir, 'index.js');
   const captured = captureIO();
   let code: number;
   try {
-    code = await install({ cwd: ctx.cwd }, captured);
+    code = await install({ cwd: ctx.cwd }, captured, serveDeps);
   } catch (err) {
     code = 1;
     captured.err += `${errorMessage(err)}\n`;
@@ -622,16 +782,36 @@ async function stepExport(ctx: Ctx): Promise<void> {
     return;
   }
   const format: ExportFormat = app;
-  const loaded = await loadLexicon({ cwd: ctx.cwd });
-  const text = exportLexicon(loaded.merged, format);
   const desktop = path.join(ctx.home, 'Desktop');
   const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path.dirname(ctx.summary.lexiconPath));
   const file = path.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  if (ctx.plan) {
+    ctx.plan.wouldExport.push({ format, path: file });
+    ctx.say(`   would write ${safe(tildify(file, ctx.home))} for ${APP_LABELS[app].label}`);
+    return;
+  }
+  const loaded = await loadLexicon({ cwd: ctx.cwd });
+  const text = exportLexicon(loaded.merged, format);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(file, text, 'utf8');
   ctx.summary.exports.push({ format, path: file });
   ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${loaded.merged.terms.length} terms)`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
+}
+
+/** Step f (dry run): the plan card. */
+function printPlan(ctx: Ctx, p: SetupPlan): void {
+  ctx.say();
+  ctx.say(bold('Plan (nothing written).'));
+  ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
+  ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(', ')) : dim('nothing')}`);
+  ctx.say(`   would harvest: ${p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(', ')) : dim('nothing')}`);
+  ctx.say(`   detected clients: ${p.detectedClients.length > 0 ? p.detectedClients.join(', ') : dim('none')}`);
+  ctx.say(`   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')}`);
+  ctx.say(`   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped')}`);
+  ctx.say(`   would export: ${p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing')}`);
+  ctx.say();
+  ctx.say(dim('   run again without --dry-run to apply.'));
 }
 
 /** Step f: the summary card. */
@@ -659,13 +839,15 @@ function printSummary(ctx: Ctx): void {
 /**
  * The testable handler behind `lexicon setup`. Returns the exit code and the
  * summary (also printed as JSON under `opts.json`). Exit 1 when any client
- * or the serve install failed; the steps still all run.
+ * or the serve install failed; the steps still all run. Under `opts.dryRun`
+ * nothing is written, the summary stays empty and `plan` says what a real
+ * run with the same options would do (printed as the JSON under `--json`).
  */
 export async function runSetup(
   opts: SetupOptions,
   io: IO,
   deps: SetupDeps = {},
-): Promise<{ code: number; summary: SetupSummary }> {
+): Promise<{ code: number; summary: SetupSummary; plan?: SetupPlan }> {
   const cwd = path.resolve(opts.cwd ?? process.cwd());
   const home = opts.home ? path.resolve(opts.home) : (deps.home ?? os.homedir());
   // Validate the flags before any step writes anything.
@@ -673,7 +855,8 @@ export async function runSetup(
   if (opts.app !== undefined && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(', ')})`);
   }
-  const interactive = !opts.yes && !opts.json && (deps.isInteractive ?? isInteractive)();
+  // A dry run never prompts: it reports the non-interactive defaults.
+  const interactive = !opts.yes && !opts.json && !opts.dryRun && (deps.isInteractive ?? isInteractive)();
   const ownPrompter = interactive && !deps.createPrompter;
   const prompter = interactive
     ? (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))()
@@ -696,12 +879,26 @@ export async function runSetup(
     env: deps.env ?? process.env,
     exists: deps.exists ?? existsSync,
     exec: deps.exec ?? defaultSetupExec,
+    seeded: [],
     summary: { lexiconPath: '', termsAdded: [], clients: [], serve: 'skipped', exports: [] },
   };
   if (prompter) ctx.prompter = prompter;
+  if (opts.dryRun) {
+    ctx.plan = {
+      plan: true,
+      lexiconPath: '',
+      lexiconExists: false,
+      wouldSeed: [],
+      wouldHarvest: [],
+      detectedClients: [],
+      wouldInstallClients: [],
+      wouldInstallServe: false,
+      wouldExport: [],
+    };
+  }
 
-  say(bold('lexicon setup'));
-  if (!interactive && !opts.yes && !opts.json) say(dim('(no terminal: taking the defaults, as with --yes)'));
+  say(bold(opts.dryRun ? 'lexicon setup (dry run)' : 'lexicon setup'));
+  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim('(no terminal: taking the defaults, as with --yes)'));
   say();
   try {
     await stepLexicon(ctx);
@@ -713,13 +910,14 @@ export async function runSetup(
     await stepServe(ctx);
     say();
     await stepExport(ctx);
-    printSummary(ctx);
+    if (ctx.plan) printPlan(ctx, ctx.plan);
+    else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  if (opts.json) io.stdout(`${JSON.stringify(ctx.summary, null, 2)}\n`);
+  if (opts.json) io.stdout(`${JSON.stringify(ctx.plan ?? ctx.summary, null, 2)}\n`);
   const failed = ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
-  return { code: failed ? 1 : 0, summary: ctx.summary };
+  return { code: failed ? 1 : 0, summary: ctx.summary, ...(ctx.plan ? { plan: ctx.plan } : {}) };
 }
 
 export function registerSetupCommands(program: Command, io: IO): void {
@@ -733,8 +931,11 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('--phonetic <hint>', 'pronunciation hint for the company term, e.g. ASH-ler')
     .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
     .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')
-    .option('--no-harvest', 'skip the repo harvest')
-    .option('--no-serve', 'skip installing the local API login service')
+    .option('--harvest', 'add the repo names to the project lexicon (with --yes it is skipped unless this is passed)')
+    .option('--no-harvest', 'skip the repo harvest (no prompt)')
+    .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
+    .option('--no-serve', 'skip installing the local API login service (no prompt)')
+    .option('--dry-run', 'detect and suggest only; write nothing and print what a run would do')
     .option('--reseed', 'seed person/company terms even if the lexicon already has terms')
     .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
     .option('--json', 'print a machine-readable summary on stdout (progress goes to stderr)')

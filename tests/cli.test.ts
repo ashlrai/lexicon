@@ -87,7 +87,10 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
 });
 
 import * as core from '../src/core/index.js';
+import { findPackageRoot, resolveCliEntry } from '../src/cli/cli-entry.js';
+import { launchAgentPlist, systemdUnit } from '../src/cli/cmd-serve.js';
 import {
+  checkLoginService,
   mergeHookIntoSettings,
   HOOK_EVENTS,
   findInstalledLexiconPlugin,
@@ -448,11 +451,13 @@ describe('doctor', () => {
     await fs.writeFile(path.join(dir, 'pbpaste'), '');
     await fs.writeFile(path.join(dir, 'pbcopy'), '');
     const exec = vi.fn(() => 'lexicon: node /x/server.js - ✓ Connected');
-    const code = await runDoctor({}, io, { platform: 'darwin', env: { PATH: dir }, exec });
+    const code = await runDoctor({}, io, { platform: 'darwin', env: { PATH: dir }, exec, home: dir, uid: 501 });
     expect(code).toBe(0);
     expect(io.out).toContain('✓ global lexicon parses');
     expect(io.out).toContain('✓ lexicon MCP server is registered');
     expect(io.out).toContain('✓ clipboard backend: pbcopy');
+    // launchctl print "succeeded" (the fake exec answers everything) but no plist exists under this home.
+    expect(io.out).toContain('✓ login service ai.ashlr.lexicon.serve loaded (');
     expect(io.out).toContain('all checks passed');
   });
 
@@ -630,6 +635,180 @@ describe('doctor: Claude Code hooks and plugin', () => {
     expect(settingsHasLexiconHook(cfg('lexicon hook'), 'SessionStart')).toBe(false);
     expect(settingsHasLexiconHook({ hooks: 'nope' }, 'UserPromptSubmit')).toBe(false);
     expect(settingsHasLexiconHook(undefined, 'UserPromptSubmit')).toBe(false);
+  });
+});
+
+describe('resolveCliEntry', () => {
+  async function fakePackage(build = true): Promise<{ root: string; cli: string }> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-pkg-'));
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: '@ashlr/lexicon', version: '9.9.9' }));
+    await fs.mkdir(path.join(root, 'plugin'), { recursive: true });
+    await fs.mkdir(path.join(root, 'dist', 'cli'), { recursive: true });
+    const cli = path.join(root, 'dist', 'cli', 'index.js');
+    if (build) await fs.writeFile(cli, '#!/usr/bin/env node\n');
+    return { root, cli };
+  }
+
+  it('finds dist/cli/index.js from the plugin bundle and from dist/, by walking up to the package.json', async () => {
+    const { root, cli } = await fakePackage();
+    // An unrelated package.json above the package must not win.
+    const fromPlugin = new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href;
+    const fromDist = new URL(`file://${path.join(root, 'dist', 'cli', 'cmd-serve.js')}`).href;
+    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: {} })).toBe(cli);
+    expect(resolveCliEntry({ moduleUrl: fromDist, env: {} })).toBe(cli);
+    expect(findPackageRoot(fromPlugin)).toBe(root);
+    expect(findPackageRoot(path.join(root, 'dist'))).toBe(root);
+    // The real checkout resolves to its own dist/cli/index.js (the bundle inlines this module under plugin/).
+    expect(findPackageRoot(new URL('../package.json', import.meta.url).href)).toBe(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'));
+  });
+
+  it('prefers an explicit cliPath, then LEXICON_CLI, over the package lookup', async () => {
+    const { root } = await fakePackage();
+    const fromPlugin = new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href;
+    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' } })).toBe('/elsewhere/index.js');
+    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' }, cliPath: '/explicit/index.js' })).toBe('/explicit/index.js');
+    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '   ' } })).toBe(path.join(root, 'dist', 'cli', 'index.js'));
+  });
+
+  it('falls back to a lexicon binary on PATH (through its symlink) and otherwise throws a readable error', async () => {
+    const { root, cli } = await fakePackage(false);
+    const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-noscope-'));
+    const fromNowhere = new URL(`file://${path.join(elsewhere, 'x.mjs')}`).href;
+    const bin = path.join(elsewhere, 'bin');
+    await fs.mkdir(bin);
+    // An unbuilt package: dist/cli/index.js is absent, so the PATH entry is next.
+    await fs.writeFile(path.join(elsewhere, 'real-index.js'), '');
+    await fs.symlink(path.join(elsewhere, 'real-index.js'), path.join(bin, 'lexicon'));
+    expect(resolveCliEntry({ moduleUrl: fromNowhere, env: { PATH: bin } })).toBe(await fs.realpath(path.join(elsewhere, 'real-index.js')));
+    expect(resolveCliEntry({ moduleUrl: new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href, env: { PATH: bin } })).toBe(
+      await fs.realpath(path.join(elsewhere, 'real-index.js')),
+    );
+    // A shell wrapper on PATH is not a Node script.
+    const wrapped = path.join(elsewhere, 'wrapped');
+    await fs.mkdir(wrapped);
+    await fs.writeFile(path.join(wrapped, 'lexicon'), '#!/bin/sh\n');
+    expect(() => resolveCliEntry({ moduleUrl: fromNowhere, env: { PATH: wrapped } })).toThrow(/not a Node script.*LEXICON_CLI/);
+    // Nothing anywhere.
+    expect(() => resolveCliEntry({ moduleUrl: fromNowhere, env: { PATH: path.join(elsewhere, 'empty') } })).toThrow(/could not locate the lexicon CLI.*LEXICON_CLI/);
+    expect(() => resolveCliEntry({ moduleUrl: new URL(`file://${path.join(root, 'plugin', 'mcp-server.mjs')}`).href, env: { PATH: '' } })).toThrow(
+      new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} does not exist`),
+    );
+  });
+});
+
+describe('doctor: login service', () => {
+  async function home(): Promise<string> {
+    return fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-doctor-home-'));
+  }
+  const ok = () => '';
+  const fail = (): string => {
+    throw new Error('Could not find service');
+  };
+
+  it('darwin: ok when launchctl print succeeds and the plist program exists', async () => {
+    const h = await home();
+    const cli = path.join(h, 'dist', 'cli', 'index.js');
+    await fs.mkdir(path.dirname(cli), { recursive: true });
+    await fs.writeFile(cli, '');
+    const plist = path.join(h, 'Library', 'LaunchAgents', 'ai.ashlr.lexicon.serve.plist');
+    await fs.mkdir(path.dirname(plist), { recursive: true });
+    await fs.writeFile(plist, launchAgentPlist('/usr/local/bin/node', cli, path.join(h, 'serve.log')));
+    const calls: string[][] = [];
+    const exec = (file: string, args: readonly string[]): string => {
+      calls.push([file, ...args]);
+      return ok();
+    };
+    const check = await checkLoginService({ platform: 'darwin', env: {}, exec, home: h, uid: 501 });
+    expect(check).toEqual({ level: 'ok', message: `login service ai.ashlr.lexicon.serve loaded (${cli} exists)` });
+    expect(calls).toEqual([['launchctl', 'print', 'gui/501/ai.ashlr.lexicon.serve']]);
+  });
+
+  it('darwin: fails with the reinstall hint when the loaded service points at a missing file', async () => {
+    const h = await home();
+    const missing = path.join(h, 'plugin', 'index.js');
+    const plist = path.join(h, 'Library', 'LaunchAgents', 'ai.ashlr.lexicon.serve.plist');
+    await fs.mkdir(path.dirname(plist), { recursive: true });
+    await fs.writeFile(plist, launchAgentPlist('/usr/local/bin/node', missing, path.join(h, 'serve.log')));
+    const check = await checkLoginService({ platform: 'darwin', env: {}, exec: ok, home: h, uid: 501 });
+    expect(check).toEqual({
+      level: 'fail',
+      message: `login service ai.ashlr.lexicon.serve points at a missing file: ${missing} (run: lexicon serve --uninstall && lexicon serve --install)`,
+    });
+    // Rendered with the cross and counted as a failure by the report.
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    await fs.writeFile(path.join(dir, 'claude'), '');
+    const report = await runDoctorReport({}, {
+      platform: 'darwin',
+      env: { PATH: dir },
+      exec: (file) => (file === 'launchctl' ? '' : 'lexicon: connected'),
+      home: h,
+      uid: 501,
+      settingsPath: path.join(dir, 's.json'),
+      installedPluginsPath: path.join(dir, 'p.json'),
+    });
+    expect(report.ok).toBe(false);
+    const io = makeIO();
+    renderDoctorReport(report, io);
+    expect(io.out).toContain(`✗ login service ai.ashlr.lexicon.serve points at a missing file: ${missing}`);
+  });
+
+  it('darwin: info when nothing is installed, warn when the plist exists but is not loaded, and honours LEXICON_SERVE_LABEL', async () => {
+    const h = await home();
+    expect(await checkLoginService({ platform: 'darwin', env: {}, exec: fail, home: h, uid: 501 })).toEqual({
+      level: 'info',
+      message: 'no login service installed (optional; keeps the local API up: lexicon serve --install)',
+    });
+    const env = { LEXICON_SERVE_LABEL: 'ai.ashlr.lexicon.serve.test' };
+    const plist = path.join(h, 'Library', 'LaunchAgents', 'ai.ashlr.lexicon.serve.test.plist');
+    await fs.mkdir(path.dirname(plist), { recursive: true });
+    const cli = path.join(h, 'index.js');
+    await fs.writeFile(cli, '');
+    await fs.writeFile(plist, launchAgentPlist('/usr/local/bin/node', cli, '/dev/null', 'ai.ashlr.lexicon.serve.test'));
+    const calls: string[][] = [];
+    const check = await checkLoginService({
+      platform: 'darwin',
+      env,
+      exec: (file, args) => {
+        calls.push([file, ...args]);
+        return fail();
+      },
+      home: h,
+      uid: 501,
+    });
+    expect(check).toEqual({
+      level: 'warn',
+      message: `login service ai.ashlr.lexicon.serve.test is installed at ${plist} but not loaded (run: lexicon serve --uninstall && lexicon serve --install)`,
+    });
+    expect(calls).toEqual([['launchctl', 'print', 'gui/501/ai.ashlr.lexicon.serve.test']]);
+    const rendered = makeIO();
+    renderDoctorReport({ ok: true, checks: [await checkLoginService({ platform: 'darwin', env: {}, exec: fail, home: h })], paths: { global: '', trust: '', settings: '', installedPlugins: '' }, versions: { lexicon: '0', node: '0', platform: 'darwin' } }, rendered);
+    expect(rendered.out).toContain('· no login service installed');
+  });
+
+  it('linux: systemctl --user is-active plus the unit ExecStart path; other platforms are an info line', async () => {
+    const h = await home();
+    const cli = path.join(h, 'dist', 'cli', 'index.js');
+    await fs.mkdir(path.dirname(cli), { recursive: true });
+    await fs.writeFile(cli, '');
+    const unit = path.join(h, '.config', 'systemd', 'user', 'lexicon-serve.service');
+    await fs.mkdir(path.dirname(unit), { recursive: true });
+    await fs.writeFile(unit, systemdUnit('/usr/bin/node', cli));
+    const calls: string[][] = [];
+    const active = (file: string, args: readonly string[]): string => {
+      calls.push([file, ...args]);
+      return 'active\n';
+    };
+    expect(await checkLoginService({ platform: 'linux', env: {}, exec: active, home: h })).toEqual({
+      level: 'ok',
+      message: `login service lexicon-serve.service loaded (${cli} exists)`,
+    });
+    expect(calls).toEqual([['systemctl', '--user', 'is-active', 'lexicon-serve.service']]);
+    expect(await checkLoginService({ platform: 'linux', env: {}, exec: () => 'inactive\n', home: h })).toMatchObject({ level: 'warn' });
+    await fs.rm(cli);
+    expect(await checkLoginService({ platform: 'linux', env: {}, exec: active, home: h })).toMatchObject({ level: 'fail', message: expect.stringContaining(`points at a missing file: ${cli}`) });
+    await fs.rm(unit);
+    expect(await checkLoginService({ platform: 'linux', env: {}, exec: fail, home: h })).toMatchObject({ level: 'info' });
+    expect(await checkLoginService({ platform: 'win32', env: {}, exec: fail, home: h })).toMatchObject({ level: 'info', message: expect.stringContaining('not automated on win32') });
   });
 });
 

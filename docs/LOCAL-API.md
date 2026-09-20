@@ -15,6 +15,19 @@ lexicon serve --install       # start at login: launchd (macOS) or systemd --use
 lexicon serve --uninstall
 ```
 
+`--install` writes `~/Library/LaunchAgents/ai.ashlr.lexicon.serve.plist` (or
+`~/.config/systemd/user/lexicon-serve.service`) whose program is the built CLI,
+resolved by `resolveCliEntry()`: `$LEXICON_CLI` if set, else the package's
+`dist/cli/index.js` (found by walking up to the `@ashlr/lexicon` package.json,
+so it is the same file whether the installer runs from `dist/` or from the
+`plugin/` bundle behind `setup_lexicon`), else a `lexicon` binary on PATH. It
+refuses to write, and never boots out an existing service, when that file
+does not exist. `LEXICON_SERVE_LABEL` renames the launchd label (tests and
+scratch installs on a machine where the real label is in use). `lexicon
+doctor` reports whether the service is loaded and whether its program path
+still exists; `lexicon serve --uninstall && lexicon serve --install` repairs a
+stale one.
+
 The first run creates `~/.config/lexicon/serve.json` (mode 0600, next to your
 global lexicon; follows `LEXICON_PATH` and `XDG_CONFIG_HOME`):
 

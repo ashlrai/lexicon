@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { resolveIntegrationPaths, runInstallClaude, safe } from './commands.js';
-import type { CommonOptions, IO } from './commands.js';
+import type { CommonOptions, IO, InstallOutcome } from './commands.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,8 +49,10 @@ export interface InstallOptions extends CommonOptions {
 export interface InstallDeps {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
-  /** Directory containing the built CLI (dist/cli). Default: this module's directory. */
+  /** Directory containing the built CLI (dist/cli). Default: the package root's dist/cli. */
   cliDir?: string;
+  /** Called once per config file touched under `--apply` (setup uses it for its summary). */
+  onWritten?: (file: string, outcome: InstallOutcome) => void;
 }
 
 /** A stdio MCP server entry in the shape every client except VS Code uses. */
@@ -441,6 +443,7 @@ export async function runInstall(
     const claudeDeps = {
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
       ...(opts.home ? { settingsPath: path.join(home, '.claude', 'settings.json') } : {}),
+      ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
     };
     return runInstallClaude(claudeOpts, io, claudeDeps);
   }
@@ -453,6 +456,7 @@ export async function runInstall(
   line(io, indent(body, '   '));
   if (opts.apply) {
     const outcome = target.format === 'toml' ? await applyToml(target) : await applyJson(target);
+    deps.onWritten?.(target.file, outcome);
     if (outcome === 'unchanged') {
       line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
     } else {

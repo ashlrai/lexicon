@@ -220,12 +220,24 @@ function replaceInEditable(doc: Document, el: HTMLElement, start: number, end: n
   return verify();
 }
 
+/** A macrotask, so the editor behind a contenteditable can commit the previous edit. */
+function settle(doc: Document): Promise<void> {
+  const win = doc.defaultView;
+  return new Promise((resolve) => (win ? win.setTimeout(resolve, 0) : resolve()));
+}
+
 /**
  * Apply corrections (offsets into the composer's current text) right-to-left
  * so earlier offsets stay valid. Falls back to rewriting the whole text when
- * a ranged edit does not take. Returns the text the composer ends with.
+ * a ranged edit does not take. Resolves with the text the composer ends with.
+ *
+ * Text fields and the first ranged edit are applied synchronously. Later
+ * ranged edits each wait one task: Lexical (Perplexity) commits an edit in a
+ * microtask and, until then, resolves the next `insertText` against its own
+ * pending selection rather than the DOM range we set, so back-to-back edits
+ * landed at the caret and garbled the text (seen live, 2026-09).
  */
-export function applyCorrections(doc: Document, el: HTMLElement, corrections: readonly Correction[], expected: string): string {
+export async function applyCorrections(doc: Document, el: HTMLElement, corrections: readonly Correction[], expected: string): Promise<string> {
   const ordered = [...corrections].sort((a, b) => b.start - a.start);
   if (isTextField(el)) {
     for (const c of ordered) replaceInField(el, c.start, c.end, c.replacement);
@@ -233,7 +245,9 @@ export function applyCorrections(doc: Document, el: HTMLElement, corrections: re
     return el.value;
   }
   let ok = true;
-  for (const c of ordered) {
+  for (let i = 0; i < ordered.length; i++) {
+    if (i > 0) await settle(doc);
+    const c = ordered[i];
     if (!replaceInEditable(doc, el, c.start, c.end, c.replacement)) {
       ok = false;
       break;

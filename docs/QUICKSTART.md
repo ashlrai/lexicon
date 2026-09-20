@@ -12,7 +12,7 @@ The script checks for Node 20+, installs `@ashlr/lexicon` globally (from npm, or
 
 ## 2. `lexicon setup`
 
-One interactive pass. Every step prints a one-line result and is safe to rerun (nothing is duplicated). `lexicon setup --yes` takes every default; `--clients none`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--json` prints a machine-readable summary.
+One interactive pass. Every step prints a one-line result and is safe to rerun (nothing is duplicated). `lexicon setup --yes` takes every default (add `--serve` if you also want the local API installed as a login service; `--yes` alone never creates one); `--dry-run` prints what a run would do and writes nothing; `--clients none`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--json` prints a machine-readable summary.
 
 ```text
 $ lexicon setup

@@ -11,6 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
+import { findPackageRoot, whichBin } from './cli-entry.js';
+import { SYSTEMD_UNIT_NAME, launchAgentPath, programPathFromPlist, programPathFromUnit, serveLabel, systemdUnitPath } from './serve-paths.js';
 import { WHISPER_BIN_NAMES, installHint, locateToolSync } from '../voice/process.js';
 import {
   EXPORT_FORMATS,
@@ -166,15 +168,8 @@ function isExportFormat(value: string): value is ExportFormat {
   return (EXPORT_FORMATS as readonly string[]).includes(value);
 }
 
-/** Locate an executable on PATH (a tiny `which`). */
-export function whichBin(name: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const dirs = (env.PATH ?? '').split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    const candidate = path.join(dir, name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
+/** Locate an executable on PATH (a tiny `which`). Lives in cli-entry.ts; re-exported for callers and tests. */
+export { whichBin } from './cli-entry.js';
 
 /**
  * Read all of stdin as UTF-8. With `maxBytes` the read is abandoned (and an
@@ -722,6 +717,10 @@ export interface DoctorDeps {
   settingsPath?: string;
   /** Claude's plugin registry. Default ~/.claude/plugins/installed_plugins.json. */
   installedPluginsPath?: string;
+  /** Home directory the login service files live under. Default os.homedir(). */
+  home?: string;
+  /** Numeric uid for `launchctl print gui/<uid>/<label>`. Default process.getuid(). */
+  uid?: number;
 }
 
 /** Hook events the lexicon hook handles; `install-claude` registers both. */
@@ -832,6 +831,71 @@ function readCliPackageVersion(): string {
     }
   }
   return '0.0.0';
+}
+
+interface LoginServiceProbe {
+  platform: NodeJS.Platform;
+  env: NodeJS.ProcessEnv;
+  exec: (file: string, args: readonly string[]) => string;
+  home: string;
+  uid?: number;
+}
+
+const SERVE_REINSTALL_HINT = 'run: lexicon serve --uninstall && lexicon serve --install';
+
+/**
+ * One check for the `lexicon serve` login service. darwin: `launchctl print
+ * gui/<uid>/<label>` (loaded when it exits 0) and the plist's program path;
+ * linux: `systemctl --user is-active lexicon-serve.service` and the unit's
+ * ExecStart path. A loaded service whose program file is missing is a `fail`
+ * (it crash-loops under KeepAlive and nothing listens on the port); a service
+ * file that exists but is not loaded is a `warn`; no service is an `info`.
+ */
+export async function checkLoginService(probe: LoginServiceProbe): Promise<DoctorCheck> {
+  const { platform, env, exec, home } = probe;
+  let loaded = false;
+  let file: string | undefined;
+  let program: string | undefined;
+  let name: string;
+  if (platform === 'darwin') {
+    name = `login service ${serveLabel(env)}`;
+    const uid = probe.uid ?? process.getuid?.() ?? 501;
+    try {
+      exec('launchctl', ['print', `gui/${uid}/${serveLabel(env)}`]);
+      loaded = true;
+    } catch {
+      loaded = false;
+    }
+    file = launchAgentPath(home, env);
+  } else if (platform === 'linux') {
+    name = `login service ${SYSTEMD_UNIT_NAME}`;
+    try {
+      loaded = exec('systemctl', ['--user', 'is-active', SYSTEMD_UNIT_NAME]).trim() === 'active';
+    } catch {
+      loaded = false;
+    }
+    file = systemdUnitPath(home, env);
+  } else {
+    return { level: 'info', message: `login service is not automated on ${platform} (lexicon serve --install prints the Scheduled Task command)` };
+  }
+  let fileExists = false;
+  try {
+    const text = await fs.readFile(file, 'utf8');
+    fileExists = true;
+    program = platform === 'darwin' ? programPathFromPlist(text) : programPathFromUnit(text);
+  } catch {
+    fileExists = false;
+  }
+  if (!loaded && !fileExists) {
+    return { level: 'info', message: 'no login service installed (optional; keeps the local API up: lexicon serve --install)' };
+  }
+  if (program !== undefined && !existsSync(program)) {
+    return { level: 'fail', message: `${name} points at a missing file: ${program} (${SERVE_REINSTALL_HINT})` };
+  }
+  if (!loaded) {
+    return { level: 'warn', message: `${name} is installed at ${file} but not loaded (${SERVE_REINSTALL_HINT})` };
+  }
+  return { level: 'ok', message: `${name} loaded${program !== undefined ? ` (${program} exists)` : fileExists ? '' : ` (${file} not found; it was loaded from elsewhere)`}` };
 }
 
 /** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
@@ -1002,6 +1066,9 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     }
   }
 
+  // --- login service (lexicon serve --install) ------------------------------------
+  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os.homedir(), ...(deps.uid !== undefined ? { uid: deps.uid } : {}) }));
+
   // --- clipboard -----------------------------------------------------------------
   try {
     const backend = await detectClipboardBackend(platform, env, async (bin) => whichBin(bin, env) !== undefined);
@@ -1124,11 +1191,14 @@ export interface IntegrationPaths {
  * Where `install-claude` / `install` point clients at. Prefers the
  * self-contained bundles in `<package root>/plugin/` (no node_modules needed
  * at runtime, same files the Claude Code plugin uses) and falls back to the
- * tsc output next to this file when they are absent (e.g. a checkout that only
- * ran `npm run build`).
+ * tsc output under `<package root>/dist/` when they are absent (e.g. a
+ * checkout that only ran `npm run build`). Without `cliDir` the package root
+ * comes from `findPackageRoot` (cli-entry.ts), so the result is the same
+ * whether this module runs from dist/ or inlined in the plugin bundle.
  */
 export function resolveIntegrationPaths(cliDir?: string): IntegrationPaths {
-  const dir = cliDir ?? path.dirname(fileURLToPath(import.meta.url));
+  const pkgRoot = cliDir === undefined ? findPackageRoot(import.meta.url) : undefined;
+  const dir = cliDir ?? (pkgRoot ? path.join(pkgRoot, 'dist', 'cli') : path.dirname(fileURLToPath(import.meta.url)));
   const root = path.resolve(dir, '..', '..');
   const bundledServer = path.join(root, 'plugin', 'mcp-server.mjs');
   const bundledHook = path.join(root, 'plugin', 'hook.mjs');
@@ -1147,12 +1217,17 @@ export interface InstallClaudeOptions extends CommonOptions {
   scope?: string;
 }
 
+/** What an installer did to one file; reported through `InstallClaudeDeps.onWritten` / `InstallDeps.onWritten`. */
+export type InstallOutcome = 'created' | 'updated' | 'unchanged';
+
 export interface InstallClaudeDeps {
-  /** Directory containing the built CLI (dist/cli). Default: this module's directory. */
+  /** Directory containing the built CLI (dist/cli). Default: the package root's dist/cli. */
   cliDir?: string;
   /** Claude settings file. Default ~/.claude/settings.json. */
   settingsPath?: string;
   exec?: (file: string, args: readonly string[]) => string;
+  /** Called once per config file touched under `--apply` (setup uses it for its summary). */
+  onWritten?: (file: string, outcome: InstallOutcome) => void;
 }
 
 export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
@@ -1213,8 +1288,10 @@ export async function runInstallClaude(
       await fs.mkdir(path.dirname(settingsPath), { recursive: true });
       await fs.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
       line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
+      deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+      deps.onWritten?.(settingsPath, 'unchanged');
     }
   }
   line(io);

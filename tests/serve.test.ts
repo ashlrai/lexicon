@@ -18,6 +18,7 @@ import {
   runServe,
   systemdUnitPath,
   LAUNCH_AGENT_LABEL,
+  SERVE_LABEL_ENV_VAR,
   SYSTEMD_UNIT_NAME,
 } from '../src/cli/cmd-serve.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
@@ -48,6 +49,14 @@ function fakeExec(calls: string[][], code = 0): ServeExec {
     calls.push([cmd, ...args]);
     return { code, stdout: '', stderr: code === 0 ? '' : 'nope' };
   };
+}
+
+/** A CLI entry file that exists, so --install accepts it (it refuses paths that do not). */
+async function fakeCli(home: string, rel = 'opt/lexicon/dist/cli/index.js'): Promise<string> {
+  const file = path.join(home, rel);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, '#!/usr/bin/env node\n', 'utf8');
+  return file;
 }
 
 async function api(method: string, route: string, body?: unknown, extra: Record<string, string> = {}): Promise<Response> {
@@ -490,21 +499,23 @@ describe('lexicon serve (CLI)', () => {
   it('--install on macOS writes the LaunchAgent and bootstraps it', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
     try {
+      const cli = await fakeCli(home);
       const calls: string[][] = [];
       const io = memIO();
       const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
         platform: 'darwin',
         home,
+        env: {},
         exec: fakeExec(calls),
-        cliPath: '/opt/lexicon/dist/cli/index.js',
+        cliPath: cli,
         nodePath: '/usr/local/bin/node',
         uid: 501,
       });
       expect(code).toBe(0);
-      const plistPath = launchAgentPath(home);
+      const plistPath = launchAgentPath(home, {});
       const plist = await fs.readFile(plistPath, 'utf8');
       expect(plist).toContain(`<string>${LAUNCH_AGENT_LABEL}</string>`);
-      expect(plist).toContain('<string>/usr/local/bin/node</string>\n    <string>/opt/lexicon/dist/cli/index.js</string>\n    <string>serve</string>');
+      expect(plist).toContain(`<string>/usr/local/bin/node</string>\n    <string>${cli}</string>\n    <string>serve</string>`);
       expect(plist).toContain('<key>RunAtLoad</key>\n  <true/>');
       expect(plist).toContain('<key>KeepAlive</key>\n  <true/>');
       expect(plist).toContain(`<string>${launchAgentLogPath(home)}</string>`);
@@ -524,13 +535,13 @@ describe('lexicon serve (CLI)', () => {
         calls2.push([cmd, ...args]);
         return args[0] === 'bootstrap' ? { code: 5, stdout: '', stderr: 'Input/output error' } : { code: 0, stdout: '', stderr: '' };
       };
-      expect(await runServe({ install: true, globalPath: env.globalPath }, io2, { platform: 'darwin', home, exec: exec2, cliPath: '/x', uid: 501 })).toBe(0);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, io2, { platform: 'darwin', home, env: {}, exec: exec2, cliPath: cli, uid: 501 })).toBe(0);
       expect(calls2[2]).toEqual(['launchctl', 'load', plistPath]);
 
       // uninstall
       const calls3: string[][] = [];
       const io3 = memIO();
-      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io3, { platform: 'darwin', home, exec: fakeExec(calls3), uid: 501 })).toBe(0);
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io3, { platform: 'darwin', home, env: {}, exec: fakeExec(calls3), uid: 501 })).toBe(0);
       expect(calls3[0]).toEqual(['launchctl', 'bootout', `gui/501/${LAUNCH_AGENT_LABEL}`]);
       await expect(fs.access(plistPath)).rejects.toThrow();
       expect(io3.out.join('')).toContain(`removed ${plistPath}`);
@@ -542,6 +553,7 @@ describe('lexicon serve (CLI)', () => {
   it('--install on Linux writes the systemd user unit', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
     try {
+      const cli = await fakeCli(home);
       const calls: string[][] = [];
       const io = memIO();
       const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
@@ -549,14 +561,14 @@ describe('lexicon serve (CLI)', () => {
         home,
         env: {},
         exec: fakeExec(calls),
-        cliPath: '/opt/lexicon/dist/cli/index.js',
+        cliPath: cli,
         nodePath: '/usr/bin/node',
       });
       expect(code).toBe(0);
       const unitPath = systemdUnitPath(home, {});
       expect(unitPath).toBe(path.join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT_NAME));
       const unit = await fs.readFile(unitPath, 'utf8');
-      expect(unit).toContain('ExecStart="/usr/bin/node" "/opt/lexicon/dist/cli/index.js" serve');
+      expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli}" serve`);
       expect(unit).toContain('WantedBy=default.target');
       expect(calls).toEqual([
         ['systemctl', '--user', 'daemon-reload'],
@@ -565,12 +577,92 @@ describe('lexicon serve (CLI)', () => {
       expect(io.out.join('')).toContain(`wrote ${unitPath}`);
 
       const failing = memIO();
-      expect(await runServe({ install: true, globalPath: env.globalPath }, failing, { platform: 'linux', home, env: {}, exec: fakeExec([], 1), cliPath: '/x' })).toBe(1);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, failing, { platform: 'linux', home, env: {}, exec: fakeExec([], 1), cliPath: cli })).toBe(1);
 
       const calls2: string[][] = [];
       expect(await runServe({ uninstall: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec(calls2) })).toBe(0);
       expect(calls2[0]).toEqual(['systemctl', '--user', 'disable', '--now', SYSTEMD_UNIT_NAME]);
       await expect(fs.access(unitPath)).rejects.toThrow();
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('--install refuses a CLI path that does not exist: nothing written, no bootout, exit 1', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      // A previous, working install is in place; it must survive a broken re-install.
+      const plistPath = launchAgentPath(home, {});
+      await fs.mkdir(path.dirname(plistPath), { recursive: true });
+      await fs.writeFile(plistPath, 'previous plist', 'utf8');
+      const missing = path.join(home, 'plugin', 'index.js');
+      for (const platform of ['darwin', 'linux'] as const) {
+        const calls: string[][] = [];
+        const io = memIO();
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, { platform, home, env: {}, exec: fakeExec(calls), cliPath: missing, uid: 501 });
+        expect(code).toBe(1);
+        expect(calls).toEqual([]);
+        expect(io.out.join('')).toBe('');
+        expect(io.err.join('')).toContain(`refusing to install the login service: ${missing} does not exist`);
+        expect(io.err.join('')).toContain('nothing was written');
+      }
+      expect(await fs.readFile(plistPath, 'utf8')).toBe('previous plist');
+      await expect(fs.access(systemdUnitPath(home, {}))).rejects.toThrow();
+
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('--install resolves the CLI from LEXICON_CLI when no cliPath is given', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home, 'elsewhere/dist/cli/index.js');
+      const calls: string[][] = [];
+      const io = memIO();
+      const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+        platform: 'darwin',
+        home,
+        env: { LEXICON_CLI: cli },
+        exec: fakeExec(calls),
+        nodePath: '/usr/local/bin/node',
+        uid: 501,
+      });
+      expect(code).toBe(0);
+      const plist = await fs.readFile(launchAgentPath(home, {}), 'utf8');
+      expect(plist).toContain(`<string>${cli}</string>`);
+      expect(io.out.join('')).toContain(`ProgramArguments: /usr/local/bin/node ${cli} serve`);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('LEXICON_SERVE_LABEL renames the LaunchAgent for install, uninstall and the plist label', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const labelled = { [SERVE_LABEL_ENV_VAR]: 'ai.ashlr.lexicon.serve.test' };
+      const calls: string[][] = [];
+      const io = memIO();
+      const code = await runServe({ install: true, globalPath: env.globalPath }, io, { platform: 'darwin', home, env: labelled, exec: fakeExec(calls), cliPath: cli, uid: 501 });
+      expect(code).toBe(0);
+      const plistPath = launchAgentPath(home, labelled);
+      expect(plistPath).toBe(path.join(home, 'Library', 'LaunchAgents', 'ai.ashlr.lexicon.serve.test.plist'));
+      expect(await fs.readFile(plistPath, 'utf8')).toContain('<string>ai.ashlr.lexicon.serve.test</string>');
+      expect(calls).toEqual([
+        ['launchctl', 'bootout', 'gui/501/ai.ashlr.lexicon.serve.test'],
+        ['launchctl', 'bootstrap', 'gui/501', plistPath],
+      ]);
+      expect(io.out.join('')).toContain('installed ai.ashlr.lexicon.serve.test');
+      // The real label's plist is untouched.
+      await expect(fs.access(launchAgentPath(home, {}))).rejects.toThrow();
+      // A label with shell-ish characters is ignored in favour of the default.
+      expect(launchAgentPath(home, { [SERVE_LABEL_ENV_VAR]: 'bad label; rm -rf' })).toBe(launchAgentPath(home, {}));
+
+      const calls2: string[][] = [];
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, memIO(), { platform: 'darwin', home, env: labelled, exec: fakeExec(calls2), uid: 501 })).toBe(0);
+      expect(calls2[0]).toEqual(['launchctl', 'bootout', 'gui/501/ai.ashlr.lexicon.serve.test']);
+      await expect(fs.access(plistPath)).rejects.toThrow();
     } finally {
       await fs.rm(home, { recursive: true, force: true });
     }

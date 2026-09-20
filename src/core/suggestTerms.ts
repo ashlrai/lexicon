@@ -799,7 +799,7 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
       kind: 'alias',
       canonical: b.canonical,
       alias: b.word,
-      reason: `corrected by guess ${b.count} times; make it exact`,
+      reason: `the matcher would guess this as ${b.canonical} (${b.count} times in history); make it an exact alias`,
       confidence: round(Math.min(0.95, Math.max(AUTO_APPLY_CONFIDENCE, mean))),
       evidence: b.evidence,
       count: b.count,

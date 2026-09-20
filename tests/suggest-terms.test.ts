@@ -132,7 +132,7 @@ describe('suggestTerms: kinds', () => {
     const s = find(out, 'alias', 'Vercel', 'versal');
     expect(s).toBeDefined();
     expect(s?.count).toBe(3);
-    expect(s?.reason).toBe('corrected by guess 3 times; make it exact');
+    expect(s?.reason).toBe('the matcher would guess this as Vercel (3 times in history); make it an exact alias');
     expect(s?.confidence).toBeGreaterThanOrEqual(AUTO_APPLY_CONFIDENCE);
     expect(s?.evidence).toHaveLength(3);
   });
@@ -203,7 +203,7 @@ describe('suggestTerms: dedupe, evidence, limits, empty input', () => {
     // came from an older lexicon), so the promotion signal wins and the count is not 2 + 5.
     expect(ashlur[0].count).toBe(5);
     expect(ashlur[0].confidence).toBeGreaterThanOrEqual(AUTO_APPLY_CONFIDENCE);
-    expect(ashlur[0].reason).toBe('corrected by guess 5 times; make it exact');
+    expect(ashlur[0].reason).toBe('the matcher would guess this as Ashlr.AI (5 times in history); make it an exact alias');
     expect(ashlur[0].evidence).toContain('ping ashlur about it');
     expect(ashlur[0].evidence).toContain('ashlur is down');
     expect(ashlur[0].evidence.length).toBeLessThanOrEqual(5);
@@ -463,7 +463,7 @@ function scripted(answers: string[]): Prompter & { asked: string[]; closed: bool
 }
 
 const FIXED: TermSuggestion[] = [
-  { kind: 'alias', canonical: 'Vercel', alias: 'versal', reason: 'corrected by guess 3 times; make it exact', confidence: 0.9, evidence: ['deploy to versal'], count: 3 },
+  { kind: 'alias', canonical: 'Vercel', alias: 'versal', reason: 'the matcher would guess this as Vercel (3 times in history); make it an exact alias', confidence: 0.9, evidence: ['deploy to versal'], count: 3 },
   { kind: 'term', canonical: 'Siobhan Reilly', reason: 'capitalized name seen 5 times in transcripts and not in the lexicon', confidence: 0.85, evidence: ['talk to Siobhan Reilly'], count: 5, aliases: ['Siobhan Reilli'] },
   { kind: 'alias', canonical: 'Ashlr.AI', alias: 'ashlur', reason: '"ashlur" was left uncorrected 2 times and sounds like Ashlr.AI', confidence: 0.78, evidence: ['ping \x1b[31mashlur'], count: 2 },
   { kind: 'never', canonical: 'Locus', alias: 'lacks', reason: 'ordinary word rewritten by guess 1 time under earlier rules', confidence: 0.55, evidence: ['the process lacks locks'], count: 1 },
@@ -506,7 +506,7 @@ describe('runSuggest', () => {
     expect(await runSuggest({}, io, store.deps)).toBe(0);
     const lines = io.out.split('\n');
     expect(lines[0]).toMatch(/^kind\s+canonical\s+alias\s+count\s+confidence\s+reason$/);
-    expect(lines[2]).toMatch(/^alias\s+Vercel\s+versal\s+3\s+0\.90\s+corrected by guess 3 times; make it exact$/);
+    expect(lines[2]).toMatch(/^alias\s+Vercel\s+versal\s+3\s+0\.90\s+the matcher would guess this as Vercel \(3 times in history\); make it an exact alias$/);
     expect(io.out).toContain('stale  Zebrafish Labs');
     expect(io.out).toContain('5 suggestions.');
     expect(io.out).not.toContain('\x1b');

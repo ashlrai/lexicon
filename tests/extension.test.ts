@@ -105,23 +105,23 @@ describe('editable', () => {
     expect(flatten(document.getElementById('e')!).text).toBe('one two\n\nthree\nfour');
   });
 
-  it('rewrites a textarea through the native setter and fires input', () => {
+  it('rewrites a textarea through the native setter and fires input', async () => {
     document.body.innerHTML = '<textarea id="t"></textarea>';
     const t = document.getElementById('t') as HTMLTextAreaElement;
     t.value = 'ping ashler now';
     const seen: string[] = [];
     t.addEventListener('input', () => seen.push(t.value));
     const r = engine.normalize('ping ashler now');
-    expect(applyCorrections(document, t, r.replacements, r.output)).toBe('ping Ashlr.AI now');
+    expect(await applyCorrections(document, t, r.replacements, r.output)).toBe('ping Ashlr.AI now');
     expect(seen).toEqual(['ping Ashlr.AI now']);
   });
 
-  it('rewrites a contenteditable in place, keeping the surrounding markup', () => {
+  it('rewrites a contenteditable in place, keeping the surrounding markup', async () => {
     document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping <em>ashler</em> and cooper netties</p></div>';
     const e = document.getElementById('e')!;
     const text = readText(e);
     const r = engine.normalize(text);
-    expect(applyCorrections(document, e, r.replacements, r.output)).toBe(r.output);
+    expect(await applyCorrections(document, e, r.replacements, r.output)).toBe(r.output);
     expect(r.output).toBe('ping Ashlr.AI and Kubernetes');
     expect(e.querySelector('em')?.textContent).toBe('Ashlr.AI');
   });
@@ -477,5 +477,68 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(reply.ok && reply.mode).toBe('embedded');
     expect(reply.ok && reply.fallback).toMatch(/401/);
     expect(reply.ok && reply.output).toBe('ping Ashlr.AI');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Added after the 2026-09-19 live validation (docs/EXTENSION.md, "Supported sites").
+
+describe('live-site regressions (2026-09-19)', () => {
+  it('a dry-run precheck that found replacements still intercepts Enter', async () => {
+    // The API and the embedded engine both report `changed: false` for a dry
+    // run; the replacements list is what says the text needs fixing.
+    document.body.innerHTML = '<form><textarea id="box"></textarea></form>';
+    const box = document.getElementById('box') as HTMLTextAreaElement;
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5 });
+    box.value = 'ping ashler about cooper netties';
+    box.focus();
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(30);
+    expect(send).toHaveBeenLastCalledWith({ type: 'normalize', text: 'ping ashler about cooper netties', dryRun: true });
+
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    box.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(box.value).toBe('ping Ashlr.AI about Kubernetes');
+    expect(toastText()).toContain('Kubernetes');
+  });
+
+  it('finds the Grok Tiptap composer inside the form and ignores the stray textarea', () => {
+    document.body.innerHTML =
+      '<textarea></textarea>' +
+      '<form><div class="tiptap ProseMirror" contenteditable="true" role="textbox" aria-label="Ask Grok anything"><p>hi</p></div>' +
+      '<button type="submit" data-testid="chat-submit" aria-label="Submit"></button></form>';
+    const adapter = adapterFor('grok.com');
+    const composer = findComposer(document, adapter);
+    expect(composer?.className).toBe('tiptap ProseMirror');
+    expect(composerFromTarget(composer!.firstChild, adapter)).toBe(composer);
+    expect(composerFromTarget(document.querySelector('textarea'), adapter)).toBeNull();
+    expect(findSendButton(document, adapter, composer)?.getAttribute('data-testid')).toBe('chat-submit');
+  });
+
+  it('waits for the editor to flush one ranged edit before applying the next (Lexical)', async () => {
+    document.body.innerHTML =
+      '<div id="e" contenteditable="true" data-lexical-editor="true"><p dir="auto"><span data-lexical-text="true">ping ashler about cooper netties</span></p></div>';
+    const e = document.getElementById('e')!;
+    // A MutationObserver callback is how Lexical and ProseMirror learn about
+    // native edits; a second edit before that callback ran is what desynced
+    // Lexical on perplexity.ai.
+    let flushes = 0;
+    const flushesSeen: number[] = [];
+    const mo = new MutationObserver(() => {
+      flushes++;
+    });
+    mo.observe(e, { characterData: true, childList: true, subtree: true });
+    e.addEventListener('input', () => flushesSeen.push(flushes));
+    const r = engine.normalize(readText(e));
+    expect(r.replacements).toHaveLength(2);
+    expect(await applyCorrections(document, e, r.replacements, r.output)).toBe('ping Ashlr.AI about Kubernetes');
+    mo.disconnect();
+    expect(flushesSeen).toHaveLength(2);
+    expect(flushesSeen[0]).toBe(0); // first edit is synchronous
+    expect(flushesSeen[1]).toBeGreaterThanOrEqual(1); // second edit waited for the flush
+    expect(e.querySelector('span[data-lexical-text]')).not.toBeNull();
   });
 });

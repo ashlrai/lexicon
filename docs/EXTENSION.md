@@ -58,7 +58,7 @@ lexicon serve --show     # prints the bearer token
 
 Open the extension's **Options** (popup, top right, or the extension's details page), paste the token, click **Test connection**. The popup then reads "Local API" with the server version and term count.
 
-Endpoints used, all on `127.0.0.1:41733`: `GET /health` (no auth), `POST /normalize`, `POST /learn`, `GET /lexicon` (bearer token). CORS on the server is granted only to `chrome-extension://` and `moz-extension://` origins; a web page cannot call it.
+Endpoints used, all on `127.0.0.1:41733`: `GET /health` (no auth), `POST /normalize`, `POST /learn`, `GET /lexicon` (bearer token). CORS on the server is granted only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (plus any exact origin listed in `serve.json.allowedOrigins`); a web page cannot call it.
 
 ## Modes
 
@@ -85,17 +85,17 @@ With **Local API** selected, the extension falls back to the embedded lexicon wh
 
 | site | composer selector | send button | verified |
 |---|---|---|---|
-| ChatGPT (`chatgpt.com`, `chat.openai.com`) | `#prompt-textarea` (ProseMirror), `textarea#mobile-composer-prompt` | `button[data-testid="send-button"]`, `button[aria-label="Send prompt"]`, `button[aria-label="Send message"]` | logged-out composer live; logged-in `#prompt-textarea` assumed |
-| Claude (`claude.ai`) | `div[contenteditable="true"].ProseMirror` | `button[aria-label="Send message"]` | assumed (login wall) |
-| Grok (`grok.com`) | `form textarea` | `button[data-testid="chat-submit"]` | live |
+| ChatGPT (`chatgpt.com`, `chat.openai.com`) | `textarea#mobile-composer-prompt` (logged out), `#prompt-textarea` (ProseMirror, logged in) | `button[aria-label="Send message"]` (logged out), `button[data-testid="send-button"]`, `button[aria-label="Send prompt"]` | logged-out composer verified 2026-09-19; logged-in `#prompt-textarea` assumed |
+| Claude (`claude.ai`) | `div[contenteditable="true"].ProseMirror` | `button[aria-label="Send message"]` | assumed (login wall on 2026-09-19) |
+| Grok (`grok.com`) | `form div.tiptap[contenteditable="true"]` (Tiptap/ProseMirror), fallbacks `form textarea`, `textarea[placeholder*="Grok" i]` | `button[data-testid="chat-submit"]` | verified 2026-09-19 (composer moved from a textarea to Tiptap; adapter updated) |
 | Grok on X (`x.com/i/grok`) | focused editable | re-dispatched Enter | assumed |
-| Gemini (`gemini.google.com`) | `div.ql-editor[contenteditable="true"]` (Quill) | `button.send-button` | live |
-| Perplexity (`www.perplexity.ai`) | `#ask-input[contenteditable="true"]` (Lexical) | `button[aria-label="Submit"]` | live |
-| Poe (`poe.com`) | `textarea[class*="GrowingTextArea"]` | `button[class*="SendButton"]` | assumed (login wall) |
-| Copilot (`copilot.microsoft.com`) | `textarea#userInput` | `button[data-testid="submit-button"]` | assumed (login wall) |
-| any other site (opt-in) | the focused `textarea` / `[contenteditable]` | re-dispatched Enter | n/a |
+| Gemini (`gemini.google.com`) | `rich-textarea div.ql-editor[contenteditable="true"]` (Quill) | `button[aria-label="Send message"]` (`button.send-button` no longer present) | verified 2026-09-19 (logged-out `/app`) |
+| Perplexity (`www.perplexity.ai`) | `#ask-input[contenteditable="true"]` (Lexical) | `button[aria-label="Submit"]` | verified 2026-09-19 (two-correction rewrite needed the per-edit settle in `editable.ts`) |
+| Poe (`poe.com`) | `textarea[class*="GrowingTextArea"]` | `button[class*="SendButton"]` | assumed (login wall on 2026-09-19) |
+| Copilot (`copilot.microsoft.com`) | `textarea#userInput` | `button[data-testid="submit-button"]` | assumed (login wall on 2026-09-19) |
+| any other site (opt-in) | the focused `textarea` / `[contenteditable]` | re-dispatched Enter | verified 2026-09-19 on a plain `<form><textarea>` page |
 
-"Verified" means the selector was read from the live DOM in September 2026. These apps change their markup without notice; the table lives in `extension/src/adapters.ts` and every entry has a broad fallback. When a site stops working, fix that one row.
+"Verified" means the built `content.js` was injected into the live page on that date with a fake `chrome.runtime` bridge (replies recorded from the real local API), `ping ashler about cooper netties` was typed, Enter was dispatched, and the composer read `ping Ashlr.AI about Kubernetes` with the toast shown; the re-dispatched Enter was swallowed by the harness so nothing was sent. "Assumed" rows sit behind a login wall and are taken from public DOM reports. These apps change their markup without notice; the table lives in `extension/src/adapters.ts` and every entry has a broad fallback. When a site stops working, fix that one row.
 
 Each site has an on/off switch in the popup (for the current tab) and in Options (all of them). **Any site** in Options asks for the optional `<all_urls>` permission and registers the content script everywhere else, using the focused text box as the composer.
 

@@ -8,14 +8,21 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Command, InvalidArgumentError } from 'commander';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
+import { resolveCliEntry } from './cli-entry.js';
 import { safe, safeLines } from './commands.js';
 import type { CommonOptions, IO } from './commands.js';
+import {
+  LAUNCH_AGENT_LABEL,
+  SYSTEMD_UNIT_NAME,
+  launchAgentLogPath,
+  launchAgentPath,
+  serveLabel,
+  systemdUnitPath,
+} from './serve-paths.js';
 
-export const LAUNCH_AGENT_LABEL = 'ai.ashlr.lexicon.serve';
-export const SYSTEMD_UNIT_NAME = 'lexicon-serve.service';
+export { LAUNCH_AGENT_LABEL, SERVE_LABEL_ENV_VAR, SYSTEMD_UNIT_NAME, launchAgentLogPath, launchAgentPath, serveLabel, systemdUnitPath } from './serve-paths.js';
 /** How long `--status` waits for /health. */
 export const STATUS_TIMEOUT_MS = 1_500;
 
@@ -53,7 +60,12 @@ export interface ServeDeps {
   env?: NodeJS.ProcessEnv;
   /** Runs launchctl / systemctl. Injectable for tests. */
   exec?: ServeExec;
-  /** Absolute path of the built CLI (dist/cli/index.js). Default: next to this module. */
+  /**
+   * Absolute path of the built CLI (dist/cli/index.js). Default:
+   * `resolveCliEntry()` (`$LEXICON_CLI`, the package's dist/cli/index.js, or
+   * a `lexicon` on PATH). `--install` refuses to write a service whose
+   * program path does not exist, whichever way it was resolved.
+   */
   cliPath?: string;
   /** Node binary used by the service. Default process.execPath. */
   nodePath?: string;
@@ -110,10 +122,6 @@ export const defaultServeExec: ServeExec = (cmd, args) =>
     child.on('error', (err) => resolve({ code: null, stdout, stderr: stderr || err.message }));
     child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
-
-function defaultCliPath(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js');
-}
 
 // ---------------------------------------------------------------------------
 // --show / --status
@@ -174,7 +182,7 @@ function xmlEscape(s: string): string {
 }
 
 /** The launchd LaunchAgent: RunAtLoad + KeepAlive, stdout/stderr to `logPath`. */
-export function launchAgentPlist(nodePath: string, cliPath: string, logPath: string): string {
+export function launchAgentPlist(nodePath: string, cliPath: string, logPath: string, label: string = LAUNCH_AGENT_LABEL): string {
   const args = [nodePath, cliPath, 'serve'].map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -182,7 +190,7 @@ export function launchAgentPlist(nodePath: string, cliPath: string, logPath: str
     '<plist version="1.0">',
     '<dict>',
     '  <key>Label</key>',
-    `  <string>${LAUNCH_AGENT_LABEL}</string>`,
+    `  <string>${xmlEscape(label)}</string>`,
     '  <key>ProgramArguments</key>',
     '  <array>',
     args,
@@ -224,19 +232,6 @@ export function systemdUnit(nodePath: string, cliPath: string): string {
   ].join('\n');
 }
 
-export function launchAgentPath(home: string): string {
-  return path.join(home, 'Library', 'LaunchAgents', `${LAUNCH_AGENT_LABEL}.plist`);
-}
-
-export function launchAgentLogPath(home: string): string {
-  return path.join(home, 'Library', 'Logs', 'lexicon', 'serve.log');
-}
-
-export function systemdUnitPath(home: string, env: NodeJS.ProcessEnv): string {
-  const configHome = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim() !== '' ? env.XDG_CONFIG_HOME : path.join(home, '.config');
-  return path.join(configHome, 'systemd', 'user', SYSTEMD_UNIT_NAME);
-}
-
 async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly string[]): Promise<ExecResult> {
   line(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(' ')}`);
   const result = await exec(cmd, args);
@@ -253,22 +248,42 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
   const nodePath = deps.nodePath ?? process.execPath;
-  const cliPath = deps.cliPath ?? defaultCliPath();
+  let cliPath: string;
+  try {
+    cliPath = resolveCliEntry({ env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });
+  } catch (err) {
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+    return 1;
+  }
+  if (platform === 'darwin' || platform === 'linux') {
+    // A service whose program does not exist would crash-loop under KeepAlive /
+    // Restart and, worse, replace a working install under the same label. Nothing
+    // is written and nothing is booted out until the path is known to exist.
+    try {
+      await fs.access(cliPath);
+    } catch {
+      io.stderr(
+        `lexicon: refusing to install the login service: ${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js); nothing was written\n`,
+      );
+      return 1;
+    }
+  }
   // Make sure the token exists before the service starts, so `--show` right after works.
   await ensureServeConfig(storeOpts(opts));
 
   if (platform === 'darwin') {
-    const plistPath = launchAgentPath(home);
+    const label = serveLabel(env);
+    const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
     await fs.mkdir(path.dirname(plistPath), { recursive: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
-    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath), 'utf8');
+    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), 'utf8');
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     // A previous install must be booted out before bootstrap accepts the new plist.
-    await exec('launchctl', ['bootout', `gui/${uid}/${LAUNCH_AGENT_LABEL}`]);
+    await exec('launchctl', ['bootout', `gui/${uid}/${label}`]);
     const bootstrap = await runAndReport(exec, io, 'launchctl', ['bootstrap', `gui/${uid}`, plistPath]);
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, 'launchctl', ['load', plistPath]);
@@ -277,7 +292,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
         return 1;
       }
     }
-    line(io, `installed ${LAUNCH_AGENT_LABEL}; check with: lexicon serve --status`);
+    line(io, `installed ${label}; check with: lexicon serve --status`);
     return 0;
   }
 
@@ -321,9 +336,9 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
   void opts;
 
   if (platform === 'darwin') {
-    const plistPath = launchAgentPath(home);
+    const plistPath = launchAgentPath(home, env);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
-    const bootout = await runAndReport(exec, io, 'launchctl', ['bootout', `gui/${uid}/${LAUNCH_AGENT_LABEL}`]);
+    const bootout = await runAndReport(exec, io, 'launchctl', ['bootout', `gui/${uid}/${serveLabel(env)}`]);
     if (bootout.code !== 0) await runAndReport(exec, io, 'launchctl', ['unload', plistPath]);
     try {
       await fs.unlink(plistPath);

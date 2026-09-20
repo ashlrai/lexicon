@@ -18,8 +18,10 @@ import {
   runSetup,
   suggestCompany,
 } from '../src/cli/cmd-setup.js';
-import type { SetupDeps, SetupOptions, SetupSummary } from '../src/cli/cmd-setup.js';
+import type { SetupDeps, SetupOptions, SetupPlan, SetupSummary } from '../src/cli/cmd-setup.js';
 import type { InstallOptions } from '../src/cli/cmd-install.js';
+import { runServeInstall } from '../src/cli/cmd-serve.js';
+import type { ServeDeps } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
 import type { PromptChoice, Prompter } from '../src/cli/prompt.js';
 
@@ -116,9 +118,10 @@ function fakes(overrides: Partial<SetupDeps> = {}, present: string[] = []): Fake
       throw new Error(`unexpected exec: ${file} ${args.join(' ')}`);
     },
     isInteractive: () => false,
-    installClient: async (client, opts, io) => {
+    installClient: async (client, opts, io, onWritten) => {
       f.installed.push({ client, opts });
       io.stdout(`   updated ${path.join(home, '.fake', client)}: mcpServers.lexicon\n`);
+      onWritten(path.join(home, '.fake', client), client === 'cursor' ? 'unchanged' : 'updated');
       return 0;
     },
     installServe: async (_opts, io) => {
@@ -132,16 +135,19 @@ function fakes(overrides: Partial<SetupDeps> = {}, present: string[] = []): Fake
   return f;
 }
 
-async function run(opts: Partial<SetupOptions>, f: Fakes): Promise<{ code: number; summary: SetupSummary; io: ReturnType<typeof makeIO> }> {
+async function run(
+  opts: Partial<SetupOptions>,
+  f: Fakes,
+): Promise<{ code: number; summary: SetupSummary; plan?: SetupPlan; io: ReturnType<typeof makeIO> }> {
   const io = makeIO();
-  const { code, summary } = await runSetup({ cwd, ...opts }, io, f.deps);
-  return { code, summary, io };
+  const { code, summary, plan } = await runSetup({ cwd, ...opts }, io, f.deps);
+  return { code, summary, io, ...(plan ? { plan } : {}) };
 }
 
 describe('runSetup --yes', () => {
   it('creates the global lexicon, seeds person + company and installs into the selected clients', async () => {
     const f = fakes();
-    const { code, summary, io } = await run({ yes: true, clients: 'claude,cursor', company: 'Ashlr.AI', phonetic: 'ASH-ler' }, f);
+    const { code, summary, io } = await run({ yes: true, clients: 'claude,cursor', company: 'Ashlr.AI', phonetic: 'ASH-ler', serve: true }, f);
     expect(code).toBe(0);
     expect(summary.lexiconPath).toBe(globalPath);
     expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
@@ -156,9 +162,10 @@ describe('runSetup --yes', () => {
 
     expect(f.installed.map((i) => i.client)).toEqual(['claude', 'cursor']);
     expect(f.installed.every((i) => i.opts.apply === true && i.opts.home === home)).toBe(true);
+    // detail is the file the installer wrote (from its onWritten report), not its export hint.
     expect(summary.clients).toEqual([
-      { name: 'claude', status: 'installed', detail: expect.stringContaining('mcpServers.lexicon') },
-      { name: 'cursor', status: 'installed', detail: expect.stringContaining('mcpServers.lexicon') },
+      { name: 'claude', status: 'installed', detail: '~/.fake/claude' },
+      { name: 'cursor', status: 'installed', detail: '~/.fake/cursor (unchanged)' },
     ]);
     expect(summary.serve).toBe('installed');
     expect(f.serveCalls).toBe(1);
@@ -198,6 +205,25 @@ describe('runSetup --yes', () => {
     expect(io.out).toContain('skipped (--no-harvest)');
     expect(io.out).toContain('skipped (--no-serve)');
     expect(summary.exports).toEqual([]);
+  });
+
+  it('--yes never installs the login service unless --serve is passed explicitly', async () => {
+    const f = fakes();
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(summary.serve).toBe('skipped');
+    expect(f.serveCalls).toBe(0);
+    expect(io.out).toContain('skipped (not requested); add --serve to install it');
+
+    // Off a terminal without --yes the same rule applies.
+    const quiet = fakes();
+    const { summary: s2 } = await run({ clients: 'none', company: 'Ashlr.AI' }, quiet);
+    expect(s2.serve).toBe('skipped');
+    expect(quiet.serveCalls).toBe(0);
+
+    const explicit = fakes();
+    const { summary: s3 } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, explicit);
+    expect(s3.serve).toBe('installed');
+    expect(explicit.serveCalls).toBe(1);
   });
 
   it('skips the seed when the lexicon already has 3 terms unless --reseed', async () => {
@@ -250,7 +276,7 @@ describe('runSetup --yes', () => {
         return 0;
       },
     });
-    const { code, summary, io } = await run({ yes: true, clients: 'claude,codex,cursor', company: 'Ashlr.AI' }, f);
+    const { code, summary, io } = await run({ yes: true, clients: 'claude,codex,cursor', company: 'Ashlr.AI', serve: true }, f);
     expect(code).toBe(1);
     expect(summary.clients).toEqual([
       { name: 'claude', status: 'failed', detail: 'failed: claude: command not found' },
@@ -264,12 +290,12 @@ describe('runSetup --yes', () => {
 
   it('marks serve as failed when the installer fails and skips it on Windows', async () => {
     const f = fakes({ installServe: async (_o, io) => { io.stderr('launchctl: nope\n'); return 1; } });
-    const { code, summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    const { code, summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
     expect(code).toBe(1);
     expect(summary.serve).toBe('failed');
 
     const win = fakes({ platform: 'win32' });
-    const { summary: s2, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, win);
+    const { summary: s2, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, win);
     expect(s2.serve).toBe('skipped');
     expect(win.serveCalls).toBe(0);
     expect(io.out).toContain('not automated on win32');
@@ -288,17 +314,96 @@ describe('runSetup --yes', () => {
         return candidates;
       },
     });
-    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    // Under --yes the harvest is opt-in: without --harvest nothing is written to the repo.
+    const quiet = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(quiet.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    expect(quiet.io.out).toContain('skipped (not requested); add --harvest');
+    expect(existsSync(path.join(cwd, '.lexicon.yaml'))).toBe(false);
+    expect(harvestArgs).toEqual([]);
+
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true }, f);
     expect(harvestArgs).toEqual([cwd, { limit: 10, minCount: 5 }]);
-    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI', 'Playwright', 'Kubernetes']);
+    expect(summary.termsAdded).toEqual(['Playwright', 'Kubernetes']);
     const project = await readLexiconFile(path.join(cwd, '.lexicon.yaml'), 'project');
     expect(project.lexicon.terms.map((t) => t.canonical)).toEqual(['Playwright', 'Kubernetes']);
     expect(io.out).toContain('added 2 new terms, merged 0');
 
     // Second run merges instead of duplicating.
-    const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true }, f);
     expect(again.summary.termsAdded).toEqual([]);
     expect((await readLexiconFile(path.join(cwd, '.lexicon.yaml'), 'project')).lexicon.terms).toHaveLength(2);
+  });
+
+  it('never seeds a person or company that is already in the global lexicon, and the harvest skips names the global lexicon covers', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: mason wyatt\n    aliases: [mason wyeth]\n    category: person\n', 'utf8');
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Mason Wyatt', category: 'person', source: 'harvest:git', evidence: ['git log'], count: 40, suggestedAliases: [] },
+        { canonical: 'ASHLR.AI', category: 'brand', source: 'harvest:package', evidence: ['package.json'], count: 9, suggestedAliases: [] },
+        { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: ['package.json'], count: 9, suggestedAliases: [] },
+      ],
+    });
+    // --person equals git user.name (differently cased) and the lexicon already has it: added once, never twice.
+    const { summary, io } = await run({ yes: true, clients: 'none', person: 'Mason Wyatt', company: 'Ashlr.AI', harvest: true, reseed: true }, f);
+    expect(io.out).toContain('already present: mason wyatt (person)');
+    expect(summary.termsAdded).toEqual(['Ashlr.AI', 'Playwright']);
+    const globalTerms = (await readLexiconFile(globalPath, 'global')).lexicon.terms.map((t) => t.canonical);
+    expect(globalTerms).toEqual(['mason wyatt', 'Ashlr.AI']);
+    expect(io.out).toContain('already in the global lexicon: Mason Wyatt, ASHLR.AI');
+    const project = (await readLexiconFile(path.join(cwd, '.lexicon.yaml'), 'project')).lexicon.terms.map((t) => t.canonical);
+    expect(project).toEqual(['Playwright']);
+
+    // A second seed of the same company is reported, not merged into a second term, and the plan agrees.
+    const again = await run({ yes: true, clients: 'none', company: 'ashlr.ai', harvest: false, reseed: true }, f);
+    expect(again.summary.termsAdded).toEqual([]);
+    expect(again.io.out).toContain('already present: Ashlr.AI (brand)');
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'ashlr.ai', person: 'MASON WYATT', reseed: true }, f);
+    expect(planned.plan?.wouldSeed).toEqual([]);
+    expect(planned.plan?.wouldHarvest).toEqual(['Playwright']);
+  });
+
+  it('hands the serve installer the CLI next to deps.cliDir, and the plist it writes points at an existing dist/cli/index.js', async () => {
+    const cliDir = path.join(home, 'pkg', 'dist', 'cli');
+    await fs.mkdir(cliDir, { recursive: true });
+    await fs.writeFile(path.join(cliDir, 'index.js'), '#!/usr/bin/env node\n');
+    const calls: string[][] = [];
+    let seen: ServeDeps | undefined;
+    const f = fakes({
+      cliDir,
+      installServe: (opts, io, serveDeps) => {
+        seen = serveDeps;
+        return runServeInstall(opts, io, { ...serveDeps, exec: async (cmd, args) => { calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, nodePath: '/usr/local/bin/node', uid: 501 });
+      },
+    });
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
+    expect(summary.serve).toBe('installed');
+    expect(seen?.cliPath).toBe(path.join(cliDir, 'index.js'));
+    expect(seen?.home).toBe(home);
+    const plist = await fs.readFile(path.join(home, 'Library', 'LaunchAgents', 'ai.ashlr.lexicon.serve.plist'), 'utf8');
+    const args = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1]);
+    expect(args[2]).toBe(path.join(cliDir, 'index.js'));
+    expect(args[2].endsWith(path.join('dist', 'cli', 'index.js'))).toBe(true);
+    expect(existsSync(args[2])).toBe(true);
+    expect(calls[0]).toEqual(['launchctl', 'bootout', 'gui/501/ai.ashlr.lexicon.serve']);
+    expect(io.out).toContain('installed ai.ashlr.lexicon.serve');
+
+    // A cliDir without a built index.js (the plugin bundle's "next to me" mistake): refused, nothing written, no bootout.
+    const broken = path.join(home, 'plugin');
+    await fs.rm(path.join(home, 'Library'), { recursive: true, force: true });
+    const calls2: string[][] = [];
+    const g = fakes({
+      cliDir: broken,
+      installServe: (opts, io, serveDeps) =>
+        runServeInstall(opts, io, { ...serveDeps, exec: async (cmd, args) => { calls2.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, uid: 501 }),
+    });
+    const refused = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, g);
+    expect(refused.code).toBe(1);
+    expect(refused.summary.serve).toBe('failed');
+    expect(refused.io.err).toContain(`refusing to install the login service: ${path.join(broken, 'index.js')} does not exist`);
+    expect(calls2).toEqual([]);
+    expect(existsSync(path.join(home, 'Library', 'LaunchAgents', 'ai.ashlr.lexicon.serve.plist'))).toBe(false);
   });
 
   it('writes the dictation export with --app and reports where to import it', async () => {
@@ -334,6 +439,76 @@ describe('runSetup --yes', () => {
     const { summary, io } = await run({ clients: 'none', company: 'Ashlr.AI' }, f);
     expect(io.out).toContain('no terminal: taking the defaults');
     expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+  });
+});
+
+describe('runSetup --dry-run', () => {
+  it('runs every detection and suggestion, writes nothing and returns the plan', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const exportDir = path.join(home, 'Desktop');
+    const f = fakes(
+      {
+        harvest: async () => [
+          { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: [], count: 9, suggestedAliases: ['play right'] },
+        ],
+      },
+      [path.join(home, '.claude'), '/Applications/Cursor.app', '/fake/bin/codex'],
+    );
+    const { code, summary, plan, io } = await run({ yes: true, dryRun: true, company: 'Ashlr.AI', app: 'wispr', exportDir, serve: true }, f);
+    expect(code).toBe(0);
+    expect(plan).toEqual({
+      plan: true,
+      lexiconPath: globalPath,
+      lexiconExists: false,
+      wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],
+      wouldHarvest: ['Playwright'],
+      detectedClients: ['claude', 'codex', 'cursor'],
+      wouldInstallClients: ['claude', 'codex', 'cursor'],
+      wouldInstallServe: true,
+      wouldExport: [{ format: 'wispr', path: path.join(exportDir, 'lexicon-wispr.csv') }],
+    });
+    // Nothing on disk, nothing installed, the summary untouched.
+    expect(existsSync(globalPath)).toBe(false);
+    expect(existsSync(path.join(cwd, '.lexicon.yaml'))).toBe(false);
+    expect(existsSync(exportDir)).toBe(false);
+    expect(f.installed).toEqual([]);
+    expect(f.serveCalls).toBe(0);
+    expect(summary).toEqual({ lexiconPath: globalPath, termsAdded: [], clients: [], serve: 'skipped', exports: [] });
+    expect(io.out).toContain('lexicon setup (dry run)');
+    expect(io.out).toContain('would create ~/.config/lexicon/lexicon.yaml');
+    expect(io.out).toContain('would add 1 name to');
+    expect(io.out).toContain('Playwright');
+    expect(io.out).toContain('Plan (nothing written)');
+    expect(io.err).toBe('');
+  });
+
+  it('still lists the detected clients under --clients none, and serve/export stay off unless asked', async () => {
+    const f = fakes({}, [path.join(home, '.claude'), '/Applications/Cursor.app']);
+    const { plan } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(plan).toMatchObject({ detectedClients: ['claude', 'cursor'], wouldInstallClients: [], wouldInstallServe: false, wouldExport: [] });
+    const picked = await run({ yes: true, dryRun: true, clients: 'cursor', company: 'Ashlr.AI' }, f);
+    expect(picked.plan?.wouldInstallClients).toEqual(['cursor']);
+    expect(f.installed).toEqual([]);
+  });
+
+  it('reports an already seeded lexicon as nothing to seed and never prompts', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    const before = 'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n';
+    await fs.writeFile(globalPath, before);
+    const p = scripted([]);
+    const f = fakes({ isInteractive: () => true, createPrompter: () => p });
+    const { plan, io } = await run({ dryRun: true }, f);
+    expect(plan).toMatchObject({ lexiconExists: true, wouldSeed: [] });
+    expect(p.asked).toEqual([]);
+    expect(io.out).toContain('already has 3 terms');
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  it('--json prints the plan instead of the summary', async () => {
+    const f = fakes();
+    const { plan, io } = await run({ yes: true, dryRun: true, json: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(JSON.parse(io.out)).toEqual(plan);
+    expect(io.err).toContain('dry run');
   });
 });
 
@@ -471,5 +646,44 @@ describe('helpers', () => {
     expect(parsed.termsAdded).toContain('Acme');
     expect(parsed.serve).toBe('skipped');
     expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  it('registerSetupCommands wires --dry-run (writes nothing) and leaves serve undefined without --serve/--no-serve', async () => {
+    const io = makeIO();
+    const program = new Command().exitOverride().option('--cwd <dir>');
+    registerSetupCommands(program, io);
+    // Real detection against the temp home is read-only; only the shape is asserted.
+    await program.parseAsync(['setup', '--dry-run', '--json', '--clients', 'none', '--no-harvest', '--company', 'Acme', '--home', home, '--cwd', cwd], {
+      from: 'user',
+    });
+    const parsed = JSON.parse(io.out) as SetupPlan;
+    expect(parsed.plan).toBe(true);
+    expect(parsed.lexiconPath).toBe(globalPath);
+    expect(parsed.wouldSeed).toContain('Acme');
+    expect(parsed.wouldInstallClients).toEqual([]);
+    expect(parsed.wouldInstallServe).toBe(false);
+    expect(existsSync(globalPath)).toBe(false);
+
+    const flags = new Command().exitOverride();
+    let seen: SetupOptions | undefined;
+    flags.command('setup').option('--serve').option('--no-serve').option('--harvest').option('--no-harvest').action((o: SetupOptions) => {
+      seen = o;
+    });
+    await flags.parseAsync(['setup'], { from: 'user' });
+    expect(seen?.serve).toBeUndefined();
+    expect(seen?.harvest).toBeUndefined();
+    await flags.parseAsync(['setup', '--serve', '--harvest'], { from: 'user' });
+    expect(seen?.serve).toBe(true);
+    expect(seen?.harvest).toBe(true);
+    await flags.parseAsync(['setup', '--no-harvest'], { from: 'user' });
+    expect(seen?.harvest).toBe(false);
+
+    // The real command accepts --harvest (and --yes without it writes nothing to the repo).
+    await fs.mkdir(path.join(cwd, '.git'), { recursive: true });
+    const io2 = makeIO();
+    const program2 = new Command().exitOverride().option('--cwd <dir>');
+    registerSetupCommands(program2, io2);
+    await program2.parseAsync(['setup', '--yes', '--json', '--clients', 'none', '--no-serve', '--company', 'Acme', '--home', home, '--cwd', cwd], { from: 'user' });
+    expect(io2.err).toContain('skipped (not requested); add --harvest');
   });
 });

@@ -15,7 +15,19 @@ import { modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
-import { ffmpegRecordArgs, readState, stateFilePath, stopRecorder } from '../src/voice/recorder.js';
+import {
+  PROVISIONAL_TTL_MS,
+  claimState,
+  ensureVoiceDir,
+  ffmpegRecordArgs,
+  isStaleProvisional,
+  readState,
+  recorderLogPath,
+  stateFilePath,
+  stopRecorder,
+  voiceDir,
+  writeState,
+} from '../src/voice/recorder.js';
 import { cleanTranscript, parseWhisperOutput, whisperArgs } from '../src/voice/transcribe.js';
 import {
   EXIT_ERROR,
@@ -226,6 +238,36 @@ function whisperCall(h: Harness): { cmd: string; args: string[] } | undefined {
   return h.execCalls.find((c) => path.basename(c.cmd) === 'whisper-cli');
 }
 
+const posix = process.platform !== 'win32';
+
+async function modeOf(p: string): Promise<number> {
+  return (await fs.stat(p)).mode & 0o777;
+}
+
+/**
+ * Hold every `ffmpeg -list_devices` call (reached through `--device <name>`)
+ * until the test releases it. That point sits after the toggle has read the
+ * state file and before it claims it, so two presses can be parked there and
+ * released in a chosen order.
+ */
+function gateDeviceLookups(h: Harness): { release: () => void; count: () => number } {
+  const waiting: Array<() => void> = [];
+  const base = h.deps.exec as VoiceExec;
+  h.deps.exec = async (cmd, args, o) => {
+    if (args.includes('-list_devices')) await new Promise<void>((r) => waiting.push(r));
+    return base(cmd, args, o);
+  };
+  h.opts.device = 'External Microphone';
+  return {
+    release: () => {
+      const next = waiting.shift();
+      if (!next) throw new Error('nothing waiting at the gate');
+      next();
+    },
+    count: () => waiting.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Toggle mode
 
@@ -323,6 +365,183 @@ describe('lexicon voice --toggle', () => {
     h.out.length = 0;
     expect(await runVoiceStatus({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
     expect(JSON.parse(h.out[0])).toEqual({ recording: true, since: '2026-09-19T12:00:00.000Z', pid: 4242 });
+  });
+});
+
+describe('lexicon voice --toggle start race', () => {
+  it('a second press while a start is in flight prints "recording" and spawns nothing', async () => {
+    const h = await harness();
+    const wav = path.join(voiceDir(h.globalPath), 'recording-in-flight.wav');
+    // A provisional record: claimed a moment ago, no pid yet.
+    expect(await claimState(h.globalPath, { wav, startedAt: '2026-09-19T12:00:00.000Z' })).toBe(true);
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+    expect(h.spawnCalls).toEqual([]);
+    expect(h.kills).toEqual([]);
+    expect(await readState(h.globalPath)).toEqual({ wav, startedAt: '2026-09-19T12:00:00.000Z' });
+  });
+
+  it('two presses that race (second starts while the first is spawning) produce one recorder and one state file', async () => {
+    const h = await harness();
+    // The first press's spawn fires the second press before returning: the
+    // second runs while the state file still holds the first's provisional
+    // record, exactly the window between the claim and the pid rewrite.
+    let second: Promise<number> | undefined;
+    const base = h.deps.spawn as VoiceSpawn;
+    h.deps.spawn = (cmd, args, o) => {
+      const handle = base(cmd, args, o);
+      if (!second) second = runVoiceToggle(h.opts, h.io, h.deps);
+      return handle;
+    };
+    const first = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(first).toBe(EXIT_OK);
+    expect(await second).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n', 'recording\n']);
+    expect(h.spawnCalls).toHaveLength(1);
+    expect(h.kills).toEqual([]);
+    const state = await readState(h.globalPath);
+    expect(state?.pid).toBe(4242);
+    const files = (await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.endsWith('.json') || f.endsWith('.tmp'));
+    expect(files).toEqual(['recording.json']);
+  });
+
+  it('losing the exclusive claim re-reads the file: a young provisional record means "recording", no second ffmpeg', async () => {
+    const h = await harness();
+    const gate = gateDeviceLookups(h);
+    // Both presses read an empty state, then park before the claim.
+    const a = runVoiceToggle(h.opts, h.io, h.deps);
+    const b = runVoiceToggle(h.opts, h.io, h.deps);
+    await vi.waitFor(() => expect(gate.count()).toBe(2));
+    gate.release();
+    expect(await Promise.race([a, b])).toBe(EXIT_OK);
+    expect(h.spawnCalls).toHaveLength(1);
+    const started = await readState(h.globalPath);
+    expect(started?.pid).toBe(4242);
+    // Put the first press back between its claim and its pid rewrite, then let the second press try to claim.
+    await writeState(h.globalPath, { wav: started?.wav ?? '', startedAt: started?.startedAt ?? '' });
+    gate.release();
+    expect(await Promise.all([a, b])).toEqual([EXIT_OK, EXIT_OK]);
+    expect(h.out).toEqual(['recording\n', 'recording\n']);
+    expect(h.spawnCalls).toHaveLength(1);
+    expect(h.kills).toEqual([]);
+    expect(await readState(h.globalPath)).toEqual({ wav: started?.wav, startedAt: started?.startedAt });
+  });
+
+  it('losing the claim to a start that already finished treats the press as "stop"', async () => {
+    const h = await harness();
+    const gate = gateDeviceLookups(h);
+    const a = runVoiceToggle(h.opts, h.io, h.deps);
+    const b = runVoiceToggle(h.opts, h.io, h.deps);
+    await vi.waitFor(() => expect(gate.count()).toBe(2));
+    gate.release();
+    expect(await Promise.race([a, b])).toBe(EXIT_OK);
+    gate.release();
+    expect(await Promise.all([a, b])).toEqual([EXIT_OK, EXIT_OK]);
+    expect(h.spawnCalls).toHaveLength(1);
+    expect(h.kills).toEqual([{ pid: 4242, signal: 'SIGINT' }]);
+    expect(h.out).toEqual(['recording\n', 'ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(await readState(h.globalPath)).toBeUndefined();
+  });
+
+  it('replaces a stale provisional record (a start that died before spawning)', async () => {
+    const h = await harness();
+    const staleWav = path.join(voiceDir(h.globalPath), 'recording-stale.wav');
+    await fs.mkdir(path.dirname(staleWav), { recursive: true });
+    await fs.writeFile(staleWav, Buffer.alloc(100));
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ wav: staleWav, startedAt: '2026-09-19T11:00:00.000Z' }));
+    h.opts.quiet = false;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+    expect(h.err.join('')).toContain('stale recording state (a start that never spawned)');
+    expect(h.spawnCalls).toHaveLength(1);
+    expect((await readState(h.globalPath))?.pid).toBe(4242);
+    await expect(fs.access(staleWav)).rejects.toThrow();
+  });
+
+  it('a failed spawn removes the provisional record so the next press starts cleanly', async () => {
+    const h = await harness();
+    h.deps.spawn = () => {
+      throw new Error('spawn ENOENT');
+    };
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('spawn ENOENT');
+    expect(await readState(h.globalPath)).toBeUndefined();
+    expect((await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.endsWith('.wav'))).toEqual([]);
+
+    const noPid: VoiceSpawn = () => ({ pid: undefined, exited: Promise.resolve(null), stderr: () => '', kill: () => undefined });
+    h.deps.spawn = noPid;
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('could not start ffmpeg');
+    expect(await readState(h.globalPath)).toBeUndefined();
+  });
+
+  it('--status reports a provisional record as idle', async () => {
+    const h = await harness();
+    await claimState(h.globalPath, { wav: 'x.wav', startedAt: '2026-09-19T12:00:00.000Z' });
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.out).toEqual(['idle\n']);
+  });
+
+  it('claimState is exclusive; readState accepts a missing pid and rejects a bad one', async () => {
+    const h = await harness();
+    expect(await claimState(h.globalPath, { wav: 'a.wav', startedAt: 't' })).toBe(true);
+    expect(await claimState(h.globalPath, { wav: 'b.wav', startedAt: 't' })).toBe(false);
+    expect(await readState(h.globalPath)).toEqual({ wav: 'a.wav', startedAt: 't' });
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 'nope', wav: 'a.wav', startedAt: 't' }));
+    expect(await readState(h.globalPath)).toBeUndefined();
+    const now = Date.parse('2026-09-19T12:00:00.000Z');
+    expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS)).toBe(false);
+    expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS + 1)).toBe(true);
+    expect(isStaleProvisional({ wav: 'a', startedAt: 'garbage' }, now)).toBe(true);
+  });
+});
+
+describe.skipIf(!posix)('voice file permissions', () => {
+  it('creates the voice dir 0700 and the state file, recorder log and WAV 0600 on start', async () => {
+    const h = await harness();
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(await modeOf(voiceDir(h.globalPath))).toBe(0o700);
+    expect(await modeOf(stateFilePath(h.globalPath))).toBe(0o600);
+    expect(await modeOf(recorderLogPath(h.globalPath))).toBe(0o600);
+    const wav = (await readState(h.globalPath))?.wav ?? '';
+    expect(wav).toMatch(/\.wav$/);
+    expect(await modeOf(wav)).toBe(0o600);
+    // The foreground WAV in the scratch dir gets the same treatment.
+    const fg = await harness();
+    fg.deps.waitForStop = async () => 'enter';
+    await runVoice(fg.opts, fg.io, fg.deps);
+    // it was deleted after transcription; assert on what ffmpeg was handed instead
+    const fgWav = fg.spawnCalls[0]?.args.at(-1) ?? '';
+    await fs.writeFile(fgWav, '');
+    expect(await modeOf(fgWav)).not.toBe(0o600); // sanity: a plain write is not private ...
+    const { touchPrivateFile } = await import('../src/voice/recorder.js');
+    await touchPrivateFile(fgWav);
+    expect(await modeOf(fgWav)).toBe(0o600); // ... and the helper makes it so
+  });
+
+  it('writes history.jsonl 0600 and tightens an existing loose history or state file on rewrite', async () => {
+    const h = await harness();
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(await modeOf(historyPath(h.globalPath))).toBe(0o600);
+
+    await fs.chmod(historyPath(h.globalPath), 0o644);
+    await appendHistory(h.globalPath, { at: 't', raw: 'r', output: 'o', model: 'm', ms: { record: 0, transcribe: 0, normalize: 0 } });
+    expect(await modeOf(historyPath(h.globalPath))).toBe(0o600);
+
+    await fs.writeFile(stateFilePath(h.globalPath), '{}', { mode: 0o644 });
+    await writeState(h.globalPath, { pid: 1, wav: 'w', startedAt: 't' });
+    expect(await modeOf(stateFilePath(h.globalPath))).toBe(0o600);
+  });
+
+  it('ensureVoiceDir tightens a voice dir created earlier with a looser mode', async () => {
+    const h = await harness();
+    await fs.mkdir(voiceDir(h.globalPath), { recursive: true, mode: 0o755 });
+    expect(await modeOf(voiceDir(h.globalPath))).toBe(0o755);
+    await ensureVoiceDir(h.globalPath);
+    expect(await modeOf(voiceDir(h.globalPath))).toBe(0o700);
   });
 });
 

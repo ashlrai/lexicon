@@ -90,11 +90,11 @@ export function installContent(deps: ContentDeps): ContentHandle {
       onUndo: () => {
         const current = readText(composer);
         if (current === reply.output) {
-          applyCorrections(doc, composer, invertCorrections(corrections), original);
+          void applyCorrections(doc, composer, invertCorrections(corrections), original);
         } else {
           // Already sent (or edited): put the original wording back so the
           // user can resend it as dictated.
-          applyCorrections(doc, composer, [], original);
+          void applyCorrections(doc, composer, [], original);
         }
         precheck = { text: original, changed: false };
       },
@@ -108,7 +108,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
       // The composer may have moved on while we waited (fast typist, voice
       // input still streaming). Only rewrite when it still holds `text`.
       if (readText(composer) === text) {
-        applyCorrections(doc, composer, reply.replacements, reply.output);
+        await applyCorrections(doc, composer, reply.replacements, reply.output);
         precheck = { text: reply.output, changed: false };
         toastFor(composer, text, reply.replacements, reply);
       }
@@ -207,7 +207,9 @@ export function installContent(deps: ContentDeps): ContentHandle {
       const text = readText(composer);
       if (!text.trim()) return;
       void normalizeText(text, true).then((reply) => {
-        if (reply.ok && readText(composer) === text) precheck = { text, changed: reply.changed };
+        // A dry run reports `changed: false` by design (nothing was applied),
+        // so the replacements list is what says whether Enter must be intercepted.
+        if (reply.ok && readText(composer) === text) precheck = { text, changed: reply.changed || reply.replacements.length > 0 };
       });
     }, precheckMs);
   }
@@ -222,11 +224,11 @@ export function installContent(deps: ContentDeps): ContentHandle {
       if (!prefix.trim()) return;
       liveInFlight = true;
       void normalizeText(prefix, false)
-        .then((reply) => {
+        .then(async (reply) => {
           if (!reply.ok || !reply.changed || reply.replacements.length === 0) return;
           if (readText(composer) !== full) return;
           const output = reply.output + full.slice(caret);
-          applyCorrections(doc, composer, reply.replacements, output);
+          await applyCorrections(doc, composer, reply.replacements, output);
           precheck = null;
           toastFor(composer, full, reply.replacements, reply);
         })

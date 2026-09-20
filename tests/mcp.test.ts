@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, NormalizeResult, Term } from '../src/core/types.js';
 import type { DoctorReport, IO } from '../src/cli/commands.js';
-import type { SetupSummary } from '../src/cli/cmd-setup.js';
+import type { SetupOptions, SetupPlan, SetupSummary } from '../src/cli/cmd-setup.js';
 import type { TermSuggestion } from '../src/core/suggestTerms.js';
 
 // The core is under construction in parallel; the server is tested against a fake.
@@ -96,6 +96,18 @@ const setupSummary: SetupSummary = {
   exports: [{ format: 'claude-md', path: '/fake/global/lexicon.claude.md' }],
 };
 
+const setupPlan: SetupPlan = {
+  plan: true,
+  lexiconPath: '/fake/global/lexicon.yaml',
+  lexiconExists: false,
+  wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],
+  wouldHarvest: [],
+  detectedClients: ['claude', 'cursor', 'codex'],
+  wouldInstallClients: ['claude', 'cursor'],
+  wouldInstallServe: false,
+  wouldExport: [],
+};
+
 const aliasSuggestion: TermSuggestion = {
   kind: 'alias',
   canonical: 'Ashlr.AI',
@@ -179,7 +191,11 @@ beforeEach(() => {
     );
     return 0;
   });
-  cli.runSetup.mockResolvedValue({ code: 0, summary: setupSummary });
+  cli.runSetup.mockImplementation(async (opts: SetupOptions) =>
+    opts.dryRun
+      ? { code: 0, summary: { lexiconPath: setupPlan.lexiconPath, termsAdded: [], clients: [], serve: 'skipped', exports: [] }, plan: setupPlan }
+      : { code: 0, summary: setupSummary },
+  );
 });
 
 afterEach(() => {
@@ -408,6 +424,9 @@ describe('lexicon MCP server', () => {
       expect(instructions).toContain('learn_correction');
       expect(instructions).toMatch(/never rewrite .*code/i);
       expect(instructions).toContain('setup_lexicon');
+      expect(instructions).toMatch(/setup_lexicon previews by default/i);
+      expect(instructions).toMatch(/harvest: true and serve: true only for what the user agreed to/);
+      expect(instructions).toMatch(/omitted clients install nothing/i);
       expect(instructions).toContain('suggest_terms');
       expect(instructions).toContain('lexicon_doctor');
       expect(instructions).toMatch(/preview install_client/i);
@@ -584,6 +603,8 @@ describe('lexicon MCP server', () => {
         const tool = (await client.listTools()).tools.find((t) => t.name === 'trust_project');
         expect(tool?.description).toMatch(/ask/i);
         expect(tool?.description).toMatch(/never trust/i);
+        expect(tool?.description).toMatch(/instead of reading \.lexicon\.yaml yourself/);
+        expect(tool?.description).toMatch(/Do not open the file with Read or cat/);
         const result = await client.callTool({ name: 'trust_project', arguments: { action: 'status' } });
         expect(result.isError).toBe(false);
         const payload = JSON.parse(textOf(result)) as {
@@ -764,41 +785,85 @@ describe('lexicon MCP server', () => {
       }
     });
 
-    it('setup_lexicon runs setup non-interactively and returns the summary', async () => {
+    it('setup_lexicon without apply is a dry run: returns the plan and writes nothing', async () => {
       const { client, close } = await connect();
       try {
         const tool = (await client.listTools()).tools.find((t) => t.name === 'setup_lexicon');
-        expect(tool?.description).toMatch(/One-shot onboarding/);
+        expect(tool?.description).toMatch(/Preview by default/);
+        expect(tool?.description).toMatch(/apply: true, clients: \[\.\.\.\] and serve: true only if the user agreed to each/);
+        // Says what it asks for and what it does not do.
+        expect(tool?.description).toMatch(/their own name/);
+        expect(tool?.description).toMatch(/claude, claude-desktop, codex, cursor, windsurf, gemini, vscode/);
+        expect(tool?.description).toMatch(/does not install clients that are not listed/);
+        expect(tool?.description).toMatch(/does not harvest the repo unless harvest: true/);
+        expect(tool?.description).toMatch(/does not install the local API unless serve: true/);
+        expect((tool?.inputSchema as { properties?: Record<string, unknown> }).properties).toHaveProperty('harvest');
         const result = await client.callTool({
           name: 'setup_lexicon',
           arguments: { company: 'Ashlr.AI', person: 'Mason Wyatt', clients: ['claude', 'cursor'] },
         });
         expect(result.isError).toBe(false);
-        expect(JSON.parse(textOf(result))).toEqual({ ok: true, summary: setupSummary });
+        const body = JSON.parse(textOf(result)) as Record<string, unknown>;
+        expect(body).toEqual({ ...setupPlan, next: expect.stringMatching(/Nothing was written.*apply: true/) });
+        expect(body).not.toHaveProperty('summary');
         expect(cli.runSetup).toHaveBeenCalledWith(
-          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor' },
+          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, dryRun: true },
           expect.objectContaining({ stdout: expect.any(Function) }),
           expect.objectContaining({ cliDir: expect.any(String) }),
         );
 
-        const none = await client.callTool({ name: 'setup_lexicon', arguments: { clients: [], serve: false } });
-        expect(none.isError).toBe(false);
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false }, expect.anything(), expect.anything());
+        // apply: false is the same preview; omitted clients preview "none", never "all detected".
+        // The plan lists wouldHarvest whether or not harvest is passed (only an apply needs it).
+        await client.callTool({ name: 'setup_lexicon', arguments: { apply: false } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, dryRun: true }, expect.anything(), expect.anything());
+        await client.callTool({ name: 'setup_lexicon', arguments: { harvest: true } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, dryRun: true }, expect.anything(), expect.anything());
+        await client.callTool({ name: 'setup_lexicon', arguments: { harvest: false } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, dryRun: true }, expect.anything(), expect.anything());
       } finally {
         await close();
       }
     });
 
-    it('setup_lexicon relays a failing setup as ok: false with its stderr', async () => {
+    it('setup_lexicon apply: true installs only the listed clients and the login service only with serve: true', async () => {
+      const { client, close } = await connect();
+      try {
+        const result = await client.callTool({
+          name: 'setup_lexicon',
+          arguments: { apply: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: ['claude', 'cursor'], serve: true },
+        });
+        expect(result.isError).toBe(false);
+        expect(JSON.parse(textOf(result))).toEqual({ ok: true, applied: true, summary: setupSummary });
+        const [opts] = cli.runSetup.mock.calls.at(-1) as [SetupOptions];
+        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false });
+        expect(opts).not.toHaveProperty('dryRun');
+
+        // apply without clients installs none; serve and harvest are off unless explicitly true.
+        const bare = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true } });
+        expect(bare.isError).toBe(false);
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false }, expect.anything(), expect.anything());
+
+        await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: [], serve: false } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false }, expect.anything(), expect.anything());
+
+        // harvest: true is the only way the apply writes the project lexicon.
+        await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'], harvest: true } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true }, expect.anything(), expect.anything());
+      } finally {
+        await close();
+      }
+    });
+
+    it('setup_lexicon relays a failing apply as ok: false with its stderr', async () => {
       cli.runSetup.mockImplementationOnce(async (_o: unknown, io: IO) => {
         io.stderr('setup: claude mcp add failed\n');
         return { code: 1, summary: { ...setupSummary, clients: [{ name: 'claude', status: 'failed', detail: 'claude mcp add failed' }] } };
       });
       const { client, close } = await connect();
       try {
-        const result = await client.callTool({ name: 'setup_lexicon', arguments: {} });
+        const result = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'] } });
         expect(result.isError).toBe(false);
-        expect(JSON.parse(textOf(result))).toMatchObject({ ok: false, stderr: 'setup: claude mcp add failed' });
+        expect(JSON.parse(textOf(result))).toMatchObject({ ok: false, applied: true, stderr: 'setup: claude mcp add failed' });
       } finally {
         await close();
       }

@@ -11,7 +11,7 @@ so an agent can run the routine for you.
 $ lexicon suggest
 kind   canonical       alias   count  confidence  reason
 -----  --------------  ------  -----  ----------  ------------------------------------------------------------------
-alias  Vercel          versal  3      0.90        corrected by guess 3 times; make it exact
+alias  Vercel          versal  3      0.90        the matcher would guess this as Vercel (3 times in history); make it an exact alias
 term   Siobhan Reilly          3      0.65        capitalized name seen 3 times in transcripts and not in the lexicon
 alias  Ashlr.AI        ashlur  2      0.78        "ashlur" was left uncorrected 2 times and sounds like Ashlr.AI
 never  Locus           lacks   1      0.55        ordinary word rewritten by guess 1 time under earlier rules
@@ -34,7 +34,8 @@ Three signals feed it.
 - **Corrected by guess.** The matcher fixed it, but only through the phonetic
   or fuzzy pass, three times or more. An explicit alias is exact (confidence
   1), cheaper, and immune to the guards the inexact passes have to apply.
-  `corrected by guess 3 times; make it exact`. These start at 0.80, so
+  `the matcher would guess this as Vercel (3 times in history); make it an
+  exact alias`. These start at 0.80, so
   `--yes` picks them up.
 - **Rewritten under earlier rules.** The recorded output shows a rewrite to
   a canonical that the current matcher no longer makes (the rules got

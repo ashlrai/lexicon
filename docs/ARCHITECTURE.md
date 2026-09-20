@@ -1,6 +1,6 @@
 # Architecture
 
-`@ashlr/lexicon` is one YAML file plus five ways to apply it. Everything below is written against [CONTRACT.md](../CONTRACT.md) and `src/core/types.ts`.
+`@ashlr/lexicon` is one YAML file plus the ways to apply it: an MCP server, Claude Code hooks, a local HTTP API with a browser extension and a menu bar app on top, a local voice pipeline, a clipboard daemon, and exports into dictation apps. Everything below is written against [CONTRACT.md](../CONTRACT.md) and `src/core/types.ts`.
 
 ## Module map
 
@@ -12,60 +12,81 @@ src/
     store.ts                path resolution, YAML read/write, global+project merge,
                             addTerm / removeTerm / recordHits, the project-write trust gate
     trust.ts                trust registry (trust.json): isTrusted, trustProject, refreshTrust, listTrusted
-    matcher.ts              buildIndex(), findReplacements(), STOPLIST, phoneticKey(), similarity(). Pure, no IO.
+    matcher.ts              buildIndex(), findReplacements(), phoneticKey(), similarity(). Pure, no IO.
+    stoplist.ts             STOPLIST: 3376 common English words that block phonetic and fuzzy guesses
     normalize.ts            normalize() applies replacements; diffSummary()
     suggest.ts              suggestAliases(): likely STT misspellings of a canonical
+    suggestTerms.ts         suggestTerms(): alias / term / never / stale proposals from voice history, hits and the repo
     learn.ts                parseCorrection(), learnCorrection(), suggestCanonicalFor()
     stats.ts                computeStats(): counts, top terms, never-hit terms
     harvest.ts              harvestRepo(): candidate terms from a codebase
-    exporters/
-      index.ts              exportLexicon(), EXPORT_FORMATS, EXPORT_FORMAT_INFO
-      shared.ts             sortByImportance() and helpers shared by exporters
-      <format>.ts           one file per format (15: wispr, superwhisper, macos, claudeMd, ...)
-    importers/
-      index.ts              importLexicon(), IMPORT_FORMATS, detectImportFormat(), mergeRows()
-      csv-parse.ts          RFC 4180 CSV reader shared by wispr and csv
-      <format>.ts           one file per format (7: wispr, superwhisper, macos, espanso, text, csv, json)
+    exporters/              exportLexicon(), one file per format (15)
+    importers/              importLexicon(), detectImportFormat(), one file per format (7)
     index.ts                the only cross-module import path; the npm package entry point
-  mcp/
-    server.ts               stdio MCP server "lexicon" (bin: lexicon-mcp, or lexicon mcp)
-  hooks/
-    user-prompt-submit.ts   Claude Code hook for SessionStart and UserPromptSubmit (lexicon hook)
+  daemon/
+    clipboard.ts            clipboard watcher (lexicon daemon): loop mode and --once for shortcuts
+    clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) + PATH detection
+  serve/
+    config.ts               serve.json: port, bearer token (0600), allowedOrigins; isOriginAllowed()
+    server.ts               createServer(): node:http, 7 endpoints, auth, CORS, body caps, per-cwd lexicon cache
+  voice/
+    process.ts              locate ffmpeg / whisper-cli, exec and detached spawn, install hints
+    devices.ts              audio input device listing (avfoundation, pulse/alsa, dshow)
+    models.ts               ggml model resolution and first-run download from Hugging Face
+    recorder.ts             ffmpeg recording, toggle state file, stop with grace period
+    transcribe.ts           whisper-cli invocation with the lexicon as --prompt, transcript cleanup
+    history.ts              voice/history.jsonl (newest 1000 lines)
+    voice.ts                runVoice, runVoiceToggle, runVoiceStatus, runVoiceListDevices; exit codes 0/1/2/3
   cli/
-    index.ts                commander wiring (bin: lexicon)
-    commands.ts             handlers for init/add/remove/list/normalize/harvest/export/path/doctor/install-claude
+    index.ts                commander wiring (bin: lexicon), 25 commands
+    commands.ts             init/add/remove/list/normalize/harvest/export/path/doctor/install-claude
+    prompt.ts               dependency-free readline prompter used by the interactive commands
     cmd-import.ts           import
     cmd-install.ts          install [client]
     cmd-trust.ts            trust, untrust
     cmd-learn.ts            learn, stats
     cmd-review.ts           the interactive walkthroughs: harvest --add, review, edit
-    prompt.ts               dependency-free readline prompter used by the interactive commands
-  daemon/
-    clipboard.ts            clipboard watcher (lexicon daemon): loop mode and --once for shortcuts
-    clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) + PATH detection
+    cmd-serve.ts            serve (foreground, --show, --status, --install/--uninstall)
+    cmd-voice.ts            voice
+    cmd-suggest.ts          suggest
+    cmd-setup.ts            setup: the six-step wizard, built on the installers above
+  hooks/
+    user-prompt-submit.ts   Claude Code hook for SessionStart and UserPromptSubmit (lexicon hook)
+  mcp/
+    server.ts               stdio MCP server "lexicon": 17 tools, 2 resources, 2 prompts (bin: lexicon-mcp)
 
 plugin/
   mcp-server.mjs            esbuild bundle of src/mcp/server.ts, every dependency inlined (committed)
   hook.mjs                  esbuild bundle of src/hooks/user-prompt-submit.ts (committed)
+extension/
+  manifest.json, src/       Manifest V3 browser extension; core.ts is the browser-safe slice of src/core
+  dist/, dist-firefox/      build output (npm run build:extension)
+apps/macos/LexiconBar/      SwiftPM menu bar app that drives the CLI as subprocesses
+packaging/homebrew/         the Homebrew formula (published to ashlrai/homebrew-tap)
+site/                       the demo page (GitHub Pages) and, after build, install.sh
 scripts/
   build-bundle.mjs          produces plugin/*.mjs (npm run build:bundle; CI runs check:bundle)
+  build-extension.mjs       produces extension/dist, dist-firefox and the zips
+  build-macos-app.sh        builds and ad-hoc signs apps/macos/build/LexiconBar.app
+  build-site.mjs            produces site/dist including install.sh
   gen-cli-docs.ts           produces docs/CLI.md from every command's --help
+  install.sh                the curl | sh installer
 
 .claude-plugin/plugin.json  Claude Code plugin manifest
 .claude-plugin/marketplace.json  marketplace manifest (claude plugin marketplace add ashlrai/lexicon)
 .mcp.json                   plugin MCP server entry (node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs)
 hooks/hooks.json            plugin hook entries, SessionStart + UserPromptSubmit (node ${CLAUDE_PLUGIN_ROOT}/plugin/hook.mjs)
-skills/lexicon/SKILL.md     when the agent should normalize, learn a correction, suggest, harvest
+skills/lexicon/SKILL.md     when the agent should normalize, learn, suggest, harvest, set up, diagnose
 commands/lexicon.md         the /lexicon slash command
 tests/                      vitest, one file per module, e2e.test.ts for subprocess journeys, fixtures/fake-repo for harvest
-bench/                      accuracy benchmark corpus, runner and regression guard
+bench/                      accuracy benchmarks: synthetic corpus and real audio through whisper.cpp
 ```
 
-Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Siblings import each other only through `../core/index.js`. `src/core` never imports from `cli`, `mcp`, `hooks` or `daemon`.
+Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Siblings import each other only through `../core/index.js`. `src/core` never imports from `cli`, `mcp`, `hooks`, `daemon`, `serve` or `voice`. The MCP server imports CLI handlers (`runDoctorReport`, `runInstall`, `runImport`, `runSetup`) statically so the agent-native tools and the terminal share one code path; nothing in the static graph may also be dynamic-imported, or esbuild lazy-wraps the shared subgraph and the plugin bundle fails to load.
 
 ## Data flow
 
-The lexicon is applied at three points. Each is independent; use one or all.
+The lexicon is applied at several points. Each is independent; use one or all.
 
 ### 1. Post-STT, via MCP (any agent)
 
@@ -85,6 +106,8 @@ The lexicon is applied at three points. Each is independent; use one or all.
 
 The agent decides when to call the tool. `lexicon://me` gives it the vocabulary up front so it can also self-correct without a tool call. The learn loop closes the other direction: when the user corrects a spelling, the agent calls `learn_correction` and the misheard form becomes an alias, so the next `normalize_transcript` fixes it. `suggest_canonical` covers the gap in between (a garbled word that matched nothing yet) with "did you mean X?" candidates.
 
+The same server carries the agent-native tools (`setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `suggest_terms`, `apply_suggestion`, `serve_status`), which call the CLI handlers and return their reports as data. See the decision log.
+
 ### 2. Pre-model, via Claude Code hooks
 
 ```text
@@ -96,8 +119,8 @@ The agent decides when to call the tool. `lexicon://me` gives it the vocabulary 
 |  SessionStart  | <------------------------------------------- |  (< 200ms)    |
 +-------+--------+  additionalContext: "## Voice lexicon" table +---------------+
         |           (capped at ~4000 chars; untrusted project
-        v            file named by path only)
-  model knows every canonical spelling for the whole session
+        v            file named by path only; an empty lexicon
+  model knows every canonical spelling                 gets a once-a-day "offer setup" note instead)
 
   /voice or typed prompt
    |
@@ -138,6 +161,52 @@ These fix the text before any agent sees it, at the cost of being per-machine (d
 
 The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the tool from the platform, `WAYLAND_DISPLAY` and PATH (no process is spawned to detect), and every backend treats an empty or non-text clipboard as `''`. `lexicon daemon --once` is the shortcut-friendly form: one read, one write if anything changed, a diff on stdout, exit 0; `--paste` (macOS) sends Cmd+V through `osascript`, which is the only part that needs a permission (Accessibility). The loop mode keeps the same guard against rewriting its own output and re-reads the lexicon at most every 5s.
 
+### 4. Local API, browser extension and LexiconBar
+
+```text
+  browser extension ---- POST /normalize ---->  lexicon serve (127.0.0.1:41733)  ---- loadLexicon(cwd) ---> the same files
+  (ChatGPT, Claude.ai,   Authorization: Bearer   node:http, serve.json token 0600,                          + trust gate
+   Grok, Gemini, ...)    <--- output + diff ---  CORS for extension origins only                            + recordHits
+        |                                              ^          ^
+        | fallback when /health fails                  |          |
+        v                                        Shortcuts,    LexiconBar (macOS menu bar)
+  embedded lexicon (YAML in extension storage)   Raycast,      supervises `lexicon serve` and `lexicon daemon`,
+                                                 scripts       hotkeys run `lexicon voice --toggle --json` / `lexicon daemon --once`
+```
+
+`lexicon serve` is the bridge for everything that has neither hooks nor MCP. It is `node:http` only, binds loopback, needs a bearer token stored next to the global lexicon with mode 0600, and answers CORS only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (or exact origins in `serve.json.allowedOrigins`). Every endpoint goes through `loadLexicon()`, so the trust gate and hit counters are the same as the CLI; the lexicon is cached per `cwd` for 2 s and dropped after every write. `--install` registers it as a launchd LaunchAgent or a systemd user unit so it is up at login.
+
+The extension's content script intercepts Enter and the send button in the capture phase, asks the background worker for the correction, writes it back through the editor's own `insertText` path (ProseMirror, Lexical, Quill) or the React-safe setter (textareas), shows a toast with Undo, then re-dispatches the original event. The token lives in the worker only. When the API is down the worker falls back to an embedded copy of the lexicon compiled from YAML in extension storage, so a send is never blocked. Details in [EXTENSION.md](EXTENSION.md) and [LOCAL-API.md](LOCAL-API.md).
+
+LexiconBar is a thin native shell: every action is a CLI invocation, and the app parses the CLI's `--json` output. It supervises the daemon and the API as child processes with a restart policy and exposes the two hotkeys the CLI cannot register itself. See [MACOS-APP.md](MACOS-APP.md).
+
+### 5. Local voice pipeline
+
+```text
+  mic --> ffmpeg (16 kHz mono s16 WAV) --> whisper-cli --prompt "<canonicals>" --> cleanTranscript() --> normalize() --> stdout | clipboard | Cmd+V
+                                                                                                             |
+                                                                                                             +--> voice/history.jsonl { at, raw, output, model, ms }
+                                                                                                             +--> recordHits()
+```
+
+`lexicon voice` exists so the lexicon can be exercised end to end with no dictation app and no account. The canonicals go into whisper's `--prompt`, which alone lifts `base.en` term recall from 42% to 67% on the audio benchmark; `normalize()` then fixes what the prompt did not. `--toggle` splits the run into two invocations for hotkeys: the first spawns a detached ffmpeg and writes `voice/recording.json`, the second stops it and transcribes. Exit codes are fixed (`0` ok, `1` error, `2` a tool is missing, `3` nothing heard) so LexiconBar and scripts can branch on them. Every process interaction is injected (`VoiceDeps`), so the tests never touch a microphone. See [VOICE.md](VOICE.md).
+
+### 6. Setup wizard and the suggestion loop
+
+```text
+  install.sh | brew | npm  -->  lexicon setup  --> 1 seed global lexicon (name, company + suggested aliases)
+                                                   2 harvest repo -> .lexicon.yaml (created, therefore trusted)
+                                                   3 detect clients -> lexicon install <client> --apply
+                                                   4 lexicon serve --install (asks; under --yes only with --serve)
+                                                   5 lexicon export <app> -> ~/Desktop
+                                                   6 summary card (or --json SetupSummary)
+
+  lexicon voice / hooks / MCP / API / daemon  -->  hits + voice/history.jsonl  -->  lexicon suggest  -->  alias | term | never | stale
+                                                                                    (or suggest_terms + apply_suggestion from the agent)
+```
+
+Setup never re-implements an installer: each step calls the same handler the standalone command uses (`runInit`, `harvestRepo`, `runInstall`, `runServeInstall`, `exportLexicon`), so a rerun is idempotent, `--dry-run` can compute a `SetupPlan` by running the same steps without writing, and `setup_lexicon` can run it non-interactively (`yes: true, json: true`), previewing with `dryRun` until the agent passes `apply: true`. The suggestion loop closes the dogfooding gap: what STT keeps producing next to a known term becomes an `alias` proposal, a capitalised name that recurs in corrected output becomes a `term`, an ordinary word an older rule rewrote becomes a `never`, and a term with no hits after 30 days becomes `stale`. Suggestions are ranked by `confidence * log(1 + count)`; `--yes` auto-applies only at or above 0.80 and never a removal or a harvest candidate. See [SUGGEST.md](SUGGEST.md) and [AGENT-NATIVE.md](AGENT-NATIVE.md).
+
 ## File resolution and trust
 
 `resolvePaths()` in `store.ts`:
@@ -147,13 +216,15 @@ The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the t
 
 `loadLexicon()` merges the two. On a canonical collision (case-insensitive) the project term wins; aliases from both sides are unioned. Settings follow the same precedence. New project files are created at the git root (`defaultProjectPath()`).
 
-Every entry point (`mcp`, `hook`, `cli`, `daemon`) reads the file fresh on each call. There is no cache that can go stale after an edit.
+Every entry point (`mcp`, `hook`, `cli`, `daemon`, `voice`) reads the file fresh on each call. The local API is the one exception: it caches the loaded lexicon per `cwd` for 2 s and drops the cache after every write, so an edit is visible within two seconds.
 
-The project file is merged only when it is trusted (`trust.ts`; registry at `<dirname(global)>/trust.json`, keyed by absolute path, pinned to the file's sha256). Otherwise `loadLexicon()` returns global-only with `projectTrust` and `skippedProject` set, and callers report the path without loading the contents. The same gate guards writes: `addTerm` and `removeTerm` with project scope throw `ProjectTrustError` when the target file exists and is untrusted or changed, and every project-scope surface (`add --project`, `import --project`, `learn --project`, `harvest --add`, `review --project`, the MCP tools) inherits that. A file the tool creates, or one that is already trusted, is pinned or re-pinned after the write.
+The config directory next to the global lexicon also holds `trust.json`, `serve.json`, `onboard-note.json`, `voice/` (history and toggle state) and `models/` (whisper models).
+
+The project file is merged only when it is trusted (`trust.ts`; registry at `<dirname(global)>/trust.json`, keyed by absolute path, pinned to the file's sha256). Otherwise `loadLexicon()` returns global-only with `projectTrust` and `skippedProject` set, and callers report the path without loading the contents. The same gate guards writes: `addTerm` and `removeTerm` with project scope throw `ProjectTrustError` when the target file exists and is untrusted or changed, and every project-scope surface (`add --project`, `import --project`, `learn --project`, `harvest --add`, `review --project`, `suggest --project`, the MCP tools, the local API) inherits that. A file the tool creates, or one that is already trusted, is pinned or re-pinned after the write.
 
 ## Why post-STT and pre-model
 
-We cannot change what the recognizer hears. Claude Code, ChatGPT, Codex and local Whisper each own their STT and expose no vocabulary hook. The only text we can reliably touch is the transcript after it exists and before the model acts on it. Every application point above lives in that window.
+We cannot change what the recognizer hears. Claude Code, ChatGPT, Codex and local Whisper each own their STT and expose no vocabulary hook. The only text we can reliably touch is the transcript after it exists and before the model acts on it. Every application point above lives in that window. Even `lexicon voice`, which does own its recognizer, applies the lexicon twice: as a prompt bias before recognition and as a rewrite after.
 
 Matching on text instead of audio also makes the lexicon portable: the same YAML works whether the transcript came from Wispr, Whisper, or a phone.
 
@@ -165,9 +236,13 @@ The hooks run on every prompt and every session start in Claude Code, so they ar
 |---|---|---|
 | `plugin/hook.mjs`, 1KB prompt | under 200ms end to end, including Node startup. Measured: about 100ms on an M-series Mac with an 8-term lexicon | No network. YAML read once. `buildIndex()` precomputes alias map and phonetic keys. Exact alias is a single word-boundary regex pass. One bundled file, no module resolution |
 | `normalize_transcript` | under 50ms for a typical prompt | Same index; server process stays warm. Benchmark: 0.3 ms per sentence including `buildIndex()` |
+| `POST /normalize` | a few ms on loopback | Lexicon cached per cwd for 2 s; 1 MB body cap; 64 in-flight requests, then 503 |
+| extension send | zero added delay when nothing changes | The worker prechecks the text on a 250 ms debounce while you type; an unchanged send is not intercepted at all |
 | `lexicon daemon` | 250ms poll, negligible CPU when idle | one clipboard read per poll (`pbpaste`, `wl-paste`, `xclip -o`, `xsel` or a PowerShell process); skips normalize when text is unchanged |
+| `lexicon voice` | about one second hotkey round trip with `base.en` | Transcription is 0.2 to 0.35 s for a short clip on Apple silicon with Metal (`base.en` / `small.en`), plus ffmpeg start-up and the stop grace; `normalize()` is under 5 ms |
 | `harvestRepo()` | bounded by caps | 5000 files, 512KB per file, 5s git timeout, skips `node_modules`, `dist`, `.git`, `vendor`, `build` |
 | `lexicon import` | linear in input size | 8 MB cap checked before the file is read whole; every parser is a single-pass scanner |
+| `suggestTerms()` | under 100 ms for 1000 history lines and 200 terms | one pass over history with the prebuilt index; evidence capped at 5 lines of 120 characters |
 
 The hook always exits 0. A thrown error prints to stderr and produces no context; it never blocks a prompt. The CLI `normalize` command follows the same rule: on a lexicon load error it warns on stderr and passes the text through unchanged, so a pipeline never loses input.
 
@@ -183,11 +258,11 @@ A vocabulary list is small, personal and changes rarely. A file under `~/.config
 
 ### The hook injects context instead of rewriting
 
-Claude Code's `UserPromptSubmit` hook can add `additionalContext` or block the prompt; it cannot edit the prompt text. Even if it could, silent rewriting is risky: a wrong correction would be invisible to the user. Injecting a short note ("STT corrections: Ashler -> Ashlr.AI") keeps the original visible, lets the model apply judgment, and is exactly what a careful human assistant would do. Actual rewriting is reserved for surfaces where the user sees the result before it is used: the CLI, the MCP tool (the agent shows the diff), and the clipboard daemon (the user pastes it).
+Claude Code's `UserPromptSubmit` hook can add `additionalContext` or block the prompt; it cannot edit the prompt text. Even if it could, silent rewriting is risky: a wrong correction would be invisible to the user. Injecting a short note ("STT corrections: Ashler -> Ashlr.AI") keeps the original visible, lets the model apply judgment, and is exactly what a careful human assistant would do. Actual rewriting is reserved for surfaces where the user sees the result before it is used: the CLI, the MCP tool (the agent shows the diff), the clipboard daemon (the user pastes it) and the extension (a toast with Undo).
 
 ### SessionStart injection, once per session
 
-The `UserPromptSubmit` note only fires when a prompt changes, so a model that never triggers it never learns the vocabulary unless it reads `lexicon://me` on its own. Most clients do not read resources unprompted. The `SessionStart` hook fixes that by handing the model the `claude-md` table once at startup, resume, clear and compact, which are exactly the moments the context is empty. It is capped at about 4000 characters so a large lexicon cannot crowd out the session; the truncation line points at `lexicon://me` for the rest. The cost is one hook run per session, not per prompt. An empty lexicon emits nothing so a fresh install adds no noise.
+The `UserPromptSubmit` note only fires when a prompt changes, so a model that never triggers it never learns the vocabulary unless it reads `lexicon://me` on its own. Most clients do not read resources unprompted. The `SessionStart` hook fixes that by handing the model the `claude-md` table once at startup, resume, clear and compact, which are exactly the moments the context is empty. It is capped at about 4000 characters so a large lexicon cannot crowd out the session; the truncation line points at `lexicon://me` for the rest. The cost is one hook run per session, not per prompt. An empty lexicon emits a one-line offer to run setup at most once a day, and otherwise nothing, so a fresh install adds no noise.
 
 ### The hook flags corrections but never writes
 
@@ -207,7 +282,7 @@ When a file is skipped the hooks and `lexicon://me` say so in one line, by path 
 
 ### The stoplist exists
 
-Phonetic and fuzzy matching are guesses. Without a guard, "sauce" becomes "SaaS", "off" becomes "auth", and "cube" becomes "Kubernetes" in a sentence about geometry. The built-in stoplist of about 300 common English words, plus `settings.protectedWords` and per-term `never`, makes those guesses conservative. Tokens under three characters are excluded from guessing entirely. `minConfidence` defaults to 0.82 for the same reason.
+Phonetic and fuzzy matching are guesses. Without a guard, "sauce" becomes "SaaS", "off" becomes "auth", and "cube" becomes "Kubernetes" in a sentence about geometry. The built-in stoplist (`stoplist.ts`, 3376 common English words in their usual inflections, grown from a few hundred after `lacks` became `Locus` in production), plus `settings.protectedWords` and per-term `never`, makes those guesses conservative. Product names that double as words (`docker`, `neon`, `whisper`) are deliberately kept off it. Tokens under three characters are excluded from guessing entirely. `minConfidence` defaults to 0.82 for the same reason.
 
 ### Explicit aliases override the stoplist
 
@@ -215,8 +290,24 @@ If a user writes `aliases: [off]` under `auth`, they have already made the judgm
 
 ### One index, pure matcher
 
-`matcher.ts` has no IO and no knowledge of files. That keeps it testable with plain fixtures, reusable from the hook, server, CLI and daemon, and fast enough for the hook budget since the expensive precomputation happens once in `buildIndex()`.
+`matcher.ts` has no IO and no knowledge of files. That keeps it testable with plain fixtures, reusable from the hook, server, CLI, daemon, API, voice pipeline and the browser extension (whose `core.ts` bundles it unchanged), and fast enough for the hook budget since the expensive precomputation happens once in `buildIndex()`.
 
 ### Interactive commands without a dependency
 
-`harvest --add`, `add -i`, `review` and `edit` need a prompt. Pulling in an inquirer-style library would add a dependency tree to a package whose selling point is that the hook starts in 100ms. `src/cli/prompt.ts` wraps `node:readline` in a small `Prompter` interface instead, every interactive handler takes one as a parameter so tests script the answers, and every command refuses to run without a TTY so a pipe or CI job never hangs on a question.
+`harvest --add`, `add -i`, `review`, `edit`, `setup` and `suggest --apply` need a prompt. Pulling in an inquirer-style library would add a dependency tree to a package whose selling point is that the hook starts in 100ms. `src/cli/prompt.ts` wraps `node:readline` in a small `Prompter` interface instead, every interactive handler takes one as a parameter so tests script the answers, and every command refuses to run without a TTY so a pipe or CI job never hangs on a question (`setup` is the exception: off a TTY it takes every default and says so, because the install script may run it through a pipe).
+
+### Loopback API with a bearer token instead of native messaging
+
+The browser extension needs to reach the user's lexicon files. Chrome's native messaging would do it, but it needs a per-browser host manifest registered in a platform-specific directory, a separate registration for Firefox, and gives nothing to Shortcuts, Raycast, the Codex app or a menu bar app. A `node:http` server on `127.0.0.1:41733` serves all of them with one mechanism and one install step (`lexicon serve --install`). The costs are handled explicitly: a bearer token in a 0600 file so another user on the machine cannot use it, CORS answered only to extension origins so a web page cannot read responses even with the token, no TLS because the traffic never leaves the loopback interface, and a fixed port so clients can find it without discovery. A process running as the same user could read the token, but that process could already edit the YAML directly; the API does not widen that boundary.
+
+### The extension rewrites on send, not live, by default
+
+Rewriting the composer while the user types would fight the dictation tool that is still streaming partial words into it, flicker on every keystroke, and correct words the user is about to finish. Intercepting Enter and the send button instead means the text is complete, the correction is applied once, and a toast with Undo shows exactly what changed before the message leaves. An unchanged send is not intercepted at all, so ordinary sentences pay nothing. Live mode exists for people whose dictation tool commits whole sentences, and it is opt-in.
+
+### Voice is minimal by design
+
+`lexicon voice` is ffmpeg, whisper.cpp and `normalize()` glued together with a hotkey mode. There is no floating window, no streaming, no voice commands and no per-app modes, because Wispr Flow, Superwhisper and MacWhisper already do those better and the project's stance is to feed them, not compete with them. What the pipeline is for: a fully local path with no account for people who want one, a test bench that exercises the lexicon end to end against a real recognizer, and the source of `voice/history.jsonl`, which is what `lexicon suggest` learns from. Every dependency is located at runtime and the command exits 2 with an install hint when one is missing, so the rest of the CLI never depends on ffmpeg or whisper being present.
+
+### Agent-native tools preview before they apply
+
+The setup, install, trust, import and suggestion tools let an agent change files outside the lexicon (client configs, a launchd plist, a repo's `.lexicon.yaml`). A model acting on a hook note or a repo file must not be able to make those writes silently, so every such tool is split into a read and a write: `install_client` returns the exact entry it would write unless `apply: true`; `setup_lexicon` returns a `SetupPlan` from a dry run unless `apply: true`, and then installs only into the clients named in the call and creates the login service only with `serve: true`; `trust_project { action: 'status' }` returns a sanitized preview and only `action: 'trust'` pins; `import_dictionary` has `dryRun`; `suggest_terms` proposes and `apply_suggestion` applies one item, passed back as received. The skill and the server instructions tell the model to show the preview and wait for a yes. The onboarding note in `SessionStart` follows the same rule: it asks the model to offer setup, and `setup_lexicon` runs only after the user has answered. The tools reuse the CLI handlers rather than reimplementing them, so a preview from the agent and a dry run from the terminal are the same code.

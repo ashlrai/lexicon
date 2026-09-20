@@ -5,9 +5,11 @@
  * fallback, because these apps re-skin their DOM often. `GENERIC` covers any
  * other site: the focused textarea / contenteditable.
  *
- * Verified live (2026-09): ChatGPT logged-out composer, Grok, Gemini,
- * Perplexity. Assumed from public DOM reports: ChatGPT logged-in
- * `#prompt-textarea` (ProseMirror), Claude.ai, Poe, Copilot, Grok on x.com.
+ * Verified live (2026-09-19, injected content script, nothing sent):
+ * ChatGPT logged-out composer, Grok (Tiptap), Gemini (Quill), Perplexity
+ * (Lexical). Assumed from public DOM reports: ChatGPT logged-in
+ * `#prompt-textarea` (ProseMirror), Claude.ai, Poe, Copilot (all behind a
+ * login wall on that date), Grok on x.com.
  */
 import { hostKey } from './shared.js';
 
@@ -41,7 +43,10 @@ export const ADAPTERS: readonly SiteAdapter[] = [
     id: 'grok',
     label: 'Grok',
     hosts: ['grok.com'],
-    editor: 'form textarea, textarea[placeholder*="Grok" i]',
+    // 2026-09: a Tiptap (ProseMirror) contenteditable inside the form; the
+    // textarea selectors are the pre-Tiptap layout, kept as fallbacks.
+    editor:
+      'form div.tiptap[contenteditable="true"], form div.ProseMirror[contenteditable="true"], div[contenteditable="true"][aria-label*="Grok" i], form textarea, textarea[placeholder*="Grok" i]',
     send: 'button[data-testid="chat-submit"], button[aria-label="Submit"]',
   },
   {

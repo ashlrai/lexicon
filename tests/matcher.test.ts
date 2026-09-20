@@ -581,3 +581,18 @@ describe('robustness and performance', () => {
     expect(best).toBeLessThan(20);
   });
 });
+
+describe('bug I: stoplist words plus abbreviations never match phonetically', () => {
+  const MASON = { canonical: 'Mason Wyatt', aliases: ['mason white'], category: 'person' as const };
+  const OPENAI = { canonical: 'OpenAI', aliases: [] };
+  it('does not turn "ms window" into a person', () => {
+    expect(find('a 1 ms window could be clobbered', [MASON])).toHaveLength(0);
+  });
+  it('still matches the explicit alias and a real garble', () => {
+    expect(find('ping mason white', [MASON])[0]).toMatchObject({ replacement: 'Mason Wyatt', reason: 'alias' });
+    expect(find('ping mason wyat', [MASON])[0]).toMatchObject({ replacement: 'Mason Wyatt' });
+  });
+  it('keeps implicit split aliases that contain an abbreviation', () => {
+    expect(find('ask open ai about it', [OPENAI])[0]).toMatchObject({ replacement: 'OpenAI', reason: 'alias' });
+  });
+});

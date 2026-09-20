@@ -2,10 +2,12 @@
  * `<dirname(globalPath)>/voice/history.jsonl`: one line per transcription,
  * `{ at, raw, output, model, ms }`. Raw-vs-output pairs are the raw material
  * for suggesting aliases later. Capped at HISTORY_MAX_LINES (oldest dropped).
+ * The file holds everything the user dictated, so it is written 0600 inside
+ * the 0700 voice directory (see recorder.ts).
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { voiceDir } from './recorder.js';
+import { ensureVoiceDir, voiceDir, writePrivateFile } from './recorder.js';
 
 export const HISTORY_MAX_LINES = 1000;
 
@@ -25,7 +27,7 @@ export function historyPath(globalPath: string): string {
 export async function appendHistory(globalPath: string, entry: HistoryEntry, max: number = HISTORY_MAX_LINES): Promise<void> {
   const file = historyPath(globalPath);
   try {
-    await fs.mkdir(path.dirname(file), { recursive: true });
+    await ensureVoiceDir(globalPath);
     let existing = '';
     try {
       existing = await fs.readFile(file, 'utf8');
@@ -35,9 +37,7 @@ export async function appendHistory(globalPath: string, entry: HistoryEntry, max
     const lines = existing.split('\n').filter((l) => l.length > 0);
     lines.push(JSON.stringify(entry));
     const kept = lines.length > max ? lines.slice(lines.length - max) : lines;
-    const tmp = `${file}.${process.pid}.tmp`;
-    await fs.writeFile(tmp, `${kept.join('\n')}\n`, 'utf8');
-    await fs.rename(tmp, file);
+    await writePrivateFile(file, `${kept.join('\n')}\n`);
   } catch {
     // best-effort
   }

@@ -1,6 +1,6 @@
 # CLI reference
 
-Generated from `lexicon --help` (v0.3.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.3.1) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -450,8 +450,14 @@ Options:
   --phonetic <hint>   pronunciation hint for the company term, e.g. ASH-ler
   --app <app>         dictation app to export for: wispr|superwhisper|macos|none
   --export-dir <dir>  where to write the dictation export (default: ~/Desktop)
-  --no-harvest        skip the repo harvest
-  --no-serve          skip installing the local API login service
+  --harvest           add the repo names to the project lexicon (with --yes it
+                      is skipped unless this is passed)
+  --no-harvest        skip the repo harvest (no prompt)
+  --serve             install the local API login service (with --yes it is
+                      skipped unless this is passed)
+  --no-serve          skip installing the local API login service (no prompt)
+  --dry-run           detect and suggest only; write nothing and print what a
+                      run would do
   --reseed            seed person/company terms even if the lexicon already has
                       terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)

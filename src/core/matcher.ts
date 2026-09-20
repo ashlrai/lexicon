@@ -347,7 +347,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
       const collapsedLower = collapse(norm);
       if (!collapsedLower) continue;
       // Explicit wins over implicit when the user lists the canonical itself.
-      const dedupeKey = `${normLower} ${explicit ? 1 : 0}`;
+      const dedupeKey = `${normLower}\u0000${explicit ? 1 : 0}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
 
@@ -376,7 +376,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
       if (alpha.length >= 3 && !isSpelledOut(norm) && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
         const key = doubleMetaphone(alpha)[0];
         if (key.length >= PHONETIC_MIN_KEY) {
-          const dedupePhonetic = `${key} ${alpha.length}`;
+          const dedupePhonetic = `${key}\u0000${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
             push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length });
@@ -547,6 +547,12 @@ interface WindowView {
   readonly tokenCount: number;
   /** Every token is a stoplist/protected word. */
   readonly allStop: boolean;
+  /**
+   * Every token is a stoplist word, a protected word, or a 1-2 character abbreviation, with at
+   * least one real stoplist word. Blocks phonetic/fuzzy only: "ms window" must never become a
+   * person's name, but the implicit alias "open ai" -> OpenAI still matches exactly.
+   */
+  readonly mostlyStop: boolean;
   /** Some token is a protected word (settings.protectedWords). */
   readonly anyProtected: boolean;
   /** Multi-token window whose first or last token is a function word (see FUNCTION_WORDS). */
@@ -617,6 +623,8 @@ function makeView(
   const lowerParts: string[] = [];
   let allStop = true;
   let anyProtected = false;
+  let stopCount = 0;
+  let mostlyStop = true;
   for (let i = from; i <= to; i++) {
     const t = tokens[i];
     const useBase = i === to && possessiveBase;
@@ -625,8 +633,12 @@ function makeView(
     const lower = t.baseLower;
     const isProtected = protectedWords.has(lower);
     if (isProtected) anyProtected = true;
-    if (!isProtected && !STOPLIST.has(lower)) allStop = false;
+    const isStop = STOPLIST.has(lower);
+    if (isStop) stopCount++;
+    if (!isProtected && !isStop) allStop = false;
+    if (!isProtected && !isStop && lower.length > 2) mostlyStop = false;
   }
+  if (stopCount === 0) mostlyStop = false;
   const norm = parts.join(' ');
   const normLower = lowerParts.join(' ');
   const collapsedRaw = norm.replace(/[^\p{L}\p{N}]+/gu, '');
@@ -641,6 +653,7 @@ function makeView(
     collapsed: normLower.replace(/[^\p{L}\p{N}]+/gu, ''),
     tokenCount: to - from + 1,
     allStop,
+    mostlyStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
     loneToken: from === to,
@@ -705,7 +718,7 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
   if (exactHit) return exactHit;
 
   // Shared guards for the inexact passes.
-  if (view.allStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return undefined;
+  if (view.allStop || view.mostlyStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return undefined;
   const barFor = (termIndex: number, lone: boolean): number =>
     lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
 

@@ -104,7 +104,8 @@ export function defaultSpawn(cmd: string, args: readonly string[], opts: SpawnOp
   let stderrFd: number | 'ignore' = 'ignore';
   if (opts.detached && opts.logFile) {
     try {
-      stderrFd = openSync(opts.logFile, 'a');
+      // 0600: the log can echo device names and paths; voice.ts pre-creates it with the same mode.
+      stderrFd = openSync(opts.logFile, 'a', 0o600);
     } catch {
       stderrFd = 'ignore';
     }

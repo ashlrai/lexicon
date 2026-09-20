@@ -10,6 +10,9 @@
  * - `runVoiceToggle`: the hotkey mode. First call starts a detached ffmpeg and
  *   writes `<dirname(globalPath)>/voice/recording.json`; second call stops it,
  *   transcribes and outputs. A stale state file (pid gone) counts as "start".
+ *   The start is atomic: the state file is claimed with an exclusive create
+ *   before ffmpeg spawns, so two presses that race start one recorder (the
+ *   loser prints `recording` and exits 0).
  *
  * Every process interaction goes through `VoiceDeps` so tests never touch a
  * microphone. Exit codes: 0 ok, 1 error, 2 ffmpeg/whisper-cli missing,
@@ -36,18 +39,25 @@ import {
   locateFfmpeg,
   locateWhisperCli,
 } from './process.js';
-import type { VoiceExec, VoiceSpawn } from './process.js';
+import type { ChildHandle, VoiceExec, VoiceSpawn } from './process.js';
 import {
   MAX_TOGGLE_SECONDS,
+  claimState,
   clearState,
+  ensureVoiceDir,
+  isProvisional,
+  isStaleProvisional,
   readState,
+  recorderLogPath,
   resolveInput,
   startRecorder,
+  stateFilePath,
   stopRecorder,
-  voiceDir,
+  touchPrivateFile,
   wavHasAudio,
   writeState,
 } from './recorder.js';
+import type { RecordingState } from './recorder.js';
 import { MissingToolError, transcribeFile } from './transcribe.js';
 import type { TranscribeResult } from './transcribe.js';
 
@@ -380,6 +390,8 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 
   await fs.mkdir(r.tmpDir, { recursive: true });
   const wav = path.join(r.tmpDir, `lexicon-voice-${process.pid}-${r.clock().toString(36)}.wav`);
+  // Created 0600 before ffmpeg opens it (O_TRUNC keeps the mode): the audio is the user's.
+  await touchPrivateFile(wav);
   const seconds = opts.seconds !== undefined && opts.seconds > 0 ? opts.seconds : undefined;
   const t0 = r.clock();
   const child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, detached: false, ...(seconds !== undefined ? { seconds } : {}) });
@@ -428,56 +440,92 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 // ---------------------------------------------------------------------------
 // Toggle mode (hotkey)
 
+/** How many times a start re-reads the state file after losing the claim before giving up. */
+const CLAIM_ATTEMPTS = 3;
+
 /** Start a detached recording, or stop the running one and transcribe it. Returns the exit code. */
 export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   const r = resolve(opts, io, deps);
-  const state = await readState(r.globalPath);
-
-  if (state && r.isAlive(state.pid)) {
-    // ---- stop ----
-    const startedAt = Date.parse(state.startedAt);
-    const stop = await stopRecorder({ pid: state.pid, isAlive: r.isAlive, kill: r.kill, ...(deps.sleep ? { sleep: deps.sleep } : {}) });
-    const recordMs = Math.max(0, r.clock() - (Number.isFinite(startedAt) ? startedAt : r.clock()));
-    await clearState(r.globalPath);
-    if (stop.killed) r.log('recorder did not stop within 3s; killed (the WAV may be truncated)');
-
-    const tools = await requireTools(r, io, deps, { ffmpeg: false, whisper: true });
-    if (!tools) return EXIT_MISSING_TOOL;
-
-    if (!(await wavHasAudio(state.wav))) {
-      io.stderr(
-        `lexicon voice: recording failed (no audio written to ${state.wav})\n` +
-          (r.platform === 'darwin' ? '  Check that the app running this command has Microphone permission: System Settings > Privacy & Security > Microphone.\n' : '') +
-          `  ffmpeg log: ${path.join(voiceDir(r.globalPath), 'recorder.log')}\n`,
+  // Read, decide, claim. Losing the claim means another toggle wrote the file
+  // between our read and our create, so read again and decide again.
+  for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+    const state = await readState(r.globalPath);
+    if (state && state.pid !== undefined && r.isAlive(state.pid)) {
+      return stopAndTranscribe(state as RecordingState & { pid: number }, opts, io, deps, r);
+    }
+    if (state && isProvisional(state) && !isStaleProvisional(state, r.now().getTime())) {
+      // A start is in flight (double-tap): idempotent, let it finish.
+      io.stdout('recording\n');
+      return EXIT_OK;
+    }
+    if (state) {
+      r.log(
+        isProvisional(state)
+          ? `stale recording state (a start that never spawned); starting a new recording`
+          : `stale recording state (pid ${state.pid} is gone); starting a new recording`,
       );
+      await clearState(r.globalPath);
       await fs.rm(state.wav, { force: true }).catch(() => undefined);
-      return EXIT_ERROR;
     }
-
-    let lexicon: Lexicon;
-    try {
-      lexicon = await loadMerged(r, opts);
-    } catch (e) {
-      io.stderr(`lexicon voice: ${message(e)} (audio kept at ${state.wav})\n`);
-      return EXIT_ERROR;
-    }
-    try {
-      r.log('transcribing ...');
-      const result = await transcribeFile(state.wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
-      await fs.rm(state.wav, { force: true }).catch(() => undefined);
-      return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r);
-    } catch (e) {
-      io.stderr(`lexicon voice: ${message(e)} (audio kept at ${state.wav})\n`);
-      return e instanceof MissingToolError ? EXIT_MISSING_TOOL : EXIT_ERROR;
-    }
+    const outcome = await startDetached(opts, io, deps, r);
+    if (outcome !== 'lost') return outcome;
   }
+  io.stderr(`lexicon voice: could not claim ${stateFilePath(r.globalPath)} after ${CLAIM_ATTEMPTS} attempts; try again\n`);
+  return EXIT_ERROR;
+}
 
-  // ---- start ----
-  if (state) {
-    r.log(`stale recording state (pid ${state.pid} is gone); starting a new recording`);
-    await clearState(r.globalPath);
+/** The second press: stop ffmpeg, transcribe the WAV, deliver. */
+async function stopAndTranscribe(
+  state: RecordingState & { pid: number },
+  opts: VoiceOptions,
+  io: VoiceIO,
+  deps: VoiceDeps,
+  r: Resolved,
+): Promise<number> {
+  const startedAt = Date.parse(state.startedAt);
+  const stop = await stopRecorder({ pid: state.pid, isAlive: r.isAlive, kill: r.kill, ...(deps.sleep ? { sleep: deps.sleep } : {}) });
+  const recordMs = Math.max(0, r.clock() - (Number.isFinite(startedAt) ? startedAt : r.clock()));
+  await clearState(r.globalPath);
+  if (stop.killed) r.log('recorder did not stop within 3s; killed (the WAV may be truncated)');
+
+  const tools = await requireTools(r, io, deps, { ffmpeg: false, whisper: true });
+  if (!tools) return EXIT_MISSING_TOOL;
+
+  if (!(await wavHasAudio(state.wav))) {
+    io.stderr(
+      `lexicon voice: recording failed (no audio written to ${state.wav})\n` +
+        (r.platform === 'darwin' ? '  Check that the app running this command has Microphone permission: System Settings > Privacy & Security > Microphone.\n' : '') +
+        `  ffmpeg log: ${recorderLogPath(r.globalPath)}\n`,
+    );
     await fs.rm(state.wav, { force: true }).catch(() => undefined);
+    return EXIT_ERROR;
   }
+
+  let lexicon: Lexicon;
+  try {
+    lexicon = await loadMerged(r, opts);
+  } catch (e) {
+    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${state.wav})\n`);
+    return EXIT_ERROR;
+  }
+  try {
+    r.log('transcribing ...');
+    const result = await transcribeFile(state.wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
+    await fs.rm(state.wav, { force: true }).catch(() => undefined);
+    return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r);
+  } catch (e) {
+    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${state.wav})\n`);
+    return e instanceof MissingToolError ? EXIT_MISSING_TOOL : EXIT_ERROR;
+  }
+}
+
+/**
+ * The first press: claim the state file, spawn the detached recorder, record
+ * its pid. Returns 'lost' when another toggle claimed the file first; the
+ * caller re-reads. A spawn that fails removes the provisional record so the
+ * next press starts cleanly.
+ */
+async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
 
@@ -489,14 +537,25 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
     return EXIT_ERROR;
   }
 
-  const dir = voiceDir(r.globalPath);
-  await fs.mkdir(dir, { recursive: true });
+  const dir = await ensureVoiceDir(r.globalPath);
   const startedAt = r.now();
   const wav = path.join(dir, `recording-${startedAt.toISOString().replace(/[:.]/g, '-')}.wav`);
+  const provisional: RecordingState = { wav, startedAt: startedAt.toISOString() };
+  if (!(await claimState(r.globalPath, provisional))) return 'lost';
+
   const seconds = opts.seconds !== undefined && opts.seconds > 0 ? Math.min(opts.seconds, MAX_TOGGLE_SECONDS) : MAX_TOGGLE_SECONDS;
-  const child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, seconds, detached: true, logFile: path.join(dir, 'recorder.log') });
-  if (child.pid === undefined) {
-    io.stderr('lexicon voice: could not start ffmpeg\n');
+  const logFile = recorderLogPath(r.globalPath);
+  let child: ChildHandle;
+  try {
+    // Both files exist 0600 before ffmpeg touches them; ffmpeg keeps the mode.
+    await touchPrivateFile(wav);
+    await touchPrivateFile(logFile);
+    child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, seconds, detached: true, logFile });
+    if (child.pid === undefined) throw new Error('could not start ffmpeg');
+  } catch (e) {
+    await clearState(r.globalPath);
+    await fs.rm(wav, { force: true }).catch(() => undefined);
+    io.stderr(`lexicon voice: ${message(e)}\n`);
     return EXIT_ERROR;
   }
   await writeState(r.globalPath, { pid: child.pid, wav, startedAt: startedAt.toISOString() });
@@ -511,7 +570,7 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
 export async function runVoiceStatus(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   const r = resolve(opts, io, deps);
   const state = await readState(r.globalPath);
-  const recording = state !== undefined && r.isAlive(state.pid);
+  const recording = state !== undefined && state.pid !== undefined && r.isAlive(state.pid);
   if (opts.json) {
     io.stdout(`${JSON.stringify(recording && state ? { recording: true, since: state.startedAt, pid: state.pid } : { recording: false })}\n`);
   } else {

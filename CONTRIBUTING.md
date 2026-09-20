@@ -34,14 +34,16 @@ tests/
   schema.test.ts      normalize.test.ts   harvest.test.ts     mcp.test.ts       trust.test.ts
   store.test.ts       suggest.test.ts     exporters.test.ts   hook.test.ts      learn.test.ts
   matcher.test.ts     cli.test.ts         importers.test.ts   install.test.ts   stats.test.ts
-  daemon.test.ts      review.test.ts      e2e.test.ts (real CLI/hook/MCP as subprocesses)
+  daemon.test.ts      review.test.ts      serve.test.ts       voice.test.ts     setup.test.ts
+  suggest-terms.test.ts                   extension.test.ts (jsdom; skipped on Node 20)
+  e2e.test.ts (real CLI/hook/MCP as subprocesses)
   fixtures/fake-repo/ a small repo (package.json, README.md, src/, scripts/, node_modules/) for harvest tests
 bench/bench.test.ts   accuracy regression guard over the benchmark corpus (npx vitest run bench)
 ```
 
 `npm test` runs them once; `npm run test:watch` watches. `npm run bench` prints the accuracy report as markdown and writes `bench/results.json`; `docs/BENCHMARK.md` is updated by hand from that report. See `bench/README.md`.
 
-Matcher and normalize tests use inline fixtures. Store, trust, CLI and hook tests use a temp directory and `LEXICON_PATH` so they never touch a real config. The daemon test injects read/write functions instead of touching the clipboard. Interactive commands (`harvest --add`, `add -i`, `review`, `edit`) take a `Prompter` or an editor spawner as a parameter, so `review.test.ts` scripts the answers.
+Matcher and normalize tests use inline fixtures. Store, trust, CLI and hook tests use a temp directory and `LEXICON_PATH` so they never touch a real config. The daemon test injects read/write functions instead of touching the clipboard. Interactive commands (`harvest --add`, `add -i`, `review`, `edit`, `setup`, `suggest --apply`) take a `Prompter` or an editor spawner as a parameter, so the tests script the answers. The voice, serve and setup tests inject `exec`, `spawn` and filesystem probes through their `*Deps` parameters and never touch a microphone, a port on a real config or the machine's client configs.
 
 ### End-to-end journeys
 
@@ -87,7 +89,7 @@ To add a journey test:
 3. Register it in `src/core/exporters/index.ts`: add it to `EXPORT_FORMATS`, add a `description` and `ext` entry to `EXPORT_FORMAT_INFO`, and add it to the `EXPORTERS` map that `exportLexicon()` dispatches through. Use `sortByImportance()` from `shared.ts` so term order matches the other exporters.
 4. Add a test in `tests/exporters.test.ts` with a small lexicon and an exact expected string. Cover `categories` and `limit`.
 5. Add the format to `EXPORT_FORMAT_VALUES` in `src/mcp/server.ts` (the build fails until you do) and to the `export_lexicon` description.
-6. Add a row to the export table in `README.md`, the format lists in `commands/lexicon.md` and `skills/lexicon/SKILL.md`, and the exporters line in `CONTRACT.md`. Update the format count wherever it is stated ("fifteen").
+6. Add a row to the export table in `README.md`, the format lists in `commands/lexicon.md` and `skills/lexicon/SKILL.md`, the exporters line in `CONTRACT.md` and `EXPORT_CONTENT_TYPES` in `src/serve/server.ts` if the extension is new. Update the format count wherever it is stated ("fifteen").
 
 The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORMATS` automatically.
 
@@ -111,4 +113,4 @@ The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORM
 
 ## Pull requests
 
-Keep them small. One exporter, one importer, one harvester, one matcher change per PR. Include the test. Update `CHANGELOG.md` under the `0.1.0 (unreleased)` heading (Added, Security or Internal) until the first release ships. Rebuild the plugin bundles (`npm run build:bundle`) when the change is reachable from the MCP server or the hook, and commit them.
+Keep them small. One exporter, one importer, one harvester, one matcher change per PR. Include the test. Add a bullet to `CHANGELOG.md` under the `(unreleased)` heading at the top (Added, Changed, Security or Internal). Rebuild the plugin bundles (`npm run build:bundle`) when the change is reachable from the MCP server or the hook, and commit them. Run `npm run docs:cli` after touching a command or flag.

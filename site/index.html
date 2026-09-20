@@ -125,7 +125,7 @@
     <div class="install-panel">
       <header class="install-head">
         <h2 id="h-install">Install</h2>
-        <p class="install-lede">Pick one. Each takes about a minute and makes no network requests afterwards.</p>
+        <p class="install-lede">Pick one. Each takes about a minute. Afterwards nothing phones home; the only download the tool ever makes is the whisper model for <code>lexicon voice</code>.</p>
       </header>
 
       <ol class="install-options">
@@ -144,23 +144,23 @@
           </div>
         </li>
         <li>
-          <span class="install-label">npm (Node 20+)</span>
+          <span class="install-label">npm (Node 20+; the package is not on the registry yet)</span>
           <div class="cmd">
-            <code class="mono">npm i -g @ashlr/lexicon</code>
-            <button type="button" class="btn btn-ghost btn-xs" data-copy="npm i -g @ashlr/lexicon">Copy</button>
+            <code class="mono">npm i -g github:ashlrai/lexicon#v0.3.0</code>
+            <button type="button" class="btn btn-ghost btn-xs" data-copy="npm i -g github:ashlrai/lexicon#v0.3.0">Copy</button>
           </div>
         </li>
       </ol>
 
       <p class="install-then">
-        Then run <code>lexicon setup</code>. It seeds your lexicon and registers the MCP server and hooks in Claude Code, Codex, Cursor and the other clients it finds. The script does this for you.
+        Then run <code>lexicon setup</code>. It seeds your lexicon with your name and company, harvests the current repo, registers the MCP server and hooks in Claude Code, Codex, Cursor and the other clients it finds, and exports to your dictation app. The script runs it for you.
       </p>
 
       <div class="downloads">
         <h3>Downloads</h3>
         <p class="hint">From the <a href="https://github.com/ashlrai/lexicon/releases/latest">latest release</a>. Checksums are in <code>SHA256SUMS</code> next to them.</p>
         <div class="download-row">
-          <a class="btn btn-secondary btn-sm" href="https://github.com/ashlrai/lexicon/releases/latest/download/lexicon-extension.zip" download>Chrome extension <span class="dl-meta">.zip</span></a>
+          <a class="btn btn-secondary btn-sm" href="https://github.com/ashlrai/lexicon/releases/latest/download/lexicon-extension.zip" download>Chrome, Edge and Brave extension <span class="dl-meta">.zip</span></a>
           <a class="btn btn-secondary btn-sm" href="https://github.com/ashlrai/lexicon/releases/latest/download/lexicon-extension-firefox.zip" download>Firefox extension <span class="dl-meta">.zip</span></a>
           <a class="btn btn-secondary btn-sm" href="https://github.com/ashlrai/lexicon/releases/latest/download/LexiconBar.app.zip" download>LexiconBar for macOS <span class="dl-meta">.app.zip</span></a>
         </div>
@@ -182,7 +182,7 @@
         <div><dt>per sentence</dt><dd>0.3 ms</dd></div>
       </dl>
       <p class="bench-note">
-        Measured on 398 dictated sentences with a 70-term lexicon.
+        Measured on 398 synthetic dictated sentences with a 70-term lexicon. On real audio through whisper.cpp small.en, 76.0% &rarr; 95.7%.
         <a href="https://github.com/ashlrai/lexicon/blob/main/docs/BENCHMARK.md">Full benchmark</a>
         &middot; <a href="https://github.com/ashlrai/lexicon">Source</a>
         &middot; <a href="https://www.npmjs.com/package/@ashlr/lexicon">npm</a>

@@ -176,6 +176,10 @@ describe('runUserPromptSubmitHook', () => {
       const ctx = context(out);
       expect(ctx).toContain('untrusted .lexicon.yaml at /fake/repo/.lexicon.yaml');
       expect(ctx).toContain('lexicon trust');
+      // Points the model at the sanitized preview, not at the file.
+      expect(ctx).toContain('call the lexicon trust_project tool with action "status"');
+      expect(ctx).toContain('Do not open the file with Read or cat');
+      expect(ctx).toContain('Trust it only if the user says yes after seeing the preview');
       expect(ctx).not.toContain('\n');
       expect(ctx).not.toContain('Corrected prompt');
     });
@@ -197,6 +201,8 @@ describe('runUserPromptSubmitHook', () => {
       const ctx = context(await runUserPromptSubmitHook(payload('plain prompt')));
       expect(ctx).toContain('changed since the user trusted it');
       expect(ctx).toContain('run `lexicon trust` again');
+      expect(ctx).toContain('trust_project tool with action "status"');
+      expect(ctx).toContain('Do not open the file with Read or cat');
       expect(ctx).not.toContain('\n');
     });
 
@@ -346,6 +352,67 @@ describe('runUserPromptSubmitHook', () => {
   });
 });
 
+  describe('pasted dictionary data', () => {
+    // Experiment 6 of the agent-native dogfood: the Wispr CSV row `versel,Vercel` became
+    // `Vercel,Vercel` and Vercel got a hit. Here the fake matcher rewrites "Ashler".
+    const WISPR_PASTE = 'import this Wispr dictionary: word,replacement\nsoup a base,Supabase\nashler,Ashler';
+
+    it('emits no corrections (and records no hits) for a pasted Wispr CSV', async () => {
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      expect(await runUserPromptSubmitHook(payload(WISPR_PASTE))).toBe('');
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+      // The same rows without a header still count as data once there are three of them.
+      expect(await runUserPromptSubmitHook(payload('soup a base,Supabase\nversel,Vercel\nashler,Ashler'))).toBe('');
+      // A canonical,alias,category export.
+      expect(await runUserPromptSubmitHook(payload('canonical,alias,category\nAshler,ashlur,brand'))).toBe('');
+    });
+
+    it('still corrects ordinary prose with commas, and the prose around a data block', async () => {
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const prose = context(await runUserPromptSubmitHook(payload('ping Ashler, then deploy')));
+      expect(prose).toContain('Corrected prompt:\nping Ashlr.AI, then deploy');
+      // Two bare rows are not a block; "a,b" needs three rows or a header.
+      expect(context(await runUserPromptSubmitHook(payload('x,y\nsend it to Ashler')))).toContain('Corrected prompt:\nx,y\nsend it to Ashlr.AI');
+      // The rows are left alone (including one after a prose prefix, as in the dogfood paste);
+      // the sentences around the block are corrected. A matcher that finds every "Ashler":
+      mocks.normalize.mockImplementation((text: string): NormalizeResult => {
+        const replacements: NormalizeResult['replacements'] = [];
+        for (const m of text.matchAll(/Ashler/g)) {
+          replacements.push({ start: m.index, end: m.index + 6, original: 'Ashler', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 });
+        }
+        return { input: text, output: text.replace(/Ashler/g, 'Ashlr.AI'), replacements, changed: replacements.length > 0 };
+      });
+      const mixed = await runUserPromptSubmitHook(
+        payload('tell Ashler: import this Wispr dictionary: word,replacement\nsoup a base,Supabase\nashler,Ashler\nthen tell Ashler it is done'),
+      );
+      const ctx = context(mixed);
+      expect(ctx).toContain(
+        'Corrected prompt:\ntell Ashlr.AI: import this Wispr dictionary: word,replacement\nsoup a base,Supabase\nashler,Ashler\nthen tell Ashlr.AI it is done',
+      );
+      expect(ctx.match(/"Ashler" -> "Ashlr\.AI"/g)).toHaveLength(2);
+      expect(mocks.recordHits).toHaveBeenCalledTimes(3);
+    });
+
+    it('dataBlockSpans covers a header block, a 3+ row run, and nothing else', async () => {
+      const { dataBlockSpans, dropDataBlockSpans } = await import('../src/hooks/user-prompt-submit.js');
+      const text = 'intro\nword,replacement\na,b\nc,d\n\nx,y\nprose, with a comma\np,q\nr,s\nt,u\nend';
+      const spans = dataBlockSpans(text);
+      expect(spans.map(([s, e]) => text.slice(s, e))).toEqual(['word,replacement\na,b\nc,d', 'p,q\nr,s\nt,u']);
+      expect(dataBlockSpans('one, two, three')).toEqual([]);
+      expect(dataBlockSpans('a,b\nc,d')).toEqual([]);
+      expect(dataBlockSpans('a , b\nc ,d\ne, f')).toEqual([]);
+      expect(dataBlockSpans('shortcut,expansion\r\nbrb,be right back')).toHaveLength(1);
+      // A header after a prose prefix: the span starts at the header token; a header stops a run.
+      const prefixed = 'import this: word,replacement\nversel,Vercel';
+      expect(dataBlockSpans(prefixed).map(([s, e]) => prefixed.slice(s, e))).toEqual(['word,replacement\nversel,Vercel']);
+      // Column count must match: a 2-column row after a 3-column header is prose.
+      const cols = 'canonical,alias,category\nAshler,ashlur,brand\nnot,this';
+      expect(dataBlockSpans(cols).map(([s, e]) => cols.slice(s, e))).toEqual(['canonical,alias,category\nAshler,ashlur,brand']);
+      const untouched = fakeNormalize('deploy Ashler tonight');
+      expect(dropDataBlockSpans(untouched)).toBe(untouched);
+    });
+  });
+
 describe('runHook', () => {
   it('routes UserPromptSubmit payloads to the prompt handler', async () => {
     const { runHook, runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
@@ -406,6 +473,13 @@ describe('runHook', () => {
         expect(parsed.hookSpecificOutput.additionalContext).toBe(ONBOARD_NOTE);
         expect(ONBOARD_NOTE).toContain('setup_lexicon');
         expect(ONBOARD_NOTE).toContain('onboard prompt');
+        // Names the three questions and says to offer, not run.
+        expect(ONBOARD_NOTE).toContain('do not run it unasked');
+        expect(ONBOARD_NOTE).toMatch(/\(1\) company\/product names, spelled exactly/);
+        expect(ONBOARD_NOTE).toMatch(/\(2\) their own name/);
+        expect(ONBOARD_NOTE).toContain('(3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code');
+        expect(ONBOARD_NOTE).toContain('with company, person and clients');
+        expect(ONBOARD_NOTE).not.toContain('\n');
         expect(mocks.normalize).not.toHaveBeenCalled();
 
         const state = JSON.parse(await fs.readFile(path.join(dir, 'onboard-note.json'), 'utf8')) as { lastNotedAt: string };
