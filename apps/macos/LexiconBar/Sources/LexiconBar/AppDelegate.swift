@@ -1013,7 +1013,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 return
             }
-            self.reportError("Could not install the local API at login (\(result.failureDescription)). Running it under the app instead \u{2014} it will stop when LexiconBar quits.")
+            self.reportError("Could not install the local API at login (\(result.failureDescription)). Running it under the app instead. It will stop when LexiconBar quits.")
             self.server?.start()
         }
     }

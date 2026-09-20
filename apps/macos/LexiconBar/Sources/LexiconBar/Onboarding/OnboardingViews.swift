@@ -139,7 +139,7 @@ private struct WelcomeStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Lexicon fixes the names your dictation gets wrong \u{2014} in place, in whatever app you are typing in.")
+            Text("Lexicon fixes the names your dictation gets wrong, in place, in whatever app you are typing in.")
                 .font(.title3)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -157,7 +157,7 @@ private struct WelcomeStep: View {
                 StatusLine(
                     ok: model.accessibilityTrusted,
                     okText: "Accessibility is granted",
-                    badText: "Accessibility is not granted yet \u{2014} corrections in other apps need it",
+                    badText: "Accessibility is not granted yet. Corrections in other apps need it",
                     actionTitle: "Grant Accessibility",
                     action: { model.grantAccessibility() },
                     // A rebuilt app has a new code signature, and macOS binds
@@ -169,7 +169,7 @@ private struct WelcomeStep: View {
                 StatusLine(
                     ok: model.apiReachable,
                     okText: "Local API is running (\(model.apiTerms) terms)",
-                    badText: "Local API is not reachable \u{2014} it does the correcting",
+                    badText: "Local API is not reachable. It does the correcting",
                     actionTitle: "Start the API",
                     action: { model.startLocalAPI() },
                     hint: "Or run `lexicon serve` in a terminal. The app can start it for you and keep it running."
@@ -252,7 +252,7 @@ private struct WordsStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Type a name the way it should be spelled. Lexicon suggests what dictation is likely to write instead \u{2014} switch off anything wrong, add your own.")
+            Text("Type a name the way it should be spelled. Lexicon suggests what dictation is likely to write instead. Switch off anything wrong, add your own.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 

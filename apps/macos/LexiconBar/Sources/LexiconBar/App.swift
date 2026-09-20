@@ -134,7 +134,7 @@ enum LexiconBarMain {
             print("Local API: \(apiError ?? "not reachable")")
         }
         print("Token: \(token ? "found" : "missing") (\(NormalizeClient.serveJSONPath))")
-        print("Serve ownership: \(owner) \u{2014} \(serve.title)")
+        print("Serve ownership: \(owner). \(serve.title)")
         print("Fix everywhere: \(fixOn ? "on" : "off")")
         return trusted && reachable && token ? 0 : 1
     }
