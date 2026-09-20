@@ -8,6 +8,30 @@ lists, default settings). Reproduce with `npm run bench -- --sweep`; the raw out
 every failing case is `bench/results.json`. How the metrics are defined:
 [`bench/README.md`](../bench/README.md).
 
+## Reproducing every number on this page
+
+Nothing here is hand-copied from a run we no longer have. Each command below regenerates the
+section next to it, and the first one needs nothing but a clone and `npm ci`.
+
+| command | regenerates | needs |
+|---|---|---|
+| `npm run bench` | ["Headline"](#headline), ["By category"](#by-category), ["By reason"](#by-reason), and `bench/results.json` | Node 20+. Nothing else. |
+| `npm run bench -- --sweep` | ["Sweep: minConfidence vs accuracy and false positives"](#sweep-minconfidence-vs-accuracy-and-false-positives) | Node 20+. |
+| `npm run bench -- --verbose` | the list of failing cases behind ["What still fails"](#what-still-fails) | Node 20+. |
+| `npm run bench:audio` | ["Real audio"](#real-audio-macos-tts---whispercpp) and `bench/audio/results.md` | macOS (`say`), whisper.cpp (`brew install whisper-cpp`). Downloads 636 MB of models on first run; about six minutes cold, seconds warm. |
+| `npm run bench:compare` | ["Against the alternatives"](#against-the-alternatives) | One `npm run bench:audio` first, to fill the transcript cache. |
+| `npm test` | the test count quoted in the docs | Node 20+. |
+
+Two notes on honesty, because they change how the numbers should be read:
+
+- `bench/audio/out/` and `bench/audio/models/` are gitignored, so `npm run bench:compare` cannot
+  run straight from a clone: it re-scores the cached transcripts that `npm run bench:audio`
+  produces and will tell you so if they are missing. That is deliberate. Re-scoring a fixed set
+  of transcripts is what makes the comparison a controlled experiment rather than five separate
+  recognizer runs.
+- `bench/results.json` and `bench/audio/results.md` are committed, so you can diff your run
+  against ours without running anything. If they disagree, ours is wrong.
+
 ## Headline
 
 Corpus: 398 cases. 278 positives (a term misheard inside a dictated sentence, including 16
@@ -62,7 +86,8 @@ Each row is the full benchmark re-run after one matcher change landed, default c
 | D. phonetic guards (key >= 3, window >= 4, no keys for spelled-out aliases, 0.88 bar for aliased plain words) | 94.2% | 96.5% | 1.1% | 15.8% |
 | D'. the 0.88 aliased plain-word bar applied to fuzzy as well | 94.2% | 96.5% | 0.0% | 15.0% |
 | E. diacritics folded in the exact pass; F. transposition-aware similarity | 94.2% | 96.5% | 0.0% | 15.0% |
-| G. 0.88 bar applied case-blind; initial-vowel guard; similarity floors tiered by key length; glue guard for `@`, `/` and `_`; mostly-stopword windows refused; stoplist additions | 94.2% | 96.5% | 0.0% | 12.5% |
+| G and H. 0.88 bar applied case-blind; initial-vowel guard; similarity floors tiered by key length; glue guard for `@`, `/` and `_`; mostly-stopword windows refused; stoplist additions, which is where `graphical` and `tropic` went | 94.2% | 96.5% | 0.0% | 12.5% |
+| I. rewrites declined when they would collapse a sentence that quotes two spellings | 94.2% | 96.5% | 0.0% | 12.5% |
 
 The one positive lost between C and D is `sas` -> SaaS (pos-128): SaaS keys to `SS`, two
 characters, and the key-length rule that removes 22 spurious hits also removes it. An explicit
@@ -70,6 +95,12 @@ characters, and the key-length rule that removes 22 spurious hits also removes i
 was already recovered by fuzzy at 0.93 and is now an exact hit at 1.0; `levenshtien` was
 rescued by the phonetic pass and is now a fuzzy hit at 0.91 instead of 0.82 under plain
 Levenshtein.
+
+G and H share a row because they landed together and the benchmark was run once across both.
+I moves nothing, which is the point of it: it only declines rewrites in sentences that are
+quoting a misspelling rather than committing one, and this corpus contains none. Its effect on
+the real-audio corpus is nil too, verified by running that benchmark with the guard bypassed
+and diffing the report.
 
 ## Configurations
 
@@ -151,8 +182,8 @@ prose rate: `email` -> YAML (neg-116) no longer fires. Fix H (a second productio
 positive, `lacks` -> Locus) again left the positives untouched (99.6% excl. hard, term recall
 96.5%) and dropped two more expected-hard negatives: `graphical` -> GraphQL (neg-038, now a
 stoplist word) and `tropic` -> tRPC (neg-039, keyed via the alias `tea rpc` at 0.90 but only
-0.33 alike). Prose FP incl. hard is 12.5% (15/120), term precision 95.0% and F1 95.7%; the
-tables above predate G and H by one row.
+0.33 alike). Prose FP incl. hard is 12.5% (15/120), term precision 95.0% and F1 95.7%. The
+tables above have since been regenerated and now include G and H.
 
 | case | heard -> output | expected | why |
 |---|---|---|---|
@@ -269,8 +300,22 @@ For lexicon owners:
 
 Everything above feeds the matcher hand-written STT errors. This section measures the same
 matcher on transcripts from an actual recognizer, so the "before" number is what Whisper really
-produced, not what we assumed it would. Measured 2026-09-19 with `npm run bench:audio`; the full
+produced, not what we assumed it would. Measured 2026-09-20 with `npm run bench:audio`; the full
 report including every failing clip is [`bench/audio/results.md`](../bench/audio/results.md).
+
+The audio numbers moved between the 2026-09-19 run and this one, and they moved in both
+directions: recall on `base.en` fell from 86.4% to 82.8% and on `small.en` from 93.5% to 91.0%,
+while precision rose from 91.6% to 93.9% and from 92.6% to 94.4%, and the prose false-positive
+rate fell from 20.0% to 16.7%. Concretely, the precision work gave up `SQ light` -> SQLite
+(3 clips) and `Olima` -> Ollama (2 clips) and took back `graphical` -> GraphQL (3 clips). F1 is
+roughly flat (88.9% to 88.0% on `base.en`, 93.0% to 92.7% on `small.en`).
+
+**The cause is fixes G and H, not the enumeration guard**, and the distinction matters because
+both landed on the same day. This report had simply not been regenerated since the precision
+guards went in, so the older figures described a matcher that no longer existed. The enumeration
+guard changes nothing here at all: running the whole audio benchmark with it bypassed returns a
+byte-identical report, and it declines no rewrite in any of the 239 transcripts. The synthetic
+corpus is likewise identical to the case before and after it.
 
 ### Method
 
@@ -318,40 +363,42 @@ report including every failing clip is [`bench/audio/results.md`](../bench/audio
 | metric | base.en | base.en + prompt | small.en | small.en + prompt |
 |---|---|---|---|---|
 | term recall, raw Whisper | 41.9% (117/279) | 66.7% (186/279) | 45.9% (128/279) | 76.0% (212/279) |
-| term recall, after lexicon | **86.4%** (241/279) | **92.1%** (257/279) | **93.5%** (261/279) | **95.7%** (267/279) |
-| term precision | 91.6% | 93.5% | 92.6% | 93.7% |
-| term F1 | 88.9% | 92.8% | 93.0% | 94.7% |
+| term recall, after lexicon | **82.8%** (231/279) | **90.3%** (252/279) | **91.0%** (254/279) | **95.7%** (267/279) |
+| term precision | 93.9% | 95.5% | 94.4% | 95.7% |
+| term F1 | 88.0% | 92.8% | 92.7% | 95.7% |
 | sentence accuracy, raw Whisper (positives, loose) | 37.9% | 51.2% | 45.4% | 72.5% |
-| sentence accuracy, after lexicon (positives, loose) | 67.9% | 67.5% | 79.6% | 82.5% |
-| prose false-positive rate (negatives changed) | 20.0% (18/90) | 15.6% (14/90) | 20.0% (18/90) | 16.7% (15/90) |
+| sentence accuracy, after lexicon (positives, loose) | 65.8% | 67.1% | 78.8% | 83.8% |
+| prose false-positive rate (negatives changed) | 16.7% (15/90) | 13.3% (12/90) | 16.7% (15/90) | 13.3% (12/90) |
 | prose false-positive rate excl. expected-hard | **0.0%** (0/72) | **0.0%** (0/72) | **0.0%** (0/72) | **0.0%** (0/72) |
 
 The README-ready sentence:
 
 > On 279 proper nouns dictated through macOS TTS, whisper.cpp `base.en` spelled 42% correctly;
-> after the lexicon 86% are correct (`small.en`: 46% -> 94%). Passing the lexicon to Whisper as
-> an initial prompt gets `base.en` to 67% on its own; prompt plus lexicon reaches 92%
+> after the lexicon 83% are correct (`small.en`: 46% -> 91%). Passing the lexicon to Whisper as
+> an initial prompt gets `base.en` to 67% on its own; prompt plus lexicon reaches 90%
 > (`small.en`: 76% -> 96%). Clean prose without a lexicon term was never changed except the six
 > sentences that contain a canonical spelled as an English word (0 of 72 ordinary negatives, in
 > every configuration).
 
-Every one of the 18 prose false positives is one of the six `expected-hard` sentences, three
-voices each: `drizzle`, `neon`, `whisper`, `playwright` case-fixed and `graphical` -> GraphQL,
-`pedantic` -> Pydantic at 0.90. The synthetic benchmark predicted exactly this set.
+Every one of the 15 prose false positives is one of the six `expected-hard` sentences, five of
+them across three voices each: `drizzle`, `neon`, `whisper`, `playwright` case-fixed and
+`pedantic` -> Pydantic at 0.90. The synthetic benchmark predicted exactly this set. The sixth,
+`graphical` -> GraphQL, no longer fires: fix H put it on the stoplist, which removed it in all
+three voices and accounts for most of the drop from 20.0% to 16.7%.
 
 ### By voice and category (base.en, plain)
 
 | voice | term recall raw | term recall after | sentence acc raw | sentence acc after |
 |---|---|---|---|---|
-| Samantha (en_US) | 44.1% | 90.3% | 42.5% | 75.0% |
-| Daniel (en_GB) | 41.9% | 87.1% | 38.8% | 68.8% |
-| Karen (en_AU) | 39.8% | 81.7% | 32.5% | 60.0% |
+| Samantha (en_US) | 44.1% | 88.2% | 42.5% | 73.8% |
+| Daniel (en_GB) | 41.9% | 83.9% | 38.8% | 68.8% |
+| Karen (en_AU) | 39.8% | 76.3% | 32.5% | 55.0% |
 
 | category | term slots | raw | after | raw with prompt | after with prompt |
 |---|---|---|---|---|---|
 | brand | 54 | 14.8% | 81.5% | 37.0% | 85.2% |
-| product | 111 | 48.6% | 88.3% | 73.0% | 92.8% |
-| acronym | 54 | 88.9% | 96.3% | 100.0% | 100.0% |
+| product | 111 | 48.6% | 80.2% | 73.0% | 88.3% |
+| acronym | 54 | 88.9% | 94.4% | 100.0% | 100.0% |
 | person | 33 | 21.2% | 75.8% | 54.5% | 90.9% |
 | identifier | 27 | 0.0% | 81.5% | 48.1% | 88.9% |
 
@@ -365,8 +412,9 @@ and `Olima` but not `vessel`, `versatile` or `erupts`.
 
 `--prompt` with the canonicals is worth 25 points of raw recall on `base.en` and 30 on
 `small.en`, and it is the only thing that gets `Ashlr.AI`, `Hetzner` and `Kubernetes` spelled
-right at the source. It is not a substitute for the lexicon: 8 to 24 points remain, and the
-prompt introduces its own errors. Seen in this run:
+right at the source. It is not a substitute for the lexicon: 20 points (`small.en`, 76.0% to
+95.7%) to 24 points (`base.en`, 66.7% to 90.3%) remain for the lexicon to close after the prompt
+has done its work, and the prompt introduces its own errors. Seen in this run:
 
 - Casing the prompt does not control: `DeepGram` (3 of 6 base.en clips, 5 of 6 small.en; the
   prompt says `Deepgram`), `Saas` (3 of 3, small.en), `NormalizeTranscript`, `UserPrompt Submit`.
@@ -405,14 +453,14 @@ table for all 70 terms is in `bench/audio/results.md`.
 | LexiconStore | identifier | 0.0% (0/6) | 83.3% (5/6) | `lexicon store` x3 alias; `lexicon story` x1 phonetic; `Lexi can store` x1 phonetic; `Lexic and` x1 MISSED |
 | Nginx | product | 0.0% (0/3) | 100.0% (3/3) | `Engine X` x2 alias; `Enginex` x1 alias |
 | normalizeTranscript | identifier | 0.0% (0/6) | 100.0% (6/6) | `normalize transcript` x3 alias; `Normalize transcript` x3 alias |
-| Ollama | product | 0.0% (0/3) | 100.0% (3/3) | `Olima` x2 phonetic; `all Emma` x1 phonetic |
+| Ollama | product | 0.0% (0/3) | 33.3% (1/3) | `Olima` x2 MISSED; `all Emma` x1 phonetic |
 | OpenClaw | brand | 0.0% (0/3) | 100.0% (3/3) | `open claw` x3 alias |
 | Playwright | product | 0.0% (0/6) | 100.0% (6/6) | `playwright` x6 alias |
 | PostgreSQL | product | 0.0% (0/6) | 100.0% (6/6) | `Postgres` x6 alias |
 | Puppeteer | product | 0.0% (0/3) | 66.7% (2/3) | `puppeteer` x2 alias; `pup hitear` x1 MISSED |
 | Pydantic | product | 0.0% (0/3) | 66.7% (2/3) | `pedantic` x2 phonetic; `Adipidantic` x1 MISSED |
 | Siobhan Reilly | person | 0.0% (0/6) | 83.3% (5/6) | `Shiv on Riley` x2 alias; `Shivorn really` x1 fuzzy; `Shivorn Riley` x1 fuzzy; `Shivorn rally` x1 MISSED; `Sheve-On-Rally` x1 phonetic |
-| SQLite | product | 0.0% (0/3) | 100.0% (3/3) | `SQ light` x2 phonetic; `SQ light fall` x1 phonetic |
+| SQLite | product | 0.0% (0/3) | 0.0% (0/3) | `SQ light` x2 MISSED; `SQ light fall` x1 MISSED |
 | Supabase | brand | 0.0% (0/6) | 100.0% (6/6) | `Superbase` x6 alias |
 | Superwhisper | brand | 0.0% (0/3) | 100.0% (3/3) | `Super Whisper` x3 alias |
 | Tadeusz Wróblewski | person | 0.0% (0/3) | 66.7% (2/3) | `Tadayush Vrooblefsky` x1 phonetic; `Tadayushvublefsky` x1 MISSED; `Ted Ayushvroob Lefsky` x1 phonetic |
@@ -468,6 +516,83 @@ Not applied (the naive lexicon is the point of the benchmark). Mechanical list i
 Not suggested: `DeepGram`, `Superbase`, `Postgres`, `Jason`, `jot`, `Engine X`, `TRPC`,
 `playwright` (lowercase): all already exact hits through existing aliases or the case-insensitive
 canonical, which is the alias list in `bench/lexicon.yaml` doing what it was written to do.
+
+## Against the alternatives
+
+Everything above measures Lexicon against doing nothing. This section measures it against the
+three things a reader would otherwise reach for. Every row is scored on the **same cached
+whisper.cpp transcripts**, so the audio, the three voices and the recognizer are identical and
+the only variable is the fix. Reproduce with `npm run bench:compare` (after one
+`npm run bench:audio` to fill the transcript cache).
+
+The conditions:
+
+- **raw whisper.cpp** with no help at all.
+- **whisper.cpp `--prompt`**, the recognizer's own hint list, set to
+  `lexicon export whisper-prompt` (the 70 canonicals, 654 chars). This changes what Whisper
+  writes in the first place rather than fixing it afterwards.
+- **exact substitution**, the macOS Text Replacement baseline: a flat table of "this exact
+  phrase becomes that one", applied on word boundaries, longest first, one pass. It is given
+  exactly the same 175 aliases the matcher has, so the only thing being compared is the matching
+  strategy. Reported case-insensitively, which is the generous reading and how Text Replacement
+  actually behaves; the case-sensitive row is shown because the aliases in `bench/lexicon.yaml`
+  are written lowercase while Whisper capitalizes freely, and that alone costs 8 points.
+- **exact substitution + canonical casing rules**, the same table plus a `drizzle -> Drizzle`
+  rule per term, which is what a determined person adds once they notice the recognizer heard
+  the word but lower-cased it. This is the strongest honest version of the hand-rolled approach.
+- **Lexicon**: `normalize()`, alias > phonetic > fuzzy, with the guardrails.
+
+### small.en
+
+| condition | proper nouns recovered | sentences exactly right | clean prose wrongly changed |
+|---|---|---|---|
+| raw whisper.cpp | 45.9% (128/279) | 45.4% (109/240) | n/a, nothing runs |
+| exact substitution | 62.0% (173/279) | 59.2% (142/240) | 0 of 72 |
+| exact substitution + canonical casing rules | 71.3% (199/279) | 59.2% (142/240) | 0 of 72 |
+| whisper.cpp `--prompt` | 76.0% (212/279) | 72.5% (174/240) | n/a, nothing runs |
+| **Lexicon** | **91.0% (254/279)** | **78.8% (189/240)** | **0 of 72** |
+
+### base.en
+
+| condition | proper nouns recovered | sentences exactly right | clean prose wrongly changed |
+|---|---|---|---|
+| raw whisper.cpp | 41.9% (117/279) | 37.9% (91/240) | n/a, nothing runs |
+| exact substitution, case-sensitive | 49.8% (139/279) | 45.4% (109/240) | 0 of 72 |
+| exact substitution | 58.1% (162/279) | 49.6% (119/240) | 0 of 72 |
+| exact substitution + canonical casing rules | 65.6% (183/279) | 49.6% (119/240) | 0 of 72 |
+| whisper.cpp `--prompt` | 66.7% (186/279) | 51.2% (123/240) | n/a, nothing runs |
+| **Lexicon** | **82.8% (231/279)** | **65.8% (158/240)** | **0 of 72** |
+
+### Reading this table honestly
+
+- **The two baselines that do nothing cannot wrongly change prose.** Raw Whisper and `--prompt`
+  score `n/a` in the last column because neither runs a rewrite step. That is the absence of the
+  feature, not a safety advantage: they also cannot fix anything after the fact. The column that
+  compares all five conditions fairly is the first one.
+- **`--prompt` is a complement, not a competitor.** It is the strongest non-Lexicon condition on
+  `small.en` (76.0%), and it composes: the headline table above reports prompt plus lexicon at
+  95.7%, higher than either alone. The exporters exist so you can use both.
+- **The hand-rolled table is not free either.** Once it is strong enough to be worth having
+  (the casing-rules row), it starts changing prose it should not: 13.3% (12 of 90) with the
+  `expected-hard` sentences included, against Lexicon's 16.7% (15 of 90). Both are zero on the
+  72 ordinary prose clips. So Lexicon buys roughly 20 more points of recall for about 3 points
+  of adversarial false positives, not for a free lunch.
+- **The gap is the phonetic and fuzzy tiers.** Exact substitution recovers what an alias already
+  covers and nothing else. It cannot reach `Versal` -> Vercel, `Superbase` -> Supabase,
+  `CloudFloor` -> Cloudflare, `pedantic` -> Pydantic or `Leventstein` -> Levenshtein, because no
+  table a person writes by hand contains the spelling they have not seen yet. That is the whole
+  argument for the matcher, and it is worth 29 points on `small.en`.
+
+### Caveats specific to this table
+
+- The exact-substitution baseline is a faithful model of macOS Text Replacement's *matching*,
+  not of its *deployment*. Real Text Replacement fires while you type in Cocoa text fields; it
+  does not run over an agent's stdin. The comparison is about what the strategy can recover,
+  not about where it can be installed.
+- It is given the lexicon's aliases, which were written by someone who had already seen these
+  errors. A person starting from scratch would have fewer, so this row flatters the baseline.
+- Every caveat from the real-audio section applies: TTS is cleaner than a microphone, three
+  voices, one run, small per-term counts.
 
 ## See also
 

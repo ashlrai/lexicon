@@ -30,7 +30,21 @@ That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's 
 
 ## Measured
 
-Method and full tables are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench:audio`.
+Method, full tables and every failing case are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench` (no setup beyond a clone), or `npm run bench:audio && npm run bench:compare` (needs macOS and whisper.cpp).
+
+**Against the alternatives.** 330 clips of real audio through whisper.cpp `small.en`, three voices. Same audio, same recognizer, same 70-term lexicon in every row; the only thing that changes is how the proper nouns get fixed.
+
+| how the words get fixed | proper nouns recovered | clean prose wrongly changed |
+| --- | --- | --- |
+| nothing, raw whisper.cpp | 45.9% | n/a, nothing runs |
+| exact-string substitution, the macOS Text Replacement approach | 62.0% | 0 of 72 |
+| the same, plus a casing rule per term | 71.3% | 0 of 72 |
+| whisper.cpp's own `--prompt` hint list | 76.0% | n/a, nothing runs |
+| **Lexicon** | **91.0%** | **0 of 72** |
+
+Exact substitution recovers the spellings someone already wrote down, and nothing else. It cannot reach `Versal`, `Superbase`, `CloudFloor` or `pedantic`, because no table written by hand contains the mistake you have not heard yet. That gap is what the phonetic and fuzzy tiers are for, and it is worth 20 points here. `--prompt` is a complement rather than a rival: stacked with the lexicon it reaches **95.7%**. The top two rows cannot wrongly change prose because neither runs a rewrite step, which is the absence of the feature rather than an advantage.
+
+**Before and after.**
 
 | corpus | proper nouns recovered, raw STT | after lexicon | clean prose wrongly changed |
 | --- | --- | --- | --- |
@@ -39,6 +53,8 @@ Method and full tables are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce 
 | synthetic STT errors (398 sentences, 70 terms) | 5.1% | 96.5% | 0 of 95 |
 
 Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
+
+The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the real-audio one, 41.9%.
 
 The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 12.5% (15 of 120) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 

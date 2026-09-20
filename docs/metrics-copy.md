@@ -1,0 +1,136 @@
+# Landing-page copy: the numbers
+
+Handoff for whoever owns `web/`. Nothing in this file has been applied to the site. Every figure
+below is real, is computed by a command named next to it, and is committed in this repo so a
+reader can diff their run against ours.
+
+**Ground rule for this page.** Lexicon has been public for one day. There are no users, no
+downloads worth showing, one GitHub star, and no one has said anything about it in public. So
+there is no social proof to use, and inventing some would be the one mistake this launch cannot
+absorb. Everything persuasive here is a measurement, not a testimonial. See
+["What not to put on the page"](#what-not-to-put-on-the-page) at the bottom, which is the
+important half of this document.
+
+## The headline
+
+> **Your recognizer gets 46% of your proper nouns right. Lexicon gets 91%.**
+>
+> Measured on 330 clips of real audio through whisper.cpp, not on hand-written examples. It
+> never touched one of the 72 ordinary prose sentences in the same corpus.
+
+Source: `npm run bench:audio`, `small.en`, 279 term slots across three voices. Raw 45.9%
+(128/279), after the lexicon 91.0% (254/279). Prose: 0 of 72.
+
+Why this one and not the bigger number. The synthetic corpus shows 5.1% to 96.5%, which looks
+better and is worse evidence: every sentence in it was written to contain a mis-hearing, so the
+5.1% is an artifact of corpus construction, not a fact about speech-to-text. The real-audio
+before-number is the one that survives a sceptic. If a shorter line is needed, "46% to 91% on
+real audio" is the floor of what can be said honestly, and "roughly doubles what your recognizer
+gets right" is a fair plain-English gloss.
+
+## The section that should sit under it
+
+This is the comparison a reader is actually running in their head, and until now the repo had no
+answer to it. Same 330 clips, same recognizer, same 70-term lexicon in every row. Only the fix
+changes.
+
+| how the words get fixed | proper nouns recovered | clean prose wrongly changed |
+| --- | --- | --- |
+| nothing, raw whisper.cpp | 45.9% | n/a, nothing runs |
+| exact-string substitution, the macOS Text Replacement approach | 62.0% | 0 of 72 |
+| the same, plus a casing rule per term | 71.3% | 0 of 72 |
+| whisper.cpp's own `--prompt` hint list | 76.0% | n/a, nothing runs |
+| **Lexicon** | **91.0%** | **0 of 72** |
+
+Source: `npm run bench:compare` (after one `npm run bench:audio`). Full method, the `base.en`
+table and the caveats: [BENCHMARK.md, "Against the alternatives"](BENCHMARK.md#against-the-alternatives).
+
+Supporting line, if there is room:
+
+> Exact substitution recovers the spellings someone already wrote down. It cannot reach
+> `Versal`, `Superbase`, `CloudFloor` or `pedantic`, because no table written by hand contains
+> the mistake you have not heard yet.
+
+Three things the table must not be allowed to imply, and the copy should pre-empt at least the
+first:
+
+1. **The top two rows are not "safer".** They score `n/a` in the last column because they do not
+   run a rewrite step at all. If the page renders that as `0` or a green tick it becomes a lie
+   by formatting. Render it as text, or leave the cell visibly empty with a footnote.
+2. **`--prompt` is a complement, not a rival.** It is the strongest non-Lexicon row, and the two
+   stack: prompt plus lexicon is 95.7%. Say so. A reader who feels the page is picking a fight
+   with whisper's own feature will trust the rest of it less.
+3. **The hand-rolled row is not free either.** Once the casing rules make it strong enough to be
+   worth having, it starts changing prose it should not, on the adversarial sentences: 13.3%
+   against Lexicon's 16.7%. Both are 0 on ordinary prose. The trade is roughly 20 points of
+   recall for 3 points of adversarial false positives, and the page is more convincing if it
+   says that than if it implies the win is free.
+
+## Numbers that are safe to use anywhere
+
+| claim | figure | where it comes from |
+| --- | --- | --- |
+| proper nouns recovered, real audio, `small.en` | 45.9% to 91.0% | `npm run bench:audio` |
+| proper nouns recovered, real audio, `base.en` | 41.9% to 82.8% | `npm run bench:audio` |
+| best configuration, prompt + lexicon | 95.7% (267/279) | `npm run bench:audio` |
+| ordinary prose sentences changed | 0 of 72, in every configuration | `npm run bench:audio` |
+| ordinary prose, synthetic corpus | 0 of 95 | `npm run bench` |
+| term precision, real audio | 93.9% (`base.en`) to 95.7% (`small.en` + prompt) | `npm run bench:audio` |
+| latency | about 0.3 ms per sentence | `npm run bench` |
+| corpus size, audio | 110 sentences x 3 voices = 330 clips, 279 term slots | `bench/audio/sentences.jsonl` |
+| corpus size, synthetic | 398 cases, 313 term slots, 70 terms | `bench/corpus.jsonl` |
+| tests | 844, on every CI job | `npm test` |
+| licence | MIT | `LICENSE` |
+| exporters / importers / MCP tools / CLI commands | 15 / 7 / 19 / 25 | derived and enforced by `npm run check:facts` |
+
+Every one of these is regenerated by a command, and `npm run check:facts` fails the build if a
+doc states a stale count. That fact is itself worth a line on the page: it is a stronger
+credibility signal than any badge.
+
+## Framing that is true and does more work than a statistic
+
+- "Every number on this page names the command that regenerates it." Then link BENCHMARK.md.
+  For a project with no users, reproducibility is the only credibility available, so lead with
+  it rather than hiding it in a footer.
+- "The benchmark includes the cases we fail." The adversarial prose sentences, the 15 false
+  positives and the terms the matcher still misses are all in the repo. Saying so converts an
+  apparent weakness into the reason to believe the rest.
+- "It runs locally. Nothing is sent anywhere." Verifiable from the source, and true.
+
+## What not to put on the page
+
+Hard no, regardless of how the section is framed or hedged:
+
+- **Download counts.** The npm downloads API returns "not found" for `@ashlr/lexicon` as of
+  2026-09-20, because the package is about a day old. A shields.io downloads badge will render
+  an error or a zero.
+- **A GitHub star count or star badge.** It is 1.
+- **User counts, "trusted by", "used in production at", company logos, testimonials, quotes,
+  case studies, adoption charts.** None of these exist. There is no version of them that is
+  true today.
+- **Time-saved or money-saved figures.** Any "saves you N hours a week" requires a user to have
+  saved it. Deriving one from the accuracy numbers would be fabrication with a calculation
+  attached.
+- **"Join N developers", waitlist counts, Discord member counts.**
+- **Anything phrased to imply scale**: "teams are using", "since launch", "growing", "popular".
+
+Allowed and worth showing: the CI badge, the npm version badge, the licence badge, the Node
+version badge. All four are already in `README.md` and all four resolve correctly right now
+(`npm` currently renders `v0.5.1`, the published version).
+
+One thing to check before launch: `package.json` is at `0.5.2` but npm's latest is `0.5.1`, so
+the version badge will read `v0.5.1` until `0.5.2` is actually published. Worth publishing
+first, or the badge quietly contradicts the release notes.
+
+## Copy that would be wrong, and why
+
+For whoever writes the next draft, the three tempting mistakes, all of which I made and backed
+out of while writing this:
+
+- "Speech-to-text gets 5% of proper nouns right." No. That is the synthetic corpus, where every
+  sentence was built to contain an error. Use 41.9%, or 45.9% on `small.en`.
+- "Lexicon never changes ordinary prose." Close, but say "0 of 72 in this corpus". It changes
+  prose in 15 of 90 clips once the deliberately adversarial sentences are included, and those
+  sentences are in the repo for anyone to find.
+- "10x more accurate", "near-perfect", "solves". The real numbers are good enough that
+  inflating them only creates something to disprove.
