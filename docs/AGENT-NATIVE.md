@@ -96,12 +96,12 @@ Answers "is lexicon set up for this user, and if not what is the single
 command that fixes it" in one call. Three fields carry that answer and are
 meant to be read on their own:
 
-- `ready` — true when corrections will actually happen: there are terms, and
+- `ready` is true when corrections will actually happen: there are terms, and
   an agent is wired up to use them. This, not `ok`, is the answer to "is it
   set up". A lexicon with no terms and no integration fails no check, so `ok`
   is true and nothing works.
-- `summary` — one sentence, safe to relay verbatim.
-- `nextStep` — the single thing to do next, already phrased as an instruction.
+- `summary` is one sentence, safe to relay verbatim.
+- `nextStep` is the single thing to do next, already phrased as an instruction.
   Always present; when nothing is broken it says so and names how to try it.
 
 Then `{ ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }],
@@ -122,7 +122,7 @@ lexicon-serve.service` and the unit's `ExecStart`.
 > first failure: lexicon MCP server not registered with claude (run: lexicon
 > install claude --apply)"`
 > You have 36 terms and no conflicts, but the MCP server is not registered
-> with claude, so nothing is reading them. One command fixes it — want me to
+> with claude, so nothing is reading them. One command fixes it. Want me to
 > preview the Claude Code install?
 
 The agent relayed two fields and asked one question. It did not paste thirty
@@ -257,6 +257,8 @@ version, terms, port, ... }` or `{ up: false, error, hint }`.
 
 ## See also
 
-- [AGENTS.md](AGENTS.md) — the checklist version, written to the agent doing the work.
-- [MCP.md](MCP.md) — every tool's arguments and return shape.
-- [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) — these tools run for real, and the bugs that found.
+- [ARCHITECTURE.md](ARCHITECTURE.md) shows where these tools sit in the module map.
+- [CONTRACT.md](CONTRACT.md) gives each one its exact signature and return shape.
+- [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) is these tools run for real, and the bugs that found.
+
+Back to [the docs index](README.md).

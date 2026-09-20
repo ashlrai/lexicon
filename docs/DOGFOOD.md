@@ -1,6 +1,6 @@
 # Dogfood: @ashlr/lexicon against the real Claude Code CLI
 
-Run 1 of two recorded dogfood sessions. Subject: the correction path — the Claude Code hooks and the MCP server — against the real CLI. A dated record, not a guide; nothing here is required reading to use Lexicon.
+Run 1 of two recorded dogfood sessions. Subject: the correction path (the Claude Code hooks and the MCP server) against the real CLI. A dated record, not a guide; nothing here is required reading to use Lexicon.
 
 Live run of the hook + MCP integration through the headless CLI, on the
 maintainer's machine, with the maintainer's real lexicon. Nothing in `src/`
@@ -346,6 +346,7 @@ session, including headless and scripted ones.
 
 ## See also
 
-- [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) — run 2, covering the onboarding path, and run against the fixes this one produced.
-- [CLIENTS.md](CLIENTS.md) — what the hooks exercised here are supposed to do.
-- [CHANGELOG.md](../CHANGELOG.md) — where the fixes below landed.
+- [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) is run 2, covering the onboarding path, and run against the fixes this one produced.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) covers running these same checks yourself before you open a PR.
+
+Back to [the docs index](README.md).

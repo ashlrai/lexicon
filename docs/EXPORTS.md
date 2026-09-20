@@ -59,6 +59,8 @@ Flags for both commands are in the [CLI reference](CLI.md). Adding a new format 
 
 ## See also
 
-- [VOICE.md](VOICE.md) — `lexicon voice` uses the `whisper-prompt` export automatically.
-- [LIBRARY.md](LIBRARY.md) — doing the same bias-then-correct pass from your own code.
-- [PACKS.md](PACKS.md) — 155 curated terms, if you have no dictionary to import.
+- [LIBRARY.md](LIBRARY.md) does the same bias-then-correct pass from your own code.
+- [LEXICON-FILE.md](LEXICON-FILE.md) is the source every export is rendered from.
+- [MATCHING.md](MATCHING.md) covers what the `whisper-prompt` export is biasing.
+
+Back to [the docs index](README.md).

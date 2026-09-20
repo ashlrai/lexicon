@@ -4,6 +4,25 @@ LexiconBar is a small native menu bar app that fronts the `lexicon` CLI. It has 
 
 Source: `apps/macos/LexiconBar` (Swift Package, macOS 13+, AppKit + SwiftUI, no third-party dependencies).
 
+## Get it
+
+Every release attaches a built app. Download `LexiconBar.app.zip` from the
+[latest release](https://github.com/ashlrai/lexicon/releases/latest), unzip it,
+and drag `LexiconBar.app` into `/Applications`. That is the route to take unless
+you are changing the app itself; [Build from source](#build-from-source) is the
+other one.
+
+It needs the `lexicon` CLI on your machine as well, since the app has no logic
+of its own: `brew install ashlrai/tap/lexicon`, or see
+[QUICKSTART.md](QUICKSTART.md).
+
+The build is ad-hoc signed and not notarized, so macOS will not open it on a
+double-click the first time. Right-click the app and choose **Open**, then
+**Open** again in the dialog (or run `xattr -d com.apple.quarantine
+/Applications/LexiconBar.app` once). This is what [Opening an unsigned
+build](#opening-an-unsigned-build) is about, and it applies to every update,
+because each release is signed with a different ad-hoc identity.
+
 ## What it does
 
 | Menu item | Runs | Notes |
@@ -37,7 +56,7 @@ Every step talks to the local API (`lexicon serve`), never to the lexicon file d
 | 1. Welcome | One sentence, the before/after example (you said "Ashlr.AI", dictation wrote "Ashler", Lexicon writes "Ashlr.AI"), and a live status line for Accessibility and the local API. **Grant Accessibility** opens the Privacy pane; **Start the API** turns the Local API setting on. The lines re-check every 2 s, so leaving for System Settings and coming back shows the new state. | Nothing, unless you press Start the API (`localAPI` setting). |
 | 2. Your words | A table of rows: a "Correct spelling" field plus toggleable chips of what dictation is likely to write. The first row is pre-filled from your macOS full name (`NSFullUserName()`); the second is left blank rather than guessing a company wrong. 500 ms after you stop typing, or when you leave the field, the app asks `GET /aliases?canonical=…` and shows the answer as chips, all on. Switch any off, or type your own in "what dictation actually writes". A **Try it** box under the table normalizes whatever you type through `POST /normalize`, 300 ms after the last keystroke, with the corrected words in bold. | `POST /add {canonical, aliases}` per row, when you leave the field, press Return, or press Continue. |
 | 3. Starter packs | A card per pack from `GET /packs`: title, description, term and spelling counts, and a switch. On a lexicon that lists no packs at all, `developer`, `ai` and `voice-tools` are switched on for you; a lexicon that already has packs is left alone. Each installed card then reads "64 terms added, 6 merged". | `POST /packs/:name` and `DELETE /packs/:name`. |
-| 4. Where it works | Checkboxes that read and write the real settings: Fix everywhere, Watch clipboard, the local API, Show the correction bubble, plus the three hotkeys, and the same Try-it box. The local-API row is a checkbox only when this app could start or stop the server; when a LaunchAgent (or anything else) already owns the port it becomes a status line instead — see [Who runs the local API](#who-runs-the-local-api). | `fixEverywhere`, `watchClipboard`, `localAPI`, `bubble.show`. The clipboard watcher starts or stops with its checkbox; ticking the local API installs the LaunchAgent, falling back to a supervised child. |
+| 4. Where it works | Checkboxes that read and write the real settings: Fix everywhere, Watch clipboard, the local API, Show the correction bubble, plus the three hotkeys, and the same Try-it box. The local-API row is a checkbox only when this app could start or stop the server; when a LaunchAgent (or anything else) already owns the port it becomes a status line instead. See [Who runs the local API](#who-runs-the-local-api). | `fixEverywhere`, `watchClipboard`, `localAPI`, `bubble.show`. The clipboard watcher starts or stops with its checkbox; ticking the local API installs the LaunchAgent, falling back to a supervised child. |
 | 5. Done | Term and spelling counts from `GET /stats`, the terms you added, the packs you switched on, what is enabled, and **Open the lexicon file**. | `didOnboard`. |
 
 Writes are queued, never overlapped. `POST /add` and the pack routes are each a read-modify-write of the same YAML file on the server, so two in flight at once race and the later write wins. The window runs them strictly one at a time; reads (`/aliases`, `/normalize`, `/stats`) still go in parallel so nothing feels slow.
@@ -50,8 +69,8 @@ How it works: an `AXObserver` per app watches `kAXFocusedUIElementChanged` and `
 
 - **Permission**: needs LexiconBar under System Settings > Privacy & Security > Accessibility. The menu shows "Needs Accessibility permission" until it is granted.
 
-  Rebuilding the app changes its ad-hoc code signature, and the grant is bound to the *old* one. The row stays in the list with its switch still on, and it no longer authorises anything: TCC logs `Failed to match existing code requirement for subject ai.ashlr.lexiconbar` and denies with `auth_value=0`. **Toggling that row off and on does not help** — it keeps the stored signature. Select LexiconBar, remove it with **−**, then add the rebuilt `.app` again. `--status` will say `not granted` throughout, which is how to tell this apart from the app simply not asking.
-- **Streamed dictation**: dictation does not always arrive as one insertion. macOS's own dictation, Wispr Flow's streaming mode and an app's built-in microphone button insert a word at a time, and the gaps between spoken words are routinely longer than the 700 ms settle delay — which used to end the run at the first pause, leaving a single word that was "too short" to correct, and then doing the same for every following word, so a dictated sentence went through completely uncorrected. A run that has produced at least one word-sized insertion is now held open until the field has been quiet for `runQuietMs` (default 1500 ms, longer than a pause between words), and the words are corrected together as one burst. Continuous dictation is capped at `maxRunMs` (default 12 s) so it is still corrected periodically. A single insertion that already reads as a burst — a paste, or a dictation tool that inserts the finished phrase — still fires at the settle delay, so pasting is no slower than before.
+  Rebuilding the app changes its ad-hoc code signature, and the grant is bound to the *old* one. The row stays in the list with its switch still on, and it no longer authorises anything: TCC logs `Failed to match existing code requirement for subject ai.ashlr.lexiconbar` and denies with `auth_value=0`. **Toggling that row off and on does not help**: it keeps the stored signature. Select LexiconBar, remove it with **−**, then add the rebuilt `.app` again. `--status` will say `not granted` throughout, which is how to tell this apart from the app simply not asking.
+- **Streamed dictation**: dictation does not always arrive as one insertion. macOS's own dictation, Wispr Flow's streaming mode and an app's built-in microphone button insert a word at a time, and the gaps between spoken words are routinely longer than the 700 ms settle delay. That used to end the run at the first pause, leaving a single word that was "too short" to correct, and then doing the same for every following word, so a dictated sentence went through completely uncorrected. A run that has produced at least one word-sized insertion is now held open until the field has been quiet for `runQuietMs` (default 1500 ms, longer than a pause between words), and the words are corrected together as one burst. Continuous dictation is capped at `maxRunMs` (default 12 s) so it is still corrected periodically. A single insertion that already reads as a burst (a paste, or a dictation tool that inserts the finished phrase) still fires at the settle delay, so pasting is no slower than before.
 
 - **Per-app exclusions**: the menu has "Fix everywhere in `<frontmost app>`", and Preferences has the full list. A trailing `.*` matches a prefix (`com.jetbrains.*`); ids are matched case-insensitively. Excluded by default:
 
@@ -60,11 +79,11 @@ How it works: an `AXObserver` per app watches `kAXFocusedUIElementChanged` and `
 
   Most of the manager entries are vendor prefixes rather than exact ids, because an exact list is wrong the moment a vendor ships a new bundle id. **If your manager is not on the list, add it**: focus it and use the menu's "Fix everywhere in `<app>`" to switch it off, or add its bundle id in Preferences. `osascript -e 'id of app "YourApp"'` prints the id.
 
-- **Fields that look like they hold a secret**: a bundle-id list always lags reality, and the secure-field check only protects the literal masked password input — in any manager that is not on the list, the *ordinary* fields (an item's notes, a custom field, a TOTP seed box, a vault search field echoing a username) would otherwise be read and sent to the local API. So, independently of which app it is, a field is refused when its accessibility identifier, placeholder, title, help, description or role description — or the title of the window it sits in — contains one of `password`, `passphrase`, `passcode`, `secret`, `token`, `api key`, `private key`, `seed`, `mnemonic`, `recovery`, `pin`, `cvv`, `cvc`, `security code`, `verification code`, `otp`, `totp`, `2fa`, `mfa`, `credential`, `keychain`, `vault`, `card number`, `account number`, `routing number` or `social security`. Matching is on whole words after splitting camel case and punctuation, so `apiKeyField` and `api_key` match but "shipping" never matches "pin" and an ordinary Notes field is left alone. A refused field is never watched at all — no value is read from it — and the log says `not watching this field in <app>: it looks like it holds a secret (<term>)`.
+- **Fields that look like they hold a secret**: a bundle-id list always lags reality, and the secure-field check only protects the literal masked password input. In any manager that is not on the list, the *ordinary* fields (an item's notes, a custom field, a TOTP seed box, a vault search field echoing a username) would otherwise be read and sent to the local API. So, independently of which app it is, a field is refused when its accessibility identifier, placeholder, title, help, description or role description (or the title of the window it sits in) contains one of `password`, `passphrase`, `passcode`, `secret`, `token`, `api key`, `private key`, `seed`, `mnemonic`, `recovery`, `pin`, `cvv`, `cvc`, `security code`, `verification code`, `otp`, `totp`, `2fa`, `mfa`, `credential`, `keychain`, `vault`, `card number`, `account number`, `routing number` or `social security`. Matching is on whole words after splitting camel case and punctuation, so `apiKeyField` and `api_key` match but "shipping" never matches "pin" and an ordinary Notes field is left alone. A refused field is never watched at all (no value is read from it), and the log says `not watching this field in <app>: it looks like it holds a secret (<term>)`.
 - **Undo**: ⌃⌥Z, the menu's "Undo last fix", or the bubble's Undo button. It only applies while the same field still holds exactly the corrected text; edit on and the offer goes away.
-- **Apps that hide their Accessibility tree**: some apps build one only once an assistive client asks, and the two opt-in switches are not the same one. Electron and most Chromium embedders take `AXManualAccessibility`, which LexiconBar sets for every app it watches. The Codex/ChatGPT desktop app rejects that one and stays dark — its whole window reads as six nested empty `AXGroup`s and `AXFocusedUIElement` answers `kAXErrorNoValue` — until AppKit's own `AXEnhancedUserInterface` is written, after which its composer turns out to be an ordinary writable `AXTextArea`. LexiconBar therefore sends that second nudge, but only to an app that has already reported no focused element, at most once per process, because enhanced mode makes AppKit animate window frame changes and window managers object to it being on globally. It is logged: `<app> reported no focused element; enabling AXEnhancedUserInterface`.
+- **Apps that hide their Accessibility tree**: some apps build one only once an assistive client asks, and the two opt-in switches are not the same one. Electron and most Chromium embedders take `AXManualAccessibility`, which LexiconBar sets for every app it watches. The Codex/ChatGPT desktop app rejects that one and stays dark (its whole window reads as six nested empty `AXGroup`s and `AXFocusedUIElement` answers `kAXErrorNoValue`) until AppKit's own `AXEnhancedUserInterface` is written, after which its composer turns out to be an ordinary writable `AXTextArea`. LexiconBar therefore sends that second nudge, but only to an app that has already reported no focused element, at most once per process, because enhanced mode makes AppKit animate window frame changes and window managers object to it being on globally. It is logged: `<app> reported no focused element; enabling AXEnhancedUserInterface`.
 
-- **Limitations**: apps with no Accessibility text support are invisible to it (nothing is corrected, nothing breaks, and the log line above is the only trace). **Cursor and VS Code are in this group**: they expose no focused text element even after both nudges, because they build an Accessibility tree only when their own accessibility-support setting is on, so Fix everywhere does nothing in their editor and Quick Open. Secure text fields are refused by subrole and by a role description containing "secure" or "password". Fields over 20,000 characters are skipped, as are multi-paragraph bursts and any rewrite that would introduce a newline the burst did not have (in a chat composer that would send the message). An insertion that cannot be located — because the text around it repeats and the caret does not pin it down — is refused rather than guessed at. One API call per field per 300 ms.
+- **Limitations**: apps with no Accessibility text support are invisible to it (nothing is corrected, nothing breaks, and the log line above is the only trace). **Cursor and VS Code are in this group**: they expose no focused text element even after both nudges, because they build an Accessibility tree only when their own accessibility-support setting is on, so Fix everywhere does nothing in their editor and Quick Open. Secure text fields are refused by subrole and by a role description containing "secure" or "password". Fields over 20,000 characters are skipped, as are multi-paragraph bursts and any rewrite that would introduce a newline the burst did not have (in a chat composer that would send the message). An insertion that cannot be located (because the text around it repeats and the caret does not pin it down) is refused rather than guessed at. One API call per field per 300 ms.
 
 ## Correction bubble
 
@@ -82,13 +101,18 @@ Three buttons:
 
 Never and Add act on the guessed replacement when the bubble lists one, otherwise on the first.
 
-Behaviour: fades in over 120 ms, and goes away after 4 seconds (2 to 10, or off, in Preferences). Hovering pauses the countdown so it cannot vanish on the way to Undo; leaving restarts it. Escape, a click anywhere else, switching app, or typing on dismisses it at once, and the next burst replaces it rather than stacking a second panel — there is only ever one.
+Behaviour: fades in over 120 ms, and goes away after 4 seconds (2 to 10, or off, in Preferences). Hovering pauses the countdown so it cannot vanish on the way to Undo; leaving restarts it. Escape, a click anywhere else, switching app, or typing on dismisses it at once, and the next burst replaces it rather than stacking a second panel: there is only ever one.
 
 The panel is a `.nonactivatingPanel` with `canBecomeKey` forced to false, at `.floating` level, joining all Spaces and staying out of the window cycle. It never takes keyboard focus, so you can keep typing straight through it; that also means Escape and clicks reach it through global event monitors rather than the responder chain.
 
 Placement comes from Accessibility: the caret rectangle via `kAXBoundsForRangeParameterizedAttribute` over the selected range, falling back to the focused element's own frame (`AXPosition` + `AXSize`), then to the mouse. The result is clamped to the `visibleFrame` of the screen the caret is on, so it never lands under the menu bar, the notch or the Dock, and flips above the caret when there is no room below.
 
 ## Build from source
+
+Only needed if you are changing the app. To just use it, download
+`LexiconBar.app.zip` from the [latest
+release](https://github.com/ashlrai/lexicon/releases/latest); see [Get
+it](#get-it).
 
 Requirements: Xcode 15 or newer (Swift 5.9+), macOS 13+.
 
@@ -105,13 +129,13 @@ The `macOS app` GitHub workflow (`.github/workflows/macos-app.yml`) builds, test
 
 ### Opening an unsigned build
 
-The app is signed locally and not notarized. The first launch of a downloaded copy is blocked by Gatekeeper. Either right-click the app and choose Open, or clear the quarantine flag:
+The app is signed ad-hoc and not notarized. A copy that arrived over the network is quarantined, so Gatekeeper blocks its first launch. That covers both `LexiconBar.app.zip` from a [release](https://github.com/ashlrai/lexicon/releases/latest) and a zip pulled from a CI run. Either right-click the app and choose Open, or clear the quarantine flag:
 
 ```bash
-xattr -d com.apple.quarantine apps/macos/build/LexiconBar.app
+xattr -d com.apple.quarantine apps/macos/build/LexiconBar.app   # or /Applications/LexiconBar.app
 ```
 
-A build made on the same Mac (via the script above) is not quarantined and opens normally.
+A build made on the same Mac by the script above was never downloaded, so it is not quarantined and opens normally.
 
 ## Signing, and why the Accessibility grant kept disappearing
 
@@ -119,7 +143,7 @@ The symptom is maddening and gives you no clue what is wrong: LexiconBar is list
 
 ### The trap
 
-macOS does not grant Accessibility to a *path*. It grants it to a **code signature**, stored as the app's designated requirement (DR) — a rule the app must keep satisfying every time it asks.
+macOS does not grant Accessibility to a *path*. It grants it to a **code signature**, stored as the app's designated requirement (DR): a rule the app must keep satisfying every time it asks.
 
 An ad-hoc signature (`codesign --sign -`) has no certificate, so there is nothing durable to name the app by, and the DR falls back to the hash of the binary itself:
 
@@ -133,7 +157,7 @@ Every build produces a different binary, so every build has a different cdhash, 
 Failed to match existing code requirement for subject ai.ashlr.lexiconbar
 ```
 
-The row in System Settings stays, and keeps its switch on, because it is still a row about "LexiconBar" — it just no longer describes the app on disk. The switch is UI state; the DR is the thing being checked. Nothing about the interface tells you they have come apart.
+The row in System Settings stays, and keeps its switch on, because it is still a row about "LexiconBar". It just no longer describes the app on disk. The switch is UI state; the DR is the thing being checked. Nothing about the interface tells you they have come apart.
 
 ### The one-time fix
 
@@ -158,7 +182,7 @@ scripts/build-macos-app.sh
 designated => identifier "ai.ashlr.lexiconbar" and certificate leaf = H"8f4eec66…"
 ```
 
-The certificate does not change when the binary does, so this line is identical on every future build — which is exactly what the stored grant is checked against. `build-macos-app.sh` prints the cdhash and the DR on every build, so you can watch the cdhash move while the DR stays put.
+The certificate does not change when the binary does, so this line is identical on every future build, which is exactly what the stored grant is checked against. `build-macos-app.sh` prints the cdhash and the DR on every build, so you can watch the cdhash move while the DR stays put.
 
 The script is idempotent: run it again and it reports the identity it already made. Without it the build still works, signs ad-hoc, and prints a warning saying the grant will break again.
 
@@ -166,7 +190,7 @@ The script is idempotent: run it again and it reports the identity it already ma
 
 The certificate and its private key go in a keychain of their own, `~/Library/Keychains/lexiconbar-signing.keychain-db`, whose password is generated and kept in `~/Library/Application Support/LexiconBar/signing-keychain.password` (mode 0600). That is what makes the whole thing non-interactive: `security set-key-partition-list` must be given the keychain's password or macOS puts up a dialog, and the login keychain's password is yours, not ours. A keychain we create has a password we can supply, so `codesign` never asks for anything. The keychain is added to your `security list-keychains -d user` search list, which is how `codesign` finds the identity, and `build-macos-app.sh` unlocks it before signing (it is locked again after a reboot).
 
-`security find-identity -v -p codesigning` will still report **0 valid identities**: `-v` means "valid" in the sense of "chains to a trusted root", and a self-signed certificate does not. That does not matter — `codesign` signs with it happily. To see it, drop the `-v`:
+`security find-identity -v -p codesigning` will still report **0 valid identities**: `-v` means "valid" in the sense of "chains to a trusted root", and a self-signed certificate does not. That does not matter: `codesign` signs with it happily. To see it, drop the `-v`:
 
 ```bash
 security find-identity -p codesigning     # 1) 8F4EEC66… "LexiconBar Local Signing" (CSSMERR_TP_NOT_TRUSTED)
@@ -185,7 +209,7 @@ rm -f ~/Library/Application\ Support/LexiconBar/signing-keychain.password
 
 ### This is not a Developer ID
 
-Gatekeeper does not trust this certificate, and neither will anyone else's Mac. It solves one problem — TCC forgetting the app between local builds — and nothing else. Shipping to other people needs a real Developer ID certificate and notarization; see [RELEASING.md](RELEASING.md).
+Gatekeeper does not trust this certificate, and neither will anyone else's Mac. It solves one problem (TCC forgetting the app between local builds) and nothing else. Shipping to other people needs a real Developer ID certificate and notarization; see [RELEASING.md](RELEASING.md).
 
 ## Finding the CLI
 
@@ -234,12 +258,12 @@ Everything the app corrects goes through `lexicon serve` on `127.0.0.1:41733`, b
 
 | Who | How it is detected | What the row does |
 | --- | --- | --- |
-| **LaunchAgent** | `launchctl print gui/<uid>/ai.ashlr.lexicon.serve` exits 0 | Status line, "Local API: running at login (launchd)", with "Manage with `lexicon serve --uninstall`". No checkbox — a click could only start a second server that cannot bind the port. |
+| **LaunchAgent** | `launchctl print gui/<uid>/ai.ashlr.lexicon.serve` exits 0 | Status line, "Local API: running at login (launchd)", with "Manage with `lexicon serve --uninstall`". No checkbox: a click could only start a second server that cannot bind the port. |
 | **This app's child** | the app's own `ChildProcessSupervisor` has a live `lexicon serve` | Checkbox, on. Switching it off stops the child. |
 | **Something else** | nothing above, but `GET /health` answers | Status line, "Local API: reachable (not managed by this app)". Usually a `lexicon serve` you started in a terminal; find it with `lsof -nP -iTCP:41733 -sTCP:LISTEN`. |
 | **Nobody** | none of the above | Checkbox, off, labelled "Run the local API". |
 
-launchd wins outright: with `KeepAlive` it takes the port back whatever else happens, so a child of ours could only thrash. A plist on disk that is *not* loaded is not ownership — it only changes the hint on the "nobody" row.
+launchd wins outright: with `KeepAlive` it takes the port back whatever else happens, so a child of ours could only thrash. A plist on disk that is *not* loaded is not ownership: it only changes the hint on the "nobody" row.
 
 Ticking **Run the local API** installs the LaunchAgent (`lexicon serve --install`) rather than supervising a child, because that survives an app restart, a logout and a crash, which is what asking for "the local API" almost always means. If the install fails, the app falls back to a supervised child and says why.
 
@@ -257,7 +281,7 @@ which prints `apiReachable`, `serveOwnership` (`launchAgent` / `appChild` / `for
 
 (If the grant is listed and switched on but the app still is not trusted, the problem is the code signature, not this: see [Signing, and why the Accessibility grant kept disappearing](#signing-and-why-the-accessibility-grant-kept-disappearing).)
 
-`AXIsProcessTrusted()` does not answer "is LexiconBar allowed to use Accessibility". It answers for the **responsible process**, and for anything started from a shell that is the terminal. A `--status` run from a terminal therefore inherits the terminal's grant, and a bare `.build/release/LexiconBar` — a binary that cannot hold a grant at all — will happily report `true` while the GUI-launched bundle is being denied.
+`AXIsProcessTrusted()` does not answer "is LexiconBar allowed to use Accessibility". It answers for the **responsible process**, and for anything started from a shell that is the terminal. A `--status` run from a terminal therefore inherits the terminal's grant, and a bare `.build/release/LexiconBar` (a binary that cannot hold a grant at all) will happily report `true` while the GUI-launched bundle is being denied.
 
 So it does not report it. From a terminal, `--status` says:
 
@@ -273,12 +297,12 @@ The answer that matters comes from the running app, which writes its own state t
 { "axTrusted": false, "pid": 92830, "running": true, "updatedAt": "2026-09-20T03:32:31Z", "version": "0.4.0" }
 ```
 
-`--status` reads it and prints a second line — this is the one to believe, and the one an agent should parse (`axAppTrusted`):
+`--status` reads it and prints a second line. This is the one to believe, and the one an agent should parse (`axAppTrusted`):
 
 | State file | Second line |
 | --- | --- |
 | fresh, granted | `Accessibility (menu bar app): trusted (as of 8 seconds ago)` |
-| fresh, denied | `Accessibility (menu bar app): not granted (as of 8 seconds ago) — add LexiconBar.app under …` |
+| fresh, denied | `Accessibility (menu bar app): not granted (as of 8 seconds ago). Add LexiconBar.app under …` |
 | written on quit | `Accessibility (menu bar app): not running (it quit 4 seconds ago)` |
 | older than 5 minutes | `Accessibility (menu bar app): not running (last heartbeat 9 minutes ago)` |
 | missing | `Accessibility (menu bar app): not running (no state file at …)` |
@@ -302,3 +326,11 @@ log show --last 5m --predicate 'process == "tccd"' --info | grep -B20 'AUTHREQ_R
 - Start at login uses `SMAppService`, which requires the packaged `.app`; move it to `/Applications` before enabling so the path stays stable.
 - One paste failure hint per install (reset with `defaults delete ai.ashlr.lexiconbar hint.accessibilityShown`).
 - The status item may be hidden behind the notch on a MacBook with a crowded menu bar; macOS does this to any status item and the hotkeys keep working.
+
+## See also
+
+- [LOCAL-API.md](LOCAL-API.md) is the server this app starts and supervises, and the API that Fix everywhere calls.
+- [DAEMON.md](DAEMON.md) is the same clipboard fix without the app, on any OS.
+- [VOICE.md](VOICE.md) documents the `lexicon voice` pipeline behind push to talk.
+
+Back to [the docs index](README.md).

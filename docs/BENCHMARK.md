@@ -1,5 +1,7 @@
 # Accuracy benchmark results
 
+The accuracy numbers behind every claim in the README, with the method, the corpora and every case that still fails. For anyone deciding whether to trust the matcher, or changing it.
+
 Measured 2026-09-19 against `src/core/matcher.ts` after the precision fixes described in
 "Fix log" below, with the naive `bench/lexicon.yaml` (70 terms, 21 without aliases, no `never`
 lists, default settings). Reproduce with `npm run bench -- --sweep`; the raw output including
@@ -463,3 +465,11 @@ Not applied (the naive lexicon is the point of the benchmark). Mechanical list i
 Not suggested: `DeepGram`, `Superbase`, `Postgres`, `Jason`, `jot`, `Engine X`, `TRPC`,
 `playwright` (lowercase): all already exact hits through existing aliases or the case-insensitive
 canonical, which is the alias list in `bench/lexicon.yaml` doing what it was written to do.
+
+## See also
+
+- [RESEARCH.md](RESEARCH.md) explains why accuracy on proper nouns is the thing worth measuring.
+- [ARCHITECTURE.md](ARCHITECTURE.md) covers what got built, and the decisions behind it.
+- [LANDING.md](LANDING.md) is where these numbers get quoted to a stranger.
+
+Back to [the docs index](README.md).

@@ -94,3 +94,11 @@ Each recommendation above, mapped to what exists in the repo today.
 | Reduce install friction | `curl -fsSL https://ashlrai.github.io/lexicon/install.sh \| sh`, `brew install ashlrai/tap/lexicon`, and `lexicon setup`, which seeds the lexicon, harvests the repo, installs into detected agents and the dictation app in one pass; the agent can run the same setup through `setup_lexicon` and the `onboard` prompt (`docs/AGENT-NATIVE.md`) |
 
 Still open: store listings for the browser extension, a notarized macOS app, a Windows and Linux tray app, per-app sync (pushing changes into the apps instead of exporting), non-English phonetics, and a benchmark on recorded speech rather than text-to-speech audio (`docs/BENCHMARK.md` has a real-audio benchmark, but the clips are macOS TTS).
+
+## See also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) covers what got built, and the decisions behind it.
+- [LANDING.md](LANDING.md) is the page that makes this argument in public.
+- [DISTRIBUTION.md](DISTRIBUTION.md) covers how the thing reaches the people described here.
+
+Back to [the docs index](README.md).

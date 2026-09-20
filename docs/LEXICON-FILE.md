@@ -63,6 +63,8 @@ Parsing is defensive: fields are length-capped and stripped of zero-width and bi
 
 ## See also
 
-- [MATCHING.md](MATCHING.md) — how the file is applied to text, and what each setting does to the matcher.
-- [TRUST.md](TRUST.md) — why the project file is off until you approve it.
-- [GROWING.md](GROWING.md) — filling the file without typing it.
+- [TRUST.md](TRUST.md) explains why the project file is off until you approve it.
+- [MATCHING.md](MATCHING.md) covers how the file is applied to text, and what each setting does to the matcher.
+- [ARCHITECTURE.md](ARCHITECTURE.md) shows the module that reads and writes it.
+
+Back to [the docs index](README.md).

@@ -42,6 +42,8 @@ The three tiers are colour-coded in the [live demo](https://ashlrai.github.io/le
 
 ## See also
 
-- [LEXICON-FILE.md](LEXICON-FILE.md) — the settings that tune everything above.
-- [BENCHMARK.md](BENCHMARK.md) — how well the tiers and guards actually do, and where they fail.
-- [SUGGEST.md](SUGGEST.md) — turning a false positive into a `never` word.
+- [BENCHMARK.md](BENCHMARK.md) measures how well the tiers and guards actually do, and where they fail.
+- [RESEARCH.md](RESEARCH.md) explains why accuracy on proper nouns is the thing worth measuring.
+- [CONTRACT.md](CONTRACT.md) has the matcher's exact signatures and every tuning constant.
+
+Back to [the docs index](README.md).

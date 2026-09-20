@@ -532,6 +532,8 @@ Commands:
 
 ## See also
 
-- [QUICKSTART.md](QUICKSTART.md) — the commands you actually need on day one, in order.
-- [LEXICON-FILE.md](LEXICON-FILE.md) — the file these commands read and write.
-- [MCP.md](MCP.md) — the same capabilities as tools your agent can call.
+- [MCP.md](MCP.md) has the same capabilities as tools your agent can call.
+- [GROWING.md](GROWING.md) covers the commands that fill the lexicon for you.
+- [LEXICON-FILE.md](LEXICON-FILE.md) is the file these commands read and write.
+
+Back to [the docs index](README.md).

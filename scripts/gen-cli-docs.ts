@@ -116,11 +116,16 @@ async function main(): Promise<void> {
     out.push(fence(help([c.name])));
   }
   out.push('');
+  // Points onward, never back at QUICKSTART.md, which is where most readers of
+  // this page came from. No em-dashes: CONTRIBUTING.md bans them in docs, and
+  // this file is a doc even though a script writes it.
   out.push('## See also');
   out.push('');
-  out.push('- [QUICKSTART.md](QUICKSTART.md) — the commands you actually need on day one, in order.');
-  out.push('- [LEXICON-FILE.md](LEXICON-FILE.md) — the file these commands read and write.');
-  out.push('- [MCP.md](MCP.md) — the same capabilities as tools your agent can call.');
+  out.push('- [MCP.md](MCP.md) has the same capabilities as tools your agent can call.');
+  out.push('- [GROWING.md](GROWING.md) covers the commands that fill the lexicon for you.');
+  out.push('- [LEXICON-FILE.md](LEXICON-FILE.md) is the file these commands read and write.');
+  out.push('');
+  out.push('Back to [the docs index](README.md).');
   out.push('');
 
   await fs.mkdir(path.dirname(OUT), { recursive: true });

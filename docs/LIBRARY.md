@@ -61,6 +61,8 @@ Runnable versions of both snippets: [examples/library-usage.ts](../examples/libr
 
 ## See also
 
-- [CONTRACT.md](CONTRACT.md) — the exported signature of every module.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — the design behind those signatures.
-- [MATCHING.md](MATCHING.md) — what `normalize()` does to a sentence, and every guard it applies.
+- [MATCHING.md](MATCHING.md) covers what `normalize()` does to a sentence, and every guard it applies.
+- [ARCHITECTURE.md](ARCHITECTURE.md) shows which module you are importing, and what it may import.
+- [CONTRACT.md](CONTRACT.md) has the exported signature of every module.
+
+Back to [the docs index](README.md).

@@ -195,6 +195,8 @@ vocabulary Whisper gets wrong, since the lexicon cannot fix words it does not kn
 
 ## See also
 
-- [DAEMON.md](DAEMON.md) — if you already have a dictation app and only want its output corrected.
-- [SUGGEST.md](SUGGEST.md) — what `lexicon suggest` mines from the history this command writes.
-- [EXPORTS.md](EXPORTS.md) — exporting into Wispr Flow or Superwhisper instead, which are nicer dictation apps.
+- [EXPORTS.md](EXPORTS.md) covers Wispr Flow and Superwhisper, which are nicer dictation apps to export into.
+- [SUGGEST.md](SUGGEST.md) mines the history this command writes for what to add next.
+- [MATCHING.md](MATCHING.md) explains the corrections applied to each transcript.
+
+Back to [the docs index](README.md).

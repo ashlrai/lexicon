@@ -10,30 +10,30 @@ The short pitch, the benchmark headline and the install commands are in the
 
 ## Get started
 
-| Page | What it covers |
-|---|---|
-| [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes |
-| [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client |
-| [FAQ.md](FAQ.md) | The questions people ask before installing |
-| [PACKS.md](PACKS.md) | The four starter packs, what is in each, and how install and remove behave |
-| [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` |
+| Page | What it covers | Also listed under |
+|---|---|---|
+| [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes | |
+| [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
+| [FAQ.md](FAQ.md) | The questions people ask before installing | |
+| [PACKS.md](PACKS.md) | The four starter packs, what is in each, and how install and remove behave | |
+| [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
 
 ## Use it with
 
 One lexicon, applied wherever your voice lands. Pick your surface.
 
-| Page | Surface |
-|---|---|
-| [CLIENTS.md](CLIENTS.md) | Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop |
-| [MCP.md](MCP.md) | Any MCP client: the stdio server's tools, resources and prompts |
-| [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser |
-| [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API |
-| [LOCAL-API.md](LOCAL-API.md) | Shortcuts, Raycast, Alfred, scripts: the loopback HTTP API |
-| [VOICE.md](VOICE.md) | Local push-to-talk dictation with ffmpeg and whisper.cpp |
-| [DAEMON.md](DAEMON.md) | Any text field on any OS, through the clipboard and a hotkey |
-| [EXPORTS.md](EXPORTS.md) | Wispr Flow, Superwhisper, espanso, Deepgram, Azure, Google and nine more |
-| [LIBRARY.md](LIBRARY.md) | Your own STT pipeline, by calling `normalize()` |
-| [AGENTS.md](AGENTS.md) | Written to the agent, not the user: how to install and verify Lexicon on someone's behalf |
+| Page | Surface | Also listed under |
+|---|---|---|
+| [CLIENTS.md](CLIENTS.md) | Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop | Get started |
+| [MCP.md](MCP.md) | Any MCP client: the stdio server's tools, resources and prompts | Reference |
+| [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser | |
+| [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |
+| [LOCAL-API.md](LOCAL-API.md) | The loopback HTTP API: the browser extension is its main client, then LexiconBar, Shortcuts, Raycast, Alfred and scripts | |
+| [VOICE.md](VOICE.md) | Local push-to-talk dictation with ffmpeg and whisper.cpp | |
+| [DAEMON.md](DAEMON.md) | Any text field on any OS, through the clipboard and a hotkey | |
+| [EXPORTS.md](EXPORTS.md) | Wispr Flow, Superwhisper, espanso, Deepgram, Azure, Google and nine more | Reference |
+| [LIBRARY.md](LIBRARY.md) | Your own STT pipeline, by calling `normalize()` | |
+| [AGENTS.md](AGENTS.md) | Written to the agent, not the user: how to install and verify Lexicon on someone's behalf | |
 
 ## Understand how it works
 
@@ -43,17 +43,21 @@ One lexicon, applied wherever your voice lands. Pick your surface.
 | [TRUST.md](TRUST.md) | Why a project `.lexicon.yaml` is off until you approve it |
 | [BENCHMARK.md](BENCHMARK.md) | The accuracy measurements: corpora, method, results, and what still fails |
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
-| [GROWING.md](GROWING.md) | Harvesting a repo, learning from corrections, stats, pruning what never fires |
+| [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
 
 ## Reference
 
-| Page | What it covers |
-|---|---|
-| [CLI.md](CLI.md) | Every command and flag, generated from `--help` |
-| [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes |
-| [LEXICON-FILE.md](LEXICON-FILE.md) | The file schema and every setting |
-| [EXPORTS.md](EXPORTS.md) | Every export format and every importer |
+Look up an exact name, flag or field. Three of these four pages appear above as
+well; they are the same page either way, listed twice because you reach them for
+two different reasons.
+
+| Page | What it covers | Also listed under |
+|---|---|---|
+| [CLI.md](CLI.md) | Every command and flag, generated from `--help` | |
+| [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
+| [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
+| [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 
 ## Contribute
 

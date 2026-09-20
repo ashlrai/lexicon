@@ -14,7 +14,7 @@ lexicon: run `lexicon setup` to build your own; nothing was written.
 ping Ashlr.AI about the Kubernetes migration
 ```
 
-With no lexicon of your own, a sentence typed as arguments is corrected against the built-in example terms so you can see what the tool does before deciding to keep it. (Piped input is never touched by the example: `cat notes.md | lexicon normalize` passes through byte-exact until you have terms of your own.) Nothing is written, and nothing is installed globally — `npx` runs it from a cache.
+With no lexicon of your own, a sentence typed as arguments is corrected against the built-in example terms so you can see what the tool does before deciding to keep it. (Piped input is never touched by the example: `cat notes.md | lexicon normalize` passes through byte-exact until you have terms of your own.) Nothing is written, and nothing is installed globally: `npx` runs it from a cache.
 
 ## 1. Install
 
@@ -24,7 +24,7 @@ npx @ashlr/lexicon@latest setup
 
 That is the whole thing: no global install, and `setup` asks before it does anything that writes outside your lexicon. When it notices it is running from an npx cache it writes `npx -y @ashlr/lexicon@<version> mcp` into your client configs rather than a path npm will eventually delete, so what it sets up keeps working.
 
-If you would rather have it installed properly — it starts faster, and the Claude Code hook stops paying npx's ~1s per prompt:
+If you would rather have it installed properly, which starts faster and stops the Claude Code hook paying npx's ~1s per prompt:
 
 ```bash
 npm i -g @ashlr/lexicon && lexicon setup
@@ -34,7 +34,7 @@ Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recom
 
 ## 2. `lexicon setup`
 
-One interactive pass, seven steps, ending in a live correction. Every step prints a one-line result and is safe to rerun (nothing is duplicated), and the starter packs arrive as a checklist you can untick ([PACKS.md](PACKS.md) has what is in each).
+One interactive pass, seven numbered steps, ending in a live correction. Every step prints a one-line result and is safe to rerun (nothing is duplicated), and the starter packs arrive as a checklist you can untick ([PACKS.md](PACKS.md) has what is in each).
 
 `lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service stay opt-in even then, so add `--packs developer,ai,voice-tools`, `--harvest` and `--serve` for those. `--dry-run` prints what a run would do and writes nothing, `--clients none` / `--no-packs` / `--no-harvest` / `--no-serve` / `--app none` skip steps, and `--json` prints a machine-readable summary.
 
@@ -101,13 +101,18 @@ Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and d
 
 `lexicon normalize "tell Ashler to ship it"` prints `tell Ashlr.AI to ship it`; `lexicon stats` shows hits per term and never-hit terms.
 
-`lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper, and ends with the two lines that matter: a one-sentence verdict and the single next thing to do. Agents get the same two as the `summary` and `nextStep` fields of the `lexicon_doctor` tool, alongside `ready` — the boolean answer to "is this set up?".
+`lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper, and ends with the two lines that matter: a one-sentence verdict and the single next thing to do. Agents get the same two as the `summary` and `nextStep` fields of the `lexicon_doctor` tool, alongside `ready`, the boolean answer to "is this set up?".
 
 ## Next
+
+Your client page is the one to read after this: [CLIENTS.md](CLIENTS.md) covers installing into Claude Code (plugin, hooks, headless) and into Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop, with what each one writes and how to check it took.
+
+Then, depending on where else your voice lands:
 
 - Browser chats (ChatGPT, Claude, Grok, Gemini, ...): the extension, [EXTENSION.md](EXTENSION.md).
 - Local push-to-talk with whisper.cpp: `lexicon voice`, [VOICE.md](VOICE.md).
 - macOS menu bar app with a hotkey and clipboard fixing: [MACOS-APP.md](MACOS-APP.md).
-- Other agents (Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop): `lexicon install <client> --apply`.
 - More starter terms: [PACKS.md](PACKS.md), or `lexicon pack list`.
 - The full CLI: [CLI.md](CLI.md); the file format: [LEXICON-FILE.md](LEXICON-FILE.md); the trust model: [TRUST.md](TRUST.md).
+
+Back to [the docs index](README.md).

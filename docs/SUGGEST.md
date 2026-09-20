@@ -127,6 +127,8 @@ Nothing leaves the machine.
 
 ## See also
 
-- [GROWING.md](GROWING.md) — the other ways terms get in, and where suggestions sit among them.
-- [VOICE.md](VOICE.md) — the command that writes the history this reads.
-- [MATCHING.md](MATCHING.md) — the scoring these suggestions are trying to improve.
+- [LEXICON-FILE.md](LEXICON-FILE.md) is where an applied suggestion lands.
+- [MATCHING.md](MATCHING.md) covers the scoring these suggestions are trying to improve.
+- [BENCHMARK.md](BENCHMARK.md) measures whether that scoring is working.
+
+Back to [the docs index](README.md).

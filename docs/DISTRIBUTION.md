@@ -5,7 +5,7 @@ each destination costs. We pay for none of it. Several directories now sell queu
 where that is true it is named, along with the free path and what the free path costs in
 waiting.
 
-Status is as of 2026-09-20. Verify before acting — this landscape moves.
+Status is as of 2026-09-20. This landscape moves, so verify before acting.
 
 | # | Destination | Cost | Who drives it | Status |
 |---|---|---|---|---|
@@ -18,8 +18,8 @@ Status is as of 2026-09-20. Verify before acting — this landscape moves.
 | 7 | [mcp.so](#7-mcpso) | free via issue, or $39 | agent | not submitted |
 | 8 | [mcpmarket.com](#8-mcpmarketcom) | free, or $29 | agent | not submitted |
 | 9 | [Smithery](#9-smithery) | free | **Mason** | poor fit, low priority |
-| 10 | [PulseMCP](#10-pulsemcp) | free | — | submissions paused upstream |
-| 11 | [Continue.dev hub](#11-continuedev-hub) | — | — | dead, do not pursue |
+| 10 | [PulseMCP](#10-pulsemcp) | free | nobody | submissions paused upstream |
+| 11 | [Continue.dev hub](#11-continuedev-hub) | n/a | nobody | dead, do not pursue |
 
 Three of these need Mason personally: the Anthropic plugin directory, Smithery, and
 merging the awesome-mcp-servers PR from his own GitHub account. Everything else an agent
@@ -27,7 +27,7 @@ can prepare and run.
 
 ## 1. Official MCP Registry
 
-<https://registry.modelcontextprotocol.io> — source at
+<https://registry.modelcontextprotocol.io>. Source at
 <https://github.com/modelcontextprotocol/registry>.
 
 The one that matters most: it is upstream of several other directories, which ingest from
@@ -39,7 +39,7 @@ it rather than crawling. Free, no review queue, no placement to buy.
 - *Namespace.* We claim `io.github.ashlrai/lexicon`, proven by logging in with a GitHub
   account that can act for the `ashlrai` org. The alternative, `ai.ashlr/lexicon`, is proven
   by a DNS TXT record on `ashlr.ai` and would be the better long-term name if we ever move
-  off GitHub — but it is more setup for no immediate gain, so we use the GitHub namespace.
+  off GitHub. But it is more setup for no immediate gain, so we use the GitHub namespace.
 - *Package ownership.* The registry fetches
   `https://registry.npmjs.org/@ashlr%2flexicon/<version>` and requires an `mcpName` field
   equal to the server name.
@@ -59,7 +59,7 @@ as of 0.5.1 it prints `ready to publish`.
 (This was blocked until 0.5.1. `@ashlr/lexicon@0.5.0` went to npm without an `mcpName`
 field and npm versions are immutable, so the field could only arrive in a new release.
 `server.json` carries the version too, which is why it is one of the files
-[RELEASING.md](RELEASING.md) bumps — do not hand-publish to clear a registry blocker, or
+[RELEASING.md](RELEASING.md) bumps. Do not hand-publish to clear a registry blocker, or
 the five version-carrying files drift apart and the plugin marketplace ships a version npm
 does not have.)
 
@@ -77,7 +77,7 @@ for no password and no token on the command line. The credential is cached; `mcp
 logout` clears it. Nothing else prompts.
 
 To publish from CI instead, `mcp-publisher login github-oidc` uses the GitHub Actions OIDC
-token and needs no interactive step — worth wiring into the release workflow once the first
+token and needs no interactive step. Worth wiring into the release workflow once the first
 manual publish has proven the namespace.
 
 ## 2. Glama
@@ -88,8 +88,8 @@ Glama's crawler creates a listing on its own; [`glama.json`](../glama.json) at t
 is how we *claim* the one it creates, which unlocks editing the listing.
 
 Free. The schema (<https://glama.ai/mcp/schemas/server.json>) requires exactly one field,
-`maintainers`, an array of GitHub usernames. Ours is `masonwyatt23` — confirmed with
-`gh api user --jq .login`. Note this is a personal handle, not the `ashlrai` org; Glama
+`maintainers`, an array of GitHub usernames. Ours is `masonwyatt23` (confirmed with
+`gh api user --jq .login`). Note this is a personal handle, not the `ashlrai` org; Glama
 matches maintainers by GitHub user.
 
 Nothing to submit. The file is committed; the crawler picks it up on its next pass. If the
@@ -100,7 +100,7 @@ form on the server page.
 
 <https://platform.claude.com/plugins/submit>
 
-**Mason must do this one personally** — it is a form behind his Anthropic Console sign-in,
+**Mason must do this one personally**: it is a form behind his Anthropic Console sign-in,
 and an agent cannot and should not authenticate as him.
 
 Set expectations first. Anthropic's *official* marketplace (`claude-plugins-official`) is
@@ -123,9 +123,9 @@ the plugin name (`lexicon`), a one-line description, and the license (MIT).
 
 Free, high-traffic, and a single-line README edit. Their
 [CONTRIBUTING.md](https://github.com/punkpeye/awesome-mcp-servers/blob/main/CONTRIBUTING.md)
-asks for one server per line, alphabetical order within a category, and — this matters for
-us — invites automated agents to append `🤖🤖🤖` to the PR title to opt into a fast-track
-merge.
+asks for one server per line, alphabetical order within a category, and invites automated
+agents to append `🤖🤖🤖` to the PR title to opt into a fast-track merge. That last one
+matters for us.
 
 **Category:** `### 🎧 Text-to-Speech`, whose description is "Tools for converting
 text-to-speech and vice-versa". That section already holds speech-to-text servers
@@ -147,14 +147,14 @@ Free. Submission is a GitHub issue using their `mcp-server-submission.yml` templ
 requires three things:
 
 1. The GitHub repo URL.
-2. **A 400x400 PNG logo.** We do not have one at that size — this is the blocker. There is
+2. **A 400x400 PNG logo.** We do not have one at that size. This is the blocker. There is
    artwork under `docs/assets` and `web/` to cut one from.
 3. A short reason the server benefits Cline users.
 
 The template also asks you to confirm you have watched Cline install the server from the
 `README.md` and/or `llms-install.md` alone. That is exactly what
 [`llms-install.md`](../llms-install.md) is for, and it is why that file is worth keeping
-current whether or not we ever submit here — Cline's one-click install reads it, and other
+current whether or not we ever submit here: Cline's one-click install reads it, and other
 agents increasingly look for it by convention.
 
 Their stated review criteria are community adoption, maintainer credibility, project
@@ -177,7 +177,7 @@ Form fields, and what to put in them:
 | Category | `Productivity` (no voice/speech category exists; `Development` is the fallback) |
 | Short Description | Fixes the names and jargon speech-to-text gets wrong before your agent acts on a dictated prompt. |
 | Repository / Website | `https://github.com/ashlrai/lexicon` |
-| Official MCP Registry Name | `io.github.ashlrai/lexicon` — fill this in only after step 1 lands |
+| Official MCP Registry Name | `io.github.ashlrai/lexicon` (fill this in only after step 1 lands) |
 | Supports remote connections | unchecked (stdio, local only) |
 | Contact Email | `mason@ashlr.ai` |
 | Plan | Free ($0) |
@@ -194,12 +194,12 @@ without review", verified badge, featured placement, dofollow link). Do not pay 
 The free path still exists but is no longer advertised on that page: open a GitHub issue on
 <https://github.com/chatmcp/mcpso> (the repo behind the site; `chatmcp/mcp-directory`
 redirects to it). Existing issues follow a `Submit: <name>` title convention. Be realistic
-about the odds — that repo has roughly 3,100 open issues, so the free queue is effectively
+about the odds: that repo has roughly 3,100 open issues, so the free queue is effectively
 unbounded. Low cost to file, low expectation.
 
 ```bash
 gh issue create -R chatmcp/mcpso \
-  --title "Submit: Lexicon — fix what speech-to-text mishears before the agent acts" \
+  --title "Submit: Lexicon (fixes what speech-to-text mishears before the agent acts)" \
   --body "https://github.com/ashlrai/lexicon"
 ```
 
@@ -221,16 +221,16 @@ Fields: repo `https://github.com/ashlrai/lexicon`, type `MCP Server` + `GitHub r
 
 <https://smithery.ai>
 
-**Needs Mason's sign-in**, and it is a poor fit besides — leave it late.
+**Needs Mason's sign-in**, and it is a poor fit besides. Leave it late.
 
 Smithery now documents exactly two publishing paths, and the container/Docker build path
 the survey remembered is gone (the old `smithery.ai/docs/build/deployments` page 404s and
 no container page appears anywhere in their docs index):
 
-- **URL** — bring your own hosting, Streamable HTTP transport, Smithery proxies to it.
+- **URL.** Bring your own hosting, Streamable HTTP transport, Smithery proxies to it.
   Lexicon is a local stdio server that reads a file in the user's home directory. Hosting it
   remotely would defeat the point.
-- **Local (MCPB bundle)** — you build a `.mcpb` bundle and Smithery distributes it:
+- **Local (MCPB bundle).** You build a `.mcpb` bundle and Smithery distributes it:
   `smithery mcp publish ./server.mcpb -n ashlrai/lexicon`. This is the only path that fits,
   and it means producing and maintaining an MCPB artifact we do not currently build.
 
@@ -251,19 +251,19 @@ month.
 
 ## 11. Continue.dev hub
 
-Do not pursue. Continue has been acquired by Cursor — continue.dev now leads with "Continue
-has joined Cursor" — and `hub.continue.dev` no longer resolves in DNS. The remaining docs at
+Do not pursue. Continue has been acquired by Cursor (continue.dev now leads with "Continue
+has joined Cursor"), and `hub.continue.dev` no longer resolves in DNS. The remaining docs at
 docs.continue.dev describe MCP servers only as local user config, with no submission or
 publishing flow and no directory. There is no listing to get.
 
 ## The awesome-mcp-servers line
 
-Insert into `### 🎧 Text-to-Speech`, as the **first** entry in that section — immediately
+Insert into `### 🎧 Text-to-Speech`, as the **first** entry in that section: immediately
 after the "Tools for converting text-to-speech and vice-versa" line and its blank line, and
 directly above the existing `daisys-ai/daisys-mcp` entry.
 
 ```markdown
-- [ashlrai/lexicon](https://github.com/ashlrai/lexicon) 📇 🏠 🍎 🪟 🐧 - A personal vocabulary for dictated prompts: fixes the names, brands and jargon speech-to-text mishears before the agent acts on them. One local YAML file, 19 tools — normalize a transcript, learn a correction from "I said X not Y", harvest terms from a repo, import a Wispr Flow or Superwhisper dictionary. No API key, nothing leaves the machine. `npx -y @ashlr/lexicon mcp`
+- [ashlrai/lexicon](https://github.com/ashlrai/lexicon) 📇 🏠 🍎 🪟 🐧 - A personal vocabulary for dictated prompts: fixes the names, brands and jargon speech-to-text mishears before the agent acts on them. One local YAML file, 19 tools. Normalize a transcript, learn a correction from "I said X not Y", harvest terms from a repo, import a Wispr Flow or Superwhisper dictionary. No API key, nothing leaves the machine. `npx -y @ashlr/lexicon mcp`
 ```
 
 Emoji, per their legend: 📇 TypeScript, 🏠 local service, 🍎 🪟 🐧 macOS/Windows/Linux.
@@ -335,8 +335,9 @@ replace this one on someone's machine.
 ## Order of operations
 
 1. Release `0.5.1` to npm carrying `mcpName`, then `mcp-publisher publish`. Everything
-   downstream benefits, and two of the forms want the registry name.
-2. Glama needs nothing further — the file is in the repo.
+   downstream benefits, and two of the forms want the registry name. Cut that release
+   through [RELEASING.md](RELEASING.md) rather than uploading assets by hand.
+2. Glama needs nothing further. The file is in the repo.
 3. Open the awesome-mcp-servers PR.
 4. Mason submits the Anthropic plugin directory form.
 5. Free-tier forms: mcpservers.org, then mcpmarket.com, then the mcp.so issue.
@@ -345,6 +346,6 @@ replace this one on someone's machine.
 
 ## See also
 
-- [RELEASING.md](RELEASING.md) — cutting the release that every destination here consumes. Publish through it, not by hand.
-- [LANDING.md](LANDING.md) — the site these listings point at.
-- [RESEARCH.md](RESEARCH.md) — who the listings are trying to reach.
+- [CHANGELOG.md](../CHANGELOG.md) is the record each listing's "what is new" is written from.
+
+Back to [the docs index](README.md).

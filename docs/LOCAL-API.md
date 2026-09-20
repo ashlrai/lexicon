@@ -47,7 +47,7 @@ always allowed; `*` is never honoured.
 
 ## Endpoints
 
-Every request except `GET /health` and `GET /pair` needs
+Eleven routes. Every request except `GET /health` and `GET /pair` needs
 `Authorization: Bearer <token>`. Requests and responses are JSON
 (`Content-Type: application/json`) unless noted. Errors are
 `{ "error": "<message>" }`.
@@ -60,8 +60,12 @@ Every request except `GET /health` and `GET /pair` needs
 | POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path }` |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
-| GET | `/export/:format` | | the export as text; `Content-Type` per format (see below) |
 | GET | `/stats` | | `LexiconStats` |
+| GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }` |
+| POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope }`; an unknown pack is 404 |
+| DELETE | `/packs/:name` | | `{ pack, removed, kept, files }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone |
+| GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form |
+| GET | `/export/:format` | | the export as text; `Content-Type` per format (see below) |
 
 Status codes: 400 invalid JSON or a bad field, 401 missing or wrong token,
 403 a project-scope write into an untrusted `.lexicon.yaml` or `/pair` with
@@ -175,6 +179,8 @@ beyond that. `/pair` hands the same token to a loopback browser tab whose
 
 ## See also
 
-- [EXTENSION.md](EXTENSION.md) — the browser extension, the API's main client, and how pairing works from its side.
-- [DAEMON.md](DAEMON.md) — the no-server way to correct the clipboard on a hotkey.
-- [MACOS-APP.md](MACOS-APP.md) — LexiconBar, which starts and supervises this server for you.
+- [DAEMON.md](DAEMON.md) is the no-server way to correct the clipboard on a hotkey.
+- [LIBRARY.md](LIBRARY.md) skips HTTP entirely and calls `normalize()` in process.
+- [MATCHING.md](MATCHING.md) explains what `POST /normalize` does to a sentence.
+
+Back to [the docs index](README.md).

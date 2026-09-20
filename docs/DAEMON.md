@@ -75,6 +75,8 @@ Use the absolute path to `lexicon` (`which lexicon`) if the shortcut runner has 
 
 ## See also
 
-- [VOICE.md](VOICE.md) — recording and transcribing locally, rather than correcting what another tool produced.
-- [LOCAL-API.md](LOCAL-API.md) — when a script needs the structured replacement list instead of the clipboard.
-- [MACOS-APP.md](MACOS-APP.md) — the same actions as a macOS menu bar app.
+- [VOICE.md](VOICE.md) records and transcribes locally, rather than correcting what another tool produced.
+- [EXPORTS.md](EXPORTS.md) pushes your terms into a dictation app, so there is less left to correct.
+- [MATCHING.md](MATCHING.md) explains what the daemon is doing to the clipboard.
+
+Back to [the docs index](README.md).

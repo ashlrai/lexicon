@@ -538,6 +538,6 @@ Claude Code created in the real `~/.claude` during the failed auth attempt).
 
 ## See also
 
-- [DOGFOOD.md](DOGFOOD.md) — run 1, the correction path, and the method this run reuses.
-- [AGENT-NATIVE.md](AGENT-NATIVE.md) — the design these tools were tested against.
-- [CHANGELOG.md](../CHANGELOG.md) — where the two `setup_lexicon` bugs below were fixed.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) covers running these same checks yourself before you open a PR.
+
+Back to [the docs index](README.md).
