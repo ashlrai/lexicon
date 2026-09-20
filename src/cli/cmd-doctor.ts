@@ -63,6 +63,22 @@ export interface DoctorCheck {
 export interface DoctorReport {
   /** True when no check is at level `fail`. */
   ok: boolean;
+  /**
+   * True when dictation corrections will actually happen for this user: a
+   * lexicon that exists and has at least one term, wired into at least one
+   * agent. This is the answer to "is lexicon set up?" -- `ok` is not, because
+   * a lexicon with no terms and no integration has nothing to fail.
+   */
+  ready: boolean;
+  /** One sentence describing the state, safe to relay to the user verbatim. */
+  summary: string;
+  /**
+   * The single most useful thing to do next, as one line. Always present:
+   * when there is nothing to fix it says so and names the way to use the
+   * thing instead. A caller that shows the user only `summary` and
+   * `nextStep` has told them everything that matters.
+   */
+  nextStep: string;
   checks: DoctorCheck[];
   paths: {
     global: string;
@@ -147,6 +163,61 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
   return { level: 'ok', message: `${name} loaded${program !== undefined ? ` (${program} exists)` : fileExists ? '' : ` (${file} not found; it was loaded from elsewhere)`}` };
 }
 
+/**
+ * Turns the check list into the three fields a caller can act on without
+ * reading it: `ready`, one sentence, and one next step.
+ *
+ * The ordering of `nextStep` is the order a human would fix things in --
+ * there is no point registering a client for a lexicon with no terms, and no
+ * point adding terms the agent will never see. The first unmet condition
+ * wins; everything else waits for the next run.
+ */
+function summarize(
+  checks: readonly DoctorCheck[],
+  state: { terms: number; wired: boolean; untrustedProject: boolean },
+): { ready: boolean; summary: string; nextStep: string } {
+  const fails = checks.filter((c) => c.level === 'fail');
+  const warns = checks.filter((c) => c.level === 'warn');
+  const counts = `${state.terms} term${state.terms === 1 ? '' : 's'}`;
+  const ready = state.terms > 0 && state.wired && fails.length === 0;
+
+  if (state.terms === 0) {
+    return {
+      ready: false,
+      summary: 'Lexicon is not set up yet: there are no terms, so nothing will be corrected.',
+      nextStep: 'Run: lexicon setup',
+    };
+  }
+  if (fails.length > 0) {
+    return {
+      ready: false,
+      summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? '' : 's'} failed: ${fails[0].message}`,
+      // Every failing message ends in its own "(run: ...)" hint, so the first
+      // failure carries its fix with it.
+      nextStep: `Fix the first failure: ${fails[0].message}`,
+    };
+  }
+  if (!state.wired) {
+    return {
+      ready: false,
+      summary: `Lexicon has ${counts}, but no agent is wired up to use them yet.`,
+      nextStep: 'Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)',
+    };
+  }
+  if (state.untrustedProject) {
+    return {
+      ready: true,
+      summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
+      nextStep: 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust',
+    };
+  }
+  return {
+    ready: true,
+    summary: `Lexicon is set up and working: ${counts}, wired into your agent${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? '' : 's'} not configured` : ''}.`,
+    nextStep: 'Nothing to fix. Dictate a sentence with one of your names in it and watch it come out spelled right.',
+  };
+}
+
 /** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
 function renderCheck(c: DoctorCheck): string {
   const message = safeLines(c.message);
@@ -168,6 +239,11 @@ export function renderDoctorReport(report: DoctorReport, io: IO): number {
   const failures = report.checks.filter((c) => c.level === 'fail').length;
   line(io);
   line(io, failures === 0 ? green('all checks passed') : red(`${failures} check${failures === 1 ? '' : 's'} failed`));
+  // The two lines that matter, after the thirty that might: the same
+  // `summary` and `nextStep` the MCP tool hands a model, so the terminal and
+  // the agent never tell the user different things.
+  line(io, safeLines(report.summary));
+  line(io, report.ready && failures === 0 ? dim(report.nextStep) : yellow(report.nextStep));
   return failures === 0 ? 0 : 1;
 }
 
@@ -188,6 +264,11 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   const push = (level: DoctorLevel, message: string): void => {
     checks.push({ level, message });
   };
+  // Set as the checks run; `summarize` turns them into ready/summary/nextStep.
+  /** True once something on this machine is actually calling the lexicon: the plugin, a hook, or a registered MCP server. */
+  let wired = false;
+  /** True when this repo has a .lexicon.yaml the user has not approved, so its terms are not being applied. */
+  let untrustedProject = false;
 
   // --- lexicon files -------------------------------------------------------
   const paths = resolvePaths({ cwd });
@@ -214,8 +295,10 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
         push('ok', 'project lexicon is trusted and merged');
         files.push(p);
       } else if (trust === 'changed') {
+        untrustedProject = true;
         push('warn', `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
       } else {
+        untrustedProject = true;
         push('warn', `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
@@ -285,15 +368,17 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   if (settings.error) push('warn', `could not parse ${settingsPath}: ${settings.error}`);
   const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
   if (pluginId) {
+    wired = true;
     push('ok', `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
       if (settingsHasLexiconHook(settings.value, event)) {
+        wired = true;
         push('ok', `${event} hook found in ${settingsPath}`);
       } else {
         push(
           'warn',
-          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install-claude --apply)`,
+          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`,
         );
       }
     }
@@ -307,9 +392,11 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     push('ok', `claude CLI found: ${claudeBin}`);
     try {
       const out = exec('claude', ['mcp', 'list']);
-      if (/lexicon/i.test(out)) push('ok', 'lexicon MCP server is registered with claude');
-      else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
-      else push('fail', 'lexicon MCP server not registered with claude (run: lexicon install-claude --apply)');
+      if (/lexicon/i.test(out)) {
+        wired = true;
+        push('ok', 'lexicon MCP server is registered with claude');
+      } else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
+      else push('fail', 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)');
     } catch (err) {
       push('warn', `could not run "claude mcp list": ${errorMessage(err)}`);
     }
@@ -342,8 +429,12 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject });
   return {
     ok: !checks.some((c) => c.level === 'fail'),
+    ready: verdict.ready,
+    summary: verdict.summary,
+    nextStep: verdict.nextStep,
     checks,
     paths: {
       global: paths.global,

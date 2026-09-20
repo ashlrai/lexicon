@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ashlrai/lexicon",
+  "title": "Lexicon",
+  "description": "Fixes the names and jargon speech-to-text gets wrong before your agent acts on a dictated prompt.",
+  "version": "0.5.0",
+  "websiteUrl": "https://lexicon.ashlr.ai",
+  "repository": {
+    "url": "https://github.com/ashlrai/lexicon",
+    "source": "github",
+    "id": "1376859455"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@ashlr/lexicon",
+      "version": "0.5.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "subcommand",
+          "value": "mcp",
+          "description": "Runs the stdio MCP server. The package also installs a dedicated `lexicon-mcp` binary; `lexicon mcp` is used here because npx resolves the package-named `lexicon` bin by default."
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "LEXICON_PATH",
+          "description": "Path to the global lexicon YAML. Defaults to $XDG_CONFIG_HOME/lexicon/lexicon.yaml, else ~/.config/lexicon/lexicon.yaml.",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "LEXICON_CWD",
+          "description": "Directory used to locate the project .lexicon.yaml. Defaults to the server process working directory.",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

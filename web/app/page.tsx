@@ -1,12 +1,31 @@
+import { CommandLine } from '@/components/Copy';
 import { CorrectionProof } from '@/components/CorrectionProof';
+import { Faq } from '@/components/Faq';
 import { Install } from '@/components/Install';
 import { LiveDemo } from '@/components/LiveDemo';
+import { StructuredData } from '@/components/StructuredData';
 import { WorksWith } from '@/components/WorksWith';
+import {
+  BENCHMARK,
+  DEMO,
+  DOC,
+  DOWNLOADS,
+  INSTALL_COMMANDS,
+  MCP_SERVER_CONFIG,
+  PRIMARY_COMMAND,
+  PRIMARY_RESULT,
+  REPO,
+} from '@/lib/site';
 
 export const revalidate = 3600;
 
-const REPO = 'https://github.com/ashlrai/lexicon';
-const BENCHMARK = `${REPO}/blob/main/docs/BENCHMARK.md`;
+/*
+ * No `metadata` export here on purpose. Metadata merges shallowly per top-level
+ * key, so a page-level `alternates: { canonical: '/' }` would silently replace
+ * the layout's whole `alternates` object and take the /llms.txt, /llms-full.txt
+ * and /mcp.json <link rel="alternate"> tags with it. The layout already sets the
+ * canonical for this route.
+ */
 
 /** Star count, refreshed hourly. A rate limit or an outage just drops the number. */
 async function stars(): Promise<number | null> {
@@ -38,6 +57,7 @@ export default async function Page() {
         Skip to the live demo
       </a>
 
+      <StructuredData />
       <Header stars={starCount} />
 
       <main>
@@ -48,6 +68,8 @@ export default async function Page() {
         <Surfaces />
         <Numbers />
         <InstallSection />
+        <ForAgents />
+        <Faq />
         <OpenSource />
       </main>
 
@@ -78,6 +100,9 @@ function Header({ stars }: { stars: number | null }) {
           <a href="#install" className="micro px-2 py-1 transition-colors hover:text-paper">
             Install
           </a>
+          <a href="#faq" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
+            FAQ
+          </a>
           <a
             href={REPO}
             className="micro ml-1 rounded border border-rule px-2.5 py-1 transition-colors hover:border-blue-dim hover:text-blue"
@@ -105,9 +130,26 @@ function Hero({ stars }: { stars: number | null }) {
         app. It sits between the one you already use and whatever you are talking to.
       </p>
 
-      <div className="mt-9 flex flex-wrap items-center gap-3">
-        <a href="#install" className="btn btn-primary">
-          Get started
+      {/*
+        * The command itself, not a button that scrolls to a command. Someone who
+        * arrived convinced should be able to copy and paste without moving.
+        */}
+      <div className="mt-9 max-w-[42rem]">
+        <CommandLine command={PRIMARY_COMMAND} note={PRIMARY_RESULT} />
+        <p className="mt-3 text-[0.82rem] leading-relaxed text-paper-3">
+          No global install:{' '}
+          <code className="font-mono text-paper-2">{INSTALL_COMMANDS.npx}</code>. Homebrew, npm and
+          the Claude Code plugin are{' '}
+          <a className="link-accent" href="#install">
+            under install
+          </a>
+          .
+        </p>
+      </div>
+
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <a href="#demo" className="btn btn-primary">
+          See it fix a sentence
         </a>
         <a href={REPO} className="btn btn-ghost">
           <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 fill-current">
@@ -440,11 +482,134 @@ function InstallSection() {
                 words into the dictation app you already use.
               </p>
             </div>
+
+            {/*
+              * The two pieces that are not an npm install. Each href is the
+              * /releases/latest/download/ form, so it follows whatever the newest
+              * release is instead of pinning a tag that goes stale on the next one.
+              */}
+            <div className="mt-10 border-t border-rule-soft pt-7">
+              <span className="micro mb-4 block">direct downloads</span>
+              <ul className="flex flex-col gap-4">
+                {DOWNLOADS.map((d) => (
+                  <li key={d.href}>
+                    <a className="link-accent text-[0.95rem]" href={d.href}>
+                      {d.label}
+                    </a>
+                    <p className="mt-1 max-w-[46ch] text-[0.82rem] leading-relaxed text-paper-3">
+                      {d.note}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-5 text-[0.82rem] leading-relaxed text-paper-3">
+                Both come from the{' '}
+                <a className="link-accent" href={`${REPO}/releases/latest`}>
+                  latest release
+                </a>
+                , with a <span className="font-mono">SHA256SUMS</span> beside them.
+              </p>
+            </div>
           </div>
           <Install />
         </div>
       </div>
     </section>
+  );
+}
+
+/* ---------------------------------------------------------------- for agents */
+
+/*
+ * Written for the reader who is not a person.
+ *
+ * A fair share of the people who need this will never read a landing page: they
+ * will say "my dictation keeps writing Ashler" to an assistant, and the
+ * assistant will go looking. This section is what it finds. The endpoints are
+ * real files served by this site, and they are linked in plain sight rather than
+ * hidden in the head, because a model reading the rendered text should find them
+ * too.
+ */
+const MCP_BLOCK = JSON.stringify(MCP_SERVER_CONFIG, null, 2);
+
+function ForAgents() {
+  return (
+    <section id="agents" className="border-t border-rule-soft bg-ink-2/40 scroll-mt-14">
+      <div className="shell py-16 sm:py-24">
+        <span className="entry-label">for agents</span>
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,31rem)] lg:gap-14">
+          <div>
+            <h2 className="h2 max-w-[20ch]">If you are an agent reading this for someone.</h2>
+            <p className="lede mt-6">
+              Your user keeps having one name come out wrong. Install Lexicon for them, add that
+              name, and verify it. Everything you need is machine-readable and linked below; you do
+              not have to scrape this page.
+            </p>
+
+            <dl className="mt-9 flex flex-col gap-5">
+              <AgentLink
+                href="/llms.txt"
+                title="/llms.txt"
+                body="A short markdown index of this site: what Lexicon is, who it is for, the install commands, and where everything else lives."
+              />
+              <AgentLink
+                href="/llms-full.txt"
+                title="/llms-full.txt"
+                body="The whole thing in one fetch: the problem, the install, the nineteen MCP tools, the exports, the measured numbers, the privacy claims and the FAQ."
+              />
+              <AgentLink
+                href="/mcp.json"
+                title="/mcp.json"
+                body="The install manifest. Take the mcpServers key verbatim and merge it into your user's client config; the sibling keys tell you how to get the binary on PATH first and how to check it worked."
+              />
+              <AgentLink
+                href={DOC('docs/AGENTS.md')}
+                title="docs/AGENTS.md"
+                body="Written to you rather than to a human: the exact commands per client, what to say while you do it, and how to verify the install without guessing."
+              />
+            </dl>
+
+            <p className="mt-9 max-w-[52ch] text-[0.88rem] leading-relaxed text-paper-3">
+              Lexicon writes only where it is told to. <span className="font-mono text-paper-2">setup_lexicon</span>,{' '}
+              <span className="font-mono text-paper-2">install_client</span> and{' '}
+              <span className="font-mono text-paper-2">trust_project</span> return a plan by default
+              and change nothing until you pass <span className="font-mono text-paper-2">apply</span>,
+              so you can show your user what will happen and ask first.
+            </p>
+          </div>
+
+          <figure className="panel m-0 overflow-hidden">
+            <figcaption className="panel-head">
+              <span className="micro">mcp server config</span>
+              <span className="micro">stdio</span>
+            </figcaption>
+            <pre className="overflow-x-auto px-5 py-5 font-mono text-[0.76rem] leading-[1.75] text-paper-2 sm:text-[0.82rem]">
+              <code>{MCP_BLOCK}</code>
+            </pre>
+            <div className="border-t border-rule px-5 py-4 text-[0.82rem] leading-relaxed text-paper-3">
+              After a global install, <span className="font-mono text-paper-2">lexicon-mcp</span> is
+              on the PATH. For a named client,{' '}
+              <span className="font-mono text-paper-2">lexicon install cursor --apply</span> writes
+              that client&rsquo;s own config file; omit{' '}
+              <span className="font-mono text-paper-2">--apply</span> to see the diff first.
+            </div>
+          </figure>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgentLink({ href, title, body }: { href: string; title: string; body: string }) {
+  return (
+    <div>
+      <dt>
+        <a className="link-accent font-mono text-[0.95rem]" href={href}>
+          {title}
+        </a>
+      </dt>
+      <dd className="mt-1.5 max-w-[54ch] text-[0.88rem] leading-relaxed text-paper-2">{body}</dd>
+    </div>
   );
 }
 
@@ -591,6 +756,12 @@ function Footer() {
             <a className="link-quiet" href={BENCHMARK}>
               Benchmark
             </a>
+            <a className="link-quiet" href={`${REPO}/blob/main/docs/FAQ.md`}>
+              FAQ
+            </a>
+            <a className="link-quiet" href={DEMO}>
+              Browser demo
+            </a>
             <a className="link-quiet" href={`${REPO}/blob/main/LICENSE`}>
               MIT
             </a>
@@ -599,6 +770,23 @@ function Footer() {
             </a>
           </nav>
         </div>
+
+        {/* Linked, not just declared in the head: a model reading the text finds them. */}
+        <nav aria-label="Machine-readable" className="flex flex-wrap gap-x-5 gap-y-2">
+          <span className="micro">for models</span>
+          <a className="link-quiet font-mono text-[0.8rem]" href="/llms.txt">
+            /llms.txt
+          </a>
+          <a className="link-quiet font-mono text-[0.8rem]" href="/llms-full.txt">
+            /llms-full.txt
+          </a>
+          <a className="link-quiet font-mono text-[0.8rem]" href="/mcp.json">
+            /mcp.json
+          </a>
+          <a className="link-quiet font-mono text-[0.8rem]" href={`${REPO}/blob/main/docs/AGENTS.md`}>
+            docs/AGENTS.md
+          </a>
+        </nav>
 
         <p className="max-w-[80ch] text-[0.78rem] leading-relaxed text-paper-3">
           All product names, logos and brands are the property of their respective owners. Their use

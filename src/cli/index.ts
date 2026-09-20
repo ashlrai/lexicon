@@ -23,23 +23,23 @@ import {
   runExport,
   runHarvest,
   runInit,
-  runInstallClaude,
   runList,
   runNormalize,
   runPath,
   runRemove,
 } from './commands.js';
+import { runInstall } from './cmd-install.js';
 import type { ClipboardBackendName } from '../daemon/clipboard-backends.js';
 import type {
   AddOptions,
   ExportCliOptions,
   HarvestCliOptions,
   InitOptions,
-  InstallClaudeOptions,
   ListOptions,
   NormalizeCliOptions,
   RemoveOptions,
 } from './commands.js';
+import type { InstallOptions } from './cmd-install.js';
 
 
 interface DaemonCliOptions {
@@ -217,12 +217,21 @@ program
     );
   });
 
+/**
+ * Back-compat alias for `lexicon install claude`, which is the documented
+ * command. Hidden from --help and from docs/CLI.md so there is one name to
+ * learn, but kept working (and forwarded to the same handler, with the same
+ * flags) because it is in shipped READMEs, in older doctor output and in
+ * people's shell history.
+ */
 program
-  .command('install-claude')
-  .description('print (or with --apply, perform) the Claude Code MCP + hook setup')
-  .option('--apply', 'run `claude mcp add` and merge the hook into ~/.claude/settings.json')
-  .option('--scope <scope>', 'MCP registration scope: user|project', 'user')
-  .action(async (opts: InstallClaudeOptions) => done(await runInstallClaude(withGlobals(opts), io)));
+  .command('install-claude', { hidden: true })
+  .description('deprecated alias for `lexicon install claude`')
+  .option('--apply', 'write the config (merge; existing keys are kept)')
+  .option('--scope <scope>', 'user|project', 'user')
+  .option('--project', 'same as --scope project')
+  .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
+  .action(async (opts: InstallOptions) => done(await runInstall('claude', withGlobals(opts), io)));
 
 // Extension slots: each module registers its own commands (keeps index.ts small).
 registerImportCommands(program, io);

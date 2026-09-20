@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Mono, Instrument_Sans, Newsreader } from 'next/font/google';
+import { DESCRIPTION, SITE_URL, TAGLINE } from '@/lib/site';
 import './globals.css';
 
 /*
@@ -28,39 +29,67 @@ const plexMono = IBM_Plex_Mono({
   weight: ['400', '500'],
 });
 
-const DESCRIPTION =
-  'Speech-to-text is excellent at English and wrong about your vocabulary. ' +
-  'Lexicon is one YAML file of the names, products and acronyms you say out loud, ' +
-  'applied to every transcript before an agent reads it.';
+const TITLE = `Lexicon: ${TAGLINE}`;
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://lexicon.ashlr.ai'),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Lexicon: the words your dictation keeps getting wrong',
+    default: TITLE,
     template: '%s | Lexicon',
   },
   description: DESCRIPTION,
   applicationName: 'Lexicon',
+  category: 'technology',
   keywords: [
-    'dictation', 'speech to text', 'MCP', 'Model Context Protocol',
-    'Claude Code', 'whisper.cpp', 'vocabulary', 'transcription',
+    'dictation', 'speech to text', 'transcription errors', 'proper nouns',
+    'MCP', 'Model Context Protocol', 'MCP server', 'Claude Code', 'Cursor',
+    'Codex', 'custom dictionary', 'Wispr Flow', 'Superwhisper', 'whisper.cpp',
+    'voice to text', 'brand name', 'vocabulary',
   ],
   authors: [{ name: 'Ashlr.AI', url: 'https://ashlr.ai' }],
+  creator: 'Ashlr.AI',
+  publisher: 'Ashlr.AI',
   openGraph: {
     type: 'website',
-    url: 'https://lexicon.ashlr.ai',
+    url: SITE_URL,
     siteName: 'Lexicon',
-    title: 'Lexicon: the words your dictation keeps getting wrong',
+    locale: 'en_US',
+    title: TITLE,
     description: DESCRIPTION,
-    images: [{ url: '/og.png', width: 1280, height: 640, alt: 'Lexicon' }],
+    // No `images` here on purpose: app/opengraph-image.tsx supplies a generated
+    // 1200x630 card that always matches the current copy. Setting images here
+    // would override it with a file that goes stale the moment the page changes.
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Lexicon: the words your dictation keeps getting wrong',
+    title: TITLE,
     description: DESCRIPTION,
-    images: ['/og.png'],
   },
-  alternates: { canonical: 'https://lexicon.ashlr.ai' },
+  alternates: {
+    canonical: '/',
+    types: {
+      // The llms.txt convention: a clean, linkable summary for models, advertised
+      // from the head so a crawler finds it without being told.
+      'text/plain': [
+        { url: '/llms.txt', title: 'Lexicon for language models (index)' },
+        { url: '/llms-full.txt', title: 'Lexicon for language models (full text)' },
+      ],
+      'application/json': [
+        { url: '/mcp.json', title: 'Lexicon MCP server install manifest' },
+      ],
+    },
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
   },
@@ -77,6 +106,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${newsreader.variable} ${instrument.variable} ${plexMono.variable}`}
     >
+      {/*
+        * The llms.txt v2 discovery convention (llmstxt.org): `rel="describedby"`
+        * points at the llms.txt that covers this path. Next's metadata API has
+        * no field for a custom `rel`, so it is written here and React hoists it
+        * into the head. The `rel="alternate"` pair in `metadata.alternates` says
+        * the same thing in the older form; both are cheap, and which one a given
+        * crawler honours is not something we get to find out.
+        */}
+      <link rel="describedby" type="text/plain" href="/llms.txt" />
       <body>{children}</body>
     </html>
   );

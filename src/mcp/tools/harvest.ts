@@ -27,8 +27,13 @@ export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Harvest names from a repository',
       description:
-        'Scan a repository for proper nouns an STT engine is likely to mangle (package names, PascalCase identifiers, git authors, README headings) and propose them as lexicon terms. ' +
-        'Run this when entering a repo that has no .lexicon.yaml. With add:true the candidates are written to the project lexicon.',
+        'Scan a repository for proper nouns an STT engine is likely to mangle: package names, PascalCase identifiers, git authors, README headings. ' +
+        'WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project ' +
+        'would add. Call it without `add` first -- that is a read-only preview. ' +
+        "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml and trusts that file. " +
+        "That is a write inside the user's repository plus a trust decision, so show the candidate list and get a yes first. " +
+        'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
+        'candidates come back as names, categories and counts.',
       inputSchema: {
         path: z.string().optional().describe('Repository root. Defaults to the server working directory.'),
         limit: z.number().int().positive().optional().describe('Max candidates to return (default 50).'),

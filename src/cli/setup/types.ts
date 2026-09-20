@@ -104,6 +104,20 @@ export interface SetupPackResult {
   merged: number;
 }
 
+/**
+ * The live demonstration printed by the last step: a sentence in the
+ * misspellings STT produces for the user's own terms, and the same sentence
+ * after the lexicon ran. `usedExample` is true when the user's lexicon could
+ * not demonstrate anything yet and the built-in example terms stood in.
+ */
+export interface SetupDemo {
+  heard: string;
+  corrected: string;
+  /** Canonicals that were spliced in, in the order they appear. */
+  terms: string[];
+  usedExample: boolean;
+}
+
 export interface SetupSummary {
   lexiconPath: string;
   /** Seeded and harvested terms created by this run (pack terms are counted in `packs`). */
@@ -113,6 +127,8 @@ export interface SetupSummary {
   clients: SetupClientResult[];
   serve: 'installed' | 'skipped' | 'failed';
   exports: { format: string; path: string }[];
+  /** The correction the run ended by demonstrating. Absent only if the step threw. */
+  demo?: SetupDemo;
 }
 
 /** What `runSetup` would do, computed by a dry run that writes nothing. */
@@ -138,6 +154,8 @@ export interface SetupPlan {
   wouldInstallClients: string[];
   wouldInstallServe: boolean;
   wouldExport: { format: string; path: string }[];
+  /** The correction a real run would end by demonstrating (computed, never written). */
+  demo?: SetupDemo;
 }
 
 /** Runs a command and returns trimmed stdout; throws when it fails. */

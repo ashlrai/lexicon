@@ -1,5 +1,6 @@
 {
   "name": "@ashlr/lexicon",
+  "mcpName": "io.github.ashlrai/lexicon",
   "version": "0.5.0",
   "description": "Personal lexicon for voice-to-agents. Fixes the words STT gets wrong (Ashler -> Ashlr.AI) before your agent sees the prompt.",
   "type": "module",
@@ -52,6 +53,7 @@
     "bench:audio": "node --import tsx bench/audio/run.ts",
     "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
     "check:links": "node scripts/check-links.mjs",
+    "check:server-json": "node scripts/check-server-json.mjs",
     "check:facts": "node scripts/check-facts.mjs",
     "prepublishOnly": "npm run build && npm run build:bundle && npm test",
     "build:site": "node scripts/build-site.mjs",

@@ -24,11 +24,19 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
   server.registerTool(
     'lexicon_doctor',
     {
-      title: 'Diagnose the lexicon install',
+      title: 'Is the lexicon set up, and if not what fixes it',
       description:
-        'Diagnose the lexicon install: files, trust, hooks, MCP registration, clipboard, voice tools. ' +
-        'Call when corrections are not happening or the user asks whether it is set up. ' +
-        "Returns { ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }], paths, versions }; summarise the fails and warns for the user and offer the fix each message names.",
+        'Answers "is lexicon set up for this user, and what is the one command that fixes it" in a single call. ' +
+        'WHEN TO CALL: when corrections are not happening, when the user asks whether it is set up, or before you offer to set it up, ' +
+        'so you know whether there is anything to offer. Safe and free to call unprompted: it only reads. ' +
+        'WHAT IT CHANGES: nothing. It writes no files and installs nothing. ' +
+        'READ THESE THREE FIELDS FIRST: `ready` (boolean: true means corrections will actually happen for this user -- there are terms ' +
+        'and an agent is wired up to use them), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do ' +
+        'next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). ' +
+        'If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ' +
+        'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), ' +
+        "`checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for " +
+        'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
     },
     async () => guarded(async () => textResult(await runDoctorReport({ cwd }))),

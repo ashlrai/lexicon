@@ -473,9 +473,13 @@ describe('runHook', () => {
         expect(parsed.hookSpecificOutput.additionalContext).toBe(ONBOARD_NOTE);
         expect(ONBOARD_NOTE).toContain('setup_lexicon');
         expect(ONBOARD_NOTE).toContain('onboard prompt');
-        // Names the three questions and says to offer, not run.
-        expect(ONBOARD_NOTE).toContain('do not run it unasked');
-        expect(ONBOARD_NOTE).toMatch(/\(1\) company\/product names, spelled exactly/);
+        // Names the three questions, and is an offer with a trigger rather than a task:
+        // it waits for dictation, offers once, and installs nothing without a yes.
+        expect(ONBOARD_NOTE).toMatch(/Wait until a message looks dictated/);
+        expect(ONBOARD_NOTE).toMatch(/Offer once/);
+        expect(ONBOARD_NOTE).toMatch(/apply: true only after they say yes/);
+        expect(ONBOARD_NOTE).toMatch(/Install nothing they did not name/);
+        expect(ONBOARD_NOTE).toMatch(/\(1\) their company\/product names, spelled exactly/);
         expect(ONBOARD_NOTE).toMatch(/\(2\) their own name/);
         expect(ONBOARD_NOTE).toContain('(3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code');
         expect(ONBOARD_NOTE).toContain('with company, person and clients');

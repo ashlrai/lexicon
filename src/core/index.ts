@@ -16,3 +16,4 @@ export * from './learn.js';
 export * from './stats.js';
 export * from './suggestTerms.js';
 export * from './packs.js';
+export * from './demo.js';

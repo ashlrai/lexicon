@@ -1,5 +1,5 @@
 /**
- * `lexicon setup`: the one command a new user runs. Walks through seven steps,
+ * `lexicon setup`: the one command a new user runs. Walks through eight steps,
  * each printing a one-line result, and never re-implements an installer:
  *
  *   a. global lexicon (runInit) seeded with the git user as a person term and
@@ -11,7 +11,10 @@
  *   d. agent clients detected on this machine, installed via runInstall
  *   e. the local API as a login service via runServeInstall
  *   f. an export for the user's dictation app, written to ~/Desktop
- *   g. a summary card (or JSON with --json)
+ *   g. a live demonstration: the sentence STT would have produced for the
+ *      terms just seeded, and the same sentence after normalize() ran
+ *   h. a summary card ending in the single next thing to do (or JSON with
+ *      --json, which carries the demonstration as `demo`)
  *
  * Interactive on a terminal (prompt.ts); `--yes` answers every prompt with
  * its default, and off a TTY without `--yes` the defaults are used as well.
@@ -43,6 +46,7 @@ import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './se
 import { defaultSetupExec, isSetupApp, parseClientList, parsePackList } from './setup/detect.js';
 import {
   stepClients,
+  stepDemo,
   stepExport,
   stepHarvest,
   stepLexicon,
@@ -91,7 +95,28 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
   ctx.say(dim('   run again without --dry-run to apply.'));
 }
 
-/** Step g: the summary card. */
+/**
+ * The one thing to do next, in one line. Not a list: a stranger who has just
+ * read six step results has room for exactly one instruction, and the whole
+ * product is "say a name out loud and watch it come out spelled right".
+ *
+ * The name is the company seeded in step 1 when there is one, else whatever
+ * the step-7 demonstration just corrected, so the sentence is always one this
+ * lexicon can actually fix.
+ */
+function printNext(ctx: Ctx): void {
+  const s = ctx.summary;
+  const name = ctx.company ?? s.demo?.terms[0];
+  const installed = s.clients.filter((c) => c.status === 'installed').map((c) => c.name);
+  const where = installed.includes('claude') ? 'Claude Code' : (installed[0] ?? 'your agent');
+  ctx.say();
+  ctx.say(
+    `${bold('Next:')} open ${safe(where)} and dictate a sentence with ${name ? `"${safe(name)}"` : 'one of your names'} in it. That is the whole thing.`,
+  );
+  ctx.say(dim('   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)'));
+}
+
+/** Step h: the summary card. */
 function printSummary(ctx: Ctx): void {
   const s = ctx.summary;
   ctx.say();
@@ -106,12 +131,7 @@ function printSummary(ctx: Ctx): void {
   );
   ctx.say(`   local API: ${s.serve}`);
   ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('none')}`);
-  ctx.say();
-  ctx.say(bold('Next:'));
-  const company = ctx.company;
-  ctx.say(`   1. Open Claude Code and dictate a sentence${company ? ` with "${safe(company)}" in it` : ''}; the hook fixes it before Claude reads it.`);
-  ctx.say('   2. After a week: lexicon suggest (finds names you keep correcting) and lexicon stats.');
-  ctx.say('   3. Local push-to-talk: lexicon voice --list-devices, then lexicon voice --copy.');
+  printNext(ctx);
 }
 
 /**
@@ -193,6 +213,8 @@ export async function runSetup(
     await stepServe(ctx);
     say();
     await stepExport(ctx);
+    say();
+    await stepDemo(ctx);
     if (ctx.plan) printPlan(ctx, ctx.plan);
     else printSummary(ctx);
   } finally {

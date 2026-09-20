@@ -536,9 +536,14 @@ describe('runDoctorReport', () => {
     expect(directCode).toBe(1);
     expect(direct.out).toBe(rendered.out);
     const lines = rendered.out.trimEnd().split('\n');
-    expect(lines).toHaveLength(report.checks.length + 2);
-    expect(lines.at(-2)).toBe('');
-    expect(lines.at(-1)).toBe('1 check failed');
+    // every check, a blank line, the verdict, then the two lines a caller can
+    // act on without reading the rest: `summary` and `nextStep`.
+    expect(lines).toHaveLength(report.checks.length + 4);
+    expect(lines.at(-4)).toBe('');
+    expect(lines.at(-3)).toBe('1 check failed');
+    expect(lines.at(-2)).toBe(report.summary);
+    expect(lines.at(-1)).toBe(report.nextStep);
+    expect(report.nextStep).not.toBe('');
     report.checks.forEach((c, i) => {
       const marker = { ok: '✓', fail: '✗', warn: '!', info: '·' }[c.level];
       expect(lines[i]).toBe(`${marker} ${c.message}`);
@@ -774,7 +779,7 @@ describe('doctor: login service', () => {
     });
     expect(calls).toEqual([['launchctl', 'print', 'gui/501/ai.ashlr.lexicon.serve.test']]);
     const rendered = makeIO();
-    renderDoctorReport({ ok: true, checks: [await checkLoginService({ platform: 'darwin', env: {}, exec: fail, home: h })], paths: { global: '', trust: '', settings: '', installedPlugins: '' }, versions: { lexicon: '0', node: '0', platform: 'darwin' } }, rendered);
+    renderDoctorReport({ ok: true, ready: true, summary: 'ok', nextStep: 'nothing', checks: [await checkLoginService({ platform: 'darwin', env: {}, exec: fail, home: h })], paths: { global: '', trust: '', settings: '', installedPlugins: '' }, versions: { lexicon: '0', node: '0', platform: 'darwin' } }, rendered);
     expect(rendered.out).toContain('· no login service installed');
   });
 

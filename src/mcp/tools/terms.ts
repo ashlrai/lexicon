@@ -30,9 +30,16 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Normalize dictated text',
       description:
-        "Rewrite a dictated/transcribed text using the user's personal lexicon (fixes STT misspellings of names, brands, acronyms, identifiers). " +
-        'Call this on any user message that came from voice/dictation or contains a word that looks like a garbled proper noun. ' +
-        'Returns corrected text and the list of replacements.',
+        "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. " +
+        'WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with ' +
+        "little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a " +
+        "real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need " +
+        'the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. ' +
+        'WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit ' +
+        'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
+        'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
+        'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
+        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently.',
       inputSchema: {
         text: z.string().describe('The dictated or transcribed text to correct.'),
         dryRun: z
@@ -76,9 +83,16 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Add a lexicon term',
       description:
-        "Save a canonical spelling to the user's lexicon so future dictation is corrected to it. " +
-        'Use when the user corrects you ("it\'s Ashlr.AI, not Ashler") - pass the misheard spelling as an alias. ' +
-        'If aliases are omitted, likely STT misspellings are generated automatically. Merges aliases into an existing term with the same canonical.',
+        "Teach the lexicon a name, so dictation is corrected to it from now on. " +
+        'WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give ' +
+        'you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the ' +
+        'right term for you. Do not add a name the user did not ask you to remember. ' +
+        "WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with " +
+        "scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and " +
+        'only gains the new aliases. ' +
+        'WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling ' +
+        'exactly as the user writes it. Omit `aliases` and likely STT misspellings are generated for you, which beats inventing ' +
+        'your own; show the user what was generated so they can veto one.',
       inputSchema: {
         canonical: z.string().min(1).describe('The correct spelling, exactly as the user wants it written.'),
         aliases: z
@@ -120,7 +134,14 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     'remove_term',
     {
       title: 'Remove a lexicon term',
-      description: "Delete a term (by canonical spelling, case-insensitive) from the user's lexicon.",
+      description:
+        "Delete a term from the user's lexicon by canonical spelling (case-insensitive). " +
+        'WHEN TO CALL: only when the user asks for a name to be forgotten, or after they accepted a ' +
+        "'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. " +
+        'WHAT IT CHANGES: removes that one term, and the corrections it was making stop happening. ' +
+        'There is no undo through this server. ' +
+        'WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot ' +
+        'name exactly -- use list_terms first if you are unsure which canonical the user means.',
       inputSchema: {
         canonical: z.string().min(1),
         scope: z
@@ -141,7 +162,13 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'List lexicon terms',
       description:
-        "List the user's lexicon terms (global + project merged). Optional case-insensitive substring filter over canonical spellings and aliases, and category filter.",
+        "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical " +
+        'spellings and aliases, plus a category filter. ' +
+        'WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the ' +
+        'exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. ' +
+        'WHAT IT CHANGES: nothing. ' +
+        'WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in ' +
+        '`note`, and trust_project is how the user reviews it.',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring matched against canonical and aliases.'),
         category: z.enum(TERM_CATEGORIES).optional(),
@@ -208,9 +235,13 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Learn from a spelling correction',
       description:
-        'Record that the user corrected a transcription: they said `meant` but the transcript/agent wrote `heard`. ' +
-        "Call this whenever the user says things like 'it's Ashlr.AI not Ashler', 'I said X', or fixes a name you wrote. " +
-        'Adds `heard` as an alias so future dictation is corrected automatically.',
+        'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. ' +
+        "WHEN TO CALL: the moment the user corrects a name -- \"it's Ashlr.AI not Ashler\", \"I said Hetzner\", or they simply " +
+        'retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction ' +
+        'being written down, and asking every time is the irritating version of this product. ' +
+        'WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. ' +
+        'WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- ' +
+        'pass only the misspelled name as `heard`, not the sentence around it. Then get on with what the user actually asked for.',
       inputSchema: {
         heard: z.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: z.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -240,8 +271,14 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Suggest the canonical form of a garbled word',
       description:
-        'Given a word that looks like a garbled proper noun and was not corrected by normalize_transcript, ' +
-        "return the closest existing lexicon terms so you can ask the user 'did you mean X?'.",
+        'Look up what a garbled word was probably meant to be. ' +
+        'WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, ' +
+        'so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. ' +
+        'WHAT IT CHANGES: nothing. It only reads the lexicon. ' +
+        'WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above ' +
+        "about 0.8 use the canonical and mention it in passing, below that ask \"did you mean X?\" and call learn_correction once " +
+        'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
+        'offer to add it with add_term.',
       inputSchema: {
         heard: z.string().min(1).describe('The suspicious word or phrase as it appeared in the transcript.'),
       },

@@ -23,6 +23,9 @@ import {
   HOOK_EVENTS,
   defaultExec,
   hookConfigFor,
+  hookTimeoutFor,
+  launchCommandLine,
+  launchFor,
   mergeHookIntoSettings,
   resolveIntegrationPaths,
 } from './claude-settings.js';
@@ -206,7 +209,10 @@ export function targetFor(
   serverPath: string,
   ctx: PathContext,
 ): InstallTarget {
-  const base: StdioServerEntry = { command: 'node', args: [serverPath] };
+  // `node <abs path>` normally; `npx -y @ashlr/lexicon@<v> mcp` when this copy
+  // is running out of an npx cache, which npm is free to delete (see launchFor).
+  const launch = launchFor(serverPath, 'mcp');
+  const base: StdioServerEntry = { command: launch.command, args: launch.args };
   const file = configPathFor(client, ctx);
   const common = { client, label: labelFor(client), file, rulesFile: rulesFileFor(client) };
   switch (client) {
@@ -360,8 +366,9 @@ function printExportHint(io: IO, step: number, client: InstallClient): void {
 }
 
 function printGeneric(io: IO, serverPath: string): void {
+  const launch = launchFor(serverPath, 'mcp');
   line(io, bold('Generic MCP client configuration'));
-  line(io, indent(jsonSnippet('mcpServers', { command: 'node', args: [serverPath] }), '   '));
+  line(io, indent(jsonSnippet('mcpServers', { command: launch.command, args: launch.args }), '   '));
   line(io);
   line(io, bold('Supported clients'));
   for (const c of INSTALL_CLIENTS) {
@@ -499,12 +506,14 @@ export async function runInstallClaude(
   let failed = false;
 
   // 1. MCP server registration ------------------------------------------------
-  const mcpArgs = ['mcp', 'add', '--scope', scope, 'lexicon', '--', 'node', serverPath];
+  const serverLaunch = launchFor(serverPath, 'mcp');
+  const mcpArgs = ['mcp', 'add', '--scope', scope, 'lexicon', '--', serverLaunch.command, ...serverLaunch.args];
   line(io, bold('1. Register the MCP server'));
   line(io, `   claude ${mcpArgs.map(quoteArg).join(' ')}`);
-  if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
+  if (serverLaunch.viaNpx) line(io, dim('   (run from an npx cache, so the config calls npx rather than a path npm may delete)'));
+  else if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
-    if (!existsSync(serverPath)) {
+    if (!serverLaunch.viaNpx && !existsSync(serverPath)) {
       line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
@@ -518,18 +527,24 @@ export async function runInstallClaude(
   line(io);
 
   // 2. UserPromptSubmit + SessionStart hooks ----------------------------------------
-  // Always quoted: the path is embedded in a shell command string in settings.json.
-  const hookCommand = `node "${hookPath.replace(/(["\\$`])/g, '\\$1')}"`;
+  // Quoted per argument: the whole thing is a shell command string in settings.json.
+  const hookLaunch = launchFor(hookPath, 'hook');
+  const hookCommand = launchCommandLine(hookLaunch);
+  const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
   line(io, `   merge into ${safe(settingsPath)}:`);
-  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, 5, HOOK_EVENTS), null, 2), '   '));
+  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), '   '));
+  if (hookLaunch.viaNpx) {
+    line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
+    line(io, dim('    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)'));
+  }
   if (opts.apply) {
     const read = await readJsonFile(settingsPath);
     if (read.error !== undefined) {
       throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
     }
     const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, 5, HOOK_EVENTS);
+    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
       await writeJsonFile(settingsPath, settings);
       line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));

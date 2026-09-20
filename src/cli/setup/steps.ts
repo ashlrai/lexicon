@@ -11,6 +11,7 @@ import {
   EXPORT_FORMAT_INFO,
   ProjectTrustError,
   addTerm,
+  demonstrate,
   exportLexicon,
   harvestRepo,
   installPack,
@@ -546,4 +547,44 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 
-/** Step g (dry run): the plan card. */
+/**
+ * Step g: prove it works, right now, on this machine.
+ *
+ * Every step before this one reports a file it wrote, which is not the same
+ * thing as the product working. This one takes the terms the wizard just
+ * seeded, writes the sentence speech-to-text would have produced for them,
+ * runs the real normalizer over it and prints the before and the after. It is
+ * the only step whose output a stranger can evaluate without trusting us.
+ *
+ * It never ends in "no changes": when the user's own lexicon cannot
+ * demonstrate anything yet -- `--yes` seeds at most a person and a company,
+ * and a company with no recorded mishearings cannot fire -- `demonstrate()`
+ * falls back to the built-in example terms, and the step says so.
+ */
+export async function stepDemo(ctx: Ctx): Promise<void> {
+  stepHeading(ctx, 7, 'Does it work?');
+  let merged;
+  try {
+    merged = (await loadLexicon({ cwd: ctx.cwd })).merged;
+  } catch {
+    merged = { version: 1 as const, terms: [] };
+  }
+  // The person and company from step 1 first: a stranger should see their own
+  // name corrected, not a term that arrived with a starter pack.
+  const demo = demonstrate(merged, ctx.seeded);
+  const summary = demo.result.replacements
+    .map((r) => `"${safe(r.original)}" -> "${safe(r.replacement)}"`)
+    .join(', ');
+  ctx.say(`   you dictate:  ${safe(demo.heard)}`);
+  ctx.say(`   ${bold('your agent sees')}: ${bold(safe(demo.corrected))}`);
+  if (summary) ctx.say(dim(`   fixed: ${summary}`));
+  if (demo.usedExample) {
+    ctx.say(dim('   (that used the built-in example terms: your lexicon has no misspellings recorded yet)'));
+    ctx.say(dim('   add one now: lexicon add "Your Co" --suggest'));
+  }
+  const record = { heard: demo.heard, corrected: demo.corrected, terms: demo.terms, usedExample: demo.usedExample };
+  if (ctx.plan) ctx.plan.demo = record;
+  else ctx.summary.demo = record;
+}
+
+/** Step h (dry run): the plan card. */

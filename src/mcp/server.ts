@@ -42,9 +42,28 @@ const ONBOARD_PROMPT = [
   '3. Ask which agent clients I use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI or VS Code.',
   '4. Call setup_lexicon with my company, my name and those clients, show me its plan, and apply it only after I say yes. Tell me what it installed and where the lexicon file lives.',
   '5. For every other name I gave you, call add_term without aliases so likely misspellings are generated, then show each term with its aliases on one line so I can veto any.',
-  '6. Finish with one sentence I can dictate to test it that contains two of the names, and tell me to try it in a new session.',
+  '6. Offer the starter packs once (list_packs; say in one line what each contains) and add only the ones I pick.',
+  '7. Finish by proving it works: take one of my names, write the sentence I can dictate to test it containing two of the names, and run normalize_transcript on that sentence spelled the way speech-to-text would mangle it, so I can see the before and after. Then tell me to try it in a new session.',
   'Never install anything or trust a project file without telling me first. If a step fails, show me the error and continue with the rest.',
 ].join('\n');
+
+/**
+ * What to do when the user is clearly dictating but has no lexicon. Offered as
+ * part of the server instructions rather than as its own prompt, because the
+ * moment it applies is mid-conversation, not at a slash command.
+ *
+ * The line to walk: an agent that silently sets things up has installed
+ * software the user did not ask for; an agent that pitches on every message is
+ * an ad. So: notice, finish the actual request first, then one sentence,
+ * once -- and take "no" as permanent for the session.
+ */
+const PROACTIVE_OFFER = [
+  'OFFERING SETUP UNPROMPTED: if a message looks dictated and contains a proper noun you do not recognise, and lexicon_doctor says ready is false,',
+  'you may offer to set this up on your own initiative -- but answer what the user actually asked first, then add at most one short sentence, once per session,',
+  'naming the word that looked wrong ("Ashler" looked like a name STT mangled -- want me to set up a lexicon so it comes out right?).',
+  'Do not offer twice, do not offer when the user is busy with something failing, and never run setup_lexicon with apply: true, install_client, add_pack or trust_project without an explicit yes.',
+  'If the user says no, drop it for the session and just keep calling normalize_transcript.',
+].join(' ');
 
 /** Sent to the client at initialize; the one-screen summary of how an agent should use this server. */
 const SERVER_INSTRUCTIONS = [
@@ -55,6 +74,8 @@ const SERVER_INSTRUCTIONS = [
   'If a word looks like a garbled name and normalize_transcript did not change it, call suggest_canonical before guessing.',
   'Never rewrite text inside code blocks, inline code, file paths, URLs or emails.',
   "If the lexicon is empty, offer to set it up: ask for the company/product spelling, the user's own name and the clients in use, then call setup_lexicon (or use the onboard prompt).",
+  'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
+  PROACTIVE_OFFER,
   'setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.',
   'Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.',
   'When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.',

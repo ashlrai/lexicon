@@ -383,9 +383,12 @@ describe('runSetup --yes', () => {
     const { summary, io } = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, f);
     const parsed = JSON.parse(io.out) as SetupSummary;
     expect(parsed).toEqual(summary);
-    expect(Object.keys(parsed).sort()).toEqual(['clients', 'exports', 'lexiconPath', 'packs', 'serve', 'termsAdded']);
+    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'packs', 'serve', 'termsAdded']);
     expect(io.err).toContain('lexicon setup');
     expect(io.err).toContain('claude: installed');
+    // The run ends in a correction the caller can show, not just a file list.
+    expect(parsed.demo?.corrected).toContain('Ashlr.AI');
+    expect(parsed.demo?.heard).not.toBe(parsed.demo?.corrected);
   });
 
   it('takes the defaults off a terminal without --yes and says so', async () => {
@@ -421,6 +424,14 @@ describe('runSetup --dry-run', () => {
       wouldInstallClients: ['claude', 'codex', 'cursor'],
       wouldInstallServe: true,
       wouldExport: [{ format: 'wispr', path: path.join(exportDir, 'lexicon-wispr.csv') }],
+      // A dry run writes nothing, so there is no lexicon to demonstrate from:
+      // the example terms stand in, and the plan carries what a real run would show.
+      demo: {
+        heard: 'can you check whether the Ashler migration landed yet',
+        corrected: 'can you check whether the Ashlr.AI migration landed yet',
+        terms: ['Ashlr.AI'],
+        usedExample: true,
+      },
     });
     // Nothing on disk, nothing installed, the summary untouched.
     expect(existsSync(globalPath)).toBe(false);

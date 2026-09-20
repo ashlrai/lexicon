@@ -76,9 +76,12 @@ vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
 
 const doctorReport: DoctorReport = {
   ok: false,
+  ready: false,
+  summary: 'Lexicon has 2 terms but 1 check failed: lexicon MCP server not registered with claude (run: lexicon install claude --apply)',
+  nextStep: 'Fix the first failure: lexicon MCP server not registered with claude (run: lexicon install claude --apply)',
   checks: [
     { level: 'ok', message: 'global lexicon parses: /fake/global/lexicon.yaml (2 terms)' },
-    { level: 'fail', message: 'lexicon MCP server not registered with claude (run: lexicon install-claude --apply)' },
+    { level: 'fail', message: 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)' },
     { level: 'info', message: 'no project lexicon (.lexicon.yaml) found from /fake/repo' },
   ],
   paths: { global: '/fake/global/lexicon.yaml', trust: '/fake/global/trust.json', settings: '/home/u/.claude/settings.json', installedPlugins: '/home/u/.claude/plugins/installed_plugins.json' },

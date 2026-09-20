@@ -3,8 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lexicon demo</title>
+  <title>Lexicon demo: watch a mis-transcribed name get fixed</title>
   <meta name="description" content="Say your company name and watch it get fixed. @ashlr/lexicon rewrites what speech-to-text got wrong before your agent sees it. The matcher runs entirely in your browser; your lexicon never leaves this page.">
+  <link rel="canonical" href="https://ashlrai.github.io/lexicon/">
+  <!--
+    This page is the interactive demo; lexicon.ashlr.ai is the project's home.
+    They are different content, so each is canonical for itself, but the link
+    below and the ones in the header and footer tell a crawler (and a model)
+    which one to treat as the entity, and the JSON-LD points `about` at its id.
+  -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Lexicon">
+  <meta property="og:url" content="https://ashlrai.github.io/lexicon/">
+  <meta property="og:title" content="Lexicon demo: watch a mis-transcribed name get fixed">
+  <meta property="og:description" content="Type or dictate a sentence with a brand, product or surname in it. The real matcher runs in your browser and shows you what it would send your agent instead.">
+  <meta property="og:image" content="https://lexicon.ashlr.ai/opengraph-image">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Lexicon: dictation gets English right and your vocabulary wrong.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Lexicon demo: watch a mis-transcribed name get fixed">
+  <meta name="twitter:description" content="Type or dictate a sentence with a brand, product or surname in it. The real matcher runs in your browser.">
+  <meta name="twitter:image" content="https://lexicon.ashlr.ai/opengraph-image">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
@@ -20,6 +41,7 @@
         <span class="brand-name">Lexicon</span>
       </a>
       <nav class="header-links" aria-label="Project links">
+        <a href="https://lexicon.ashlr.ai">What Lexicon is</a>
         <a href="https://github.com/ashlrai/lexicon">GitHub</a>
         <a href="https://www.npmjs.com/package/@ashlr/lexicon">npm</a>
         <span class="install">
@@ -183,12 +205,38 @@
       <p class="bench-note">
         Measured on 398 synthetic dictated sentences with a 70-term lexicon. On real audio through whisper.cpp small.en, 76.0% &rarr; 95.7%.
         <a href="https://github.com/ashlrai/lexicon/blob/main/docs/BENCHMARK.md">Full benchmark</a>
+        &middot; <a href="https://lexicon.ashlr.ai">Install Lexicon and connect your agents</a>
+        &middot; <a href="https://lexicon.ashlr.ai#faq">FAQ</a>
         &middot; <a href="https://github.com/ashlrai/lexicon">Source</a>
         &middot; <a href="https://www.npmjs.com/package/@ashlr/lexicon">npm</a>
         &middot; MIT
       </p>
+      <p class="bench-note">
+        For models: <a href="https://lexicon.ashlr.ai/llms.txt">llms.txt</a>
+        &middot; <a href="https://lexicon.ashlr.ai/llms-full.txt">llms-full.txt</a>
+        &middot; <a href="https://lexicon.ashlr.ai/mcp.json">MCP install manifest</a>
+        &middot; <a href="https://github.com/ashlrai/lexicon/blob/main/docs/AGENTS.md">docs/AGENTS.md</a>
+      </p>
     </div>
   </footer>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": "https://ashlrai.github.io/lexicon/#webpage",
+    "url": "https://ashlrai.github.io/lexicon/",
+    "name": "Lexicon demo",
+    "description": "An interactive demo of the Lexicon matcher, running entirely in the browser.",
+    "inLanguage": "en-US",
+    "isPartOf": { "@type": "WebSite", "@id": "https://lexicon.ashlr.ai/#website", "url": "https://lexicon.ashlr.ai" },
+    "about": { "@type": "SoftwareApplication", "@id": "https://lexicon.ashlr.ai/#software", "name": "Lexicon", "url": "https://lexicon.ashlr.ai" },
+    "significantLink": [
+      "https://lexicon.ashlr.ai",
+      "https://github.com/ashlrai/lexicon"
+    ]
+  }
+  </script>
 
   <script type="module" src="app.js"></script>
 </body>

@@ -50,12 +50,14 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
+  DEMO_LEXICON,
   EXPORT_FORMATS,
   TERM_CATEGORIES,
   EXPORT_FORMAT_INFO,
   addTerm,
   diffSummary,
   emptyLexicon,
+  isEmptyLexicon,
   exportLexicon,
   harvestRepo,
   loadLexicon,
@@ -463,7 +465,22 @@ export async function runNormalize(
   try {
     const loaded = await loadLexicon({ cwd: resolveCwd(opts), includeUntrusted: opts.includeUntrusted === true });
     warnSkippedProject(loaded, io);
-    const result = normalize(text, loaded.merged, normalizeOpts);
+    // `npx @ashlr/lexicon normalize "ping ashler"` with nothing set up is the
+    // cheapest demo of the product, and with an empty lexicon it would print
+    // the input back unchanged -- a demo of nothing. Stand in the example
+    // terms and say so on stderr, so stdout still round-trips exactly.
+    //
+    // Arguments only, never stdin: a human typing a sentence is trying the
+    // tool, whereas `cat notes.md | lexicon normalize` is a pipeline whose
+    // bytes must not be rewritten by terms the user never chose.
+    const useExample = fromArgs && isEmptyLexicon(loaded.merged);
+    if (useExample) {
+      io.stderr(
+        'lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\n' +
+          'lexicon: run `lexicon setup` to build your own; nothing was written.\n',
+      );
+    }
+    const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);
     if (opts.json) {
       line(io, JSON.stringify(result, null, 2));
       return 0;

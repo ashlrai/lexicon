@@ -12,6 +12,7 @@ import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
 import { resolveCliEntry } from './cli-entry.js';
+import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage } from '../util/errors.js';
 import { fail, line, safe, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
@@ -323,6 +324,18 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     cliPath = resolveCliEntry({ env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });
   } catch (err) {
     return fail(io, err);
+  }
+  // The same reasoning, one step earlier: a path inside an npx cache exists
+  // right now but npm may delete it, so a login service pointing at one is a
+  // crash-loop waiting to happen. Unlike a client config there is no npx form
+  // to fall back to -- a service is meant to be permanent -- so this refuses
+  // and names the one command that makes it permanent.
+  if (isVolatileEntry(cliPath)) {
+    io.stderr(
+      `lexicon: refusing to install the login service: this copy is running from an npx cache (${safe(cliPath)}), ` +
+        'which npm deletes. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written\n',
+    );
+    return 1;
   }
   if (platform === 'darwin' || platform === 'linux') {
     // A service whose program does not exist would crash-loop under KeepAlive /

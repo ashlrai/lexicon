@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
+import { INSTALL_COMMANDS } from '@/lib/site';
 import { CommandLine } from './Copy';
 
 type Method = {
@@ -14,19 +15,25 @@ const METHODS: Method[] = [
   {
     id: 'script',
     label: 'Script',
-    command: 'curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh',
-    note: 'Installs the CLI and runs the setup wizard, which writes your first lexicon and registers the MCP server with whichever agent clients it finds.',
+    command: INSTALL_COMMANDS.script,
+    note: 'macOS and Linux. Checks for Node 20 or newer, installs the CLI, then runs the setup wizard, which writes your first lexicon and registers the MCP server with whichever agent clients it finds.',
+  },
+  {
+    id: 'npx',
+    label: 'No install',
+    command: INSTALL_COMMANDS.npx,
+    note: 'Runs the same setup wizard without installing anything globally. Anywhere Node 20 or newer is on the PATH, including Windows. Your lexicon and your client configs are written for good; only the CLI itself is temporary.',
   },
   {
     id: 'brew',
     label: 'Homebrew',
-    command: 'brew install ashlrai/tap/lexicon',
-    note: 'macOS and Linux. Then run lexicon setup to create the lexicon file and connect your agents.',
+    command: INSTALL_COMMANDS.brew,
+    note: 'macOS and Linux; pulls in Node for you. Then run lexicon setup to create the lexicon file and connect your agents.',
   },
   {
     id: 'npm',
     label: 'npm',
-    command: 'npm i -g @ashlr/lexicon',
+    command: INSTALL_COMMANDS.npm,
     note: 'Node 20 or newer. Then run lexicon setup. The same package is importable as a library if you want to call normalize() yourself.',
   },
 ];
@@ -81,9 +88,9 @@ export function Install() {
       <div className="mt-7 border-t border-rule-soft pt-6">
         <p className="micro mb-3">inside claude code</p>
         <div className="flex flex-col gap-2">
-          <CommandLine command="claude plugin marketplace add ashlrai/lexicon" />
+          <CommandLine command={INSTALL_COMMANDS.claudePlugin} />
           <CommandLine
-            command="claude plugin install lexicon@ashlrai"
+            command={INSTALL_COMMANDS.claudePluginInstall}
             note="Brings the MCP server, the SessionStart and UserPromptSubmit hooks, the lexicon skill and the /lexicon command. No build step."
           />
         </div>

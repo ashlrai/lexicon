@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../util/json.js';
+import { PACKAGE_NAME, UNKNOWN_VERSION, packageVersion } from '../util/package.js';
 import { findPackageRoot } from './cli-entry.js';
 
 /** Hook events the lexicon hook handles; `install-claude` registers both. */
@@ -147,6 +148,82 @@ export function resolveIntegrationPaths(cliDir?: string): IntegrationPaths {
     hook: path.resolve(dir, '../hooks/user-prompt-submit.js'),
     bundled: false,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Launching the server and the hook, from wherever this copy happens to live
+// ---------------------------------------------------------------------------
+
+/**
+ * npm's `npx` cache: `~/.npm/_npx/<hash>/node_modules/@ashlr/lexicon/...`.
+ * npm garbage-collects those directories, so an absolute path into one is a
+ * config entry with an expiry date on it.
+ */
+const NPX_CACHE_SEGMENT = /[\\/]_npx[\\/]/;
+
+/**
+ * True when `p` lives in an npx cache, i.e. this process was started by
+ * `npx @ashlr/lexicon ...` and nothing on this machine owns the files.
+ */
+export function isVolatileEntry(p: string): boolean {
+  return NPX_CACHE_SEGMENT.test(p);
+}
+
+/** A command and its arguments, as a client config or a hook line needs them. */
+export interface StdioLaunch {
+  command: string;
+  args: string[];
+  /**
+   * True when the launch re-resolves the package through npx at run time
+   * instead of pointing at a file. Callers use it to widen hook timeouts and
+   * to explain the tradeoff.
+   */
+  viaNpx: boolean;
+}
+
+/**
+ * How another program should start the lexicon `subcommand` (`mcp` or `hook`).
+ *
+ * Normally `node <absolute path>`: fastest, and the file is owned by a real
+ * install. But `npx @ashlr/lexicon@latest setup` runs from a cache directory
+ * npm may delete at any time, and writing that path into Cursor's config
+ * would leave the user with an MCP server that works today and is gone next
+ * week. In that case we write `npx -y @ashlr/lexicon@<version> <subcommand>`
+ * instead, which re-resolves the package on every start: slower to boot, but
+ * it keeps working, and it installs nothing.
+ *
+ * The version is pinned rather than `@latest` so a config keeps behaving the
+ * way it did the day it was written.
+ */
+export function launchFor(entryPath: string, subcommand: 'mcp' | 'hook', version?: string): StdioLaunch {
+  if (!isVolatileEntry(entryPath)) return { command: 'node', args: [entryPath], viaNpx: false };
+  const v = version ?? packageVersion(import.meta.url);
+  const spec = v === UNKNOWN_VERSION ? PACKAGE_NAME : `${PACKAGE_NAME}@${v}`;
+  return { command: 'npx', args: ['-y', spec, subcommand], viaNpx: true };
+}
+
+/**
+ * Hook timeout in seconds. A `node <path>` hook answers in ~20ms; an npx one
+ * has to check its cache first and takes about a second, so it gets room to
+ * do that without Claude Code killing it mid-prompt.
+ */
+export function hookTimeoutFor(launch: StdioLaunch): number {
+  return launch.viaNpx ? 15 : 5;
+}
+
+/**
+ * A launch rendered as a single shell command line, for settings.json hooks.
+ *
+ * File paths are always quoted, whether or not they currently need it: the
+ * string is stored and re-read by another program, and a user who later moves
+ * the install under a directory with a space in it should not have to notice.
+ * Package specs and subcommand names (`-y`, `@ashlr/lexicon@0.5.0`, `hook`)
+ * are left bare so the line stays readable.
+ */
+export function launchCommandLine(launch: StdioLaunch): string {
+  const quote = (s: string): string =>
+    /[\s"'$`\\]/.test(s) || path.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, '\\$1')}"` : s;
+  return [launch.command, ...launch.args].map(quote).join(' ');
 }
 
 export function defaultExec(file: string, args: readonly string[]): string {
