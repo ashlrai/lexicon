@@ -214,7 +214,7 @@ not among the ~600 words of the old stoplist.
   letter) would have lost that headline case. Multi-token windows are exempt. Terms with and
   without aliases are both covered, so `the inter font` stays put even for a bare `Entire.io`.
 - **Stoplist (H).** The built-in stoplist moved to `src/core/stoplist.ts` and grew from about
-  600 to 3376 words: function words, the common verbs, nouns, adjectives and adverbs in the
+  600 to 3398 words: function words, the common verbs, nouns, adjectives and adverbs in the
   inflections STT produces (`lack`, `lacks`, `lacked`, `lacking`, `looked`, `looking`, `users`,
   ...), calendar words and everyday tech vocabulary. It still only blocks the phonetic and fuzzy
   passes and the implicit (canonical-derived) exact alias; an alias the user listed explicitly
