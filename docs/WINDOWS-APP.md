@@ -50,7 +50,13 @@ No installer. One file.
 LexiconBar.exe
 ```
 
-No release ships it yet. Get it from the `LexiconBar-win-x64` artifact on a green run of the `Windows app` workflow, or build it yourself: see [Build from source](#build-from-source), which cross-compiles from a Mac just as well as it builds on Windows.
+No release ships it yet, deliberately: every line that drives UI Automation is still unrun, and an unverified binary that synthesizes keystrokes into whatever field you have focused is not something to hand a stranger. Until someone has worked through the [manual test script](#manual-test-script), take it from CI:
+
+```bash
+gh run download --repo ashlrai/lexicon --name LexiconBar-win-x64 --dir .
+```
+
+That is the artifact from the last green run of the `Windows app` workflow, built and tested on `windows-latest`. Or build it yourself: see [Build from source](#build-from-source), which cross-compiles from a Mac just as well as it builds on Windows.
 
 Double-click it. A waveform icon appears in the notification area and Fix everywhere is on. Nothing needs elevating, nothing is written outside your own profile, and there is no service.
 
