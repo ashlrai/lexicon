@@ -9,5 +9,12 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts', 'bench/**/*.test.ts'],
     exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts'] : [])],
     environment: 'node',
+    // Vitest's default is 5s. Several suites do real filesystem work (mkdtemp,
+    // atomic writes, recursive rm) and NTFS plus Defender make each of those
+    // several times slower than on APFS or ext4: `installPack` and the setup
+    // walkthroughs came in at 3.6-5.1s on windows-latest against ~300ms on a
+    // Mac, so they were timing out on their own slowness rather than failing.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

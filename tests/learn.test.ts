@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Lexicon, LoadedLexicon, Term } from '../src/core/types.js';
 
@@ -157,7 +158,9 @@ describe('learnCorrection', () => {
     const result = await learnCorrection({ heard: 'Ashlur', meant: 'ashlr.ai' }, { cwd: '/fake/repo' });
     expect(store.addTerm).toHaveBeenCalledWith(
       { canonical: 'Ashlr.AI', aliases: ['Ashlur'], source: 'learned' },
-      { cwd: '/fake/repo', scope: 'global' },
+      // path.resolve, because runLearn resolves the cwd it is handed and
+      // '/fake/repo' becomes 'D:\\fake\\repo' on a Windows runner.
+      { cwd: path.resolve('/fake/repo'), scope: 'global' },
     );
     expect(result.created).toBe(false);
     expect(result.aliasAdded).toBe(true);
@@ -166,7 +169,7 @@ describe('learnCorrection', () => {
 
   it('follows the term into the project scope when it lives there', async () => {
     await learnCorrection({ heard: 'kubernetties', meant: 'Kubernetes' }, { cwd: '/fake/repo' });
-    expect(store.addTerm).toHaveBeenCalledWith(expect.anything(), { cwd: '/fake/repo', scope: 'project' });
+    expect(store.addTerm).toHaveBeenCalledWith(expect.anything(), { cwd: path.resolve('/fake/repo'), scope: 'project' });
   });
 
   it('an explicit scope overrides the term scope', async () => {

@@ -717,7 +717,10 @@ describe('lexicon serve (CLI)', () => {
       const unitPath = systemdUnitPath(home, {});
       expect(unitPath).toBe(path.join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT_NAME));
       const unit = await fs.readFile(unitPath, 'utf8');
-      expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli}" serve`);
+      // systemd's own escaping: unitQuote doubles a backslash, so the
+      // Windows temp path in this fixture is doubled in the unit file. That is
+      // the unit being right, not the test being wrong.
+      expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli.replace(/\\/g, '\\\\')}" serve`);
       expect(unit).toContain('WantedBy=default.target');
       expect(calls).toEqual([
         ['systemctl', '--user', 'daemon-reload'],

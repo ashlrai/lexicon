@@ -349,7 +349,9 @@ describe('generic, claude and the commander wiring', () => {
     const { code, io } = await run('generic');
     expect(code).toBe(0);
     expect(io.out).toContain('"mcpServers"');
-    expect(io.out).toContain(SERVER);
+    // The path sits inside a JSON snippet, so on Windows its separators are
+    // JSON-escaped. Compare against the escaped form rather than the raw path.
+    expect(io.out).toContain(JSON.stringify(SERVER).slice(1, -1));
     for (const c of ['codex', 'cursor', 'windsurf', 'gemini', 'claude-desktop', 'vscode']) {
       expect(io.out).toContain(`lexicon install ${c}`);
     }
@@ -422,8 +424,31 @@ describe('installing from an npx cache', () => {
     const direct = launchFor('/opt/lexicon/dist/hooks/user-prompt-submit.js', 'hook', '1.2.3');
     expect(hookTimeoutFor(direct)).toBe(5);
     expect(hookTimeoutFor(viaNpx)).toBeGreaterThan(5);
-    expect(launchCommandLine(viaNpx)).toBe('npx -y @ashlr/lexicon@1.2.3 hook');
-    expect(launchCommandLine(direct)).toBe('node "/opt/lexicon/dist/hooks/user-prompt-submit.js"');
+    expect(launchCommandLine(viaNpx, 'linux')).toBe('npx -y @ashlr/lexicon@1.2.3 hook');
+    expect(launchCommandLine(direct, 'linux')).toBe('node "/opt/lexicon/dist/hooks/user-prompt-submit.js"');
+  });
+
+  it('does not backslash-escape a Windows path, which would write a path that is not the file', () => {
+    const viaNpxWin = launchFor(`${NPX_CLI}/../hooks/user-prompt-submit.js`, 'hook', '1.2.3');
+    // The POSIX branch doubles a backslash because that is the shell's escape
+    // character. On Windows it is the path separator and nothing else, so
+    // doubling it turned C:\Users\me\... into "C:\\Users\\me\\..." in
+    // settings.json -- a hook command pointing at a file that does not exist.
+    const win = launchFor('C:\\Users\\me\\lexicon\\dist\\hooks\\user-prompt-submit.js', 'hook', '1.2.3');
+    expect(launchCommandLine(win, 'win32')).toBe('node "C:\\Users\\me\\lexicon\\dist\\hooks\\user-prompt-submit.js"');
+    expect(launchCommandLine(win, 'win32')).not.toContain('\\\\');
+
+    // A path with a space is still quoted, which is the point of quoting at all.
+    const spaced = launchFor('C:\\Program Files\\lexicon\\hook.js', 'hook', '1.2.3');
+    expect(launchCommandLine(spaced, 'win32')).toBe('node "C:\\Program Files\\lexicon\\hook.js"');
+
+    // $ and a backtick are ordinary characters to cmd.exe and PowerShell;
+    // escaping them the POSIX way would corrupt a path that contains one.
+    const odd = launchFor('C:\\odd$dir\\hook.js', 'hook', '1.2.3');
+    expect(launchCommandLine(odd, 'win32')).toBe('node "C:\\odd$dir\\hook.js"');
+
+    // The npx form carries no path and is identical on both.
+    expect(launchCommandLine(viaNpxWin, 'win32')).toBe('npx -y @ashlr/lexicon@1.2.3 hook');
   });
 
   it('writes the npx form into a client config end to end', async () => {

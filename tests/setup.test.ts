@@ -66,7 +66,13 @@ function fakes(overrides: Partial<SetupDeps> = {}, present: string[] = []): Fake
     env: { PATH: '/fake/bin' },
     home,
     // Real files under the temp dirs (the lexicon, .git), fake everything else.
-    exists: (p) => f.present.has(p) || ((p.startsWith(cwd) || p.startsWith(home)) && existsSync(p)),
+    // `path.join(x) === p` as well as a raw hit: the `present` fixtures are
+    // written POSIX-style ('/Applications/Cursor.app') while detectClients
+    // probes with the host's path.join, which is backslashed on Windows.
+    exists: (p) =>
+      f.present.has(p) ||
+      [...f.present].some((x) => path.join(x) === p) ||
+      ((p.startsWith(cwd) || p.startsWith(home)) && existsSync(p)),
     exec: (file, args) => {
       if (file === 'git' && args.join(' ') === 'config --global user.name') return 'Mason Wyatt';
       if (file === 'git' && args.includes('get-url')) return 'https://github.com/ashlrai/lexicon.git';

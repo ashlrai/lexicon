@@ -53754,8 +53754,13 @@ function launchFor(entryPath, subcommand, version2) {
 function hookTimeoutFor(launch) {
   return launch.viaNpx ? 15 : 5;
 }
-function launchCommandLine(launch) {
-  const quote = (s) => /[\s"'$`\\]/.test(s) || path13.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
+function launchCommandLine(launch, platform = process.platform) {
+  const win = platform === "win32";
+  const p = win ? path13.win32 : path13.posix;
+  const quote = (s) => {
+    if (win) return /[\s"]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
+    return /[\s"'$`\\]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
+  };
   return [launch.command, ...launch.args].map(quote).join(" ");
 }
 function defaultExec(file2, args) {

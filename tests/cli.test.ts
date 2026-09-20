@@ -404,12 +404,19 @@ describe('install-claude', () => {
   it('prints the mcp add command and hook JSON without applying', async () => {
     const io = makeIO();
     const exec = vi.fn(() => '');
-    const code = await runInstallClaude({}, io, { cliDir: '/x/dist/cli', settingsPath: '/nonexistent/settings.json', exec });
+    const cliDir = path.join(path.sep, 'x', 'dist', 'cli');
+    const code = await runInstallClaude({}, io, { cliDir, settingsPath: '/nonexistent/settings.json', exec });
     expect(code).toBe(0);
     expect(exec).not.toHaveBeenCalled();
-    expect(io.out).toContain('claude mcp add --scope user lexicon -- node /x/dist/mcp/server.js');
+    // resolveIntegrationPaths resolves against cliDir, so these are backslash
+    // paths on Windows; and on Windows an absolute path is quoted in the
+    // printed `claude mcp add` line, where on POSIX it is bare.
+    const { server, hook } = resolveIntegrationPaths(cliDir);
+    const shown = process.platform === 'win32' ? `"${server}"` : server;
+    expect(io.out).toContain(`claude mcp add --scope user lexicon -- node ${shown}`);
     expect(io.out).toContain('"UserPromptSubmit"');
-    expect(io.out).toContain('node \\"/x/dist/hooks/user-prompt-submit.js\\"');
+    // The hook command is embedded in JSON, so its quotes arrive escaped.
+    expect(io.out).toContain(JSON.stringify(`node "${hook}"`).slice(1, -1));
     expect(io.out).toContain('Read the `lexicon://me` resource before interpreting dictated text.');
   });
 
@@ -418,9 +425,10 @@ describe('install-claude', () => {
     const settingsPath = path.join(dir, '.claude', 'settings.json');
     const exec = vi.fn(() => 'Added stdio MCP server lexicon');
     const io = makeIO();
-    const code = await runInstallClaude({ apply: true, scope: 'project' }, io, { cliDir: '/x/dist/cli', settingsPath, exec });
+    const cliDir = path.join(path.sep, 'x', 'dist', 'cli');
+    const code = await runInstallClaude({ apply: true, scope: 'project' }, io, { cliDir, settingsPath, exec });
     expect(code).toBe(0);
-    expect(exec).toHaveBeenCalledWith('claude', ['mcp', 'add', '--scope', 'project', 'lexicon', '--', 'node', '/x/dist/mcp/server.js']);
+    expect(exec).toHaveBeenCalledWith('claude', ['mcp', 'add', '--scope', 'project', 'lexicon', '--', 'node', resolveIntegrationPaths(cliDir).server]);
     const written = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { hooks: { UserPromptSubmit: unknown[] } };
     expect(written.hooks.UserPromptSubmit).toHaveLength(1);
     expect(io.out).toContain('created');
@@ -728,14 +736,21 @@ describe('resolveCliEntry', () => {
   it('prefers an explicit cliPath, then LEXICON_CLI, over the package lookup', async () => {
     const { root } = await fakePackage();
     const fromPlugin = pathToFileURL(path.join(root, 'plugin', 'mcp-server.mjs')).href;
-    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' } })).toBe('/elsewhere/index.js');
-    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' }, cliPath: '/explicit/index.js' })).toBe('/explicit/index.js');
+    // resolveCliEntry resolves what it is given: '/elsewhere/index.js' picks
+    // up the current drive on Windows.
+    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' } })).toBe(path.resolve('/elsewhere/index.js'));
+    expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '/elsewhere/index.js' }, cliPath: '/explicit/index.js' })).toBe(
+      path.resolve('/explicit/index.js'),
+    );
     expect(resolveCliEntry({ moduleUrl: fromPlugin, env: { LEXICON_CLI: '   ' } })).toBe(path.join(root, 'dist', 'cli', 'index.js'));
   });
 
   it('falls back to a lexicon binary on PATH (through its symlink) and otherwise throws a readable error', async (ctx) => {
     const { root, cli } = await fakePackage(false);
-    const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-noscope-'));
+    // realpath: os.tmpdir() hands back the 8.3 short form (RUNNER~1) on a
+    // Windows runner, while resolveCliEntry realpaths what it finds, so the
+    // two spellings of the same file would not compare equal.
+    const elsewhere = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-noscope-')));
     // Creating a symlink on Windows needs Developer Mode or
     // SeCreateSymbolicLinkPrivilege. GitHub's windows-latest image has it, but
     // a developer box often does not, and a hard skip would also hide the
@@ -920,16 +935,17 @@ describe('doctor: login service', () => {
 
 describe('resolveIntegrationPaths and the bundled plugin files', () => {
   it('falls back to dist paths when plugin/ bundles are absent', () => {
-    const paths = resolveIntegrationPaths('/x/dist/cli');
+    const cliDir = path.join(path.sep, 'x', 'dist', 'cli');
+    const paths = resolveIntegrationPaths(cliDir);
     expect(paths).toEqual({
-      server: '/x/dist/mcp/server.js',
-      hook: '/x/dist/hooks/user-prompt-submit.js',
+      server: path.resolve(cliDir, '..', 'mcp', 'server.js'),
+      hook: path.resolve(cliDir, '..', 'hooks', 'user-prompt-submit.js'),
       bundled: false,
     });
   });
 
   it('prefers plugin/mcp-server.mjs and plugin/hook.mjs when both exist, and install-claude uses them for both hooks', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-root-'));
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-root-')));
     await fs.mkdir(path.join(root, 'plugin'));
     await fs.writeFile(path.join(root, 'plugin', 'mcp-server.mjs'), '');
     // Only one bundle present: not enough, must fall back.

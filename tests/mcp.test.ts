@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -671,7 +672,7 @@ describe('lexicon MCP server', () => {
         const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
         expect(payload).toMatchObject({
           action: 'trust',
-          path: '/fake/repo/sub/.lexicon.yaml',
+          path: path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'),
           previousStatus: 'untrusted',
           status: 'trusted',
           result: 'trusted',

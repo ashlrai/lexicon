@@ -231,10 +231,27 @@ export function hookTimeoutFor(launch: StdioLaunch): number {
  * the install under a directory with a space in it should not have to notice.
  * Package specs and subcommand names (`-y`, `@ashlr/lexicon@0.5.0`, `hook`)
  * are left bare so the line stays readable.
+ *
+ * The backslash is the whole difficulty. On POSIX it is the shell's escape
+ * character and has to be doubled inside the quotes. On Windows it is the
+ * path separator and nothing else, so doubling it corrupts every path this
+ * writes: `C:\Users\me\...` went into settings.json as
+ * `"C:\\Users\\me\\..."`, which is not the file. Windows also cannot put a
+ * `"` in a filename, so quoting there needs no escaping at all -- and the
+ * other three POSIX metacharacters (`$`, backtick, `'`) are ordinary
+ * characters to cmd.exe and PowerShell, so escaping them would break a path
+ * that legitimately contains one.
  */
-export function launchCommandLine(launch: StdioLaunch): string {
-  const quote = (s: string): string =>
-    /[\s"'$`\\]/.test(s) || path.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, '\\$1')}"` : s;
+export function launchCommandLine(launch: StdioLaunch, platform: NodeJS.Platform = process.platform): string {
+  const win = platform === 'win32';
+  // path.win32/path.posix rather than the host's `path`: with `platform`
+  // passed in, the host's isAbsolute answers for the wrong OS and a
+  // `C:\...` path reads as relative (so it would go in unquoted) on a Mac.
+  const p = win ? path.win32 : path.posix;
+  const quote = (s: string): string => {
+    if (win) return /[\s"]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/"/g, '')}"` : s;
+    return /[\s"'$`\\]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, '\\$1')}"` : s;
+  };
   return [launch.command, ...launch.args].map(quote).join(' ');
 }
 
