@@ -15,3 +15,5 @@ extension/dist/
 extension/dist-firefox/
 extension/*.zip
 .scratch/
+.vercel
+.env*

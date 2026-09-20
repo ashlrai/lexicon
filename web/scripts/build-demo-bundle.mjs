@@ -55,8 +55,14 @@ mkdirSync(outdir, { recursive: true });
 
 /* ---------------------------------------------------------------- core bundle */
 
+// esbuild resolves a bare import from the importing file upward, so a matcher.ts
+// under <repo>/src/core looks in <repo>/node_modules and never in web/node_modules.
+// On Vercel only web/ is installed (rootDirectory is web), so point esbuild at both.
+const nodePaths = [resolve(web, 'node_modules'), resolve(repo, 'node_modules')];
+
 await build({
   absWorkingDir: repo,
+  nodePaths,
   entryPoints: [resolve(web, 'lib/demo-entry.ts')],
   outfile: resolve(outdir, 'lexicon-core.js'),
   bundle: true,
@@ -119,6 +125,7 @@ export declare function suggestAliases(canonical: string): string[];
 const validatorPath = resolve(outdir, '.validate-lexicon.mjs');
 await build({
   absWorkingDir: repo,
+  nodePaths,
   stdin: {
     contents: "export { parseLexicon } from './src/core/schema.js';",
     resolveDir: repo,
