@@ -35,6 +35,7 @@ import { STOPLIST } from './stoplist.js';
 import { tokenize } from './matcher/tokenize.js';
 import type { Token } from './matcher/tokenize.js';
 import type { AliasEntry, MatcherIndex, PhoneticEntry } from './matcher/build.js';
+import { declineCollapsedMentions } from './matcher/enumeration.js';
 
 export { DEFAULT_MIN_CONFIDENCE } from './matcher/tuning.js';
 export { phoneticKey, similarity } from './matcher/text.js';
@@ -372,7 +373,15 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
   }
   accepted.sort((a, b) => a.start - b.start);
 
-  return accepted.filter((c) => !c.noop).map(({ termIndex: _termIndex, noop: _noop, ...rest }) => rest);
+  // Last, because it reasons about the whole rewrite rather than any one window:
+  // refuse the rewrites that would turn a sentence distinguishing two spellings
+  // into the same spelling twice. See matcher/enumeration.ts.
+  const surviving = declineCollapsedMentions(
+    text,
+    accepted.filter((c) => !c.noop),
+  );
+
+  return surviving.map(({ termIndex: _termIndex, noop: _noop, ...rest }) => rest);
 }
 
 function clamp01(n: number): number {

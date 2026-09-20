@@ -34,13 +34,13 @@ Method and full tables are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce 
 
 | corpus | proper nouns recovered, raw STT | after lexicon | clean prose wrongly changed |
 | --- | --- | --- | --- |
-| real audio, whisper.cpp base.en (330 clips) | 41.9% | 86.4% | 0 of 72 |
+| real audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
 | real audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
 | synthetic STT errors (398 sentences, 70 terms) | 5.1% | 96.5% | 0 of 95 |
 
 Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
 
-The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 12.5% (15 of 120) synthetic and 20% (18 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
+The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 12.5% (15 of 120) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## Install
 

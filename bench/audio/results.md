@@ -1,6 +1,6 @@
 # Real-audio benchmark results
 
-Generated 2026-09-19T20:54:19.999Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
+Generated 2026-09-20T19:42:45.128Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
 
 Sentences: 110 (80 with lexicon terms, 30 clean prose; 6 marked expected-hard) x 3 voice(s) = 330 clips per variant. This invocation took 1 s (synthesis 0 s); cached audio and transcripts are skipped, so a cold run is longer (see the whisper wall time row).
 
@@ -12,12 +12,12 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 | --- | --- | --- | --- | --- |
 | clips | 330 | 330 | 330 | 330 |
 | term recall, raw Whisper | 41.9% (117/279) | 66.7% (186/279) | 45.9% (128/279) | 76.0% (212/279) |
-| term recall, after lexicon | **86.4% (241/279)** | **92.1% (257/279)** | **93.5% (261/279)** | **95.7% (267/279)** |
-| term precision | 91.6% (241/263) | 93.5% (257/275) | 92.6% (261/282) | 93.7% (267/285) |
-| term F1 | 88.9% | 92.8% | 93.0% | 94.7% |
+| term recall, after lexicon | **82.8% (231/279)** | **90.3% (252/279)** | **91.0% (254/279)** | **95.7% (267/279)** |
+| term precision | 93.9% (231/246) | 95.5% (252/264) | 94.4% (254/269) | 95.7% (267/279) |
+| term F1 | 88.0% | 92.8% | 92.7% | 95.7% |
 | sentence accuracy, raw Whisper (positives, loose) | 37.9% (91/240) | 51.2% (123/240) | 45.4% (109/240) | 72.5% (174/240) |
-| sentence accuracy, after lexicon (positives, loose) | 67.9% (163/240) | 67.5% (162/240) | 79.6% (191/240) | 82.5% (198/240) |
-| prose false-positive rate (negatives changed) | 20.0% (18/90) | 15.6% (14/90) | 20.0% (18/90) | 16.7% (15/90) |
+| sentence accuracy, after lexicon (positives, loose) | 65.8% (158/240) | 67.1% (161/240) | 78.8% (189/240) | 83.8% (201/240) |
+| prose false-positive rate (negatives changed) | 16.7% (15/90) | 13.3% (12/90) | 16.7% (15/90) | 13.3% (12/90) |
 | prose false-positive rate excl. expected-hard | 0.0% (0/72) | 0.0% (0/72) | 0.0% (0/72) | 0.0% (0/72) |
 | whisper wall time | cached | cached | cached | cached |
 
@@ -27,17 +27,17 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | voice | clips | term recall raw | term recall after | sentence acc raw | sentence acc after | prose FP |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samantha | 110 | 44.1% (41/93) | 90.3% (84/93) | 42.5% (34/80) | 75.0% (60/80) | 20.0% (6/30) |
-| Daniel | 110 | 41.9% (39/93) | 87.1% (81/93) | 38.8% (31/80) | 68.8% (55/80) | 20.0% (6/30) |
-| Karen | 110 | 39.8% (37/93) | 81.7% (76/93) | 32.5% (26/80) | 60.0% (48/80) | 20.0% (6/30) |
+| Samantha | 110 | 44.1% (41/93) | 88.2% (82/93) | 42.5% (34/80) | 73.8% (59/80) | 16.7% (5/30) |
+| Daniel | 110 | 41.9% (39/93) | 83.9% (78/93) | 38.8% (31/80) | 68.8% (55/80) | 16.7% (5/30) |
+| Karen | 110 | 39.8% (37/93) | 76.3% (71/93) | 32.5% (26/80) | 55.0% (44/80) | 16.7% (5/30) |
 
 ### By category
 
 | category | clips | term recall raw | term recall after |
 | --- | --- | --- | --- |
 | brand | 48 | 14.8% (8/54) | 81.5% (44/54) |
-| product | 96 | 48.6% (54/111) | 88.3% (98/111) |
-| acronym | 42 | 88.9% (48/54) | 96.3% (52/54) |
+| product | 96 | 48.6% (54/111) | 80.2% (89/111) |
+| acronym | 42 | 88.9% (48/54) | 94.4% (51/54) |
 | person | 30 | 21.2% (7/33) | 75.8% (25/33) |
 | identifier | 24 | 0.0% (0/27) | 81.5% (22/27) |
 | prose | 90 | - | - |
@@ -47,8 +47,8 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
 | alias | 102 | 90 | 12 | 1.000 |
-| phonetic | 35 | 25 | 10 | 0.890 |
-| fuzzy | 9 | 9 | 0 | 0.904 |
+| phonetic | 19 | 16 | 3 | 0.896 |
+| fuzzy | 8 | 8 | 0 | 0.910 |
 
 ## base.en + prompt
 
@@ -56,16 +56,16 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | voice | clips | term recall raw | term recall after | sentence acc raw | sentence acc after | prose FP |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samantha | 110 | 64.5% (60/93) | 91.4% (85/93) | 55.0% (44/80) | 73.8% (59/80) | 16.7% (5/30) |
-| Daniel | 110 | 68.8% (64/93) | 95.7% (89/93) | 51.2% (41/80) | 67.5% (54/80) | 16.7% (5/30) |
-| Karen | 110 | 66.7% (62/93) | 89.2% (83/93) | 47.5% (38/80) | 61.3% (49/80) | 13.3% (4/30) |
+| Samantha | 110 | 64.5% (60/93) | 90.3% (84/93) | 55.0% (44/80) | 73.8% (59/80) | 13.3% (4/30) |
+| Daniel | 110 | 68.8% (64/93) | 92.5% (86/93) | 51.2% (41/80) | 67.5% (54/80) | 13.3% (4/30) |
+| Karen | 110 | 66.7% (62/93) | 88.2% (82/93) | 47.5% (38/80) | 60.0% (48/80) | 13.3% (4/30) |
 
 ### By category
 
 | category | clips | term recall raw | term recall after |
 | --- | --- | --- | --- |
 | brand | 48 | 37.0% (20/54) | 85.2% (46/54) |
-| product | 96 | 73.0% (81/111) | 92.8% (103/111) |
+| product | 96 | 73.0% (81/111) | 88.3% (98/111) |
 | acronym | 42 | 100.0% (54/54) | 100.0% (54/54) |
 | person | 30 | 54.5% (18/33) | 90.9% (30/33) |
 | identifier | 24 | 48.1% (13/27) | 88.9% (24/27) |
@@ -76,7 +76,7 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
 | alias | 58 | 49 | 9 | 1.000 |
-| phonetic | 22 | 13 | 9 | 0.889 |
+| phonetic | 11 | 8 | 3 | 0.895 |
 | fuzzy | 9 | 9 | 0 | 0.914 |
 
 ## small.en
@@ -85,16 +85,16 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | voice | clips | term recall raw | term recall after | sentence acc raw | sentence acc after | prose FP |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samantha | 110 | 49.5% (46/93) | 95.7% (89/93) | 48.8% (39/80) | 85.0% (68/80) | 20.0% (6/30) |
-| Daniel | 110 | 43.0% (40/93) | 92.5% (86/93) | 43.8% (35/80) | 78.8% (63/80) | 20.0% (6/30) |
-| Karen | 110 | 45.2% (42/93) | 92.5% (86/93) | 43.8% (35/80) | 75.0% (60/80) | 20.0% (6/30) |
+| Samantha | 110 | 49.5% (46/93) | 93.5% (87/93) | 48.8% (39/80) | 83.8% (67/80) | 16.7% (5/30) |
+| Daniel | 110 | 43.0% (40/93) | 90.3% (84/93) | 43.8% (35/80) | 78.8% (63/80) | 16.7% (5/30) |
+| Karen | 110 | 45.2% (42/93) | 89.2% (83/93) | 43.8% (35/80) | 73.8% (59/80) | 16.7% (5/30) |
 
 ### By category
 
 | category | clips | term recall raw | term recall after |
 | --- | --- | --- | --- |
 | brand | 48 | 22.2% (12/54) | 92.6% (50/54) |
-| product | 96 | 51.4% (57/111) | 97.3% (108/111) |
+| product | 96 | 51.4% (57/111) | 91.0% (101/111) |
 | acronym | 42 | 88.9% (48/54) | 94.4% (51/54) |
 | person | 30 | 30.3% (10/33) | 87.9% (29/33) |
 | identifier | 24 | 3.7% (1/27) | 85.2% (23/27) |
@@ -105,7 +105,7 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
 | alias | 107 | 95 | 12 | 1.000 |
-| phonetic | 38 | 29 | 9 | 0.887 |
+| phonetic | 25 | 22 | 3 | 0.890 |
 | fuzzy | 9 | 9 | 0 | 0.890 |
 
 ## small.en + prompt
@@ -114,9 +114,9 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | voice | clips | term recall raw | term recall after | sentence acc raw | sentence acc after | prose FP |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samantha | 110 | 75.3% (70/93) | 96.8% (90/93) | 75.0% (60/80) | 87.5% (70/80) | 16.7% (5/30) |
-| Daniel | 110 | 75.3% (70/93) | 94.6% (88/93) | 71.3% (57/80) | 81.3% (65/80) | 16.7% (5/30) |
-| Karen | 110 | 77.4% (72/93) | 95.7% (89/93) | 71.3% (57/80) | 78.8% (63/80) | 16.7% (5/30) |
+| Samantha | 110 | 75.3% (70/93) | 96.8% (90/93) | 75.0% (60/80) | 88.8% (71/80) | 13.3% (4/30) |
+| Daniel | 110 | 75.3% (70/93) | 94.6% (88/93) | 71.3% (57/80) | 82.5% (66/80) | 13.3% (4/30) |
+| Karen | 110 | 77.4% (72/93) | 95.7% (89/93) | 71.3% (57/80) | 80.0% (64/80) | 13.3% (4/30) |
 
 ### By category
 
@@ -134,7 +134,7 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
 | alias | 53 | 44 | 9 | 1.000 |
-| phonetic | 15 | 6 | 9 | 0.892 |
+| phonetic | 9 | 6 | 3 | 0.886 |
 | fuzzy | 5 | 5 | 0 | 0.894 |
 
 ## What Whisper wrote (base.en)
@@ -156,14 +156,14 @@ One row per canonical, sorted by raw recall (worst first). Outcome per spelling:
 | LexiconStore | identifier | 0.0% (0/6) | 83.3% (5/6) | `lexicon store` x3 alias; `lexicon story` x1 phonetic; `Lexi can store` x1 phonetic; `Lexic and` x1 MISSED |
 | Nginx | product | 0.0% (0/3) | 100.0% (3/3) | `Engine X` x2 alias; `Enginex` x1 alias |
 | normalizeTranscript | identifier | 0.0% (0/6) | 100.0% (6/6) | `normalize transcript` x3 alias; `Normalize transcript` x3 alias |
-| Ollama | product | 0.0% (0/3) | 100.0% (3/3) | `Olima` x2 phonetic; `all Emma` x1 phonetic |
+| Ollama | product | 0.0% (0/3) | 33.3% (1/3) | `Olima` x2 MISSED; `all Emma` x1 phonetic |
 | OpenClaw | brand | 0.0% (0/3) | 100.0% (3/3) | `open claw` x3 alias |
 | Playwright | product | 0.0% (0/6) | 100.0% (6/6) | `playwright` x6 alias |
 | PostgreSQL | product | 0.0% (0/6) | 100.0% (6/6) | `Postgres` x6 alias |
 | Puppeteer | product | 0.0% (0/3) | 66.7% (2/3) | `puppeteer` x2 alias; `pup hitear` x1 MISSED |
 | Pydantic | product | 0.0% (0/3) | 66.7% (2/3) | `pedantic` x2 phonetic; `Adipidantic` x1 MISSED |
 | Siobhan Reilly | person | 0.0% (0/6) | 83.3% (5/6) | `Shiv on Riley` x2 alias; `Shivorn really` x1 fuzzy; `Shivorn Riley` x1 fuzzy; `Shivorn rally` x1 MISSED; `Sheve-On-Rally` x1 phonetic |
-| SQLite | product | 0.0% (0/3) | 100.0% (3/3) | `SQ light` x2 phonetic; `SQ light fall` x1 phonetic |
+| SQLite | product | 0.0% (0/3) | 0.0% (0/3) | `SQ light` x2 MISSED; `SQ light fall` x1 MISSED |
 | Supabase | brand | 0.0% (0/6) | 100.0% (6/6) | `Superbase` x6 alias |
 | Superwhisper | brand | 0.0% (0/3) | 100.0% (3/3) | `Super Whisper` x3 alias |
 | Tadeusz Wróblewski | person | 0.0% (0/3) | 66.7% (2/3) | `Tadayush Vrooblefsky` x1 phonetic; `Tadayushvublefsky` x1 MISSED; `Ted Ayushvroob Lefsky` x1 phonetic |
@@ -172,11 +172,11 @@ One row per canonical, sorted by raw recall (worst first). Outcome per spelling:
 | UserPromptSubmit | identifier | 0.0% (0/6) | 50.0% (3/6) | `user prompt submit` x3 alias; `prompt` x1 MISSED; `prompt, submit` x1 MISSED; `user prompt, submit` x1 MISSED |
 | Vercel | brand | 0.0% (0/6) | 66.7% (4/6) | `Versal` x4 phonetic; `vessel` x1 MISSED; `versatile` x1 MISSED |
 | Vite | product | 0.0% (0/3) | 0.0% (0/3) | `VEED` x2 MISSED; `V8` x1 MISSED |
-| Vitest | product | 0.0% (0/3) | 100.0% (3/3) | `V test` x3 phonetic |
+| Vitest | product | 0.0% (0/3) | 0.0% (0/3) | `V test` x3 MISSED |
 | Wispr Flow | brand | 0.0% (0/3) | 100.0% (3/3) | `whisper flow` x3 alias |
 | Xiuying Zhao | person | 0.0% (0/3) | 66.7% (2/3) | `Shaoying Jia` x1 phonetic; `Shawingiao` x1 MISSED; `Showing Zhao` x1 fuzzy |
 | Deepgram | brand | 16.7% (1/6) | 100.0% (6/6) | `deep gram` x3 alias; `DeepGram` x2 alias |
-| YAML | acronym | 16.7% (1/6) | 83.3% (5/6) | `yaml` x3 alias; `Yannell` x1 MISSED; `Yemil` x1 phonetic |
+| YAML | acronym | 16.7% (1/6) | 66.7% (4/6) | `yaml` x3 alias; `Yannell` x1 MISSED; `Yemil` x1 MISSED |
 | Neon | brand | 33.3% (1/3) | 100.0% (3/3) | `neon` x1 alias; `knee on` x1 alias |
 | Priyanka Raghunathan | person | 33.3% (2/6) | 50.0% (3/6) | `Priyanka Regunath and` x2 MISSED; `Priyankaragunath and` x1 MISSED; `Priyanka Regunathan` x1 fuzzy |
 | Tailwind | product | 33.3% (1/3) | 100.0% (3/3) | `tailwind` x2 alias |
@@ -184,7 +184,7 @@ One row per canonical, sorted by raw recall (worst first). Outcome per spelling:
 | JWT | product | 50.0% (3/6) | 100.0% (6/6) | `jot` x3 alias |
 | Kubernetes | product | 50.0% (3/6) | 50.0% (3/6) | `Cuban eats` x1 MISSED; `Cuban needs` x1 MISSED; `cuba needs` x1 MISSED |
 | Next.js | product | 66.7% (2/3) | 100.0% (3/3) | `next JS` x1 alias |
-| OAuth | product | 66.7% (2/3) | 100.0% (3/3) | `OA auth` x1 fuzzy |
+| OAuth | product | 66.7% (2/3) | 66.7% (2/3) | `OA auth` x1 MISSED |
 | SaaS | acronym | 66.7% (2/3) | 66.7% (2/3) | `SAS` x1 MISSED |
 | Zod | product | 66.7% (2/3) | 66.7% (2/3) | `sod` x1 MISSED |
 | Kafka | product | 83.3% (5/6) | 83.3% (5/6) | `calf care` x1 MISSED |
@@ -220,8 +220,11 @@ Spellings the lexicon did not recover (adding these as aliases fixes the miss):
 
 | canonical | add alias | seen |
 | --- | --- | --- |
+| Vitest | `V test` | x3 |
 | Anthropic | `and Thropic` | x2 |
+| Ollama | `Olima` | x2 |
 | Priyanka Raghunathan | `Priyanka Regunath and` | x2 |
+| SQLite | `SQ light` | x2 |
 | Vite | `VEED` | x2 |
 | Anthropic | `and Tropic` | x1 |
 | Bjørn Halvorsen | `By-on Halverson` | x1 |
@@ -239,11 +242,13 @@ Spellings the lexicon did not recover (adding these as aliases fixes the miss):
 | Levenshtein | `Leventstein` | x1 |
 | LexiconStore | `Lexic and` | x1 |
 | Mason Wyatt | `Mason Wired` | x1 |
+| OAuth | `OA auth` | x1 |
 | Priyanka Raghunathan | `Priyankaragunath and` | x1 |
 | Puppeteer | `pup hitear` | x1 |
 | Pydantic | `Adipidantic` | x1 |
 | SaaS | `SAS` | x1 |
 | Siobhan Reilly | `Shivorn rally` | x1 |
+| SQLite | `SQ light fall` | x1 |
 | Tadeusz Wróblewski | `Tadayushvublefsky` | x1 |
 | Upstash | `erupts` | x1 |
 | UserPromptSubmit | `prompt` | x1 |
@@ -254,6 +259,7 @@ Spellings the lexicon did not recover (adding these as aliases fixes the miss):
 | Vite | `V8` | x1 |
 | Xiuying Zhao | `Shawingiao` | x1 |
 | YAML | `Yannell` | x1 |
+| YAML | `Yemil` | x1 |
 | Zod | `sod` | x1 |
 
 Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit exact and confidence 1.0):
@@ -261,12 +267,9 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 | canonical | add alias | seen |
 | --- | --- | --- |
 | Vercel | `Versal` | x4 |
-| Vitest | `V test` | x3 |
-| Ollama | `Olima` | x2 |
 | Pydantic | `pedantic` | x2 |
-| SQLite | `SQ light` | x2 |
 
-## Failing clips: base.en (95)
+## Failing clips: base.en (97)
 
 - **a-brand-08@Samantha** [brand, terms recovered, Whisper mangled another word]
   - heard:    `I dictated the whole speck with whisper flow this morning.`
@@ -285,6 +288,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Migrate the session's table from Postgres to Redis.`
   - output:   `Migrate the session's table from PostgreSQL to Redis.`
   - expected: `Migrate the sessions table from PostgreSQL to Redis.`
+- **a-prod-04@Samantha** [product]
+  - heard:    `Ship the SQ light fallback for offline mode.`
+  - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-06@Samantha** [product, terms recovered, Whisper mangled another word]
   - heard:    `Replace the hand-written the styles with Tailwind on the settings page.`
   - expected: `Replace the handwritten styles with Tailwind on the settings page.`
@@ -296,6 +303,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Switch the build from webpack to VEED.`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Samantha** [product]
+  - heard:    `Run the V test suite before you push.`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-12@Samantha** [product, terms recovered, Whisper mangled another word]
   - heard:    `the TRPC router needs an off-middle wear.`
   - output:   `the tRPC router needs an off-middle wear.`
@@ -325,11 +336,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Our SAS margins are fine. The services margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
   - missed: SaaS
-- **a-acr-03@Samantha** [acronym]
-  - heard:    `the CLI should print the diff before it writes.`
-  - output:   `the CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-11@Samantha** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Add the retention KPI to the OKR.`
   - expected: `Add the retention KPI to the OKR doc.`
@@ -369,11 +375,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `The Playwright took a bow after the final curtain.`
   - expected: `The playwright took a bow after the final curtain.`
   - spurious: "playwright" -> "Playwright" (alias, 1.00)
-- **a-prose-14@Samantha** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Samantha** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commerce.`
   - output:   `He can be a bit Pydantic about commerce.`
@@ -389,10 +390,8 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - missed: Vercel
 - **a-brand-11@Daniel** [brand]
   - heard:    `and Tropic released a new model. Update the pricing doc.`
-  - output:   `and tRPC released a new model. Update the pricing doc.`
   - expected: `Anthropic released a new model, update the pricing doc.`
   - missed: Anthropic
-  - spurious: "Tropic" -> "tRPC" (phonetic, 0.90)
 - **a-prod-01@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `Add a pedantic model for the sink job.`
   - output:   `Add a Pydantic model for the sink job.`
@@ -401,14 +400,18 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `The Cuban eats cluster ran out of memory again last night.`
   - expected: `The Kubernetes cluster ran out of memory again last night.`
   - missed: Kubernetes
-- **a-prod-04@Daniel** [product, terms recovered, Whisper mangled another word]
+- **a-prod-04@Daniel** [product]
   - heard:    `Ship the SQ light fall back for a flying mode.`
-  - output:   `Ship the SQLite fall back for a flying mode.`
   - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-08@Daniel** [product]
   - heard:    `Switch the build from webpack to V8.`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Daniel** [product]
+  - heard:    `Run the V test suite before you push.`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-12@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `The TRPC router needs an orth middle way.`
   - output:   `The tRPC router needs an orth middle way.`
@@ -428,10 +431,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Rip out landshane and call the model directly.`
   - expected: `Rip out LangChain and call the model directly.`
   - missed: LangChain
-- **a-prod-26@Daniel** [product, terms recovered, Whisper mangled another word]
+- **a-prod-26@Daniel** [product]
   - heard:    `Run the evil locally with Olima first.`
-  - output:   `Run the evil locally with Ollama first.`
   - expected: `Run the eval locally with Ollama first.`
+  - missed: Ollama
 - **a-prod-31@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `Cash the Postgres query results in Redis for an hour.`
   - output:   `Cash the PostgreSQL query results in Redis for an hour.`
@@ -439,11 +442,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-32@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `work Kafka into the Kubernetes deployment with a sidecar.`
   - expected: `Wire Kafka into the Kubernetes deployment with a sidecar.`
-- **a-acr-03@Daniel** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-04@Daniel** [acronym]
   - heard:    `Export the lexicon as Yannell, not Jason.`
   - output:   `Export the lexicon as Yannell, not JSON.`
@@ -500,11 +498,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `The Playwright took a bow after the final curtain.`
   - expected: `The playwright took a bow after the final curtain.`
   - spurious: "playwright" -> "Playwright" (alias, 1.00)
-- **a-prose-14@Daniel** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Daniel** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
@@ -538,14 +531,26 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `The Cuban needs cluster ran out of memory again last night.`
   - expected: `The Kubernetes cluster ran out of memory again last night.`
   - missed: Kubernetes
+- **a-prod-04@Karen** [product]
+  - heard:    `Ship the SQ light fallback for offline mode.`
+  - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-08@Karen** [product]
   - heard:    `Switch the build from Webpack to VEED.`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Karen** [product]
+  - heard:    `Run the V test suite before you push.`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-12@Karen** [product, terms recovered, Whisper mangled another word]
   - heard:    `The TRPC router needs an orth-middle way.`
   - output:   `The tRPC router needs an orth-middle way.`
   - expected: `The tRPC router needs an auth middleware.`
+- **a-prod-14@Karen** [product]
+  - heard:    `The OA auth callback is redirecting to the wrong port.`
+  - expected: `The OAuth callback is redirecting to the wrong port.`
+  - missed: OAuth
 - **a-prod-16@Karen** [product, terms recovered, Whisper mangled another word]
   - heard:    `Refresh the jot when it has less than 5 minutes left.`
   - output:   `Refresh the JWT when it has less than 5 minutes left.`
@@ -560,10 +565,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-21@Karen** [product, terms recovered, Whisper mangled another word]
   - heard:    `Set up a Grafana dashboard for checkout agency.`
   - expected: `Set up a Grafana dashboard for checkout latency.`
-- **a-prod-26@Karen** [product, terms recovered, Whisper mangled another word]
+- **a-prod-26@Karen** [product]
   - heard:    `Run the ever locally with Olima first.`
-  - output:   `Run the ever locally with Ollama first.`
   - expected: `Run the eval locally with Ollama first.`
+  - missed: Ollama
 - **a-prod-29@Karen** [product]
   - heard:    `Use Leventstein distance for the fuzzy pass.`
   - expected: `Use Levenshtein distance for the fuzzy pass.`
@@ -579,11 +584,14 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-acr-01@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Our SaaS margins are fine, the service's margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
-- **a-acr-03@Karen** [acronym]
+- **a-acr-03@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `The CLI should print the diff before it rides.`
-  - output:   `The CLI should print the diff before it Redis.`
   - expected: `The CLI should print the diff before it writes.`
-  - spurious: "rides" -> "Redis" (phonetic, 0.90)
+- **a-acr-04@Karen** [acronym]
+  - heard:    `Export the lexicon as Yemil, not Jason.`
+  - output:   `Export the lexicon as Yemil, not JSON.`
+  - expected: `Export the lexicon as YAML, not JSON.`
+  - missed: YAML
 - **a-acr-05@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `The RLS policy blocks the export through admins.`
   - expected: `The RLS policy blocks the export for admins.`
@@ -654,18 +662,13 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `The Playwright took a bow after the final curtain.`
   - expected: `The playwright took a bow after the final curtain.`
   - spurious: "playwright" -> "Playwright" (alias, 1.00)
-- **a-prose-14@Karen** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a clean alleged.`
-  - output:   `Our GraphQL report needs a clean alleged.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Karen** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
   - expected: `He can be a bit pedantic about commas.`
   - spurious: "pedantic" -> "Pydantic" (phonetic, 0.90)
 
-## Failing clips: base.en + prompt (92)
+## Failing clips: base.en + prompt (91)
 
 - **a-brand-03@Samantha** [brand, terms recovered, Whisper mangled another word]
   - heard:    `The Versal Build doubled last month. Can you check why?`
@@ -703,6 +706,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-25@Samantha** [product, terms recovered, Whisper mangled another word]
   - heard:    `Ripout LangChain and call the model directly.`
   - expected: `Rip out LangChain and call the model directly.`
+- **a-prod-26@Samantha** [product]
+  - heard:    `Run the eval locally with Olima first.`
+  - expected: `Run the eval locally with Ollama first.`
+  - missed: Ollama
 - **a-prod-31@Samantha** [product, terms recovered, Whisper mangled another word]
   - heard:    `Cash the Postgres Query Results in Redis for an hour`
   - output:   `Cash the PostgreSQL Query Results in Redis for an hour`
@@ -714,11 +721,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-acr-01@Samantha** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Our SaaS margins are fine, the service's margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
-- **a-acr-03@Samantha** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-09@Samantha** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `MRR is flat but churned dropped`
   - expected: `MRR is flat but churn dropped.`
@@ -759,11 +761,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `Please Whisper, the baby is asleep.`
   - expected: `Please whisper, the baby is asleep.`
   - spurious: "whisper" -> "Whisper" (alias, 1.00)
-- **a-prose-14@Samantha** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Samantha** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commerce.`
   - output:   `He can be a bit Pydantic about commerce.`
@@ -778,22 +775,24 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - expected: `Our Upstash usage is way over the free tier.`
 - **a-brand-11@Daniel** [brand]
   - heard:    `and Tropic released a new model. Update the pricing doc.`
-  - output:   `and tRPC released a new model. Update the pricing doc.`
   - expected: `Anthropic released a new model, update the pricing doc.`
   - missed: Anthropic
-  - spurious: "Tropic" -> "tRPC" (phonetic, 0.90)
 - **a-brand-12@Daniel** [brand]
   - heard:    `Put the API behind Cloudflow before we announce`
   - expected: `Put the API behind Cloudflare before we announce.`
   - missed: Cloudflare
-- **a-prod-04@Daniel** [product, terms recovered, Whisper mangled another word]
+- **a-prod-04@Daniel** [product]
   - heard:    `Ship the SQ light fallback for a flying mode`
-  - output:   `Ship the SQLite fallback for a flying mode`
   - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-08@Daniel** [product]
   - heard:    `Switch the build from Webpack to V8`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Daniel** [product]
+  - heard:    `Run the V test suite before you push.`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-12@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `The TRPC router needs an orth middle way.`
   - output:   `The tRPC router needs an orth middle way.`
@@ -813,10 +812,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-24@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `Replace Puppeteer with Playwright and the Scraper.`
   - expected: `Replace Puppeteer with Playwright in the scraper.`
-- **a-prod-26@Daniel** [product, terms recovered, Whisper mangled another word]
+- **a-prod-26@Daniel** [product]
   - heard:    `Run the evil locally with Olima first.`
-  - output:   `Run the evil locally with Ollama first.`
   - expected: `Run the eval locally with Ollama first.`
+  - missed: Ollama
 - **a-prod-31@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `Cash the Postgres query results in Redis for an hour.`
   - output:   `Cash the PostgreSQL query results in Redis for an hour.`
@@ -828,11 +827,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-acr-01@Daniel** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Our SaaS margins are fine. The service's margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
-- **a-acr-03@Daniel** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-08@Daniel** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `ARR cross the target this quarter.`
   - expected: `ARR crossed the target this quarter.`
@@ -878,11 +872,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `Please Whisper, the baby is asleep.`
   - expected: `Please whisper, the baby is asleep.`
   - spurious: "whisper" -> "Whisper" (alias, 1.00)
-- **a-prose-14@Daniel** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Daniel** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
@@ -926,6 +915,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Switch the build from Webpack to VEED`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Karen** [product]
+  - heard:    `Run the V test suite before you push`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-12@Karen** [product, terms recovered, Whisper mangled another word]
   - heard:    `The TRPC router needs an orth middle way`
   - output:   `The tRPC router needs an orth middle way`
@@ -964,11 +957,9 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-acr-01@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Our SaaS margins are fine, the service's margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
-- **a-acr-03@Karen** [acronym]
+- **a-acr-03@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `The CLI should print the diff before it rides.`
-  - output:   `The CLI should print the diff before it Redis.`
   - expected: `The CLI should print the diff before it writes.`
-  - spurious: "rides" -> "Redis" (phonetic, 0.90)
 - **a-acr-14@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `and compare TTS latency against the STT pipeline.`
   - expected: `Compare TTS latency against the STT pipeline.`
@@ -1021,7 +1012,7 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - expected: `He can be a bit pedantic about commas.`
   - spurious: "pedantic" -> "Pydantic" (phonetic, 0.90)
 
-## Failing clips: small.en (67)
+## Failing clips: small.en (66)
 
 - **a-brand-03@Samantha** [brand]
   - heard:    `The versatile bill doubled last month. Can you check why?`
@@ -1030,10 +1021,18 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-brand-11@Samantha** [brand, terms recovered, Whisper mangled another word]
   - heard:    `Anthropic released a new model, update the pricing dock.`
   - expected: `Anthropic released a new model, update the pricing doc.`
+- **a-prod-04@Samantha** [product]
+  - heard:    `Ship the SQ light fallback for offline mode.`
+  - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-08@Samantha** [product]
   - heard:    `Switch the build from Webpack to VEED.`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Samantha** [product]
+  - heard:    `Run the V test suite before you push.`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-13@Samantha** [product, terms recovered, Whisper mangled another word]
   - heard:    `Expose the search and point over GraphQL as well.`
   - expected: `Expose the search endpoint over GraphQL as well.`
@@ -1049,11 +1048,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Use Levengteen distance for the fuzzy pass.`
   - expected: `Use Levenshtein distance for the fuzzy pass.`
   - missed: Levenshtein
-- **a-acr-03@Samantha** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-11@Samantha** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Add the retention KPI to the OKR dock.`
   - expected: `Add the retention KPI to the OKR doc.`
@@ -1089,11 +1083,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `The Playwright took a bow after the final curtain.`
   - expected: `The playwright took a bow after the final curtain.`
   - spurious: "playwright" -> "Playwright" (alias, 1.00)
-- **a-prose-14@Samantha** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Samantha** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
@@ -1107,10 +1096,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `and Thropic released a new model. Update the pricing dock.`
   - expected: `Anthropic released a new model, update the pricing doc.`
   - missed: Anthropic
-- **a-prod-04@Daniel** [product, terms recovered, Whisper mangled another word]
+- **a-prod-04@Daniel** [product]
   - heard:    `Ship the SQ light full back for a flying mode.`
-  - output:   `Ship the SQLite full back for a flying mode.`
   - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-12@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `The TRPC router needs a north middle way.`
   - output:   `The tRPC router needs a north middle way.`
@@ -1122,15 +1111,14 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-20@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `Kafka consumer lag spiked off to the deploy.`
   - expected: `Kafka consumer lag spiked after the deploy.`
+- **a-prod-26@Daniel** [product]
+  - heard:    `Run the eval locally with Olima first.`
+  - expected: `Run the eval locally with Ollama first.`
+  - missed: Ollama
 - **a-acr-01@Daniel** [acronym]
   - heard:    `Our SAS margins are fine. The services margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
   - missed: SaaS
-- **a-acr-03@Daniel** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-04@Daniel** [acronym]
   - heard:    `Export the lexicon as Yannal, not Jason.`
   - output:   `Export the lexicon as Yannal, not JSON.`
@@ -1186,11 +1174,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `The Playwright took a bow off to the final curtain.`
   - expected: `The playwright took a bow after the final curtain.`
   - spurious: "playwright" -> "Playwright" (alias, 1.00)
-- **a-prose-14@Daniel** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Daniel** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
@@ -1207,10 +1190,18 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-brand-11@Karen** [brand, terms recovered, Whisper mangled another word]
   - heard:    `Anthropic released a new model, update the pricing dock.`
   - expected: `Anthropic released a new model, update the pricing doc.`
+- **a-prod-04@Karen** [product]
+  - heard:    `Ship the SQ light fallback for offline mode.`
+  - expected: `Ship the SQLite fallback for offline mode.`
+  - missed: SQLite
 - **a-prod-08@Karen** [product]
   - heard:    `switch the build from Webpack to VEED.`
   - expected: `Switch the build from webpack to Vite.`
   - missed: Vite
+- **a-prod-09@Karen** [product]
+  - heard:    `Run the V test suite before you push.`
+  - expected: `Run the Vitest suite before you push.`
+  - missed: Vitest
 - **a-prod-12@Karen** [product, terms recovered, Whisper mangled another word]
   - heard:    `The TRPC router needs an old middle way.`
   - output:   `The tRPC router needs an old middle way.`
@@ -1226,10 +1217,10 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `The playwright tests a flaky on the build server.`
   - output:   `The Playwright tests a flaky on the build server.`
   - expected: `The Playwright tests are flaky on the build server.`
-- **a-prod-26@Karen** [product, terms recovered, Whisper mangled another word]
+- **a-prod-26@Karen** [product]
   - heard:    `Run the ever locally with Olima first.`
-  - output:   `Run the ever locally with Ollama first.`
   - expected: `Run the eval locally with Ollama first.`
+  - missed: Ollama
 - **a-prod-31@Karen** [product, terms recovered, Whisper mangled another word]
   - heard:    `Kesh the Postgres query results in Redis for an hour.`
   - output:   `Kesh the PostgreSQL query results in Redis for an hour.`
@@ -1238,11 +1229,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Our SAS margins are fine, the services margin is the problem.`
   - expected: `Our SaaS margins are fine, the services margin is the problem.`
   - missed: SaaS
-- **a-acr-03@Karen** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-11@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Add the retention KPI to the OKR dock.`
   - expected: `Add the retention KPI to the OKR doc.`
@@ -1293,18 +1279,13 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `The Playwright took a bow after the final curtain.`
   - expected: `The playwright took a bow after the final curtain.`
   - spurious: "playwright" -> "Playwright" (alias, 1.00)
-- **a-prose-14@Karen** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Karen** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
   - expected: `He can be a bit pedantic about commas.`
   - spurious: "pedantic" -> "Pydantic" (phonetic, 0.90)
 
-## Failing clips: small.en + prompt (57)
+## Failing clips: small.en + prompt (51)
 
 - **a-brand-06@Samantha** [brand]
   - heard:    `Our ups-usage is way over the free tier.`
@@ -1323,11 +1304,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-29@Samantha** [product, terms recovered, Whisper mangled another word]
   - heard:    `Use LevenshteinDistance for the fuzzy pass.`
   - expected: `Use Levenshtein distance for the fuzzy pass.`
-- **a-acr-03@Samantha** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-04@Samantha** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Export to Lexicon as YAML, not JSON.`
   - expected: `Export the lexicon as YAML, not JSON.`
@@ -1356,11 +1332,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `Please Whisper, the baby is asleep.`
   - expected: `Please whisper, the baby is asleep.`
   - spurious: "whisper" -> "Whisper" (alias, 1.00)
-- **a-prose-14@Samantha** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Samantha** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
@@ -1398,11 +1369,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
 - **a-prod-29@Daniel** [product, terms recovered, Whisper mangled another word]
   - heard:    `Use LevenshteinDistance for the fuzzy pass.`
   - expected: `Use Levenshtein distance for the fuzzy pass.`
-- **a-acr-03@Daniel** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-07@Daniel** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Sync the CRM with the billing event nightly.`
   - expected: `Sync the CRM with the billing events nightly.`
@@ -1435,11 +1401,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `Please Whisper, the baby is asleep.`
   - expected: `Please whisper, the baby is asleep.`
   - spurious: "whisper" -> "Whisper" (alias, 1.00)
-- **a-prose-14@Daniel** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Daniel** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`
@@ -1478,11 +1439,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - heard:    `Keshe the Postgres query results in Redis for an hour.`
   - output:   `Keshe the PostgreSQL query results in Redis for an hour.`
   - expected: `Cache the PostgreSQL query results in Redis for an hour.`
-- **a-acr-03@Karen** [acronym]
-  - heard:    `The CLI should print the diff before it writes.`
-  - output:   `The CLI should print the diff before it Redis.`
-  - expected: `The CLI should print the diff before it writes.`
-  - spurious: "writes" -> "Redis" (phonetic, 0.90)
 - **a-acr-11@Karen** [acronym, terms recovered, Whisper mangled another word]
   - heard:    `Add the retention KPI to the OKR dock.`
   - expected: `Add the retention KPI to the OKR doc.`
@@ -1521,11 +1477,6 @@ Spellings recovered by the phonetic or fuzzy pass (an alias would make the hit e
   - output:   `Please Whisper, the baby is asleep.`
   - expected: `Please whisper, the baby is asleep.`
   - spurious: "whisper" -> "Whisper" (alias, 1.00)
-- **a-prose-14@Karen** [prose, expected-hard, negative]
-  - heard:    `Our graphical report needs a cleaner legend.`
-  - output:   `Our GraphQL report needs a cleaner legend.`
-  - expected: `Our graphical report needs a cleaner legend.`
-  - spurious: "graphical" -> "GraphQL" (phonetic, 0.90)
 - **a-prose-15@Karen** [prose, expected-hard, negative]
   - heard:    `He can be a bit pedantic about commas.`
   - output:   `He can be a bit Pydantic about commas.`

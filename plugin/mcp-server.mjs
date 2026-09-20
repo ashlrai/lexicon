@@ -48839,6 +48839,129 @@ function tokenize(text, skipCode) {
   return tokens;
 }
 
+// src/core/matcher/enumeration.ts
+var SPELLING_CUES = [
+  "sounds like",
+  "sound like",
+  "sounded like",
+  "spelled",
+  "spelling",
+  "spells",
+  "misspell",
+  "misheard",
+  "mishears",
+  "hears it as",
+  "heard as",
+  "writes it",
+  "writes as",
+  "write it as",
+  "written as",
+  "wrote it as",
+  "comes out as",
+  "turns into",
+  "transcrib",
+  "renders it",
+  "mangles",
+  "autocorrect",
+  "typo",
+  "alias",
+  "canonical",
+  "stt",
+  "speech-to-text",
+  "speech to text"
+];
+var LIST_DELIMITERS = /* @__PURE__ */ new Set(["/", "|", ",", ";", "	", ">", "\u2192"]);
+function isWordChar(ch) {
+  return ch !== "" && /[\p{L}\p{N}]/u.test(ch);
+}
+function sentenceBounds(text) {
+  const bounds = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const isNewline = ch === "\n" || ch === "\r";
+    const isTerminal2 = (ch === "." || ch === "!" || ch === "?") && /[ \t]/.test(text[i + 1] ?? "\n");
+    if (!isNewline && !isTerminal2) continue;
+    const end = isNewline ? i : i + 1;
+    if (end > start) bounds.push([start, end]);
+    start = i + 1;
+  }
+  if (start < text.length) bounds.push([start, text.length]);
+  return bounds;
+}
+function bareOccurrences(text, from, to, needle, covered) {
+  if (needle.length === 0) return [];
+  const found = [];
+  const window = text.slice(from, to);
+  let at = window.indexOf(needle);
+  while (at !== -1) {
+    const start = from + at;
+    const end = start + needle.length;
+    const bounded = !isWordChar(text[start - 1] ?? "") && !isWordChar(text[end] ?? "");
+    if (bounded && !covered.some((s) => start < s.end && s.start < end)) found.push(start);
+    at = window.indexOf(needle, at + 1);
+  }
+  return found;
+}
+function delimiterAdjacent(text, leftEnd, rightStart) {
+  if (rightStart < leftEnd) return false;
+  const between = text.slice(leftEnd, rightStart);
+  if (between.length === 0 || between.length > 8) return false;
+  let sawDelimiter = false;
+  for (const ch of between) {
+    if (LIST_DELIMITERS.has(ch)) {
+      sawDelimiter = true;
+      continue;
+    }
+    if (ch === "-" || ch === "\u2013" || ch === "\u2014") {
+      sawDelimiter = true;
+      continue;
+    }
+    if (!/\s/.test(ch)) return false;
+  }
+  return sawDelimiter;
+}
+function hasSpellingCue(sentence) {
+  const lower = sentence.toLowerCase();
+  return SPELLING_CUES.some((cue) => lower.includes(cue));
+}
+function declineCollapsedMentions(text, spans) {
+  if (spans.length === 0) return spans;
+  const declined = /* @__PURE__ */ new Set();
+  for (const [from, to] of sentenceBounds(text)) {
+    const here = [];
+    for (let i = 0; i < spans.length; i++) {
+      if (spans[i].start >= from && spans[i].end <= to) here.push({ span: spans[i], index: i });
+    }
+    if (here.length === 0) continue;
+    const covered = here.map((h) => h.span);
+    const cued = hasSpellingCue(text.slice(from, to));
+    const byResult = /* @__PURE__ */ new Map();
+    for (const { span, index } of here) {
+      let group = byResult.get(span.replacement);
+      if (!group) {
+        group = { originals: /* @__PURE__ */ new Set(), indices: [], points: [] };
+        byResult.set(span.replacement, group);
+      }
+      group.originals.add(span.original);
+      group.indices.push(index);
+      group.points.push([span.start, span.end]);
+    }
+    for (const [result, group] of byResult) {
+      const bare = bareOccurrences(text, from, to, result, covered);
+      for (const at of bare) {
+        group.originals.add(result);
+        group.points.push([at, at + result.length]);
+      }
+      if (group.originals.size < 2) continue;
+      const adjacent = group.points.slice().sort((a, b) => a[0] - b[0]).some(([, end], i, sorted) => i + 1 < sorted.length && delimiterAdjacent(text, end, sorted[i + 1][0]));
+      if (cued || bare.length > 0 && adjacent) for (const index of group.indices) declined.add(index);
+    }
+  }
+  if (declined.size === 0) return spans;
+  return spans.filter((_, i) => !declined.has(i));
+}
+
 // src/core/matcher/build.ts
 function push(map2, key, value) {
   const list = map2.get(key);
@@ -49155,7 +49278,11 @@ function findReplacements(text, index, opts = {}) {
     if (!overlaps) accepted.push(c);
   }
   accepted.sort((a, b) => a.start - b.start);
-  return accepted.filter((c) => !c.noop).map(({ termIndex: _termIndex, noop: _noop, ...rest }) => rest);
+  const surviving = declineCollapsedMentions(
+    text,
+    accepted.filter((c) => !c.noop)
+  );
+  return surviving.map(({ termIndex: _termIndex, noop: _noop, ...rest }) => rest);
 }
 function clamp01(n) {
   if (Number.isNaN(n)) return DEFAULT_MIN_CONFIDENCE;

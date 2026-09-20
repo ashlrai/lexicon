@@ -596,3 +596,57 @@ describe('bug I: stoplist words plus abbreviations never match phonetically', ()
     expect(find('ask open ai about it', [OPENAI])[0]).toMatchObject({ replacement: 'OpenAI', reason: 'alias' });
   });
 });
+
+describe('bug J: text that quotes misspellings is not flattened into one spelling', () => {
+  const MASON = { canonical: 'Mason Wyatt', aliases: ['Mason Wyat', 'mason white'], category: 'person' as const };
+  const REDIS = { canonical: 'Redis', aliases: ['reddis', 'red iss'] };
+
+  // The report that prompted this: a sentence naming two example misspellings
+  // came back naming the canonical twice, so it no longer said anything.
+  it('leaves a slash-delimited pair of misspellings alone', () => {
+    const text = 'Rewritten to name Mason Wyatt, the chips Mason Wiatt / Mason Wyat, and the Try it box.';
+    expect(apply(text, find(text, [MASON]))).toBe(text);
+  });
+
+  it('leaves a docs table row listing a canonical and its aliases alone', () => {
+    const row = '| Ashlr.AI | Ashler, Ashlar | brand |';
+    expect(apply(row, find(row, [ASHLR]))).toBe(row);
+  });
+
+  it('leaves a row alone when it lists only one alias', () => {
+    const row = '| Ashlr.AI | Ashler | brand |';
+    expect(apply(row, find(row, [ASHLR]))).toBe(row);
+  });
+
+  it('leaves an enumeration alone when the sentence says it is about spelling', () => {
+    const text = 'Ashlr.AI sounds like Ashler or Ashlar to the recognizer.';
+    expect(apply(text, find(text, [ASHLR]))).toBe(text);
+  });
+
+  it('leaves a canonical paired with one quoted misspelling alone', () => {
+    const text = 'Ashlr.AI is what we write, but STT gives Ashler.';
+    expect(apply(text, find(text, [ASHLR]))).toBe(text);
+  });
+
+  // The other half of the guard, and the reason it is not simply "never collapse
+  // two spellings": these are people dictating, not quoting, and must still be fixed.
+  it('still corrects two different garbles of one term joined by prose', () => {
+    const text = 'the reddis and red iss instances are the same box';
+    expect(apply(text, find(text, [REDIS]))).toBe('the Redis and Redis instances are the same box');
+  });
+
+  it('still corrects a garble in a sentence that already names the canonical', () => {
+    const text = 'Kubernetes is fine but the cooper netties docs are not';
+    expect(apply(text, find(text, [K8S]))).toBe('Kubernetes is fine but the Kubernetes docs are not');
+  });
+
+  it('still corrects the same misspelling repeated, which is repetition not quotation', () => {
+    const text = 'Ashler and Ashler both appear here.';
+    expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI and Ashlr.AI both appear here.');
+  });
+
+  it('confines the guard to the sentence that quotes', () => {
+    const text = 'Ashlr.AI sounds like Ashler. My company Ashler ships today.';
+    expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI sounds like Ashler. My company Ashlr.AI ships today.');
+  });
+});
