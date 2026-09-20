@@ -670,17 +670,7 @@ private struct WhereStep: View {
                     }
                 }
 
-                Toggle(isOn: Binding(
-                    get: { model.settings.localAPI },
-                    set: { model.settings.localAPI = $0 }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Local API at login")
-                        Text("`lexicon serve` on 127.0.0.1. Fix everywhere and the browser extension both go through it.")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                LocalAPIRow(model: model)
 
                 Toggle(isOn: Binding(
                     get: { model.settings.showBubble },
@@ -710,6 +700,56 @@ private struct WhereStep: View {
             Divider()
 
             TryItBox(model: model)
+        }
+    }
+}
+
+/// The local-API row of step 4. It is a checkbox only when this app could
+/// actually start or stop the server; when a LaunchAgent (or anything else)
+/// already owns the port it becomes a status line with a note on how to manage
+/// it, so ticking it can never start a duplicate that fails to bind. The words
+/// come from the same `ServeOwnership.resolve` the menu uses.
+private struct LocalAPIRow: View {
+    @ObservedObject var model: OnboardingModel
+
+    var body: some View {
+        if model.serveStatus.isInteractive {
+            Toggle(isOn: Binding(
+                get: { model.settings.localAPI || model.serveStatus.isOn },
+                set: { model.setLocalAPI($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.serveStatus.title)
+                    Text(model.serveStatus.detail)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let hint = model.serveStatus.hint {
+                        Text(hint)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        } else {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: model.serveStatus.isOn ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(model.serveStatus.isOn ? Color.green : Color.orange)
+                    .frame(width: 14)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.serveStatus.title)
+                    Text(model.serveStatus.detail)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let hint = model.serveStatus.hint {
+                        Text(hint)
+                            .font(.caption).foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer()
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 }

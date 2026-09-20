@@ -44,6 +44,14 @@ final class OnboardingModel: ObservableObject {
     /// "70 terms added" per pack name, after a successful install.
     @Published private(set) var packSummaries: [String: String] = [:]
 
+    // MARK: step 4, where it works
+
+    /// Who runs `lexicon serve`, from the same `ServeOwnership.resolve` the
+    /// menu uses. Pushed in by the app delegate, which owns the probe cache.
+    @Published var serveStatus: ServeStatus = ServeOwnership.resolve(ServeProbe())
+    /// Asks the delegate to re-probe; the answer arrives as a `serveStatus` write.
+    var refreshServeStatus: (() -> Void)?
+
     // MARK: step 5, done
 
     @Published private(set) var summaryTerms = 0
@@ -132,6 +140,7 @@ final class OnboardingModel: ObservableObject {
         case .welcome:
             refreshStatus()
             startStatusPolling()
+            refreshServeStatus?()
         case .words:
             stopStatusPolling()
             refreshTryIt()
@@ -142,6 +151,7 @@ final class OnboardingModel: ObservableObject {
         case .whereItWorks:
             stopStatusPolling()
             refreshTryIt()
+            refreshServeStatus?()
         case .done:
             stopStatusPolling()
             refreshSummary()
@@ -190,11 +200,22 @@ final class OnboardingModel: ObservableObject {
     }
 
     /// The "Start the API" button: flips the setting, which the app delegate
-    /// observes and turns into a `lexicon serve` child process.
+    /// observes and turns into a LaunchAgent install (or, if that fails, a
+    /// supervised `lexicon serve` child).
     func startLocalAPI() {
         settings.localAPI = true
-        // The child needs a moment to bind the port.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.refreshStatus() }
+        // Installing the agent and binding the port take a moment.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.refreshStatus()
+            self?.refreshServeStatus?()
+        }
+    }
+
+    /// Step 4's local-API row, when it is a checkbox the user may click.
+    func setLocalAPI(_ on: Bool) {
+        guard serveStatus.isInteractive else { return }
+        settings.localAPI = on
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.refreshServeStatus?() }
     }
 
     // MARK: step 2
@@ -486,7 +507,12 @@ final class OnboardingModel: ObservableObject {
         var lines: [String] = []
         lines.append(settings.fixEverywhere ? "Fix everywhere is on" : "Fix everywhere is off")
         if settings.watchClipboard { lines.append("The clipboard watcher is running") }
-        if settings.localAPI { lines.append("The local API starts with the app") }
+        switch serveStatus.ownership {
+        case .launchAgent: lines.append("The local API starts at login (launchd)")
+        case .appChild: lines.append("The local API runs while LexiconBar does")
+        case .foreign: lines.append("The local API is already running")
+        case .none: if settings.localAPI { lines.append("The local API starts with the app") }
+        }
         if settings.showBubble { lines.append("The correction bubble shows for \(Int(settings.bubbleSeconds)) s") }
         return lines
     }

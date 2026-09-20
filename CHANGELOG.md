@@ -2,6 +2,16 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## 0.4.1 (unreleased)
+
+### Fixed
+- **LexiconBar told the truth about who runs the local API.** The menu's **Local API** checkbox and the first-run window's "Local API at login" row only ever reflected whether *the app* was supervising its own `lexicon serve` child — one of four ways the server can be up. On a machine where the launchd agent `ai.ashlr.lexicon.serve` owns it (what `lexicon serve --install` writes), both read "off" while the API was plainly answering on `127.0.0.1:41733`, and ticking either would have started a second server that cannot bind the port. A new pure `ServeOwnership` resolver in `LexiconBarKit` turns four observable facts — `launchctl print gui/<uid>/<label>` exit status, whether the plist is on disk, whether `GET /health` answers, and whether this app's supervisor has a live child — into one of `launchAgent(label:programPath:)`, `appChild`, `foreign` or `none`, plus the words the UI shows. launchd wins outright (`KeepAlive` takes the port back regardless), then our own child, then a stranger on the port, then nobody. The menu row and onboarding step 4 read the same resolver, so they can never disagree: a LaunchAgent gives a non-toggle status line, "Local API: running at login (launchd)", with a "Manage with `lexicon serve --uninstall`" hint and no checkbox to start a duplicate; a foreign listener gives "Local API: reachable (not managed by this app)"; and only `appChild` and `none` are clickable.
+
+### Changed
+- LexiconBar: ticking **Run the local API** now prefers installing the LaunchAgent (`lexicon serve --install`) over supervising a child process, because the agent survives an app restart, a logout and a crash. The supervised child stays as the fallback when the install fails, and the failure reason is surfaced rather than swallowed. The probes behind all this (a `launchctl print`, a plist `stat` and a `GET /health`) run off the main thread and are cached for 5 s, so opening the menu never blocks on them; `$LEXICON_SERVE_LABEL` overrides the label exactly as it does in the CLI.
+- LexiconBar `--status` gains `--json`, printing `axTrusted`, `apiReachable`, `apiPort`, `apiTerms`, `tokenFound`, `fixEverywhere`, `serveOwnership`, `serveTitle` and the probe inputs as one object; the text form gains a "Serve ownership" line. Note that `axTrusted` answers for that *invocation*: macOS attributes a TCC check to the responsible process, so a `--status` run from a terminal inherits the terminal's Accessibility grant and can report `true` while the Finder-launched app is denied. The running app now logs its own `ax=` at launch for the answer that actually matters.
+- `LexiconBarKit` gains `ServeOwnership`, `ServeProbe` and `ServeStatus`. 14 new tests (the resolver's full sixteen-row truth table and the exact strings per case), 109 in total.
+
 ## 0.4.0 (2026-09-20)
 
 ### Added

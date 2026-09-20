@@ -37,7 +37,7 @@ Every step talks to the local API (`lexicon serve`), never to the lexicon file d
 | 1. Welcome | One sentence, the before/after example (you said "Ashlr.AI", dictation wrote "Ashler", Lexicon writes "Ashlr.AI"), and a live status line for Accessibility and the local API. **Grant Accessibility** opens the Privacy pane; **Start the API** turns the Local API setting on. The lines re-check every 2 s, so leaving for System Settings and coming back shows the new state. | Nothing, unless you press Start the API (`localAPI` setting). |
 | 2. Your words | A table of rows: a "Correct spelling" field plus toggleable chips of what dictation is likely to write. The first row is pre-filled from your macOS full name (`NSFullUserName()`); the second is left blank rather than guessing a company wrong. 500 ms after you stop typing, or when you leave the field, the app asks `GET /aliases?canonical=…` and shows the answer as chips, all on. Switch any off, or type your own in "what dictation actually writes". A **Try it** box under the table normalizes whatever you type through `POST /normalize`, 300 ms after the last keystroke, with the corrected words in bold. | `POST /add {canonical, aliases}` per row, when you leave the field, press Return, or press Continue. |
 | 3. Starter packs | A card per pack from `GET /packs`: title, description, term and spelling counts, and a switch. On a lexicon that lists no packs at all, `developer`, `ai` and `voice-tools` are switched on for you; a lexicon that already has packs is left alone. Each installed card then reads "64 terms added, 6 merged". | `POST /packs/:name` and `DELETE /packs/:name`. |
-| 4. Where it works | Checkboxes that read and write the real settings: Fix everywhere, Watch clipboard, Local API at login, Show the correction bubble, plus the three hotkeys, and the same Try-it box. | `fixEverywhere`, `watchClipboard`, `localAPI`, `bubble.show`. The clipboard watcher and the API child process start or stop with the checkbox. |
+| 4. Where it works | Checkboxes that read and write the real settings: Fix everywhere, Watch clipboard, the local API, Show the correction bubble, plus the three hotkeys, and the same Try-it box. The local-API row is a checkbox only when this app could start or stop the server; when a LaunchAgent (or anything else) already owns the port it becomes a status line instead — see [Who runs the local API](#who-runs-the-local-api). | `fixEverywhere`, `watchClipboard`, `localAPI`, `bubble.show`. The clipboard watcher starts or stops with its checkbox; ticking the local API installs the LaunchAgent, falling back to a supervised child. |
 | 5. Done | Term and spelling counts from `GET /stats`, the terms you added, the packs you switched on, what is enabled, and **Open the lexicon file**. | `didOnboard`. |
 
 Writes are queued, never overlapped. `POST /add` and the pack routes are each a read-modify-write of the same YAML file on the server, so two in flight at once race and the later write wins. The window runs them strictly one at a time; reads (`/aliases`, `/normalize`, `/stats`) still go in parallel so nothing feels slow.
@@ -140,6 +140,37 @@ The app is a thin remote control. Everything it shows comes from these calls and
 - `lexicon doctor`, `lexicon serve`, `lexicon serve --show`, `lexicon daemon`: run as is.
 
 The lexicon file, the matcher, the trust gate and stats all stay in the CLI; the app never reads or writes the lexicon itself.
+
+## Who runs the local API
+
+Everything the app corrects goes through `lexicon serve` on `127.0.0.1:41733`, but the app is only one of four things that can be running it. The menu's **Local API** row and step 4 of the first-run window both ask one resolver (`ServeOwnership.resolve` in `LexiconBarKit`) who owns it, so the two can never disagree:
+
+| Who | How it is detected | What the row does |
+| --- | --- | --- |
+| **LaunchAgent** | `launchctl print gui/<uid>/ai.ashlr.lexicon.serve` exits 0 | Status line, "Local API: running at login (launchd)", with "Manage with `lexicon serve --uninstall`". No checkbox — a click could only start a second server that cannot bind the port. |
+| **This app's child** | the app's own `ChildProcessSupervisor` has a live `lexicon serve` | Checkbox, on. Switching it off stops the child. |
+| **Something else** | nothing above, but `GET /health` answers | Status line, "Local API: reachable (not managed by this app)". Usually a `lexicon serve` you started in a terminal; find it with `lsof -nP -iTCP:41733 -sTCP:LISTEN`. |
+| **Nobody** | none of the above | Checkbox, off, labelled "Run the local API". |
+
+launchd wins outright: with `KeepAlive` it takes the port back whatever else happens, so a child of ours could only thrash. A plist on disk that is *not* loaded is not ownership — it only changes the hint on the "nobody" row.
+
+Ticking **Run the local API** installs the LaunchAgent (`lexicon serve --install`) rather than supervising a child, because that survives an app restart, a logout and a crash, which is what asking for "the local API" almost always means. If the install fails, the app falls back to a supervised child and says why.
+
+The probes (a `launchctl print`, a `stat` of `~/Library/LaunchAgents/ai.ashlr.lexicon.serve.plist`, and a `GET /health`) run off the main thread and are cached for 5 s, so opening the menu never blocks on them. `$LEXICON_SERVE_LABEL` overrides the label, the same way the CLI does.
+
+To see the answer without opening the menu:
+
+```
+apps/macos/build/LexiconBar.app/Contents/MacOS/LexiconBar --status --json
+```
+
+which prints `axTrusted`, `apiReachable`, `serveOwnership` (`launchAgent` / `appChild` / `foreign` / `none`), `serveTitle` and the probe inputs. Two caveats: `appChild` can never appear there, because a child of the *running* app is invisible to a separate process; and `axTrusted` answers for that invocation, not for the app. macOS attributes a TCC check to the *responsible process*, so a `--status` run from a terminal inherits the terminal's Accessibility grant and can report `true` while the Finder-launched app is denied. For the app's own answer, launch it and read its log line:
+
+```
+log show --last 5m --predicate 'process == "LexiconBar"' --info | grep kTCCServiceAccessibility -A1
+```
+
+an `auth_value` of `2` is granted, `0` is denied.
 
 ## Known limitations
 

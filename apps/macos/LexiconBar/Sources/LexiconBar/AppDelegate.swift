@@ -30,6 +30,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var daemon: ChildProcessSupervisor!
     private var server: ChildProcessSupervisor!
+    /// Who actually runs `lexicon serve`: a LaunchAgent, our own child, a
+    /// stranger on the port, or nobody. Drives the menu row, the onboarding
+    /// row, and whether we are allowed to start a child at all.
+    private lazy var serveOwnership = ServeOwnershipMonitor(runner: runner, credentials: normalizeClient)
+    /// True while `lexicon serve --install` is in flight, so a second sync
+    /// does not kick off a second install.
+    private var installingLaunchAgent = false
 
     // Fix everywhere: one AX thread shared by the watcher and the engine.
     private let axThread = AXThread()
@@ -70,9 +77,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         daemon = ChildProcessSupervisor(name: "daemon", arguments: ["daemon", "--quiet"], cli: cli)
         server = ChildProcessSupervisor(name: "serve", arguments: ["serve"], cli: cli)
         daemon.onStateChange = { [weak self] state in self?.childStateChanged(name: "Watch clipboard", state: state, setting: \.watchClipboard) }
-        server.onStateChange = { [weak self] state in self?.childStateChanged(name: "Local API", state: state, setting: \.localAPI) }
+        server.onStateChange = { [weak self] state in
+            self?.childStateChanged(name: "Local API", state: state, setting: \.localAPI)
+            // Our child starting or stopping changes who owns the port.
+            self?.serveOwnership.refreshIfStale(force: true)
+        }
 
         cliStatus.redetect = { [weak self] in self?.detectCLI() }
+        serveOwnership.onChange = { [weak self] in
+            guard let self else { return }
+            self.rebuildMenu()
+            self.onboardingWindow?.model.serveStatus = self.serveStatus()
+        }
+        serveOwnership.refreshIfStale(force: true)
         settings.$pushToTalkHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
         settings.$fixClipboardHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
         // The onboarding window's step 4 writes these settings directly, so
@@ -94,9 +111,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if CommandLine.arguments.contains("--onboard") || !settings.didOnboard {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.openOnboarding() }
         }
-        NSLog("LexiconBar %@ launched: status item visible=%d, bundled=%d, push-to-talk=%@",
+        // `ax=` is the app's own view of the Accessibility grant, from the
+        // process the user actually launched — the one answer a `--status` run
+        // from a terminal cannot give, because TCC attributes that check to
+        // the terminal instead.
+        NSLog("LexiconBar %@ launched: status item visible=%d, bundled=%d, ax=%d, push-to-talk=%@",
               Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
-              statusItem.isVisible ? 1 : 0, Notifier.isBundled ? 1 : 0, settings.pushToTalkHotKey.displayString)
+              statusItem.isVisible ? 1 : 0, Notifier.isBundled ? 1 : 0,
+              accessibilityTrusted ? 1 : 0, settings.pushToTalkHotKey.displayString)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -124,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if outcome.location != nil {
                 self.syncVoiceStatus()
                 if self.settings.watchClipboard, !self.daemon.isRunning { self.daemon.start() }
-                if self.settings.localAPI, !self.server.isRunning { self.server.start() }
+                self.syncLocalAPI()
             }
         }
     }
@@ -168,11 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let watch = add("Watch clipboard", #selector(toggleWatchClipboard), enabled: available)
         watch.state = daemon?.isRunning == true ? .on : (settings.watchClipboard && available ? .mixed : .off)
-        let api = add("Local API", #selector(toggleLocalAPI), enabled: available)
-        api.state = server?.isRunning == true ? .on : (settings.localAPI && available ? .mixed : .off)
-        if server?.isRunning == true {
-            add("Show API URL and token\u{2026}", #selector(showAPIInfo), enabled: available, indent: 1)
-        }
+        addLocalAPIItems(available: available)
         if let daemon, case .failed(let why) = daemon.state {
             addInfo("Clipboard watcher stopped: \(why)", indent: 1)
         }
@@ -223,6 +241,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         add("Quit LexiconBar\(version.map { " \($0)" } ?? "")", #selector(quit), enabled: true, key: "q")
+    }
+
+    /// The "Local API" row. What it looks like depends on who owns the port:
+    /// a checkbox when this app could start or stop the server, a plain status
+    /// line (plus how to manage it) when a LaunchAgent or a stranger holds it,
+    /// so a click can never start a second server that fails to bind.
+    private func addLocalAPIItems(available: Bool) {
+        // Cheap while the cache is warm; reports back through `onChange`.
+        serveOwnership.refreshIfStale()
+        let serve = serveStatus()
+        if serve.isInteractive {
+            let api = add(serve.title, #selector(toggleLocalAPI), enabled: available)
+            api.state = serve.isOn ? .on : (settings.localAPI && available ? .mixed : .off)
+            api.toolTip = serve.detail
+        } else {
+            addInfo(serve.title)
+            if let hint = serve.hint { addInfo(hint, indent: 1) }
+        }
+        if serve.isOn {
+            add("Show API URL and token\u{2026}", #selector(showAPIInfo), enabled: available, indent: 1)
+        }
     }
 
     /// "Fix everywhere" block: master switch, per-app switch for the app that
@@ -605,9 +644,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.watchClipboard ? daemon.start() : daemon.stop()
     }
 
+    /// The current answer from the ownership monitor, with this app's own
+    /// supervisor state folded in.
+    private func serveStatus() -> ServeStatus {
+        serveOwnership.status(appChildRunning: server?.isRunning == true)
+    }
+
+    /// Flips the *wish*; `syncLocalAPI` decides how to honour it. Does nothing
+    /// when the row is a status line — a LaunchAgent or a stranger owns the
+    /// port and this app has no business touching it.
     @objc private func toggleLocalAPI() {
+        guard serveStatus().isInteractive else { return }
         settings.localAPI.toggle()
-        settings.localAPI ? server.start() : server.stop()
     }
 
     private func childStateChanged(name: String, state: ChildProcessSupervisor.State, setting: ReferenceWritableKeyPath<Settings, Bool>) {
@@ -722,8 +770,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.syncChildProcesses()
                 self.rebuildMenu()
             }
+            // Step 4's local-API row reads the same resolver as the menu, so
+            // the two can never disagree about who runs the server.
+            model.serveStatus = serveStatus()
+            model.refreshServeStatus = { [weak self] in
+                guard let self else { return }
+                self.serveOwnership.whenFresh(force: true) { [weak self] in
+                    guard let self else { return }
+                    self.onboardingWindow?.model.serveStatus = self.serveStatus()
+                }
+            }
             onboardingWindow = OnboardingWindowController(model: model)
         }
+        onboardingWindow?.model.serveStatus = serveStatus()
         bubble.dismiss()
         onboardingWindow?.show()
     }
@@ -734,8 +793,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard cli.isAvailable else { return }
         if settings.watchClipboard, daemon?.isRunning != true { daemon?.start() }
         if !settings.watchClipboard, daemon?.isRunning == true { daemon?.stop() }
-        if settings.localAPI, server?.isRunning != true { server?.start() }
-        if !settings.localAPI, server?.isRunning == true { server?.stop() }
+        syncLocalAPI()
+    }
+
+    /// Makes the world match `settings.localAPI`, without ever starting a
+    /// second server. The probe is re-run first when it has gone stale, because
+    /// the decision turns on who owns the port right now.
+    private func syncLocalAPI() {
+        guard cli.isAvailable else { return }
+        serveOwnership.whenFresh { [weak self] in self?.applyLocalAPIWish() }
+    }
+
+    private func applyLocalAPIWish() {
+        guard cli.isAvailable else { return }
+        let serve = serveStatus()
+        guard settings.localAPI else {
+            if server?.isRunning == true { server?.stop() }
+            return
+        }
+        switch serve.ownership {
+        case .launchAgent, .foreign:
+            // Someone else holds the port. Our child could only fail to bind.
+            if server?.isRunning == true { server?.stop() }
+        case .appChild:
+            break
+        case .none:
+            startLocalAPI()
+        }
+    }
+
+    /// Starting the API prefers the LaunchAgent over a child of ours: it
+    /// survives an app restart, a logout and a crash, which is what the user
+    /// asking for "the local API" almost always means. The supervised child is
+    /// the fallback when the install will not go through, and the reason is
+    /// surfaced rather than swallowed.
+    private func startLocalAPI() {
+        guard !installingLaunchAgent, server?.isRunning != true else { return }
+        installingLaunchAgent = true
+        cli.run(["serve", "--install"], timeout: 30) { [weak self] result in
+            guard let self else { return }
+            self.installingLaunchAgent = false
+            guard self.settings.localAPI else { return }
+            if result.succeeded {
+                NSLog("LexiconBar: installed the lexicon serve LaunchAgent")
+                self.serveOwnership.whenFresh(force: true) { [weak self] in
+                    guard let self else { return }
+                    self.rebuildMenu()
+                    self.onboardingWindow?.model.serveStatus = self.serveStatus()
+                    // Nothing came up under launchd after all: keep the promise
+                    // with a supervised child instead of leaving it off.
+                    if !self.serveStatus().isOn, self.server?.isRunning != true { self.server?.start() }
+                }
+                return
+            }
+            self.reportError("Could not install the local API at login (\(result.failureDescription)). Running it under the app instead \u{2014} it will stop when LexiconBar quits.")
+            self.server?.start()
+        }
     }
 
     @objc private func openPreferences() {
