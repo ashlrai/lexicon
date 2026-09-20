@@ -1,6 +1,6 @@
 # CLI reference
 
-Generated from `lexicon --help` (v0.3.2) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.4.0) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 

@@ -133,6 +133,61 @@ enum AX {
         string(element, kAXValueAttribute as String)
     }
 
+    /// Screen rect of the insertion point, for placing the correction bubble.
+    ///
+    /// `kAXBoundsForRangeParameterizedAttribute` over the selected range is
+    /// the accurate answer and most Cocoa and WebKit text views give it. A
+    /// collapsed selection has length 0, which several apps answer with an
+    /// empty rect, so it is asked for one character. Apps that do not
+    /// implement the parameterized attribute fall back to the element's own
+    /// frame (`AXPosition` + `AXSize`), which at least lands the bubble on the
+    /// right field.
+    ///
+    /// The result is in Quartz global coordinates: origin at the top left of
+    /// the primary display, y growing downwards. `BubblePanel` flips it.
+    static func caretRect(_ element: AXUIElement) -> CGRect? {
+        if let selected = range(element, kAXSelectedTextRangeAttribute as String),
+           let rect = bounds(element, forRange: NSRange(location: selected.location, length: max(selected.length, 1))),
+           rect.width >= 0, rect.height > 0 {
+            return rect
+        }
+        // Some apps answer an empty rect for a caret at the very end of the
+        // value; the character before it is just as good a place to point at.
+        if let selected = range(element, kAXSelectedTextRangeAttribute as String), selected.location > 0,
+           let rect = bounds(element, forRange: NSRange(location: selected.location - 1, length: 1)),
+           rect.height > 0 {
+            return rect
+        }
+        return frame(element)
+    }
+
+    /// `AXBoundsForRange`, in Quartz global coordinates.
+    static func bounds(_ element: AXUIElement, forRange range: NSRange) -> CGRect? {
+        var cf = CFRange(location: range.location, length: range.length)
+        guard let parameter = AXValueCreate(.cfRange, &cf) else { return nil }
+        var result: CFTypeRef?
+        let err = AXUIElementCopyParameterizedAttributeValue(
+            element, kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &result)
+        guard err == .success, let value = result, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(unsafeDowncast(value, to: AXValue.self), .cgRect, &rect) else { return nil }
+        return rect
+    }
+
+    /// The element's own frame, in Quartz global coordinates.
+    static func frame(_ element: AXUIElement) -> CGRect? {
+        guard let positionValue = copy(element, kAXPositionAttribute as String),
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              let sizeValue = copy(element, kAXSizeAttribute as String),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID() else { return nil }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(unsafeDowncast(positionValue, to: AXValue.self), .cgPoint, &origin),
+              AXValueGetValue(unsafeDowncast(sizeValue, to: AXValue.self), .cgSize, &size),
+              size.height > 0 else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
     /// Shows the system "allow LexiconBar to control your computer" prompt if needed.

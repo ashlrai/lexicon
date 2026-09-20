@@ -89,8 +89,26 @@ struct PreferencesView: View {
                     Text("\(Int(settings.fixSettleMs)) ms").monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
                 Stepper("Minimum words: \(settings.fixMinWords)", value: $settings.fixMinWords, in: Settings.minWordsRange)
-                Toggle("Notify on each fix", isOn: $settings.fixNotify)
                 ExcludedAppsEditor(bundleIDs: $settings.fixExcludedApps)
+            }
+
+            Section("Correction bubble") {
+                Toggle("Show the correction bubble", isOn: $settings.showBubble)
+                Text("A small panel near the caret after each fix, listing what changed, with Undo, Never and Add. It never takes keyboard focus, so you can keep typing straight through it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Stays up for")
+                    Slider(value: $settings.bubbleSeconds, in: Settings.bubbleSecondsRange, step: 0.5)
+                    Text("\(settings.bubbleSeconds, specifier: "%.1f") s").monospacedDigit().frame(width: 64, alignment: .trailing)
+                }
+                .disabled(!settings.showBubble)
+                Text("Hovering pauses the countdown. Escape, a click elsewhere, switching app or typing on dismisses it at once.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Notify on each fix", isOn: $settings.fixNotify)
+                Text(settings.showBubble
+                     ? "Used for Never and Add confirmations while the bubble is on."
+                     : "The bubble is off, so each fix is announced as a notification instead.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Hotkeys") {

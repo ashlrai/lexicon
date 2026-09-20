@@ -22,10 +22,16 @@ final class Settings: ObservableObject {
         static let fixExcludedApps = "fixEverywhere.excludedApps"
         static let fixNotify = "fixEverywhere.notify"
         static let undoFixHotKey = "hotkey.undoFix"
+        static let showBubble = "bubble.show"
+        static let bubbleSeconds = "bubble.seconds"
+        static let didOnboard = "didOnboard"
     }
 
     static let settleRange: ClosedRange<Double> = 300...1500
     static let minWordsRange: ClosedRange<Int> = 1...5
+    /// How long the correction bubble stays up. The window's own default is
+    /// 4 s; the Preferences slider covers 2 to 10.
+    static let bubbleSecondsRange: ClosedRange<Double> = 2...10
 
     static let models = ["base.en", "small.en"]
 
@@ -49,6 +55,18 @@ final class Settings: ObservableObject {
     @Published var fixExcludedApps: [String] { didSet { defaults.set(fixExcludedApps, forKey: Keys.fixExcludedApps) } }
     @Published var fixNotify: Bool { didSet { defaults.set(fixNotify, forKey: Keys.fixNotify) } }
     @Published var undoFixHotKey: HotKey { didSet { defaults.set(undoFixHotKey.storage, forKey: Keys.undoFixHotKey) } }
+
+    // The correction bubble near the caret. With it off, `fixNotify` decides
+    // whether a fix is announced as a notification instead.
+    @Published var showBubble: Bool { didSet { defaults.set(showBubble, forKey: Keys.showBubble) } }
+    @Published var bubbleSeconds: Double { didSet { defaults.set(bubbleSeconds, forKey: Keys.bubbleSeconds) } }
+
+    /// False until the first-run window reaches its last step. Reset with
+    /// `defaults delete ai.ashlr.lexiconbar didOnboard` to see it again.
+    var didOnboard: Bool {
+        get { defaults.bool(forKey: Keys.didOnboard) }
+        set { defaults.set(newValue, forKey: Keys.didOnboard) }
+    }
 
     var exclusions: AppExclusions {
         get { AppExclusions(bundleIDs: fixExcludedApps) }
@@ -83,5 +101,8 @@ final class Settings: ObservableObject {
         fixExcludedApps = defaults.stringArray(forKey: Keys.fixExcludedApps) ?? AppExclusions.defaults
         fixNotify = defaults.object(forKey: Keys.fixNotify) as? Bool ?? true
         undoFixHotKey = HotKey(storage: defaults.dictionary(forKey: Keys.undoFixHotKey)) ?? .defaultUndoFix
+        showBubble = defaults.object(forKey: Keys.showBubble) as? Bool ?? true
+        let seconds = defaults.object(forKey: Keys.bubbleSeconds) as? Double ?? 4
+        bubbleSeconds = min(max(seconds, Settings.bubbleSecondsRange.lowerBound), Settings.bubbleSecondsRange.upperBound)
     }
 }

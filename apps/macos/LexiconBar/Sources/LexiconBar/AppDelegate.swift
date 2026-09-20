@@ -34,7 +34,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Fix everywhere: one AX thread shared by the watcher and the engine.
     private let axThread = AXThread()
     private lazy var focusWatcher = FocusWatcher(ax: axThread)
-    private lazy var fixEngine = FixEngine(ax: axThread, watcher: focusWatcher, client: NormalizeClient())
+    // One credential loader for the whole app: the engine's `/normalize` and
+    // the onboarding window's `/add`, `/aliases` and `/packs` share its cache
+    // and its invalidation, so a re-issued token heals everywhere at once.
+    private let normalizeClient = NormalizeClient()
+    private lazy var localAPI = LocalAPI(credentials: normalizeClient)
+    private lazy var fixEngine = FixEngine(ax: axThread, watcher: focusWatcher, client: normalizeClient)
+    private lazy var bubble = CorrectionBubbleController()
+    private var onboardingWindow: OnboardingWindowController?
     private var undoFixHotKeyID: UInt32?
     private var undoAvailable = false
     private var fixFlashTimer: Timer?
@@ -68,16 +75,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cliStatus.redetect = { [weak self] in self?.detectCLI() }
         settings.$pushToTalkHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
         settings.$fixClipboardHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
+        // The onboarding window's step 4 writes these settings directly, so
+        // the children follow the setting rather than the menu item that used
+        // to be the only way to change it.
+        settings.$watchClipboard.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.syncChildProcesses() }
+        }.store(in: &cancellables)
+        settings.$localAPI.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.syncChildProcesses() }
+        }.store(in: &cancellables)
 
         registerHotKeys()
         detectCLI()
         startFixEverywhere()
+        bubble.onAction = { [weak self] action, line in self?.bubbleAction(action, line: line) }
+        // First launch, or `--onboard` on any launch. Deferred a beat so the
+        // status item is in the menu bar before the window covers it.
+        if CommandLine.arguments.contains("--onboard") || !settings.didOnboard {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.openOnboarding() }
+        }
         NSLog("LexiconBar %@ launched: status item visible=%d, bundled=%d, push-to-talk=%@",
               Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
               statusItem.isVisible ? 1 : 0, Notifier.isBundled ? 1 : 0, settings.pushToTalkHotKey.displayString)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        bubble.dismiss()
         statusPollTimer?.invalidate()
         fixFlashTimer?.invalidate()
         focusWatcher.stop()
@@ -178,6 +201,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(last)
 
         menu.addItem(.separator())
+        let setup = add("Set up Lexicon\u{2026}", #selector(openOnboarding), enabled: true)
+        setup.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        setup.toolTip = "The first-run walkthrough: your words, starter packs and where corrections happen."
         add("Open lexicon file", #selector(openLexiconFile), enabled: available)
         add("Stats\u{2026}", #selector(showStats), enabled: available)
         add("Run doctor", #selector(runDoctor), enabled: available)
@@ -214,6 +240,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let undo = add("Undo last fix (\(settings.undoFixHotKey.displayString))", #selector(undoLastFix), enabled: settings.fixEverywhere && undoAvailable, indent: 1)
         undo.toolTip = "Puts the dictated text back if the field still holds the corrected text."
+        let showBubble = add("Show the correction bubble", #selector(toggleShowBubble), enabled: settings.fixEverywhere, indent: 1)
+        showBubble.state = settings.showBubble ? .on : .off
+        showBubble.toolTip = "A small panel near the caret after each fix, with Undo, Never and Add. Off falls back to a notification."
         if settings.fixEverywhere, !accessibilityTrusted {
             let hint = add("Needs Accessibility permission \u{2013} open System Settings", #selector(openAccessibilitySettings), enabled: true, indent: 1)
             hint.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
@@ -316,13 +345,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             remember(replacements: fix.replacements, summary: fix.summary)
             flashStatusIcon()
             NSLog("LexiconBar fix: %@ in %@ via %@ in %d ms", fix.replacements.map(\.label).joined(separator: ", "), fix.appName, fix.strategy, fix.elapsedMs)
-            if settings.fixNotify {
+            // The bubble is the visible channel; the notification is the
+            // fallback for when the user has turned the bubble off.
+            if settings.showBubble, let content = CorrectionBubble.content(for: fix.replacements) {
+                bubble.show(content, caret: fix.caret, seconds: settings.bubbleSeconds)
+            } else if settings.fixNotify {
                 let labels = fix.replacements.prefix(3).map(\.label).joined(separator: ", ")
                 let more = fix.replacements.count > 3 ? " +\(fix.replacements.count - 3)" : ""
                 notifier.post(title: "Fixed: \(labels)\(more)", body: "in \(fix.appName). \(settings.undoFixHotKey.displayString) undoes it.")
             }
         case .undone(let appName):
             lastError = nil
+            bubble.dismiss()
             if settings.fixNotify { notifier.post(title: "Undid the last fix", body: "in \(appName)") }
         case .skipped(let why):
             lastError = why
@@ -346,7 +380,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleFixEverywhere() {
         settings.fixEverywhere.toggle()
         if settings.fixEverywhere, !AX.isTrusted { AX.requestTrust() }
+        if !settings.fixEverywhere { bubble.dismiss() }
         accessibilityTrusted = AX.isTrusted
+    }
+
+    @objc private func toggleShowBubble() {
+        settings.showBubble.toggle()
+        if !settings.showBubble { bubble.dismiss() }
+    }
+
+    /// One of the three buttons on the correction bubble. `line` is the
+    /// replacement the bubble said the button applies to.
+    private func bubbleAction(_ action: BubbleAction, line: BubbleLine) {
+        switch action {
+        case .undo:
+            fixEngine.undoLast()
+        case .never:
+            // Record the original under the term's `never` list, then put the
+            // text back. The undo runs regardless of what the API says, so a
+            // stopped `lexicon serve` still gives the user their word back.
+            localAPI.add(canonical: line.canonical, never: [line.original]) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if case .failure(let why) = result {
+                        self.reportError("Could not record \u{201C}\(line.original)\u{201D} as never: \(why.description)")
+                    } else {
+                        self.notifier.post(title: "Left alone from now on",
+                                           body: "\u{201C}\(line.original)\u{201D} will not be corrected to \u{201C}\(line.canonical)\u{201D}.")
+                    }
+                }
+            }
+            fixEngine.undoLast()
+        case .add:
+            localAPI.learn(heard: line.original, meant: line.canonical) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    switch result {
+                    case .success:
+                        self.notifier.post(title: "Learned it",
+                                           body: "\u{201C}\(line.original)\u{201D} now maps to \u{201C}\(line.canonical)\u{201D} exactly.")
+                    case .failure(let why):
+                        self.reportError("Could not learn \u{201C}\(line.original)\u{201D}: \(why.description)")
+                    }
+                }
+            }
+        }
     }
 
     @objc private func toggleFixEverywhereForFrontmostApp(_ sender: NSMenuItem) {
@@ -626,6 +704,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             reportError("Start at login: \(error.localizedDescription)")
         }
+    }
+
+    /// The first-run walkthrough. Shown automatically once, on `--onboard`,
+    /// and from the menu. `didOnboard` is set when the flow reaches the end,
+    /// not when the window opens, so closing it halfway brings it back next
+    /// launch.
+    @objc private func openOnboarding() {
+        if onboardingWindow == nil {
+            let model = OnboardingModel(settings: settings, api: localAPI)
+            model.openLexiconFile = { [weak self] in self?.openLexiconFile() }
+            model.onFinish = { [weak self] in
+                guard let self else { return }
+                self.settings.didOnboard = true
+                // The steps write settings directly; make sure the children
+                // and the menu catch up with what the user chose.
+                self.syncChildProcesses()
+                self.rebuildMenu()
+            }
+            onboardingWindow = OnboardingWindowController(model: model)
+        }
+        bubble.dismiss()
+        onboardingWindow?.show()
+    }
+
+    /// Starts or stops the `daemon` and `serve` children to match the
+    /// settings, after something other than the menu changed them.
+    private func syncChildProcesses() {
+        guard cli.isAvailable else { return }
+        if settings.watchClipboard, daemon?.isRunning != true { daemon?.start() }
+        if !settings.watchClipboard, daemon?.isRunning == true { daemon?.stop() }
+        if settings.localAPI, server?.isRunning != true { server?.start() }
+        if !settings.localAPI, server?.isRunning == true { server?.stop() }
     }
 
     @objc private func openPreferences() {

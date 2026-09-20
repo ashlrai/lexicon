@@ -27,6 +27,9 @@ final class FixEngine: @unchecked Sendable {
         /// "selection" (AXSelectedText write) or "value" (whole-value fallback).
         let strategy: String
         let elapsedMs: Int
+        /// Where the caret ended up, in Quartz global coordinates, for the
+        /// correction bubble. nil when the app exposes no usable geometry.
+        let caret: CGRect?
     }
 
     enum Event: Equatable {
@@ -168,9 +171,12 @@ final class FixEngine: @unchecked Sendable {
         undo.record(UndoLedger.Entry(fieldKey: field.key, range: plan.range, correctedText: plan.newText,
                                      previousText: plan.previousText, fieldTextAfter: plan.splicedFullText))
         publishUndoAvailability(currentText: plan.splicedFullText, force: true)
+        // Read the caret here, on the AX thread, right after the write: the
+        // main thread must never make AX calls into another app.
         let fix = Fix(appName: field.appName, bundleID: field.bundleID,
                       replacements: response.replacements.map(\.asReplacement), summary: response.summary,
-                      strategy: strategy, elapsedMs: Int((now - started) * 1000))
+                      strategy: strategy, elapsedMs: Int((now - started) * 1000),
+                      caret: AX.caretRect(field.element))
         report(.fixed(fix))
     }
 

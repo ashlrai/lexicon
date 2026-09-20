@@ -1,6 +1,6 @@
 {
   "name": "@ashlr/lexicon",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Personal lexicon for voice-to-agents. Fixes the words STT gets wrong (Ashler -> Ashlr.AI) before your agent sees the prompt.",
   "type": "module",
   "license": "MIT",

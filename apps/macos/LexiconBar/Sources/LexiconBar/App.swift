@@ -8,6 +8,8 @@ import ServiceManagement
 // Two launch arguments run without the UI and exit:
 //   --status          prints Accessibility trust and local API reachability; exit 0 when both are fine
 //   --start-at-login  registers the app as a login item (packaged .app only); exit 0 on success
+// One more runs the app normally and opens a window:
+//   --onboard         opens the first-run setup window (also shown once on a fresh install)
 @main
 @MainActor
 enum LexiconBarMain {
