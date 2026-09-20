@@ -45,8 +45,12 @@ git add package.json package-lock.json server.json CHANGELOG.md README.md \
         .claude-plugin/plugin.json .claude-plugin/marketplace.json \
         apps/windows/Directory.Build.props docs/CLI.md packaging/homebrew/lexicon.rb
 git commit -m "vX.Y.Z"
-git tag vX.Y.Z
-git push --follow-tags
+
+# Annotated, not lightweight. `git push --follow-tags` pushes annotated tags
+# only, so a lightweight one is created locally, silently not pushed, and the
+# release workflow never fires. Every tag from v0.4.0 on is annotated.
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin main --follow-tags
 ```
 
 The release workflow refuses to run when the tag does not match `package.json`, so a missed bump fails fast instead of publishing the wrong number.
