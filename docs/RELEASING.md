@@ -4,20 +4,22 @@ How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the Gi
 
 ## 1. Bump the version
 
-Four files carry the version and must agree. `npm version` handles the first; edit the other three by hand in the same commit.
+Five files carry the version and must agree. `npm version` handles the first; edit the rest by hand in the same commit.
 
 | File | Field |
 |---|---|
 | `package.json` (and `package-lock.json`) | `version` |
 | `.claude-plugin/plugin.json` | `version` |
 | `.claude-plugin/marketplace.json` | `plugins[0].version` |
+| `server.json` | `version` and `packages[0].version` (the MCP Registry reads both) |
 | `CHANGELOG.md` | rename `## X.Y.Z (unreleased)` to `## X.Y.Z (YYYY-MM-DD)` |
 
 ```bash
 npm version minor --no-git-tag-version      # or patch / major; writes package.json + lock
-# edit .claude-plugin/plugin.json and .claude-plugin/marketplace.json to the same version
+# edit .claude-plugin/plugin.json, .claude-plugin/marketplace.json and server.json to the same version
 # date the CHANGELOG heading
 npm run check:bundle                         # plugin/ bundles match src/ (CI fails on drift)
+npm run check:server-json                    # server.json schema + version agreement + npm mcpName
 npm run docs:cli                             # docs/CLI.md matches --help
 npm test
 git add -A
@@ -108,3 +110,9 @@ The demo site's Install section links `releases/latest/download/<asset>`, so tho
 ## Hotfixes
 
 Patch releases follow the same steps with `npm version patch`. If a job fails after the release was created, fix the cause on `main`, delete the tag and release (`gh release delete vX.Y.Z --cleanup-tag`) and tag again, or re-run the failed job when the fix needs no code change (a flaky runner, a missing secret).
+
+## See also
+
+- [DISTRIBUTION.md](DISTRIBUTION.md) — where to list a release once it is out.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — the checks that must already be green before you start.
+- [CHANGELOG.md](../CHANGELOG.md) — the file step 1 dates.

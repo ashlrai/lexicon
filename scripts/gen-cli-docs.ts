@@ -26,7 +26,14 @@ function help(args: readonly string[]): string {
     env: { ...process.env, COLUMNS, NO_COLOR: '1', FORCE_COLOR: '0' },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-  }).trimEnd();
+  })
+    // commander writes CRLF on Windows. This output is embedded verbatim
+    // inside the fenced blocks of docs/CLI.md, which CI then asserts with
+    // `git diff --exit-code`, so an un-normalized \r is committed content
+    // rather than something git's clean filter hides: the generated file
+    // would differ byte-for-byte depending on which OS generated it.
+    .replace(/\r\n/g, '\n')
+    .trimEnd();
 }
 
 interface CommandEntry {
@@ -42,7 +49,7 @@ interface CommandEntry {
  * `  <signature padded>  <description>`; a continuation line is indented deeper.
  */
 function parseCommands(topHelp: string): CommandEntry[] {
-  const lines = topHelp.split('\n');
+  const lines = topHelp.split(/\r?\n/);
   const start = lines.findIndex((l) => l.trim() === 'Commands:');
   if (start === -1) throw new Error('could not find the Commands: section in `lexicon --help`');
   const entries: CommandEntry[] = [];
@@ -79,6 +86,12 @@ async function main(): Promise<void> {
   out.push('# CLI reference');
   out.push('');
   out.push(
+    'Every command and flag, for when you know what you want to do and need the exact spelling. ' +
+      'If you are still deciding, [QUICKSTART.md](QUICKSTART.md) and the task pages in ' +
+      '[the docs index](README.md) are better starting points.',
+  );
+  out.push('');
+  out.push(
     `Generated from \`lexicon --help\` (v${pkg.version}) by \`npm run docs:cli\`. Do not edit by hand; ` +
       'change the command definitions in `src/cli/` and re-run the generator.',
   );
@@ -102,6 +115,12 @@ async function main(): Promise<void> {
     out.push('');
     out.push(fence(help([c.name])));
   }
+  out.push('');
+  out.push('## See also');
+  out.push('');
+  out.push('- [QUICKSTART.md](QUICKSTART.md) — the commands you actually need on day one, in order.');
+  out.push('- [LEXICON-FILE.md](LEXICON-FILE.md) — the file these commands read and write.');
+  out.push('- [MCP.md](MCP.md) — the same capabilities as tools your agent can call.');
   out.push('');
 
   await fs.mkdir(path.dirname(OUT), { recursive: true });

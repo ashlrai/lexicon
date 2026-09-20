@@ -1,5 +1,7 @@
 # Exports and imports
 
+Getting your terms into a dictation app's own dictionary or an STT engine's biasing parameter, and bringing in a dictionary you already trained somewhere else.
+
 One lexicon, fifteen ways out and seven ways in.
 
 ## Export into your dictation app
@@ -54,3 +56,9 @@ lexicon import Text\ Substitutions.plist --category brand
 Rows are merged by canonical (case-insensitive), aliases deduped, and each term is then added with the same merge rules as `lexicon add`, so re-importing is safe. The output is a table of what was created or merged plus a summary line, `imported N terms (M new, K merged, S skipped)`; skipped rows and why go to stderr. Inputs over 8 MB are refused before parsing.
 
 Flags for both commands are in the [CLI reference](CLI.md). Adding a new format is three files and a test: see [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## See also
+
+- [VOICE.md](VOICE.md) — `lexicon voice` uses the `whisper-prompt` export automatically.
+- [LIBRARY.md](LIBRARY.md) — doing the same bias-then-correct pass from your own code.
+- [PACKS.md](PACKS.md) — 155 curated terms, if you have no dictionary to import.

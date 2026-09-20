@@ -1,5 +1,7 @@
 # How matching works
 
+What the matcher does to a sentence, and why it so rarely touches ordinary prose. Read this before tuning `minConfidence` or reporting a false positive.
+
 Matching runs in three tiers over token windows. Exact hits are resolved first (longest span, earliest start); phonetic and fuzzy hits only get the spans left over, and matches never overlap.
 
 1. **Exact alias.** Word-boundary, multi-word, case-insensitive and diacritic-insensitive (`bjorn halvorsen` hits `Bjørn Halvorsen`) unless the term sets `caseSensitive`. Confidence 1.0.
@@ -36,4 +38,10 @@ lexicon normalize --diff "deploy to head sner with cooper netties and kubernetee
 
 `--diff` goes to stderr so stdout stays pipeable. `--min-confidence 0.9`, `--no-phonetic` and `--no-fuzzy` override the file settings for one run. `normalize` always exits 0; if the lexicon fails to load it prints a warning to stderr and passes the text through unchanged.
 
-The three tiers are colour-coded in the [live demo](https://ashlrai.github.io/lexicon/), which runs this same matcher in your browser. Accuracy numbers are in [BENCHMARK.md](BENCHMARK.md); the matcher settings that produce them are in [LEXICON-FILE.md](LEXICON-FILE.md).
+The three tiers are colour-coded in the [live demo](https://ashlrai.github.io/lexicon/), which runs this same matcher in your browser.
+
+## See also
+
+- [LEXICON-FILE.md](LEXICON-FILE.md) — the settings that tune everything above.
+- [BENCHMARK.md](BENCHMARK.md) — how well the tiers and guards actually do, and where they fail.
+- [SUGGEST.md](SUGGEST.md) — turning a false positive into a `never` word.

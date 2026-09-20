@@ -1,5 +1,7 @@
 # Module contract
 
+The exported signature of every module, in dependency order — the reference a change is written against, and the file to update when a public signature moves.
+
 The per-module API of `@ashlr/lexicon`, in dependency order. Every module codes against `src/core/types.ts`. Cross-module imports inside `src/core` go through `../core/index.js`; `src/util/*` is the one exception, a dependency-free bottom layer every other layer imports directly by path. ESM, `.js` suffix on relative imports, NodeNext resolution. No default exports. Node >= 20, no `any` in public signatures. Update this file when a public signature changes.
 
 Several files are facades: they re-export from the modules they were split into so their old import paths keep working. Where that is so, this document says where a name is *defined* as well as where it can be imported from.
@@ -458,3 +460,9 @@ SwiftPM app, no dependencies, that fronts the CLI; it never links the TypeScript
 - `LexiconBarKit` (testable, no AppKit): `CLILocator` (finds `lexicon` on PATH, `/opt/homebrew/bin`, `/usr/local/bin`, npm and Homebrew prefixes, or the path saved in Preferences), `CLIOutput` (parses `lexicon voice --json`, `lexicon daemon --once` and `lexicon serve --status --json` output), `RestartPolicy` (5 s backoff, 5 restarts before giving up), `HotKey` (Carbon hotkey encoding for the recorder).
 - `LexiconBar` (AppKit): `AppDelegate` builds the status item menu; `HotKeyCenter` registers ⌃⌥Space (push to talk via `lexicon voice --toggle --json`) and ⌃⌥V (`lexicon daemon --once`); `ChildProcessSupervisor` runs `lexicon daemon` and `lexicon serve` as child processes under `RestartPolicy`; `CommandRunner` spawns one-shot CLI calls; `Notifier` posts a notification after each run; `Settings` persists CLI path, whisper model, paste-vs-copy and hotkeys in `UserDefaults`; `PreferencesWindow` is the SwiftUI preferences sheet and `TextWindow` a read-only text window for `lexicon doctor` output.
 - Everything the app does is a CLI invocation with the same files, trust gate and hit counters as the terminal, so this contract for the CLI is the app's contract too.
+
+## See also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — the same modules as a data flow, with the decisions behind them.
+- [LIBRARY.md](LIBRARY.md) — the subset of this surface that package consumers actually import.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — the workflow these rules are enforced by.

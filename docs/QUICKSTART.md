@@ -34,7 +34,9 @@ Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recom
 
 ## 2. `lexicon setup`
 
-One interactive pass, seven steps, ending in a live correction. Every step prints a one-line result and is safe to rerun (nothing is duplicated). On a terminal the starter packs are offered as a checklist with the recommended ones already ticked — Enter accepts, or untick what you do not want. `lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service are opt-in even then, so add `--packs developer,ai,voice-tools` for the starter packs, `--harvest` for the repo scan and `--serve` for the login service; `--dry-run` prints what a run would do and writes nothing; `--clients none`, `--no-packs`, `--no-harvest`, `--no-serve`, `--app none` skip steps; `--packs developer,ai` picks the starter packs without a prompt; `--json` prints a machine-readable summary.
+One interactive pass, seven steps, ending in a live correction. Every step prints a one-line result and is safe to rerun (nothing is duplicated), and the starter packs arrive as a checklist you can untick ([PACKS.md](PACKS.md) has what is in each).
+
+`lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service stay opt-in even then, so add `--packs developer,ai,voice-tools`, `--harvest` and `--serve` for those. `--dry-run` prints what a run would do and writes nothing, `--clients none` / `--no-packs` / `--no-harvest` / `--no-serve` / `--app none` skip steps, and `--json` prints a machine-readable summary.
 
 ```text
 $ lexicon setup
@@ -75,10 +77,6 @@ lexicon setup
    which dictation app do you use?  1) Wispr Flow  2) Superwhisper  3) macOS Text Replacement  4) none
    wrote ~/Desktop/lexicon-wispr.csv (6 terms)
    import it in Wispr Flow > Dictionary > Import
-
-Done.
-   lexicon: ~/.config/lexicon/lexicon.yaml   terms added: Mason Wyatt, Ashlr.AI, Playwright, ...
-   clients: claude, cursor   local API: installed   exports: ~/Desktop/lexicon-wispr.csv
 
 7. Does it work?
    you dictate:  can you ask Mason Wiatt where the Ashler migration landed

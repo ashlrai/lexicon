@@ -1,5 +1,7 @@
 # Dogfood: @ashlr/lexicon against the real Claude Code CLI
 
+Run 1 of two recorded dogfood sessions. Subject: the correction path — the Claude Code hooks and the MCP server — against the real CLI. A dated record, not a guide; nothing here is required reading to use Lexicon.
+
 Live run of the hook + MCP integration through the headless CLI, on the
 maintainer's machine, with the maintainer's real lexicon. Nothing in `src/`
 was changed for this run; the proposed fixes at the end were verified on a
@@ -341,3 +343,9 @@ session, including headless and scripted ones.
   `e2/out.jsonl`, `e3/out.jsonl` + `lex.before.yaml`/`lex.yaml`,
   `e4/out.jsonl`, `e5/out.json`, `e6/out*.json` + `settings-with.json`/`settings-without.json`,
   `fix/dist/core/learn.js` (patched copy used to verify A).
+
+## See also
+
+- [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) — run 2, covering the onboarding path, and run against the fixes this one produced.
+- [CLIENTS.md](CLIENTS.md) — what the hooks exercised here are supposed to do.
+- [CHANGELOG.md](../CHANGELOG.md) — where the fixes below landed.

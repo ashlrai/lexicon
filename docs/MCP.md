@@ -1,5 +1,7 @@
 # MCP server reference
 
+Every tool, resource and prompt the `lexicon` server exposes, for anyone wiring it into an MCP client or writing an agent that calls it. To *register* the server in a client, use [CLIENTS.md](CLIENTS.md); this page is what it answers once it is running.
+
 Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Nineteen tools, two resources, two prompts.
 
 Registering it in a client is one command: see [CLIENTS.md](CLIENTS.md). Point any other MCP client at the stdio server directly:
@@ -64,3 +66,9 @@ Project-scope writes (`add_term`, `learn_correction`, `apply_suggestion`, `impor
 `setup_lexicon`, `install_client` and `trust_project` preview by default and only write when the agent passes `apply: true` or `action: 'trust'` after showing you the preview.
 
 Why these tools exist and how an agent is meant to chain them is in [AGENT-NATIVE.md](AGENT-NATIVE.md).
+
+## See also
+
+- [CLIENTS.md](CLIENTS.md) — registering the server in Claude Code, Codex, Cursor and the rest.
+- [AGENT-NATIVE.md](AGENT-NATIVE.md) — why these tools exist and how an agent is meant to chain them.
+- [AGENTS.md](AGENTS.md) — the procedural version, written to the agent rather than about it.

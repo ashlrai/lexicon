@@ -1,5 +1,7 @@
 # Dogfood 2: agent-native onboarding against the real Claude Code CLI
 
+Run 2 of two recorded dogfood sessions. Subject: the agent-native onboarding tools and the `SessionStart` note, in an isolated scratch HOME. A dated record, not a guide; it assumes the fixes from [DOGFOOD.md](DOGFOOD.md) are in.
+
 Live run of the agent-native tools (`setup_lexicon`, `lexicon_doctor`,
 `trust_project`, `import_dictionary`, `suggest_terms`, `apply_suggestion`,
 `learn_correction`) and the SessionStart onboarding note through the headless
@@ -533,3 +535,9 @@ plist), `out/e1-onboard.jsonl` ... `out/e8-with-2.jsonl` and `.stderr`,
 `out/lexicon.before-e5.yaml` / `-e6` / `-e7`, `out/trust.before-e4.json`,
 `out/hostile.lexicon.yaml`, `stray/real-config-dir.claude.json` (the file
 Claude Code created in the real `~/.claude` during the failed auth attempt).
+
+## See also
+
+- [DOGFOOD.md](DOGFOOD.md) — run 1, the correction path, and the method this run reuses.
+- [AGENT-NATIVE.md](AGENT-NATIVE.md) — the design these tools were tested against.
+- [CHANGELOG.md](../CHANGELOG.md) — where the two `setup_lexicon` bugs below were fixed.

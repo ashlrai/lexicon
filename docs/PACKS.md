@@ -47,3 +47,9 @@ A new pack is one file and one test.
 4. `lexicon pack show <name>` and `lexicon normalize` a sentence that uses three of its terms.
 
 Pack files are read from the package's `packs/` directory only, and the name is validated before any path is built, so a name arriving from the local API or an MCP call can never escape that directory.
+
+## See also
+
+- [GROWING.md](GROWING.md) — the other three ways terms get in: your repo, your corrections, your voice history.
+- [LEXICON-FILE.md](LEXICON-FILE.md) — the schema a pack file follows.
+- [BENCHMARK.md](BENCHMARK.md) — the precision numbers the alias rule above is written against.

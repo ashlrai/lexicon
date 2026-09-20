@@ -63,9 +63,7 @@ If the browser that opened is not the one with the extension, copy the URL into 
 
 Manual fallback, for a browser profile the CLI cannot open: `lexicon serve --show` prints the token; paste it into **Options > Local API > Token** and click **Test connection**.
 
-What the pairing page is and is not: it is served without a token, but only to a loopback client whose `Host` header is exactly `127.0.0.1:<port>` or `localhost:<port>` (a DNS-rebinding page arrives with its own Host and gets 403), with `Cache-Control: no-store`, `X-Frame-Options: DENY`, a CSP of `default-src 'none'; style-src 'unsafe-inline'` (no script, no external request) and `Referrer-Policy: no-referrer`. It exposes nothing a local process could not already read from `serve.json`. See `SECURITY.md`.
-
-Endpoints used, all on `127.0.0.1:41733`: `GET /health` (no auth), `GET /pair` (no auth, Host-checked), `GET /stats` (pairing check), `POST /normalize`, `POST /learn`, `GET /lexicon` (bearer token). CORS on the server is granted only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (plus any exact origin listed in `serve.json.allowedOrigins`); a web page cannot call it.
+The pairing page is served without a token but only to a loopback client whose `Host` header names this server, and it exposes nothing a local process could not already read from `serve.json`. That boundary, the routes the extension uses, and the CORS rule that lets an extension origin call the API while a web page cannot, are all in [LOCAL-API.md](LOCAL-API.md).
 
 ## Modes
 
@@ -160,3 +158,9 @@ The tests cover the DOM logic; a real browser is still needed for the editor int
 9. Popup > switch the site off; Enter sends the raw text with no toast.
 10. Options > Any site, accept the permission, open a plain `<textarea>` page (any form), confirm corrections run on Enter.
 11. Live mode on: type `ping ashler and`, pause; the first word is fixed while you keep typing.
+
+## See also
+
+- [LOCAL-API.md](LOCAL-API.md) — the `lexicon serve` API the extension talks to, its routes and its token.
+- [CLIENTS.md](CLIENTS.md) — the same job for agent clients that can run a hook or an MCP server.
+- [MATCHING.md](MATCHING.md) — what the corrections in the composer are actually doing.

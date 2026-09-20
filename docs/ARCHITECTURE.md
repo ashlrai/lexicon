@@ -1,5 +1,7 @@
 # Architecture
 
+How the pieces fit and why they were built that way, for anyone about to change the code. [CONTRACT.md](CONTRACT.md) is the companion: this page is the shape and the reasoning, that one is the signatures.
+
 `@ashlr/lexicon` is one YAML file plus the ways to apply it: an MCP server, Claude Code hooks, a local HTTP API with a browser extension and a menu bar app on top, a local voice pipeline, a clipboard daemon, and exports into dictation apps. Everything below is written against [CONTRACT.md](CONTRACT.md) and `src/core/types.ts`.
 
 ## Module map
@@ -310,4 +312,10 @@ Rewriting the composer while the user types would fight the dictation tool that 
 
 ### Agent-native tools preview before they apply
 
-The setup, install, trust, import and suggestion tools let an agent change files outside the lexicon (client configs, a launchd plist, a repo's `.lexicon.yaml`). A model acting on a hook note or a repo file must not be able to make those writes silently, so every such tool is split into a read and a write: `install_client` returns the exact entry it would write unless `apply: true`; `setup_lexicon` returns a `SetupPlan` from a dry run unless `apply: true`, and then installs only into the clients named in the call and creates the login service only with `serve: true`; `trust_project { action: 'status' }` returns a sanitized preview and only `action: 'trust'` pins; `import_dictionary` has `dryRun`; `suggest_terms` proposes and `apply_suggestion` applies one item, passed back as received. The skill and the server instructions tell the model to show the preview and wait for a yes. The onboarding note in `SessionStart` follows the same rule: it asks the model to offer setup, and `setup_lexicon` runs only after the user has answered. The tools reuse the CLI handlers rather than reimplementing them, so a preview from the agent and a dry run from the terminal are the same code.
+The setup, install, trust, import and suggestion tools let an agent change files outside the lexicon (client configs, a launchd plist, a repo's `.lexicon.yaml`). A model acting on a hook note or a repo file must not be able to make those writes silently, so every such tool is split into a read and a write: the read returns a preview, and nothing is written until a second call carries an explicit flag. The skill and the server instructions tell the model to show the preview and wait for a yes, and the `SessionStart` onboarding note follows the same rule. The tools reuse the CLI handlers rather than reimplementing them, so a preview from the agent and a dry run from the terminal are the same code. Which flag each tool takes, and the dialogue each is designed for, is in [AGENT-NATIVE.md](AGENT-NATIVE.md).
+
+## See also
+
+- [CONTRACT.md](CONTRACT.md) — the exported API of every module named above.
+- [AGENT-NATIVE.md](AGENT-NATIVE.md) — the design of the tools an agent calls.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — setup, the test layout, and how to add a format or a pack.

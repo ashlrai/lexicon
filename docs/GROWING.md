@@ -78,12 +78,16 @@ If `Ashlr.AI` already exists (as a canonical or an alias) the heard form becomes
 
 ## Suggestions from your voice history
 
-`lexicon suggest` reads `voice/history.jsonl` (written by `lexicon voice`), the hit counters and, with `--harvest`, the repo, and proposes four kinds of change: an `alias` STT keeps producing for a term you have, a `term` that recurs in corrected output but is not in the lexicon, a `never` word that keeps getting rewritten by mistake, and a `stale` term that never fired in 30 days. `--apply` walks them one by one, `--yes` applies everything at or above 0.80 confidence (stale removals and harvest candidates never qualify), `--json` prints them. The same list is available to your agent as `suggest_terms` and `apply_suggestion`. Details in [SUGGEST.md](SUGGEST.md).
+`lexicon suggest` reads the history `lexicon voice` keeps, the hit counters and, with `--harvest`, the repo, and proposes the edits that would have made the last few weeks of transcripts come out right: aliases to add, terms you are missing, words to protect with `never`, and terms that stopped firing. `--apply` walks them one by one; your agent gets the same list as `suggest_terms` and `apply_suggestion`. What it proposes and how it scores each one is in [SUGGEST.md](SUGGEST.md).
 
 ## Review what you have
 
 `lexicon review` walks existing terms (`--never-hit` for only the ones that never fired, `--project` for the project file, `--category <c>`), showing each term's aliases and hit count and taking `k` keep, `d` delete, `e` edit aliases, `p` phonetic hint, `n` notes, `q` quit. The file is written once at the end.
 
-`lexicon edit` opens the global (or `--project`) file in `$VISUAL` / `$EDITOR` and validates it when the editor exits, reporting any schema error with the path so your edits are never lost. `lexicon add <canonical> -i` turns the auto-suggested aliases into a checklist and asks for the phonetic hint and category.
+`lexicon add <canonical> -i` turns the auto-suggested aliases into a checklist and asks for the phonetic hint and category. To edit the YAML directly, `lexicon edit` opens it safely: see [LEXICON-FILE.md](LEXICON-FILE.md#editing-it).
 
-Full flags for every command are in the [CLI reference](CLI.md).
+## See also
+
+- [SUGGEST.md](SUGGEST.md) — the deep version of the suggestions step above.
+- [PACKS.md](PACKS.md) — the fastest hundred-odd terms, if you are starting from nothing.
+- [CLI.md](CLI.md) — full flags for `harvest`, `learn`, `stats`, `review` and `suggest`.

@@ -23,3 +23,9 @@ Until a project file is trusted, `list`, `normalize` and `doctor` warn on stderr
 ## The rest of the hardening
 
 Every field is length-capped and stripped of zero-width and bidi characters at parse time, lexicon files over 2 MB and imports over 8 MB are refused, and the local API listens on loopback only behind a bearer token. There is no telemetry: the CLI, hooks, MCP server, local API and extension make no request beyond loopback, and the one outbound request in the codebase is `lexicon voice` fetching a whisper model on first use. Details, including the extension, voice history and the install script, are in [SECURITY.md](../SECURITY.md).
+
+## See also
+
+- [LEXICON-FILE.md](LEXICON-FILE.md) — what a project `.lexicon.yaml` may contain.
+- [MCP.md](MCP.md) — `trust_project`, the agent-facing version of the commands above.
+- [SECURITY.md](../SECURITY.md) — the full threat model.

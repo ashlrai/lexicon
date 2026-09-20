@@ -1,5 +1,7 @@
 # The lexicon file
 
+Where your terms live on disk, what a term may contain, and every setting that changes how it is matched.
+
 Two files, merged at load time.
 
 | Scope | Path |
@@ -57,6 +59,10 @@ settings:
 
 `lexicon edit` opens the global file (`--project` for `.lexicon.yaml`) in `$VISUAL` / `$EDITOR` and validates it when the editor exits, reporting any schema error with the path so your edits are never lost. A trusted project file is re-pinned after the edit.
 
-Every field is length-capped and stripped of zero-width and bidi characters at parse time, and files over 2 MB are refused. See [SECURITY.md](../SECURITY.md).
+Parsing is defensive: fields are length-capped and stripped of zero-width and bidi characters, and oversized files are refused. The limits and the reasoning are in [TRUST.md](TRUST.md#the-rest-of-the-hardening).
 
-How the file is applied to text is in [MATCHING.md](MATCHING.md).
+## See also
+
+- [MATCHING.md](MATCHING.md) — how the file is applied to text, and what each setting does to the matcher.
+- [TRUST.md](TRUST.md) — why the project file is off until you approve it.
+- [GROWING.md](GROWING.md) — filling the file without typing it.

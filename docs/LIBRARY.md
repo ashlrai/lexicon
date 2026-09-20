@@ -1,5 +1,7 @@
 # Use as a library
 
+Using `@ashlr/lexicon` as a dependency: for anyone building their own STT pipeline, editor plugin or service rather than using the CLI.
+
 Everything the CLI, MCP server and hooks do is available as plain functions. `normalize()` is pure (text + lexicon in, result out); the store functions read and write the same YAML files the CLI uses.
 
 ```bash
@@ -53,8 +55,12 @@ await llm.send(fixed.output);
 
 `parseLexicon(raw)` validates an object you loaded yourself, `diffSummary(result)` renders the replacement list, `suggestAliases(canonical)` guesses likely misspellings, `importLexicon(content, format)` parses another tool's dictionary, `parseCorrection(text)` and `learnCorrection({ heard, meant })` handle corrections, `suggestCanonicalFor(heard, lexicon)` finds the closest terms, `suggestTerms(input)` mines voice history, `computeStats(loaded)` reports usage, and `EXPORT_FORMATS` / `IMPORT_FORMATS` list what `exportLexicon` / `importLexicon` accept. `listPacks()`, `loadPack()`, `installPack()` and `uninstallPack()` cover the [starter packs](PACKS.md).
 
-Types (`Lexicon`, `Term`, `NormalizeResult`, `HarvestCandidate`, `TermSuggestion`, ...) are exported too. The local API is embeddable as `createServer()` from `src/serve/server.ts`.
+Types (`Lexicon`, `Term`, `NormalizeResult`, `HarvestCandidate`, `TermSuggestion`, ...) are exported too. The local API is embeddable as `createServer()`, imported from `dist/serve/index.js` and defined in `src/serve/server.ts`; see [LOCAL-API.md](LOCAL-API.md#embedding).
 
 Runnable versions of both snippets: [examples/library-usage.ts](../examples/library-usage.ts) and [examples/stt-pipeline.ts](../examples/stt-pipeline.ts) (`node --import tsx examples/<file>`).
 
-The per-module signatures are in [CONTRACT.md](CONTRACT.md); the design behind them is in [ARCHITECTURE.md](ARCHITECTURE.md).
+## See also
+
+- [CONTRACT.md](CONTRACT.md) — the exported signature of every module.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — the design behind those signatures.
+- [MATCHING.md](MATCHING.md) — what `normalize()` does to a sentence, and every guard it applies.

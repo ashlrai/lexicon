@@ -1,15 +1,22 @@
+<div align="center">
+
+<img src="docs/assets/logo-400.png" alt="" width="88" height="88">
+
 # Lexicon
+
+**A personal lexicon for voice-to-agents.**
+
+One YAML file of the words speech-to-text gets wrong, applied everywhere your voice
+lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
-**A personal lexicon for voice-to-agents.** One YAML file of the words speech-to-text gets wrong, applied everywhere your voice lands: MCP, Claude Code, the browser, macOS. The package is [`@ashlr/lexicon`](https://www.npmjs.com/package/@ashlr/lexicon); the command is `lexicon`.
+[**Live demo**](https://ashlrai.github.io/lexicon/) &nbsp;·&nbsp; [**Quickstart**](docs/QUICKSTART.md) &nbsp;·&nbsp; [**Docs**](docs/README.md) &nbsp;·&nbsp; [**lexicon.ashlr.ai**](https://lexicon.ashlr.ai)
 
-![The live demo correcting a dictated sentence in the browser](docs/assets/demo.gif)
-
-**[lexicon.ashlr.ai](https://lexicon.ashlr.ai)** is the live demo, the benchmarks and the install commands.
+</div>
 
 ```text
 You said:        "tell Ashlr.AI to deploy the Kubernetes auth service"
@@ -17,7 +24,9 @@ STT heard:       "tell Ashler to deploy the Cooper Nettie's off service"
 Agent received:  "tell Ashlr.AI to deploy the Kubernetes auth service"
 ```
 
-[Try it in your browser.](https://ashlrai.github.io/lexicon/) No install: the page runs this repo's real matcher on your text, in your browser. (The Dictate button uses your browser's own speech recognizer, which in Chrome sends audio to Google.)
+![The browser demo, three panels. Left, what STT heard: "tell ashler to deploy cooper netties on head sner and ping mason white about the sass pricing". Middle, what the agent gets: "tell Ashlr.AI to deploy Kubernetes on Hetzner and ping Mason Wyatt about the SaaS pricing", labelled 5 corrections in 0.80 ms, above a table giving each replacement its tier and confidence. Right, the lexicon YAML driving it.](docs/assets/demo.gif)
+
+That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's real matcher on your text, in your browser, with nothing installed. (Its Dictate button uses your browser's own speech recognizer, which in Chrome sends audio to Google.)
 
 ## Measured
 
@@ -35,6 +44,8 @@ The last column counts ordinary prose only. Each corpus also contains sentences 
 
 ## Install
 
+The package is [`@ashlr/lexicon`](https://www.npmjs.com/package/@ashlr/lexicon); the command is `lexicon`.
+
 ```bash
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh   # CLI + the setup wizard
 brew install ashlrai/tap/lexicon                               # or Homebrew (macOS, Linux)
@@ -43,7 +54,22 @@ npm i -g @ashlr/lexicon                                        # or npm (Node 20
 
 Then open Claude Code and say a sentence with your company name in it. Done.
 
-The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. It is six steps: seed the lexicon with your name and company, install starter packs, harvest the current repo, register the MCP server and hooks in every agent client it detects, install the local API as a login service, and export to your dictation app. Every step is optional and safe to rerun, and `lexicon setup --dry-run` prints the whole plan without writing anything. The walkthrough is in [docs/QUICKSTART.md](docs/QUICKSTART.md).
+The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. Every step is optional and safe to rerun, and `lexicon setup --dry-run` prints the whole plan without writing anything.
+
+<details>
+<summary>What <code>lexicon setup</code> does, step by step</summary>
+
+1. Seeds the lexicon with your name and your company, with the misspellings STT will produce for each.
+2. Offers the starter packs as a checklist.
+3. Harvests the current repo for names already in your code.
+4. Registers the MCP server and hooks in every agent client it detects.
+5. Installs the local API as a login service.
+6. Exports to your dictation app.
+7. Dictates a sentence built from the terms it just seeded, and shows you the correction.
+
+The full walkthrough, with the real terminal output, is in [docs/QUICKSTART.md](docs/QUICKSTART.md).
+
+</details>
 
 Or skip the wizard and add one term by hand. The first argument is the canonical spelling, the rest are what STT actually produces:
 
@@ -110,61 +136,25 @@ The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHIN
 
 ## Documentation
 
-**Start here**
+**[The full index is in `docs/`](docs/README.md)**, grouped by task: get started, use it
+with your client, understand how it works, contribute, internals. The three pages most
+people need:
 
 | Page | What it covers |
 |---|---|
 | [QUICKSTART.md](docs/QUICKSTART.md) | Five minutes from nothing to corrections in Claude Code, with what each setup step writes |
 | [CLIENTS.md](docs/CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client |
-| [PACKS.md](docs/PACKS.md) | The four starter packs, how install and remove behave, how the aliases were chosen |
+| [FAQ.md](docs/FAQ.md) | The questions people ask before installing |
 
-**Reference**
+Writing an agent that installs this for someone? [docs/AGENTS.md](docs/AGENTS.md) is written
+to you. Changing the code? Start at [CONTRIBUTING.md](CONTRIBUTING.md) and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-| Page | What it covers |
-|---|---|
-| [CLI.md](docs/CLI.md) | Every command and flag, generated from `--help` |
-| [MCP.md](docs/MCP.md) | The MCP server: nineteen tools, two resources, two prompts |
-| [LEXICON-FILE.md](docs/LEXICON-FILE.md) | File locations, the term schema, settings, `never` |
-| [MATCHING.md](docs/MATCHING.md) | The three matching tiers and every guard against a false positive |
-| [EXPORTS.md](docs/EXPORTS.md) | Fifteen export formats and seven importers |
-| [LIBRARY.md](docs/LIBRARY.md) | Using `normalize()` and the store functions from your own code |
-| [TRUST.md](docs/TRUST.md) | Why a project `.lexicon.yaml` is off until you approve it |
-
-**Surfaces**
-
-| Page | What it covers |
-|---|---|
-| [EXTENSION.md](docs/EXTENSION.md) | The browser extension for ChatGPT, Claude, Grok, Gemini, Perplexity, Poe and Copilot |
-| [MACOS-APP.md](docs/MACOS-APP.md) | LexiconBar, the macOS menu bar app and its Accessibility rewrite |
-| [LOCAL-API.md](docs/LOCAL-API.md) | The loopback HTTP API, its routes and its token |
-| [VOICE.md](docs/VOICE.md) | Local push-to-talk with ffmpeg and whisper.cpp |
-| [DAEMON.md](docs/DAEMON.md) | The clipboard daemon and hotkey recipes for macOS, Linux and Windows |
-
-**Growing and measuring**
-
-| Page | What it covers |
-|---|---|
-| [GROWING.md](docs/GROWING.md) | Harvesting a repo, learning from corrections, stats, reviewing terms |
-| [SUGGEST.md](docs/SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
-| [BENCHMARK.md](docs/BENCHMARK.md) | The accuracy benchmark: corpora, metrics, results and the fix log |
-| [RESEARCH.md](docs/RESEARCH.md) | Why this layer exists, the market read, and the kill criteria |
-
-**Internals**
-
-| Page | What it covers |
-|---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map and the design decisions behind it |
-| [CONTRACT.md](docs/CONTRACT.md) | The per-module API contract every change is written against |
-| [AGENT-NATIVE.md](docs/AGENT-NATIVE.md) | The agent-as-UI design: which tool an agent calls when |
-| [DOGFOOD.md](docs/DOGFOOD.md), [DOGFOOD-AGENT-NATIVE.md](docs/DOGFOOD-AGENT-NATIVE.md) | Two live runs against the real Claude Code CLI, and the bugs they found |
-| [RELEASING.md](docs/RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
-| [LANDING.md](docs/LANDING.md) | The landing page at lexicon.ashlr.ai: what it claims, and how to deploy it |
-
-Also at the root: [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md).
+Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap); `npm i -g github:ashlrai/lexicon#v0.4.0` installs a tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap); `npm i -g github:ashlrai/lexicon#v0.5.1` installs a tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 

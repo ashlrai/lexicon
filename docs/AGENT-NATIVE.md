@@ -1,5 +1,7 @@
 # Agent-native lexicon
 
+Why the MCP tools are shaped the way they are, and which one an agent should reach for in a given conversation. Design rationale, with worked dialogues; for the commands to actually run, see [AGENTS.md](AGENTS.md), and for argument-level detail see [MCP.md](MCP.md).
+
 The agent is the UI. A user who talks to Claude Code, Claude Desktop, Codex or
 Cursor should be able to onboard, install, trust, import, diagnose and improve
 their voice lexicon by asking for it, without opening a terminal. Every CLI
@@ -252,3 +254,9 @@ version, terms, port, ... }` or `{ up: false, error, hint }`.
 5. **Nothing from an untrusted file reaches the context unsanitized.** Trust
    previews pass every string through `sanitizeForDisplay` and cap the table;
    notes are flagged as present, not quoted; hook notes carry the path only.
+
+## See also
+
+- [AGENTS.md](AGENTS.md) — the checklist version, written to the agent doing the work.
+- [MCP.md](MCP.md) — every tool's arguments and return shape.
+- [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) — these tools run for real, and the bugs that found.

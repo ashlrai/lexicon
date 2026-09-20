@@ -153,3 +153,9 @@ scripts/build-macos-app.sh       # apps/macos/build/LexiconBar.app (hotkey, clip
 ```
 
 The voice path is deliberately minimal. Wispr Flow and Superwhisper remain nicer dictation apps; use them and export your lexicon into their dictionaries. `lexicon voice` is for people who want a fully local path with no accounts.
+
+## See also
+
+- [MCP.md](MCP.md) — the tools, resources and prompts the server you just registered exposes.
+- [QUICKSTART.md](QUICKSTART.md) — the five-minute version, if you landed here first.
+- [TRUST.md](TRUST.md) — why a repo's `.lexicon.yaml` stays off until you approve it.

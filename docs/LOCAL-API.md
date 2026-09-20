@@ -138,56 +138,21 @@ selected text when run as a Quick Action) and puts the result back:
 Assign a keyboard shortcut in Shortcuts > (i) > Add Keyboard Shortcut and run
 `lexicon serve --install` once so the server is always up.
 
-## Raycast script command
+## Correcting the clipboard on a hotkey
 
-Save as `~/raycast-scripts/fix-dictation.sh`, `chmod +x`, and add the folder
-under Raycast > Extensions > Script Commands. It corrects the clipboard in
-place and shows the diff summary.
-
-```bash
-#!/bin/bash
-
-# Required parameters:
-# @raycast.schemaVersion 1
-# @raycast.title Fix dictation
-# @raycast.mode compact
-# @raycast.packageName Lexicon
-
-# Optional parameters:
-# @raycast.icon 🎙️
-# @raycast.description Correct the clipboard with your lexicon (lexicon serve)
-
-set -euo pipefail
-
-CONFIG="${LEXICON_SERVE_JSON:-$HOME/.config/lexicon/serve.json}"
-TOKEN=$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).token' "$CONFIG")
-PORT=$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).port' "$CONFIG")
-
-BODY=$(pbpaste | node -pe 'JSON.stringify({ text: require("fs").readFileSync(0, "utf8") })')
-RESPONSE=$(curl -sS --max-time 3 -X POST "http://127.0.0.1:${PORT}/normalize" \
-  -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
-  --data-binary "$BODY")
-
-printf '%s' "$RESPONSE" | node -e '
-  const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
-  if (r.error) { console.log("lexicon: " + r.error); process.exit(1); }
-  if (!r.changed) { console.log("no changes"); process.exit(0); }
-  require("child_process").execFileSync("pbcopy", { input: r.output });
-  console.log(r.summary.split("\n").join("; "));
-'
-```
-
-Pair it with a Raycast hotkey to run right after dictating; add `--paste`
-behaviour with `osascript -e 'tell application "System Events" to keystroke "v" using command down'`
-at the end if you want the corrected text pasted automatically (needs
-Accessibility permission for Raycast).
+If all you want is "dictate, press a key, paste the corrected text", you do not
+need this API: `lexicon daemon --once --paste` does it with no token and no
+server. The Raycast, Alfred, AutoHotkey and GNOME recipes are in
+[DAEMON.md](DAEMON.md). Reach for the API instead when you need the structured
+`replacements` list, or when whatever runs the hotkey is already making HTTP
+calls.
 
 ## Embedding
 
 The server is a plain `node:http` server behind one function:
 
 ```ts
-import { createServer } from './dist/serve/index.js'; // src/serve/index.js in-repo; not a package subpath export yet
+import { createServer } from './dist/serve/index.js'; // defined in src/serve/server.ts; not a package subpath export yet
 
 const api = createServer({ port: 0, quiet: true });
 const { url, token } = await api.start();
@@ -207,3 +172,9 @@ cap, 64 concurrent requests. Anyone who can read `serve.json` is already the
 same user and could edit the lexicon file directly; the API grants nothing
 beyond that. `/pair` hands the same token to a loopback browser tab whose
 `Host` names this server, which is the same boundary. See `SECURITY.md`.
+
+## See also
+
+- [EXTENSION.md](EXTENSION.md) — the browser extension, the API's main client, and how pairing works from its side.
+- [DAEMON.md](DAEMON.md) — the no-server way to correct the clipboard on a hotkey.
+- [MACOS-APP.md](MACOS-APP.md) — LexiconBar, which starts and supervises this server for you.

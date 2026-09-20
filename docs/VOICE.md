@@ -192,3 +192,9 @@ vocabulary Whisper gets wrong, since the lexicon cannot fix words it does not kn
   notice is printed; wire the paste keystroke in the launcher as shown above.
 - No streaming: nothing appears until you stop. For long dictation a real dictation
   app is a better fit.
+
+## See also
+
+- [DAEMON.md](DAEMON.md) — if you already have a dictation app and only want its output corrected.
+- [SUGGEST.md](SUGGEST.md) — what `lexicon suggest` mines from the history this command writes.
+- [EXPORTS.md](EXPORTS.md) — exporting into Wispr Flow or Superwhisper instead, which are nicer dictation apps.

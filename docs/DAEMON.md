@@ -1,5 +1,7 @@
 # Clipboard daemon
 
+For correcting text in anything that has no hook, no extension and no MCP server: if you can copy it, this can fix it. If you want the dictation itself as well, see [VOICE.md](VOICE.md); on macOS, [LexiconBar](MACOS-APP.md) wraps this same command in a menu bar hotkey.
+
 Dictate anywhere, copy the text, paste the corrected version. macOS, Linux and Windows.
 
 ```bash
@@ -70,3 +72,9 @@ sh -c 'lexicon daemon --once --quiet && xdotool key ctrl+v'   # X11; drop the xd
 ```
 
 Use the absolute path to `lexicon` (`which lexicon`) if the shortcut runner has a minimal PATH.
+
+## See also
+
+- [VOICE.md](VOICE.md) — recording and transcribing locally, rather than correcting what another tool produced.
+- [LOCAL-API.md](LOCAL-API.md) — when a script needs the structured replacement list instead of the clipboard.
+- [MACOS-APP.md](MACOS-APP.md) — the same actions as a macOS menu bar app.

@@ -9,7 +9,7 @@ Status is as of 2026-09-20. Verify before acting — this landscape moves.
 
 | # | Destination | Cost | Who drives it | Status |
 |---|---|---|---|---|
-| 1 | [Official MCP Registry](#1-official-mcp-registry) | free | agent | blocked on an npm release |
+| 1 | [Official MCP Registry](#1-official-mcp-registry) | free | agent | ready to publish |
 | 2 | [Glama](#2-glama) | free | agent | ready, file committed |
 | 3 | [Anthropic plugin directory](#3-anthropic-plugin-directory) | free | **Mason** | needs his sign-in |
 | 4 | [punkpeye/awesome-mcp-servers](#4-punkpeyeawesome-mcp-servers) | free | agent, Mason merges | line drafted, PR not opened |
@@ -42,7 +42,7 @@ it rather than crawling. Free, no review queue, no placement to buy.
   off GitHub — but it is more setup for no immediate gain, so we use the GitHub namespace.
 - *Package ownership.* The registry fetches
   `https://registry.npmjs.org/@ashlr%2flexicon/<version>` and requires an `mcpName` field
-  equal to the server name. This is the blocker below.
+  equal to the server name.
 
 **Validate before publishing:**
 
@@ -52,22 +52,18 @@ mcp-publisher validate server.json
 ```
 
 `mcp-publisher validate` only checks shape against the registry's schema; it does **not**
-check npm ownership, so it passes today while a real publish would fail.
-[`scripts/check-server-json.mjs`](../scripts/check-server-json.mjs) checks all three.
+check npm ownership, so it passes on its own while a real publish would fail.
+[`scripts/check-server-json.mjs`](../scripts/check-server-json.mjs) checks all three, and
+as of 0.5.1 it prints `ready to publish`.
 
-**Blocker.** `@ashlr/lexicon@0.5.0` was published to npm without an `mcpName` field, and npm
-versions are immutable — the field cannot be added to 0.5.0 after the fact. `"mcpName":
-"io.github.ashlrai/lexicon"` is now in [`package.json`](../package.json), so the fix is a new
-patch release:
+(This was blocked until 0.5.1. `@ashlr/lexicon@0.5.0` went to npm without an `mcpName`
+field and npm versions are immutable, so the field could only arrive in a new release.
+`server.json` carries the version too, which is why it is one of the files
+[RELEASING.md](RELEASING.md) bumps — do not hand-publish to clear a registry blocker, or
+the five version-carrying files drift apart and the plugin marketplace ships a version npm
+does not have.)
 
-```bash
-npm version patch                 # 0.5.0 -> 0.5.1
-# bump "version" and packages[0].version in server.json to match
-npm publish --access public
-npm run check:server-json         # must now print "ready to publish"
-```
-
-**Then publish:**
+**Publish:**
 
 ```bash
 brew install mcp-publisher        # already installed at 1.8.1
@@ -346,3 +342,9 @@ replace this one on someone's machine.
 5. Free-tier forms: mcpservers.org, then mcpmarket.com, then the mcp.so issue.
 6. Cline, once there is a 400x400 logo and a little traction.
 7. Re-check PulseMCP in a month.
+
+## See also
+
+- [RELEASING.md](RELEASING.md) — cutting the release that every destination here consumes. Publish through it, not by hand.
+- [LANDING.md](LANDING.md) — the site these listings point at.
+- [RESEARCH.md](RESEARCH.md) — who the listings are trying to reach.

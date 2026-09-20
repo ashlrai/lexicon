@@ -1,5 +1,7 @@
 # CLI reference
 
+Every command and flag, for when you know what you want to do and need the exact spelling. If you are still deciding, [QUICKSTART.md](QUICKSTART.md) and the task pages in [the docs index](README.md) are better starting points.
+
 Generated from `lexicon --help` (v0.5.1) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
@@ -382,7 +384,7 @@ Options:
   --pair         open http://127.0.0.1:41733/pair in your browser so the
                  extension pairs itself, and exit
   --install      install as a login service (launchd on macOS, systemd --user on
-                 Linux)
+                 Linux, a Scheduled Task on Windows)
   --uninstall    remove the login service
   -h, --help     display help for command
 ```
@@ -527,3 +529,9 @@ Commands:
                               aliases) are kept
   show [options] <name>       print the terms and aliases a pack contains
 ```
+
+## See also
+
+- [QUICKSTART.md](QUICKSTART.md) — the commands you actually need on day one, in order.
+- [LEXICON-FILE.md](LEXICON-FILE.md) — the file these commands read and write.
+- [MCP.md](MCP.md) — the same capabilities as tools your agent can call.
