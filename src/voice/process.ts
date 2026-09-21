@@ -207,3 +207,84 @@ export async function locateFfmpeg(opts: LocateOptions = {}): Promise<string | u
   }
   return locateTool(['ffmpeg'], opts);
 }
+
+/**
+ * Is a live pid really the recorder we spawned, and can an orphan be found?
+ *
+ * Two problems need the same answer. A pid is only unique while its process
+ * lives: once the recorder exits, the operating system is free to hand that
+ * number to anything, and `defaultIsAlive` then reports our recorder is running
+ * when it is really someone else's process about to receive our stop signal.
+ * And a start that dies between spawning ffmpeg and recording its pid leaves a
+ * recorder nothing can stop, because the number was never written down.
+ *
+ * Asking what a pid is actually running settles both. The check is one process
+ * listing on the stop path, which is nothing beside the transcription that
+ * follows it, and the recorder's own WAV filename carries a timestamp, so it
+ * identifies our capture without having to match a whole path across platforms.
+ */
+export type ProcessDescribe = (pid: number) => Promise<string | undefined>;
+export type ProcessList = () => Promise<ReadonlyArray<{ pid: number; command: string }>>;
+
+/** `ps`/`Get-CimInstance` invocations, kept here so both helpers agree. */
+function listCommand(platform: NodeJS.Platform): { cmd: string; args: string[] } {
+  if (platform === 'win32') {
+    return {
+      cmd: 'powershell',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        // The filter is a literal, so no caller-supplied path is ever
+        // interpolated into a shell; the matching happens in JavaScript.
+        "Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }",
+      ],
+    };
+  }
+  return { cmd: 'ps', args: ['-A', '-o', 'pid=,command='] };
+}
+
+function parseProcessLines(stdout: string): Array<{ pid: number; command: string }> {
+  const out: Array<{ pid: number; command: string }> = [];
+  for (const line of stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    if (Number.isFinite(pid)) out.push({ pid, command: match[2].trim() });
+  }
+  return out;
+}
+
+/** Every running process, best effort. An empty list means "could not tell", never "none". */
+export function makeProcessList(exec: VoiceExec, platform: NodeJS.Platform): ProcessList {
+  return async () => {
+    const { cmd, args } = listCommand(platform);
+    try {
+      const res = await exec(cmd, args, { timeoutMs: 5000 });
+      if (res.code !== 0) return [];
+      return parseProcessLines(res.stdout);
+    } catch {
+      return [];
+    }
+  };
+}
+
+/** The command line behind one pid, or undefined when it cannot be read. */
+export function makeProcessDescribe(exec: VoiceExec, platform: NodeJS.Platform): ProcessDescribe {
+  return async (pid: number) => {
+    const win = platform === 'win32';
+    const cmd = win ? 'powershell' : 'ps';
+    // `pid` is a number we validated on the way in, so interpolating it is safe.
+    const args = win
+      ? ['-NoProfile', '-NonInteractive', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`]
+      : ['-p', String(pid), '-o', 'command='];
+    try {
+      const res = await exec(cmd, args, { timeoutMs: 5000 });
+      if (res.code !== 0) return undefined;
+      const text = res.stdout.trim();
+      return text.length > 0 ? text : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+}

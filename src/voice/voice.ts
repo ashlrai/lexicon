@@ -37,12 +37,14 @@ import {
   defaultExec,
   defaultIsAlive,
   defaultKill,
+  makeProcessDescribe,
+  makeProcessList,
   defaultSpawn,
   installHint,
   locateFfmpeg,
   locateWhisperCli,
 } from './process.js';
-import type { ChildHandle, VoiceExec, VoiceSpawn } from './process.js';
+import type { ChildHandle, ProcessDescribe, ProcessList, VoiceExec, VoiceSpawn } from './process.js';
 import {
   MAX_TOGGLE_SECONDS,
   captureSeconds,
@@ -60,6 +62,8 @@ import {
   stopRecorder,
   touchPrivateFile,
   writeState,
+  confirmRecorder,
+  findOrphanRecorder,
 } from './recorder.js';
 import type { RecordingState, WavCheck } from './recorder.js';
 import { MissingToolError, transcribeFile } from './transcribe.js';
@@ -106,6 +110,10 @@ export interface VoiceDeps {
   env?: NodeJS.ProcessEnv;
   isAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
+  /** What a pid is running, for telling our recorder from a recycled number. */
+  describeProcess?: ProcessDescribe;
+  /** The process table, for finding a recorder whose pid was never recorded. */
+  listProcesses?: ProcessList;
   sleep?: (ms: number) => Promise<void>;
   download?: Downloader;
   /** Resolves when the foreground recording should stop; the value says why. */
@@ -149,6 +157,8 @@ interface Resolved {
   spawn: VoiceSpawn;
   isAlive: (pid: number) => boolean;
   kill: (pid: number, signal: NodeJS.Signals) => void;
+  describeProcess: ProcessDescribe;
+  listProcesses: ProcessList;
   cwd: string;
   globalPath: string;
   tmpDir: string;
@@ -169,6 +179,8 @@ function resolve(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps): Resolved {
     spawn: deps.spawn ?? defaultSpawn,
     isAlive: deps.isAlive ?? defaultIsAlive,
     kill: deps.kill ?? defaultKill,
+    describeProcess: deps.describeProcess ?? makeProcessDescribe(deps.exec ?? defaultExec, deps.platform ?? process.platform),
+    listProcesses: deps.listProcesses ?? makeProcessList(deps.exec ?? defaultExec, deps.platform ?? process.platform),
     cwd,
     globalPath,
     tmpDir: deps.tmpDir ?? os.tmpdir(),
@@ -543,6 +555,16 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
   for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
     const state = await readState(r.globalPath);
     if (state && state.pid !== undefined && r.isAlive(state.pid)) {
+      // A pid is only unique while its process lives. Once the recorder exits,
+      // the system is free to hand that number to anything, and a stale state
+      // file would then send our stop signal to a stranger's process. Ask what
+      // the pid is actually running. Undefined means the question could not be
+      // answered, in which case assume it is ours, as this always used to.
+      const mine = await confirmRecorder(state.pid, state.wav, r.describeProcess);
+      if (mine === false) {
+        r.log(`pid ${state.pid} belongs to something else now; the recorder is gone`);
+        return recoverDeadRecorder(state as RecordingState & { pid: number }, opts, io, deps, r);
+      }
       return stopAndTranscribe(state as RecordingState & { pid: number }, opts, io, deps, r);
     }
     if (state && state.pid !== undefined) {
@@ -555,10 +577,18 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
     }
     if (state) {
       // A start that died between claiming the state file and recording a pid.
-      // Usually the WAV is the empty file the claim created, but a start can
-      // also die after spawning ffmpeg, in which case an orphan recorder is
-      // still writing to it and we have no pid to stop. Either way the audio
-      // is not ours to delete: keep whatever is there and say so.
+      // It may have spawned ffmpeg first, leaving a recorder that keeps writing
+      // and that nothing could stop, because the number needed to signal it was
+      // never written down. The process table still knows, and the capture's
+      // own filename is in the command line that opened it.
+      const orphanPid = await findOrphanRecorder(state.wav, r.listProcesses);
+      if (orphanPid !== undefined) {
+        r.log(`a previous start left a recorder running (pid ${orphanPid}); stopping it and using its audio`);
+        return stopAndTranscribe({ ...state, pid: orphanPid }, opts, io, deps, r);
+      }
+      // Nothing is writing it. Usually the WAV is the empty file the claim
+      // created. Either way the audio is not ours to delete: keep what is
+      // there and say so.
       const orphan = await inspectWav(state.wav);
       r.log(`stale recording state (a start that never recorded its pid); starting a new recording`);
       if (orphan.bytes > 0) r.log(`the previous start left ${orphan.bytes} bytes at ${state.wav}; it is kept`);

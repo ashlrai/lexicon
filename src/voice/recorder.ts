@@ -18,7 +18,7 @@ import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { listAudioDevices, pickDevice } from './devices.js';
 import type { AudioDevice } from './devices.js';
-import type { ChildHandle, VoiceExec, VoiceSpawn } from './process.js';
+import type { ChildHandle, ProcessDescribe, ProcessList, VoiceExec, VoiceSpawn } from './process.js';
 import { writeFileAtomic } from '../util/atomic.js';
 
 /** A forgotten `--toggle` must not fill the disk: ffmpeg stops on its own after this. */
@@ -515,4 +515,56 @@ export async function inspectWav(wav: string): Promise<WavCheck> {
 /** True when the capture is a WAV with audio in it. See `inspectWav` for why. */
 export async function wavHasAudio(wav: string): Promise<boolean> {
   return (await inspectWav(wav)).ok;
+}
+
+/**
+ * A recorder's WAV filename is `recording-<iso>.wav`, which is unique to the
+ * capture and appears in ffmpeg's own command line. Matching on the basename
+ * rather than the whole path avoids having to reconcile how each platform
+ * spells the same directory.
+ */
+export function recorderFingerprint(wav: string): string {
+  return path.basename(wav);
+}
+
+/** True when `command` is an ffmpeg writing this capture. */
+export function commandIsRecorder(command: string, wav: string): boolean {
+  const fingerprint = recorderFingerprint(wav);
+  if (fingerprint.length === 0 || !command.includes(fingerprint)) return false;
+  return /ffmpeg/i.test(command);
+}
+
+/**
+ * Is the live pid in the state file really our recorder?
+ *
+ * `isAlive` alone cannot tell: the operating system reuses a pid as soon as the
+ * process holding it exits, so a stale state file plus a recycled number sends
+ * our stop signal to a stranger's process. Undefined means the question could
+ * not be answered (no `ps`, a sandbox, a permission error), and the caller
+ * treats that as "assume it is ours", which is the behaviour this had before
+ * the check existed.
+ */
+export async function confirmRecorder(
+  pid: number,
+  wav: string,
+  describe: ProcessDescribe,
+): Promise<boolean | undefined> {
+  const command = await describe(pid);
+  if (command === undefined) return undefined;
+  return commandIsRecorder(command, wav);
+}
+
+/**
+ * Find a recorder that is writing `wav` but whose pid was never recorded.
+ *
+ * This is the start that died between spawning ffmpeg and writing the state
+ * file. The capture keeps growing and nothing can stop it, because the number
+ * needed to signal it was never written down. The process table still knows,
+ * and the WAV's own name is in the command line that opened it.
+ */
+export async function findOrphanRecorder(wav: string, list: ProcessList): Promise<number | undefined> {
+  for (const { pid, command } of await list()) {
+    if (commandIsRecorder(command, wav)) return pid;
+  }
+  return undefined;
 }

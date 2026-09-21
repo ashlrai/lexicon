@@ -14,7 +14,7 @@ import {
 import { HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
 import { expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
-import { installHint, locateWhisperCli } from '../src/voice/process.js';
+import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
 import {
   PROVISIONAL_TTL_MS,
@@ -31,6 +31,10 @@ import {
   voiceDir,
   wavHasAudio,
   writeState,
+  commandIsRecorder,
+  confirmRecorder,
+  findOrphanRecorder,
+  recorderFingerprint,
 } from '../src/voice/recorder.js';
 import { cleanTranscript, parseWhisperOutput, whisperArgs } from '../src/voice/transcribe.js';
 import {
@@ -1320,4 +1324,143 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E || !hasFfmpeg())('capture validatio
 
 beforeEach(() => {
   vi.restoreAllMocks();
+});
+
+/**
+ * Two ways the toggle used to lose track of its own recorder. Both are about
+ * the pid in the state file being the only handle we keep on a detached
+ * process, and a pid being a weaker handle than it looks.
+ */
+describe('identifying the recorder behind a pid', () => {
+  const WAV = '/tmp/lexicon/voice/recording-2026-09-19T11-00-00-000Z.wav';
+  const FFMPEG = `/opt/homebrew/bin/ffmpeg -f avfoundation -i :default -t 600 -ac 1 -y ${WAV}`;
+
+  it('matches our own recorder and nothing else', () => {
+    expect(recorderFingerprint(WAV)).toBe('recording-2026-09-19T11-00-00-000Z.wav');
+    expect(commandIsRecorder(FFMPEG, WAV)).toBe(true);
+    // Right file, wrong program: something else is reading our capture.
+    expect(commandIsRecorder(`/usr/bin/open ${WAV}`, WAV)).toBe(false);
+    // Right program, wrong file: another recording entirely.
+    expect(commandIsRecorder('/opt/homebrew/bin/ffmpeg -i other.wav', WAV)).toBe(false);
+    expect(commandIsRecorder('', WAV)).toBe(false);
+  });
+
+  it('reads a command line out of ps and out of PowerShell', async () => {
+    const posix = makeProcessDescribe(async () => ({ code: 0, stdout: `${FFMPEG}\n`, stderr: '' }), 'darwin');
+    expect(await posix(4242)).toBe(FFMPEG);
+    const win = makeProcessDescribe(async () => ({ code: 0, stdout: `${FFMPEG}\r\n`, stderr: '' }), 'win32');
+    expect(await win(4242)).toBe(FFMPEG);
+    // A pid that is gone, and a ps that is not there at all.
+    expect(await makeProcessDescribe(async () => ({ code: 1, stdout: '', stderr: '' }), 'darwin')(1)).toBeUndefined();
+    expect(
+      await makeProcessDescribe(() => Promise.reject(new Error('ENOENT')), 'darwin')(1),
+    ).toBeUndefined();
+  });
+
+  it('parses a process table, and reports an unreadable one as empty rather than as none', async () => {
+    const list = makeProcessList(
+      async () => ({ code: 0, stdout: `  501 /bin/zsh\n 4242 ${FFMPEG}\nrubbish\n`, stderr: '' }),
+      'darwin',
+    );
+    expect(await list()).toEqual([
+      { pid: 501, command: '/bin/zsh' },
+      { pid: 4242, command: FFMPEG },
+    ]);
+    expect(await makeProcessList(() => Promise.reject(new Error('nope')), 'darwin')()).toEqual([]);
+  });
+
+  it('answers undefined when it cannot tell, so the caller keeps the old behaviour', async () => {
+    expect(await confirmRecorder(1, WAV, async () => undefined)).toBeUndefined();
+    expect(await confirmRecorder(1, WAV, async () => FFMPEG)).toBe(true);
+    expect(await confirmRecorder(1, WAV, async () => '/usr/sbin/cupsd')).toBe(false);
+  });
+
+  it('finds an orphaned recorder by the capture it is writing', async () => {
+    const list = async () => [
+      { pid: 501, command: '/bin/zsh' },
+      { pid: 7777, command: FFMPEG },
+    ];
+    expect(await findOrphanRecorder(WAV, list)).toBe(7777);
+    expect(await findOrphanRecorder('/tmp/other.wav', list)).toBeUndefined();
+    expect(await findOrphanRecorder(WAV, async () => [])).toBeUndefined();
+  });
+});
+
+describe('lexicon voice --toggle, when the pid is not what it seems', () => {
+  /**
+   * Fails against the old code, which trusted `isAlive` alone: it would have
+   * sent SIGINT to pid 99999, a process that has nothing to do with us.
+   */
+  it('does not signal a recycled pid that now belongs to something else', async () => {
+    const h = await harness();
+    const wav = await deadRecorderState(h, wavBytes({ audioBytes: 32_000, finalized: true }));
+    // The number is live again, running someone else's process.
+    h.alive.add(99999);
+    h.deps.describeProcess = async () => '/usr/sbin/cupsd';
+
+    h.opts.quiet = false;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+
+    expect(code).toBe(EXIT_OK);
+    expect(h.kills).toEqual([]);
+    expect(h.err.join('')).toContain('belongs to something else now');
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(await readState(h.globalPath)).toBeUndefined();
+    void wav;
+  });
+
+  it('still stops a pid it cannot ask about, which is how this behaved before', async () => {
+    const h = await harness();
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    h.out.length = 0;
+    h.deps.describeProcess = async () => undefined;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.kills).toEqual([{ pid: 4242, signal: 'SIGINT' }]);
+  });
+
+  /**
+   * Fails against the old code, which cleared the state, left the orphan
+   * running until its own `-t 600` expired, and started a second recorder
+   * competing for the microphone.
+   */
+  it('finds and stops a recorder whose pid was never written down', async () => {
+    const h = await harness();
+    const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
+    await fs.mkdir(path.dirname(wav), { recursive: true });
+    await fs.writeFile(wav, wavBytes({ audioBytes: 64_000, finalized: false }));
+    // Provisional: claimed, spawned, then the start died before writing the pid.
+    await fs.writeFile(
+      stateFilePath(h.globalPath),
+      JSON.stringify({ wav, startedAt: '2026-09-19T11:00:00.000Z' }),
+    );
+    h.alive.add(7777);
+    h.deps.listProcesses = async () => [{ pid: 7777, command: `/fake/bin/ffmpeg -i :default -y ${wav}` }];
+
+    h.opts.quiet = false;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+
+    expect(code).toBe(EXIT_OK);
+    expect(h.err.join('')).toContain('left a recorder running (pid 7777)');
+    expect(h.kills).toEqual([{ pid: 7777, signal: 'SIGINT' }]);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(h.spawnCalls).toHaveLength(0);
+    expect(await readState(h.globalPath)).toBeUndefined();
+  });
+
+  it('starts a new recording when the dead start left no recorder behind', async () => {
+    const h = await harness();
+    const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
+    await fs.mkdir(path.dirname(wav), { recursive: true });
+    await fs.writeFile(wav, '');
+    await fs.writeFile(
+      stateFilePath(h.globalPath),
+      JSON.stringify({ wav, startedAt: '2026-09-19T11:00:00.000Z' }),
+    );
+    h.deps.listProcesses = async () => [];
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+    expect(h.spawnCalls).toHaveLength(1);
+  });
 });

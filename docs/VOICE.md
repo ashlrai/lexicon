@@ -124,7 +124,18 @@ here has measured it, because dshow does not exist off Windows.
 
 A forgotten recording stops itself after 10 minutes (`-t 600`). **That is a finished
 recording, not a mess to clear up**: the next press finds a pid that is gone, looks at
-the WAV, and transcribes it like any other. The same goes for a recorder that crashed
+the WAV, and transcribes it like any other.
+
+Two things about that pid are worth knowing, because a pid is a weaker handle than it
+looks. It is unique only while its process lives, so a stale state file plus a number the
+system has since handed to something else would send the stop signal to a stranger. Before
+signalling, the toggle asks what the pid is actually running and expects an ffmpeg writing
+this capture; anything else is treated as a recorder that is gone. And if a start spawned
+ffmpeg but died before writing the pid down, the recorder is found in the process table by
+the capture it is writing, stopped, and its audio transcribed, rather than left running to
+the end of its ten minutes while a second recorder competes for the microphone. Where the
+process table cannot be read at all, both checks fall back to trusting the pid, which is
+what this did before they existed. The same goes for a recorder that crashed
 partway, whose header ffmpeg never finalized. A recorder that left nothing usable (no
 microphone permission, so ffmpeg never opened its output) is reported with ffmpeg's
 own last lines instead of silently starting another doomed recording, and the command
