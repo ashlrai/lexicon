@@ -1,6 +1,5 @@
 using System.Drawing;
 using LexiconBar.Interop;
-using Windows.Win32.UI.Input.KeyboardAndMouse;
 
 namespace LexiconBar.FixEverywhere;
 
@@ -105,6 +104,14 @@ internal sealed class FixEngine
                     ? Refuse(field, why)
                     : new BurstDetector(field.ReadValue(ReadLimit) ?? string.Empty, config.Detector);
             }
+
+            // Off means the watcher reads nothing at all, not that it reads
+            // everything and this class declines to act on it. Last, and on
+            // this thread rather than posted, so that by the time it runs the
+            // config above is the new one and the switch cannot be overtaken by
+            // work queued behind it. Turning it back on re-resolves focus,
+            // which is what rebuilds the detector.
+            _watcher.SetReading(config.Enabled);
         });
     }
 
@@ -135,8 +142,9 @@ internal sealed class FixEngine
     /// settings change the engine may hold a list the watcher has not got yet.
     /// Refusing here too means the newer of the two always wins.
     ///
-    /// The same check runs once more in <see cref="Handle"/>, immediately before
-    /// anything is sent to the local API.
+    /// The same check runs again in <see cref="Settle"/>, before the caret read
+    /// that would pull text across, and once more in <see cref="Handle"/>,
+    /// immediately before anything is sent to the local API.
     /// </summary>
     private BurstDetector? MakeDetector(UiaField field, string value) =>
         Refusal(field) is string why ? Refuse(field, why) : new BurstDetector(value, _config.Detector);
@@ -176,10 +184,26 @@ internal sealed class FixEngine
     {
         if (!_config.Enabled || _detector is not BurstDetector detector || _field is not UiaField field) return;
 
+        // The gate, before the read, because the next line is a read. CaretEnd
+        // measures the document in front of the caret, which means pulling that
+        // text across the process boundary; a refusal that arrived while this
+        // timer was armed has to be honoured here and not two calls later in
+        // Handle. Today the watcher drops a newly refused field before this
+        // timer can fire, so this is not known to be reachable — but the
+        // ordering is what SECURITY.md promises, and a promise that holds only
+        // because of the queue discipline in another class is not one worth
+        // making.
+        if (Refusal(field) is string refused)
+        {
+            Log.Info($"skip in {field.ProcessName}: {refused}");
+            _detector = null;
+            return;
+        }
+
         // Where the caret is now tells the detector which of several textually
         // identical windows actually arrived. Without it, dictation in front of
         // text that starts the same way is located several units late.
-        int? caretEnd = field.CaretEnd();
+        int? caretEnd = field.CaretEnd(ReadLimit);
 
         switch (detector.Settle(_thread.Now, caretEnd))
         {
@@ -213,7 +237,7 @@ internal sealed class FixEngine
 
     private void Handle(Burst burst, UiaField field)
     {
-        // The last of the three checks, and the one that matters most: this is
+        // The last of the four checks, and the one that matters most: this is
         // the call that would put the text on the wire. Nothing about the burst
         // is logged or sent when it refuses.
         if (Refusal(field) is string why)
@@ -279,10 +303,10 @@ internal sealed class FixEngine
             return;
         }
 
-        (string? strategy, string detail) = Write(plan, field, before: current);
-        if (strategy is null)
+        WriteOutcome outcome = Write(plan, field, before: current);
+        if (outcome.Strategy is not string strategy)
         {
-            Report(new Event.Failed($"Could not write into {field.AppName}: {detail}"));
+            ReportWriteFailure(field, outcome);
             return;
         }
 
@@ -326,7 +350,9 @@ internal sealed class FixEngine
     /// <item><b>Backspace and retype.</b> Only when the burst is the tail of
     ///   the field and the caret is sitting at the end of it. Anything less
     ///   exact and a mistimed backspace eats the user's own text, so this
-    ///   refuses rather than guesses.</item>
+    ///   refuses rather than guesses. The backspaces and the replacement go in
+    ///   one <c>SendInput</c> call, because in two the deletion can succeed and
+    ///   the retype fail.</item>
     /// </list>
     ///
     /// <paramref name="before"/> is the field value the plan was made from;
@@ -337,21 +363,42 @@ internal sealed class FixEngine
     /// selection without changing a character of it, so the keystroke path also
     /// re-reads the <i>selection</i> immediately before typing.
     ///
+    /// Only strategy 1 and strategy 3 can half-finish, and only through
+    /// <c>SendInput</c>. Both are now a single call each, capped at
+    /// <c>Keyboard.MaxKeyEvents</c>, and both report how much of that call
+    /// landed. Anything short of all of it is turned into a
+    /// <see cref="PartialWrite"/>, checked against the field, repaired by the
+    /// whole-value write where that is available and recorded in the undo
+    /// ledger where it is not. What must never happen again is the old
+    /// behaviour: half a replacement in the field, the user's original span
+    /// gone, an undo that was never recorded and a message saying the write
+    /// failed.
+    ///
     /// UNVERIFIED: this ladder has never been run against a real provider. The
     /// ordering is the reasoned counterpart of the macOS one, not a measured one.
     /// </summary>
-    private (string? Strategy, string Detail) Write(RewritePlan plan, UiaField field, string before)
+    private WriteOutcome Write(RewritePlan plan, UiaField field, string before)
     {
         List<string> notes = new();
 
+        // Set as soon as our own keystrokes are known to have half-landed. From
+        // that moment the field no longer holds `before`, and every guard below
+        // that compares against `before` has to compare against this instead:
+        // refusing to touch a field we ourselves left half-written is the one
+        // case where doing nothing is the worse answer.
+        PartialWrite? halfWritten = null;
+
         if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
         {
-            return (null, "field changed before the write");
+            return new WriteOutcome(null, "field changed before the write");
         }
 
         // --- 1. select and type -------------------------------------------
-        bool selected = field.SelectSpan(plan.Span, plan.PreviousText, before.Length);
-        notes.Add(selected ? "span selected" : "span not selectable");
+        bool fits = Keyboard.Fits(plan.NewText.Length);
+        bool selected = fits && field.SelectSpan(plan.Span, plan.PreviousText, before.Length);
+        notes.Add(fits
+            ? selected ? "span selected" : "span not selectable"
+            : $"replacement is {plan.NewText.Length} characters, too long for one uninterruptible write");
 
         if (selected)
         {
@@ -359,7 +406,7 @@ internal sealed class FixEngine
             // the plan was computed from before typing over it.
             if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
             {
-                return (null, $"field changed while selecting ({string.Join(", ", notes)})");
+                return new WriteOutcome(null, $"field changed while selecting ({string.Join(", ", notes)})");
             }
 
             if (!field.IsForeground())
@@ -372,7 +419,7 @@ internal sealed class FixEngine
                 // synthesized Return in a chat composer sends the message.
                 notes.Add("replacement contains a newline, keystrokes skipped");
             }
-            else if (!field.SelectionMatches(plan.Span, plan.PreviousText))
+            else if (!field.SelectionMatches(plan.Span, plan.PreviousText, ReadLimit))
             {
                 // The whole-text comparison above cannot see this. Home, End,
                 // an arrow key or a click elsewhere in the same field moves the
@@ -383,31 +430,65 @@ internal sealed class FixEngine
                 // check — takes round trips the user can type into.
                 notes.Add("selection moved after it was made, keystrokes skipped");
             }
-            else if (Keyboard.Type(plan.NewText))
-            {
-                if (field.Verify(plan.SplicedFullText, 0.6, ReadLimit))
-                {
-                    return ("keystrokes", string.Join(", ", notes));
-                }
-
-                notes.Add("keystrokes not reflected");
-                if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
-                {
-                    // Something landed but not what was planned: stop rather
-                    // than write again on top of a field we no longer understand.
-                    return (null, $"typing changed the field to something else; left alone ({string.Join(", ", notes)})");
-                }
-            }
             else
             {
-                notes.Add("SendInput refused (elevated window?)");
+                int typed = Keyboard.Type(plan.NewText);
+                if (typed == plan.NewText.Length)
+                {
+                    if (field.Verify(plan.SplicedFullText, 0.6, ReadLimit))
+                    {
+                        return new WriteOutcome("keystrokes", string.Join(", ", notes));
+                    }
+
+                    notes.Add("keystrokes not reflected");
+                    if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
+                    {
+                        // Something landed but not what was planned: stop rather
+                        // than write again on top of a field we no longer understand.
+                        return new WriteOutcome(
+                            null, $"typing changed the field to something else; left alone ({string.Join(", ", notes)})");
+                    }
+                }
+                else
+                {
+                    // SendInput accepted only part of the call. Work out what
+                    // the field must hold, confirm it actually holds that, and
+                    // carry it down the ladder: the value write below is the
+                    // repair, and if there is no value write the caller still
+                    // gets an undo entry that puts the user's own text back.
+                    string now = field.ReadValue(ReadLimit) ?? string.Empty;
+                    if (now == before)
+                    {
+                        notes.Add(typed == 0
+                            ? "SendInput refused (elevated window?)"
+                            : $"SendInput took {typed} of {plan.NewText.Length} characters and the field is unchanged");
+                    }
+                    else if (PartialWrite.OverSelection(plan, before, typed) is PartialWrite landed
+                             && landed.FieldText == now)
+                    {
+                        halfWritten = landed;
+                        notes.Add($"only {typed} of {plan.NewText.Length} characters landed; repairing");
+                    }
+                    else
+                    {
+                        return new WriteOutcome(
+                            null,
+                            "typing landed somewhere this cannot account for; left alone "
+                                + $"({string.Join(", ", notes)})");
+                    }
+                }
             }
         }
 
         // --- 2. whole-value write ------------------------------------------
-        if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
+        // Also the repair for a keystroke write that half-landed: SetValue
+        // replaces the whole value, so it does not care what state the field is
+        // in, and the "is the field still what the plan was made from?" guard
+        // would otherwise refuse the one case that most needs repairing.
+        string expected = halfWritten?.FieldText ?? before;
+        if ((field.ReadValue(ReadLimit) ?? string.Empty) != expected)
         {
-            return (null, $"field changed ({string.Join(", ", notes)})");
+            return new WriteOutcome(null, $"field changed ({string.Join(", ", notes)})", halfWritten);
         }
 
         if (field.HasWritableValuePattern())
@@ -415,13 +496,16 @@ internal sealed class FixEngine
             if (field.SetWholeValue(plan.SplicedFullText)
                 && field.Verify(plan.SplicedFullText, 0.3, ReadLimit))
             {
-                return ("value", string.Join(", ", notes));
+                return new WriteOutcome("value", string.Join(", ", notes));
             }
 
             notes.Add("value write not reflected");
-            if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
+            if ((field.ReadValue(ReadLimit) ?? string.Empty) != expected)
             {
-                return (null, $"the value write changed the field to something else; left alone ({string.Join(", ", notes)})");
+                return new WriteOutcome(
+                    null,
+                    $"the value write changed the field to something else; left alone ({string.Join(", ", notes)})",
+                    halfWritten);
             }
         }
         else
@@ -434,40 +518,150 @@ internal sealed class FixEngine
         // destroys text without first proving the app agrees where that text
         // is, so it runs only when the burst is unambiguously the tail of the
         // field and the caret is already sitting behind it.
+        if (halfWritten is not null)
+        {
+            // Every offset this path relies on was measured against `before`,
+            // and the field no longer holds `before`. Stop here and hand the
+            // recovery up rather than backspace over a field we half-wrote.
+            notes.Add("backspace path skipped: the field already holds part of the correction");
+            return new WriteOutcome(null, string.Join(", ", notes), halfWritten);
+        }
+
+        int events = plan.PreviousText.Length + plan.NewText.Length;
         bool atEnd = plan.Span.End == before.Length;
-        int? caret = field.CaretEnd();
-        if (atEnd && caret == before.Length && field.IsForeground()
+        int? caret = field.CaretEnd(ReadLimit);
+        if (atEnd && caret == before.Length && Keyboard.Fits(events) && field.IsForeground()
             && !TextDiff.ContainsNewline(plan.NewText)
             && plan.PreviousText.Length > 0)
         {
-            if (Keyboard.Press(VIRTUAL_KEY.VK_BACK, plan.PreviousText.Length)
-                && Keyboard.Type(plan.NewText)
-                && field.Verify(plan.SplicedFullText, 0.6, ReadLimit))
+            // Backspaces and replacement in one call. Two calls left a gap in
+            // which the deletion had happened and the retype had not, with
+            // nothing recorded that could put the deleted text back.
+            int delivered = Keyboard.ReplaceTail(plan.PreviousText.Length, plan.NewText);
+            if (delivered == events)
             {
-                return ("backspace", string.Join(", ", notes));
-            }
+                if (field.Verify(plan.SplicedFullText, 0.6, ReadLimit))
+                {
+                    return new WriteOutcome("backspace", string.Join(", ", notes));
+                }
 
-            notes.Add("backspace rewrite not reflected");
+                notes.Add("backspace rewrite not reflected");
+            }
+            else
+            {
+                notes.Add($"backspace rewrite delivered {delivered} of {events} key events");
+                string now = field.ReadValue(ReadLimit) ?? string.Empty;
+                if (PartialWrite.OverTail(plan, before, delivered) is PartialWrite landed
+                    && landed.FieldText == now)
+                {
+                    return new WriteOutcome(null, string.Join(", ", notes), landed);
+                }
+            }
+        }
+        else if (!Keyboard.Fits(events))
+        {
+            notes.Add($"backspace path would need {events} key events, too many for one uninterruptible write");
         }
         else
         {
             notes.Add("backspace path not applicable");
         }
 
-        return (null, string.Join(", ", notes));
+        return new WriteOutcome(null, string.Join(", ", notes));
+    }
+
+    /// <summary>What a write managed, and what it left behind if it did not manage all of it.</summary>
+    /// <param name="Strategy">Non-null exactly when the field now holds <c>plan.SplicedFullText</c>.</param>
+    /// <param name="Partial">
+    /// Set when synthesized keystrokes landed only in part, in which case the
+    /// field holds <see cref="PartialWrite.FieldText"/> and the caller must
+    /// record the matching ledger entry before it tells the user anything.
+    /// </param>
+    private sealed record WriteOutcome(string? Strategy, string Detail, PartialWrite? Partial = null);
+
+    /// <summary>
+    /// Makes a half-landed keystroke write undoable, and says whether it could.
+    ///
+    /// The field is re-read first. <see cref="PartialWrite"/> is arithmetic
+    /// about what must have happened, not an observation, and an entry that
+    /// does not match the field would offer an undo that splices at the wrong
+    /// offset — which is the same class of damage this whole change exists to
+    /// stop. When they disagree nothing is recorded and the caller says so.
+    /// </summary>
+    private bool RecordPartial(PartialWrite? halfWritten, UiaField field)
+    {
+        if (halfWritten is null) return false;
+        if ((field.ReadValue(ReadLimit) ?? string.Empty) != halfWritten.FieldText) return false;
+
+        _undo.Record(halfWritten.Entry(field.Key));
+        _detector?.MarkStable(halfWritten.FieldText);
+        _watcher.NoteValue(halfWritten.FieldText, field);
+        PublishUndoAvailability(halfWritten.FieldText, force: true);
+        return true;
+    }
+
+    /// <summary>
+    /// Tells the user what actually happened. "Could not write" is only true
+    /// when nothing was written; a half-written field gets a sentence that says
+    /// so and points at the undo that was just recorded for it.
+    /// </summary>
+    private void ReportWriteFailure(UiaField field, WriteOutcome outcome)
+    {
+        if (outcome.Partial is null)
+        {
+            Report(new Event.Failed($"Could not write into {field.AppName}: {outcome.Detail}"));
+            return;
+        }
+
+        Report(new Event.Failed(RecordPartial(outcome.Partial, field)
+            ? $"Only part of the correction went into {field.AppName}: {outcome.Detail}. "
+                + "Undo (Ctrl+Alt+Z) puts your text back."
+            : $"Part of the correction went into {field.AppName} and the field then changed, "
+                + $"so it cannot be put back from here: {outcome.Detail}"));
     }
 
     private void PerformUndo()
     {
-        if (_field is not UiaField field || _detector is not BurstDetector detector)
+        if (_field is not UiaField field)
         {
             Report(new Event.Skipped("Nothing to undo: no text field focused."));
             return;
         }
 
-        string current = field.ReadValue(ReadLimit) ?? string.Empty;
-        UndoLedger.Entry? entry = _undo.Take(field.Key, current);
-        if (entry is null || entry.FieldTextBefore is not string restored)
+        // Undo reads the field and then writes into it, so it is a read like
+        // any other and asks the gate first. It used to go straight to
+        // ReadValue, which made Ctrl+Alt+Z the one path where excluding an app
+        // while it still held focus stopped neither the read nor the write,
+        // while every other path in this class refused it. macOS had the same
+        // hole in the same method.
+        if (!_config.Enabled)
+        {
+            Report(new Event.Skipped("Fix everywhere is off."));
+            return;
+        }
+
+        FieldRead read = FieldGate.Read(field, _config.Exclusions, ReadLimit);
+        if (read.Refusal is string refusal)
+        {
+            Log.Info($"skip undo in {field.ProcessName}: {refusal}");
+
+            // The entry holds that field's text, so it goes with the refusal.
+            _undo.Clear();
+            Report(new Event.Skipped($"Not undoing in {field.AppName}: {refusal}"));
+            PublishUndoAvailability(string.Empty, force: true);
+            return;
+        }
+
+        if (_detector is not BurstDetector detector)
+        {
+            Report(new Event.Skipped("Nothing to undo: no text field focused."));
+            return;
+        }
+
+        string current = read.Value ?? string.Empty;
+        if (!_undo.CanUndo(field.Key, current)
+            || _undo.Last is not UndoLedger.Entry entry
+            || entry.FieldTextBefore is not string restored)
         {
             Report(new Event.Skipped($"Nothing to undo in {field.AppName}."));
             PublishUndoAvailability(current, force: true);
@@ -480,16 +674,32 @@ internal sealed class FixEngine
             entry.PreviousText,
             restored);
 
-        (string? strategy, string detail) = Write(plan, field, before: current);
-        if (strategy is not null)
+        WriteOutcome outcome = Write(plan, field, before: current);
+        if (outcome.Strategy is not null)
         {
+            // Consumed only now. The entry used to be taken before the write,
+            // so an undo that did nothing threw it away and left the user with
+            // a correction they could no longer reverse.
+            _undo.Clear();
             detector.MarkStable(restored);
             _watcher.NoteValue(restored, field);
             Report(new Event.Undone(field.AppName));
         }
+        else if (RecordPartial(outcome.Partial, field))
+        {
+            // The undo itself half-landed. The ledger now describes that state
+            // instead of the one before it, so undoing again returns the field
+            // to the corrected text rather than leaving it somewhere nothing
+            // has a record of.
+            Report(new Event.Failed(
+                $"Undo only partly landed in {field.AppName}: {outcome.Detail}. "
+                    + "Undo again to put it back the way it was."));
+        }
         else
         {
-            Report(new Event.Failed($"Undo failed in {field.AppName}: {detail}"));
+            // The original entry is untouched, so the offer stands and the user
+            // can try again.
+            Report(new Event.Failed($"Undo failed in {field.AppName}: {outcome.Detail}"));
         }
 
         PublishUndoAvailability(field.ReadValue(ReadLimit) ?? string.Empty, force: true);

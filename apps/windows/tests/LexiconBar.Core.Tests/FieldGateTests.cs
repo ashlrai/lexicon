@@ -190,4 +190,28 @@ public class FieldGateTests
     [Fact]
     public void RefuseAdmitsOrdinaryWriting() =>
         Assert.Null(FieldGate.Refuse(Defaults, "winword", new FieldHints(Title: "Document", WindowTitle: "Shipping notes.docx")));
+
+    /// <summary>
+    /// <see cref="FieldGate.Read"/> is not the only read in the app. The engine
+    /// also asks the field where the caret is, which on Windows means measuring
+    /// the document in front of it, and that measurement used to happen before
+    /// the refusal rather than after. Putting it the right way round depends on
+    /// the property pinned here: a refusal costs nothing but metadata, so it
+    /// can be placed in front of <i>any</i> read, not only the value one.
+    ///
+    /// The ordering itself lives in <c>FixEngine.Settle</c>, in the UI
+    /// Automation half, which no headless runner can execute. This is the part
+    /// of it that can be held to account here.
+    /// </summary>
+    [Fact]
+    public void ARefusalCostsNoReadEitherWay()
+    {
+        RecordingField vault = new("1Password", new FieldHints(Title: "Notes"));
+        Assert.NotNull(FieldGate.Refuse(Defaults, vault.ProcessName, vault.Hints));
+        Assert.Equal(0, vault.Reads);
+
+        RecordingField ordinary = new("notepad", new FieldHints(Title: "Document"));
+        Assert.Null(FieldGate.Refuse(Defaults, ordinary.ProcessName, ordinary.Hints));
+        Assert.Equal(0, ordinary.Reads);
+    }
 }

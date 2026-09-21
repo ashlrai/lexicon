@@ -8,7 +8,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 
 > ## Read this first
 >
-> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 158 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
+> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 180 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
 >
 > Before trusting it with anything you care about, run [the manual test script](#manual-test-script). It takes about ten minutes.
 
@@ -82,8 +82,8 @@ Settings live in `%APPDATA%\LexiconBar\settings.json`; the log is `%APPDATA%\Lex
 
 | Menu item | What it does |
 | --- | --- |
-| **Fix everywhere** | The main switch. On by default. |
-| **Fix everywhere in `<app>`** | Per-app exclusion for whatever last had focus. Writes the executable name into the exclusion list. |
+| **Fix everywhere** | The main switch. On by default. Off, the watcher reads nothing at all, not merely nothing it will act on. |
+| **Fix everywhere in `<app>`** | Per-app exclusion for whatever last had focus. Ticked off, it writes the executable name into the exclusion list; ticked back on, it removes that exact entry and tells you when a wildcard rule still covers the app. |
 | **Fix clipboard now** (Ctrl+Alt+V) | Normalizes whatever is on the clipboard and puts the result back. |
 | **Watch clipboard** | Does that automatically whenever the clipboard changes. Off by default. |
 | **Last correction** | Submenu of the `original → canonical` pairs from the most recent fix. Clicking one copies the canonical spelling. |
@@ -118,9 +118,17 @@ This is where Windows and macOS genuinely diverge, and it is the least certain p
 
 1. **Select and type.** Build a `TextPatternRange` over the burst span, read it back and confirm the provider means the same span we do, confirm the app is still in the foreground, re-read the selection and confirm it is *still* exactly that span, then send the replacement as Unicode key events (`SendInput` with `KEYEVENTF_UNICODE`, no virtual key, so it is layout-independent). This goes through the app's own editing pipeline, so its undo stack works.
 2. **Whole-value write.** `ValuePattern.SetValue` with the spliced full text. Works in Win32 edits, WinForms and WPF text boxes, needs no foreground window, but it loses the app's undo stack and moves the caret to the end, which is why it is second, not first.
-3. **Backspace and retype.** Deliberately the narrowest path in the app: it only runs when the burst is unambiguously the tail of the field *and* the caret is sitting at the end of it *and* the app is in the foreground. It is the only path that destroys text without first proving the app agrees where that text is, so it refuses rather than guesses.
+3. **Backspace and retype.** Deliberately the narrowest path in the app: it only runs when the burst is unambiguously the tail of the field *and* the caret is sitting at the end of it *and* the app is in the foreground. It is the only path that destroys text without first proving the app agrees where that text is, so it refuses rather than guesses. The backspaces and the replacement go out in one `SendInput` call, because in two the deletion can land and the retype fail.
 
-Each step re-reads the field immediately before doing anything destructive, and verifies afterwards by re-reading again. A step that half-worked stops the ladder instead of writing again on top of a field we no longer understand.
+Each step re-reads the field immediately before doing anything destructive, and verifies afterwards by re-reading again.
+
+**A write that half-lands is recovered, not reported as a failure.** Only steps 1 and 3 can half-finish, and only through `SendInput`, which returns the number of events it accepted and may accept fewer than it was handed. Three things keep that from becoming corrupted text:
+
+- **One call per write, never a loop.** `SendInput`'s guarantee that nothing interleaves is a guarantee about a single call. This used to send 400 INPUT records at a time and walk a longer array in several calls, so any replacement over 200 characters was several calls with gaps between them, and a later one failing left the earlier ones in the field. There is now a cap (`Keyboard.MaxKeyEvents`, 1000 key events) and no loop: a replacement too long for one call is refused by the keystroke path and made through `ValuePattern.SetValue` instead, which replaces the whole value in one go and cannot half-finish.
+- **The leftover state is computed and checked.** `PartialWrite`, in the portable core so that it is tested, works out exactly what the field must hold when *n* of *m* key events landed, for both the select-and-type and the backspace shapes. The engine re-reads the field and proceeds only when the two agree; a field holding anything else is one it no longer understands, and it says so rather than guessing an offset to splice at.
+- **Repair first, undo second.** A half-landed keystroke write falls through to the whole-value write, which repairs it outright because that write does not care what state the field was in. Where there is no writable `ValuePattern`, the undo ledger gets an entry describing the half-written state before the user is told anything, so Ctrl+Alt+Z puts their own text back, and the message says "only part of the correction went in" rather than "could not write".
+
+An undo goes through the same ladder and is subject to the same rules, and its ledger entry is now consumed only once the write has succeeded. An undo that did nothing used to throw the entry away, leaving a correction that could no longer be reversed at all.
 
 Re-reading the whole field is necessary and not sufficient, which is why step 1 checks the selection separately. Selecting the span takes several round trips, and in the gap before the keystrokes go out the user can press Home, End or an arrow key, or click somewhere else in the same field: the selection moves or collapses, **every character stays exactly where it was**, and a whole-text comparison sees nothing wrong. The correction would then be typed at the caret instead of over the span. So the selection is read back immediately before `SendInput` and compared by position as well as by text — "add the item, add the item" has two textually identical halves — and the write falls through to the value path rather than typing into the wrong place. `SendInput`'s guarantee that nothing interleaves covers only the call itself, never the gap in front of it.
 
@@ -128,7 +136,13 @@ Re-reading the whole field is necessary and not sufficient, which is why step 1 
 
 Three independent guards, because each one on its own has a hole.
 
-**All three are decided before the field's text is read, not after.** UI Automation will tell you a field's automation id, its labels, its class name, the title of its window and which executable owns it without ever touching its contents, and that metadata is all three guards need. Only a field that passes all three is asked for its value; a refused one is never read at all, so its text is never in this process's memory, where a crash dump or an attached debugger could reach it. (This is enforced in `FieldGate`, which `FocusWatcher` consults before its first read and again on every poll, because the exclusion list can change while the app it now covers still has focus. The same checks run once more before anything is sent to the local API and before anything is written back, as defence in depth rather than as the guard itself.)
+**All three are decided before the field's text is read, not after.** UI Automation will tell you a field's automation id, its labels, its class name, the title of its window and which executable owns it without ever touching its contents, and that metadata is all three guards need. Only a field that passes all three is asked for its value; a refused one is never read at all, so its text is never in this process's memory, where a crash dump or an attached debugger could reach it. (This is enforced in `FieldGate`, which `FocusWatcher` consults before its first read and again on every poll, because the exclusion list can change while the app it now covers still has focus. The same checks run again in `FixEngine.Settle` before the caret is read, once more before anything is sent to the local API, and once more before anything is written back, as defence in depth rather than as the guard itself.)
+
+**The caret read is a read.** Asking UIA where the insertion point sits means cloning the document range and measuring the text in front of it, which pulls that text across the process boundary. `Settle` used to do that before its refusal check rather than after. The watcher drops a newly refused field before that timer can fire, so no case is known in which a refused field's text was actually read this way, but the ordering is what this page promises, and a promise that holds only because of the queue discipline in another class is not one worth making. The refusal now runs first, and the measurement takes the same `MaxFieldLength` cap as every other read instead of fetching the document in full.
+
+**Undo is a read too.** Ctrl+Alt+Z reads the field and then writes into it, and it used to go straight to `ReadValue`. That made it the one path where excluding an app while it still held focus stopped neither the read nor the write, in a field the user believed they had just put out of reach. It goes through the same gate as everything else now; a refusal drops the ledger entry with it, because that entry holds the field's text.
+
+**"Fix everywhere" off means nothing is read.** Turning the main switch off used to stop the corrections and leave the watcher reading and caching every focused field it was handed. It now stops the reads: no focus resolution, no event read, no poll, and whatever the last field held is dropped at once rather than at the next focus change. Which app is in front is still tracked, because that is metadata and the tray menu needs it. This matters because "turn it off" is the answer this page gives anyone who does not want their typing read at all, and that answer has to be true.
 
 **1. `IsPassword`.** UIA's own answer for a masked input. Cheap, so it is checked first, and a field that says yes is never even watched.
 
@@ -140,6 +154,10 @@ Three independent guards, because each one on its own has a hole.
 - **Password managers**, as vendor prefixes rather than exact names: `1password*`, `bitwarden*`, `dashlane*`, `lastpass*`, `keepass*`, `nordpass*`, `enpass*`, `proton pass*`, `keeper*`, `roboform*`, `strongbox*`, `zohovault*`, `safeincloud*`, `stickypassword*`, `psono*`, `pwsafe*`, `authy*`, `cryptomator*`, `veracrypt*`.
 
 Prefixes, because an exact list is wrong the moment a vendor renames an executable, and being wrong here means reading a vault field and POSTing it to an HTTP endpoint. **If your manager is not on the list, add it**: focus it and use "Fix everywhere in `<app>`", or edit the list in Preferences.
+
+Un-ticking "Fix everywhere in `<app>`" removes the *exact* entry for that executable and nothing else. It used to remove every rule that matched, wildcards included, so allowing one 1Password process deleted `1password*` and with it the cover for every other 1Password executable, silently and for good, since re-ticking only ever adds the exact name back. When a prefix rule still matches after the exact entry is gone, nothing is saved and the tray says which rule is holding the app, because deciding that a rule covering a whole password manager should come off is not something a checkbox should do on your behalf.
+
+**An empty list means "exclude nothing", and says so.** Clearing the box in Preferences is a legitimate choice and is saved as one, the same as on macOS. It is also the only setting in that window that can put dictation into a password manager, so it never passes quietly: the grey hint under the box is replaced by a warning naming what is no longer covered, and saving a list that was not already empty asks first. What survives an empty list is `IsPassword` and the label heuristic, neither of which is a name on any list. Neither is a substitute for it: a manager's notes field, its search box and its custom fields are not masked and are not labelled "password". **Restore defaults** puts the list back.
 
 **3. Fields whose labels suggest a secret.** The process list always lags reality, and `IsPassword` only protects the literal masked input; in any manager that is not on the list, the *ordinary* fields (an item's notes, a custom field, a TOTP seed box, a vault search field echoing a username) would otherwise be read and sent. So, independently of which app it is, a field is refused when its automation id, help text, name, localized control type, full description, class name, or the title of the window it sits in contains one of:
 
@@ -212,12 +230,14 @@ The token is read lazily and re-read after any failure, so restarting the server
 
 - `dotnet build -c Release` succeeds for the whole solution, warnings-as-errors, on macOS.
 - `dotnet publish -r win-x64 --self-contained` produces a single 72 MB `LexiconBar.exe` (`PE32+ executable (GUI) x86-64`), cross-compiled from macOS.
-- **158 unit tests pass**, on macOS, covering:
+- **180 unit tests pass**, on macOS, covering:
   - the burst detector, ported case for case from `BurstDetectorTests.swift`: typing never fires, streamed dictation coalesces, a paste fires at the settle delay, the run cap, hard refusals, UTF-16 maths with emoji, CRLF;
   - the splice and alignment maths, ported from `BurstAlignmentTests.swift`, covering the ambiguous-window regression, caret anchoring, stale snapshots, multi-replacement splices, newline refusal, the undo ledger;
   - the secret-field heuristic, including the whole-word cases ("shipping" vs "pin") and a pinned known-miss for pluralized all-caps acronyms;
-  - the read gate, through a fake field that counts the times anything asked for its value: an excluded app's field, a secret-looking field in an app nobody excluded, and a field whose app the user excludes mid-focus are each refused with that count still at zero;
-  - the exclusion list, bubble content and actions, bubble placement in Windows y-down coordinates including the flip and the clamps;
+  - the read gate, through a fake field that counts the times anything asked for its value: an excluded app's field, a secret-looking field in an app nobody excluded, and a field whose app the user excludes mid-focus are each refused with that count still at zero, and a refusal itself costs no read either way, which is what lets it be put in front of the caret read and the undo read as well as the value read;
+  - the write ladder's partial-write recovery: what the field holds when *n* of *m* key events landed, for both the select-and-type and the backspace shapes, and that undoing the recorded entry restores the user's own text at every point in between;
+  - the exclusion list, including that an emptied list excludes nothing and knows it, and that un-excluding one executable does not take a vendor wildcard with it;
+  - bubble content and actions, bubble placement in Windows y-down coordinates including the flip and the clamps;
   - `serve.json` path resolution, credential parsing, the `normalize` response parser, settings round-trip, CLI discovery.
 - The CsWin32-generated UIA interfaces compile against the code that calls them, which is the reason for choosing CsWin32 over hand-written `[ComImport]` declarations: the vtable layout comes from Microsoft's own Win32 metadata, not from memory. A method out of order in a 60-method interface is a silent ABI bug that a Mac cannot catch.
 
@@ -233,9 +253,9 @@ Nothing below has been executed. It compiles; that is all anyone can say.
 | Reading text | `FixEverywhere/UiaField.cs` | `GetText(limit + 1)` capping; the `ValuePattern` fallback; whether `IsTextPatternAvailable` is trustworthy per app. |
 | Caret offset | `FixEverywhere/UiaField.cs` `CaretEnd` | The clone-and-measure trick (`MoveEndpointByRange` then `GetText().Length`). **This is the highest-value unverified thing in the app.** Without a caret the detector refuses ambiguous bursts, so if it is wrong, dictation in front of similar text silently does nothing. |
 | Character units | `FixEverywhere/UiaField.cs` `SelectSpan` | That `TextUnit_Character` maps 1:1 to UTF-16 units in each provider. It is read back and compared before any write, so a mismatch should degrade to "not selectable" rather than corrupt, but that guard itself is untested. |
-| Writing | `FixEverywhere/FixEngine.cs` `Write` | The whole three-step ladder, its ordering, and every verification timeout in it (0.6 s / 0.3 s / 0.6 s). |
+| Writing | `FixEverywhere/FixEngine.cs` `Write` | The whole three-step ladder, its ordering, and every verification timeout in it (0.6 s / 0.3 s / 0.6 s). The partial-write recovery is reasoned, not run: the arithmetic it depends on is tested, but that a half-landed `SendInput` really leaves the field in that state is not. |
 | Selection re-check | `FixEverywhere/UiaField.cs` `SelectionMatches` | That `GetSelection` answers one range for an ordinary caret or selection, and that measuring its start offset agrees with the offsets `SelectSpan` selected by. If a provider disagrees, the keystroke path degrades to the whole-value write rather than typing in the wrong place — safe, but it would make step 1 useless in that app, so watch for "always writes via the value path". |
-| Synthesized input | `Interop/Keyboard.cs` | `SendInput` with `KEYEVENTF_UNICODE`; surrogate pairs as two events; the 400-event batch size; that a UIPI refusal shows up as "not reflected" rather than as a partial write. |
+| Synthesized input | `Interop/Keyboard.cs` | `SendInput` with `KEYEVENTF_UNICODE`; surrogate pairs as two events; that one call of up to 2,000 INPUT records is accepted whole; that a short return count means what the recovery path assumes it means. The *consequences* of a short count are tested (`PartialWriteTests`); the count itself is not. |
 | SAFEARRAY reads | `Interop/SafeArrays.cs` | Reading VT_I4 runtime ids and VT_R8 rectangles from `pvData`, and that `SafeArrayDestroy` frees them correctly. Pointer code, unrunnable here. |
 | BSTR lifetime | `Interop/SafeArrays.cs` `Bstr` | That every returned BSTR is freed exactly once and none is freed twice. A double free is a crash, not a leak. |
 | Bubble | `Ui/CorrectionBubbleForm.cs` | The no-activate behaviour (the three things that must agree); whether the buttons receive clicks; sizing and rounding; multi-monitor and mixed-DPI placement. |
@@ -259,7 +279,7 @@ In the order I would bet on:
 5. **Balloon tips and the drawn icon at 150% DPI.** Cosmetic, near-certain to need a tweak.
 6. **`Text_TextChanged` not firing in Electron.** Expected; the poll is the mitigation, and the symptom is a slower correction, not a wrong one.
 
-The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 158 tests cover and it is the same logic that has been running on macOS.
+The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 180 tests cover and it is the same logic that has been running on macOS.
 
 ## Manual test script
 
@@ -341,7 +361,7 @@ Requirements: the **.NET 8 SDK**. No Visual Studio, no Windows.
 ```bash
 cd apps/windows
 dotnet build -c Release                      # whole solution
-dotnet test  -c Release                      # the 158 portable tests
+dotnet test  -c Release                      # the 180 portable tests
 dotnet publish src/LexiconBar.App/LexiconBar.App.csproj \
   -c Release -r win-x64 --self-contained -o artifacts/win-x64
 ```
@@ -374,7 +394,7 @@ The split is load-bearing, not cosmetic: **every rule that can corrupt a user's 
 
 ### CI
 
-`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 158 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
+`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 180 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
 
 ## Troubleshooting
 

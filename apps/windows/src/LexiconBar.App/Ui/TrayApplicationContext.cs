@@ -192,17 +192,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ApplySettings()
     {
+        // The watcher first, and with its own copy of the list rather than a
+        // shared instance: AppExclusions is mutable, and the menu edits one
+        // while the UIA thread may be matching against the other. First because
+        // it is the half that reads, so a tightened list has to reach it before
+        // anything else acts on the change.
+        _watcher.Configure(_settings.PollMs, _settings.MaxFieldLength, new AppExclusions(_settings.Exclusions));
+
         _engine.Update(new FixEngine.Config
         {
             Enabled = _settings.FixEverywhere,
             Detector = _settings.DetectorConfig(),
             Exclusions = new AppExclusions(_settings.Exclusions),
         });
-
-        // The watcher gets its own copy of the list, not a shared instance:
-        // AppExclusions is mutable, and the menu edits one while the UIA thread
-        // may be matching against the other.
-        _watcher.Configure(_settings.PollMs, _settings.MaxFieldLength, new AppExclusions(_settings.Exclusions));
         _clipboardTimer.Enabled = _settings.WatchClipboard;
 
         try
@@ -274,7 +276,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
         AppExclusions exclusions = new(_settings.Exclusions);
         if (exclusions.IsExcluded(process))
         {
-            exclusions.Include(process);
+            // Include takes the exact entry off the list and nothing else, so a
+            // vendor wildcard can outlive it. When it does, the tick would go
+            // back the moment the menu reopened with no explanation, so nothing
+            // is saved and the surviving rule is named instead: the user has to
+            // decide in Preferences whether a rule covering a whole password
+            // manager should really come off.
+            if (exclusions.Include(process) is string rule)
+            {
+                Notify(
+                    "Still excluded",
+                    $"{AppExclusions.Normalize(process)} matches the exclusion rule "
+                        + $"\"{rule}\". Edit that rule in Preferences to allow it.",
+                    ToolTipIcon.Info);
+                RefreshDynamicItems();
+                return;
+            }
         }
         else
         {
@@ -283,6 +300,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _settings.Exclusions = exclusions.ProcessNames;
         ApplySettings();
+        RefreshDynamicItems();
     }
 
     // -------------------------------------------------------------- events

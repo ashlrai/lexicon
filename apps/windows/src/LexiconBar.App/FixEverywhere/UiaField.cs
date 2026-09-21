@@ -180,9 +180,13 @@ internal sealed class UiaField : IInspectableField
     ///
     /// Null when the provider exposes no selection (Chromium sometimes answers
     /// an empty array while the page is still laying out), in which case the
-    /// detector refuses an ambiguous insertion rather than guessing.
+    /// detector refuses an ambiguous insertion rather than guessing. Null too
+    /// when the caret sits further into the document than <paramref name="limit"/>:
+    /// this is a read like any other, so it takes the same cap, and an offset
+    /// measured from truncated text would be a wrong number rather than a
+    /// missing one.
     /// </summary>
-    internal int? CaretEnd()
+    internal int? CaretEnd(int limit)
     {
         try
         {
@@ -191,8 +195,11 @@ internal sealed class UiaField : IInspectableField
             if (selection is null || selection.Length < 1) return null;
 
             IUIAutomationTextRange caret = selection.GetElement(0);
-            int start = StartOffsetOf(text, caret);
-            int selected = (Bstr.Consume(caret.GetText(-1)) ?? string.Empty).Length;
+            if (StartOffsetOf(text, caret, limit) is not int start) return null;
+
+            int selected = (Bstr.Consume(caret.GetText(limit + 1)) ?? string.Empty).Length;
+            if (selected > limit) return null;
+
             return start + selected;
         }
         catch (Exception ex) when (IsProviderFailure(ex))
@@ -206,15 +213,22 @@ internal sealed class UiaField : IInspectableField
     /// document. A <c>TextPatternRange</c> carries no offsets, so the only way
     /// to ask is to clone the document range, drag its End back to this range's
     /// Start, and measure what is left in front.
+    ///
+    /// That measurement is a read of the user's text, so it is capped like
+    /// every other one. A probe that comes back at the cap was truncated and
+    /// its length is no longer the offset, so this answers null rather than a
+    /// number it cannot stand behind.
     /// </summary>
-    private static int StartOffsetOf(IUIAutomationTextPattern text, IUIAutomationTextRange range)
+    private static int? StartOffsetOf(IUIAutomationTextPattern text, IUIAutomationTextRange range, int limit)
     {
         IUIAutomationTextRange probe = text.DocumentRange.Clone();
         probe.MoveEndpointByRange(
             TextPatternRangeEndpoint.TextPatternRangeEndpoint_End,
             range,
             TextPatternRangeEndpoint.TextPatternRangeEndpoint_Start);
-        return (Bstr.Consume(probe.GetText(-1)) ?? string.Empty).Length;
+
+        int length = (Bstr.Consume(probe.GetText(limit + 1)) ?? string.Empty).Length;
+        return length > limit ? null : length;
     }
 
     /// <summary>
@@ -327,8 +341,11 @@ internal sealed class UiaField : IInspectableField
                 if (moved != -tail) return false;
             }
 
-            // The provider's idea of "character" is not necessarily ours.
-            if (Bstr.Consume(range.GetText(-1)) != expected) return false;
+            // The provider's idea of "character" is not necessarily ours. One
+            // unit past `expected` is enough to tell "the same" from "longer",
+            // and it keeps this from pulling a whole document across when a
+            // range lands somewhere other than where it was aimed.
+            if (Bstr.Consume(range.GetText(expected.Length + 1)) != expected) return false;
 
             range.Select();
 
@@ -350,7 +367,7 @@ internal sealed class UiaField : IInspectableField
             {
                 IUIAutomationTextRangeArray selection = text.GetSelection();
                 if (selection is not null && selection.Length >= 1
-                    && Bstr.Consume(selection.GetElement(0).GetText(-1)) == expected)
+                    && Bstr.Consume(selection.GetElement(0).GetText(expected.Length + 1)) == expected)
                 {
                     return true;
                 }
@@ -383,11 +400,14 @@ internal sealed class UiaField : IInspectableField
     /// halves are textually identical, and a selection that slid from one to
     /// the other would pass a text-only comparison.
     ///
-    /// This narrows the window to the one call it cannot cover — <c>SendInput</c>
-    /// is itself non-interleaving, so nothing can land between this check and
-    /// the keystrokes except in the microseconds it takes to issue them.
+    /// This narrows the window to the one call it cannot cover. A single
+    /// <c>SendInput</c> is non-interleaving, so nothing can land between this
+    /// check and the keystrokes except in the microseconds it takes to issue
+    /// them — which is true of <i>one</i> call and was not true of the loop of
+    /// them this used to sit in front of. <c>Keyboard.MaxKeyEvents</c> is what
+    /// keeps it one call.
     /// </summary>
-    internal bool SelectionMatches(TextSpan span, string expected)
+    internal bool SelectionMatches(TextSpan span, string expected, int limit)
     {
         try
         {
@@ -399,9 +419,9 @@ internal sealed class UiaField : IInspectableField
             if (selection is null || selection.Length != 1) return false;
 
             IUIAutomationTextRange range = selection.GetElement(0);
-            if (Bstr.Consume(range.GetText(-1)) != expected) return false;
+            if (Bstr.Consume(range.GetText(expected.Length + 1)) != expected) return false;
 
-            return StartOffsetOf(text, range) == span.Location;
+            return StartOffsetOf(text, range, limit) == span.Location;
         }
         catch (Exception ex) when (IsProviderFailure(ex))
         {

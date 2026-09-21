@@ -54,6 +54,16 @@ internal sealed class FocusWatcher : IDisposable
     /// <summary>The key of the field we last refused, so the log says so once rather than four times a second.</summary>
     private string _refusedKey = string.Empty;
 
+    /// <summary>
+    /// Whether this class may touch a field's contents at all. See
+    /// <see cref="SetReading"/>. It starts true because the watcher is
+    /// constructed before any setting reaches it, and the safe default while
+    /// nothing has been pushed is the same one the exclusion list takes: the
+    /// conservative behaviour, not the permissive one. The engine pushes the
+    /// real answer before <see cref="Start"/> subscribes to anything.
+    /// </summary>
+    private bool _reading = true;
+
     /// <summary>Called with the new focused field (or null) and its current value.</summary>
     internal Action<UiaField?, string>? FieldChanged { get; set; }
 
@@ -92,6 +102,58 @@ internal sealed class FocusWatcher : IDisposable
         });
     }
 
+    /// <summary>
+    /// Whether anything here may touch a field's contents.
+    ///
+    /// With it off nothing is read: no focus resolution, no event read, no
+    /// poll, and whatever the last field held is dropped on the spot rather
+    /// than at the next focus change. Which app has focus is still tracked,
+    /// because that is metadata and the tray menu needs it.
+    ///
+    /// This exists because "turn Fix everywhere off" is the mitigation the
+    /// security notes offer a user who does not want their typing read, and it
+    /// has to mean that rather than "read everything and decline to correct
+    /// it". The engine used to stop correcting while this class carried on
+    /// reading and caching every focused field. The macOS app had the same gap
+    /// and closed it the same way.
+    /// </summary>
+    internal void SetReading(bool on)
+    {
+        // Inline when the caller is already on the UIA thread, which the engine
+        // is when it pushes a config change. Posting would put the switch one
+        // work item behind the change that asked for it, and the app's first
+        // ApplySettings lands before Start(): a posted "stop reading" would
+        // arrive after Start() had already read whatever had focus.
+        if (_thread.IsCurrent)
+        {
+            ApplyReading(on);
+            return;
+        }
+
+        _thread.Post(() => ApplyReading(on));
+    }
+
+    private void ApplyReading(bool on)
+    {
+        if (on == _reading) return;
+        _reading = on;
+
+        if (!on)
+        {
+            _polling = false;
+            SetCurrent(null, string.Empty);
+            _refusedKey = string.Empty;
+            Log.Info("focus watcher stopped reading: Fix everywhere is off");
+            return;
+        }
+
+        // Start() has not run yet, and will pick this up when it does.
+        if (!_subscribed) return;
+
+        RefreshFocusNow();
+        StartPolling();
+    }
+
     internal void Start()
     {
         _thread.Post(() =>
@@ -108,6 +170,11 @@ internal sealed class FocusWatcher : IDisposable
                 Log.Error($"could not subscribe to focus changes: {ex.Message}");
                 return;
             }
+
+            // Subscribed either way: the focus event is how the tray learns
+            // which app is in front, and that costs no read. Reading the field
+            // is what waits for Fix everywhere to be on.
+            if (!_reading) return;
 
             // Whatever has focus right now, before the first event arrives.
             RefreshFocusNow();
@@ -175,6 +242,15 @@ internal sealed class FocusWatcher : IDisposable
         if (field is null)
         {
             SetCurrent(null, string.Empty);
+            return;
+        }
+
+        // Fix everywhere is off. Which app owns the field is metadata and has
+        // already been recorded above; its text is not, and nothing below this
+        // line is going to ask for it.
+        if (!_reading)
+        {
+            if (_current is not null) SetCurrent(null, string.Empty);
             return;
         }
 
@@ -312,7 +388,7 @@ internal sealed class FocusWatcher : IDisposable
     /// </summary>
     private void Poll()
     {
-        if (!_polling) return;
+        if (!_polling || !_reading) return;
         try
         {
             if (_current is not UiaField field)
@@ -352,6 +428,7 @@ internal sealed class FocusWatcher : IDisposable
 
     private void NotifyValueChanged()
     {
+        if (!_reading) return;
         if (_current is not UiaField field) return;
 
         // An event is still a read, so it is still the gate's decision.

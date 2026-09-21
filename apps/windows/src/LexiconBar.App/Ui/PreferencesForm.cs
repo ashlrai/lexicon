@@ -18,6 +18,11 @@ internal sealed class PreferencesForm : Form
     private readonly NumericUpDown _bubbleSeconds = new();
     private readonly TextBox _cliPath = new();
     private readonly TextBox _exclusions = new();
+    private readonly Label _exclusionsHint;
+
+    /// <summary>The hint under the exclusions box while the list excludes something.</summary>
+    private const string ExclusionsHint =
+        "Executable names without .exe. A trailing * matches a prefix (keepass*).";
 
     internal PreferencesForm(AppSettings settings)
     {
@@ -68,8 +73,9 @@ internal sealed class PreferencesForm : Form
         _exclusions.Height = 110;
         _exclusions.Width = 300;
         _exclusions.Text = string.Join(Environment.NewLine, settings.Exclusions);
-        AddRow(layout, "One per line", _exclusions,
-            "Executable names without .exe. A trailing * matches a prefix (keepass*).");
+        _exclusionsHint = AddRow(layout, "One per line", _exclusions, ExclusionsHint);
+        _exclusions.TextChanged += (_, _) => RefreshExclusionsHint();
+        RefreshExclusionsHint();
 
         FlowLayoutPanel buttons = new()
         {
@@ -97,8 +103,62 @@ internal sealed class PreferencesForm : Form
         FormClosing += (_, e) =>
         {
             if (DialogResult != DialogResult.OK || e.Cancel) return;
+            if (!ConfirmEmptyExclusions())
+            {
+                // Keep the window open with the text still in it, so answering
+                // "no" costs nothing.
+                e.Cancel = true;
+                DialogResult = DialogResult.None;
+                return;
+            }
+
             Commit();
         };
+    }
+
+    /// <summary>
+    /// The exclusion entries as typed, blank lines dropped. The same list
+    /// <see cref="Commit"/> saves, so what the hint judges and what gets
+    /// written are never two different things.
+    /// </summary>
+    private List<string> Entered() => _exclusions.Text
+        .Split('\n')
+        .Select(line => line.Trim())
+        .Where(line => line.Length > 0)
+        .ToList();
+
+    /// <summary>
+    /// Says when the list excludes nothing, instead of letting a cleared box
+    /// look like any other edit. An empty list is a legitimate choice and is
+    /// saved as one; it is also the only setting in this window that can put
+    /// dictation into a password manager, so it does not pass quietly.
+    /// </summary>
+    private void RefreshExclusionsHint()
+    {
+        bool empty = new AppExclusions(Entered()).IsEmpty;
+        _exclusionsHint.Text = empty ? AppExclusions.EmptyWarning : ExclusionsHint;
+        _exclusionsHint.ForeColor = empty ? Color.FromArgb(0xB0, 0x3A, 0x00) : SystemColors.GrayText;
+    }
+
+    /// <summary>
+    /// Asks before saving a list that excludes nothing, and only when it was
+    /// not already empty. The box is one Ctrl+A away from losing every default,
+    /// and those defaults are what keep Fix everywhere out of terminals, out of
+    /// Windows' own sign-in prompts and out of password managers. A user who
+    /// has already chosen an empty list is not asked again.
+    /// </summary>
+    private bool ConfirmEmptyExclusions()
+    {
+        if (!new AppExclusions(Entered()).IsEmpty) return true;
+        if (new AppExclusions(_settings.Exclusions).IsEmpty) return true;
+
+        return MessageBox.Show(
+            this,
+            $"{AppExclusions.EmptyWarning}\n\nSave the empty list anyway?",
+            "No excluded processes",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
     }
 
     private void RestoreDefaults()
@@ -122,11 +182,7 @@ internal sealed class PreferencesForm : Form
         _settings.PollMs = (int)_poll.Value;
         _settings.BubbleSeconds = (double)_bubbleSeconds.Value;
         _settings.CliPath = _cliPath.Text.Trim();
-        _settings.Exclusions = _exclusions.Text
-            .Split('\n')
-            .Select(line => line.Trim())
-            .Where(line => line.Length > 0)
-            .ToList();
+        _settings.Exclusions = Entered();
     }
 
     private static void AddHeader(TableLayoutPanel layout, string text)
@@ -158,7 +214,8 @@ internal sealed class PreferencesForm : Form
         AddRow(layout, label, control, hint);
     }
 
-    private static void AddRow(TableLayoutPanel layout, string label, Control control, string hint)
+    /// <summary>Adds a labelled row and hands back its grey hint label, which some rows rewrite.</summary>
+    private static Label AddRow(TableLayoutPanel layout, string label, Control control, string hint)
     {
         layout.Controls.Add(new Label
         {
@@ -175,17 +232,20 @@ internal sealed class PreferencesForm : Form
             WrapContents = false,
             Margin = new Padding(0, 2, 0, 6),
         };
-        cell.Controls.Add(control);
-        cell.Controls.Add(new Label
+        Label hintLabel = new()
         {
             Text = hint,
             AutoSize = true,
             MaximumSize = new Size(300, 0),
             ForeColor = SystemColors.GrayText,
             Margin = new Padding(0, 2, 0, 0),
-        });
+        };
+
+        cell.Controls.Add(control);
+        cell.Controls.Add(hintLabel);
 
         layout.Controls.Add(cell);
+        return hintLabel;
     }
 }
 
