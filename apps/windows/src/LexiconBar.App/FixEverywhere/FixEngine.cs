@@ -132,6 +132,15 @@ internal sealed class FixEngine
 
     private int ReadLimit => _config.Detector.MaxFieldLength + 1;
 
+    /// <summary>
+    /// How long a write is given to show up in the field before the engine
+    /// decides what happened. The same number for the write working and for the
+    /// write half working, because it is the same wait: the app consumes
+    /// synthesized input on its own message loop, and nothing about that loop
+    /// speeds up because <c>SendInput</c> returned a short count.
+    /// </summary>
+    private const double SettleSeconds = 0.6;
+
     // ------------------------------------------------------------ UIA thread
 
     private void FieldChanged(UiaField? field, string value)
@@ -376,14 +385,17 @@ internal sealed class FixEngine
     ///
     /// Only strategy 1 and strategy 3 can half-finish, and only through
     /// <c>SendInput</c>. Both are now a single call each, capped at
-    /// <c>Keyboard.MaxKeyEvents</c>, and both report how much of that call
-    /// landed. Anything short of all of it is turned into a
-    /// <see cref="PartialWrite"/>, checked against the field, repaired by the
-    /// whole-value write where that is available and recorded in the undo
-    /// ledger where it is not. What must never happen again is the old
-    /// behaviour: half a replacement in the field, the user's original span
-    /// gone, an undo that was never recorded and a message saying the write
-    /// failed.
+    /// <c>Keyboard.MaxKeyEvents</c>. A write that does not visibly work goes to
+    /// <see cref="KeystrokeSettle"/>, which watches the field over the same
+    /// window the success path waits out and says what it settled on: all of it
+    /// after all, part of it, or none of it. Part of it is turned into a
+    /// <see cref="PartialWrite"/>, repaired by the whole-value write where that
+    /// is available and recorded in the undo ledger where it is not. None of it,
+    /// with keystrokes the system accepted, stops the ladder rather than write
+    /// a value the queued keystrokes would land on top of. What must never
+    /// happen again is the old behaviour: half a replacement in the field, the
+    /// user's original span gone, an undo that was never recorded and a message
+    /// saying the write failed.
     ///
     /// UNVERIFIED: this ladder has never been run against a real provider. The
     /// ordering is the reasoned counterpart of the macOS one, not a measured one.
@@ -444,49 +456,69 @@ internal sealed class FixEngine
             else
             {
                 int typed = Keyboard.Type(plan.NewText);
-                if (typed == plan.NewText.Length)
+                if (typed == plan.NewText.Length && field.Verify(plan.SplicedFullText, SettleSeconds, ReadLimit))
                 {
-                    if (field.Verify(plan.SplicedFullText, 0.6, ReadLimit))
-                    {
-                        return new WriteOutcome("keystrokes", string.Join(", ", notes));
-                    }
-
-                    notes.Add("keystrokes not reflected");
-                    if ((field.ReadValue(ReadLimit) ?? string.Empty) != before)
-                    {
-                        // Something landed but not what was planned: stop rather
-                        // than write again on top of a field we no longer understand.
-                        return new WriteOutcome(
-                            null, $"typing changed the field to something else; left alone ({string.Join(", ", notes)})");
-                    }
+                    return new WriteOutcome("keystrokes", string.Join(", ", notes));
                 }
-                else
+
+                notes.Add(typed == plan.NewText.Length
+                    ? "keystrokes not reflected"
+                    : typed == 0
+                        ? "SendInput refused (elevated window?)"
+                        : $"SendInput took {typed} of {plan.NewText.Length} characters");
+
+                // Whatever the count said, the field is the evidence, and it is
+                // read over a window rather than once: SendInput queues, and the
+                // app consumes on its own message loop. See KeystrokeSettle.
+                SettledWrite settled = KeystrokeSettle.Resolve(
+                    before,
+                    plan.SplicedFullText,
+                    plan.NewText.Length,
+                    typed,
+                    landed => landed >= plan.NewText.Length
+                        ? FullWrite(plan)
+                        : PartialWrite.OverSelection(plan, before, landed),
+                    field.Polling(SettleSeconds, ReadLimit));
+
+                switch (settled)
                 {
-                    // SendInput accepted only part of the call. Work out what
-                    // the field must hold, confirm it actually holds that, and
-                    // carry it down the ladder: the value write below is the
-                    // repair, and if there is no value write the caller still
-                    // gets an undo entry that puts the user's own text back.
-                    string now = field.ReadValue(ReadLimit) ?? string.Empty;
-                    if (now == before)
-                    {
-                        notes.Add(typed == 0
-                            ? "SendInput refused (elevated window?)"
-                            : $"SendInput took {typed} of {plan.NewText.Length} characters and the field is unchanged");
-                    }
-                    else if (PartialWrite.OverSelection(plan, before, typed) is PartialWrite landed
-                             && landed.FieldText == now)
-                    {
-                        halfWritten = landed;
-                        notes.Add($"only {typed} of {plan.NewText.Length} characters landed; repairing");
-                    }
-                    else
-                    {
+                    case SettledWrite.Complete:
+                        notes.Add("late, but all of it landed");
+                        return new WriteOutcome("keystrokes", string.Join(", ", notes));
+
+                    case SettledWrite.Half half:
+                        // Carry it down the ladder: the value write below is the
+                        // repair, and if there is no value write the caller still
+                        // gets an undo entry that puts the user's own text back.
+                        halfWritten = half.Partial;
+                        notes.Add(
+                            $"{half.Partial.WrittenText.Length} of {plan.NewText.Length} characters landed; repairing");
+                        break;
+
+                    case SettledWrite.Untouched when typed == 0:
+                        // Nothing was accepted, so nothing is queued and nothing
+                        // can arrive later. The value write below is safe and is
+                        // the whole point of the ladder.
+                        notes.Add("the field is unchanged");
+                        break;
+
+                    case SettledWrite.Untouched untouched:
+                        // The system took the keystrokes and the field has not
+                        // shown them. They may still be queued for the app, in
+                        // which case writing the value now would put them on top
+                        // of the write and leave text nothing has a record of. So
+                        // this stops, and hands up the state the field will hold
+                        // if they do arrive, so that it is undoable when it does.
+                        return new WriteOutcome(
+                            null,
+                            $"the keystrokes were accepted but have not appeared ({string.Join(", ", notes)})",
+                            Pending: untouched.Pending);
+
+                    case SettledWrite.Unexplained:
                         return new WriteOutcome(
                             null,
                             "typing landed somewhere this cannot account for; left alone "
                                 + $"({string.Join(", ", notes)})");
-                    }
                 }
             }
         }
@@ -549,24 +581,42 @@ internal sealed class FixEngine
             // which the deletion had happened and the retype had not, with
             // nothing recorded that could put the deleted text back.
             int delivered = Keyboard.ReplaceTail(plan.PreviousText.Length, plan.NewText);
-            if (delivered == events)
+            if (delivered == events && field.Verify(plan.SplicedFullText, SettleSeconds, ReadLimit))
             {
-                if (field.Verify(plan.SplicedFullText, 0.6, ReadLimit))
-                {
-                    return new WriteOutcome("backspace", string.Join(", ", notes));
-                }
-
-                notes.Add("backspace rewrite not reflected");
+                return new WriteOutcome("backspace", string.Join(", ", notes));
             }
-            else
+
+            notes.Add(delivered == events
+                ? "backspace rewrite not reflected"
+                : $"backspace rewrite delivered {delivered} of {events} key events");
+
+            // The same settle as the keystroke path above, and the branch that
+            // most needs it: the backspaces go first, so every event that does
+            // land destroys a character before any of them puts one back.
+            SettledWrite settled = KeystrokeSettle.Resolve(
+                before,
+                plan.SplicedFullText,
+                events,
+                delivered,
+                landed => landed >= events
+                    ? FullWrite(plan)
+                    : PartialWrite.OverTail(plan, before, landed),
+                field.Polling(SettleSeconds, ReadLimit));
+
+            switch (settled)
             {
-                notes.Add($"backspace rewrite delivered {delivered} of {events} key events");
-                string now = field.ReadValue(ReadLimit) ?? string.Empty;
-                if (PartialWrite.OverTail(plan, before, delivered) is PartialWrite landed
-                    && landed.FieldText == now)
-                {
-                    return new WriteOutcome(null, string.Join(", ", notes), landed);
-                }
+                case SettledWrite.Complete:
+                    notes.Add("late, but all of it landed");
+                    return new WriteOutcome("backspace", string.Join(", ", notes));
+
+                case SettledWrite.Half half:
+                    // There is no repair left below this, so all the caller can
+                    // do is record it. That is the difference between a lost
+                    // span and one keystroke away from being back.
+                    return new WriteOutcome(null, string.Join(", ", notes), half.Partial);
+
+                case SettledWrite.Untouched untouched when untouched.Pending is not null:
+                    return new WriteOutcome(null, string.Join(", ", notes), Pending: untouched.Pending);
             }
         }
         else if (!Keyboard.Fits(events))
@@ -581,6 +631,21 @@ internal sealed class FixEngine
         return new WriteOutcome(null, string.Join(", ", notes));
     }
 
+    /// <summary>
+    /// The whole correction, in the shape the settle and the ledger both take.
+    ///
+    /// <see cref="PartialWrite.OverSelection"/> and
+    /// <see cref="PartialWrite.OverTail"/> both answer null for a full count,
+    /// because a full count is the write simply working and there is nothing
+    /// partial to describe. The settle still needs that state described: a write
+    /// the system accepted in full can arrive after the engine has stopped
+    /// waiting for it, and then it is the whole correction sitting in the field
+    /// with no ledger entry behind it. Undoing this is the same splice
+    /// <see cref="Apply"/> records when the write works first time.
+    /// </summary>
+    private static PartialWrite FullWrite(RewritePlan plan) =>
+        new(plan.SplicedFullText, plan.Span, plan.NewText, plan.PreviousText);
+
     /// <summary>What a write managed, and what it left behind if it did not manage all of it.</summary>
     /// <param name="Strategy">Non-null exactly when the field now holds <c>plan.SplicedFullText</c>.</param>
     /// <param name="Partial">
@@ -588,7 +653,18 @@ internal sealed class FixEngine
     /// field holds <see cref="PartialWrite.FieldText"/> and the caller must
     /// record the matching ledger entry before it tells the user anything.
     /// </param>
-    private sealed record WriteOutcome(string? Strategy, string Detail, PartialWrite? Partial = null);
+    /// <param name="Pending">
+    /// Set when the system accepted keystrokes that never appeared in the field.
+    /// Nothing was written and the field still holds the user's own text, so
+    /// there is nothing to repair; this is what it will hold if they turn up
+    /// after the engine stopped waiting, recorded so that it is reversible if
+    /// they do. Never set together with <paramref name="Partial"/>.
+    /// </param>
+    private sealed record WriteOutcome(
+        string? Strategy,
+        string Detail,
+        PartialWrite? Partial = null,
+        PartialWrite? Pending = null);
 
     /// <summary>
     /// Makes a half-landed keystroke write undoable, and says whether it could.
@@ -618,6 +694,22 @@ internal sealed class FixEngine
     /// </summary>
     private void ReportWriteFailure(UiaField field, WriteOutcome outcome)
     {
+        if (outcome.Partial is null && outcome.Pending is PartialWrite pending)
+        {
+            // Nothing is in the field, so nothing is recorded about the field as
+            // it is now. The entry describes the state the queued keystrokes
+            // would produce, and the ledger only ever offers an undo to a field
+            // whose text matches its entry exactly, so it sits inert unless they
+            // actually arrive. If they do, the next value change publishes the
+            // offer and the user's own words are one hotkey away.
+            _undo.Record(pending.Entry(field.Key));
+            PublishUndoAvailability(field.ReadValue(ReadLimit) ?? string.Empty, force: true);
+            Report(new Event.Failed(
+                $"Nothing was written into {field.AppName} and your text is as you left it: {outcome.Detail}. "
+                    + "If the correction appears late, Undo (Ctrl+Alt+Z) takes it back out."));
+            return;
+        }
+
         if (outcome.Partial is null)
         {
             Report(new Event.Failed($"Could not write into {field.AppName}: {outcome.Detail}"));

@@ -64,6 +64,18 @@ final class FixEverywhereWiringTests: XCTestCase {
             all.compactMap { if case .skipped(let why) = $0 { return why } else { return nil } }
         }
 
+        /// What was reported as an outright failure, which is what a write that
+        /// did not land says.
+        var failures: [String] {
+            all.compactMap { if case .failed(let why) = $0 { return why } else { return nil } }
+        }
+
+        /// Every "the undo offer is on / off" the engine published, in order.
+        /// This is what the menu item and the bubble's Undo button follow.
+        var undoAvailability: [Bool] {
+            all.compactMap { if case .undoAvailable(let on) = $0 { return on } else { return nil } }
+        }
+
         var undone: Bool { all.contains { if case .undone = $0 { return true } else { return false } } }
     }
 
@@ -323,6 +335,98 @@ final class FixEverywhereWiringTests: XCTestCase {
         XCTAssertEqual(reads.reads, 0, "undo read a field in an excluded app")
         XCTAssertFalse(h.events.undone, "undo wrote into a field in an excluded app")
         XCTAssertFalse(h.events.skips.isEmpty)
+    }
+
+    // MARK: an undo that does not land
+
+    /// The corrected field, and the ledger entry a correction in it leaves
+    /// behind: "I use ashler daily" became "I use Ashlr.AI daily".
+    private static let corrected = "I use Ashlr.AI daily"
+
+    private static func correctionEntry(fieldKey: String) -> UndoLedger.Entry {
+        UndoLedger.Entry(fieldKey: fieldKey,
+                         range: NSRange(location: 6, length: 6),
+                         correctedText: "Ashlr.AI",
+                         previousText: "ashler",
+                         fieldTextAfter: corrected)
+    }
+
+    /// The bug this pair of tests exists for: `undo.take` consumed the entry
+    /// before the write was attempted, so an undo whose write did nothing threw
+    /// away the only record of the correction. The user was left with text they
+    /// never typed and nothing that could put theirs back, and the menu item
+    /// that would have offered it went grey.
+    ///
+    /// Headless, the write cannot land: there is no real Accessibility element
+    /// behind this field, so `write` reads a value that is not the text the plan
+    /// was made from and refuses before touching anything. That is one of the
+    /// three ways it fails on a real machine, and the cheapest to arrange.
+    @MainActor
+    func testAnUndoWhoseWriteDoesNotLandKeepsTheCorrectionReversible() {
+        let h = Harness()
+        defer { h.tearDown() }
+        h.subscribe()
+        let reads = ValueReads(text: Self.corrected)
+        let field = h.focus("com.apple.TextEdit", reads: reads)
+        h.engine.recordUndo(Self.correctionEntry(fieldKey: field.key))
+        h.flush()
+
+        h.engine.undoLast()
+        h.flush()
+        pumpMain()
+
+        XCTAssertFalse(h.events.undone, "nothing was written, so nothing was undone")
+        XCTAssertTrue(h.events.failures.contains { $0.hasPrefix("Undo failed in") }, "\(h.events.all)")
+        XCTAssertEqual(h.events.undoAvailability.last, true,
+                       "the offer was withdrawn for a correction that is still in the field")
+    }
+
+    /// And the offer is real: pressing it again reaches the write again, rather
+    /// than being told there is nothing to undo.
+    @MainActor
+    func testTheUndoCanBeTriedAgainAfterAWriteThatDidNotLand() {
+        let h = Harness()
+        defer { h.tearDown() }
+        h.subscribe()
+        let reads = ValueReads(text: Self.corrected)
+        let field = h.focus("com.apple.TextEdit", reads: reads)
+        h.engine.recordUndo(Self.correctionEntry(fieldKey: field.key))
+        h.flush()
+
+        for _ in 0..<2 {
+            h.engine.undoLast()
+            h.flush()
+        }
+        pumpMain()
+
+        XCTAssertEqual(h.events.failures.filter { $0.hasPrefix("Undo failed in") }.count, 2,
+                       "the second press found an empty ledger: \(h.events.all)")
+        XCTAssertFalse(h.events.skips.contains { $0.contains("Nothing to undo in") },
+                       "\(h.events.skips)")
+    }
+
+    /// The other half of the same rule: an undo that *does* land consumes the
+    /// entry, so the offer goes away rather than firing a second time at a
+    /// field that no longer holds the correction. Nothing here can make a write
+    /// land, so this asserts the guard the entry is kept behind: the ledger
+    /// stops offering the moment the field holds something else.
+    @MainActor
+    func testTheOfferGoesAwayWhenTheFieldNoLongerHoldsTheCorrection() {
+        let h = Harness()
+        defer { h.tearDown() }
+        h.subscribe()
+        let reads = ValueReads(text: "I use ashler daily")
+        let field = h.focus("com.apple.TextEdit", reads: reads)
+        h.engine.recordUndo(Self.correctionEntry(fieldKey: field.key))
+        h.flush()
+
+        h.engine.undoLast()
+        h.flush()
+        pumpMain()
+
+        XCTAssertFalse(h.events.undone)
+        XCTAssertEqual(h.events.skips, ["Nothing to undo in com.apple.TextEdit."])
+        XCTAssertEqual(h.events.undoAvailability.last, false)
     }
 
     @MainActor

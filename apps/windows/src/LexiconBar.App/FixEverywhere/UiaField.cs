@@ -482,6 +482,38 @@ internal sealed class UiaField : IInspectableField
     }
 
     /// <summary>
+    /// The same watching, for a caller that does not know in advance what it is
+    /// waiting to see. <see cref="Verify"/> asks "is it this yet?";
+    /// <see cref="KeystrokeSettle"/> asks "what is it now?", over the same
+    /// window and at the same cadence, and decides at the end.
+    /// </summary>
+    internal ISettlePoll Polling(double seconds, int limit) => new ValuePoll(this, seconds, limit);
+
+    private sealed class ValuePoll : ISettlePoll
+    {
+        private readonly UiaField _field;
+        private readonly double _seconds;
+        private readonly int _limit;
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+        internal ValuePoll(UiaField field, double seconds, int limit)
+        {
+            _field = field;
+            _seconds = seconds;
+            _limit = limit;
+        }
+
+        public string? Read() => _field.ReadValue(_limit);
+
+        public bool KeepWaiting()
+        {
+            if (_clock.Elapsed.TotalSeconds >= _seconds) return false;
+            Thread.Sleep(25);
+            return true;
+        }
+    }
+
+    /// <summary>
     /// True when this field's process owns the foreground window. Synthesized
     /// input goes wherever keyboard focus is, so nothing may be typed unless
     /// that is still here.

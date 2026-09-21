@@ -90,8 +90,18 @@ final class FixEngine: @unchecked Sendable {
             // switch and the list, and it needs them before anything below
             // looks at `field`: excluding the app that has focus right now has
             // to drop the cached text there and here in the same breath.
-            watcher.setReading(config.enabled)
+            //
+            // The list goes first, which is the order Windows was given, and
+            // for the same reason: `setReading(true)` is not a flag, it
+            // re-resolves focus and reads whatever field it finds, and it would
+            // decide that read against the list the watcher still held. The
+            // narrow case is the first push of all, at launch, where the
+            // watcher is still on the default list and the user's saved
+            // exclusions are in the config arriving now. Turning the switch on
+            // one line earlier reads a field in an app the user excluded,
+            // through a gate that has not been told yet.
             watcher.setExclusions(config.exclusions)
+            watcher.setReading(config.enabled)
             detector?.config = detectorConfig
             if wasEnabled != config.enabled { settleGeneration += 1 }
             guard config.enabled else {
@@ -140,6 +150,19 @@ final class FixEngine: @unchecked Sendable {
     /// ⌃⌥Z: put the previous text back if the same field still holds the corrected text.
     func undoLast() {
         ax.async { [self] in performUndo() }
+    }
+
+    /// Seeds the ledger with the entry a correction leaves behind.
+    ///
+    /// Internal rather than private so the test target can stand an undo up,
+    /// for the same reason `FocusWatcher.setCurrent` is: a headless test has no
+    /// Accessibility grant and no local API, so it cannot make a correction
+    /// happen and cannot reach the line in `apply` that records one. What needs
+    /// a test here is what becomes of this entry when the undo's own write does
+    /// not land, which is where it used to be thrown away. Nothing outside the
+    /// tests calls it.
+    func recordUndo(_ entry: UndoLedger.Entry) {
+        ax.async { [self] in undo.record(entry) }
     }
 
     // MARK: AX thread
@@ -437,7 +460,17 @@ final class FixEngine: @unchecked Sendable {
         }
         guard let detector else { report(.skipped("Nothing to undo: no text field focused.")); return }
         let current = read.value ?? ""
-        guard let entry = undo.take(fieldKey: field.key, currentText: current), let before = entry.fieldTextBefore else {
+        // Read, not consumed. This used to be `undo.take`, which clears the
+        // entry whatever happens next, so an undo whose write did nothing threw
+        // away the only record of the correction: the field still held text the
+        // user never typed and there was no longer anything that could put
+        // theirs back. The write below fails for reasons that have nothing to
+        // do with the entry being wrong, starting with the field changing
+        // between the read and the write. Windows fixed the same bug in
+        // `FixEngine.cs`; this is the mirror of it.
+        guard undo.canUndo(fieldKey: field.key, currentText: current),
+              let entry = undo.last,
+              let before = entry.fieldTextBefore else {
             report(.skipped("Nothing to undo in \(field.appName)."))
             publishUndoAvailability(currentText: current, force: true)
             return
@@ -446,13 +479,23 @@ final class FixEngine: @unchecked Sendable {
                                     previousText: entry.correctedText, newText: entry.previousText, splicedFullText: before)
         let outcome = write(plan, to: field.element, before: current, pid: field.pid)
         if outcome.strategy != nil {
+            // Consumed only now, once the field actually holds the user's own
+            // text again.
+            undo.clear()
             detector.markStable(before)
             watcher.noteValue(before, for: field)
             report(.undone(appName: field.appName))
         } else {
+            // The entry is untouched, so the offer stands and ⌃⌥Z can be
+            // pressed again.
             report(.failed("Undo failed in \(field.appName): \(outcome.detail)"))
         }
-        publishUndoAvailability(currentText: AX.value(field.element) ?? "", force: true)
+        // Through the gate, like every other read in this class. The raw
+        // `AX.value` this used to call was the one read here that nothing
+        // decided on first, and it answered for a field the rest of the method
+        // had been careful to ask about.
+        publishUndoAvailability(currentText: FieldGate.read(field, exclusions: config.exclusions).value ?? "",
+                                force: true)
     }
 
     private func publishUndoAvailability(currentText: String, force: Bool = false) {

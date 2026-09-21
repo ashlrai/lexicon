@@ -103,11 +103,19 @@ internal static class Keyboard
         }
 
         // A key down and its key up are a pair, and a call cut off between them
-        // left one unfinished. Rounding down calls that pair "did not land",
-        // which is the conservative direction: the caller compares the field
-        // against what this claims rather than trusting it, and a claim that
-        // under-counts fails that comparison instead of splicing at an offset
-        // one character off.
+        // left one unfinished. This rounds that pair down to "did not land",
+        // which is a lie in the one direction that matters: KEYEVENTF_UNICODE
+        // carries the character on the key down, so the app gets it and this
+        // says it did not.
+        //
+        // That is safe only because of what the caller does with the number. It
+        // is not evidence about the field; it is a bound on how much can
+        // possibly be in it, and KeystrokeSettle treats it as exactly that,
+        // allowing one unit above this count and then identifying the state by
+        // reading the field rather than by trusting the arithmetic. An earlier
+        // version of that caller did trust it, compared the field against the
+        // single state it predicted, and reported "landed somewhere this cannot
+        // account for" when the app had consumed one character more.
         return Math.Min(events, (int)(sent / 2));
     }
 
