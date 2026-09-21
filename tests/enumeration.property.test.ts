@@ -671,6 +671,17 @@ function summarize(name: string, report: Report): void {
  */
 const PROSE_CEILING = 0.42;
 
+/*
+ * These generate and match tens of thousands of cases, so they are slow by
+ * design. The suite's default 30 s budget is comfortable on a developer
+ * machine (about 10 s for the file) and is not on a shared CI runner, where
+ * `generates enough cases, and actually checks them` timed out on ubuntu node
+ * 20. The budget is raised for this file only. Raising it globally would hide
+ * a genuine hang somewhere else, which is the failure the lock work spent a
+ * day making loud.
+ */
+const PROPERTY_TIMEOUT_MS = 120_000;
+
 describe('quoting guard, generated round trips', () => {
   const quoting = buildQuotingCases();
   const dictation = buildDictationCases();
@@ -697,7 +708,7 @@ describe('quoting guard, generated round trips', () => {
     // here, not a quieter assertion.
     expect(foreign.length / CONNECTIVES.length).toBeGreaterThan(0.4);
     expect(CONNECTIVES.length).toBeGreaterThan(200);
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('generates enough cases, and actually checks them', () => {
     expect(quoting.length).toBeGreaterThan(2000);
@@ -712,11 +723,11 @@ describe('quoting guard, generated round trips', () => {
     expect(m.skipped + p.skipped).toBeLessThan(quoting.length * 0.2);
     expect(run(dictation, 'dictation').checked).toBeGreaterThan(200);
     expect(runControls([...quoting, ...dictation]).checked).toBeGreaterThan(28000);
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('QUOTING, marked: a quote, a cell, a list item or an arrow is never flattened', () => {
     summarize('QUOTING-marked', run(marked, 'quoting'));
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('QUOTING, prose: free sentences about spelling, measured against a ceiling', () => {
     const report = run(prose, 'quoting');
@@ -727,15 +738,15 @@ describe('quoting guard, generated round trips', () => {
           `The guard's word list covers less English than it did.\n${describeFailures('QUOTING-prose', report)}`,
       );
     }
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('DICTATION: one word said twice in ordinary prose is corrected', () => {
     summarize('DICTATION', run(dictation, 'dictation'));
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('DICTATION: with no canonical present, every quoting shape is corrected', () => {
     summarize('DICTATION-no-canonical', runControls([...quoting, ...dictation]));
-  });
+  }, PROPERTY_TIMEOUT_MS);
 });
 
 /**
@@ -797,5 +808,5 @@ describe('the repo, as a corpus', () => {
     }
     expect(proposed).toBeGreaterThan(0);
     expect(flattened).toEqual([]);
-  });
+  }, PROPERTY_TIMEOUT_MS);
 });
