@@ -45,67 +45,141 @@ const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
 
 /**
- * Markdown's other code block: a run of lines indented by four spaces or a tab.
- * Nothing above matches it, so a bug report that pasted its repro as an
- * indented block had the repro corrected out of existence.
+ * Markdown's other code block: a run of lines indented four columns past
+ * whatever contains them. Nothing else here matches it, so a bug report that
+ * pasted its repro as an indented block had the repro corrected out of
+ * existence.
  *
  * Deliberately narrower than CommonMark, because the two ways of being wrong
  * are not equally bad. Skipping too little leaves a correction somewhere it was
  * not wanted, and you can see it. Skipping too much silently stops correcting
  * ordinary prose, and you cannot. So a run is a code block only when
- *   - a blank line, or the start of the text, comes directly above it, since
- *     four spaces in the middle of a paragraph is a wrapped line, not code, and
- *   - the nearest non-blank line above starts at column zero and is not a
- *     bullet, a numbered item or a block quote, since a list item's indented
- *     continuation and a nested bullet are list content.
- * It runs to the first non-blank line indented less than four spaces; a blank
- * line inside it does not end it.
+ *   - a blank line comes directly above it, since four spaces in the middle of
+ *     a paragraph is a wrapped line, not code;
+ *   - a non-blank line comes above that one. Text that simply begins indented
+ *     is prose. CommonMark would call the whole of it code, which is right for
+ *     a document and wrong for what this actually reads: a clipboard paste, a
+ *     dictated transcript, a prompt;
+ *   - the run is indented four columns past its container, where the container
+ *     is the block quote it sits in and the list item it hangs under. A list
+ *     item's indented continuation and a nested bullet are list content and
+ *     stay ordinary text, while the repro under "1. Run this:" or "> Run this:"
+ *     is code, which is the shape a bug report's repro usually has;
+ *   - at least one of its lines is not itself a list item or a table row, since
+ *     a run of nothing but bullets is a list someone indented. The run decides
+ *     this together: judging it by its opening line alone meant one
+ *     bullet-looking first line (a pasted diff, a shell flag, numbered output)
+ *     left every line under it exposed, and made the answer depend on the order
+ *     the lines happened to be in.
+ * It runs to the first non-blank line indented less than that; a blank line
+ * inside it does not end it.
  *
- * Not covered, and still corrected: an indented code block inside a list item
- * or a block quote, and one whose paragraph above is itself indented.
+ * Not covered, and still corrected: a run hanging under a table row, and one
+ * whose quote depth differs from the line above it.
  */
-const INDENT_RE = /^(?: {4}|\t)/;
-const LIST_OR_QUOTE_RE = /^(?:[-*+>]|\d+[.)])(?:\s|$)/;
+const INDENT_UNIT = 4;
+/** Leading `>` markers: everything after them is inside a block quote. */
+const QUOTE_PREFIX_RE = /^ {0,3}(?:>[ \t]?)+/;
+/**
+ * A list item marker and the space after it. Bullets and numbers, plus the
+ * lettered and roman markers an outline uses (`a)`, `i.`, `iv)`), because a
+ * continuation indented under one of those is list content just as much as a
+ * continuation under `1.` is.
+ */
+const LIST_MARKER_RE = /^(?:[-*+]|(?:\d{1,9}|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)])(?:[ \t]+|$)/;
 
-function isBlank(line: string): boolean {
-  return line.trim().length === 0;
+interface LineInfo {
+  readonly start: number;
+  readonly end: number;
+  readonly blank: boolean;
+  readonly quoteDepth: number;
+  /** Columns of indent after the block quote prefix; a tab advances to the next multiple of four. */
+  readonly indent: number;
+  /** Columns this line's list marker indents its own content by, 0 when it opens no item. */
+  readonly listWidth: number;
+  readonly tableRow: boolean;
 }
 
-/** True when a code block may open under this line (see indentedCodeRanges). */
-function opensUnder(above: string): boolean {
-  return above === '' || (!/^[ \t]/.test(above) && !LIST_OR_QUOTE_RE.test(above));
+function indentWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) {
+    if (ch === ' ') w++;
+    else if (ch === '\t') w += INDENT_UNIT - (w % INDENT_UNIT);
+    else break;
+  }
+  return w;
+}
+
+function listMarkerWidth(content: string): number {
+  const m = LIST_MARKER_RE.exec(content);
+  if (!m) return 0;
+  // A marker alone on its line ("-") still indents the item's content by one.
+  return /[ \t]$/.test(m[0]) ? m[0].length : m[0].length + 1;
+}
+
+function scanLine(raw: string, start: number): LineInfo {
+  const prefix = QUOTE_PREFIX_RE.exec(raw)?.[0] ?? '';
+  const body = raw.slice(prefix.length);
+  const content = body.replace(/^[ \t]+/, '');
+  return {
+    start,
+    end: start + raw.length,
+    blank: content.trim().length === 0,
+    quoteDepth: prefix.split('>').length - 1,
+    indent: indentWidth(body),
+    listWidth: listMarkerWidth(content),
+    tableRow: content.startsWith('|'),
+  };
 }
 
 export function indentedCodeRanges(text: string): Range[] {
-  const out: Range[] = [];
+  const lines: LineInfo[] = [];
   let at = 0;
-  // The start of the text counts as the blank line above the first block.
+  for (const raw of text.split('\n')) {
+    lines.push(scanLine(raw, at));
+    at += raw.length + 1;
+  }
+
+  const out: Range[] = [];
+  /** Nearest non-blank line above the one being looked at. */
+  let above: LineInfo | undefined;
   let prevBlank = true;
-  let above = '';
-  let open: { start: number; end: number } | undefined;
-  for (const line of text.split('\n')) {
-    const start = at;
-    const end = at + line.length;
-    at = end + 1;
-    if (isBlank(line)) {
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.blank) {
       prevBlank = true;
+      i++;
       continue;
     }
-    const indented = INDENT_RE.test(line);
-    if (open) {
-      if (indented) open.end = end;
-      else {
-        out.push(open);
-        open = undefined;
-      }
+    // Columns the line above indents its content to; undefined when nothing
+    // above it can hold a code block at all.
+    const container =
+      prevBlank && above !== undefined && above.quoteDepth === line.quoteDepth && !above.tableRow
+        ? above.indent + above.listWidth
+        : undefined;
+    if (container === undefined || line.indent < container + INDENT_UNIT) {
+      prevBlank = false;
+      above = line;
+      i++;
+      continue;
     }
-    if (!open && indented && prevBlank && !LIST_OR_QUOTE_RE.test(line.trim()) && opensUnder(above)) {
-      open = { start, end };
+
+    const min = container + INDENT_UNIT;
+    let last = i;
+    let allList = true;
+    for (let j = i; j < lines.length; j++) {
+      const l = lines[j];
+      if (l.blank) continue;
+      if (l.quoteDepth !== line.quoteDepth || l.indent < min) break;
+      if (l.listWidth === 0 && !l.tableRow) allList = false;
+      last = j;
     }
+    if (!allList) out.push({ start: lines[i].start, end: lines[last].end });
+    above = lines[last];
     prevBlank = false;
-    above = line;
+    i = last + 1;
   }
-  if (open) out.push(open);
   return out;
 }
 

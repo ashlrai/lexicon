@@ -104,8 +104,19 @@ export { STOPLIST };
  * sliding window could take one in for free, stay above the threshold, and then
  * win overlap resolution on span length, so the number or the abbreviation was
  * swallowed by the replacement: "cooper netties i.e. Terraform" came out as
- * "Kubernetes. Terraform". An inexact multi-token window therefore never starts
- * or ends on one.
+ * "Kubernetes. Terraform". A multi-token window therefore never starts or ends
+ * on one in the phonetic pass.
+ *
+ * The test is against the alias, not against the window alone, because the
+ * argument below is symmetric and the canonical side of it was missed once
+ * already. A numeral contributes no letters wherever it sits, so it cannot
+ * distinguish "Kubernetes 1" from "Kubernetes" either, and blocking every
+ * window with a numeral at its edge blocked every phonetic garble of a term
+ * whose own name ends in a version number: "clawd 4" stopped reaching
+ * "Claude 4", and "cooper netties 1" was rewritten by the narrower window into
+ * "Kubernetes 1 1". So the window's edge token has to be matched by one of the
+ * same kind at the same end of the alias; then the wider window spans the
+ * number instead of stranding it, and wins overlap resolution as it should.
  *
  * Deliberately narrow, and not the more general rule it looks like it should
  * be. Asking instead whether the extra token added anything to the window's

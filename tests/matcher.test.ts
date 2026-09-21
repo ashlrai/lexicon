@@ -809,3 +809,85 @@ describe('bug J: text that quotes a misspelling is not flattened into one spelli
     expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI, not Ashler, since 2024. My company Ashlr.AI ships today.');
   });
 });
+
+// Three defects a review found in the matcher work of v0.5.3. Bug M is a
+// regression of bug K's edge guard; bugs N and O are the indented-code-block
+// rule of bug L. M and O are silent losses, so both are checked in the
+// direction that does not announce itself: this must still be corrected.
+describe('bugs M-O: a canonical that ends in a numeral, and what counts as an indented code block', () => {
+  const CLAUDE4: Term = { canonical: 'Claude 4', aliases: [] };
+  const K8S1: Term = { canonical: 'Kubernetes 1', aliases: [] };
+  const PG16: Term = { canonical: 'Postgres 16', aliases: [] };
+
+  // Bug K refused any multi-token phonetic window that started or ended on a
+  // numeral, on the grounds that a numeral contributes no letters and so no
+  // length penalty can price it. The same is true of the numeral in the term's
+  // own name, which was not considered, so every version-suffixed canonical
+  // stopped being reachable phonetically: Claude 4, Llama 3, Postgres 16.
+  it('still corrects a phonetic garble of a canonical that ends in a numeral (bug M)', () => {
+    const text = 'we use clawd 4 in production';
+    const reps = find(text, [CLAUDE4]);
+    expect(reps.map((r) => r.original)).toEqual(['clawd 4']);
+    expect(reps[0]).toMatchObject({ replacement: 'Claude 4', reason: 'phonetic' });
+    expect(apply(text, reps)).toBe('we use Claude 4 in production');
+    // and the guard still holds in the direction it was written for: a numeral
+    // the canonical does not have is not swallowed, at either end
+    expect(find('pick 2 cooper netties please', [K8S]).map((r) => r.original)).toEqual(['cooper netties']);
+  });
+
+  // Worse than a miss. Forced onto the non-numeral prefix, the narrower window
+  // rewrote the name and left the version number standing beside it.
+  it('spans a version number instead of duplicating it (bug M)', () => {
+    const one = 'we run cooper netties 1 here';
+    expect(apply(one, find(one, [K8S1]))).toBe('we run Kubernetes 1 here');
+    // The window budget counts the alias's own no-sound tokens too: alphaOnly
+    // drops them, so "Postgres 16" allowed two tokens for a garble needing three.
+    const pg = 'we run post gres 16 now';
+    expect(apply(pg, find(pg, [PG16]))).toBe('we run Postgres 16 now');
+    // unchanged: the same window against a term with no numeral in its name
+    expect(find('cooper netties i.e. Terraform', [K8S]).map((r) => r.original)).toEqual(['cooper netties']);
+  });
+
+  // The list-or-quote exemption was tested against the candidate opening line
+  // only, so one bullet-looking first line (a pasted diff, a shell flag, a
+  // redirect) stopped the block opening at all and left every line under it
+  // exposed. The answer depended on the order the lines happened to be in.
+  it('judges an indented code block by the whole run, not by its first line (bug N)', () => {
+    const body = ['- flag Ashler', 'lexicon add Ashler', 'echo Ashlar'];
+    for (const order of [body, [body[1], body[0], body[2]]]) {
+      const text = `Repro:\n\n${order.map((l) => `    ${l}`).join('\n')}\n`;
+      expect(find(text, [ASHLR]), text).toHaveLength(0);
+    }
+    // a run of nothing but bullets is still a list someone indented, not code
+    expect(find('Here is what I need:\n\n    - talk to Ashler\n    - ship it\n', [ASHLR])).toHaveLength(1);
+  });
+
+  // The rule also missed its own motivating case in its commonest form: a bug
+  // report states its repro under a numbered step, a bullet or a quote.
+  it('skips a repro indented under a numbered step, a bullet or a block quote (bug N)', () => {
+    expect(find('1. Run this:\n\n        lexicon add Ashler\n', [ASHLR])).toHaveLength(0);
+    expect(find('- Run this:\n\n        lexicon add Ashler\n', [ASHLR])).toHaveLength(0);
+    expect(find('> Run this:\n>\n>     lexicon add Ashler\n', [ASHLR])).toHaveLength(0);
+    // four columns past the item's own marker, not past column zero: anything
+    // less than that is the item's indented continuation and ordinary text
+    expect(find('1. Run this:\n\n    Ashler is the name\n', [ASHLR])).toHaveLength(1);
+  });
+
+  // prevBlank started true and nothing was required above, so a string that
+  // simply began with an indent was code in its entirety. CommonMark-correct
+  // for a document, wrong for a clipboard paste, a transcript or a prompt.
+  it('treats text that merely begins indented as prose (bug O)', () => {
+    expect(find('    Ashler is what the recognizer wrote today.', [ASHLR])).toHaveLength(1);
+    expect(find('\tAshler is what it wrote.', [ASHLR])).toHaveLength(1);
+    expect(find('\n\n    Ashler after nothing but blank lines.', [ASHLR])).toHaveLength(1);
+  });
+
+  // The docstring promised that a list item's indented continuation stays
+  // ordinary text, but the marker test knew only bullets and digits.
+  it('knows the list markers an outline uses, and a table row (bug O)', () => {
+    for (const above of ['a) First step', 'i. First step', 'IV) First step', '3. First step']) {
+      expect(find(`${above}\n\n    Ashler continues it\n`, [ASHLR]), above).toHaveLength(1);
+    }
+    expect(find('| Term | Note |\n| --- | --- |\n\n    Ashler under the table\n', [ASHLR])).toHaveLength(1);
+  });
+});

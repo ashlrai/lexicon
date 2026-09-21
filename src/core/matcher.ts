@@ -69,11 +69,13 @@ interface WindowView {
   /** Multi-token window whose first or last token is a function word (see FUNCTION_WORDS). */
   readonly edgeFunctionWord: boolean;
   /**
-   * Multi-token window whose first or last token carries no word sound: a bare
-   * numeral or a spelled-out abbreviation (see isNonWordToken). Blocks the
-   * phonetic pass only, where such a token is free and widens the span for nothing.
+   * Multi-token window whose first (respectively last) token carries no word
+   * sound: a bare numeral or a spelled-out abbreviation (see isNonWordToken).
+   * Checked against the alias in the phonetic pass only, where such a token is
+   * free and would widen the span for nothing.
    */
-  readonly edgeNonWord: boolean;
+  readonly edgeNonWordStart: boolean;
+  readonly edgeNonWordEnd: boolean;
   /** Single-token window (any case): held to ALIASED_PLAIN_WORD_MIN in the phonetic pass against terms with explicit aliases. */
   readonly loneToken: boolean;
   /** Single all-lowercase alphabetic token: held to ALIASED_PLAIN_WORD_MIN in the fuzzy pass as well. */
@@ -173,7 +175,8 @@ function makeView(
     mostlyStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
-    edgeNonWord: to > from && (isNonWordToken(first.baseLower) || isNonWordToken(last.baseLower)),
+    edgeNonWordStart: to > from && isNonWordToken(first.baseLower),
+    edgeNonWordEnd: to > from && isNonWordToken(last.baseLower),
     loneToken: from === to,
     plainWord: from === to && /^\p{Ll}+$/u.test(norm),
     digitsOnly: /^\p{N}+$/u.test(collapsedRaw),
@@ -241,10 +244,7 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
     lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
 
   // --- pass b: phonetic -----------------------------------------------------
-  // edgeNonWord: a numeral or a spelled-out abbreviation at either end costs the
-  // length ratio nothing, so the window grew over it for free and then won on
-  // span length. See isNonWordToken for why this is lexical and not phonetic.
-  if (opts.phonetic && !view.edgeNonWord && index.phoneticKeys.size > 0) {
+  if (opts.phonetic && index.phoneticKeys.size > 0) {
     const alpha = alphaOnly(view.collapsed);
     if (
       alpha.length >= 3 &&
@@ -257,6 +257,16 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
         for (const e of entries) {
           // Phonetic keys cannot honour case; case-sensitive terms are exact/fuzzy only.
           if (e.term.caseSensitive) continue;
+          // A numeral or a spelled-out abbreviation at either end costs the
+          // length ratio nothing, so the window grows over it for free and then
+          // wins on span length. Refuse it, unless the alias has the same kind
+          // of token in the same place and the window is covering it rather
+          // than swallowing it: the version number in "Claude 4" or
+          // "Kubernetes 1" is part of the name, and blocking the window that
+          // spans it left the shorter window to rewrite "cooper netties 1" as
+          // "Kubernetes 1 1". See isNonWordToken.
+          if (view.edgeNonWordStart && !e.startsNonWord) continue;
+          if (view.edgeNonWordEnd && !e.endsNonWord) continue;
           if (alpha.length < Math.min(PHONETIC_MIN_WINDOW, e.length)) continue;
           const max = Math.max(alpha.length, e.length);
           const diffRatio = Math.abs(alpha.length - e.length) / max;

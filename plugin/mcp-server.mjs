@@ -49100,43 +49100,77 @@ var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
 var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
-var INDENT_RE = /^(?: {4}|\t)/;
-var LIST_OR_QUOTE_RE = /^(?:[-*+>]|\d+[.)])(?:\s|$)/;
-function isBlank(line2) {
-  return line2.trim().length === 0;
+var INDENT_UNIT = 4;
+var QUOTE_PREFIX_RE = /^ {0,3}(?:>[ \t]?)+/;
+var LIST_MARKER_RE = /^(?:[-*+]|(?:\d{1,9}|[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,})[.)])(?:[ \t]+|$)/;
+function indentWidth(s) {
+  let w = 0;
+  for (const ch of s) {
+    if (ch === " ") w++;
+    else if (ch === "	") w += INDENT_UNIT - w % INDENT_UNIT;
+    else break;
+  }
+  return w;
 }
-function opensUnder(above) {
-  return above === "" || !/^[ \t]/.test(above) && !LIST_OR_QUOTE_RE.test(above);
+function listMarkerWidth(content) {
+  const m = LIST_MARKER_RE.exec(content);
+  if (!m) return 0;
+  return /[ \t]$/.test(m[0]) ? m[0].length : m[0].length + 1;
+}
+function scanLine(raw, start) {
+  const prefix = QUOTE_PREFIX_RE.exec(raw)?.[0] ?? "";
+  const body = raw.slice(prefix.length);
+  const content = body.replace(/^[ \t]+/, "");
+  return {
+    start,
+    end: start + raw.length,
+    blank: content.trim().length === 0,
+    quoteDepth: prefix.split(">").length - 1,
+    indent: indentWidth(body),
+    listWidth: listMarkerWidth(content),
+    tableRow: content.startsWith("|")
+  };
 }
 function indentedCodeRanges(text) {
-  const out = [];
+  const lines = [];
   let at = 0;
+  for (const raw of text.split("\n")) {
+    lines.push(scanLine(raw, at));
+    at += raw.length + 1;
+  }
+  const out = [];
+  let above;
   let prevBlank = true;
-  let above = "";
-  let open2;
-  for (const line2 of text.split("\n")) {
-    const start = at;
-    const end = at + line2.length;
-    at = end + 1;
-    if (isBlank(line2)) {
+  let i = 0;
+  while (i < lines.length) {
+    const line2 = lines[i];
+    if (line2.blank) {
       prevBlank = true;
+      i++;
       continue;
     }
-    const indented = INDENT_RE.test(line2);
-    if (open2) {
-      if (indented) open2.end = end;
-      else {
-        out.push(open2);
-        open2 = void 0;
-      }
+    const container = prevBlank && above !== void 0 && above.quoteDepth === line2.quoteDepth && !above.tableRow ? above.indent + above.listWidth : void 0;
+    if (container === void 0 || line2.indent < container + INDENT_UNIT) {
+      prevBlank = false;
+      above = line2;
+      i++;
+      continue;
     }
-    if (!open2 && indented && prevBlank && !LIST_OR_QUOTE_RE.test(line2.trim()) && opensUnder(above)) {
-      open2 = { start, end };
+    const min = container + INDENT_UNIT;
+    let last = i;
+    let allList = true;
+    for (let j = i; j < lines.length; j++) {
+      const l = lines[j];
+      if (l.blank) continue;
+      if (l.quoteDepth !== line2.quoteDepth || l.indent < min) break;
+      if (l.listWidth === 0 && !l.tableRow) allList = false;
+      last = j;
     }
+    if (!allList) out.push({ start: lines[i].start, end: lines[last].end });
+    above = lines[last];
     prevBlank = false;
-    above = line2;
+    i = last + 1;
   }
-  if (open2) out.push(open2);
   return out;
 }
 function collectRanges(text) {
@@ -49663,7 +49697,10 @@ function buildIndex(lexicon) {
       const dedupeKey2 = `${normLower}\0${explicit ? 1 : 0}`;
       if (seen.has(dedupeKey2)) continue;
       seen.add(dedupeKey2);
-      const tokenCount = norm.split(" ").length;
+      const aliasTokens = normLower.split(" ");
+      const tokenCount = aliasTokens.length;
+      const startsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[0]);
+      const endsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[tokenCount - 1]);
       const entry = {
         termIndex,
         term,
@@ -49687,10 +49724,11 @@ function buildIndex(lexicon) {
           const dedupePhonetic = `${key}\0${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length });
+            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length, startsNonWord, endsNonWord });
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
-            maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4));
+            const noSound = aliasTokens.filter((t) => isNonWordToken(t)).length;
+            maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4) + noSound);
           }
         }
       }
@@ -49776,7 +49814,8 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     mostlyStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
-    edgeNonWord: to > from && (isNonWordToken(first.baseLower) || isNonWordToken(last.baseLower)),
+    edgeNonWordStart: to > from && isNonWordToken(first.baseLower),
+    edgeNonWordEnd: to > from && isNonWordToken(last.baseLower),
     loneToken: from === to,
     plainWord: from === to && new RegExp("^\\p{Ll}+$", "u").test(norm),
     digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
@@ -49827,7 +49866,7 @@ function findBest(view, index, opts) {
   if (exactHit) return exactHit;
   if (view.allStop || view.mostlyStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return void 0;
   const barFor = (termIndex, lone) => lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
-  if (opts.phonetic && !view.edgeNonWord && index.phoneticKeys.size > 0) {
+  if (opts.phonetic && index.phoneticKeys.size > 0) {
     const alpha = alphaOnly(view.collapsed);
     if (alpha.length >= 3 && alpha.length * 2 >= index.phoneticMinLen && alpha.length <= index.phoneticMaxLen * 2) {
       const key = doubleMetaphone(alpha)[0];
@@ -49835,6 +49874,8 @@ function findBest(view, index, opts) {
       if (entries) {
         for (const e of entries) {
           if (e.term.caseSensitive) continue;
+          if (view.edgeNonWordStart && !e.startsNonWord) continue;
+          if (view.edgeNonWordEnd && !e.endsNonWord) continue;
           if (alpha.length < Math.min(PHONETIC_MIN_WINDOW, e.length)) continue;
           const max = Math.max(alpha.length, e.length);
           const diffRatio = Math.abs(alpha.length - e.length) / max;

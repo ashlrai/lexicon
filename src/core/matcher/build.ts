@@ -12,6 +12,7 @@ import {
   MAX_PHONETIC_KEYS_PER_TERM,
   MAX_WINDOW,
   PHONETIC_MIN_KEY,
+  isNonWordToken,
 } from './tuning.js';
 import { alphaOnly, collapse, foldLower, squash } from './text.js';
 
@@ -40,6 +41,15 @@ export interface PhoneticEntry {
   readonly alpha: string;
   /** Length of `alpha`. */
   readonly length: number;
+  /**
+   * True when this alias has several tokens and its first (respectively last)
+   * one carries no word sound of its own: "Claude 4", "Kubernetes 1". The
+   * phonetic pass refuses a window with such an edge token unless the alias has
+   * one in the same place, so "clawd 4" still reaches "Claude 4" while "cooper
+   * netties 2" cannot reach plain "Kubernetes". See isNonWordToken.
+   */
+  readonly startsNonWord: boolean;
+  readonly endsNonWord: boolean;
 }
 
 export interface MatcherIndex {
@@ -133,7 +143,10 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
 
-      const tokenCount = norm.split(' ').length;
+      const aliasTokens = normLower.split(' ');
+      const tokenCount = aliasTokens.length;
+      const startsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[0]);
+      const endsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[tokenCount - 1]);
       const entry: AliasEntry = {
         termIndex,
         term,
@@ -161,12 +174,16 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
           const dedupePhonetic = `${key}\u0000${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length });
+            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length, startsNonWord, endsNonWord });
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
             // STT tends to split one long word into several ("pie dentic"), so
-            // allow windows wide enough to reassemble it.
-            maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4));
+            // allow windows wide enough to reassemble it. The alias's own
+            // no-sound tokens are counted on top: `alpha` drops them, so
+            // "Postgres 16" budgets two tokens for a garble that needs three
+            // ("post gres 16") and the 16 was left stranded beside the rewrite.
+            const noSound = aliasTokens.filter((t) => isNonWordToken(t)).length;
+            maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4) + noSound);
           }
         }
       }
