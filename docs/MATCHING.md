@@ -4,7 +4,7 @@ What the matcher does to a sentence, and why it so rarely touches ordinary prose
 
 Matching runs in three tiers over token windows. Exact hits are resolved first (longest span, earliest start); phonetic and fuzzy hits only get the spans left over, and matches never overlap.
 
-1. **Exact alias.** Word-boundary, multi-word, case-insensitive and diacritic-insensitive (`bjorn halvorsen` hits `Bjørn Halvorsen`) unless the term sets `caseSensitive`. Confidence 1.0.
+1. **Exact alias.** Word-boundary, multi-word, case-insensitive and diacritic-insensitive (`bjorn halvorsen` hits `Bjørn Halvorsen`) unless the term sets `caseSensitive`. Confidence 1.0, except for a boundary the matcher invented (below), which is 0.95.
 2. **Phonetic.** Double metaphone of a token window equals that of an alias or the canonical. Confidence about 0.9, scaled by length similarity.
 3. **Fuzzy.** Normalized Damerau-Levenshtein (adjacent-transposition-aware) similarity at or above `minConfidence`. Confidence equals the similarity.
 
@@ -20,6 +20,22 @@ Checked before any replacement:
 - A lone word matched against a term that has explicit aliases must score at least 0.88. In the phonetic pass that bar applies whatever the case (`Inter` is held to it as much as `inter`), and the candidate must also resemble the alias in spelling; in the fuzzy pass only an all-lowercase token (`prism`, `email`, `gram`) is held to it.
 - A phonetic window of two or more words never starts or ends on a token with no word sound of its own: a bare numeral (`2`, `3.5`) or an abbreviation spelled out with periods (`i.e`, `a.m`). Confidence there is a ratio of letter counts, so such a token is free, and the window grew over it and then won on span length (`cooper netties i.e. Terraform` came out as `Kubernetes. Terraform`). The test is against the alias, not the window alone: when the term's own name carries one in the same place, the window covers it instead of swallowing it, so `clawd 4` still reaches `Claude 4` and `cooper netties 1` gives `Kubernetes 1` rather than `Kubernetes 1 1`. Phonetic pass only, so `b 2 b`, `auth 0` and `11 labs` still work as exact aliases.
 - A trailing possessive is kept: `ashler ai's` becomes `Ashlr.AI's`.
+- An implicit alias that had to invent a word boundary scores 0.95, not 1.0, and has to clear `minConfidence` like anything else. See below.
+
+## Boundaries the matcher invented
+
+The exact pass strips every separator before comparing, which is why `ashlrai`, `ashlr ai`, `ashlr-ai` and `Ashlr.AI` all reach the same term. The same stripping means a window can match by breaking a word the canonical never breaks: `lexicon file` reaches `LexiconFile`, `open ai` reaches `OpenAI`, `tail wind` reaches `Tailwind`. The split is read off a case hump, which is a convention of written code and not a sound anyone makes.
+
+Those two claims are not alike, so they no longer score alike.
+
+- The window breaks where the canonical's own spelling breaks, or joins where it separates: `ashlr ai` and `ashlrai` for `Ashlr.AI`, `next js` and `nextjs` for `Next.js`, `wispr flow` and `wisprflow` for `Wispr Flow`, `vertex ai` and `vertexai` for `Vertex AI`. Only punctuation differs. Confidence stays 1.0.
+- The window breaks where the canonical has no separator at all: `lexicon file` for `LexiconFile`, `open ai` for `OpenAI`. Confidence 0.95, and `minConfidence` can now refuse it. This is the only place `minConfidence` reaches the exact pass.
+
+An alias you listed yourself is exempt, for the same reason it beats the stoplist: you wrote the string down, so it is not a guess.
+
+Set `minConfidence` above 0.95 to turn invented boundaries off. Nothing else in the exact pass moves, because nothing else scores below 1.0.
+
+**This is a score, not a verdict.** It does not decide that `the lexicon file` is English and `lexicon store` is a symbol. Those two sentences are the same shape, and the stoplist, the casing and the category say the same thing about both: `lexicon` is absent from the stoplist while `file` and `store` are both in it, neither phrase is capitalised, and both terms are `category: identifier`. A guard that refuses one refuses the other, and the benchmark asks for `lexicon store` by name. What decides it is whether `LexiconFile` belongs in your lexicon at all, which is `lexicon harvest`'s problem and yours, not the matcher's. If a term of yours reads as ordinary English, give it a `never` list or drop it.
 
 **Explicit aliases always beat the stoplist.** If you list `off` as an alias for `auth`, "off" is rewritten. The stoplist exists to stop phonetic and fuzzy guessing, not to override what you wrote down. Use `never` if a term needs its own exceptions.
 

@@ -15,7 +15,7 @@ The matrix is `ubuntu-latest`, `windows-latest` and `macos-latest`, with Node 20
 
 | Feature | macOS | Windows | Linux | What the mark rests on |
 |---|---|---|---|---|
-| CLI: all twenty-five `lexicon` commands | **Tested in CI** | **Tested in CI** | **Tested in CI** | The 969 TypeScript tests run on every matrix job, followed by a smoke test that drives the built binary rather than the source. Only the jsdom extension file is conditional, and only on Node 20. |
+| CLI: all twenty-five `lexicon` commands | **Tested in CI** | **Tested in CI** | **Tested in CI** | The 975 TypeScript tests run on every matrix job, followed by a smoke test that drives the built binary rather than the source. Only the jsdom extension file is conditional, and only on Node 20. |
 | MCP server (stdio, nineteen tools) | **Tested in CI** | **Tested in CI** | **Tested in CI** | The smoke step starts the real server as a child process and speaks stdio JSON-RPC to it on every job. |
 | Claude Code hooks and the plugin bundle | **Tested in CI** | **Tested in CI** | **Tested in CI** | The end-to-end suite spawns the real hook and the real CLI as child processes; a separate gate fails if the committed plugin bundle has drifted from source. |
 | `lexicon install <client> --apply` | **Tested in CI** | **Tested in CI** | **Tested in CI** | Covered by the portable suite everywhere. On Windows all five client configs are additionally written into a scratch `%USERPROFILE%` and read back off disk, so the paths are checked against the filesystem rather than against our own constant. |

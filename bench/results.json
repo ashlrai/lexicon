@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T02:43:45.435Z",
+  "generatedAt": "2026-09-21T04:56:14.305Z",
   "lexicon": "bench/lexicon.yaml",
   "corpus": "bench/corpus.jsonl",
   "config": {
@@ -171,7 +171,7 @@
       "replacements": 242,
       "correct": 228,
       "wrong": 14,
-      "meanConfidence": 1
+      "meanConfidence": 0.995247933884297
     },
     "phonetic": {
       "replacements": 52,
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 329.0627758793958,
-    "findReplacementsUs": 59.90379296482638,
+    "normalizeUs": 490.979553768844,
+    "findReplacementsUs": 77.17861809045318,
     "rounds": 5
   },
   "failures": [
@@ -521,7 +521,7 @@
           "replacement": "Tailwind",
           "canonical": "Tailwind",
           "reason": "alias",
-          "confidence": 1
+          "confidence": 0.95
         }
       ],
       "missed": [],
@@ -533,7 +533,7 @@
           "replacement": "Tailwind",
           "canonical": "Tailwind",
           "reason": "alias",
-          "confidence": 1
+          "confidence": 0.95
         }
       ]
     },

@@ -22,6 +22,7 @@ import {
   ALIASED_PLAIN_WORD_MIN,
   DEFAULT_MIN_CONFIDENCE,
   FUNCTION_WORDS,
+  INVENTED_BOUNDARY_CONFIDENCE,
   PHONETIC_BASE,
   PHONETIC_LENGTH_WEIGHT,
   PHONETIC_LONE_TOKEN_MIN_SIM,
@@ -35,12 +36,13 @@ import { alphaOnly, similarity } from './matcher/text.js';
 import { STOPLIST } from './stoplist.js';
 import { tokenize } from './matcher/tokenize.js';
 import type { Token } from './matcher/tokenize.js';
+import { separatorOffsets } from './matcher/build.js';
 import type { AliasEntry, MatcherIndex, PhoneticEntry } from './matcher/build.js';
 import { declineCollapsedMentions } from './matcher/enumeration.js';
 
 export { DEFAULT_MIN_CONFIDENCE } from './matcher/tuning.js';
 export { phoneticKey, similarity } from './matcher/text.js';
-export { buildIndex } from './matcher/build.js';
+export { buildIndex, separatorOffsets } from './matcher/build.js';
 export type { AliasEntry, MatcherIndex, PhoneticEntry } from './matcher/build.js';
 /** Re-exported from stoplist.ts: core/index.ts has always surfaced it through here. */
 export { STOPLIST } from './stoplist.js';
@@ -183,6 +185,25 @@ function makeView(
   };
 }
 
+/**
+ * True when the window breaks an alphanumeric run somewhere the alias does not:
+ * "lexicon file" against LexiconFile, "open ai" against OpenAI. The exact pass
+ * strips every separator before comparing, so such a window is letter-for-letter
+ * right and boundary-for-boundary a guess. Explicit aliases are exempt, on the
+ * same principle that exempts them from the stoplist: the user wrote the string
+ * down. See INVENTED_BOUNDARY_CONFIDENCE.
+ *
+ * Module scope and no memo on purpose. `findBest` runs for every window in the
+ * text and this runs only for a window one of the exact maps already answered,
+ * which is almost none of them; a closure or a cache per window would cost more
+ * than it saves.
+ */
+function inventsBoundary(view: WindowView, e: AliasEntry): boolean {
+  if (e.explicit) return false;
+  for (const off of separatorOffsets(view.norm)) if (!e.separators.has(off)) return true;
+  return false;
+}
+
 function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun'>>): Candidate | undefined {
   // Held in an object read through a getter: TS does not invalidate narrowing of
   // a local across the closure calls below, so a plain `let best` narrows to never.
@@ -230,7 +251,11 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
         continue;
       }
       if (blocked(e)) continue;
-      consider(e, 'alias', 1);
+      const confidence = inventsBoundary(view, e) ? INVENTED_BOUNDARY_CONFIDENCE : 1;
+      // The only place minConfidence reaches the exact pass: an invented
+      // boundary is the one thing in it the user did not spell out.
+      if (confidence < opts.minConfidence) continue;
+      consider(e, 'alias', confidence);
     }
   };
   tryExact(index.exact.get(view.normLower), false);

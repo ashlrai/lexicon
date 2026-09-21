@@ -84,6 +84,36 @@ export function loneTokenMinSim(keyLength: number): number {
   if (keyLength === 4) return PHONETIC_LONE_KEY4_MIN_SIM;
   return 0;
 }
+/**
+ * Confidence of an exact hit that had to invent a word boundary the alias does
+ * not have. Everything else in the exact pass stays at 1.
+ *
+ * The exact pass compares a window against an alias with every separator
+ * stripped, so one map entry serves two very different claims. "ashlr ai" ->
+ * Ashlr.AI and "next js" -> Next.js break exactly where the user's own
+ * spelling breaks; the matcher is only forgiving punctuation, and those are
+ * still 1. "lexicon file" -> LexiconFile and "open ai" -> OpenAI break where
+ * the canonical has no separator at all: the split is read off a case hump,
+ * which is a convention of written code and not a sound. That is a guess, and
+ * a guess scored 1.00 is a guess `--min-confidence` cannot reach and `--diff`
+ * cannot show you. See separatorOffsets in matcher/build.ts.
+ *
+ * 0.95 is deliberately above every inexact pass rather than near them: the
+ * split is exact on every letter and digit, so it should still win a span a
+ * phonetic or fuzzy candidate also wants, exactly as it does today. What
+ * changes is that raising minConfidence past it now turns invented boundaries
+ * off while leaving the rest of the exact pass alone, and that a split shows up
+ * in --dry-run and --diff as the guess it is.
+ *
+ * Implicit aliases only. An alias the user listed is a string they asked to
+ * have replaced, and the stoplist is already overridden for the same reason.
+ *
+ * This is a confidence, not a guard: it does not decide that "the lexicon file"
+ * is prose and "lexicon store" is a symbol, because nothing in the text does.
+ * See docs/MATCHING.md.
+ */
+export const INVENTED_BOUNDARY_CONFIDENCE = 0.95;
+
 /** Domain-style suffixes stripped to derive an implicit short alias ("Ashlr.AI" -> "Ashlr"). */
 export const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 

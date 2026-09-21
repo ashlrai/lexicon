@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STOPLIST, buildIndex, findReplacements, phoneticKey, similarity } from '../src/core/matcher.js';
+import { STOPLIST, buildIndex, findReplacements, phoneticKey, separatorOffsets, similarity } from '../src/core/matcher.js';
 import type { Lexicon, Replacement, Term } from '../src/core/types.js';
 
 function lex(terms: Term[], settings?: Lexicon['settings']): Lexicon {
@@ -969,5 +969,117 @@ describe('bugs M-O: a canonical that ends in a numeral, and what counts as an in
       expect(find(`${above}\n\n    Ashler continues it\n`, [ASHLR]), above).toHaveLength(1);
     }
     expect(find('| Term | Note |\n| --- | --- |\n\n    Ashler under the table\n', [ASHLR])).toHaveLength(1);
+  });
+});
+
+// Bug P: the exact pass strips every separator before comparing, so one map
+// entry serves two claims that are not alike. "ashlr ai" -> Ashlr.AI breaks
+// where the user's own spelling breaks; "lexicon file" -> LexiconFile breaks
+// where LexiconFile has no separator at all, and that boundary is the
+// matcher's, read off a case hump. Both scored 1.00, which is the one score
+// minConfidence cannot reach and --diff cannot question, so a lexicon holding
+// LexiconFile rewrote "the lexicon file" in ordinary prose 23 times in this
+// repository's own markdown and called it exact.
+//
+// Nothing here decides that "the lexicon file" is prose while "lexicon store"
+// is a symbol: the two sentences are the same shape and the stoplist, the
+// casing and the category all say the same thing about both (see
+// docs/MATCHING.md). What changes is the score, and therefore whether the
+// threshold can reach it.
+describe('bug P: a word boundary the canonical does not have is not an exact match', () => {
+  const LEXICON_FILE: Term = { canonical: 'LexiconFile', aliases: [], category: 'identifier' };
+  const NORMALIZE_RESULT: Term = { canonical: 'NormalizeResult', aliases: [], category: 'identifier' };
+  const OPENAI: Term = { canonical: 'OpenAI', aliases: [] };
+  const TAILWIND: Term = { canonical: 'Tailwind', aliases: [] };
+  const VERTEX: Term = { canonical: 'Vertex AI', aliases: [] };
+  const NEXTJS: Term = { canonical: 'Next.js', aliases: [] };
+  const WISPR: Term = { canonical: 'Wispr Flow', aliases: [] };
+
+  it('reports the boundaries a spelling marks, and none for a case hump', () => {
+    expect([...separatorOffsets('Ashlr.AI')]).toEqual([5]);
+    expect([...separatorOffsets('Wispr Flow')]).toEqual([5]);
+    expect([...separatorOffsets('Next.js')]).toEqual([4]);
+    expect([...separatorOffsets('lexicon file')]).toEqual([7]);
+    // A hump is a convention of written code, not a break anyone can hear.
+    expect([...separatorOffsets('LexiconFile')]).toEqual([]);
+    expect([...separatorOffsets('OpenAI')]).toEqual([]);
+    // Counted on the folded form, because that is what `collapse` counts and
+    // folding can change a string's length.
+    expect([...separatorOffsets('Bjørn Halvorsen')]).toEqual([5]);
+    expect([...separatorOffsets('Straße Ecke')]).toEqual([7]);
+    // Leading and trailing punctuation separates nothing.
+    expect([...separatorOffsets('  .Ashlr.  ')]).toEqual([]);
+  });
+
+  it('scores an invented boundary below 1', () => {
+    expect(find('The lexicon file lives in the repo', [LEXICON_FILE])[0]).toMatchObject({
+      original: 'lexicon file', replacement: 'LexiconFile', reason: 'alias', confidence: 0.95,
+    });
+    expect(find('the normalize result is a pure value', [NORMALIZE_RESULT])[0]).toMatchObject({ confidence: 0.95 });
+    expect(find('ask open ai about it', [OPENAI])[0]).toMatchObject({ replacement: 'OpenAI', confidence: 0.95 });
+    expect(find('the tail wind config', [TAILWIND])[0]).toMatchObject({ replacement: 'Tailwind', confidence: 0.95 });
+  });
+
+  it('keeps confidence 1 where the boundary is the canonical’s own', () => {
+    // The window breaks where the spelling already breaks: only punctuation differs.
+    expect(find('ashlr ai rocks', [ASHLR])[0]).toMatchObject({ replacement: 'Ashlr.AI', confidence: 1 });
+    expect(find('built on next js', [NEXTJS])[0]).toMatchObject({ replacement: 'Next.js', confidence: 1 });
+    expect(find('we use vertex ai', [VERTEX])[0]).toMatchObject({ replacement: 'Vertex AI', confidence: 1 });
+    expect(find('a wispr flow session', [WISPR])[0]).toMatchObject({ replacement: 'Wispr Flow', confidence: 1 });
+    // And dropping a separator the user did write invents nothing either.
+    expect(find('ping ashlrai today', [ASHLR])[0]).toMatchObject({ replacement: 'Ashlr.AI', confidence: 1 });
+    expect(find('built on nextjs', [NEXTJS])[0]).toMatchObject({ confidence: 1 });
+    expect(find('we use vertexai', [VERTEX])[0]).toMatchObject({ confidence: 1 });
+    expect(find('a wisprflow session', [WISPR])[0]).toMatchObject({ confidence: 1 });
+  });
+
+  it('lets minConfidence reach an invented boundary, and nothing else in the exact pass', () => {
+    const opts = { minConfidence: 0.96 };
+    // Refused, and not rescued by the phonetic or fuzzy pass either: their own
+    // scores are well below this threshold.
+    expect(find('The lexicon file lives in the repo', [LEXICON_FILE], opts)).toHaveLength(0);
+    expect(find('ask open ai about it', [OPENAI], opts)).toHaveLength(0);
+    expect(find('the tail wind config', [TAILWIND], opts)).toHaveLength(0);
+    // Still exact, because the user wrote the boundary down.
+    expect(find('ashlr ai rocks', [ASHLR], opts)[0]).toMatchObject({ replacement: 'Ashlr.AI', confidence: 1 });
+    expect(find('we use vertex ai', [VERTEX], opts)[0]).toMatchObject({ replacement: 'Vertex AI', confidence: 1 });
+    expect(find('built on next js', [NEXTJS], opts)[0]).toMatchObject({ replacement: 'Next.js', confidence: 1 });
+    expect(find('ping ashlrai today', [ASHLR], opts)[0]).toMatchObject({ confidence: 1 });
+  });
+
+  it('exempts an alias the user listed, wherever it breaks', () => {
+    const listed: Term = { canonical: 'LexiconFile', aliases: ['Lexicon File'], category: 'identifier' };
+    expect(find('the lexicon file lives here', [listed])[0]).toMatchObject({ reason: 'alias', confidence: 1 });
+    expect(find('the lexicon file lives here', [listed], { minConfidence: 0.99 })[0]).toMatchObject({ confidence: 1 });
+    // Same principle that already exempts an explicit alias from the stoplist:
+    // the user wrote the string down, so it is not a guess.
+    expect(find('ask open ai about it', [{ canonical: 'OpenAI', aliases: ['open ai'] }])[0]).toMatchObject({ confidence: 1 });
+  });
+
+  // The direction that does not announce itself. Implicit splitting is the
+  // product's headline shape, and a guard drawn tighter than this one takes it
+  // out silently: every one of these must keep matching at the default
+  // threshold, and nothing below is a case the matcher may stop correcting.
+  it('still matches every shape implicit splitting exists for', () => {
+    for (const [text, term, canonical] of [
+      ['send it to ashlr ai today', ASHLR, 'Ashlr.AI'],
+      ['ask open ai about it', OPENAI, 'OpenAI'],
+      ['we use vertex ai for this', VERTEX, 'Vertex AI'],
+      ['built on next js', NEXTJS, 'Next.js'],
+      ['a wispr flow session', WISPR, 'Wispr Flow'],
+      ['open claw is great', { canonical: 'OpenClaw', aliases: [] }, 'OpenClaw'],
+      // The identifier shape the benchmark measures, which is the same shape as
+      // "the lexicon file" and is why no guard here tells them apart.
+      ['lexicon store throws when the file is empty', { canonical: 'LexiconStore', aliases: [], category: 'identifier' }, 'LexiconStore'],
+      ['can you refactor normalize transcript', { canonical: 'normalizeTranscript', aliases: [], category: 'identifier' }, 'normalizeTranscript'],
+      ['refactor harvest repo to take options', { canonical: 'harvestRepo', aliases: [], category: 'identifier' }, 'harvestRepo'],
+    ] as Array<[string, Term, string]>) {
+      const reps = find(text, [term]);
+      expect(reps.map((r) => r.replacement), text).toEqual([canonical]);
+      expect(reps[0].reason, text).toBe('alias');
+    }
+    // A garble the phonetic pass reassembles across a space is untouched by any
+    // of this: it never went through the exact pass at all.
+    expect(find('deploy cooper netties today', [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
   });
 });

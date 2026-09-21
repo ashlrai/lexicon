@@ -49080,6 +49080,7 @@ function loneTokenMinSim(keyLength) {
   if (keyLength === 4) return PHONETIC_LONE_KEY4_MIN_SIM;
   return 0;
 }
+var INVENTED_BOUNDARY_CONFIDENCE = 0.95;
 var DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 var NO_LETTERS_RE = /^[^\p{L}]+$/u;
 var SPELLED_ABBREVIATION_RE = new RegExp("^\\p{L}{1,2}(?:\\.\\p{L}{1,2})+$", "u");
@@ -49322,6 +49323,139 @@ function tokenize(text, skipCode) {
     tokens.push({ ...t, joinsNext });
   }
   return tokens;
+}
+
+// src/core/matcher/build.ts
+function push(map2, key, value) {
+  const list = map2.get(key);
+  if (list) list.push(value);
+  else map2.set(key, [value]);
+}
+function isSpelledOut(norm) {
+  return norm.split(" ").every((t) => alphaOnly(t).length <= 2);
+}
+var ALNUM_RE = /[\p{L}\p{N}]/u;
+function separatorOffsets(s) {
+  const out = /* @__PURE__ */ new Set();
+  let n = 0;
+  let gap = false;
+  for (const ch of foldLower(s)) {
+    if (ALNUM_RE.test(ch)) {
+      if (gap && n > 0) out.add(n);
+      gap = false;
+      n++;
+    } else if (n > 0) {
+      gap = true;
+    }
+  }
+  return out;
+}
+function implicitAliases(canonical) {
+  const out = [canonical];
+  const m = DOMAIN_SUFFIX.exec(canonical);
+  if (m) out.push(m[1]);
+  return out;
+}
+function buildIndex(lexicon) {
+  const settings = lexicon.settings ?? {};
+  const exact = /* @__PURE__ */ new Map();
+  const collapsed = /* @__PURE__ */ new Map();
+  const phoneticKeys = /* @__PURE__ */ new Map();
+  const fuzzyBuckets = /* @__PURE__ */ new Map();
+  const never2 = [];
+  const hasExplicitAliases = [];
+  let maxWindow = 1;
+  let maxFuzzyWindow = 1;
+  let phoneticMinLen = Number.POSITIVE_INFINITY;
+  let phoneticMaxLen = 0;
+  lexicon.terms.forEach((term, termIndex) => {
+    const neverSet = /* @__PURE__ */ new Set();
+    for (const w of term.never ?? []) {
+      const n = foldLower(squash(w));
+      if (!n) continue;
+      neverSet.add(n);
+      neverSet.add(collapse(n));
+    }
+    never2.push(neverSet);
+    hasExplicitAliases.push(term.aliases.some((a) => squash(a).length > 0));
+    const seen = /* @__PURE__ */ new Set();
+    const termKeys = /* @__PURE__ */ new Set();
+    const candidates = [
+      ...implicitAliases(term.canonical).map((alias) => ({ alias, explicit: false })),
+      ...term.aliases.map((alias) => ({ alias, explicit: true }))
+    ];
+    for (const { alias, explicit } of candidates) {
+      const norm = squash(alias);
+      if (!norm) continue;
+      const normLower = foldLower(norm);
+      const collapsedRaw = norm.replace(/[^\p{L}\p{N}]+/gu, "");
+      const collapsedLower = collapse(norm);
+      if (!collapsedLower) continue;
+      const dedupeKey2 = `${normLower}\0${explicit ? 1 : 0}`;
+      if (seen.has(dedupeKey2)) continue;
+      seen.add(dedupeKey2);
+      const aliasTokens = normLower.split(" ");
+      const tokenCount = aliasTokens.length;
+      const startsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[0]);
+      const endsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[tokenCount - 1]);
+      const entry = {
+        termIndex,
+        term,
+        alias,
+        norm,
+        normLower,
+        collapsedRaw,
+        collapsed: collapsedLower,
+        tokenCount,
+        separators: separatorOffsets(norm),
+        explicit
+      };
+      push(exact, normLower, entry);
+      push(collapsed, collapsedLower, entry);
+      push(fuzzyBuckets, tokenCount, entry);
+      maxWindow = Math.max(maxWindow, tokenCount);
+      maxFuzzyWindow = Math.max(maxFuzzyWindow, tokenCount);
+      const alpha = alphaOnly(norm);
+      if (alpha.length >= 3 && !isSpelledOut(norm) && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
+        const key = doubleMetaphone(alpha)[0];
+        if (key.length >= PHONETIC_MIN_KEY) {
+          const dedupePhonetic = `${key}\0${alpha.length}`;
+          if (!termKeys.has(dedupePhonetic)) {
+            termKeys.add(dedupePhonetic);
+            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length, startsNonWord, endsNonWord });
+            phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
+            phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
+            const noSound = aliasTokens.filter((t) => isNonWordToken(t)).length;
+            maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4) + noSound);
+          }
+        }
+      }
+    }
+  });
+  if (!Number.isFinite(phoneticMinLen)) phoneticMinLen = 0;
+  const protectedWords = /* @__PURE__ */ new Set();
+  for (const w of settings.protectedWords ?? []) {
+    const n = foldLower(squash(w));
+    if (n) protectedWords.add(n);
+  }
+  return {
+    lexicon,
+    hasExplicitAliases,
+    minConfidence: settings.minConfidence ?? DEFAULT_MIN_CONFIDENCE,
+    phonetic: settings.phonetic ?? true,
+    fuzzy: settings.fuzzy ?? true,
+    skipCode: settings.skipCode ?? true,
+    protectedWords,
+    maxWindow: Math.min(MAX_WINDOW, maxWindow),
+    maxFuzzyWindow: Math.min(MAX_WINDOW, maxFuzzyWindow),
+    phoneticMinLen,
+    phoneticMaxLen,
+    exact,
+    collapsed,
+    phoneticKeys,
+    fuzzyBuckets,
+    never: never2
+  };
 }
 
 // src/core/matcher/enumeration.ts
@@ -49856,122 +49990,6 @@ function declineCollapsedMentions(text, spans) {
   return spans.filter((_, i) => !declined.has(i));
 }
 
-// src/core/matcher/build.ts
-function push(map2, key, value) {
-  const list = map2.get(key);
-  if (list) list.push(value);
-  else map2.set(key, [value]);
-}
-function isSpelledOut(norm) {
-  return norm.split(" ").every((t) => alphaOnly(t).length <= 2);
-}
-function implicitAliases(canonical) {
-  const out = [canonical];
-  const m = DOMAIN_SUFFIX.exec(canonical);
-  if (m) out.push(m[1]);
-  return out;
-}
-function buildIndex(lexicon) {
-  const settings = lexicon.settings ?? {};
-  const exact = /* @__PURE__ */ new Map();
-  const collapsed = /* @__PURE__ */ new Map();
-  const phoneticKeys = /* @__PURE__ */ new Map();
-  const fuzzyBuckets = /* @__PURE__ */ new Map();
-  const never2 = [];
-  const hasExplicitAliases = [];
-  let maxWindow = 1;
-  let maxFuzzyWindow = 1;
-  let phoneticMinLen = Number.POSITIVE_INFINITY;
-  let phoneticMaxLen = 0;
-  lexicon.terms.forEach((term, termIndex) => {
-    const neverSet = /* @__PURE__ */ new Set();
-    for (const w of term.never ?? []) {
-      const n = foldLower(squash(w));
-      if (!n) continue;
-      neverSet.add(n);
-      neverSet.add(collapse(n));
-    }
-    never2.push(neverSet);
-    hasExplicitAliases.push(term.aliases.some((a) => squash(a).length > 0));
-    const seen = /* @__PURE__ */ new Set();
-    const termKeys = /* @__PURE__ */ new Set();
-    const candidates = [
-      ...implicitAliases(term.canonical).map((alias) => ({ alias, explicit: false })),
-      ...term.aliases.map((alias) => ({ alias, explicit: true }))
-    ];
-    for (const { alias, explicit } of candidates) {
-      const norm = squash(alias);
-      if (!norm) continue;
-      const normLower = foldLower(norm);
-      const collapsedRaw = norm.replace(/[^\p{L}\p{N}]+/gu, "");
-      const collapsedLower = collapse(norm);
-      if (!collapsedLower) continue;
-      const dedupeKey2 = `${normLower}\0${explicit ? 1 : 0}`;
-      if (seen.has(dedupeKey2)) continue;
-      seen.add(dedupeKey2);
-      const aliasTokens = normLower.split(" ");
-      const tokenCount = aliasTokens.length;
-      const startsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[0]);
-      const endsNonWord = tokenCount > 1 && isNonWordToken(aliasTokens[tokenCount - 1]);
-      const entry = {
-        termIndex,
-        term,
-        alias,
-        norm,
-        normLower,
-        collapsedRaw,
-        collapsed: collapsedLower,
-        tokenCount,
-        explicit
-      };
-      push(exact, normLower, entry);
-      push(collapsed, collapsedLower, entry);
-      push(fuzzyBuckets, tokenCount, entry);
-      maxWindow = Math.max(maxWindow, tokenCount);
-      maxFuzzyWindow = Math.max(maxFuzzyWindow, tokenCount);
-      const alpha = alphaOnly(norm);
-      if (alpha.length >= 3 && !isSpelledOut(norm) && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
-        const key = doubleMetaphone(alpha)[0];
-        if (key.length >= PHONETIC_MIN_KEY) {
-          const dedupePhonetic = `${key}\0${alpha.length}`;
-          if (!termKeys.has(dedupePhonetic)) {
-            termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length, startsNonWord, endsNonWord });
-            phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
-            phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
-            const noSound = aliasTokens.filter((t) => isNonWordToken(t)).length;
-            maxWindow = Math.max(maxWindow, Math.ceil(alpha.length / 4) + noSound);
-          }
-        }
-      }
-    }
-  });
-  if (!Number.isFinite(phoneticMinLen)) phoneticMinLen = 0;
-  const protectedWords = /* @__PURE__ */ new Set();
-  for (const w of settings.protectedWords ?? []) {
-    const n = foldLower(squash(w));
-    if (n) protectedWords.add(n);
-  }
-  return {
-    lexicon,
-    hasExplicitAliases,
-    minConfidence: settings.minConfidence ?? DEFAULT_MIN_CONFIDENCE,
-    phonetic: settings.phonetic ?? true,
-    fuzzy: settings.fuzzy ?? true,
-    skipCode: settings.skipCode ?? true,
-    protectedWords,
-    maxWindow: Math.min(MAX_WINDOW, maxWindow),
-    maxFuzzyWindow: Math.min(MAX_WINDOW, maxFuzzyWindow),
-    phoneticMinLen,
-    phoneticMaxLen,
-    exact,
-    collapsed,
-    phoneticKeys,
-    fuzzyBuckets,
-    never: never2
-  };
-}
-
 // src/core/matcher.ts
 var REASON_RANK = { alias: 0, phonetic: 1, fuzzy: 2 };
 var GLUE_BEFORE = /* @__PURE__ */ new Set(["@", "/", "#", ":", "\\", "~", "_", "-"]);
@@ -50033,6 +50051,11 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
   };
 }
+function inventsBoundary(view, e) {
+  if (e.explicit) return false;
+  for (const off of separatorOffsets(view.norm)) if (!e.separators.has(off)) return true;
+  return false;
+}
 function findBest(view, index, opts) {
   const state = { best: void 0 };
   const current = () => state.best;
@@ -50069,7 +50092,9 @@ function findBest(view, index, opts) {
         continue;
       }
       if (blocked(e)) continue;
-      consider(e, "alias", 1);
+      const confidence = inventsBoundary(view, e) ? INVENTED_BOUNDARY_CONFIDENCE : 1;
+      if (confidence < opts.minConfidence) continue;
+      consider(e, "alias", confidence);
     }
   };
   tryExact(index.exact.get(view.normLower), false);

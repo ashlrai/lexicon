@@ -1,6 +1,6 @@
 # Real-audio benchmark results
 
-Generated 2026-09-21T02:44:00.246Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
+Generated 2026-09-21T04:56:15.370Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
 
 Sentences: 110 (80 with lexicon terms, 30 clean prose; 6 marked expected-hard) x 3 voice(s) = 330 clips per variant. This invocation took 1 s (synthesis 0 s); cached audio and transcripts are skipped, so a cold run is longer (see the whisper wall time row).
 
@@ -46,7 +46,7 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
-| alias | 102 | 90 | 12 | 1.000 |
+| alias | 102 | 90 | 12 | 0.993 |
 | phonetic | 19 | 16 | 3 | 0.896 |
 | fuzzy | 8 | 8 | 0 | 0.910 |
 
@@ -75,7 +75,7 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
-| alias | 58 | 49 | 9 | 1.000 |
+| alias | 58 | 49 | 9 | 0.995 |
 | phonetic | 11 | 8 | 3 | 0.895 |
 | fuzzy | 9 | 9 | 0 | 0.914 |
 
@@ -104,7 +104,7 @@ Metrics are the ones from `bench/lib.ts` (see `bench/README.md`). Term recall is
 
 | reason | replacements | correct | spurious | mean confidence |
 | --- | --- | --- | --- | --- |
-| alias | 107 | 95 | 12 | 1.000 |
+| alias | 107 | 95 | 12 | 0.993 |
 | phonetic | 25 | 22 | 3 | 0.890 |
 | fuzzy | 9 | 9 | 0 | 0.890 |
 

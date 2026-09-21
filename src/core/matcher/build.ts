@@ -29,6 +29,11 @@ export interface AliasEntry {
   readonly collapsedRaw: string;
   readonly collapsed: string;
   readonly tokenCount: number;
+  /**
+   * Offsets into the collapsed form where this alias's own spelling separates
+   * one alphanumeric run from the next (see separatorOffsets).
+   */
+  readonly separators: ReadonlySet<number>;
   /** True when listed by the user in term.aliases (as opposed to derived from the canonical). */
   readonly explicit: boolean;
 }
@@ -90,6 +95,41 @@ export function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 /** True when every token is one or two letters: an acronym spelled out letter by letter. */
 export function isSpelledOut(norm: string): boolean {
   return norm.split(' ').every((t) => alphaOnly(t).length <= 2);
+}
+
+const ALNUM_RE = /[\p{L}\p{N}]/u;
+
+/**
+ * Offsets, counted in the collapsed (letters and digits only) form, where `s`
+ * separates one alphanumeric run from the next: `Ashlr.AI` -> {5},
+ * `Wispr Flow` -> {5}, `Next.js` -> {4}, `LexiconFile` -> {} (an empty set: a
+ * case hump is a spelling convention, not a separator anyone can hear).
+ *
+ * The exact pass compares a window against an alias with every separator
+ * removed, so "ashlr ai" and "lexiconfile" reach `Ashlr.AI` and `LexiconFile`
+ * through the same map. These offsets are what tells the two apart: the window
+ * "ashlr ai" breaks where `Ashlr.AI` already breaks, while "lexicon file"
+ * breaks where `LexiconFile` does not, and that second boundary is the
+ * matcher's invention rather than anything the user wrote. See
+ * INVENTED_BOUNDARY_CONFIDENCE.
+ *
+ * Computed on the diacritics-folded, lowercased form, because that is what
+ * `collapse` counts: folding can change a string's length (ss for ß, th for þ).
+ */
+export function separatorOffsets(s: string): Set<number> {
+  const out = new Set<number>();
+  let n = 0;
+  let gap = false;
+  for (const ch of foldLower(s)) {
+    if (ALNUM_RE.test(ch)) {
+      if (gap && n > 0) out.add(n);
+      gap = false;
+      n++;
+    } else if (n > 0) {
+      gap = true;
+    }
+  }
+  return out;
 }
 
 /** Implicit aliases every canonical gets: itself and, for domain-like names, the stem. */
@@ -156,6 +196,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
         collapsedRaw,
         collapsed: collapsedLower,
         tokenCount,
+        separators: separatorOffsets(norm),
         explicit,
       };
       push(exact, normLower, entry);
