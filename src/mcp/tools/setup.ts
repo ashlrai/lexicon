@@ -34,6 +34,9 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         'and an agent is wired up to use them), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do ' +
         'next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). ' +
         'If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ' +
+        'ready being false does not always mean "not set up yet": a lexicon file that exists but does not parse also reports ready false, ' +
+        'and `lexicon setup` will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable ' +
+        'lexicon it names the file and points at `lexicon edit`. ' +
         'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), ' +
         "`checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for " +
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',

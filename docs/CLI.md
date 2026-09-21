@@ -14,7 +14,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon add [options] <canonical> [aliases...]`](#lexicon-add) | add a term, or merge aliases into an existing one |
 | [`lexicon remove\|rm [options] <canonical>`](#lexicon-remove) | remove a term (project lexicon first, then global) |
 | [`lexicon list\|ls [options]`](#lexicon-list) | list terms from the merged global + project lexicon |
-| [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); always exits 0 |
+| [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read |
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
 | [`lexicon export [options] [format]`](#lexicon-export) | export the merged lexicon for another tool (run without a format to list them) |
 | [`lexicon path`](#lexicon-path) | print the resolved global and project lexicon paths |
@@ -54,7 +54,7 @@ Commands:
   add [options] <canonical> [aliases...]  add a term, or merge aliases into an existing one
   remove|rm [options] <canonical>         remove a term (project lexicon first, then global)
   list|ls [options]                       list terms from the merged global + project lexicon
-  normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); always exits 0
+  normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
   path                                    print the resolved global and project lexicon paths
@@ -146,7 +146,8 @@ Options:
 ```text
 Usage: lexicon normalize [options] [text...]
 
-correct dictated text (from arguments, or stdin when omitted); always exits 0
+correct dictated text (from arguments, or stdin when omitted); stdout always
+round-trips the input, exit 1 if the lexicon could not be read
 
 Options:
   --json                print the full NormalizeResult as JSON

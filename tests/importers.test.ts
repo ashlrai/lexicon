@@ -1,7 +1,12 @@
+import { promises as fsp } from 'node:fs';
+import os from 'node:os';
+import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   IMPORT_FORMATS,
   IMPORT_FORMAT_INFO,
+  decodeImportBytes,
+  detectImportEncoding,
   detectImportFormat,
   importLexicon,
   isImportFormat,
@@ -408,6 +413,125 @@ describe('importLexicon', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Encoding
+//
+// A fresh-user walkthrough found that `lexicon import` read every file as
+// UTF-8. Two encodings a Windows user produces by accident are not UTF-8, and
+// each failed differently and wrongly: UTF-16LE (PowerShell `Out-File`,
+// Notepad's "Unicode") reached the schema as NUL-riddled mojibake and was
+// rejected with an error naming the *destination* lexicon, and Latin-1
+// imported with exit 0 and permanently recorded "Caf�" as the canonical
+// spelling of "Café". Each test below names the one it holds shut.
+// ---------------------------------------------------------------------------
+
+const TERMS_TEXT = 'Ashlr.AI: ashler, ashlar\nCafé: cafe\nKubernetes: kubernetties\n';
+
+function utf16le(text: string, bom = true): Buffer {
+  const body = Buffer.from(text, 'utf16le');
+  return bom ? Buffer.concat([Buffer.from([0xff, 0xfe]), body]) : body;
+}
+
+function utf16be(text: string, bom = true): Buffer {
+  const body = Buffer.from(text, 'utf16le').swap16();
+  return bom ? Buffer.concat([Buffer.from([0xfe, 0xff]), body]) : body;
+}
+
+describe('import encoding', () => {
+  it('decodes a UTF-16LE file with a BOM, the shape PowerShell Out-File writes', () => {
+    // Regression: these bytes used to be read as UTF-8, so every second byte
+    // became a NUL and the import died on `terms[0].canonical: must not
+    // contain control characters` against the lexicon the user never touched.
+    const decoded = decodeImportBytes(utf16le(TERMS_TEXT), { path: '/tmp/dict.txt' });
+    expect(decoded.encoding).toBe('utf-16le');
+    expect(decoded.text).toBe(TERMS_TEXT);
+    expect(decoded.text).not.toContain(' ');
+    const { terms } = importLexicon(decoded.text, 'auto', { filename: 'dict.txt' });
+    expect(terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Café', 'Kubernetes']);
+  });
+
+  it('decodes UTF-16 big-endian, and either endianness without a BOM', () => {
+    expect(decodeImportBytes(utf16be(TERMS_TEXT)).text).toBe(TERMS_TEXT);
+    // A concatenated or re-saved export loses its BOM; the NUL in every other
+    // byte still says what it is, and guessing wrong here is not silent.
+    expect(decodeImportBytes(utf16le(TERMS_TEXT, false)).text).toBe(TERMS_TEXT);
+    expect(decodeImportBytes(utf16be(TERMS_TEXT, false)).text).toBe(TERMS_TEXT);
+    expect(detectImportEncoding(utf16le(TERMS_TEXT, false))).toBe('utf-16le');
+    expect(detectImportEncoding(utf16be(TERMS_TEXT, false))).toBe('utf-16be');
+  });
+
+  it('refuses a Latin-1 file by name instead of storing a replacement character', () => {
+    // Regression: this imported with exit 0 and no warning, and the lexicon
+    // then asserted forever that "Café" is spelled "Caf�".
+    const bytes = Buffer.from('Caf\xe9: cafe, caff\n', 'latin1');
+    expect(detectImportEncoding(bytes)).toBe('not-utf-8');
+    let message = '';
+    try {
+      decodeImportBytes(bytes, { path: '/tmp/wispr-export.txt' });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    // The file the user chose, not the file they never touched.
+    expect(message).toContain('/tmp/wispr-export.txt');
+    expect(message).not.toContain('lexicon.yaml');
+    expect(message).toContain('not UTF-8');
+    // And how to get out of it.
+    expect(message).toContain('iconv -f WINDOWS-1252 -t UTF-8');
+    expect(message).toContain('Set-Content -Encoding utf8');
+  });
+
+  it('names standard input when the bytes came from a pipe', () => {
+    expect(() => decodeImportBytes(Buffer.from('Caf\xe9\n', 'latin1'), { label: 'standard input' })).toThrow(
+      /standard input is not UTF-8/,
+    );
+  });
+
+  it('leaves UTF-8 alone, with or without a BOM and with CRLF line endings', () => {
+    // The two encodings that already worked. The gate must not cost them.
+    const crlf = 'Café: cafe\r\nAshlr.AI: ashler\r\n';
+    const plain = decodeImportBytes(Buffer.from(crlf, 'utf8'));
+    expect(plain.encoding).toBe('utf-8');
+    expect(plain.text).toBe(crlf);
+    const bom = decodeImportBytes(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(crlf, 'utf8')]));
+    expect(bom.encoding).toBe('utf-8');
+    // Byte-identical to what readFile(path, 'utf8') returned before: the
+    // parsers strip the BOM themselves and nothing here second-guesses them.
+    expect(bom.text).toBe(`﻿${crlf}`);
+    expect(importLexicon(bom.text, 'auto').terms.map((t) => t.canonical)).toEqual(['Café', 'Ashlr.AI']);
+  });
+
+  it('accepts a UTF-8 file that genuinely contains U+FFFD', () => {
+    // The round-trip check must not confuse "the author typed this character"
+    // with "we destroyed a byte getting here".
+    const text = 'Glyph �: glyph\n';
+    expect(decodeImportBytes(Buffer.from(text, 'utf8')).text).toBe(text);
+  });
+
+  it('refuses UTF-32 and anything carrying NUL bytes', () => {
+    const utf32le = Buffer.concat([Buffer.from([0xff, 0xfe, 0x00, 0x00]), Buffer.from('A\0\0\0', 'latin1')]);
+    expect(detectImportEncoding(utf32le)).toBe('utf-32le');
+    expect(() => decodeImportBytes(utf32le, { path: '/tmp/x.txt' })).toThrow(/UTF-32/);
+    // A NUL is valid UTF-8 but never valid in a dictionary; letting it
+    // through only moved the error onto the destination file.
+    const binary = Buffer.from([0x41, 0x42, 0x43, 0x44, 0x45, 0x00, 0x46, 0x47]);
+    expect(detectImportEncoding(binary)).toBe('not-text');
+    expect(() => decodeImportBytes(binary, { path: '/tmp/x.bin' })).toThrow(/NUL bytes/);
+  });
+
+  it('importLexicon refuses a term carrying U+FFFD even when handed a string', () => {
+    // The backstop for callers that never see bytes: the MCP
+    // `import_dictionary` tool's `content` argument, and any embedder with
+    // its own reader. Without it those paths could still store mojibake.
+    expect(() => importLexicon('Caf�: cafe\n', 'text', { filename: 'dict.txt' })).toThrow(
+      /the imported file dict\.txt was not UTF-8/,
+    );
+    expect(() => importLexicon('Ashlr.AI: ashl�r\n', 'text')).toThrow(/replacement character/);
+    // A clean string is untouched.
+    expect(importLexicon('Café: cafe\n', 'text').terms[0].canonical).toBe('Café');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CLI: runImport (store mocked)
 // ---------------------------------------------------------------------------
 
@@ -539,5 +663,53 @@ describe('runImport', () => {
     expect(code).toBe(0);
     expect(io.out).toContain('nothing to import (text)');
     expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  /**
+   * These go through the real file reader, not an injected one, because the
+   * encoding is decided there: an injected reader hands over a string that
+   * has already been decoded, so it cannot reproduce either finding.
+   */
+  describe('real files, real encodings', () => {
+    let dir: string;
+    beforeEach(async () => {
+      dir = await fsp.mkdtemp(nodePath.join(os.tmpdir(), 'lexicon-encoding-'));
+    });
+
+    const write = async (name: string, bytes: Buffer): Promise<string> => {
+      const p = nodePath.join(dir, name);
+      await fsp.writeFile(p, bytes);
+      return p;
+    };
+
+    it('imports a UTF-16LE file with its accents intact', async () => {
+      // Regression: `terms[0].canonical: must not contain control characters
+      // or newlines`, pointing at the lexicon instead of this file.
+      const file = await write('powershell.txt', utf16le(TERMS_TEXT));
+      const io = makeIO();
+      const code = await runImport(file, { format: 'text' }, io);
+      expect(code).toBe(0);
+      expect(store.addTerm.mock.calls.map((c) => (c[0] as Term).canonical)).toEqual(['Ashlr.AI', 'Café', 'Kubernetes']);
+      expect(io.err).toBe('');
+    });
+
+    it('refuses a Latin-1 file, names it, and writes nothing', async () => {
+      // Regression: exit 0, no warning, and "Caf�" written to the
+      // lexicon as a canonical spelling.
+      const file = await write('latin1.txt', Buffer.from('Caf\xe9: cafe, caff\n', 'latin1'));
+      await expect(runImport(file, { format: 'text' }, makeIO())).rejects.toThrow(/is not UTF-8 text/);
+      await expect(runImport(file, { format: 'text' }, makeIO())).rejects.toThrow(file);
+      expect(store.addTerm).not.toHaveBeenCalled();
+    });
+
+    it('still imports a UTF-8 file with a BOM and CRLF endings', async () => {
+      const file = await write(
+        'utf8-bom.txt',
+        Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('Café: cafe\r\nAshlr.AI: ashler\r\n', 'utf8')]),
+      );
+      const io = makeIO();
+      expect(await runImport(file, { format: 'text' }, io)).toBe(0);
+      expect(store.addTerm.mock.calls.map((c) => (c[0] as Term).canonical)).toEqual(['Café', 'Ashlr.AI']);
+    });
   });
 });

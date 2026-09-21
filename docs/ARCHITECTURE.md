@@ -271,7 +271,7 @@ The hooks run on every prompt and every session start in Claude Code, so they ar
 | `lexicon import` | linear in input size | 8 MB cap checked before the file is read whole; every parser is a single-pass scanner |
 | `suggestTerms()` | under 100 ms for 1000 history lines and 200 terms | one pass over history with the prebuilt index; evidence capped at 5 lines of 120 characters |
 
-The hook always exits 0. A thrown error prints to stderr and produces no context; it never blocks a prompt. The CLI `normalize` command follows the same rule: on a lexicon load error it warns on stderr and passes the text through unchanged, so a pipeline never loses input.
+The hook always exits 0. A thrown error prints to stderr and produces no context; it never blocks a prompt. The CLI `normalize` command keeps half of that rule and drops the other half: on a lexicon load error it warns on stderr and passes the text through stdout unchanged, so a pipeline never loses input, but it exits 1. A hook cannot report a failure without breaking the prompt; a command can, and exit 0 made a lexicon that had stopped correcting anything indistinguishable from one with nothing to correct.
 
 ## Decision log
 

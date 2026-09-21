@@ -328,14 +328,41 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: normalize', () => {
     expect(alias.stdout).toBe('ping Ashlr.AI\n');
   });
 
-  it('passes text through and exits 0 when the global lexicon is unreadable', async () => {
+  /**
+   * Regression: this exited 0. Corrections had stopped, the text came back
+   * unchanged, and the exit code said nothing was wrong, so "no corrections
+   * were applied" was indistinguishable from "nothing needed correcting".
+   * stdout still round-trips byte-exactly, because a broken lexicon must not
+   * damage a pipeline; the exit code is what carries the bad news.
+   */
+  it('passes text through byte-exactly but exits 1 when the global lexicon is unreadable', async () => {
     const h = await freshHome('broken');
     await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
     await fs.writeFile(h.globalPath, 'version: 1\nterms: "not a list"\n');
     const r = await runCli(['normalize', 'ping Ashler'], { env: h.env });
-    expect(r.code).toBe(0);
+    expect(r.code).toBe(1);
     expect(r.stdout).toBe('ping Ashler\n');
-    expect(r.stderr).toContain('passing text through unchanged');
+    expect(r.stderr).toContain('no corrections were applied');
+    expect(r.stderr).toContain('lexicon doctor');
+  });
+
+  /**
+   * The other half of finding 3: with that same unreadable lexicon, `doctor`
+   * used to say "Lexicon is not set up yet: there are no terms" and send the
+   * user to `lexicon setup`, which exits 0 having repaired nothing. Both the
+   * terminal and the MCP `lexicon_doctor` tool read these fields.
+   */
+  it('doctor names the unreadable file and points at lexicon edit, not lexicon setup', async () => {
+    const h = await freshHome('broken-doctor');
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    await fs.writeFile(h.globalPath, 'version: 1\nterms:\n  - canonical: "unterminated\n');
+    const r = await runCli(['doctor'], { env: h.env });
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain('global lexicon does not parse (run: lexicon edit)');
+    expect(r.stdout).toContain('does not parse, so no corrections are happening');
+    expect(r.stdout).not.toContain('there are no terms');
+    expect(r.stdout).not.toContain('Run: lexicon setup');
+    expect(r.stdout).toContain('Open it and fix the parse error: lexicon edit');
   });
 });
 
@@ -395,6 +422,39 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: learn and import', () => {
     const listed = await runCli(['list', '--json', '--query', 'pydantic'], { env: h.env });
     const terms = JSON.parse(listed.stdout) as { canonical: string; category?: string; source?: string }[];
     expect(terms).toEqual([expect.objectContaining({ canonical: 'Pydantic', category: 'product', source: 'import' })]);
+  });
+
+  /**
+   * Finding 1, through the real CLI. A walkthrough hit both of these with a
+   * file it had just created on Windows: UTF-16LE (PowerShell `Out-File`,
+   * Notepad's "Unicode") failed with an error naming the destination lexicon
+   * rather than the file the user chose, and Latin-1 imported with exit 0 and
+   * wrote "Caf<U+FFFD>" into the lexicon as a canonical spelling.
+   */
+  it('import decodes a UTF-16LE file and refuses a Latin-1 one by name', async () => {
+    const h = await cloneOf(shared, 'import-encoding');
+    const body = 'Café: cafe\nHetzner: head sner\n';
+
+    const utf16 = path.join(h.home, 'powershell.txt');
+    await fs.writeFile(utf16, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(body, 'utf16le')]));
+    const ok = await runCli(['import', utf16, 'text'], { env: h.env });
+    expect(ok.code, ok.stderr).toBe(0);
+    expect(ok.stdout).toContain('Café');
+    // Nothing mojibake reached the file the product spends its life reading.
+    const stored = await fs.readFile(h.globalPath, 'utf8');
+    expect(stored).toContain('Café');
+    expect(stored).not.toContain('�');
+
+    const latin1 = path.join(h.home, 'notepad.txt');
+    await fs.writeFile(latin1, Buffer.from('Caf\xe9: cafe, caff\n', 'latin1'));
+    const refused = await runCli(['import', latin1, 'text'], { env: h.env });
+    expect(refused.code).toBe(1);
+    // The input file, not the lexicon the user never touched.
+    expect(refused.stderr).toContain(latin1);
+    expect(refused.stderr).not.toContain('lexicon.yaml');
+    expect(refused.stderr).toContain('iconv');
+    // And nothing was written on the way out.
+    expect(await fs.readFile(h.globalPath, 'utf8')).not.toContain('�');
   });
 });
 

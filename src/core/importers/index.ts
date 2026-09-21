@@ -5,6 +5,7 @@
  * the terms with addTerm.
  */
 import type { Term, TermSource } from '../types.js';
+import { REPLACEMENT_CHAR } from './encoding.js';
 import { parseCsvImport, isLexiconCsvHeader } from './csv.js';
 import { parseCsv } from './csv-parse.js';
 import { looksLikeEspanso, parseEspansoImport } from './espanso.js';
@@ -24,6 +25,13 @@ export {
   parseTextImport,
   parseWisprImport,
 };
+export {
+  REPLACEMENT_CHAR,
+  decodeImportBytes,
+  detectImportEncoding,
+  importEncodingError,
+} from './encoding.js';
+export type { DecodedImport, ImportEncoding, ImportSource, UnsupportedImportEncoding } from './encoding.js';
 export type { ImportRow, ImportSkip, RawImport };
 
 export type ImportFormat = 'wispr' | 'superwhisper' | 'macos' | 'csv' | 'espanso' | 'text' | 'json' | 'auto';
@@ -129,7 +137,29 @@ export function importLexicon(content: string, format: ImportFormat, opts: Impor
   const resolved: ConcreteImportFormat = format === 'auto' ? detectImportFormat(content, opts.filename) : format;
   const raw = PARSERS[resolved](content);
   const { terms, skipped } = mergeRows(raw.rows, opts.source);
+  assertNoLostCharacters(terms, opts.filename);
   return { terms, format: resolved, skipped: [...raw.skipped, ...skipped].sort((a, b) => a.line - b.line) };
+}
+
+/**
+ * The backstop for callers that hand us a string instead of bytes (the MCP
+ * `import_dictionary` tool with `content`, an embedder with its own reader):
+ * `decodeImportBytes` cannot run for them, and a term carrying U+FFFD means
+ * the original spelling was already lost upstream. Refusing is the only
+ * honest option left. Storing it would make the lexicon assert, permanently,
+ * that a name is spelled with a replacement character.
+ */
+function assertNoLostCharacters(terms: readonly Term[], filename?: string): void {
+  for (const term of terms) {
+    const lost = [term.canonical, ...term.aliases].find((s) => s.includes(REPLACEMENT_CHAR));
+    if (lost === undefined) continue;
+    const where = filename ? `the imported file ${filename}` : 'the imported text';
+    throw new Error(
+      `${where} was not UTF-8: "${lost}" contains the replacement character "${REPLACEMENT_CHAR}", ` +
+        'so the original spelling is already lost and importing it would record the wrong spelling. ' +
+        'Save the source as UTF-8 and import it again.',
+    );
+  }
 }
 
 /**

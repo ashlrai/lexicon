@@ -123,7 +123,7 @@ program
 
 program
   .command('normalize')
-  .description('correct dictated text (from arguments, or stdin when omitted); always exits 0')
+  .description('correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read')
   .argument('[text...]')
   .option('--json', 'print the full NormalizeResult as JSON')
   .option('--diff', 'print a summary of replacements to stderr')

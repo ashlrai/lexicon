@@ -492,12 +492,21 @@ export async function runNormalize(
     }
     emit(result.output);
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))} (passing text through unchanged)\n`);
+    // Two contracts pull in opposite directions here, so each gets its own
+    // channel. stdout still round-trips the text byte-exactly, because
+    // `... | lexicon normalize | ...` must never drop or mangle a pipeline's
+    // bytes just because the lexicon is broken. The exit code becomes 1,
+    // because "no corrections applied" and "nothing needed correcting" are
+    // different answers and exit 0 made them indistinguishable: a script, a
+    // watcher or a person saw silence and concluded it was working.
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+    io.stderr('lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n');
     if (opts.json) {
       line(io, JSON.stringify({ input: text, output: text, replacements: [], changed: false }, null, 2));
     } else {
       emit(text);
     }
+    return 1;
   }
   return 0;
 }

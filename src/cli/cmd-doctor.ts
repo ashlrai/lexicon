@@ -203,6 +203,37 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
   return { level: 'ok', message: `${name} loaded${program !== undefined ? ` (${program} exists)` : ''}` };
 }
 
+/** A lexicon file that exists but could not be read: the path, its scope, and why. */
+interface UnreadableLexicon {
+  path: string;
+  scope: TermScope;
+  /** The error from `readLexiconFile`, already naming the file. */
+  error: string;
+}
+
+/**
+ * The parse error with the "... at <path>: " preamble removed and folded onto
+ * one line, so `summary` stays one relayable sentence. Both store.ts messages
+ * ("Failed to parse lexicon YAML at X: ..." and "Invalid lexicon at X: ...")
+ * open by naming the file, and the summary is about that file already;
+ * repeating an absolute path here would spend the whole 200-character display
+ * budget on something the check line and `nextStep` also carry. Zod's
+ * "Invalid lexicon:" errors are a bulleted list, so the cap keeps the first
+ * bullets, which are the ones that say where to look.
+ */
+function parseReason(error: string, filePath: string, max = 110): string {
+  const marker = `${filePath}: `;
+  const at = error.lastIndexOf(marker);
+  const body = at >= 0 ? error.slice(at + marker.length) : error;
+  const flat = body.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+}
+
+/** `lexicon edit`, with the flag that opens the file that is actually broken. */
+function editCommand(scope: TermScope): string {
+  return scope === 'project' ? 'lexicon edit --project' : 'lexicon edit';
+}
+
 /**
  * Turns the check list into the three fields a caller can act on without
  * reading it: `ready`, one sentence, and one next step.
@@ -214,13 +245,33 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
  */
 function summarize(
   checks: readonly DoctorCheck[],
-  state: { terms: number; wired: boolean; untrustedProject: boolean },
+  state: { terms: number; wired: boolean; untrustedProject: boolean; unreadable: readonly UnreadableLexicon[] },
 ): { ready: boolean; summary: string; nextStep: string } {
   const fails = checks.filter((c) => c.level === 'fail');
   const warns = checks.filter((c) => c.level === 'warn');
   const counts = `${state.terms} term${state.terms === 1 ? '' : 's'}`;
   const ready = state.terms > 0 && state.wired && fails.length === 0;
 
+  // A file that exists but will not parse is not "not set up yet": it has
+  // terms, `lexicon setup` cannot repair it, and running setup exits 0 having
+  // done nothing. Saying so first, with the file and the parse error, is the
+  // difference between a dead end and a two-minute fix.
+  if (state.unreadable.length > 0) {
+    const first = state.unreadable[0];
+    const alsoProject = state.unreadable.length > 1 ? ' The project lexicon does not parse either.' : '';
+    return {
+      ready: false,
+      summary:
+        `The ${first.scope} lexicon exists but does not parse, so no corrections are happening: ` +
+        `${parseReason(first.error, first.path)}${alsoProject}`,
+      // Command first, path second: a rendered line is capped at 200
+      // characters and an absolute path can use most of that, so what gets
+      // cut has to be the part the check list already showed.
+      nextStep:
+        `Open it and fix the parse error: ${editCommand(first.scope)}  ` +
+        `(lexicon setup will not repair this). The file is ${first.path}`,
+    };
+  }
   if (state.terms === 0) {
     return {
       ready: false,
@@ -283,7 +334,12 @@ export function renderDoctorReport(report: DoctorReport, io: IO): number {
   // `summary` and `nextStep` the MCP tool hands a model, so the terminal and
   // the agent never tell the user different things.
   line(io, safeLines(report.summary));
-  line(io, report.ready && failures === 0 ? dim(report.nextStep) : yellow(report.nextStep));
+  // nextStep quotes check messages, which quote paths, canonicals and aliases
+  // from a project file this user may not have written, so it is sanitized
+  // like everything else. Each nextStep leads with its command for that
+  // reason: the cap can only eat the detail, never the fix.
+  const nextStep = safeLines(report.nextStep);
+  line(io, report.ready && failures === 0 ? dim(nextStep) : yellow(nextStep));
   return failures === 0 ? 0 : 1;
 }
 
@@ -309,6 +365,8 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   let wired = false;
   /** True when this repo has a .lexicon.yaml the user has not approved, so its terms are not being applied. */
   let untrustedProject = false;
+  /** Lexicon files that exist but do not parse. These make every other verdict wrong, so they are reported first. */
+  const unreadable: UnreadableLexicon[] = [];
 
   // --- lexicon files -------------------------------------------------------
   const paths = resolvePaths({ cwd });
@@ -323,7 +381,11 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
       push('fail', `global lexicon missing: ${paths.global} (run: lexicon init)`);
     }
   } catch (err) {
-    push('fail', `global lexicon: ${errorMessage(err)}`);
+    const error = errorMessage(err);
+    unreadable.push({ path: paths.global, scope: 'global', error });
+    // The fix comes before the detail: a rendered check is capped at 200
+    // characters, and the parse error plus an absolute path will reach that.
+    push('fail', `global lexicon does not parse (run: ${editCommand('global')}): ${error}`);
   }
 
   if (paths.project) {
@@ -342,7 +404,9 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
         push('warn', `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
-      push('fail', `project lexicon: ${errorMessage(err)}`);
+      const error = errorMessage(err);
+      unreadable.push({ path: paths.project, scope: 'project', error });
+      push('fail', `project lexicon does not parse (run: ${editCommand('project')}): ${error}`);
     }
   } else {
     push('info', 'no project lexicon (.lexicon.yaml) found from ' + cwd);
@@ -469,7 +533,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject });
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable });
   return {
     ok: !checks.some((c) => c.level === 'fail'),
     ready: verdict.ready,

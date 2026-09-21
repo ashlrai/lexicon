@@ -162,13 +162,32 @@ describe('normalize', () => {
     });
   });
 
-  it('passes text through unchanged and still exits 0 when the lexicon fails to load', async () => {
+  /**
+   * Regression: this used to exit 0. The text came back unchanged and the
+   * exit code said everything was fine, so "no corrections were applied"
+   * and "nothing needed correcting" were the same answer. Nothing downstream
+   * could tell them apart, and a person watching a pipeline saw silence and
+   * concluded it was working.
+   */
+  it('passes text through byte-exactly but exits 1 when the lexicon fails to load', async () => {
     vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
     const io = makeIO();
     const code = await runNormalize(['meet Ashler'], {}, io);
-    expect(code).toBe(0);
+    expect(code).toBe(1);
+    // stdout is still the user's bytes: a broken lexicon must not damage a pipeline.
     expect(io.out).toBe('meet Ashler\n');
     expect(io.err).toContain('bad yaml');
+    expect(io.err).toContain('no corrections were applied');
+    expect(io.err).toContain('lexicon doctor');
+  });
+
+  it('exits 1 with --json too, and the JSON still round-trips the input', async () => {
+    vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
+    const io = makeIO();
+    const code = await runNormalize(['meet Ashler'], { json: true }, io);
+    expect(code).toBe(1);
+    const parsed = JSON.parse(io.out) as NormalizeResult;
+    expect(parsed).toMatchObject({ input: 'meet Ashler', output: 'meet Ashler', changed: false });
   });
 });
 
@@ -567,6 +586,64 @@ describe('runDoctorReport', () => {
       expect(report.nextStep).toContain('lexicon install claude --apply');
       // The old spelling is gone from every hint the doctor emits.
       expect(JSON.stringify(report)).not.toContain('install-claude');
+    });
+
+    /**
+     * Regression, and the one the walkthrough called the cheapest fix in its
+     * list: with a lexicon that would not parse, doctor said "Lexicon is not
+     * set up yet: there are no terms, so nothing will be corrected. Run:
+     * lexicon setup". Both sentences were false. The file had terms, setup
+     * cannot repair a parse error, and running it exits 0 after doing
+     * nothing. The MCP `lexicon_doctor` tool returns this report verbatim,
+     * so an agent trying to help was handed the same dead end.
+     */
+    it('says the lexicon will not parse, quotes the error, and points at lexicon edit', async () => {
+      vi.mocked(core.readLexiconFile).mockRejectedValue(
+        new Error(`Failed to parse lexicon YAML at ${state.globalPath}: Missing closing "quote at line 3, column 16`),
+      );
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.ok).toBe(false);
+      expect(report.ready).toBe(false);
+      // Not "there are no terms": we do not know how many terms it has.
+      expect(report.summary).not.toMatch(/no terms/i);
+      expect(report.summary).not.toMatch(/not set up yet/i);
+      expect(report.summary).toMatch(/does not parse/);
+      expect(report.summary).toContain('Missing closing "quote at line 3, column 16');
+      // The way out exists and is named; the way that does nothing is not.
+      expect(report.nextStep).toContain('lexicon edit');
+      expect(report.nextStep).toContain(state.globalPath);
+      expect(report.nextStep).not.toMatch(/^Run: lexicon setup$/);
+      // Nothing anywhere in the report tells an agent to run setup instead.
+      expect(report.nextStep).toMatch(/lexicon setup will not repair this/);
+      // The check line leads with its fix, because rendering caps it at 200 characters.
+      const failed = report.checks.find((c) => c.level === 'fail');
+      expect(failed?.message).toMatch(/^global lexicon does not parse \(run: lexicon edit\): /);
+    });
+
+    it('names the project file and `lexicon edit --project` when that is the broken one', async () => {
+      state.projectPath = '/tmp/proj/.lexicon.yaml';
+      vi.mocked(core.readLexiconFile).mockImplementation(async (p: string, scope: string) => {
+        if (scope === 'project') throw new Error(`Invalid lexicon at ${p}: terms[0].canonical: must be a string`);
+        return { path: p, scope, lexicon: FIXED_LEXICON, exists: true } as never;
+      });
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.ready).toBe(false);
+      expect(report.summary).toMatch(/^The project lexicon exists but does not parse/);
+      expect(report.summary).toContain('terms[0].canonical: must be a string');
+      // The path is not repeated inside the quoted reason: at 200 rendered
+      // characters an absolute path would crowd out the reason itself.
+      expect(report.summary).not.toContain('/tmp/proj/.lexicon.yaml');
+      expect(report.nextStep).toContain('lexicon edit --project');
+      expect(report.nextStep).toContain('/tmp/proj/.lexicon.yaml');
+    });
+
+    it('still says "not set up yet" when the lexicon parses and is simply empty', async () => {
+      // The other side of the distinction: this message was always correct
+      // for an empty lexicon and must keep working.
+      vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.summary).toMatch(/not set up yet/);
+      expect(report.nextStep).toBe('Run: lexicon setup');
     });
 
     it('leads with the first failure, which carries its own fix', async () => {

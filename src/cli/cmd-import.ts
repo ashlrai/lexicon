@@ -11,6 +11,7 @@ import {
   IMPORT_FORMATS,
   IMPORT_FORMAT_INFO,
   addTerm,
+  decodeImportBytes,
   findTerm,
   importLexicon,
   isImportFormat,
@@ -20,7 +21,6 @@ import {
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
 import { renderTable, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
-import { readStdin } from './commands.js';
 
 export interface ImportCliOptions extends CommonOptions {
   /** Import format; `auto` (default) sniffs the content. */
@@ -93,28 +93,48 @@ function tooLarge(what: string, bytes?: number): Error {
   return new Error(`${what} ${size} the ${MAX_IMPORT_BYTES} byte (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) import limit`);
 }
 
-/** Read the input file, or stdin when `file` is `-`. Refuses inputs over MAX_IMPORT_BYTES before reading them whole. */
-async function defaultReadInput(file: string, cwd: string): Promise<string> {
-  if (file === '-') {
-    try {
-      return await readStdin(MAX_IMPORT_BYTES);
-    } catch (err) {
-      if (err instanceof Error && /byte limit/.test(err.message)) throw tooLarge('stdin');
-      throw err;
-    }
+/** Stdin as bytes, so the encoding is decided the same way for `-` as for a file. Mirrors readStdin's cap. */
+async function readStdinBytes(maxBytes: number): Promise<Buffer> {
+  if (process.stdin.isTTY) {
+    process.stderr.write('lexicon: reading text from stdin (press ctrl-D to finish)\n');
   }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of process.stdin) {
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    total += buf.length;
+    if (total > maxBytes) throw tooLarge('stdin');
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Read the file (or stdin) as bytes. Refuses inputs over MAX_IMPORT_BYTES before reading them whole. */
+async function readInputBytes(file: string, cwd: string): Promise<{ bytes: Buffer; path?: string }> {
+  if (file === '-') return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
   const resolved = path.resolve(cwd, file);
   try {
     const stat = await fs.stat(resolved);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved}`);
     if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved, stat.size);
-    return await fs.readFile(resolved, 'utf8');
+    return { bytes: await fs.readFile(resolved), path: resolved };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') throw new Error(`file not found: ${resolved}`);
     if (code === 'EISDIR') throw new Error(`expected a file, got a directory: ${resolved}`);
     throw err;
   }
+}
+
+/**
+ * Read the input file, or stdin when `file` is `-`, and decode it by its
+ * actual encoding. Decoding here rather than with `readFile(path, 'utf8')` is
+ * what keeps a UTF-16 or Latin-1 file from reaching the parsers as mojibake:
+ * a non-UTF-8 file is refused by its own name, before the lexicon is touched.
+ */
+async function defaultReadInput(file: string, cwd: string): Promise<string> {
+  const { bytes, path: resolved } = await readInputBytes(file, cwd);
+  return decodeImportBytes(bytes, resolved !== undefined ? { path: resolved } : { label: 'standard input' }).text;
 }
 
 export async function runImport(
