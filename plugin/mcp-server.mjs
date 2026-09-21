@@ -50003,6 +50003,7 @@ function isBetter(a, b) {
   if (REASON_RANK[a.reason] !== REASON_RANK[b.reason]) return REASON_RANK[a.reason] < REASON_RANK[b.reason];
   return a.termIndex < b.termIndex;
 }
+var PLAIN_WORD_RE = new RegExp("^\\p{Ll}+(?:-\\p{Ll}+)*$", "u");
 function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
   const first = tokens[from];
   const last = tokens[to];
@@ -50047,7 +50048,7 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     edgeNonWordStart: to > from && isNonWordToken(first.baseLower),
     edgeNonWordEnd: to > from && isNonWordToken(last.baseLower),
     loneToken: from === to,
-    plainWord: from === to && new RegExp("^\\p{Ll}+$", "u").test(norm),
+    plainWord: from === to && PLAIN_WORD_RE.test(norm),
     digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
   };
 }

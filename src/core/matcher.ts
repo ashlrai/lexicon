@@ -80,7 +80,17 @@ interface WindowView {
   readonly edgeNonWordEnd: boolean;
   /** Single-token window (any case): held to ALIASED_PLAIN_WORD_MIN in the phonetic pass against terms with explicit aliases. */
   readonly loneToken: boolean;
-  /** Single all-lowercase alphabetic token: held to ALIASED_PLAIN_WORD_MIN in the fuzzy pass as well. */
+  /**
+   * Single all-lowercase word: held to ALIASED_PLAIN_WORD_MIN in the fuzzy pass
+   * as well. A hyphenated compound of all-lowercase words counts, because it is
+   * one ordinary lowercase word of English written with a hyphen in it
+   * ("per-category", "well-known", "sign-in"); the tokenizer keeps the hyphen,
+   * so it arrives as one token, and the bar this feeds exists for exactly that
+   * shape. Nothing else the tokenizer can leave inside a token does: a dot
+   * marks a written name or an abbreviation rather than prose ("node.js",
+   * "i.e"), and an apostrophe survives only in a contraction, which no
+   * canonical is close enough to for the bar to reach.
+   */
   readonly plainWord: boolean;
   readonly digitsOnly: boolean;
 }
@@ -128,6 +138,13 @@ function isBetter(a: Candidate, b: Candidate | undefined): boolean {
   if (REASON_RANK[a.reason] !== REASON_RANK[b.reason]) return REASON_RANK[a.reason] < REASON_RANK[b.reason];
   return a.termIndex < b.termIndex;
 }
+
+/**
+ * A lone all-lowercase word of English, hyphenated compounds included. See
+ * WindowView.plainWord for why the hyphen is in and the dot and apostrophe
+ * are not.
+ */
+const PLAIN_WORD_RE = /^\p{Ll}+(?:-\p{Ll}+)*$/u;
 
 function makeView(
   text: string,
@@ -180,7 +197,7 @@ function makeView(
     edgeNonWordStart: to > from && isNonWordToken(first.baseLower),
     edgeNonWordEnd: to > from && isNonWordToken(last.baseLower),
     loneToken: from === to,
-    plainWord: from === to && /^\p{Ll}+$/u.test(norm),
+    plainWord: from === to && PLAIN_WORD_RE.test(norm),
     digitsOnly: /^\p{N}+$/u.test(collapsedRaw),
   };
 }

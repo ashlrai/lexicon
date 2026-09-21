@@ -1083,3 +1083,132 @@ describe('bug P: a word boundary the canonical does not have is not an exact mat
     expect(find('deploy cooper netties today', [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
   });
 });
+
+// Bug Q: `plainWord` was /^\p{Ll}+$/, which a hyphenated token fails, and the
+// tokenizer keeps the hyphen, so "per-category" arrived as one token that was
+// neither a plain word nor anything else the fuzzy pass holds to a bar. It was
+// rewritten to TermCategory at 0.83, and 2fe01a7 names it among the rewrites
+// this repository's own documentation was taking from its own lexicon.
+//
+// A hyphen joins two ordinary words into one ordinary word. Nothing else the
+// tokenizer leaves inside a token does: a dot marks a written name or an
+// abbreviation ("node.js", "i.e") and an apostrophe only a contraction, and
+// neither is prose in the way the bar means.
+describe('bug Q: a hyphenated lowercase word is a plain word', () => {
+  // The shape the old harvester wrote, which is what makes this reachable: the
+  // term has explicit aliases, so the fuzzy pass is its fallback and the bar
+  // applies. See ALIASED_PLAIN_WORD_MIN.
+  const TERM_CATEGORY: Term = { canonical: 'TermCategory', aliases: ['Term Category', 'TermKategory'], category: 'identifier' };
+  const TERM_CATEGORY_BARE: Term = { canonical: 'TermCategory', aliases: [], category: 'identifier' };
+  const NORMALIZE_TRANSCRIPT: Term = { canonical: 'normalizeTranscript', aliases: ['normalise transcript'], category: 'identifier' };
+
+  it('holds a hyphenated lowercase word to 0.88 in the fuzzy pass', () => {
+    // 0.833 against "termcategory": one edit for the hyphen and one for the word.
+    expect(find('group them per-category in the table', [TERM_CATEGORY])).toHaveLength(0);
+    expect(find('a per-category breakdown of the hits', [TERM_CATEGORY])).toHaveLength(0);
+  });
+
+  it('still holds only lowercase to the bar, hyphen or no hyphen', () => {
+    // The rule is about case, not about the hyphen: a capitalised token one
+    // edit from a listed alias is what the alias was listed for, and that is as
+    // true of "Per-Category" as of "Ashlet".
+    expect(find('the Per-Category column', [TERM_CATEGORY])[0]).toMatchObject({ replacement: 'TermCategory', reason: 'fuzzy' });
+    expect(find('Ashlet is down', [ASHLR])[0]).toMatchObject({ replacement: 'Ashlr.AI', reason: 'fuzzy' });
+  });
+
+  it('still matches a hyphenated word that clears the bar', () => {
+    // 0.895: the bar is a bar, not a refusal of the shape.
+    expect(find('run the normalize-transcrpt step', [NORMALIZE_TRANSCRIPT])[0]).toMatchObject({
+      replacement: 'normalizeTranscript', reason: 'fuzzy',
+    });
+  });
+
+  it('leaves the hyphenated tokens the exact and phonetic passes answer', () => {
+    // Fuzzy pass only. The exact pass strips the hyphen and never consulted
+    // plainWord; the phonetic pass keys on loneToken, which a hyphen never changed.
+    expect(find('ping ashler-ai today', [ASHLR])[0]).toMatchObject({ replacement: 'Ashlr.AI', reason: 'alias', confidence: 1 });
+    expect(find('open the sign-in page', [{ canonical: 'SignIn', aliases: ['Sign In', 'signin'] }])[0]).toMatchObject({ reason: 'alias', confidence: 1 });
+    expect(find('the well-known path', [{ canonical: 'WellKnown', aliases: ['Well Known', 'wellknown'] }])[0]).toMatchObject({ reason: 'alias', confidence: 1 });
+    expect(find('deploy cooper-netties now', [K8S])[0]).toMatchObject({ replacement: 'Kubernetes', reason: 'phonetic' });
+  });
+
+  // The direction that stays silent. The bar this feeds is conditioned on the
+  // term having explicit aliases, and `lexicon harvest` and `lexicon add
+  // <Canonical>` both write `aliases: []`, so for every term either one
+  // proposes the bar is off and a lone word is held only to minConfidence.
+  // Dropping that condition was measured and is not taken: term recall 96.5% ->
+  // 93.6%, F1 95.1% -> 93.8%, for precision 93.8% -> 93.9%, and the prose
+  // false-positive rate excluding expected-hard is 0.0% either way. These are
+  // the positives it would cost, every one of them alias-less and every one
+  // scoring between minConfidence and 0.88.
+  it('leaves a term with no aliases held only to minConfidence', () => {
+    expect(find('group them per-category in the table', [TERM_CATEGORY_BARE])[0]).toMatchObject({
+      replacement: 'TermCategory', reason: 'fuzzy',
+    });
+    for (const [text, canonical] of [
+      ['swap the old thing for doker and rerun the tests', 'Docker'],
+      ['olama docs say this should just work', 'Ollama'],
+      ['i think tailwin is the wrong tool here', 'Tailwind'],
+      ['add a wisper model for the sync job', 'Whisper'],
+      ['swap the old thing for metafone and rerun', 'Metaphone'],
+      ['the kubernetties upgrade broke the build', 'Kubernetes'],
+      ['i think playwrite is the wrong tool here', 'Playwright'],
+    ]) {
+      const reps = find(text, [{ canonical, aliases: [] }]);
+      expect(reps.map((r) => r.replacement), text).toEqual([canonical]);
+      expect(reps[0].confidence, text).toBeLessThan(0.88);
+    }
+  });
+});
+
+// What the stoplist does about a word pair that spells a canonical, which is
+// not what its own header used to claim. The guard needs *every* token of the
+// window on the list, so a pair escapes whenever one half is missing, and the
+// two examples the docstring named were two it never covered.
+//
+// Adding the missing halves was measured and is not taken: `tail` and `claw`
+// cost term recall 96.5% -> 96.2% for precision 93.8% -> 94.1%, F1 unchanged at
+// 95.1%, and they do not reach the class ("lexicon file" escapes on `lexicon`,
+// which no list of ordinary English can hold). The lever for the class is
+// INVENTED_BOUNDARY_CONFIDENCE, which is why each of these scores 0.95.
+describe('the stoplist guards a word pair only when it holds every word of it', () => {
+  it('holds the pairs whose halves are both listed', () => {
+    for (const [canonical, heard] of [
+      ['SetUp', 'set up'],
+      ['CheckList', 'check list'],
+      ['WorkSpace', 'work space'],
+      ['TimeOut', 'time out'],
+    ]) {
+      expect(find(`we need to ${heard} now`, [{ canonical, aliases: [] }]), heard).toHaveLength(0);
+    }
+  });
+
+  it('does not hold a pair with one half missing, which is the shape people hit', () => {
+    expect(STOPLIST.has('wind')).toBe(true);
+    expect(STOPLIST.has('open')).toBe(true);
+    // Deliberately absent, and staying absent: see the header of stoplist.ts.
+    expect(STOPLIST.has('tail')).toBe(false);
+    expect(STOPLIST.has('claw')).toBe(false);
+    expect(find('we had a tail wind on the flight back', [{ canonical: 'Tailwind', aliases: [] }])[0]).toMatchObject({
+      replacement: 'Tailwind', reason: 'alias', confidence: 0.95,
+    });
+    expect(find('the open claw of the crab', [{ canonical: 'OpenClaw', aliases: [] }])[0]).toMatchObject({
+      replacement: 'OpenClaw', reason: 'alias', confidence: 0.95,
+    });
+  });
+
+  it('would not have helped a term whose pair is a listed alias anyway', () => {
+    // An explicit alias is exempt from the stoplist by design, so listing
+    // `claw` could never have reached the OpenClaw the benchmark carries.
+    expect(find('the open claw of the crab', [{ canonical: 'OpenClaw', aliases: ['open claw'] }])[0]).toMatchObject({
+      replacement: 'OpenClaw', reason: 'alias', confidence: 1,
+    });
+  });
+
+  it('is reachable by minConfidence, which is the lever that does cover the class', () => {
+    const opts = { minConfidence: 0.96 };
+    expect(find('we had a tail wind on the flight back', [{ canonical: 'Tailwind', aliases: [] }], opts)).toHaveLength(0);
+    expect(find('the open claw of the crab', [{ canonical: 'OpenClaw', aliases: [] }], opts)).toHaveLength(0);
+    expect(find('the lexicon file lives here', [{ canonical: 'LexiconFile', aliases: [], category: 'identifier' }], opts)).toHaveLength(0);
+  });
+});

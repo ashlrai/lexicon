@@ -7,9 +7,28 @@
  * fires on them: user intent wins. Product names that double as words
  * (docker, neon, whisper, playwright) are deliberately absent so a bare
  * canonical is still case-fixed in prose; `never` is the per-term opt-out.
- * The same guard covers the punctuation-stripped implicit alias of a
- * multi-word window, so a word pair that spells a canonical ("tail wind" ->
- * Tailwind, "open claw" -> OpenClaw) keeps at least one token off the list.
+ *
+ * **It does not cover a word pair that spells a canonical.** The guard needs
+ * *every* token of the window to be on the list, so a pair escapes it whenever
+ * one half is a word the list does not have, and the halves people actually
+ * hit are exactly those: "tail wind" -> Tailwind and "open claw" -> OpenClaw
+ * are both rewritten today, because `wind` and `open` are on the list while
+ * `tail` and `claw` are not. The two words this docstring used to name as
+ * covered were the two it never covered. What it does cover is a pair whose
+ * halves are both ordinary enough to be listed: "set up" -> SetUp, "work
+ * space" -> WorkSpace, "time out" -> TimeOut, "check list" -> CheckList.
+ *
+ * Adding the missing halves is not the fix and was measured. `tail` and `claw`
+ * cost term recall 96.5% -> 96.2% for precision 93.8% -> 94.1%, F1 unchanged
+ * at 95.1%: "tail wind's docs say this should just work" stops reaching
+ * Tailwind's, which is the same sentence shape as the negative it fixes. It
+ * would also buy nothing for `claw`, since OpenClaw lists "open claw" as an
+ * explicit alias and an explicit alias is exempt from this list by design. And
+ * it does not reach the class: "lexicon file" -> LexiconFile escapes on
+ * `lexicon`, which can never go on a list of ordinary English because it is
+ * the product's own name. The lever for that class is
+ * INVENTED_BOUNDARY_CONFIDENCE, which scores such a pair 0.95 so
+ * `minConfidence` can refuse it. See docs/MATCHING.md.
  *
  * One word per line, lowercase ASCII letters only, alphabetized. Keep it that
  * way: tests/matcher.test.ts checks the invariants.

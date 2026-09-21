@@ -42,10 +42,34 @@ export const PHONETIC_MIN_WINDOW = 4;
  * is a length formula with no spelling evidence in it, and a capital at the
  * start of a sentence or on a proper noun is no evidence of a garble ("Inter",
  * the font, became Entire.io at 0.86). In the fuzzy pass only an all-lowercase
- * token is held to it: fuzzy confidence is an edit similarity, so a capitalised
+ * word is held to it, hyphenated compounds included ("prism", "email",
+ * "per-category"): fuzzy confidence is an edit similarity, so a capitalised
  * token one edit from a listed alias ("Ashlet" / "Ashler", 0.83) is what the
  * alias was listed for. Multi-token windows keep the normal bar; STT rarely
  * splits an ordinary word into several.
+ *
+ * **It fires for almost no term the tools now create.** The condition is the
+ * existence of explicit aliases, and `lexicon harvest` and `lexicon add
+ * <Canonical>` both write `aliases: []`, so the bar is off for every term
+ * either one proposes and the phonetic and fuzzy passes are that term's only
+ * path rather than its fallback. Dropping the condition was measured and is
+ * not taken, because the same reasoning that motivates the bar argues against
+ * it here: a term with no aliases has nothing else to be reached by.
+ *
+ *   both passes    recall 96.5% -> 93.6%, positives 94.2% -> 91.4%, F1 95.1%
+ *                  -> 93.8%, precision 93.8% -> 93.9%
+ *   phonetic only  recall 96.5% -> 95.8%, F1 95.1% -> 94.8%, precision flat
+ *   fuzzy only     recall 96.5% -> 95.8%, F1 95.1% -> 94.9%, precision 94.0%
+ *
+ * Nine positives go for one false positive ("llama" -> Ollama). The nine are
+ * "doker" -> Docker, "olama's" and "ollamas" -> Ollama, "wisper" and "whispr"
+ * -> Whisper, "kubernetties" -> Kubernetes, "tailwin" -> Tailwind,
+ * "playwrite" -> Playwright, "metafone" -> Metaphone: every one alias-less,
+ * every one a headline case, and two of them ("doker", "olama") the pair
+ * PHONETIC_LONE_KEY3_MIN_SIM was tiered to keep. The prose false-positive rate
+ * excluding expected-hard does not move at all (0.0% either way), and neither
+ * does this repository's own markdown (47 rewrites either way). See
+ * docs/MATCHING.md.
  */
 export const ALIASED_PLAIN_WORD_MIN = 0.88;
 /**
