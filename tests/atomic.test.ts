@@ -175,14 +175,33 @@ describe('the in-process queue is bounded', () => {
     const p = path.join(dir, 'p.yaml');
     const q = path.join(dir, 'q.yaml');
     const opts = { queueTimeoutMs: 1_000 };
-    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Barriers, not sleeps. With a timed gap the deadlock only happens when
+    // both chains reach the gap before either wakes, so on a loaded machine
+    // one chain could take both locks and finish, and the test failed with
+    // ['fulfilled', 'rejected']. Neither chain now reaches for its second lock
+    // until the other holds its first, so the cycle is guaranteed and the
+    // assertion can stay the strong one. Weakening it to "at least one
+    // rejects" would have been wrong twice over: under enough load both chains
+    // can run to completion in series, and the property worth pinning is that
+    // a cycle is reported rather than waited on.
+    let aHasP!: () => void;
+    let bHasQ!: () => void;
+    const aHoldsP = new Promise<void>((resolve) => {
+      aHasP = resolve;
+    });
+    const bHoldsQ = new Promise<void>((resolve) => {
+      bHasQ = resolve;
+    });
 
     const a = withFileLock(p, async () => {
-      await sleep(50);
+      aHasP();
+      await bHoldsQ;
       return withFileLock(q, async () => 'a', opts);
     }, opts);
     const b = withFileLock(q, async () => {
-      await sleep(50);
+      bHasQ();
+      await aHoldsP;
       return withFileLock(p, async () => 'b', opts);
     }, opts);
 
