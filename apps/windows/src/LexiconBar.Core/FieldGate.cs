@@ -13,6 +13,13 @@ namespace LexiconBar;
 /// </summary>
 public interface IInspectableField
 {
+    /// <summary>
+    /// Opaque identity of this field, stable while it holds focus. Metadata:
+    /// it is what <see cref="UndoLedger"/> matches a recorded rewrite against,
+    /// and knowing it costs no read.
+    /// </summary>
+    string Key { get; }
+
     /// <summary>The owning executable's name, as <see cref="AppExclusions"/> matches it.</summary>
     string ProcessName { get; }
 

@@ -12,43 +12,12 @@ namespace LexiconBar.Tests;
 /// reach it, which is precisely what the threat model in SECURITY.md says does
 /// not happen.
 ///
-/// So <see cref="RecordingField"/> counts the reads, and every refusal case
+/// So <c>RecordingField</c> counts the reads, and every refusal case
 /// asserts that count is zero. A regression that moves the decision back behind
 /// the read still corrects nothing and still logs nothing — and fails here.
 /// </summary>
 public class FieldGateTests
 {
-    /// <summary>
-    /// A field that answers metadata freely and records every attempt to fetch
-    /// its value. The stand-in for a UIA provider: <c>UiaField</c> implements
-    /// the same interface, and its <c>ReadValue</c> is the cross-process call
-    /// that would pull the secret over.
-    /// </summary>
-    private sealed class RecordingField : IInspectableField
-    {
-        private readonly string _value;
-
-        internal RecordingField(string processName, FieldHints hints, string value = "whatever was typed")
-        {
-            ProcessName = processName;
-            Hints = hints;
-            _value = value;
-        }
-
-        public string ProcessName { get; }
-
-        public FieldHints Hints { get; }
-
-        /// <summary>How many times anything asked for this field's text.</summary>
-        internal int Reads { get; private set; }
-
-        public string? ReadValue(int limit)
-        {
-            Reads += 1;
-            return _value.Length <= limit ? _value : _value[..limit];
-        }
-    }
-
     private static readonly AppExclusions Defaults = new();
 
     // ------------------------------------------------- refused, and not read
@@ -174,6 +143,8 @@ public class FieldGateTests
 
     private sealed class UnreadableField : IInspectableField
     {
+        public string Key => "notepad:1";
+
         public string ProcessName => "notepad";
 
         public FieldHints Hints => new(Title: "Document");

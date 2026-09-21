@@ -68,6 +68,14 @@ internal sealed class FixEngine
     private readonly UndoLedger _undo = new();
     private bool _undoWasAvailable;
 
+    /// <summary>
+    /// This class's own copy of "may we read, and where", kept in step with
+    /// <see cref="_config"/>. Separate from the watcher's on purpose: the two
+    /// are pushed separately, so for the width of one settings change they can
+    /// disagree, and refusing against both means the newer of the two wins.
+    /// </summary>
+    private readonly ReadPolicy _policy = new();
+
     internal FixEngine(UiaThread thread, FocusWatcher watcher, NormalizeClient client, SynchronizationContext ui)
     {
         _thread = thread;
@@ -89,6 +97,10 @@ internal sealed class FixEngine
         {
             bool wasEnabled = _config.Enabled;
             _config = config;
+            // The change records are for the watcher, which holds a field and a
+            // poll to let go of. Nothing here does, so they are dropped.
+            _policy.SetEnabled(config.Enabled);
+            _policy.SetExclusions(config.Exclusions);
             if (_detector is not null) _detector.Settings = config.Detector;
 
             if (wasEnabled && !config.Enabled)
@@ -153,8 +165,7 @@ internal sealed class FixEngine
     /// Why this field is one we will not act on, or null. The same call the
     /// watcher gates its reads with, against this class's copy of the config.
     /// </summary>
-    private string? Refusal(UiaField field) =>
-        FieldGate.Refuse(_config.Exclusions, field.ProcessName, field.Hints);
+    private string? Refusal(UiaField field) => _policy.Refuse(field.ProcessName, field.Hints);
 
     /// <summary>Logs the refusal and hands back "no detector", so callers read as one expression.</summary>
     private static BurstDetector? Refuse(UiaField field, string why)
@@ -620,6 +631,16 @@ internal sealed class FixEngine
                 + $"so it cannot be put back from here: {outcome.Detail}"));
     }
 
+    /// <summary>
+    /// Ctrl+Alt+Z. Everything decided before the field is touched lives in
+    /// <see cref="UndoPlanner"/>, in the portable core, so that the one
+    /// ordering that matters here can be tested: the gate is consulted before
+    /// the read, and the read before the write. This used to go straight to
+    /// ReadValue, which made this the one path where excluding an app while it
+    /// still held focus stopped neither the read nor the write, while every
+    /// other path in this class refused it. macOS had the same hole in the
+    /// same method. What is left below is the writing.
+    /// </summary>
     private void PerformUndo()
     {
         if (_field is not UiaField field)
@@ -628,51 +649,44 @@ internal sealed class FixEngine
             return;
         }
 
-        // Undo reads the field and then writes into it, so it is a read like
-        // any other and asks the gate first. It used to go straight to
-        // ReadValue, which made Ctrl+Alt+Z the one path where excluding an app
-        // while it still held focus stopped neither the read nor the write,
-        // while every other path in this class refused it. macOS had the same
-        // hole in the same method.
-        if (!_config.Enabled)
+        UndoDecision decision = UndoPlanner.Plan(
+            _policy, field, _undo, watching: _detector is not null, ReadLimit);
+
+        switch (decision)
         {
-            Report(new Event.Skipped("Fix everywhere is off."));
-            return;
+            case UndoDecision.Off:
+                Report(new Event.Skipped("Fix everywhere is off."));
+                return;
+
+            case UndoDecision.Refused refused:
+                Log.Info($"skip undo in {field.ProcessName}: {refused.Reason}");
+
+                // The planner has already dropped the ledger entry, which held
+                // that field's text.
+                Report(new Event.Skipped($"Not undoing in {field.AppName}: {refused.Reason}"));
+                PublishUndoAvailability(string.Empty, force: true);
+                return;
+
+            case UndoDecision.NotWatching:
+                Report(new Event.Skipped("Nothing to undo: no text field focused."));
+                return;
+
+            case UndoDecision.Nothing nothing:
+                Report(new Event.Skipped($"Nothing to undo in {field.AppName}."));
+                PublishUndoAvailability(nothing.CurrentText, force: true);
+                return;
+
+            case UndoDecision.Go go:
+                WriteUndo(go.Plan, go.CurrentText, field);
+                return;
         }
+    }
 
-        FieldRead read = FieldGate.Read(field, _config.Exclusions, ReadLimit);
-        if (read.Refusal is string refusal)
-        {
-            Log.Info($"skip undo in {field.ProcessName}: {refusal}");
-
-            // The entry holds that field's text, so it goes with the refusal.
-            _undo.Clear();
-            Report(new Event.Skipped($"Not undoing in {field.AppName}: {refusal}"));
-            PublishUndoAvailability(string.Empty, force: true);
-            return;
-        }
-
-        if (_detector is not BurstDetector detector)
-        {
-            Report(new Event.Skipped("Nothing to undo: no text field focused."));
-            return;
-        }
-
-        string current = read.Value ?? string.Empty;
-        if (!_undo.CanUndo(field.Key, current)
-            || _undo.Last is not UndoLedger.Entry entry
-            || entry.FieldTextBefore is not string restored)
-        {
-            Report(new Event.Skipped($"Nothing to undo in {field.AppName}."));
-            PublishUndoAvailability(current, force: true);
-            return;
-        }
-
-        RewritePlan plan = new(
-            new TextSpan(entry.Span.Location, entry.CorrectedText.Length),
-            entry.CorrectedText,
-            entry.PreviousText,
-            restored);
+    /// <summary>The keystroke half of an undo the planner has approved.</summary>
+    private void WriteUndo(RewritePlan plan, string current, UiaField field)
+    {
+        if (_detector is not BurstDetector detector) return;
+        string restored = plan.SplicedFullText;
 
         WriteOutcome outcome = Write(plan, field, before: current);
         if (outcome.Strategy is not null)

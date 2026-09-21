@@ -75,6 +75,8 @@ internal sealed class UiaField : IInspectableField
     // The gate's view of this field: identity and labels for free, the value
     // only through the one call it guards. Explicit implementations so the
     // class keeps its `internal` surface for everything else.
+    string IInspectableField.Key => Key;
+
     string IInspectableField.ProcessName => ProcessName;
 
     FieldHints IInspectableField.Hints => Hints;

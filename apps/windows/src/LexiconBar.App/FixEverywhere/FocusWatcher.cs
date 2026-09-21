@@ -22,10 +22,14 @@ namespace LexiconBar.FixEverywhere;
 /// Callbacks run on the <see cref="UiaThread"/>.
 ///
 /// Every path in here that would pull a field's text goes through
-/// <see cref="FieldGate"/> first, so an excluded app's field and a
-/// secret-looking field are never read at all — not on the focus change, not on
-/// an event, not on the poll. That is the only place the refusal can live and
-/// still be true, because this class is what does the reading.
+/// <see cref="ReadPolicy"/> first, so an excluded app's field, a
+/// secret-looking field and every field at all while "Fix everywhere" is off
+/// are never read: not on the focus change, not on an event, not on the poll.
+/// That is the only place the refusal can live and still be true, because this
+/// class is what does the reading.
+///
+/// The policy itself holds no UI Automation and lives in the portable core,
+/// which is what lets <c>ReadPolicyTests</c> hold it to that.
 ///
 /// UNVERIFIED on real Windows.
 /// </summary>
@@ -45,24 +49,18 @@ internal sealed class FocusWatcher : IDisposable
     private int _readLimit = 20_001;
 
     /// <summary>
-    /// The list the gate matches on. Starts as the defaults rather than empty:
-    /// the watcher is constructed before the settings are pushed, and "no
-    /// exclusions yet" must never be the state something gets read in.
+    /// Whether this class may read anything, and which apps it may not read in.
+    /// Both halves of that live in the portable core, where they are tested;
+    /// what is left here is the UI Automation that acts on the answer.
+    ///
+    /// It starts at the defaults rather than empty, because the watcher is
+    /// constructed before the settings are pushed and "no exclusions yet" must
+    /// never be the state something gets read in.
     /// </summary>
-    private AppExclusions _exclusions = new();
+    private readonly ReadPolicy _policy = new();
 
     /// <summary>The key of the field we last refused, so the log says so once rather than four times a second.</summary>
     private string _refusedKey = string.Empty;
-
-    /// <summary>
-    /// Whether this class may touch a field's contents at all. See
-    /// <see cref="SetReading"/>. It starts true because the watcher is
-    /// constructed before any setting reaches it, and the safe default while
-    /// nothing has been pushed is the same one the exclusion list takes: the
-    /// conservative behaviour, not the permissive one. The engine pushes the
-    /// real answer before <see cref="Start"/> subscribes to anything.
-    /// </summary>
-    private bool _reading = true;
 
     /// <summary>Called with the new focused field (or null) and its current value.</summary>
     internal Action<UiaField?, string>? FieldChanged { get; set; }
@@ -94,11 +92,11 @@ internal sealed class FocusWatcher : IDisposable
         {
             _pollMs = Math.Clamp(pollMs, 60, 2000);
             _readLimit = Math.Max(1024, readLimit + 1);
-            _exclusions = exclusions;
 
             // The user can exclude the app that has focus right now, from the
-            // tray menu, while its text is in _lastValue. Drop it immediately.
-            DropCurrentIfRefused();
+            // tray menu, while its text is in _lastValue. The policy answers
+            // with "re-check what you are holding", and Apply drops it.
+            Apply(_policy.SetExclusions(exclusions));
         });
     }
 
@@ -116,6 +114,9 @@ internal sealed class FocusWatcher : IDisposable
     /// it". The engine used to stop correcting while this class carried on
     /// reading and caching every focused field. The macOS app had the same gap
     /// and closed it the same way.
+    ///
+    /// <see cref="ReadPolicy.SetEnabled"/> is what decides; everything below is
+    /// what acts on the decision.
     /// </summary>
     internal void SetReading(bool on)
     {
@@ -126,26 +127,31 @@ internal sealed class FocusWatcher : IDisposable
         // arrive after Start() had already read whatever had focus.
         if (_thread.IsCurrent)
         {
-            ApplyReading(on);
+            Apply(_policy.SetEnabled(on));
             return;
         }
 
-        _thread.Post(() => ApplyReading(on));
+        _thread.Post(() => Apply(_policy.SetEnabled(on)));
     }
 
-    private void ApplyReading(bool on)
+    /// <summary>
+    /// Carries out what a policy change asked for. The deciding happened in
+    /// <see cref="ReadPolicy"/>, which is testable; this is the half that needs
+    /// a desktop session and is not.
+    /// </summary>
+    private void Apply(ReadPolicyChange change)
     {
-        if (on == _reading) return;
-        _reading = on;
+        if (change.RecheckCurrentField) DropCurrentIfRefused();
 
-        if (!on)
+        if (change.StopReading)
         {
             _polling = false;
             SetCurrent(null, string.Empty);
             _refusedKey = string.Empty;
             Log.Info("focus watcher stopped reading: Fix everywhere is off");
-            return;
         }
+
+        if (!change.ResumeReading) return;
 
         // Start() has not run yet, and will pick this up when it does.
         if (!_subscribed) return;
@@ -174,7 +180,7 @@ internal sealed class FocusWatcher : IDisposable
             // Subscribed either way: the focus event is how the tray learns
             // which app is in front, and that costs no read. Reading the field
             // is what waits for Fix everywhere to be on.
-            if (!_reading) return;
+            if (!_policy.Enabled) return;
 
             // Whatever has focus right now, before the first event arrives.
             RefreshFocusNow();
@@ -248,7 +254,7 @@ internal sealed class FocusWatcher : IDisposable
         // Fix everywhere is off. Which app owns the field is metadata and has
         // already been recorded above; its text is not, and nothing below this
         // line is going to ask for it.
-        if (!_reading)
+        if (!_policy.Enabled)
         {
             if (_current is not null) SetCurrent(null, string.Empty);
             return;
@@ -256,11 +262,11 @@ internal sealed class FocusWatcher : IDisposable
 
         if (field.SameElementAs(_current)) return;
 
-        // The gate, before the first read. FieldGate.Read does not call
+        // The gate, before the first read. ReadPolicy.Read does not call
         // ReadValue at all for a field it refuses, so a vault's notes field
-        // never has its text in this process — not even for the instant it
+        // never has its text in this process, not even for the instant it
         // would take to decide we are not interested.
-        FieldRead read = FieldGate.Read(field, _exclusions, _readLimit);
+        FieldRead read = _policy.Read(field, _readLimit);
         if (read.Refusal is string refusal)
         {
             Refuse(field, refusal);
@@ -295,7 +301,7 @@ internal sealed class FocusWatcher : IDisposable
     private bool DropCurrentIfRefused()
     {
         if (_current is not UiaField field) return false;
-        if (FieldGate.Refuse(_exclusions, field.ProcessName, field.Hints) is not string refusal) return false;
+        if (_policy.Refuse(field.ProcessName, field.Hints) is not string refusal) return false;
         Refuse(field, refusal);
         return true;
     }
@@ -388,7 +394,7 @@ internal sealed class FocusWatcher : IDisposable
     /// </summary>
     private void Poll()
     {
-        if (!_polling || !_reading) return;
+        if (!_polling || !_policy.Enabled) return;
         try
         {
             if (_current is not UiaField field)
@@ -399,7 +405,7 @@ internal sealed class FocusWatcher : IDisposable
 
             // Through the gate again: focus has not moved, but the exclusion
             // list may have, and this is a read like any other.
-            FieldRead read = FieldGate.Read(field, _exclusions, _readLimit);
+            FieldRead read = _policy.Read(field, _readLimit);
             if (read.Refusal is string refusal)
             {
                 Refuse(field, refusal);
@@ -428,11 +434,11 @@ internal sealed class FocusWatcher : IDisposable
 
     private void NotifyValueChanged()
     {
-        if (!_reading) return;
+        if (!_policy.Enabled) return;
         if (_current is not UiaField field) return;
 
         // An event is still a read, so it is still the gate's decision.
-        FieldRead read = FieldGate.Read(field, _exclusions, _readLimit);
+        FieldRead read = _policy.Read(field, _readLimit);
         if (read.Refusal is string refusal)
         {
             Refuse(field, refusal);

@@ -8,7 +8,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 
 > ## Read this first
 >
-> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 180 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
+> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 199 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
 >
 > Before trusting it with anything you care about, run [the manual test script](#manual-test-script). It takes about ten minutes.
 
@@ -230,11 +230,13 @@ The token is read lazily and re-read after any failure, so restarting the server
 
 - `dotnet build -c Release` succeeds for the whole solution, warnings-as-errors, on macOS.
 - `dotnet publish -r win-x64 --self-contained` produces a single 72 MB `LexiconBar.exe` (`PE32+ executable (GUI) x86-64`), cross-compiled from macOS.
-- **180 unit tests pass**, on macOS, covering:
+- **199 unit tests pass**, on macOS, covering:
   - the burst detector, ported case for case from `BurstDetectorTests.swift`: typing never fires, streamed dictation coalesces, a paste fires at the settle delay, the run cap, hard refusals, UTF-16 maths with emoji, CRLF;
   - the splice and alignment maths, ported from `BurstAlignmentTests.swift`, covering the ambiguous-window regression, caret anchoring, stale snapshots, multi-replacement splices, newline refusal, the undo ledger;
   - the secret-field heuristic, including the whole-word cases ("shipping" vs "pin") and a pinned known-miss for pluralized all-caps acronyms;
   - the read gate, through a fake field that counts the times anything asked for its value: an excluded app's field, a secret-looking field in an app nobody excluded, and a field whose app the user excludes mid-focus are each refused with that count still at zero, and a refusal itself costs no read either way, which is what lets it be put in front of the caret read and the undo read as well as the value read;
+  - the master switch, against the same counting field: with "Fix everywhere" off, nothing is read at all, and turning it off asks the watcher to let go of the field it is holding and stop the poll rather than only decline the next read. This is what SECURITY.md offers a user who does not want their typing read, and it used to mean only that nothing was corrected while the watcher went on reading and caching every focused field;
+  - the undo hotkey's decision, which is a read followed by a write and so asks the gate before either: excluding an app while it still holds focus refuses Ctrl+Alt+Z with the read count unmoved, and drops the ledger entry that held that field's text;
   - the write ladder's partial-write recovery: what the field holds when *n* of *m* key events landed, for both the select-and-type and the backspace shapes, and that undoing the recorded entry restores the user's own text at every point in between;
   - the exclusion list, including that an emptied list excludes nothing and knows it, and that un-excluding one executable does not take a vendor wildcard with it;
   - bubble content and actions, bubble placement in Windows y-down coordinates including the flip and the clamps;
@@ -279,7 +281,7 @@ In the order I would bet on:
 5. **Balloon tips and the drawn icon at 150% DPI.** Cosmetic, near-certain to need a tweak.
 6. **`Text_TextChanged` not firing in Electron.** Expected; the poll is the mitigation, and the symptom is a slower correction, not a wrong one.
 
-The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 180 tests cover and it is the same logic that has been running on macOS.
+The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 199 tests cover and it is the same logic that has been running on macOS.
 
 ## Manual test script
 
@@ -361,7 +363,7 @@ Requirements: the **.NET 8 SDK**. No Visual Studio, no Windows.
 ```bash
 cd apps/windows
 dotnet build -c Release                      # whole solution
-dotnet test  -c Release                      # the 180 portable tests
+dotnet test  -c Release                      # the 199 portable tests
 dotnet publish src/LexiconBar.App/LexiconBar.App.csproj \
   -c Release -r win-x64 --self-contained -o artifacts/win-x64
 ```
@@ -392,9 +394,11 @@ apps/windows/
 
 The split is load-bearing, not cosmetic: **every rule that can corrupt a user's text lives in `LexiconBar.Core`**, which targets plain `net8.0` and may not reference UI Automation, WinForms or Win32. That is what makes it testable on a machine that cannot run the app.
 
+The same line is where the privacy decisions go, for the same reason. `FieldGate` decides whether a given field may be read; `ReadPolicy` adds the master switch and answers what the watcher must let go of when it moves; `UndoPlanner` holds everything the undo hotkey decides before it touches the field. All three take the field through `IInspectableField`, which hands over identity and labels freely and guards the one call that fetches the user's text, so a test can drive them with a field that counts reads. What is left in `LexiconBar.App` is the UI Automation that acts on the answer, and it is unverified like the rest of that project. A decision left there could only be checked by reading it: the test project references `LexiconBar.Core` alone, because `net8.0-windows` cannot load on the Linux runner that gates this repo.
+
 ### CI
 
-`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 180 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
+`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 199 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
 
 ## Troubleshooting
 
