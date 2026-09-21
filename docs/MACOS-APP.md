@@ -125,7 +125,7 @@ open apps/macos/build/LexiconBar.app
 
 The script runs `swift build -c release` in `apps/macos/LexiconBar`, assembles `apps/macos/build/LexiconBar.app` (Info.plist with `LSUIElement`, the microphone and Apple Events usage strings, and `CFBundleShortVersionString` taken from `package.json`), renders an `.icns` from the SF Symbol "waveform" with `sips` and `iconutil`, codesigns the bundle (see [Signing](#signing-and-why-the-accessibility-grant-kept-disappearing)) and zips it with `ditto`. `SKIP_ICON=1` skips the icon step.
 
-For development, `swift build` and `swift run` inside `apps/macos/LexiconBar` also work; the bare binary shows the status item but has no bundle, so notifications and Start at login are disabled. `swift test` runs the pure tests (the burst detector, the splice and alignment maths, the secret-field heuristic, the read gate, bubble content and placement, hotkey encoding, CLI output parsing, restart backoff, CLI discovery).
+For development, `swift build` and `swift run` inside `apps/macos/LexiconBar` also work; the bare binary shows the status item but has no bundle, so notifications and Start at login are disabled. `swift test` runs the portable tests (the burst detector, the splice and alignment maths, the secret-field heuristic, the read gate, bubble content and placement, hotkey encoding, CLI output parsing, restart backoff, CLI discovery) and the settings-to-watcher wiring, which links the executable target so the exclusion list can be driven through the real publisher.
 
 The `macOS app` GitHub workflow (`.github/workflows/macos-app.yml`) builds, tests and packages on `macos-latest` and uploads `LexiconBar.app.zip` as an artifact.
 
