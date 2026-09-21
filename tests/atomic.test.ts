@@ -206,8 +206,19 @@ describe('the in-process queue is bounded', () => {
     }, opts);
 
     const settled = await Promise.allSettled([a, b]);
-    expect(settled.map((s) => s.status)).toEqual(['rejected', 'rejected']);
-    for (const outcome of settled) {
+
+    // At least one rejects, not both, and CI is what taught me that. When one
+    // chain hits the bound it unwinds and releases its first lock, which is
+    // exactly what lets the other chain finish, so ['rejected', 'fulfilled']
+    // is the cycle being broken and the survivor completing. That is a better
+    // outcome than both failing and the test should not call it a bug.
+    //
+    // The barriers above are what make "at least one" a guarantee rather than
+    // a hope: neither chain reaches for its second lock until the other holds
+    // its first, so the cycle always forms and somebody always waits.
+    const rejected = settled.filter((outcome) => outcome.status === 'rejected');
+    expect(rejected.length).toBeGreaterThanOrEqual(1);
+    for (const outcome of rejected) {
       expect(isFileLockError((outcome as PromiseRejectedResult).reason)).toBe(true);
     }
   });
