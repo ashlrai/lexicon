@@ -4,7 +4,7 @@ How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the Gi
 
 ## 1. Bump the version
 
-Nine files carry the version and must agree. `npm version` handles the first; the rest are edited by hand in the same commit. This table has been wrong twice, and both times it shipped a skewed release, so treat anything not on it as a bug in this page rather than a file that does not matter. `grep -rn "$OLD_VERSION" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist .` before you commit is the check that catches a new carrier.
+Ten files carry the version and must agree. `npm version` handles the first two; the rest are edited by hand in the same commit. This table has been wrong three times, and every time it shipped a skewed release, so treat anything not on it as a bug in this page rather than a file that does not matter. `grep -rnE "0\.5\.[0-9]|v0\.5" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.next .` before you commit, with the old version's pattern, is the check that catches a new carrier. Do not trust the count in this sentence over that grep.
 
 | File | Field |
 |---|---|
@@ -14,16 +14,20 @@ Nine files carry the version and must agree. `npm version` handles the first; th
 | `server.json` | `version` and `packages[0].version` (the MCP Registry reads both) |
 | `README.md` | the `github:ashlrai/lexicon#vX.Y.Z` install pin. It names a tag that must exist, so it cannot be left at whatever it said when it was written; `check:facts` fails the build on a stale one, which is why it is here rather than in your head |
 | `apps/windows/Directory.Build.props` | `<Version>`, the assembly version of the Windows tray app. Nothing derives it from `package.json` |
+| `web/lib/site.ts` | `VERSION`, the constant the landing page renders. Nothing derives it from `package.json`, and it is the one that shipped wrong: the site said 0.5.0 while the package said 0.5.2 and npm served 0.5.1. `check:facts` reads any declared `VERSION` constant now and fails on a stale one |
 | `docs/CLI.md` | not edited by hand: `npm run docs:cli` regenerates it and it carries the version in its header. The CI `docs` job runs the generator and diffs the result, so a skipped regeneration fails the build |
 | `packaging/homebrew/lexicon.rb` | `url` and `sha256`, in step 4 rather than here, because the sha256 does not exist until the tag does |
 | `CHANGELOG.md` | rename `## X.Y.Z (unreleased)` to `## X.Y.Z (YYYY-MM-DD)` |
 
 The extension manifest and `LexiconBar.app` read the version from `package.json` at build time, so they need no edit. `apps/windows` does not.
 
+**Three things the grep finds that are not carriers.** `docs/assets/MANIFEST.md`, the alt text in `web/lib/media.ts` and the screenshots they describe are records of what a particular build actually printed, so bumping them would turn a transcript into a fabrication. `docs/EXTENSION.md` and `docs/MACOS-APP.md` quote sample output with a version inside it, and `docs/DISTRIBUTION.md`, `docs/COMMERCIAL.md` and the comments in `scripts/check-facts.mjs` name the release a thing happened in. Leave all of them. The rule is whether the number is a claim about *this* release or a record of an older one.
+
 ```bash
 npm version patch --no-git-tag-version       # or minor / major; writes package.json + lock
 # edit .claude-plugin/plugin.json, .claude-plugin/marketplace.json, server.json,
-# the README install pin and apps/windows/Directory.Build.props to the same version
+# the README install pin, apps/windows/Directory.Build.props and the VERSION
+# constant in web/lib/site.ts to the same version
 # date the CHANGELOG heading
 npm run docs:cli                             # rewrites docs/CLI.md, including its version header
 
@@ -31,7 +35,7 @@ npm run docs:cli                             # rewrites docs/CLI.md, including i
 # failure now is a failure you would have got from the tag push anyway.
 npx tsc --noEmit
 npx vitest run
-npm run build && npm run build:bundle && npm run build:site && npm run build:extension
+npm run build && npm run build:site && npm run build:extension
 npm run check:bundle                         # plugin/ bundles match src/ (CI fails on drift)
 npm run check:links
 npm run check:facts
@@ -41,9 +45,13 @@ npm run check:server-json --offline          # see the note below before running
 # Stage by explicit path. `git add -A` has twice swept up another agent's
 # uncommitted work in this shared tree, and it is how the plugin bundle came
 # to be committed carrying source that the commit did not contain.
+# `packaging/homebrew/lexicon.rb` is deliberately absent: its sha256 is the
+# checksum of a source archive that does not exist until the tag is pushed, so
+# it lands in step 4 as its own commit. This list used to name it, which meant
+# committing a formula whose url and sha256 disagreed.
 git add package.json package-lock.json server.json CHANGELOG.md README.md \
         .claude-plugin/plugin.json .claude-plugin/marketplace.json \
-        apps/windows/Directory.Build.props docs/CLI.md packaging/homebrew/lexicon.rb
+        apps/windows/Directory.Build.props web/lib/site.ts docs/CLI.md
 git commit -m "vX.Y.Z"
 
 # Annotated, not lightweight. `git push --follow-tags` pushes annotated tags
@@ -54,6 +62,14 @@ git push origin main --follow-tags
 ```
 
 The release workflow refuses to run when the tag does not match `package.json`, so a missed bump fails fast instead of publishing the wrong number.
+
+**Build the plugin bundle from a clean checkout, not from your working tree.** Twice now a bundle built where `node_modules` is a symlink has baked hundreds of absolute paths to the maintainer's home directory into the published artifact: esbuild names every bundled module by the path it resolved to rather than by `node_modules/...`, and the result is committed. Clone the repo to a scratch directory, `npm ci` there, `npm run build:bundle`, and copy `plugin/` back. Then check the artifact before you tag, because a bundle is not something anyone reads by eye:
+
+```bash
+grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs   # both must be 0
+```
+
+`npm run check:bundle` rebuilds in place and diffs, so it proves the bundle matches `src/`; it does not prove the bundle is free of your home directory. Both checks are needed.
 
 **`check:server-json` cannot pass before the publish.** Its third check fetches `https://registry.npmjs.org/@ashlr/lexicon/<version>` and requires an `mcpName` there, which is a statement about a version that is by definition not published yet. Run it with `--offline` before the tag (schema plus version agreement, which are the parts you can be wrong about), and run it again without the flag after npm has the release, which is when its answer means something.
 

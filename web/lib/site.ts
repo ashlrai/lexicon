@@ -17,7 +17,7 @@ export const SITE_URL = 'https://lexicon.ashlr.ai';
 export const REPO = 'https://github.com/ashlrai/lexicon';
 export const NPM = 'https://www.npmjs.com/package/@ashlr/lexicon';
 export const DEMO = 'https://ashlrai.github.io/lexicon/';
-export const VERSION = '0.5.2';
+export const VERSION = '0.5.3';
 
 export const DOC = (file: string) => `${REPO}/blob/main/${file}`;
 export const BENCHMARK = DOC('docs/BENCHMARK.md');

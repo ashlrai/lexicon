@@ -118,8 +118,8 @@ Allowed and worth showing: the CI badge, the npm version badge, the licence badg
 version badge. All four are already in `README.md` and all four resolve correctly right now
 (`npm` currently renders `v0.5.1`, the published version).
 
-One thing to check before launch: `package.json` is at `0.5.2` but npm's latest is `0.5.1`, so
-the version badge will read `v0.5.1` until `0.5.2` is actually published. Worth publishing
+One thing to check before launch: `package.json` is at `0.5.3` but npm's latest is still `0.5.1`,
+so the version badge will read `v0.5.1` until `0.5.3` is actually published. Worth publishing
 first, or the badge quietly contradicts the release notes.
 
 ## Copy that would be wrong, and why
