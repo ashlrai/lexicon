@@ -11,7 +11,7 @@ import { emptyLexicon, parseLexicon } from './schema.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { writeFileAtomic } from '../util/atomic.js';
+import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { xdgConfigHome } from '../util/xdg.js';
 import type {
   Lexicon,
@@ -146,13 +146,72 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
   return { path: filePath, scope, lexicon, exists: true };
 }
 
+/**
+ * Serialize, check the result reads back, then replace the file.
+ *
+ * The check is the whole point of the ordering. An import of a mis-decoded
+ * file (a UTF-16LE dictionary read as UTF-8, say) produces terms full of NUL
+ * bytes; those serialize happily and only fail on the way back in, so writing
+ * first and validating afterwards left a lexicon that no command could read
+ * and no command could repair. Nothing is replaced until the bytes we are
+ * about to write have been through the reader's own pipeline, and the previous
+ * contents are kept at `<path>.bak` either way.
+ *
+ * The write takes the file's lock, so a caller that only writes is still safe
+ * against a concurrent writer. A caller that *reads, edits and writes* has to
+ * hold the lock across all three: see `withLexiconLock` below, which this
+ * re-enters rather than deadlocking on.
+ */
 export async function writeLexiconFile(file: LexiconFile): Promise<void> {
   const body = stringifyYaml(orderLexicon(file.lexicon), { lineWidth: 0 });
   const header = HEADER_COMMENT.split('\n')
     .map((line) => (line ? `# ${line}` : '#'))
     .join('\n');
-  await writeFileAtomic(file.path, `${header}\n\n${body}`);
+  const text = `${header}\n\n${body}`;
+  assertReadsBack(text, file.path);
+  await withLexiconLock(file.path, async () => {
+    await writeFileAtomic(file.path, text, { backup: true });
+  });
   file.exists = true;
+}
+
+/**
+ * Put `text` through exactly what `readLexiconFile` would do to it and throw
+ * before any file is touched when that fails. Checking the serialized bytes
+ * rather than the in-memory object is deliberate: the round trip is where a
+ * value that YAML cannot express, or that the schema rejects, actually shows
+ * up.
+ */
+function assertReadsBack(text: string, filePath: string): void {
+  let raw: unknown;
+  try {
+    raw = parseYaml(text, { prettyErrors: false });
+  } catch (err) {
+    throw new Error(
+      `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`,
+    );
+  }
+  try {
+    parseLexicon(raw ?? emptyLexicon());
+  } catch (err) {
+    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+  }
+}
+
+/**
+ * Run `fn` with exclusive access to a lexicon file, across processes. Wrap the
+ * whole read-modify-write in it, not just the write: five writers share these
+ * files (MCP server, UserPromptSubmit hook, `lexicon serve`, the clipboard
+ * daemon, the menu bar app) and two of them reading before either writes is
+ * how a `learn_correction` used to disappear behind a hit counter.
+ *
+ * Re-entrant for the same path, so nested `writeLexiconFile` calls are free.
+ * A writer that cannot get the lock throws (`FileLockError`) rather than
+ * overwriting; `recordHits` is the one caller that swallows that, because a
+ * lost hit count is bookkeeping and it may never throw by contract.
+ */
+export function withLexiconLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(filePath, fn);
 }
 
 const TERM_KEY_ORDER: (keyof Term)[] = [
@@ -338,7 +397,9 @@ export async function addTerm(
   opts: StoreOptions & { scope?: TermScope; merge?: boolean } = {},
 ): Promise<{ file: LexiconFile; term: Term; created: boolean }> {
   const scope: TermScope = opts.scope ?? 'global';
-  const file = await resolveScopeFile(scope, opts);
+  // The trust gate stays ahead of every other check, as it was when this
+  // resolved the file rather than the path.
+  const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
   if (!canonical) throw new Error('addTerm: canonical must not be empty');
 
@@ -348,43 +409,50 @@ export async function addTerm(
     aliases: dedupeAliases(term.aliases ?? [], canonical),
   };
 
-  const existing = findTerm(file.lexicon, canonical);
-  if (existing && opts.merge !== false) {
-    existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
-    existing.phonetic ??= incoming.phonetic;
-    existing.category ??= incoming.category;
-    existing.notes ??= incoming.notes;
-    existing.caseSensitive ??= incoming.caseSensitive;
-    if (incoming.never?.length) {
-      existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
-    }
-    await writeAndTrust(file, opts);
-    return { file, term: existing, created: false };
-  }
+  // Read, edit and write inside one lock: a concurrent add that read the same
+  // file before this one wrote would otherwise rename its own copy over the
+  // top and take the new term with it.
+  return withLexiconLock(targetPath, async () => {
+    const file = await readLexiconFile(targetPath, scope);
 
-  if (existing) {
-    // merge === false: replace outright, keeping the original creation time.
-    const replaced: Term = {
+    const existing = findTerm(file.lexicon, canonical);
+    if (existing && opts.merge !== false) {
+      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
+      existing.phonetic ??= incoming.phonetic;
+      existing.category ??= incoming.category;
+      existing.notes ??= incoming.notes;
+      existing.caseSensitive ??= incoming.caseSensitive;
+      if (incoming.never?.length) {
+        existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
+      }
+      await writeAndTrust(file, opts);
+      return { file, term: existing, created: false };
+    }
+
+    if (existing) {
+      // merge === false: replace outright, keeping the original creation time.
+      const replaced: Term = {
+        ...incoming,
+        scope,
+        source: incoming.source ?? 'user',
+        createdAt: existing.createdAt ?? incoming.createdAt ?? new Date().toISOString(),
+      };
+      const idx = file.lexicon.terms.indexOf(existing);
+      file.lexicon.terms[idx] = replaced;
+      await writeAndTrust(file, opts);
+      return { file, term: replaced, created: false };
+    }
+
+    const created: Term = {
       ...incoming,
       scope,
       source: incoming.source ?? 'user',
-      createdAt: existing.createdAt ?? incoming.createdAt ?? new Date().toISOString(),
+      createdAt: incoming.createdAt ?? new Date().toISOString(),
     };
-    const idx = file.lexicon.terms.indexOf(existing);
-    file.lexicon.terms[idx] = replaced;
+    file.lexicon.terms.push(created);
     await writeAndTrust(file, opts);
-    return { file, term: replaced, created: false };
-  }
-
-  const created: Term = {
-    ...incoming,
-    scope,
-    source: incoming.source ?? 'user',
-    createdAt: incoming.createdAt ?? new Date().toISOString(),
-  };
-  file.lexicon.terms.push(created);
-  await writeAndTrust(file, opts);
-  return { file, term: created, created: true };
+    return { file, term: created, created: true };
+  });
 }
 
 /**
@@ -410,17 +478,20 @@ export async function removeTerm(
   canonical: string,
   opts: StoreOptions & { scope?: TermScope } = {},
 ): Promise<boolean> {
-  const files = await candidateFiles(opts, opts.scope);
-  for (const file of files) {
-    if (!file.exists) continue;
-    const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
-    if (remaining.length === file.lexicon.terms.length) continue;
-    if (file.scope === 'project') await assertProjectWritable(file.path, opts);
-    file.lexicon.terms = remaining;
-    await writeLexiconFile(file);
-    // The user's own edit must not flip an already-trusted file to 'changed'.
-    if (file.scope === 'project') await refreshTrust(file.path, opts);
-    return true;
+  for (const target of candidatePaths(opts, opts.scope)) {
+    const removed = await withLexiconLock(target.path, async () => {
+      const file = await readLexiconFile(target.path, target.scope);
+      if (!file.exists) return false;
+      const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
+      if (remaining.length === file.lexicon.terms.length) return false;
+      if (file.scope === 'project') await assertProjectWritable(file.path, opts);
+      file.lexicon.terms = remaining;
+      await writeLexiconFile(file);
+      // The user's own edit must not flip an already-trusted file to 'changed'.
+      if (file.scope === 'project') await refreshTrust(file.path, opts);
+      return true;
+    });
+    if (removed) return true;
   }
   return false;
 }
@@ -434,27 +505,34 @@ export async function recordHits(canonicals: string[], opts: StoreOptions = {}):
       const key = c.toLowerCase();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    const files = await candidateFiles(opts);
-    for (const file of files) {
-      if (!file.exists) continue;
-      // Hits only come from merged terms, so an untrusted project file cannot
-      // have produced any; skip it silently (this function never throws, so
-      // it cannot use assertProjectWritable) and never auto-trust it here.
-      if (file.scope === 'project' && (await isTrusted(file, opts)) !== 'trusted') continue;
-      let touched = false;
-      for (const term of file.lexicon.terms) {
-        const n = counts.get(term.canonical.toLowerCase());
-        if (n) {
-          term.hits = (term.hits ?? 0) + n;
-          touched = true;
-          // Project file is consulted first; do not double-count in global.
-          counts.delete(term.canonical.toLowerCase());
+    for (const target of candidatePaths(opts)) {
+      // One lock per file, taken and dropped in turn: the counters this writes
+      // must not be read from a copy another writer is already replacing. A
+      // lock we cannot get lands in the catch below, which is the right trade
+      // here and nowhere else (a lost hit count is bookkeeping; a lost term is
+      // not).
+      await withLexiconLock(target.path, async () => {
+        const file = await readLexiconFile(target.path, target.scope);
+        if (!file.exists) return;
+        // Hits only come from merged terms, so an untrusted project file cannot
+        // have produced any; skip it silently (this function never throws, so
+        // it cannot use assertProjectWritable) and never auto-trust it here.
+        if (file.scope === 'project' && (await isTrusted(file, opts)) !== 'trusted') return;
+        let touched = false;
+        for (const term of file.lexicon.terms) {
+          const n = counts.get(term.canonical.toLowerCase());
+          if (n) {
+            term.hits = (term.hits ?? 0) + n;
+            touched = true;
+            // Project file is consulted first; do not double-count in global.
+            counts.delete(term.canonical.toLowerCase());
+          }
         }
-      }
-      if (touched) {
-        await writeLexiconFile(file);
-        if (file.scope === 'project') await refreshTrust(file.path, opts);
-      }
+        if (touched) {
+          await writeLexiconFile(file);
+          if (file.scope === 'project') await refreshTrust(file.path, opts);
+        }
+      });
     }
   } catch {
     // best effort by contract
@@ -469,26 +547,31 @@ export function findTerm(lexicon: Lexicon, canonical: string): Term | undefined 
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** The file a scoped write targets. For project scope the trust gate runs BEFORE the file is read. */
-async function resolveScopeFile(scope: TermScope, opts: StoreOptions): Promise<LexiconFile> {
+/**
+ * The path a scoped write targets. For project scope the trust gate runs here,
+ * before the file is locked or read.
+ */
+async function resolveScopeWritePath(scope: TermScope, opts: StoreOptions): Promise<string> {
   const paths = resolvePaths(opts);
-  if (scope === 'global') return readLexiconFile(paths.global, 'global');
+  if (scope === 'global') return paths.global;
   const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
   await assertProjectWritable(projectPath, opts);
-  return readLexiconFile(projectPath, 'project');
+  return projectPath;
 }
 
-/** Files to search for a term: project first (if any), then global; or just the requested scope. */
-async function candidateFiles(opts: StoreOptions, scope?: TermScope): Promise<LexiconFile[]> {
+/**
+ * Files to search for a term: project first (if any), then global; or just the
+ * requested scope. Paths only, because each one is read inside its own lock
+ * rather than all of them up front.
+ */
+function candidatePaths(opts: StoreOptions, scope?: TermScope): { path: string; scope: TermScope }[] {
   const paths = resolvePaths(opts);
-  if (scope === 'global') return [await readLexiconFile(paths.global, 'global')];
-  if (scope === 'project') {
-    return paths.project ? [await readLexiconFile(paths.project, 'project')] : [];
-  }
-  const files: LexiconFile[] = [];
-  if (paths.project) files.push(await readLexiconFile(paths.project, 'project'));
-  files.push(await readLexiconFile(paths.global, 'global'));
-  return files;
+  if (scope === 'global') return [{ path: paths.global, scope: 'global' }];
+  if (scope === 'project') return paths.project ? [{ path: paths.project, scope: 'project' }] : [];
+  const targets: { path: string; scope: TermScope }[] = [];
+  if (paths.project) targets.push({ path: paths.project, scope: 'project' });
+  targets.push({ path: paths.global, scope: 'global' });
+  return targets;
 }
 
 function sameCanonical(a: string, b: string): boolean {

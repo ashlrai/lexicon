@@ -1,14 +1,28 @@
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import type { Lexicon, LexiconFile, Term } from '../src/core/types.js';
 
-// A passthrough for schema.ts, so a failure here is a store.ts failure and not
-// a validation one. Schema validation has its own suite (schema.test.ts).
+/**
+ * A passthrough for schema.ts, so a failure here is a store.ts failure and not
+ * a validation one. Schema validation has its own suite (schema.test.ts).
+ *
+ * `schemaOverride` lets one test swap in the real validator for the duration of
+ * a single write. The write path now runs its output back through
+ * `parseLexicon` before replacing anything, and that guarantee is only worth
+ * testing against the validator that actually rejects things.
+ */
+const schemaOverride = vi.hoisted(() => ({
+  parseLexicon: undefined as ((raw: unknown) => unknown) | undefined,
+}));
+
 vi.mock('../src/core/schema.js', () => ({
   parseLexicon: (raw: unknown): Lexicon => {
+    if (schemaOverride.parseLexicon) return schemaOverride.parseLexicon(raw) as Lexicon;
     const obj = (raw ?? {}) as Partial<Lexicon>;
     return { ...obj, version: 1, terms: Array.isArray(obj.terms) ? obj.terms : [] };
   },
@@ -29,6 +43,7 @@ import {
   writeLexiconFile,
 } from '../src/core/store.js';
 import { getTrustPath, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
+import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
 import { xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
 
 let tmp: string;
@@ -47,6 +62,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  schemaOverride.parseLexicon = undefined;
   for (const [key, value] of Object.entries(savedEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -609,6 +625,169 @@ describe('recordHits', () => {
     await fs.writeFile(bad, 'terms: [\n  - :::\n');
     await expect(recordHits(['x'], { cwd: tmp, globalPath: bad })).resolves.toBeUndefined();
     await expect(recordHits([], { cwd: tmp, globalPath: path.join(tmp, 'dir-does-not-exist', 'x.yaml') })).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The write path: no term is lost to a concurrent writer, and no write lands a
+// file the reader cannot read. Both were real losses found in a fresh-user
+// walkthrough: twelve concurrent `lexicon add` calls all reported success and
+// left one term, and a UTF-16LE import wrote its garbage and only then failed
+// validation, with no backup and no supported way back.
+// ---------------------------------------------------------------------------
+
+const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const STORE_MODULE = new URL('../src/core/store.ts', import.meta.url).href;
+
+/** A pid that is certainly gone: spawn a process that does nothing, then wait for it. */
+async function deadPid(): Promise<number> {
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  return child.pid as number;
+}
+
+/**
+ * Run `addTerm` in a real, separate process, the way `lexicon add` does. Only a
+ * second process can show that the lock works between processes; an in-process
+ * test would pass on a promise queue alone.
+ */
+function addTermInChild(script: string, globalPath: string, canonical: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', script, globalPath, canonical], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, LEXICON_PATH: '', XDG_CONFIG_HOME: '' },
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    child.once('error', reject);
+    child.once('close', (code) => (code === 0 ? resolve(out.trim()) : reject(new Error(`${canonical}: ${err || out}`))));
+  });
+}
+
+describe('concurrent writers', () => {
+  it('keeps every term when twelve separate processes add at once', async () => {
+    const script = path.join(tmp, 'add-one.mts');
+    await fs.writeFile(
+      script,
+      [
+        `import { addTerm } from ${JSON.stringify(STORE_MODULE)};`,
+        'const [globalPath, canonical] = process.argv.slice(2);',
+        'await addTerm({ canonical, aliases: [] }, { cwd: process.cwd(), globalPath });',
+        "process.stdout.write('created ' + canonical);",
+      ].join('\n'),
+    );
+
+    const names = Array.from({ length: 12 }, (_, i) => `Term${i + 1}`);
+    const printed = await Promise.all(names.map((name) => addTermInChild(script, globalPath, name)));
+    // Every child claimed success, which is what made the loss invisible.
+    expect(printed.sort()).toEqual(names.map((n) => `created ${n}`).sort());
+
+    const back = await readLexiconFile(globalPath, 'global');
+    expect(back.lexicon.terms.map((t) => t.canonical).sort()).toEqual([...names].sort());
+    // The lock is released, not leaked.
+    await expect(fs.stat(`${globalPath}${LOCK_SUFFIX}`)).rejects.toThrow();
+  });
+
+  it('keeps every term when twelve adds run at once inside one process', async () => {
+    const names = Array.from({ length: 12 }, (_, i) => `Term${i + 1}`);
+    await Promise.all(names.map((canonical) => addTerm({ canonical, aliases: [] }, { cwd: tmp, globalPath })));
+    const back = await readLexiconFile(globalPath, 'global');
+    expect(back.lexicon.terms.map((t) => t.canonical).sort()).toEqual([...names].sort());
+  });
+
+  it('loses neither the new terms nor the hit counters when adds race recordHits', async () => {
+    await addTerm({ canonical: 'Seed', aliases: [] }, { cwd: tmp, globalPath });
+    const adds = ['A', 'B', 'C', 'D', 'E'].map((canonical) =>
+      addTerm({ canonical, aliases: [] }, { cwd: tmp, globalPath }),
+    );
+    const hits = Array.from({ length: 20 }, () => recordHits(['Seed'], { cwd: tmp, globalPath }));
+    await Promise.all([...adds, ...hits]);
+
+    const back = await readLexiconFile(globalPath, 'global');
+    expect(back.lexicon.terms.map((t) => t.canonical).sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'Seed']);
+    expect(findTerm(back.lexicon, 'Seed')?.hits).toBe(20);
+  });
+
+  it('breaks a lock whose owner is gone, so a crash or a Ctrl-C does not wedge the file', async () => {
+    await addTerm({ canonical: 'First', aliases: [] }, { cwd: tmp, globalPath });
+    const lockPath = `${globalPath}${LOCK_SUFFIX}`;
+    await fs.writeFile(
+      lockPath,
+      JSON.stringify({ pid: await deadPid(), host: os.hostname(), token: 'abandoned', at: new Date().toISOString() }),
+    );
+
+    const started = Date.now();
+    await addTerm({ canonical: 'Second', aliases: [] }, { cwd: tmp, globalPath });
+    // Broken on the dead pid, not waited out on the staleness timer.
+    expect(Date.now() - started).toBeLessThan(5_000);
+    const back = await readLexiconFile(globalPath, 'global');
+    expect(back.lexicon.terms.map((t) => t.canonical)).toEqual(['First', 'Second']);
+    await expect(fs.stat(lockPath)).rejects.toThrow();
+  });
+
+  it('fails loudly rather than overwriting when the lock is held by a live process', async () => {
+    await addTerm({ canonical: 'Keep', aliases: [] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath);
+    const lockPath = `${globalPath}${LOCK_SUFFIX}`;
+    // A live pid on this host with a token that is not ours: exactly what a
+    // second lexicon process mid-write looks like from here.
+    await fs.writeFile(
+      lockPath,
+      JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'someone-else', at: new Date().toISOString() }),
+    );
+
+    let caught: unknown;
+    await withFileLock(globalPath, async () => undefined, { timeoutMs: 150 }).catch((err: unknown) => {
+      caught = err;
+    });
+    expect(isFileLockError(caught)).toBe(true);
+    expect((caught as Error).message).toContain(globalPath);
+    expect(Buffer.compare(await fs.readFile(globalPath), before)).toBe(0);
+    // Someone else's lock is never removed on the way out.
+    await expect(fs.stat(lockPath)).resolves.toBeTruthy();
+    await fs.rm(lockPath);
+  });
+});
+
+describe('a write never lands a file that cannot be read back', () => {
+  it('refuses the write and leaves the previous lexicon untouched', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    await addTerm({ canonical: 'Good', aliases: ['gud'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath);
+
+    // What a UTF-16LE dictionary read as UTF-8 leaves in a canonical: the
+    // schema rejects the control characters, but only on the way back in.
+    const garbage = `Ash${String.fromCharCode(0)}lr`;
+    const file: LexiconFile = {
+      path: globalPath,
+      scope: 'global',
+      lexicon: { version: 1, terms: [{ canonical: garbage, aliases: [] }] },
+      exists: true,
+    };
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await expect(writeLexiconFile(file)).rejects.toThrow(`Refusing to write lexicon at ${globalPath}`);
+    schemaOverride.parseLexicon = undefined;
+
+    expect(Buffer.compare(await fs.readFile(globalPath), before)).toBe(0);
+    await expect(fs.stat(`${globalPath}.tmp`)).rejects.toThrow();
+    // The product is still alive: every command reads through this.
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Good')).toBeDefined();
+  });
+
+  it('keeps the previous good file at .bak', async () => {
+    await addTerm({ canonical: 'One', aliases: [] }, { cwd: tmp, globalPath });
+    const first = await fs.readFile(globalPath, 'utf8');
+    // A first write has nothing to preserve.
+    await expect(fs.stat(`${globalPath}${BACKUP_SUFFIX}`)).rejects.toThrow();
+
+    await addTerm({ canonical: 'Two', aliases: [] }, { cwd: tmp, globalPath });
+    expect(await fs.readFile(`${globalPath}${BACKUP_SUFFIX}`, 'utf8')).toBe(first);
+    // And it is a whole lexicon, so recovery is a copy and not an edit.
+    const restored = await readLexiconFile(`${globalPath}${BACKUP_SUFFIX}`, 'global');
+    expect(restored.lexicon.terms.map((t) => t.canonical)).toEqual(['One']);
+    await expect(fs.stat(`${globalPath}${BACKUP_SUFFIX}.tmp`)).rejects.toThrow();
   });
 });
 

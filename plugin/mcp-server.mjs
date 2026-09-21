@@ -44114,7 +44114,7 @@ function emptyLexicon() {
 // src/core/store.ts
 var import_yaml = __toESM(require_dist2(), 1);
 import { promises as fs4, existsSync } from "node:fs";
-import os2 from "node:os";
+import os3 from "node:os";
 import path5 from "node:path";
 
 // src/core/trust.ts
@@ -44123,23 +44123,10 @@ import { promises as fs3 } from "node:fs";
 import path3 from "node:path";
 
 // src/util/atomic.ts
-import { promises as fs } from "node:fs";
+import { promises as fs, unlinkSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
+import os from "node:os";
 import path from "node:path";
-async function writeFileAtomic(target, data, opts = {}) {
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const tmp = opts.unique ? `${target}.${process.pid}.tmp` : `${target}.tmp`;
-  if (opts.mode === void 0) {
-    await fs.writeFile(tmp, data, "utf8");
-  } else {
-    await fs.writeFile(tmp, data, { encoding: "utf8", mode: opts.mode });
-    await fs.chmod(tmp, opts.mode);
-  }
-  await fs.rename(tmp, target);
-}
-
-// src/util/json.ts
-import { promises as fs2 } from "node:fs";
-import path2 from "node:path";
 
 // src/util/errors.ts
 function errorMessage(err) {
@@ -44149,7 +44136,193 @@ function isEnoent(err) {
   return typeof err === "object" && err !== null && err.code === "ENOENT";
 }
 
+// src/util/atomic.ts
+var BACKUP_SUFFIX = ".bak";
+var LOCK_SUFFIX = ".lock";
+var DEFAULT_LOCK_TIMEOUT_MS = 1e4;
+var DEFAULT_LOCK_STALE_MS = 3e4;
+async function writeFileAtomic(target, data, opts = {}) {
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const tmp = opts.unique ? `${target}.${process.pid}.tmp` : `${target}.tmp`;
+  if (opts.mode === void 0) {
+    await fs.writeFile(tmp, data, "utf8");
+  } else {
+    await fs.writeFile(tmp, data, { encoding: "utf8", mode: opts.mode });
+    await fs.chmod(tmp, opts.mode);
+  }
+  try {
+    if (opts.backup) await backupExisting(target);
+    await fs.rename(tmp, target);
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => void 0);
+    throw err;
+  }
+}
+async function backupExisting(target) {
+  const bak = `${target}${BACKUP_SUFFIX}`;
+  const tmpBak = `${bak}.tmp`;
+  try {
+    await fs.copyFile(target, tmpBak);
+  } catch (err) {
+    if (isEnoent(err)) return;
+    throw err;
+  }
+  try {
+    await fs.rename(tmpBak, bak);
+  } catch (err) {
+    await fs.rm(tmpBak, { force: true }).catch(() => void 0);
+    throw err;
+  }
+}
+var FileLockError = class extends Error {
+  path;
+  lockPath;
+  constructor(target, lockPath, detail) {
+    super(`could not lock ${target} for writing: ${detail} (lock file: ${lockPath})`);
+    this.name = "FileLockError";
+    this.path = target;
+    this.lockPath = lockPath;
+  }
+};
+var ownedLocks = /* @__PURE__ */ new Set();
+var exitHookInstalled = false;
+var heldLocks = new AsyncLocalStorage();
+var queues = /* @__PURE__ */ new Map();
+async function withFileLock(target, fn, opts = {}) {
+  const lockPath = `${path.resolve(target)}${LOCK_SUFFIX}`;
+  const held = heldLocks.getStore();
+  if (held?.has(lockPath)) return fn();
+  const run = async () => {
+    const token = await acquire(
+      lockPath,
+      target,
+      opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
+      opts.staleMs ?? DEFAULT_LOCK_STALE_MS
+    );
+    const next = new Set(held ?? []);
+    next.add(lockPath);
+    try {
+      return await heldLocks.run(next, fn);
+    } finally {
+      await release(lockPath, token);
+    }
+  };
+  const previous = queues.get(lockPath) ?? Promise.resolve();
+  const mine = previous.then(run, run);
+  const tail = mine.then(ignore, ignore);
+  queues.set(lockPath, tail);
+  try {
+    return await mine;
+  } finally {
+    if (queues.get(lockPath) === tail) queues.delete(lockPath);
+  }
+}
+function ignore() {
+}
+async function acquire(lockPath, target, timeoutMs, staleMs) {
+  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const payload = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
+  const deadline = Date.now() + timeoutMs;
+  let wait = 4;
+  for (; ; ) {
+    try {
+      await fs.mkdir(path.dirname(lockPath), { recursive: true });
+      await fs.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
+      rememberForCleanup(lockPath);
+      return token;
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+    }
+    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (Date.now() >= deadline) {
+      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
+    }
+    await sleep(wait / 2 + Math.random() * wait);
+    wait = Math.min(wait * 2, 120);
+  }
+}
+async function breakIfStale(lockPath, staleMs) {
+  let before;
+  let mtimeMs;
+  try {
+    before = await fs.readFile(lockPath, "utf8");
+    mtimeMs = (await fs.stat(lockPath)).mtimeMs;
+  } catch (err) {
+    return isEnoent(err);
+  }
+  const owner = parseOwner(before);
+  const ours = owner?.host === os.hostname();
+  const abandoned = ours && owner.pid !== process.pid && !pidAlive(owner.pid);
+  const expired = Date.now() - mtimeMs >= staleMs;
+  if (!abandoned && !expired) return false;
+  if (ours && owner.pid === process.pid && pidAlive(owner.pid)) return false;
+  try {
+    if (await fs.readFile(lockPath, "utf8") !== before) return false;
+    await fs.unlink(lockPath);
+  } catch {
+    return false;
+  }
+  return true;
+}
+async function release(lockPath, token) {
+  ownedLocks.delete(lockPath);
+  try {
+    if (parseOwner(await fs.readFile(lockPath, "utf8"))?.token !== token) return;
+    await fs.unlink(lockPath);
+  } catch {
+  }
+}
+function rememberForCleanup(lockPath) {
+  ownedLocks.add(lockPath);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const held of ownedLocks) {
+      try {
+        unlinkSync(held);
+      } catch {
+      }
+    }
+  });
+}
+async function describeHolder(lockPath) {
+  try {
+    const owner = parseOwner(await fs.readFile(lockPath, "utf8"));
+    if (owner) return `pid ${owner.pid} on ${owner.host} since ${owner.at}`;
+  } catch {
+  }
+  return "another lexicon process";
+}
+function parseOwner(text) {
+  try {
+    const raw = JSON.parse(text);
+    if (typeof raw !== "object" || raw === null) return void 0;
+    const { pid, host, token, at } = raw;
+    if (typeof pid !== "number" || typeof host !== "string" || typeof token !== "string") return void 0;
+    return { pid, host, token, at: typeof at === "string" ? at : "an unknown time" };
+  } catch {
+    return void 0;
+  }
+}
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function sleep(ms) {
+  return new Promise((resolve4) => setTimeout(resolve4, ms));
+}
+
 // src/util/json.ts
+import { promises as fs2 } from "node:fs";
+import path2 from "node:path";
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -44293,13 +44466,13 @@ async function listTrusted(opts = {}) {
 
 // src/util/xdg.ts
 import path4 from "node:path";
-import os from "node:os";
+import os2 from "node:os";
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
   return path4.isAbsolute(trimmed) ? trimmed : fallback;
 }
-function xdgConfigHome(env = process.env, home = os.homedir()) {
+function xdgConfigHome(env = process.env, home = os2.homedir()) {
   return absoluteOr(env.XDG_CONFIG_HOME, path4.join(home, ".config"));
 }
 
@@ -44338,7 +44511,7 @@ function findProjectFile(start) {
 function resolvePaths(opts = {}) {
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
-  const configHome = xdgConfigHome(env, opts.home ?? os2.homedir());
+  const configHome = xdgConfigHome(env, opts.home ?? os3.homedir());
   const global = opts.globalPath || env.LEXICON_PATH || path5.join(configHome, "lexicon", "lexicon.yaml");
   const project = findProjectFile(cwd);
   return project ? { global, project } : { global };
@@ -44382,10 +44555,32 @@ async function readLexiconFile(filePath, scope) {
 async function writeLexiconFile(file2) {
   const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
   const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
-  await writeFileAtomic(file2.path, `${header}
+  const text = `${header}
 
-${body}`);
+${body}`;
+  assertReadsBack(text, file2.path);
+  await withLexiconLock(file2.path, async () => {
+    await writeFileAtomic(file2.path, text, { backup: true });
+  });
   file2.exists = true;
+}
+function assertReadsBack(text, filePath) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+  } catch (err) {
+    throw new Error(
+      `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`
+    );
+  }
+  try {
+    parseLexicon(raw ?? emptyLexicon());
+  } catch (err) {
+    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+  }
+}
+function withLexiconLock(filePath, fn) {
+  return withFileLock(filePath, fn);
 }
 var TERM_KEY_ORDER = [
   "canonical",
@@ -44502,7 +44697,7 @@ async function assertProjectWritable(projectPath, opts) {
 }
 async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
-  const file2 = await resolveScopeFile(scope, opts);
+  const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
   if (!canonical) throw new Error("addTerm: canonical must not be empty");
   const incoming = {
@@ -44510,56 +44705,62 @@ async function addTerm(term, opts = {}) {
     canonical,
     aliases: dedupeAliases(term.aliases ?? [], canonical)
   };
-  const existing = findTerm(file2.lexicon, canonical);
-  if (existing && opts.merge !== false) {
-    existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
-    existing.phonetic ??= incoming.phonetic;
-    existing.category ??= incoming.category;
-    existing.notes ??= incoming.notes;
-    existing.caseSensitive ??= incoming.caseSensitive;
-    if (incoming.never?.length) {
-      existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
+  return withLexiconLock(targetPath, async () => {
+    const file2 = await readLexiconFile(targetPath, scope);
+    const existing = findTerm(file2.lexicon, canonical);
+    if (existing && opts.merge !== false) {
+      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
+      existing.phonetic ??= incoming.phonetic;
+      existing.category ??= incoming.category;
+      existing.notes ??= incoming.notes;
+      existing.caseSensitive ??= incoming.caseSensitive;
+      if (incoming.never?.length) {
+        existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
+      }
+      await writeAndTrust(file2, opts);
+      return { file: file2, term: existing, created: false };
     }
-    await writeAndTrust(file2, opts);
-    return { file: file2, term: existing, created: false };
-  }
-  if (existing) {
-    const replaced = {
+    if (existing) {
+      const replaced = {
+        ...incoming,
+        scope,
+        source: incoming.source ?? "user",
+        createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const idx = file2.lexicon.terms.indexOf(existing);
+      file2.lexicon.terms[idx] = replaced;
+      await writeAndTrust(file2, opts);
+      return { file: file2, term: replaced, created: false };
+    }
+    const created = {
       ...incoming,
       scope,
       source: incoming.source ?? "user",
-      createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+      createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
     };
-    const idx = file2.lexicon.terms.indexOf(existing);
-    file2.lexicon.terms[idx] = replaced;
+    file2.lexicon.terms.push(created);
     await writeAndTrust(file2, opts);
-    return { file: file2, term: replaced, created: false };
-  }
-  const created = {
-    ...incoming,
-    scope,
-    source: incoming.source ?? "user",
-    createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-  };
-  file2.lexicon.terms.push(created);
-  await writeAndTrust(file2, opts);
-  return { file: file2, term: created, created: true };
+    return { file: file2, term: created, created: true };
+  });
 }
 async function writeAndTrust(file2, opts) {
   await writeLexiconFile(file2);
   if (file2.scope === "project") await trustProject(file2.path, opts);
 }
 async function removeTerm(canonical, opts = {}) {
-  const files = await candidateFiles(opts, opts.scope);
-  for (const file2 of files) {
-    if (!file2.exists) continue;
-    const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
-    if (remaining.length === file2.lexicon.terms.length) continue;
-    if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
-    file2.lexicon.terms = remaining;
-    await writeLexiconFile(file2);
-    if (file2.scope === "project") await refreshTrust(file2.path, opts);
-    return true;
+  for (const target of candidatePaths(opts, opts.scope)) {
+    const removed = await withLexiconLock(target.path, async () => {
+      const file2 = await readLexiconFile(target.path, target.scope);
+      if (!file2.exists) return false;
+      const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
+      if (remaining.length === file2.lexicon.terms.length) return false;
+      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      file2.lexicon.terms = remaining;
+      await writeLexiconFile(file2);
+      if (file2.scope === "project") await refreshTrust(file2.path, opts);
+      return true;
+    });
+    if (removed) return true;
   }
   return false;
 }
@@ -44571,23 +44772,25 @@ async function recordHits(canonicals, opts = {}) {
       const key = c.toLowerCase();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    const files = await candidateFiles(opts);
-    for (const file2 of files) {
-      if (!file2.exists) continue;
-      if (file2.scope === "project" && await isTrusted(file2, opts) !== "trusted") continue;
-      let touched = false;
-      for (const term of file2.lexicon.terms) {
-        const n = counts.get(term.canonical.toLowerCase());
-        if (n) {
-          term.hits = (term.hits ?? 0) + n;
-          touched = true;
-          counts.delete(term.canonical.toLowerCase());
+    for (const target of candidatePaths(opts)) {
+      await withLexiconLock(target.path, async () => {
+        const file2 = await readLexiconFile(target.path, target.scope);
+        if (!file2.exists) return;
+        if (file2.scope === "project" && await isTrusted(file2, opts) !== "trusted") return;
+        let touched = false;
+        for (const term of file2.lexicon.terms) {
+          const n = counts.get(term.canonical.toLowerCase());
+          if (n) {
+            term.hits = (term.hits ?? 0) + n;
+            touched = true;
+            counts.delete(term.canonical.toLowerCase());
+          }
         }
-      }
-      if (touched) {
-        await writeLexiconFile(file2);
-        if (file2.scope === "project") await refreshTrust(file2.path, opts);
-      }
+        if (touched) {
+          await writeLexiconFile(file2);
+          if (file2.scope === "project") await refreshTrust(file2.path, opts);
+        }
+      });
     }
   } catch {
   }
@@ -44595,23 +44798,21 @@ async function recordHits(canonicals, opts = {}) {
 function findTerm(lexicon, canonical) {
   return lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
 }
-async function resolveScopeFile(scope, opts) {
+async function resolveScopeWritePath(scope, opts) {
   const paths = resolvePaths(opts);
-  if (scope === "global") return readLexiconFile(paths.global, "global");
+  if (scope === "global") return paths.global;
   const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
   await assertProjectWritable(projectPath, opts);
-  return readLexiconFile(projectPath, "project");
+  return projectPath;
 }
-async function candidateFiles(opts, scope) {
+function candidatePaths(opts, scope) {
   const paths = resolvePaths(opts);
-  if (scope === "global") return [await readLexiconFile(paths.global, "global")];
-  if (scope === "project") {
-    return paths.project ? [await readLexiconFile(paths.project, "project")] : [];
-  }
-  const files = [];
-  if (paths.project) files.push(await readLexiconFile(paths.project, "project"));
-  files.push(await readLexiconFile(paths.global, "global"));
-  return files;
+  if (scope === "global") return [{ path: paths.global, scope: "global" }];
+  if (scope === "project") return paths.project ? [{ path: paths.project, scope: "project" }] : [];
+  const targets = [];
+  if (paths.project) targets.push({ path: paths.project, scope: "project" });
+  targets.push({ path: paths.global, scope: "global" });
+  return targets;
 }
 function sameCanonical(a, b) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -50865,7 +51066,7 @@ async function harvestRepo(root, opts = {}) {
   if (!stat || !stat.isDirectory()) {
     throw new Error(`harvestRepo: not a directory: ${absRoot}`);
   }
-  const ignore = /* @__PURE__ */ new Set([...ALWAYS_IGNORED_DIRS, ...opts.ignore ?? []]);
+  const ignore2 = /* @__PURE__ */ new Set([...ALWAYS_IGNORED_DIRS, ...opts.ignore ?? []]);
   const wantGit = opts.git !== false;
   const wantPackages = opts.packages !== false;
   const wantIdentifiers = opts.identifiers !== false;
@@ -50899,7 +51100,7 @@ async function harvestRepo(root, opts = {}) {
       bump3(author, "person", "harvest:git", "git log", 1, true);
     }
   }
-  const { files } = walk(absRoot, ignore);
+  const { files } = walk(absRoot, ignore2);
   for (const file2 of files) {
     const rel = path6.relative(absRoot, file2) || path6.basename(file2);
     const base = path6.basename(file2);
@@ -50957,7 +51158,7 @@ async function harvestRepo(root, opts = {}) {
   candidates.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
   return candidates.slice(0, Math.max(0, limit));
 }
-function walk(root, ignore) {
+function walk(root, ignore2) {
   const files = [];
   const stack = [root];
   let truncated = false;
@@ -50973,7 +51174,7 @@ function walk(root, ignore) {
     for (const entry of entries) {
       const full = path6.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (ignore.has(entry.name)) continue;
+        if (ignore2.has(entry.name)) continue;
         stack.push(full);
         continue;
       }
@@ -53717,7 +53918,7 @@ function fail(io, err) {
 // src/cli/claude-settings.ts
 import { existsSync as existsSync4 } from "node:fs";
 import { execFileSync as execFileSync2 } from "node:child_process";
-import os3 from "node:os";
+import os4 from "node:os";
 import path13 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
@@ -53826,7 +54027,7 @@ function resolveCliEntry(opts = {}) {
 
 // src/cli/claude-settings.ts
 var HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"];
-function claudeConfigDir(env = process.env, home = os3.homedir()) {
+function claudeConfigDir(env = process.env, home = os4.homedir()) {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
   return override ? override : path13.join(home, ".claude");
 }
@@ -53930,7 +54131,7 @@ function defaultExec(file2, args) {
 
 // src/cli/cmd-doctor.ts
 import { existsSync as existsSync6, promises as fs10 } from "node:fs";
-import os5 from "node:os";
+import os6 from "node:os";
 import path16 from "node:path";
 
 // src/daemon/clipboard-backends.ts
@@ -54088,7 +54289,7 @@ async function detectClipboardBackend(platform = process.platform, env = process
 
 // src/voice/models.ts
 import { createWriteStream, existsSync as existsSync5, promises as fs9 } from "node:fs";
-import os4 from "node:os";
+import os5 from "node:os";
 import path14 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var DEFAULT_MODEL = "base.en";
@@ -54103,7 +54304,7 @@ function modelUrl(name) {
 function modelsDir(globalPath, env = process.env) {
   return env.LEXICON_WHISPER_MODELS || path14.join(path14.dirname(globalPath), "models");
 }
-function expandTilde(spec, home = os4.homedir()) {
+function expandTilde(spec, home = os5.homedir()) {
   if (spec === "~") return home;
   if (spec.startsWith("~/")) return path14.join(home, spec.slice(2));
   if (process.platform === "win32" && spec.startsWith("~\\")) return path14.join(home, spec.slice(2));
@@ -54496,7 +54697,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
     }
   }
-  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os5.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
+  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os6.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
   try {
     const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
     push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
@@ -54536,7 +54737,7 @@ async function runDoctorReport(opts, deps = {}) {
 
 // src/cli/cmd-install.ts
 import { existsSync as existsSync7, promises as fs11 } from "node:fs";
-import os6 from "node:os";
+import os7 from "node:os";
 import path17 from "node:path";
 var INSTALL_CLIENTS = [
   "claude",
@@ -54775,7 +54976,7 @@ function printGeneric(io, serverPath) {
 async function runInstall(client, opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? path17.resolve(opts.home) : os6.homedir();
+  const home = opts.home ? path17.resolve(opts.home) : os7.homedir();
   const cwd = path17.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
@@ -55099,7 +55300,7 @@ async function runInit(opts, io) {
 }
 
 // src/cli/cmd-setup.ts
-import os9 from "node:os";
+import os10 from "node:os";
 import path24 from "node:path";
 import { existsSync as existsSync10 } from "node:fs";
 
@@ -55113,7 +55314,7 @@ var SEEDED_TERMS = 3;
 // src/cli/setup/detect.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync9, promises as fs13 } from "node:fs";
-import os7 from "node:os";
+import os8 from "node:os";
 import path19 from "node:path";
 function captureIO() {
   const sink = {
@@ -55219,7 +55420,7 @@ function configDirFor(client, ctx) {
 }
 async function detectClients(deps = {}, cwd = process.cwd()) {
   const ctx = {
-    home: deps.home ?? os7.homedir(),
+    home: deps.home ?? os8.homedir(),
     cwd,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
@@ -55254,7 +55455,7 @@ import path23 from "node:path";
 // src/cli/cmd-serve.ts
 import { spawn as spawn2 } from "node:child_process";
 import { promises as fs16 } from "node:fs";
-import os8 from "node:os";
+import os9 from "node:os";
 import path22 from "node:path";
 
 // node_modules/commander/lib/error.js
@@ -58865,7 +59066,7 @@ async function runAndReport(exec, io, cmd, args) {
 }
 async function runServeInstall(opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
-  const home = deps.home ?? os8.homedir();
+  const home = deps.home ?? os9.homedir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
   const nodePath = deps.nodePath ?? process.execPath;
@@ -58935,7 +59136,7 @@ async function runServeInstall(opts, io, deps = {}) {
   if (platform === "win32") {
     const taskName = scheduledTaskName(env);
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env));
-    const xmlPath = path22.join(await fs16.mkdtemp(path22.join(os8.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
+    const xmlPath = path22.join(await fs16.mkdtemp(path22.join(os9.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
     await fs16.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
@@ -59454,7 +59655,7 @@ function printSummary(ctx) {
 }
 async function runSetup(opts, io, deps = {}) {
   const cwd = path24.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? path24.resolve(opts.home) : deps.home ?? os9.homedir();
+  const home = opts.home ? path24.resolve(opts.home) : deps.home ?? os10.homedir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);

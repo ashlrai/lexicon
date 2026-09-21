@@ -27327,7 +27327,7 @@ function emptyLexicon() {
 // src/core/store.ts
 var import_yaml = __toESM(require_dist(), 1);
 import { promises as fs3, existsSync } from "node:fs";
-import os2 from "node:os";
+import os3 from "node:os";
 import path4 from "node:path";
 
 // src/core/trust.ts
@@ -27336,8 +27336,24 @@ import { promises as fs2 } from "node:fs";
 import path2 from "node:path";
 
 // src/util/atomic.ts
-import { promises as fs } from "node:fs";
+import { promises as fs, unlinkSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
+import os from "node:os";
 import path from "node:path";
+
+// src/util/errors.ts
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function isEnoent(err) {
+  return typeof err === "object" && err !== null && err.code === "ENOENT";
+}
+
+// src/util/atomic.ts
+var BACKUP_SUFFIX = ".bak";
+var LOCK_SUFFIX = ".lock";
+var DEFAULT_LOCK_TIMEOUT_MS = 1e4;
+var DEFAULT_LOCK_STALE_MS = 3e4;
 async function writeFileAtomic(target, data, opts = {}) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const tmp = opts.unique ? `${target}.${process.pid}.tmp` : `${target}.tmp`;
@@ -27347,15 +27363,174 @@ async function writeFileAtomic(target, data, opts = {}) {
     await fs.writeFile(tmp, data, { encoding: "utf8", mode: opts.mode });
     await fs.chmod(tmp, opts.mode);
   }
-  await fs.rename(tmp, target);
+  try {
+    if (opts.backup) await backupExisting(target);
+    await fs.rename(tmp, target);
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => void 0);
+    throw err;
+  }
 }
-
-// src/util/errors.ts
-function errorMessage(err) {
-  return err instanceof Error ? err.message : String(err);
+async function backupExisting(target) {
+  const bak = `${target}${BACKUP_SUFFIX}`;
+  const tmpBak = `${bak}.tmp`;
+  try {
+    await fs.copyFile(target, tmpBak);
+  } catch (err) {
+    if (isEnoent(err)) return;
+    throw err;
+  }
+  try {
+    await fs.rename(tmpBak, bak);
+  } catch (err) {
+    await fs.rm(tmpBak, { force: true }).catch(() => void 0);
+    throw err;
+  }
 }
-function isEnoent(err) {
-  return typeof err === "object" && err !== null && err.code === "ENOENT";
+var FileLockError = class extends Error {
+  path;
+  lockPath;
+  constructor(target, lockPath, detail) {
+    super(`could not lock ${target} for writing: ${detail} (lock file: ${lockPath})`);
+    this.name = "FileLockError";
+    this.path = target;
+    this.lockPath = lockPath;
+  }
+};
+var ownedLocks = /* @__PURE__ */ new Set();
+var exitHookInstalled = false;
+var heldLocks = new AsyncLocalStorage();
+var queues = /* @__PURE__ */ new Map();
+async function withFileLock(target, fn, opts = {}) {
+  const lockPath = `${path.resolve(target)}${LOCK_SUFFIX}`;
+  const held = heldLocks.getStore();
+  if (held?.has(lockPath)) return fn();
+  const run = async () => {
+    const token = await acquire(
+      lockPath,
+      target,
+      opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
+      opts.staleMs ?? DEFAULT_LOCK_STALE_MS
+    );
+    const next = new Set(held ?? []);
+    next.add(lockPath);
+    try {
+      return await heldLocks.run(next, fn);
+    } finally {
+      await release(lockPath, token);
+    }
+  };
+  const previous = queues.get(lockPath) ?? Promise.resolve();
+  const mine = previous.then(run, run);
+  const tail = mine.then(ignore, ignore);
+  queues.set(lockPath, tail);
+  try {
+    return await mine;
+  } finally {
+    if (queues.get(lockPath) === tail) queues.delete(lockPath);
+  }
+}
+function ignore() {
+}
+async function acquire(lockPath, target, timeoutMs, staleMs) {
+  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const payload = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
+  const deadline = Date.now() + timeoutMs;
+  let wait = 4;
+  for (; ; ) {
+    try {
+      await fs.mkdir(path.dirname(lockPath), { recursive: true });
+      await fs.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
+      rememberForCleanup(lockPath);
+      return token;
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+    }
+    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (Date.now() >= deadline) {
+      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
+    }
+    await sleep(wait / 2 + Math.random() * wait);
+    wait = Math.min(wait * 2, 120);
+  }
+}
+async function breakIfStale(lockPath, staleMs) {
+  let before;
+  let mtimeMs;
+  try {
+    before = await fs.readFile(lockPath, "utf8");
+    mtimeMs = (await fs.stat(lockPath)).mtimeMs;
+  } catch (err) {
+    return isEnoent(err);
+  }
+  const owner = parseOwner(before);
+  const ours = owner?.host === os.hostname();
+  const abandoned = ours && owner.pid !== process.pid && !pidAlive(owner.pid);
+  const expired = Date.now() - mtimeMs >= staleMs;
+  if (!abandoned && !expired) return false;
+  if (ours && owner.pid === process.pid && pidAlive(owner.pid)) return false;
+  try {
+    if (await fs.readFile(lockPath, "utf8") !== before) return false;
+    await fs.unlink(lockPath);
+  } catch {
+    return false;
+  }
+  return true;
+}
+async function release(lockPath, token) {
+  ownedLocks.delete(lockPath);
+  try {
+    if (parseOwner(await fs.readFile(lockPath, "utf8"))?.token !== token) return;
+    await fs.unlink(lockPath);
+  } catch {
+  }
+}
+function rememberForCleanup(lockPath) {
+  ownedLocks.add(lockPath);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const held of ownedLocks) {
+      try {
+        unlinkSync(held);
+      } catch {
+      }
+    }
+  });
+}
+async function describeHolder(lockPath) {
+  try {
+    const owner = parseOwner(await fs.readFile(lockPath, "utf8"));
+    if (owner) return `pid ${owner.pid} on ${owner.host} since ${owner.at}`;
+  } catch {
+  }
+  return "another lexicon process";
+}
+function parseOwner(text) {
+  try {
+    const raw = JSON.parse(text);
+    if (typeof raw !== "object" || raw === null) return void 0;
+    const { pid, host, token, at } = raw;
+    if (typeof pid !== "number" || typeof host !== "string" || typeof token !== "string") return void 0;
+    return { pid, host, token, at: typeof at === "string" ? at : "an unknown time" };
+  } catch {
+    return void 0;
+  }
+}
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function sleep(ms) {
+  return new Promise((resolve2) => setTimeout(resolve2, ms));
 }
 
 // src/util/json.ts
@@ -27453,13 +27628,13 @@ async function refreshTrust(projectPath, opts = {}) {
 
 // src/util/xdg.ts
 import path3 from "node:path";
-import os from "node:os";
+import os2 from "node:os";
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
   return path3.isAbsolute(trimmed) ? trimmed : fallback;
 }
-function xdgConfigHome(env = process.env, home = os.homedir()) {
+function xdgConfigHome(env = process.env, home = os2.homedir()) {
   return absoluteOr(env.XDG_CONFIG_HOME, path3.join(home, ".config"));
 }
 
@@ -27489,7 +27664,7 @@ function findProjectFile(start) {
 function resolvePaths(opts = {}) {
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
-  const configHome = xdgConfigHome(env, opts.home ?? os2.homedir());
+  const configHome = xdgConfigHome(env, opts.home ?? os3.homedir());
   const global = opts.globalPath || env.LEXICON_PATH || path4.join(configHome, "lexicon", "lexicon.yaml");
   const project = findProjectFile(cwd);
   return project ? { global, project } : { global };
@@ -27530,10 +27705,32 @@ async function readLexiconFile(filePath, scope) {
 async function writeLexiconFile(file2) {
   const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
   const header = HEADER_COMMENT.split("\n").map((line) => line ? `# ${line}` : "#").join("\n");
-  await writeFileAtomic(file2.path, `${header}
+  const text = `${header}
 
-${body}`);
+${body}`;
+  assertReadsBack(text, file2.path);
+  await withLexiconLock(file2.path, async () => {
+    await writeFileAtomic(file2.path, text, { backup: true });
+  });
   file2.exists = true;
+}
+function assertReadsBack(text, filePath) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+  } catch (err) {
+    throw new Error(
+      `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`
+    );
+  }
+  try {
+    parseLexicon(raw ?? emptyLexicon());
+  } catch (err) {
+    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+  }
+}
+function withLexiconLock(filePath, fn) {
+  return withFileLock(filePath, fn);
 }
 var TERM_KEY_ORDER = [
   "canonical",
@@ -27632,37 +27829,37 @@ async function recordHits(canonicals, opts = {}) {
       const key = c.toLowerCase();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    const files = await candidateFiles(opts);
-    for (const file2 of files) {
-      if (!file2.exists) continue;
-      if (file2.scope === "project" && await isTrusted(file2, opts) !== "trusted") continue;
-      let touched = false;
-      for (const term of file2.lexicon.terms) {
-        const n = counts.get(term.canonical.toLowerCase());
-        if (n) {
-          term.hits = (term.hits ?? 0) + n;
-          touched = true;
-          counts.delete(term.canonical.toLowerCase());
+    for (const target of candidatePaths(opts)) {
+      await withLexiconLock(target.path, async () => {
+        const file2 = await readLexiconFile(target.path, target.scope);
+        if (!file2.exists) return;
+        if (file2.scope === "project" && await isTrusted(file2, opts) !== "trusted") return;
+        let touched = false;
+        for (const term of file2.lexicon.terms) {
+          const n = counts.get(term.canonical.toLowerCase());
+          if (n) {
+            term.hits = (term.hits ?? 0) + n;
+            touched = true;
+            counts.delete(term.canonical.toLowerCase());
+          }
         }
-      }
-      if (touched) {
-        await writeLexiconFile(file2);
-        if (file2.scope === "project") await refreshTrust(file2.path, opts);
-      }
+        if (touched) {
+          await writeLexiconFile(file2);
+          if (file2.scope === "project") await refreshTrust(file2.path, opts);
+        }
+      });
     }
   } catch {
   }
 }
-async function candidateFiles(opts, scope) {
+function candidatePaths(opts, scope) {
   const paths = resolvePaths(opts);
-  if (scope === "global") return [await readLexiconFile(paths.global, "global")];
-  if (scope === "project") {
-    return paths.project ? [await readLexiconFile(paths.project, "project")] : [];
-  }
-  const files = [];
-  if (paths.project) files.push(await readLexiconFile(paths.project, "project"));
-  files.push(await readLexiconFile(paths.global, "global"));
-  return files;
+  if (scope === "global") return [{ path: paths.global, scope: "global" }];
+  if (scope === "project") return paths.project ? [{ path: paths.project, scope: "project" }] : [];
+  const targets = [];
+  if (paths.project) targets.push({ path: paths.project, scope: "project" });
+  targets.push({ path: paths.global, scope: "global" });
+  return targets;
 }
 function sameCanonical(a, b) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
