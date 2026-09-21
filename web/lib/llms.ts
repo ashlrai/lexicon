@@ -239,9 +239,11 @@ macOS Text Replacement does 62.0%, the same plus a casing rule per term 71.3%,
 whisper.cpp's own --prompt hint list 76.0%, Lexicon 91.0%. Exact substitution
 cannot reach a mis-hearing nobody wrote down in advance, which is what the
 phonetic and fuzzy tiers are for. The --prompt list is a complement rather than
-a rival, and stacks with the lexicon to 95.7%. The raw and --prompt rows cannot
-wrongly change clean prose because neither runs a rewrite step, which is the
-absence of the feature and not a safety advantage. Reproduce the table with
+a rival, and stacks with the lexicon to 95.7%. The raw row cannot wrongly change clean
+prose because nothing runs, which is the absence of the feature and not a safety
+advantage. The --prompt row is unmeasured rather than zero: it biases the
+recognizer itself, so anything it changes is already in the transcript this
+metric scores. Reproduce the table with
 npm run bench:compare after one npm run bench:audio.
 
 ## Privacy

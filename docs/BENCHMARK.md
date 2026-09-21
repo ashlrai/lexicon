@@ -568,13 +568,15 @@ The conditions:
 - **The last column is unmeasured for the top two rows, which is not the same as zero.** Raw
   Whisper genuinely cannot change prose, because nothing runs; that is the absence of the feature
   rather than a safety advantage, since it also cannot fix anything after the fact. `--prompt` is
-  a different case and the `n/a` flatters it. It biases the recognizer itself, so its damage is
-  already in the transcript before any scoring happens, and this metric counts sentences that a
-  post-pass altered. In this corpus the prompt makes Whisper write `GraphQL` into "Exposed the
-  search endpoint over GraphQL as well" and `Playwright` into "The Playwright tests a flaky on the
-  build server", both of them ordinary prose clips, and both invisible to the column. Measuring it
-  properly means diffing the prompted transcript against the unprompted one, which this harness
-  does not do. The column that compares all five conditions fairly is the first one.
+  a different case and the `n/a` flatters it. It biases the recognizer itself, so any damage it
+  does is already in the transcript before scoring begins, while this metric counts sentences that
+  a post-pass altered. Measuring it would mean diffing the prompted transcript against the
+  unprompted one for the ninety prose clips, which this harness does not do, so the honest word
+  for that cell is unmeasured rather than zero. An earlier version of this paragraph offered two
+  clips as evidence that the prompt damages prose. That was wrong and is withdrawn: both are
+  term-carrying clips where the word in question is the expected term, not prose negatives, and
+  one of them reads the same way with no prompt at all. The column that compares all five
+  conditions fairly is the first one.
 - **`--prompt` is a complement, not a competitor.** It is the strongest non-Lexicon condition on
   `small.en` (76.0%), and it composes: the headline table above reports prompt plus lexicon at
   95.7%, higher than either alone. The exporters exist so you can use both.
@@ -590,8 +592,9 @@ The conditions:
   argument for the matcher. Sized honestly, the two inexact tiers recover 31 of the 279 term slots
   by themselves on `small.en`, which is 11.1 points, and 24 slots or 8.6 points on `base.en`; the
   by-reason tables above are where those counts come from. The rest of the 29-point distance from
-  plain exact substitution is case-insensitive matching of the canonical and the alias tier's
-  tolerance for how the recognizer splits a name into words. Both are real advantages over a
+  plain exact substitution is case-insensitive matching of the canonical, which is worth 9.3
+  points and is already included in the 71.3% row, and the alias tier's tolerance for how the
+  recognizer splits a name into words, which is the remaining 8.6. Both are real advantages over a
   hand-written replacement table, and neither is the phonetic matcher, so attributing the whole
   gap to it overstates the case by roughly threefold.
 

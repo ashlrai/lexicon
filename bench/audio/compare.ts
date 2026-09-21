@@ -463,7 +463,7 @@ function main(): void {
   lines.push('## How to read the two baselines that do nothing');
   lines.push('');
   lines.push(
-    'Raw whisper.cpp and `--prompt` cannot wrongly change clean prose, because neither runs a rewrite step. That is not a safety advantage, it is the absence of the feature: they also cannot fix anything after the fact. The honest comparison between those two rows and the last two is the "terms recovered" column.',
+    'Raw whisper.cpp cannot wrongly change clean prose, because nothing runs. That is not a safety advantage, it is the absence of the feature: it also cannot fix anything after the fact. `--prompt` scores `n/a` for a different reason, and the blank flatters it: it biases the recognizer itself, so anything it changes is in the transcript before this harness scores it, and this column counts only what a post-pass altered. Measuring it would mean diffing prompted transcripts against unprompted ones, which this harness does not do. The honest comparison between those two rows and the last two is the "terms recovered" column.',
   );
   lines.push('');
   lines.push(

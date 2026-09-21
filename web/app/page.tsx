@@ -613,8 +613,8 @@ const STATS: { before: string; after: string; label: string }[] = [
  * changes. Regenerate with `npm run bench:compare`, which re-scores the cached
  * transcripts rather than running whisper again, so the rows stay comparable.
  * The prose column is unmeasured for the top two rows rather than zero: raw
- * whisper runs nothing, and --prompt biases the recognizer, so its damage is
- * already in the transcript this metric scores. The note below says so.
+ * whisper runs nothing, and --prompt biases the recognizer, so anything it
+ * changes is already in the transcript this metric scores. The note says so.
  */
 const COMPARISON: { how: string; recovered: string; prose: string; ours?: boolean }[] = [
   { how: 'nothing, raw whisper.cpp', recovered: '45.9%', prose: 'nothing runs' },
@@ -710,8 +710,8 @@ function Numbers() {
             recognizer splits a name into words. The prompt hint list is a complement rather than a
             rival, and stacked with the lexicon it reaches 95.7%. The last column is blank for the
             top two rows because it is unmeasured, not zero: raw whisper runs nothing, while the
-            prompt biases the recognizer itself and in this corpus makes it write GraphQL and
-            Playwright into ordinary prose.
+            prompt biases the recognizer itself, so anything it changes is already in the
+            transcript before the measurement begins.
           </p>
         </div>
 
