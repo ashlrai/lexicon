@@ -4,7 +4,7 @@ How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the Gi
 
 ## 1. Bump the version
 
-Ten files carry the version and must agree. `npm version` handles the first two; the rest are edited by hand in the same commit. This table has been wrong three times, and every time it shipped a skewed release, so treat anything not on it as a bug in this page rather than a file that does not matter. `grep -rnE "0\.5\.[0-9]|v0\.5" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.next .` before you commit, with the old version's pattern, is the check that catches a new carrier. Do not trust the count in this sentence over that grep.
+Eleven files carry the version and must agree, in the ten rows below: `package.json` and `package-lock.json` share a row because `npm version` writes both, and the other nine rows are one file each. `npm version` handles that first row; the rest are edited by hand in the same commit. This table has been wrong four times now, and every time it shipped a skewed release, so treat anything not on it as a bug in this page rather than a file that does not matter. It said nine at 0.5.2 and ten at 0.5.3, and both times the miscount was counting rows and calling them files. `grep -rnE "0\.5\.[0-9]|v0\.5" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.next .` before you commit, with the old version's pattern, is the check that catches a new carrier. Do not trust the count in this sentence over that grep.
 
 | File | Field |
 |---|---|
@@ -21,7 +21,7 @@ Ten files carry the version and must agree. `npm version` handles the first two;
 
 The extension manifest and `LexiconBar.app` read the version from `package.json` at build time, so they need no edit. `apps/windows` does not.
 
-**Three things the grep finds that are not carriers.** `docs/assets/MANIFEST.md`, the alt text in `web/lib/media.ts` and the screenshots they describe are records of what a particular build actually printed, so bumping them would turn a transcript into a fabrication. `docs/EXTENSION.md` and `docs/MACOS-APP.md` quote sample output with a version inside it, and `docs/DISTRIBUTION.md`, `docs/COMMERCIAL.md` and the comments in `scripts/check-facts.mjs` name the release a thing happened in. Leave all of them. The rule is whether the number is a claim about *this* release or a record of an older one.
+**Four things the grep finds that are not carriers.** `docs/assets/MANIFEST.md`, the alt text in `web/lib/media.ts` and the screenshots they describe are records of what a particular build actually printed, so bumping them would turn a transcript into a fabrication. `docs/EXTENSION.md` and `docs/MACOS-APP.md` quote sample output with a version inside it, and `docs/DISTRIBUTION.md`, `docs/COMMERCIAL.md` and the comments in `scripts/check-facts.mjs` name the release a thing happened in. `docs/metrics-copy.md` is the fourth: it is a dated handoff whose own opening says the project has been public for one day and has one GitHub star, so the line noting that `package.json` is ahead of what npm serves is part of that snapshot. Editing the version inside it and leaving the rest would turn a record into a half-fabricated one. Leave all of them. The rule is whether the number is a claim about *this* release or a record of an older one.
 
 ```bash
 npm version patch --no-git-tag-version       # or minor / major; writes package.json + lock
@@ -31,16 +31,25 @@ npm version patch --no-git-tag-version       # or minor / major; writes package.
 # date the CHANGELOG heading
 npm run docs:cli                             # rewrites docs/CLI.md, including its version header
 
-# The gate, in the order CI runs it. Everything here is also a CI job, so a
-# failure now is a failure you would have got from the tag push anyway.
+# The gate, in the order CI runs it. Everything here is also a CI job -- and so
+# a failure now is a failure you would have got from the tag push anyway --
+# with one exception, `check:server-json`, which no workflow runs at all.
 npx tsc --noEmit
 npx vitest run
 npm run build && npm run build:site && npm run build:extension
 npm run check:bundle                         # plugin/ bundles match src/ (CI fails on drift)
 npm run check:links
 npm run check:facts
-npm run check:server-json --offline          # see the note below before running it online
+npm run check:server-json -- --offline       # the `--` is load-bearing; see the note below
 ( cd apps/macos/LexiconBar && swift test )
+
+# The release notes quote benchmark figures, so the benchmarks have to have been
+# run against the code being tagged. Neither is a CI job. Both rewrite their
+# result file on every run, and both put a timestamp (and `bench` a
+# load-sensitive latency row) in it: if nothing else moved, restore the file by
+# name rather than committing a diff that says nothing.
+npm run bench
+npm run bench:audio
 
 # Stage by explicit path. `git add -A` has twice swept up another agent's
 # uncommitted work in this shared tree, and it is how the plugin bundle came
@@ -63,7 +72,7 @@ git push origin main --follow-tags
 
 The release workflow refuses to run when the tag does not match `package.json`, so a missed bump fails fast instead of publishing the wrong number.
 
-**Build the plugin bundle from a clean checkout, not from your working tree.** Twice now a bundle built where `node_modules` is a symlink has baked hundreds of absolute paths to the maintainer's home directory into the published artifact: esbuild names every bundled module by the path it resolved to rather than by `node_modules/...`, and the result is committed. Clone the repo to a scratch directory, `npm ci` there, `npm run build:bundle`, and copy `plugin/` back. Then check the artifact before you tag, because a bundle is not something anyone reads by eye:
+**Build the plugin bundle from a clean checkout, not from your working tree.** A bundle built where `node_modules` is a symlink bakes hundreds of absolute paths to the maintainer's home directory into the published artifact: esbuild names every bundled module by the path it resolved to rather than by `node_modules/...`, and the result is committed. The count in this paragraph has been guessed at twice, so here is what the repository can actually be asked: `git log --format=%H --all -- plugin/hook.mjs` piped through `git show <sha>:plugin/hook.mjs | grep -c /Users/` finds exactly one commit that shipped them, 385c412, carrying 453 in `mcp-server.mjs` and 242 in `hook.mjs`, which is the 695 the 0.5.3 notes report. Any earlier occurrence was caught before it was committed and left no record, so run that command rather than trusting a number here. Clone the repo to a scratch directory, `npm ci` there, `npm run build:bundle`, and copy `plugin/` back. Then check the artifact before you tag, because a bundle is not something anyone reads by eye:
 
 ```bash
 grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs   # both must be 0
@@ -72,6 +81,8 @@ grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs   # both must be 0
 `npm run check:bundle` rebuilds in place and diffs, so it proves the bundle matches `src/`; it does not prove the bundle is free of your home directory. Both checks are needed.
 
 **`check:server-json` cannot pass before the publish.** Its third check fetches `https://registry.npmjs.org/@ashlr/lexicon/<version>` and requires an `mcpName` there, which is a statement about a version that is by definition not published yet. Run it with `--offline` before the tag (schema plus version agreement, which are the parts you can be wrong about), and run it again without the flag after npm has the release, which is when its answer means something.
+
+**Write it `npm run check:server-json -- --offline`.** `--offline` is a real npm config flag, so `npm run check:server-json --offline` is consumed by npm, never reaches `process.argv`, and silently runs the two network checks anyway: the 404 on the unpublished version then makes the documented pre-tag gate exit 1 for the one reason it was told to skip. This page said it without the `--` until 0.5.3. Either write the `--`, or call the script directly as `node scripts/check-server-json.mjs --offline`.
 
 ## 2. What the tag triggers
 

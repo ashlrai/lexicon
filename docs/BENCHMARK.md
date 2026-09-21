@@ -82,7 +82,7 @@ and both candidate fixes were measured and rejected: refusing invented boundarie
 costs 17.3 points of term recall, and refusing them for identifier-category terms costs 4.5. What
 shipped instead scores an invented boundary at 0.95 rather than 1.00, so `--min-confidence 0.96`
 turns the class off without touching the rest of the exact pass. `bench/bench.test.ts` guards it at 0.02 and bounds the
-expected-hard-inclusive rate at 0.17.
+expected-hard-inclusive rate at 0.16.
 
 ## Fix log
 

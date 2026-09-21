@@ -3,7 +3,7 @@
   "name": "io.github.ashlrai/lexicon",
   "title": "Lexicon",
   "description": "Fixes the names and jargon speech-to-text gets wrong before your agent acts on a dictated prompt.",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "websiteUrl": "https://lexicon.ashlr.ai",
   "repository": {
     "url": "https://github.com/ashlrai/lexicon",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@ashlr/lexicon",
-      "version": "0.5.3",
+      "version": "0.5.4",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
