@@ -18,17 +18,28 @@
  * Redis, not red iss". Widening or narrowing the window only moved which
  * sentences were wrong.
  *
- * So the test here is closed, not proximate. Three rules, in this order.
+ * So the test here is closed, not proximate.
  *
  * **A mention** is either a span the matcher wants to rewrite or a place the
  * canonical already stands. The canonical counts in any spelling that folds to
  * it, so "ashlr.ai" and "Ashlr AI" anchor a sentence exactly as "Ashlr.AI" does.
  *
- * **The canonical must be present in the block.** Every passage that quotes a
- * misspelling says what the right spelling is; that is why it is being written.
- * Two garbles with no canonical anywhere is someone dictating, and the corpus
- * insists on it: `hard-022` is "the reddis and red iss instances are the same
- * box", one word said twice, both halves to be fixed.
+ * **The canonical must be present in the block, or in the paragraph directly
+ * above it.** Every passage that quotes a misspelling says what the right
+ * spelling is; that is why it is being written. Two garbles with no canonical
+ * anywhere is someone dictating, and the corpus insists on it: `hard-022` is
+ * "the reddis and red iss instances are the same box", one word said twice,
+ * both halves to be fixed. The paragraph above counts because a README states
+ * the canonical, leaves a blank line and then lists the garbles; only the
+ * *anchor* reaches that far, never the linking below, so two mentions in this
+ * block still have to contrast with each other before anything is declined.
+ *
+ * **A mention inside its own quotation marks is named, not used.** `"Ashler"`,
+ * `'ashlur'`, `` `Ashlr AI` ``: the use-mention convention of written English,
+ * and the only rule here that reads no vocabulary at all. That is why it is the
+ * one that holds for the project's own documentation, where the words around
+ * the quote - "pronounced", "generates likely STT misspellings", "you write" -
+ * are ordinary English no word list is going to contain.
  *
  * **What sits between two mentions must be made *only* of words about writing.**
  * Not "must contain one of them" - must contain nothing else. Punctuation that
@@ -45,9 +56,25 @@
  * on sentence detection being perfect - which it cannot be, since a period
  * after a digit or an abbreviation does not end a thought.
  *
- * `tests/enumeration.property.test.ts` is the specification: it generates the
- * round trip in both directions from templates rather than pinning phrasings,
- * because every failure this file has ever had was a string nobody listed.
+ * **What the vocabulary does not cover, it does not cover.** A reviewer counted
+ * how much of the generated suite that rebuilt this module came from this
+ * module's own word lists: 54 of 56 connectives and 12 of 14 lead templates.
+ * Assembled from the list under test, it could only confirm that the list
+ * agreed with itself. `tests/enumeration.property.test.ts` sources its English
+ * independently now, and the number that came back is worth stating here: with
+ * the vocabulary below, **41.5% of ordinary free prose about a spelling is
+ * still flattened** - "can be garbled as", "not to be confused with", "the
+ * recognizer nearly always mistakes". Adding those words is the fourth round of
+ * the same mistake; `garble`, `mangle`, `confuse` and `mistake` are an open
+ * class and the list will never close over it.
+ *
+ * So treat the rules above as two different things. Quotation marks, table
+ * cells, list items, arrows and colon definitions are structural and carry
+ * their own evidence: the suite demands zero failures there. The vocabulary
+ * path is a heuristic with a measured miss rate, held to a ceiling that may
+ * only fall. It is worth having on a surface that shows the user what changed.
+ * On a surface that writes the rewrite back unseen, its 41.5% is the number to
+ * weigh, not the rules.
  */
 
 export interface MentionSpan {
@@ -103,6 +130,18 @@ const MARKERS: ReadonlySet<string> = new Set([
  * Ashlr.AI" reads as dictation as readily as it reads as a definition, so a gap
  * of pure glue is not evidence of anything.
  *
+ * This was documented as closed-class and was not: it held determiners,
+ * prepositions and the three auxiliary verbs, and nothing else. Modality
+ * (`can`, `may`, `might`, `would`), frequency (`often`, `usually`, `commonly`),
+ * epistemic adverbs (`definitely`, `probably`), relativizers and subordinators
+ * (`which`, `but`, `because`, `although`), quantifiers and personal pronouns
+ * are closed classes too, and none of them refer to anything in the world -
+ * which is the only property a gap word has to have. Their absence is what made
+ * "Ashlr.AI is often spelled Ashler" and "Ashlr.AI can come out as Ashler"
+ * flatten: the marker was there and one adverb decided the answer. The
+ * generated suite holds the other direction, because every dictation template
+ * it carries still has a word about the world in it.
+ *
  * `and` and `or` are deliberately absent. They join dictated repetitions at
  * least as often as quoted ones ("so Kubernetes and cooper netties both
  * resolve"), and leaving them out is what stops a lead-in like "Check the
@@ -110,11 +149,36 @@ const MARKERS: ReadonlySet<string> = new Set([
  * chain an already-established contrast instead; see CHAIN_WORDS.
  */
 const GLUE: ReadonlySet<string> = new Set([
+  // determiners, prepositions and demonstratives
   'a', 'an', 'the', 'of', 'to', 'as', 'at', 'in', 'on', 'for', 'from', 'by', 'with', 'into', 'than', 'then',
   'that', 'this', 'these', 'those', 'it', 'its', 'like', 'out', 'up', 'off',
+  // be, have, do
   'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'has', 'have', 'had',
   'do', 'does', 'did', 'get', 'gets', 'got', 'getting', 's',
+  // modal and semi-modal auxiliaries
+  'can', 'cannot', 'could', 'may', 'might', 'will', 'shall', 'would', 'need', 'needs', 'needed',
+  'tend', 'tends', 'end', 'ends', 'wind', 'winds', 'going',
+  // frequency and epistemic adverbs
+  'often', 'usually', 'sometimes', 'commonly', 'frequently', 'always', 'occasionally', 'typically',
+  'normally', 'generally', 'mostly', 'rarely', 'seldom', 'still', 'nearly', 'almost',
+  'definitely', 'certainly', 'probably', 'possibly', 'maybe', 'perhaps', 'apparently',
+  'simply', 'just', 'only', 'even', 'quite', 'very', 'too',
+  // relativizers and subordinators
+  'which', 'who', 'whom', 'whose', 'but', 'because', 'although', 'though', 'unless',
+  // quantifiers and personal pronouns
+  'one', 'two', 'three', 'both', 'each', 'every', 'all', 'any', 'some',
+  'we', 'you', 'they', 'i', 'us', 'them', 'our', 'your', 'their', 'my',
 ]);
+
+/**
+ * The whole vocabulary, as one set.
+ *
+ * `tests/enumeration.property.test.ts` asserts that the phrasings it generates
+ * are *not* derivable from this set, which is the defect that made its
+ * predecessor vacuous. Exported so that assertion reads the real thing rather
+ * than a copy that would drift the moment anybody edited either one.
+ */
+export const GUARD_VOCABULARY: ReadonlySet<string> = new Set<string>([...MARKERS, ...GLUE]);
 
 /** Words that extend a contrast that is already established, but can never start one. */
 const CHAIN_WORDS: ReadonlySet<string> = new Set(['and', 'or', 'plus', 'amp']);
@@ -149,6 +213,42 @@ const ENUMERATING_ABBREVIATION = /\b(?:e\.g|i\.e)\./i;
  * being two thoughts.
  */
 const ABBREVIATIONS: ReadonlySet<string> = new Set(['vs', 'eg', 'ie', 'cf', 'etc', 'al', 'approx', 'resp']);
+
+/**
+ * Matched quotation marks, straight and curly, plus the backtick.
+ *
+ * A word inside its own quotation marks is being *named*, not used. That is the
+ * use-mention convention of written English and it carries no vocabulary at
+ * all, which is the point: the corpus this guard exists for is full of
+ * `"Ashler"`, `'ashlur'` and `` `Ashlr AI` `` sitting in sentences whose other
+ * words ("pronounced", "generates likely STT misspellings", "you write") the
+ * vocabulary will never contain and should not try to. Running the project's
+ * own committed lexicon over its own markdown flattened seventeen of these.
+ */
+const QUOTE_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ['"', '"'],
+  ["'", "'"],
+  ['`', '`'],
+  ['\u201c', '\u201d'],
+  ['\u2018', '\u2019'],
+  ['\u00ab', '\u00bb'],
+];
+
+/** True when the span is exactly what a pair of quotation marks encloses. */
+function isTightQuoted(text: string, start: number, end: number): boolean {
+  const before = text[start - 1] ?? '';
+  const after = text[end] ?? '';
+  return QUOTE_PAIRS.some(([open, close]) => before === open && after === close);
+}
+
+/**
+ * Determiners. A determiner immediately before the second mention makes that
+ * mention a modifier of the noun after it rather than a spelling being named:
+ * "the reddis box" is a box. See `leadContrasts`.
+ */
+const DETERMINERS: ReadonlySet<string> = new Set([
+  'a', 'an', 'the', 'this', 'that', 'these', 'those', 'its', 'our', 'your', 'their', 'my', 'his', 'her',
+]);
 
 /** Bullets and numbering that can stand before a mention on its own line. */
 const LINE_BULLET = /^[\s\d.)\]*+•·>|-]*$/u;
@@ -332,7 +432,20 @@ function leadContrasts(text: string, blockFrom: number, first: Point, second: Po
   if (!isSpellingPhrase(leadWords)) return false;
   if (leadWords.some((w) => CHAIN_WORDS.has(w))) return false;
   const gapWords = wordsOf(text.slice(first.end, second.start));
-  return gapWords.every((w) => inVocabulary(w) && !CHAIN_WORDS.has(w));
+  // `and` may ride in the gap, because the lead has already established the
+  // contrast and extending one is the whole of what a chain word does. Refusing
+  // it here contradicted CHAIN_WORDS' own definition and declined nothing but
+  // "Two spellings, Ashlr.AI and Ashler".
+  if (!gapWords.every((w) => inVocabulary(w) || CHAIN_WORDS.has(w))) return false;
+  // A lead is weaker evidence than a gap: the marker relates to the *first*
+  // mention and says nothing about the relation between the two, which is why
+  // "Fix Redis on the reddis box" satisfied every condition above. A determiner
+  // last in the gap is the sign: it opens a noun phrase, so the second mention
+  // is modifying a word rather than being named. Every imperative the suite
+  // generates - fix, show, type, keep, list, write, print, map, correct,
+  // replace, swap, change - reaches its second mention through one.
+  const last = gapWords[gapWords.length - 1];
+  return last === undefined || !DETERMINERS.has(last);
 }
 
 /**
@@ -349,7 +462,16 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
   // document, which is what the local API accepts, took seconds.
   let cursor = 0;
 
-  for (const [from, to] of blockBounds(text)) {
+  const bounds = blockBounds(text);
+  for (let b = 0; b < bounds.length; b++) {
+    const [from, to] = bounds[b];
+    // The block immediately before this one, when nothing but whitespace
+    // separates them. A README states the canonical, leaves a blank line, and
+    // then lists the garbles; the anchor is in the paragraph above and there is
+    // no rule that could reach it from inside this block. Widening only the
+    // *anchor* is safe because linking is unchanged: two mentions in this block
+    // still have to contrast with each other before anything is declined.
+    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
 
     const here: Array<{ span: T; index: number }> = [];
@@ -380,10 +502,24 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
 
-      // The canonical has to be standing somewhere in this block. Without it
-      // there is nothing being contrasted against, and this is someone
-      // dictating one word twice.
-      if (!points.some((p) => p.anchor)) continue;
+      // The canonical has to be standing somewhere in this block, or in the
+      // paragraph directly above it. Without it there is nothing being
+      // contrasted against, and this is someone dictating one word twice.
+      const anchored =
+        points.some((p) => p.anchor) ||
+        // Folded, like every other test for the canonical here: the paragraph
+        // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
+        (previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result)));
+      if (!anchored) continue;
+
+      // A mention inside its own quotation marks is named, not used, and that
+      // is true whatever the rest of the sentence says. It is the one rule here
+      // that consults no vocabulary, which is why it holds for the sentences
+      // the vocabulary will never cover: `suggestAliases("Ashlr.AI") -> "Ashler"`,
+      // `pronounced "ashler"`, `you write "Ashler", they say it's Ashlr.AI`.
+      for (const p of points) {
+        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+      }
 
       points.sort((a, b) => a.start - b.start);
       const links: Link[] = [];

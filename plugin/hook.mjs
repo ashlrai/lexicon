@@ -32429,6 +32429,7 @@ var MARKERS = /* @__PURE__ */ new Set([
   "preferred"
 ]);
 var GLUE = /* @__PURE__ */ new Set([
+  // determiners, prepositions and demonstratives
   "a",
   "an",
   "the",
@@ -32455,6 +32456,7 @@ var GLUE = /* @__PURE__ */ new Set([
   "out",
   "up",
   "off",
+  // be, have, do
   "is",
   "are",
   "was",
@@ -32473,14 +32475,124 @@ var GLUE = /* @__PURE__ */ new Set([
   "gets",
   "got",
   "getting",
-  "s"
+  "s",
+  // modal and semi-modal auxiliaries
+  "can",
+  "cannot",
+  "could",
+  "may",
+  "might",
+  "will",
+  "shall",
+  "would",
+  "need",
+  "needs",
+  "needed",
+  "tend",
+  "tends",
+  "end",
+  "ends",
+  "wind",
+  "winds",
+  "going",
+  // frequency and epistemic adverbs
+  "often",
+  "usually",
+  "sometimes",
+  "commonly",
+  "frequently",
+  "always",
+  "occasionally",
+  "typically",
+  "normally",
+  "generally",
+  "mostly",
+  "rarely",
+  "seldom",
+  "still",
+  "nearly",
+  "almost",
+  "definitely",
+  "certainly",
+  "probably",
+  "possibly",
+  "maybe",
+  "perhaps",
+  "apparently",
+  "simply",
+  "just",
+  "only",
+  "even",
+  "quite",
+  "very",
+  "too",
+  // relativizers and subordinators
+  "which",
+  "who",
+  "whom",
+  "whose",
+  "but",
+  "because",
+  "although",
+  "though",
+  "unless",
+  // quantifiers and personal pronouns
+  "one",
+  "two",
+  "three",
+  "both",
+  "each",
+  "every",
+  "all",
+  "any",
+  "some",
+  "we",
+  "you",
+  "they",
+  "i",
+  "us",
+  "them",
+  "our",
+  "your",
+  "their",
+  "my"
 ]);
+var GUARD_VOCABULARY = /* @__PURE__ */ new Set([...MARKERS, ...GLUE]);
 var CHAIN_WORDS = /* @__PURE__ */ new Set(["and", "or", "plus", "amp"]);
 var CHAIN_PUNCTUATION = /^[\s,&+]*$/u;
 var LIST_PUNCTUATION = /^[\s/|;>→=*•·()[\]"'“”‘’:-]+$/u;
 var NUMBERED_ITEM = /^[\s\d.)\]]*\d[\s\d.)\]]*$/u;
 var ENUMERATING_ABBREVIATION = /\b(?:e\.g|i\.e)\./i;
 var ABBREVIATIONS = /* @__PURE__ */ new Set(["vs", "eg", "ie", "cf", "etc", "al", "approx", "resp"]);
+var QUOTE_PAIRS = [
+  ['"', '"'],
+  ["'", "'"],
+  ["`", "`"],
+  ["\u201C", "\u201D"],
+  ["\u2018", "\u2019"],
+  ["\xAB", "\xBB"]
+];
+function isTightQuoted(text, start, end) {
+  const before = text[start - 1] ?? "";
+  const after = text[end] ?? "";
+  return QUOTE_PAIRS.some(([open2, close]) => before === open2 && after === close);
+}
+var DETERMINERS = /* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "the",
+  "this",
+  "that",
+  "these",
+  "those",
+  "its",
+  "our",
+  "your",
+  "their",
+  "my",
+  "his",
+  "her"
+]);
 var LINE_BULLET = /^[\s\d.)\]*+•·>|-]*$/u;
 var LINE_TRAILER = /^[\s.,;:)|\]"'”’!?-]*$/u;
 function isWordChar(ch) {
@@ -32583,14 +32695,19 @@ function leadContrasts(text, blockFrom, first, second) {
   if (!isSpellingPhrase(leadWords)) return false;
   if (leadWords.some((w) => CHAIN_WORDS.has(w))) return false;
   const gapWords = wordsOf(text.slice(first.end, second.start));
-  return gapWords.every((w) => inVocabulary(w) && !CHAIN_WORDS.has(w));
+  if (!gapWords.every((w) => inVocabulary(w) || CHAIN_WORDS.has(w))) return false;
+  const last = gapWords[gapWords.length - 1];
+  return last === void 0 || !DETERMINERS.has(last);
 }
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
   const occurrences = /* @__PURE__ */ new Map();
   let cursor = 0;
-  for (const [from, to] of blockBounds(text)) {
+  const bounds = blockBounds(text);
+  for (let b = 0; b < bounds.length; b++) {
+    const [from, to] = bounds[b];
+    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
     const here = [];
     for (let i = cursor; i < spans.length && spans[i].start < to; i++) {
@@ -32617,8 +32734,14 @@ function declineCollapsedMentions(text, spans) {
         if (here.some(({ span }) => at < span.end && span.start < at + result.length)) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
-      if (!points.some((p) => p.anchor)) continue;
-      points.sort((a, b) => a.start - b.start);
+      const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
+      // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
+      previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
+      if (!anchored) continue;
+      for (const p of points) {
+        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+      }
+      points.sort((a, b2) => a.start - b2.start);
       const links = [];
       for (let i = 0; i + 1 < points.length; i++) {
         let link = linkBetween(text, points[i], points[i + 1]);

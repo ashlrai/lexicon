@@ -808,6 +808,86 @@ describe('bug J: text that quotes a misspelling is not flattened into one spelli
     const text = 'Ashlr.AI, not Ashler, since 2024. My company Ashler ships today.';
     expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI, not Ashler, since 2024. My company Ashlr.AI ships today.');
   });
+
+  // The word between the marker and the mention used to decide the answer. Each
+  // of these is a modal, a frequency adverb or a relativizer - closed classes,
+  // none of which refer to anything in the world - and each was flattened
+  // because GLUE was documented as closed-class and held prepositions and
+  // auxiliaries only. The generated suite could not see them because its
+  // connectives were drawn from the same vocabulary it was testing.
+  it('is not decided by a modal, an adverb of frequency or a relativizer', () => {
+    keeps('Ashlr.AI is often spelled Ashler.', [ASHLR]);
+    keeps('Ashlr.AI can come out as Ashler.', [ASHLR]);
+    keeps('Ashlr.AI may come out as Ashler.', [ASHLR]);
+    keeps('Ashlr.AI might be written as Ashler.', [ASHLR]);
+    keeps('Ashlr.AI will sometimes be spelled Ashler.', [ASHLR]);
+    keeps('Ashlr.AI would usually be spelled Ashler.', [ASHLR]);
+    keeps('Ashlr.AI is commonly misspelled as Ashler.', [ASHLR]);
+    keeps('Ashlr.AI is frequently transcribed as Ashler.', [ASHLR]);
+    keeps('Ashlr.AI is always heard as Ashler.', [ASHLR]);
+    keeps('Ashlr.AI, which is often written Ashler, is the brand.', [ASHLR]);
+    keeps('Ashlr.AI but the recognizer writes Ashler.', [ASHLR]);
+    keeps('We write Ashlr.AI because the recognizer gives Ashler.', [ASHLR]);
+    keeps('Ashler needs to map to Ashlr.AI', [ASHLR]);
+    keeps('Two spellings, Ashlr.AI and Ashler, same company', [ASHLR]);
+  });
+
+  // The other direction, and the reason the vocabulary above can be widened at
+  // all: a lead needed only a marker before the first mention and glue after
+  // it, so every ordinary imperative built on `fix`, `show`, `type`, `keep`,
+  // `write`, `print`, `correct`, `replace`, `swap` or `change` was declined.
+  // The determiner is the tell - `the reddis box` is a box, not a spelling.
+  it('still corrects an ordinary imperative that opens with a spelling word', () => {
+    const cases: [string, string][] = [
+      ['Fix Redis on the reddis box', 'Fix Redis on the Redis box'],
+      ['Show Redis in the reddis output', 'Show Redis in the Redis output'],
+      ['Type Redis into the reddis box', 'Type Redis into the Redis box'],
+      ['Keep Redis out of the reddis cluster', 'Keep Redis out of the Redis cluster'],
+      ['Write Redis on the reddis form', 'Write Redis on the Redis form'],
+      ['Replace Redis in the reddis config', 'Replace Redis in the Redis config'],
+      ['Swap Redis for the reddis node tomorrow', 'Swap Redis for the Redis node tomorrow'],
+    ];
+    for (const [input, expected] of cases) expect(apply(input, find(input, [REDIS]))).toBe(expected);
+    // and the substitution frames the lead rule exists for still hold
+    keeps('Replace Ashler with Ashlr.AI', [ASHLR]);
+    keeps('Replace Ashler with Ashlr.AI in the README', [ASHLR]);
+    keeps('Add Ashler as an alias of Ashlr.AI.', [ASHLR]);
+  });
+
+  // A word inside its own quotation marks is being named, not used. This is the
+  // one rule here that reads no vocabulary, and it is the one that holds for
+  // the project's own documentation, where the words around the quote
+  // ("pronounced", "generates likely STT misspellings", "you write") are
+  // ordinary English the vocabulary will never contain.
+  it('keeps a spelling that stands inside its own quotation marks', () => {
+    keeps('Ashlr.AI, pronounced "ashler". And Entire.io.', [ASHLR]);
+    keeps("Ashlr.AI, pronounced 'ashler'.", [ASHLR]);
+    keeps('suggestAliases("Ashlr.AI") generates likely STT misspellings: "Ashler", "Ashlar".', [ASHLR]);
+    keeps('The user dictates "ping ashler", you write "Ashler", they say it is Ashlr.AI.', [ASHLR]);
+    keeps('Rewrote \u2018Mason Wiatt\u2019 and \u2018Ashler\u2019 to \u2018Mason Wyatt\u2019 and \u2018Ashlr.AI\u2019.', [ASHLR, MASON]);
+    // unquoted, and with no canonical in reach, the same word is still fixed
+    expect(apply('add ashler to the vocabulary', find('add ashler to the vocabulary', [ASHLR]))).toBe(
+      'add Ashlr.AI to the vocabulary',
+    );
+  });
+
+  // A README states the canonical, leaves a blank line, and lists the garbles
+  // under it. A blank line ends a block, so there was no anchor in the block
+  // that held the garbles and every rule was off for the shape the module
+  // docstring names first. The anchor reaches one paragraph up now; linking is
+  // unchanged, so two mentions still have to contrast before anything is kept.
+  it('finds the canonical in the paragraph above a list of garbles', () => {
+    keeps('Canonical: Ashlr.AI\n\nMisspellings: Ashler, Ashlar', [ASHLR]);
+    keeps('# Ashlr.AI\n\nMisspellings: Ashler, Ashlar', [ASHLR]);
+    // the anchor folds, so the paragraph above may say "Ashlr AI" (which is
+    // itself canonicalised) and the garbles below are still kept
+    const folded = 'Ashlr AI\n\nHeard as: Ashler, Ashlar';
+    expect(apply(folded, find(folded, [ASHLR]))).toBe('Ashlr.AI\n\nHeard as: Ashler, Ashlar');
+    keeps('## Spellings\n\nCanonical: Ashlr.AI\n\nGarbles:\n- Ashler\n- Ashlar', [ASHLR]);
+    // one paragraph up, not two: an unrelated paragraph in between breaks it
+    const far = 'Ashlr.AI ships today.\n\nThe cluster is fine.\n\nreddis and red iss are the same box.';
+    expect(apply(far, find(far, [REDIS]))).toBe('Ashlr.AI ships today.\n\nThe cluster is fine.\n\nRedis and Redis are the same box.');
+  });
 });
 
 // Three defects a review found in the matcher work of v0.5.3. Bug M is a
