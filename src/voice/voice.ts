@@ -49,6 +49,7 @@ import {
   MAX_TOGGLE_SECONDS,
   captureSeconds,
   claimState,
+  claimStop,
   clearState,
   ensureVoiceDir,
   inspectWav,
@@ -60,7 +61,9 @@ import {
   startRecorder,
   stateFilePath,
   stopRecorder,
+  sweepVoiceDir,
   touchPrivateFile,
+  voiceDir,
   writeState,
   confirmRecorder,
   findOrphanRecorder,
@@ -426,20 +429,53 @@ async function recorderLogTail(r: Resolved, lines = 3): Promise<string> {
 }
 
 /**
+ * Remove a capture whisper has finished with, unless it found nothing in it.
+ *
+ * An empty transcript is not a statement that the microphone heard nothing. It
+ * is what arrives here when `--lang` names the wrong language, when the model
+ * is too small for the speaker or the room, and whenever whisper tags the whole
+ * capture `[BLANK_AUDIO]`, which `cleanTranscript` then strips to the empty
+ * string. All of those are recoverable by running the audio through whisper
+ * again with different settings, and none of them are recoverable once the file
+ * is gone. Ten minutes of speech, 19 MB of it, went this way: exit 3,
+ * `(nothing heard)`, nothing on disk.
+ *
+ * So the capture is removed only when it was replaced by something. A
+ * transcript of nothing keeps it, and says where it is.
+ */
+async function keepOrRemoveTranscribed(result: TranscribeResult, wav: string, io: VoiceIO, keepBecause?: string): Promise<void> {
+  if (result.raw.length === 0) {
+    io.stderr(
+      `lexicon voice: whisper read nothing out of this capture, so the recording is kept at ${wav}\n` +
+        '  A wrong --lang, or a model too small for the speaker, both look exactly like silence. The audio is still there to try again with.\n',
+    );
+    return;
+  }
+  if (keepBecause !== undefined) {
+    io.stderr(`lexicon voice: ${keepBecause}; the recording is kept at ${wav}\n`);
+    return;
+  }
+  await fs.rm(wav, { force: true }).catch(() => undefined);
+}
+
+/**
  * Transcribe a capture that is already on disk and deliver it. Shared by the
  * stop half of `--toggle` and by the recovery of a recorder that is no longer
- * running. The WAV is removed only once whisper has read it; every failure
- * keeps it and names it.
+ * running. The WAV is removed only once whisper has read something out of it;
+ * every failure, and every empty transcript, keeps it and names it.
+ *
+ * `keepBecause` is set by a caller that cannot rule out a recorder still
+ * writing this capture; it keeps the file whatever whisper made of it.
  */
 async function transcribeCapture(
   wav: string,
-  recordMs: number,
-  seconds: number,
+  timing: { recordMs: number; seconds: number; keepBecause?: string },
   opts: VoiceOptions,
   io: VoiceIO,
   deps: VoiceDeps,
   r: Resolved,
 ): Promise<number> {
+  const { recordMs, seconds } = timing;
   // ffmpeg is not needed here: the recording exists.
   const tools = await requireTools(r, io, deps, { ffmpeg: false, whisper: true });
   if (!tools) {
@@ -457,7 +493,7 @@ async function transcribeCapture(
   try {
     r.log('transcribing ...');
     const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
-    await fs.rm(wav, { force: true }).catch(() => undefined);
+    await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
     return await deliver(result, recordMs, seconds, opts, io, deps, r);
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
@@ -533,7 +569,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
   try {
     r.log('transcribing ...');
     const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
-    await fs.rm(wav, { force: true }).catch(() => undefined);
+    await keepOrRemoveTranscribed(result, wav, io);
     return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r);
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
@@ -554,52 +590,141 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
   // between our read and our create, so read again and decide again.
   for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
     const state = await readState(r.globalPath);
-    if (state && state.pid !== undefined && r.isAlive(state.pid)) {
-      // A pid is only unique while its process lives. Once the recorder exits,
-      // the system is free to hand that number to anything, and a stale state
-      // file would then send our stop signal to a stranger's process. Ask what
-      // the pid is actually running. Undefined means the question could not be
-      // answered, in which case assume it is ours, as this always used to.
-      const mine = await confirmRecorder(state.pid, state.wav, r.describeProcess);
-      if (mine === false) {
-        r.log(`pid ${state.pid} belongs to something else now; the recorder is gone`);
-        return recoverDeadRecorder(state as RecordingState & { pid: number }, opts, io, deps, r);
-      }
-      return stopAndTranscribe(state as RecordingState & { pid: number }, opts, io, deps, r);
-    }
-    if (state && state.pid !== undefined) {
-      return recoverDeadRecorder(state as RecordingState & { pid: number }, opts, io, deps, r);
-    }
     if (state && isProvisional(state) && !isStaleProvisional(state, r.now().getTime())) {
       // A start is in flight (double-tap): idempotent, let it finish.
       io.stdout('recording\n');
       return EXIT_OK;
     }
     if (state) {
-      // A start that died between claiming the state file and recording a pid.
-      // It may have spawned ffmpeg first, leaving a recorder that keeps writing
-      // and that nothing could stop, because the number needed to signal it was
-      // never written down. The process table still knows, and the capture's
-      // own filename is in the command line that opened it.
-      const orphanPid = await findOrphanRecorder(state.wav, r.listProcesses);
-      if (orphanPid !== undefined) {
-        r.log(`a previous start left a recorder running (pid ${orphanPid}); stopping it and using its audio`);
-        return stopAndTranscribe({ ...state, pid: orphanPid }, opts, io, deps, r);
+      // Whatever this press turns out to be, it takes over a recording that
+      // already exists, so it claims the state file before touching it. Two
+      // presses that arrive together would otherwise both stop the same
+      // recorder and both deliver the same capture: two paste keystrokes into
+      // whatever the user was typing in, for one thing said. Rename is atomic,
+      // so exactly one of them gets past here.
+      const claimed = await claimStop(r.globalPath);
+      if (!claimed) {
+        io.stdout('stopping\n');
+        return EXIT_OK;
       }
-      // Nothing is writing it. Usually the WAV is the empty file the claim
-      // created. Either way the audio is not ours to delete: keep what is
-      // there and say so.
-      const orphan = await inspectWav(state.wav);
-      r.log(`stale recording state (a start that never recorded its pid); starting a new recording`);
-      if (orphan.bytes > 0) r.log(`the previous start left ${orphan.bytes} bytes at ${state.wav}; it is kept`);
-      await clearState(r.globalPath);
-      if (orphan.bytes === 0) await fs.rm(state.wav, { force: true }).catch(() => undefined);
+      if (isProvisional(claimed) && !isStaleProvisional(claimed, r.now().getTime())) {
+        // A start claimed the file between our read and our rename. Put it
+        // back, exclusively so a third press cannot be clobbered, and treat
+        // this press as the double-tap it turned out to be.
+        await claimState(r.globalPath, claimed).catch(() => false);
+        io.stdout('recording\n');
+        return EXIT_OK;
+      }
+      const taken = await handleClaimedState(claimed, opts, io, deps, r);
+      if (taken !== 'start') return taken;
     }
     const outcome = await startDetached(opts, io, deps, r);
     if (outcome !== 'lost') return outcome;
   }
   io.stderr(`lexicon voice: could not claim ${stateFilePath(r.globalPath)} after ${CLAIM_ATTEMPTS} attempts; try again\n`);
   return EXIT_ERROR;
+}
+
+/**
+ * Act on a state file this press has claimed. Returns `'start'` when there is
+ * nothing left to take over and the press should begin a new recording.
+ *
+ * The state file is already gone by the time this runs: `claimStop` took it,
+ * which is both the exclusion and the clearing, so nothing below clears it
+ * again. That matters, because a stop that cleared the state after stopping
+ * could delete the record of a recording a *later* press had already started.
+ */
+async function handleClaimedState(
+  state: RecordingState,
+  opts: VoiceOptions,
+  io: VoiceIO,
+  deps: VoiceDeps,
+  r: Resolved,
+): Promise<number | 'start'> {
+  if (state.pid === undefined) return recoverStaleStart(state, opts, io, deps, r);
+  if (!r.isAlive(state.pid)) return recoverDeadRecorder(state as RecordingState & { pid: number }, opts, io, deps, r);
+
+  // A pid is only unique while its process lives. Once the recorder exits, the
+  // system is free to hand that number to anything, and a stale state file
+  // would then send our stop signal to a stranger's process. Ask what the pid
+  // is actually running. Undefined means the question could not be answered,
+  // in which case assume it is ours, as this always used to.
+  const mine = await confirmRecorder(state.pid, state.wav, r.describeProcess);
+  if (mine !== false) return stopAndTranscribe(state as RecordingState & { pid: number }, opts, io, deps, r);
+
+  // `describeProcess` says this pid is running something else. Usually it is:
+  // the recorder exited and the number was recycled. But a command line that
+  // was read back wrong says exactly the same thing, and then the recorder is
+  // alive and still filling this capture. Ask the process table who is writing
+  // it before believing the recording is over.
+  const writer = await findOrphanRecorder(state.wav, r.listProcesses);
+  if (typeof writer === 'number') {
+    r.log(`pid ${state.pid} is not our recorder, but pid ${writer} is writing this capture; stopping that one`);
+    return stopAndTranscribe({ ...state, pid: writer }, opts, io, deps, r);
+  }
+  r.log(`pid ${state.pid} belongs to something else now; the recorder is gone`);
+  // The pid is still alive, and the only thing saying it is not the recorder is
+  // the reading that sent us here. That is not enough to delete audio on: the
+  // capture is transcribed and kept, so a recorder we failed to recognise is
+  // not writing into a file we have already removed.
+  return recoverDeadRecorder(
+    state as RecordingState & { pid: number },
+    opts,
+    io,
+    deps,
+    r,
+    `pid ${state.pid} is still running, so something may still be writing this capture`,
+  );
+}
+
+/**
+ * A start that claimed the state file and died before recording a pid.
+ *
+ * It may have spawned ffmpeg first, leaving a recorder that keeps writing and
+ * that nothing can stop, because the number needed to signal it was never
+ * written down. The process table still knows, and the capture's own filename
+ * is in the command line that opened it.
+ */
+async function recoverStaleStart(
+  state: RecordingState,
+  opts: VoiceOptions,
+  io: VoiceIO,
+  deps: VoiceDeps,
+  r: Resolved,
+): Promise<number | 'start'> {
+  const orphanPid = await findOrphanRecorder(state.wav, r.listProcesses);
+  if (typeof orphanPid === 'number') {
+    r.log(`a previous start left a recorder running (pid ${orphanPid}); stopping it and using its audio`);
+    return stopAndTranscribe({ ...state, pid: orphanPid }, opts, io, deps, r);
+  }
+
+  const orphan = await inspectWav(state.wav);
+  if (orphanPid === 'unknown' && orphan.ok) {
+    // `undefined` from the process table is "I could not look", which is the
+    // ordinary state of a host with no `ps` rather than an edge case. Reading
+    // it as "nothing is writing this" is how minutes of recorded speech got
+    // walked away from while a second recorder started on top of it. There is
+    // audio in the file; transcribe it, and keep it, because the recorder that
+    // wrote it may still be there.
+    const seconds = captureSeconds(orphan.audioBytes);
+    r.log(`a previous start left ${seconds}s of audio and no pid, and the process table cannot be read here; transcribing it`);
+    return transcribeCapture(
+      state.wav,
+      { recordMs: Math.round(seconds * 1000), seconds, keepBecause: 'the process table cannot be read here, so a recorder may still be writing this capture' },
+      opts,
+      io,
+      deps,
+      r,
+    );
+  }
+
+  // Nothing is writing it. Usually the WAV is the empty file the claim
+  // created. Either way the audio is not ours to delete: keep what is
+  // there and say so.
+  r.log(`stale recording state (a start that never recorded its pid); starting a new recording`);
+  if (orphan.bytes > 0) r.log(`the previous start left ${orphan.bytes} bytes at ${state.wav}; it is kept`);
+  if (orphan.bytes === 0) await fs.rm(state.wav, { force: true }).catch(() => undefined);
+  return 'start';
 }
 
 /** The second press: stop ffmpeg, transcribe the WAV, deliver. */
@@ -613,7 +738,6 @@ async function stopAndTranscribe(
   const startedAt = Date.parse(state.startedAt);
   const stop = await stopRecorder({ pid: state.pid, isAlive: r.isAlive, kill: r.kill, platform: r.platform, ...(deps.sleep ? { sleep: deps.sleep } : {}) });
   const recordMs = Math.max(0, r.clock() - (Number.isFinite(startedAt) ? startedAt : r.clock()));
-  await clearState(r.globalPath);
   if (stop.killed) r.log('recorder did not stop within 3s; killed (the WAV may be truncated)');
 
   const capture = await inspectWav(state.wav);
@@ -636,7 +760,7 @@ async function stopAndTranscribe(
     return EXIT_ERROR;
   }
 
-  return transcribeCapture(state.wav, recordMs, recordMs / 1000, opts, io, deps, r);
+  return transcribeCapture(state.wav, { recordMs, seconds: recordMs / 1000 }, opts, io, deps, r);
 }
 
 /**
@@ -654,6 +778,11 @@ async function stopAndTranscribe(
  * So: look at the capture. Audio is transcribed, whatever killed the recorder.
  * Nothing usable is reported, with ffmpeg's own last words, and only a file
  * with no bytes in it is deleted.
+ *
+ * `keepBecause` is how a caller that is not certain the recorder is dead says
+ * so. This function's whole premise is that nothing is writing the capture any
+ * more, and when the caller cannot vouch for that, the capture survives being
+ * read.
  */
 async function recoverDeadRecorder(
   state: RecordingState & { pid: number },
@@ -661,15 +790,22 @@ async function recoverDeadRecorder(
   io: VoiceIO,
   deps: VoiceDeps,
   r: Resolved,
+  keepBecause?: string,
 ): Promise<number> {
-  await clearState(r.globalPath);
   const capture = await inspectWav(state.wav);
   if (capture.ok) {
     // Wall clock since `startedAt` would count the time the recorder was dead
     // as recording. The bytes cannot: 16 kHz mono s16 is 32000 bytes a second.
     const seconds = captureSeconds(capture.audioBytes);
     r.log(`the recorder (pid ${state.pid}) is no longer running; transcribing the ${seconds}s it recorded`);
-    return transcribeCapture(state.wav, Math.round(seconds * 1000), seconds, opts, io, deps, r);
+    return transcribeCapture(
+      state.wav,
+      { recordMs: Math.round(seconds * 1000), seconds, ...(keepBecause !== undefined ? { keepBecause } : {}) },
+      opts,
+      io,
+      deps,
+      r,
+    );
   }
   const tail = await recorderLogTail(r);
   io.stderr(
@@ -723,6 +859,17 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
     return EXIT_ERROR;
   }
   await writeState(r.globalPath, { pid: child.pid, wav, startedAt: startedAt.toISOString() });
+  // Sweep what is provably worthless (zero-byte captures, a claim breadcrumb a
+  // press that died mid-stop left behind) and count what is not. Captures with
+  // audio in them are kept by every path that refuses one, so they accumulate;
+  // saying how many there are is the honest half of that, and deleting them
+  // would be one more way to lose a recording.
+  const leftovers = await sweepVoiceDir(r.globalPath, wav, r.now().getTime()).catch(() => ({ kept: 0, bytes: 0 }));
+  if (leftovers.kept > 0) {
+    r.log(
+      `${leftovers.kept} earlier recording${leftovers.kept === 1 ? '' : 's'} (${(leftovers.bytes / 1_000_000).toFixed(1)} MB) ${leftovers.kept === 1 ? 'is' : 'are'} still in ${voiceDir(r.globalPath)}; nothing here deletes them for you`,
+    );
+  }
   io.stdout('recording\n');
   return EXIT_OK;
 }

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, promises as fs, writeFileSync } from 'node:fs';
+import { mkdirSync, promises as fs, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,8 @@ import {
   PROVISIONAL_TTL_MS,
   captureSeconds,
   claimState,
+  claimStop,
+  sweepVoiceDir,
   ensureVoiceDir,
   ffmpegRecordArgs,
   inspectWav,
@@ -884,14 +886,31 @@ describe('lexicon voice (foreground)', () => {
     await expect(fs.access(historyPath(h.globalPath))).rejects.toThrow();
   });
 
-  it('strips [BLANK_AUDIO] and exits 3 with "(nothing heard)" on an empty transcript', async () => {
+  /**
+   * Catches moving the capture's removal back ahead of the empty-transcript
+   * check in `runVoice`. `cleanTranscript` turns `[BLANK_AUDIO]` into the empty
+   * string, and so does a wrong `--lang` or a model too small for the speaker,
+   * so the file has to outlive a transcript of nothing.
+   */
+  it('strips [BLANK_AUDIO] and exits 3 with "(nothing heard)", keeping the audio', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
     h.transcript = ' [BLANK_AUDIO] ';
+    h.opts.quiet = false;
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_NOTHING_HEARD);
     expect(h.out).toEqual(['(nothing heard)\n']);
     expect(await readHistory(h.globalPath)).toEqual([]);
+    const kept = (await fs.readdir(path.join(h.dir, 'tmp'))).filter((f) => f.endsWith('.wav'));
+    expect(kept).toHaveLength(1);
+    expect(h.err.join('')).toContain('whisper read nothing out of this capture, so the recording is kept at');
+  });
+
+  it('removes the capture once whisper has read something out of it', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect((await fs.readdir(path.join(h.dir, 'tmp'))).filter((f) => f.endsWith('.wav'))).toEqual([]);
   });
 
   it('exits 2 with an install hint when whisper-cli is missing', async () => {
@@ -1210,7 +1229,34 @@ describe('capture validation', () => {
     expect(check.audioBytes).toBe(320);
   });
 
-  /** RIFF pads an odd chunk to an even offset. Not every writer does. */
+  /**
+   * RIFF pads an odd chunk to an even offset. Not every writer does.
+   *
+   * Swept rather than sampled, because the single size this used to check
+   * passed by luck. Stepping to the padded offset first reads one byte into
+   * the next chunk id, so what comes back is that id's last three characters
+   * followed by the low byte of its size, and that byte is printable ASCII for
+   * 95 values in 256. The `data` chunk's size is the capture length, so which
+   * captures survive depends on their length: the sweep refused 48 of these
+   * 128 before the walk read the unpadded offset first. Reverting
+   * `nextChunkOffset` to try the padded offset first fails this immediately.
+   */
+  it('finds the audio behind an unpadded odd chunk at every capture size', async () => {
+    const refused: string[] = [];
+    for (let i = 0; i < 128; i += 1) {
+      const audioBytes = 32 + i * 2;
+      const padded = withChunkBeforeData(wavBytes({ audioBytes, finalized: true }), 'LIST', 13);
+      const at = padded.indexOf(Buffer.from('data', 'latin1'));
+      const unpadded = Buffer.concat([padded.subarray(0, at - 1), padded.subarray(at)]);
+      const check = await inspectWav(await write(`sweep-${audioBytes}.wav`, unpadded));
+      if (!check.ok || check.audioBytes !== audioBytes) refused.push(`${audioBytes}: ${check.reason ?? check.audioBytes}`);
+      // The writer that did pad has to keep working at every size too.
+      const still = await inspectWav(await write(`sweep-padded-${audioBytes}.wav`, padded));
+      if (!still.ok || still.audioBytes !== audioBytes) refused.push(`padded ${audioBytes}: ${still.reason ?? still.audioBytes}`);
+    }
+    expect(refused).toEqual([]);
+  });
+
   it('recovers when an odd-sized chunk has no RIFF pad byte', async () => {
     const padded = withChunkBeforeData(wavBytes({ audioBytes: 160, finalized: true }), 'LIST', 13);
     expect((await inspectWav(await write('padded.wav', padded))).audioBytes).toBe(160);
@@ -1345,6 +1391,31 @@ describe('identifying the recorder behind a pid', () => {
     expect(commandIsRecorder('', WAV)).toBe(false);
   });
 
+  /**
+   * Catches reverting `commandIsRecorder` to a bare `command.includes(name)`.
+   * A user converting their own capture is an ffmpeg with our filename in its
+   * command line, and signalling it kills their job over a recording we were
+   * not recording.
+   */
+  it('does not mistake an ffmpeg reading the capture for the one writing it', () => {
+    expect(commandIsRecorder(`/opt/homebrew/bin/ffmpeg -i ${WAV} note.mp3`, WAV)).toBe(false);
+    expect(commandIsRecorder(`ffmpeg -i ${WAV} -af loudnorm out.wav`, WAV)).toBe(false);
+    // The output position is what makes it ours, quoted path and all.
+    expect(commandIsRecorder(`ffmpeg -f avfoundation -i :default -y "${WAV}"`, WAV)).toBe(true);
+  });
+
+  /**
+   * Catches dropping the line-joining from `commandIsRecorder`. PowerShell
+   * wraps a long CommandLine at the console width rather than truncating it,
+   * and the capture's path, being last, is what lands past the fold. Read as
+   * "some other process", that answer gets a live recorder's audio deleted.
+   */
+  it('matches a command line PowerShell folded in the middle of the capture path', () => {
+    const folded = `${FFMPEG.slice(0, FFMPEG.length - 12)}\r\n${FFMPEG.slice(FFMPEG.length - 12)}`;
+    expect(folded).not.toBe(FFMPEG);
+    expect(commandIsRecorder(folded, WAV)).toBe(true);
+  });
+
   it('reads a command line out of ps and out of PowerShell', async () => {
     const posix = makeProcessDescribe(async () => ({ code: 0, stdout: `${FFMPEG}\n`, stderr: '' }), 'darwin');
     expect(await posix(4242)).toBe(FFMPEG);
@@ -1357,7 +1428,12 @@ describe('identifying the recorder behind a pid', () => {
     ).toBeUndefined();
   });
 
-  it('parses a process table, and reports an unreadable one as empty rather than as none', async () => {
+  /**
+   * Catches making `makeProcessList` answer `[]` again when it could not look.
+   * "I cannot tell" and "nothing is running" are different answers, and the
+   * caller acts on the second one by abandoning a live capture.
+   */
+  it('parses a process table, and says undefined rather than empty when it cannot read one', async () => {
     const list = makeProcessList(
       async () => ({ code: 0, stdout: `  501 /bin/zsh\n 4242 ${FFMPEG}\nrubbish\n`, stderr: '' }),
       'darwin',
@@ -1366,7 +1442,23 @@ describe('identifying the recorder behind a pid', () => {
       { pid: 501, command: '/bin/zsh' },
       { pid: 4242, command: FFMPEG },
     ]);
-    expect(await makeProcessList(() => Promise.reject(new Error('nope')), 'darwin')()).toEqual([]);
+    // No `ps` on this host at all.
+    expect(await makeProcessList(() => Promise.reject(new Error('nope')), 'darwin')()).toBeUndefined();
+    // A `ps` that ran and failed.
+    expect(await makeProcessList(async () => ({ code: 1, stdout: '', stderr: 'denied' }), 'darwin')()).toBeUndefined();
+    // A table that was read and holds nothing is still an empty list.
+    expect(await makeProcessList(async () => ({ code: 0, stdout: '', stderr: '' }), 'darwin')()).toEqual([]);
+  });
+
+  it('asks PowerShell for a width no command line reaches, so nothing is folded', async () => {
+    const calls: string[][] = [];
+    const exec: VoiceExec = async (_cmd, args) => {
+      calls.push([...args]);
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    await makeProcessDescribe(exec, 'win32')(4242);
+    await makeProcessList(exec, 'win32')();
+    for (const args of calls) expect(args[args.length - 1]).toContain('Out-String -Width 32767');
   });
 
   it('answers undefined when it cannot tell, so the caller keeps the old behaviour', async () => {
@@ -1383,6 +1475,8 @@ describe('identifying the recorder behind a pid', () => {
     expect(await findOrphanRecorder(WAV, list)).toBe(7777);
     expect(await findOrphanRecorder('/tmp/other.wav', list)).toBeUndefined();
     expect(await findOrphanRecorder(WAV, async () => [])).toBeUndefined();
+    // A table that could not be read is its own answer, not "none".
+    expect(await findOrphanRecorder(WAV, async () => undefined)).toBe('unknown');
   });
 });
 
@@ -1462,5 +1556,211 @@ describe('lexicon voice --toggle, when the pid is not what it seems', () => {
     expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
     expect(h.out).toEqual(['recording\n']);
     expect(h.spawnCalls).toHaveLength(1);
+  });
+});
+
+/**
+ * Four ways a recording was being destroyed on a guess. Each test names the
+ * reversion it catches; every one of them was reproduced against real ffmpeg
+ * 9.0.2 and real whisper.cpp before it was written.
+ */
+describe('a capture outlives every reading of it', () => {
+  /**
+   * Catches moving the `fs.rm` in `transcribeCapture` back ahead of `deliver`.
+   * Measured: a ten-minute capture, 19.2 MB from ffmpeg, a `--lang` the speaker
+   * was not speaking, exit 3, `(nothing heard)`, and nothing left on disk.
+   */
+  it('keeps the recording when whisper read nothing out of it', async () => {
+    const h = await harness();
+    const wav = await deadRecorderState(h, wavBytes({ audioBytes: 600 * 32_000, finalized: true }));
+    h.transcript = ' [BLANK_AUDIO] ';
+    h.opts.quiet = false;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_NOTHING_HEARD);
+    expect(h.out).toEqual(['(nothing heard)\n']);
+    expect(h.err.join('')).toContain(`whisper read nothing out of this capture, so the recording is kept at ${wav}`);
+    expect(h.err.join('')).toContain('A wrong --lang');
+    expect((await fs.stat(wav)).size).toBe(600 * 32_000 + 44);
+    expect(await readHistory(h.globalPath)).toEqual([]);
+  });
+
+  /**
+   * Catches dropping the `keepBecause` that `handleClaimedState` passes when
+   * `confirmRecorder` says no about a pid that is still alive. The only thing
+   * claiming the recorder is gone there is the command line we read back, and
+   * a command line can be read back wrong: PowerShell folds a long one, and
+   * the capture's path is the part that ends up past the fold. Reproduced with
+   * a real ffmpeg recording into a real WAV, which this branch transcribed and
+   * then deleted out from under it without ever signalling it.
+   */
+  it('does not delete the capture of a pid that is still alive', async () => {
+    const h = await harness();
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    const wav = (await readState(h.globalPath))?.wav ?? '';
+    h.out.length = 0;
+    // The recorder is alive and recording; the lookup says it is not ours.
+    h.deps.describeProcess = async () => '/usr/sbin/cupsd';
+    h.deps.listProcesses = async () => undefined;
+    h.opts.quiet = false;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(h.err.join('')).toContain('pid 4242 is still running, so something may still be writing this capture');
+    expect((await fs.stat(wav)).size).toBeGreaterThan(0);
+    // Not our pid as far as anything could tell, so it is not signalled either.
+    expect(h.kills).toEqual([]);
+  });
+
+  /**
+   * The other half of the same branch: when the process table can be read and
+   * it names the process writing our capture, that is our recorder whatever
+   * the per-pid lookup said. Stopping it properly is what makes deleting the
+   * capture afterwards safe.
+   */
+  it('stops the recorder the process table found when the pid lookup read wrong', async () => {
+    const h = await harness();
+    const wav = await deadRecorderState(h, wavBytes({ audioBytes: 64_000, finalized: false }));
+    h.alive.add(99999);
+    h.alive.add(7777);
+    h.deps.describeProcess = async () => '/usr/sbin/cupsd';
+    h.deps.listProcesses = async () => [{ pid: 7777, command: `/fake/bin/ffmpeg -f avfoundation -i :default -y ${wav}` }];
+    h.opts.quiet = false;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.err.join('')).toContain('pid 7777 is writing this capture; stopping that one');
+    expect(h.kills).toEqual([{ pid: 7777, signal: 'SIGINT' }]);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    await expect(fs.access(wav)).rejects.toThrow();
+  });
+
+  /**
+   * Catches reading `undefined` from the process table as "nothing is writing
+   * this". A host with no `ps` answers that way for every press, not once in a
+   * blue moon: reproduced with a real ffmpeg five minutes into a capture and a
+   * `ps` lookup that could not run, where the old code walked away from the
+   * audio and started a second recorder on top of it.
+   */
+  it('transcribes a stale start instead of abandoning it when the process table cannot be read', async () => {
+    const h = await harness();
+    const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
+    await fs.mkdir(path.dirname(wav), { recursive: true });
+    await fs.writeFile(wav, wavBytes({ audioBytes: 300 * 32_000, finalized: false }));
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ wav, startedAt: '2026-09-19T11:00:00.000Z' }));
+    h.deps.listProcesses = async () => undefined;
+    h.opts.quiet = false;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(h.err.join('')).toContain('300s of audio and no pid, and the process table cannot be read here');
+    // Kept, because a recorder we cannot see may still be appending to it.
+    expect((await fs.stat(wav)).size).toBe(300 * 32_000 + 44);
+    // And no second recorder competing for the microphone.
+    expect(h.spawnCalls).toEqual([]);
+    expect((await readHistory(h.globalPath))[0].ms.record).toBe(300_000);
+  });
+
+  it('still starts a new recording when the table can be read and holds no recorder', async () => {
+    const h = await harness();
+    const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
+    await fs.mkdir(path.dirname(wav), { recursive: true });
+    await fs.writeFile(wav, wavBytes({ audioBytes: 32_000, finalized: false }));
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ wav, startedAt: '2026-09-19T11:00:00.000Z' }));
+    h.deps.listProcesses = async () => [];
+    h.opts.quiet = false;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+    expect(h.spawnCalls).toHaveLength(1);
+    expect((await fs.stat(wav)).size).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The stop half of a toggle, made exclusive the way the start half already was.
+ */
+describe('two hotkey presses, one recording', () => {
+  /**
+   * Catches removing the `claimStop` from `runVoiceToggle`. Without it both
+   * presses transcribe the same capture and both deliver it, which with
+   * `--paste` is two paste keystrokes for one thing said.
+   */
+  it('delivers a finished recording once however the two presses interleave', async () => {
+    const h = await harness();
+    await deadRecorderState(h, wavBytes({ audioBytes: 32_000, finalized: true }));
+
+    const [a, b] = await Promise.all([runVoiceToggle(h.opts, h.io, h.deps), runVoiceToggle(h.opts, h.io, h.deps)]);
+    expect([a, b]).toEqual([EXIT_OK, EXIT_OK]);
+    expect(h.out.filter((s) => s.includes('Ashlr.AI'))).toHaveLength(1);
+    expect(await readHistory(h.globalPath)).toHaveLength(1);
+  });
+
+  it('claimStop hands the state to exactly one caller and clears it', async () => {
+    const h = await harness();
+    await writeState(h.globalPath, { pid: 4242, wav: 'a.wav', startedAt: '2026-09-19T12:00:00.000Z' });
+
+    const claims = await Promise.all([claimStop(h.globalPath), claimStop(h.globalPath), claimStop(h.globalPath)]);
+    expect(claims.filter((c) => c !== undefined)).toEqual([{ pid: 4242, wav: 'a.wav', startedAt: '2026-09-19T12:00:00.000Z' }]);
+    expect(await readState(h.globalPath)).toBeUndefined();
+    // The claim moves the file aside and removes it; nothing is left behind.
+    expect((await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.startsWith('stopping-'))).toEqual([]);
+    expect(await claimStop(h.globalPath)).toBeUndefined();
+  });
+
+  it('a press that loses the state file stands down instead of starting a second recorder', async () => {
+    const h = await harness();
+    const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
+    await fs.mkdir(path.dirname(wav), { recursive: true });
+    await fs.writeFile(wav, wavBytes({ audioBytes: 32_000, finalized: false }));
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ wav, startedAt: '2026-09-19T11:00:00.000Z' }));
+    // Another press claims the file between this one's read and its own claim.
+    h.deps.now = () => {
+      rmSync(stateFilePath(h.globalPath), { force: true });
+      return new Date('2026-09-19T12:00:00.000Z');
+    };
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['stopping\n']);
+    expect(h.spawnCalls).toEqual([]);
+    expect(h.kills).toEqual([]);
+  });
+});
+
+describe('leftovers in the voice directory', () => {
+  /**
+   * Refused captures pile up, because every path that refuses one keeps it.
+   * What is swept is only what cannot hold audio; what can is counted and
+   * named, and left for the user to decide about.
+   */
+  it('sweeps empty captures and stale claims on a start, and counts the rest', async () => {
+    const h = await harness();
+    const dir = await ensureVoiceDir(h.globalPath);
+    await fs.writeFile(path.join(dir, 'recording-empty.wav'), Buffer.alloc(0));
+    await fs.writeFile(path.join(dir, 'recording-refused.wav'), Buffer.alloc(2_000_000, 3));
+    await fs.writeFile(path.join(dir, 'history.jsonl'), '{}\n');
+    const claim = path.join(dir, 'stopping-1-abc.json');
+    await fs.writeFile(claim, '{}');
+    await fs.utimes(claim, new Date('2026-09-19T11:00:00.000Z'), new Date('2026-09-19T11:00:00.000Z'));
+    h.opts.quiet = false;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    const left = await fs.readdir(dir);
+    expect(left).not.toContain('recording-empty.wav');
+    expect(left).not.toContain('stopping-1-abc.json');
+    expect(left).toContain('recording-refused.wav');
+    expect(left).toContain('history.jsonl');
+    expect(h.err.join('')).toContain('1 earlier recording (2.0 MB) is still in');
+  });
+
+  it('never sweeps the capture being recorded, or one that is merely young', async () => {
+    const h = await harness();
+    const dir = await ensureVoiceDir(h.globalPath);
+    const live = path.join(dir, 'recording-live.wav');
+    await fs.writeFile(live, wavBytes({ audioBytes: 1000, finalized: false }));
+    const fresh = path.join(dir, 'stopping-2-def.json');
+    await fs.writeFile(fresh, '{}');
+
+    const counted = await sweepVoiceDir(h.globalPath, live, Date.parse('2026-09-19T12:00:00.000Z'));
+    expect(counted).toEqual({ kept: 0, bytes: 0 });
+    expect(await fs.readdir(dir)).toEqual(expect.arrayContaining(['recording-live.wav', 'stopping-2-def.json']));
   });
 });

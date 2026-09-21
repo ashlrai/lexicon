@@ -224,7 +224,28 @@ export async function locateFfmpeg(opts: LocateOptions = {}): Promise<string | u
  * identifies our capture without having to match a whole path across platforms.
  */
 export type ProcessDescribe = (pid: number) => Promise<string | undefined>;
-export type ProcessList = () => Promise<ReadonlyArray<{ pid: number; command: string }>>;
+/**
+ * The process table, or `undefined` when it could not be read.
+ *
+ * The distinction is the whole point of the type. A host with no `ps` (a
+ * stripped container, a sandbox that refuses the exec) cannot answer the
+ * question at all, and answering it with an empty array turns "I cannot tell"
+ * into "nothing is running", which is how a caller ends up abandoning a live
+ * recording. An empty array means the table was read and holds nothing.
+ */
+export type ProcessList = () => Promise<ReadonlyArray<{ pid: number; command: string }> | undefined>;
+
+/**
+ * How wide a PowerShell line may be before it is folded.
+ *
+ * PowerShell formats its output for a console, which means wrapping a long
+ * line at the window width rather than letting it run. A recorder's command
+ * line is long and ends in the capture's path, so the fold lands in the middle
+ * of the one thing worth matching on, and `parseProcessLines` then drops the
+ * continuation (no pid at the front of it). Asking for a width nothing reaches
+ * is what keeps the line whole.
+ */
+const PS_WIDTH = 32_767;
 
 /** `ps`/`Get-CimInstance` invocations, kept here so both helpers agree. */
 function listCommand(platform: NodeJS.Platform): { cmd: string; args: string[] } {
@@ -237,7 +258,7 @@ function listCommand(platform: NodeJS.Platform): { cmd: string; args: string[] }
         '-Command',
         // The filter is a literal, so no caller-supplied path is ever
         // interpolated into a shell; the matching happens in JavaScript.
-        "Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }",
+        `Get-CimInstance Win32_Process -Filter "Name='ffmpeg.exe'" | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" } | Out-String -Width ${PS_WIDTH}`,
       ],
     };
   }
@@ -255,16 +276,19 @@ function parseProcessLines(stdout: string): Array<{ pid: number; command: string
   return out;
 }
 
-/** Every running process, best effort. An empty list means "could not tell", never "none". */
+/**
+ * Every running process. `undefined` when the listing could not be run or
+ * failed, which is a different answer from an empty table: see `ProcessList`.
+ */
 export function makeProcessList(exec: VoiceExec, platform: NodeJS.Platform): ProcessList {
   return async () => {
     const { cmd, args } = listCommand(platform);
     try {
       const res = await exec(cmd, args, { timeoutMs: 5000 });
-      if (res.code !== 0) return [];
+      if (res.code !== 0) return undefined;
       return parseProcessLines(res.stdout);
     } catch {
-      return [];
+      return undefined;
     }
   };
 }
@@ -276,7 +300,12 @@ export function makeProcessDescribe(exec: VoiceExec, platform: NodeJS.Platform):
     const cmd = win ? 'powershell' : 'ps';
     // `pid` is a number we validated on the way in, so interpolating it is safe.
     const args = win
-      ? ['-NoProfile', '-NonInteractive', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`]
+      ? [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine | Out-String -Width ${PS_WIDTH}`,
+        ]
       : ['-p', String(pid), '-o', 'command='];
     try {
       const res = await exec(cmd, args, { timeoutMs: 5000 });

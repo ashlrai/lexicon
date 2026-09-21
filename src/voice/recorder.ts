@@ -87,15 +87,20 @@ export async function touchPrivateFile(file: string): Promise<void> {
   }
 }
 
-export async function readState(globalPath: string): Promise<RecordingState | undefined> {
+/** Parse a state file at an explicit path (the live one, or a claimed copy). */
+async function readStateFile(file: string): Promise<RecordingState | undefined> {
   try {
-    const parsed = JSON.parse(await fs.readFile(stateFilePath(globalPath), 'utf8')) as Partial<RecordingState>;
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as Partial<RecordingState>;
     if (typeof parsed.wav !== 'string' || typeof parsed.startedAt !== 'string') return undefined;
     if (parsed.pid !== undefined && typeof parsed.pid !== 'number') return undefined;
     return { ...(parsed.pid !== undefined ? { pid: parsed.pid } : {}), wav: parsed.wav, startedAt: parsed.startedAt };
   } catch {
     return undefined;
   }
+}
+
+export async function readState(globalPath: string): Promise<RecordingState | undefined> {
+  return readStateFile(stateFilePath(globalPath));
 }
 
 /** True for a claimed-but-not-yet-spawned record. */
@@ -135,6 +140,91 @@ export async function writeState(globalPath: string, state: RecordingState): Pro
 
 export async function clearState(globalPath: string): Promise<void> {
   await fs.rm(stateFilePath(globalPath), { force: true });
+}
+
+/** Prefix of the short-lived file `claimStop` moves the state to. */
+const STOPPING_PREFIX = 'stopping-';
+
+/**
+ * Take the stop half of a toggle, exclusively. Resolves with the state that was
+ * claimed, or undefined when another press claimed it first.
+ *
+ * The start half has been exclusive since the state file became the start lock,
+ * and the stop half needs the same thing for the same reason. Two hotkey
+ * presses that arrive together both read one live state file, both signal the
+ * same recorder, and both transcribe the same capture: one recording delivered
+ * twice, which with `--paste` is two paste keystrokes into whatever the user
+ * was typing in and two lines in the history for one thing said.
+ *
+ * Rename is the primitive, because it is atomic and it both reads and removes
+ * in one step. Each press renames to a name only it picked, so of two presses
+ * exactly one finds the file still there; the loser gets ENOENT and stands
+ * down. The claimed copy is removed once it has been read, which is also what
+ * clears the state for the recording being stopped.
+ */
+export async function claimStop(globalPath: string): Promise<RecordingState | undefined> {
+  const claimed = path.join(
+    voiceDir(globalPath),
+    `${STOPPING_PREFIX}${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`,
+  );
+  try {
+    await fs.rename(stateFilePath(globalPath), claimed);
+  } catch {
+    return undefined;
+  }
+  try {
+    return await readStateFile(claimed);
+  } finally {
+    await fs.rm(claimed, { force: true }).catch(() => undefined);
+  }
+}
+
+/** A claim breadcrumb older than this was left by a press that died mid-stop. */
+const STOPPING_TTL_MS = 60_000;
+
+/**
+ * Tidy the voice directory of what is provably worthless: the zero-byte WAVs a
+ * start that never recorded leaves behind, and any claim breadcrumb a press
+ * that died mid-stop did not get to remove.
+ *
+ * Captures with bytes in them are never swept. A refusal to transcribe is this
+ * process's reading of a container and not a verdict on the audio, so those
+ * files are counted and reported rather than deleted: the user decides. `keep`
+ * names the capture of the recording being started, which is not a leftover.
+ */
+export async function sweepVoiceDir(globalPath: string, keep: string, nowMs: number): Promise<{ kept: number; bytes: number }> {
+  const dir = voiceDir(globalPath);
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return { kept: 0, bytes: 0 };
+  }
+  const keepName = path.basename(keep);
+  let kept = 0;
+  let bytes = 0;
+  for (const name of names) {
+    const file = path.join(dir, name);
+    if (name.startsWith(STOPPING_PREFIX) && name.endsWith('.json')) {
+      const age = await fs
+        .stat(file)
+        .then((s) => nowMs - s.mtimeMs)
+        .catch(() => 0);
+      if (age > STOPPING_TTL_MS) await fs.rm(file, { force: true }).catch(() => undefined);
+      continue;
+    }
+    if (!name.startsWith('recording-') || !name.endsWith('.wav') || name === keepName) continue;
+    const size = await fs
+      .stat(file)
+      .then((s) => s.size)
+      .catch(() => -1);
+    if (size === 0) await fs.rm(file, { force: true }).catch(() => undefined);
+    else if (size > 0) {
+      kept += 1;
+      bytes += size;
+    }
+  }
+  return { kept, bytes };
 }
 
 export interface InputSpec {
@@ -394,17 +484,40 @@ function isChunkId(id: string): boolean {
  *
  * RIFF pads an odd-sized chunk to an even offset, and most writers do. Some do
  * not, and stepping over a pad byte that is not there lands one byte into the
- * next id, which used to end the walk with "no audio data chunk" on a file that
- * had audio in it. So: take the padded offset when a chunk header is really
- * there, and the unpadded one otherwise.
+ * next id, which ends the walk with "no audio data chunk" on a file that has
+ * audio in it.
+ *
+ * Which offset to look at first is the whole question, and looking at the
+ * padded one first cannot answer it. One byte into a real id, the four bytes
+ * read are the id's last three characters followed by the low byte of that
+ * chunk's size, and that low byte is printable ASCII for 95 values in 256. A
+ * sweep of 128 capture sizes behind an unpadded `LIST` had 48 of them refused
+ * this way, all the ones whose `data` size ended in a byte from 0x20 to 0x7e.
+ *
+ * The unpadded offset does not have that problem. A writer that padded wrote
+ * the pad byte there, and RIFF says that byte is zero, so what is read is a
+ * zero followed by the first three characters of the real id: never a chunk
+ * id. Reading the unpadded offset first therefore tells the two writers apart,
+ * and the padded offset is what is left when nothing is at the unpadded one.
  */
 async function nextChunkOffset(handle: FileHandle, body: number, declared: number, size: number): Promise<number> {
   const unpadded = body + declared;
   if (declared % 2 === 0) return unpadded;
   const padded = unpadded + 1;
-  if (padded + CHUNK_HEADER > size) return unpadded;
-  const next = await readChunkHeader(handle, padded);
-  return next && isChunkId(next.id) ? padded : unpadded;
+  // The chunk runs to the end of the file: there is no next one to find.
+  if (unpadded >= size) return unpadded;
+  if (unpadded + CHUNK_HEADER <= size) {
+    const here = await readChunkHeader(handle, unpadded);
+    if (here && isChunkId(here.id)) return unpadded;
+  }
+  if (padded + CHUNK_HEADER <= size) {
+    const next = await readChunkHeader(handle, padded);
+    if (next && isChunkId(next.id)) return padded;
+  }
+  // Neither offset holds a chunk header. The pad byte is the likelier reading
+  // when it is on disk at all, since a chunk list that ends exactly at the
+  // file's end is what `trailingChunkBytes` is looking for.
+  return padded <= size ? padded : unpadded;
 }
 
 /**
@@ -527,11 +640,32 @@ export function recorderFingerprint(wav: string): string {
   return path.basename(wav);
 }
 
-/** True when `command` is an ffmpeg writing this capture. */
+/**
+ * True when `command` is an ffmpeg **writing** this capture.
+ *
+ * Two things that a plain substring match gets wrong:
+ *
+ * Reading is not writing. `ffmpeg -i <capture> note.mp3` names the capture too,
+ * and it is a conversion a user started over their own recording, not our
+ * recorder. Signalling it kills their job. Our recorder puts the capture last
+ * (`ffmpegRecordArgs` ends `-y <wav>`), and every ffmpeg writes its output
+ * last, so the capture has to be at the end of the command line rather than
+ * merely somewhere in it. The trailing quote is for Windows, where a path with
+ * a space in it reaches the process table quoted.
+ *
+ * And a command line can arrive folded. PowerShell wraps a long `CommandLine`
+ * at the console width instead of truncating it, and the capture's filename,
+ * being last, is exactly what ends up on the far side of the fold. Joining the
+ * pieces back up before matching is what keeps a wrapped line from reading as
+ * "some other process", which is a reading that gets a live recorder's audio
+ * deleted (see `recoverDeadRecorder`).
+ */
 export function commandIsRecorder(command: string, wav: string): boolean {
   const fingerprint = recorderFingerprint(wav);
-  if (fingerprint.length === 0 || !command.includes(fingerprint)) return false;
-  return /ffmpeg/i.test(command);
+  if (fingerprint.length === 0) return false;
+  const flat = command.replace(/\r?\n/g, '').trimEnd();
+  if (!/ffmpeg/i.test(flat)) return false;
+  return flat.endsWith(fingerprint) || flat.endsWith(`${fingerprint}"`) || flat.endsWith(`${fingerprint}'`);
 }
 
 /**
@@ -561,9 +695,17 @@ export async function confirmRecorder(
  * file. The capture keeps growing and nothing can stop it, because the number
  * needed to signal it was never written down. The process table still knows,
  * and the WAV's own name is in the command line that opened it.
+ *
+ * Three answers, not two. A pid is the recorder. `undefined` is a process table
+ * that was read and does not hold one. `'unknown'` is a process table that
+ * could not be read at all, which is the normal state of a host with no `ps`,
+ * and which is not the same claim as "nothing is writing this capture": see
+ * `ProcessList`.
  */
-export async function findOrphanRecorder(wav: string, list: ProcessList): Promise<number | undefined> {
-  for (const { pid, command } of await list()) {
+export async function findOrphanRecorder(wav: string, list: ProcessList): Promise<number | 'unknown' | undefined> {
+  const processes = await list();
+  if (processes === undefined) return 'unknown';
+  for (const { pid, command } of processes) {
     if (commandIsRecorder(command, wav)) return pid;
   }
   return undefined;

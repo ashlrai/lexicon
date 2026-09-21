@@ -102,8 +102,8 @@ lexicon voice --status                   # "recording since <time>" (exit 0) or 
 
 The first call spawns ffmpeg detached, writes
 `~/.config/lexicon/voice/recording.json` (`{ pid, wav, startedAt }`), prints
-`recording` and exits immediately. The second call stops that pid, waits up to 3 s,
-transcribes, outputs, and removes the state file and the WAV. The recorded length
+`recording` and exits immediately. The second call takes the state file, stops that
+pid, waits up to 3 s, transcribes, outputs, and removes the WAV. The recorded length
 reported in `--json` and in `history.jsonl` is wall clock for a recording this command
 stopped, and the audio's own length (bytes over 32000 a second) for one that had
 already ended on its own.
@@ -130,22 +130,46 @@ Two things about that pid are worth knowing, because a pid is a weaker handle th
 looks. It is unique only while its process lives, so a stale state file plus a number the
 system has since handed to something else would send the stop signal to a stranger. Before
 signalling, the toggle asks what the pid is actually running and expects an ffmpeg writing
-this capture; anything else is treated as a recorder that is gone. And if a start spawned
-ffmpeg but died before writing the pid down, the recorder is found in the process table by
-the capture it is writing, stopped, and its audio transcribed, rather than left running to
-the end of its ten minutes while a second recorder competes for the microphone. Where the
-process table cannot be read at all, both checks fall back to trusting the pid, which is
-what this did before they existed. The same goes for a recorder that crashed
-partway, whose header ffmpeg never finalized. A recorder that left nothing usable (no
-microphone permission, so ffmpeg never opened its output) is reported with ffmpeg's
-own last lines instead of silently starting another doomed recording, and the command
-exits 1.
+this capture: writing it, not merely naming it, so a conversion job of your own that reads
+the capture is never mistaken for the recorder. And if a start spawned ffmpeg but died
+before writing the pid down, the recorder is found in the process table by the capture it
+is writing, stopped, and its audio transcribed, rather than left running to the end of its
+ten minutes while a second recorder competes for the microphone.
 
-Nothing deletes a capture that holds bytes. A WAV is removed when whisper has read it,
-and when it is empty (the placeholder a start creates before ffmpeg runs). A capture
-this command refuses to transcribe is kept, and the error names the file, because a
-refusal is a parser's opinion about a container and the audio is the user's. ffmpeg's
-stderr for a toggle recording goes to `voice/recorder.log`.
+Neither check is allowed to cost you a recording when it comes back unsure.
+
+- A per-pid lookup that says "this is not your recorder" about a pid that is still
+  alive is only a command line read back, and a command line can be read back wrong.
+  The process table is asked who is writing the capture; if it names a process, that
+  one is stopped properly. If it cannot say, the capture is transcribed and then
+  **kept**, so a recorder nothing recognised is not left writing into a deleted file.
+- A process table that could not be read at all is not the same answer as an empty
+  one. On a host with no `ps` that is the normal reply to every press, and reading it
+  as "nothing is running" used to abandon minutes of live audio and start a second
+  recorder on top of it. The capture is transcribed and kept instead, and no second
+  recorder starts.
+
+A recorder that crashed partway, whose header ffmpeg never finalized, is transcribed the
+same way. A recorder that left nothing usable (no microphone permission, so ffmpeg never
+opened its output) is reported with ffmpeg's own last lines instead of silently starting
+another doomed recording, and the command exits 1.
+
+Two presses that arrive together deliver one recording, not two. The start half has
+always claimed the state file exclusively, and the stop half claims it the same way: of
+two presses exactly one goes on to stop the recorder and transcribe, and the other prints
+`stopping` and exits 0. Without that, one thing said arrived as two paste keystrokes and
+two lines of history.
+
+Nothing deletes a capture that holds bytes. A WAV is removed when whisper has read
+something out of it, and when it is empty (the placeholder a start creates before ffmpeg
+runs). An empty transcript is not "nothing was said": a wrong `--lang`, or a model too
+small for the speaker, reaches exit 3 and `(nothing heard)` by exactly the same route as
+silence, so the audio is kept and the message names the file. A capture this command
+refuses to transcribe is kept too, because a refusal is a parser's opinion about a
+container and the audio is the user's. Those kept captures add up, and nothing here
+deletes them for you: a start sweeps away only what cannot hold audio (zero-byte
+captures) and then says how many recordings are still sitting in `voice/` and how much
+space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`.
 
 ### Hotkey recipes
 
@@ -224,7 +248,9 @@ vocabulary Whisper gets wrong, since the lexicon cannot fix words it does not kn
 
 - Whisper hallucinates on silence ("You", "Thank you."). A recording with no speech
   may therefore print a word instead of "(nothing heard)"; exit 3 fires only when the
-  transcript is empty after tag stripping.
+  transcript is empty after tag stripping. Exit 3 does not delete the recording: the
+  audio is kept and named, since a wrong `--lang` or an undersized model looks
+  identical to silence from here.
 - Whisper is not deterministic across runs on the same audio; the same clip produced
   "Kuper Nettie's" once and "Kubernettys" the next time. The lexicon catches the
   first (phonetic) and not the second. That is exactly what `history.jsonl` is for:
