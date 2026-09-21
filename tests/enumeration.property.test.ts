@@ -24,12 +24,12 @@
  * here. Declining everything fails DICTATION; correcting everything fails
  * QUOTING. Neither number may be traded for the other silently.
  *
- * Cases the matcher itself cannot see are skipped, not failed: every case is
- * first run as a control with the canonical swapped for an unrelated word, so
- * the guard cannot fire. If the control does not correct the garble, the
- * matcher never offered the guard anything and the case proves nothing. The
- * control is also a DICTATION case in its own right, which is what covers
- * "the same templates with the canonical absent".
+ * Every case is run a second time as a control, with the canonical swapped for
+ * an unrelated word so the guard cannot fire. The control is a DICTATION case
+ * in its own right, which is what covers "the same templates with the canonical
+ * absent". It is asserted rather than used as a precondition: a matcher that
+ * stopped seeing a garble at all would pass QUOTING vacuously, and the control
+ * direction is what refuses to let it.
  */
 import { describe, expect, it } from 'vitest';
 import { buildIndex, findReplacements } from '../src/core/matcher.js';
@@ -331,20 +331,9 @@ function buildDictationCases(): Case[] {
  * of the same shape. The guard's precondition is that the canonical is present,
  * so the control can never decline and shows what the matcher alone would do.
  */
-function control(c: Case): { text: string; out: string; clean: boolean } {
+function control(c: Case): { text: string; out: string } {
   const text = c.text.split(c.canonical).join(c.subject.neutral);
-  const out = rewrite(text, c.subject.term);
-  // What a clean matcher decision looks like: every garble becomes the
-  // canonical and nothing around it moves. When the matcher's span is wider
-  // than the garble - it currently swallows a trailing token, so "cooper
-  // netties i.e." matches as one window - the guard is being asked about a
-  // different string and the case cannot say whether its answer was right.
-  let expected = text;
-  for (const alias of c.aliases) {
-    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    expected = expected.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu'), c.subject.term.canonical);
-  }
-  return { text, out, clean: out === expected };
+  return { text, out: rewrite(text, c.subject.term) };
 }
 
 interface Report {
@@ -358,10 +347,9 @@ function run(cases: readonly Case[], direction: 'quoting' | 'dictation'): Report
   let checked = 0;
   let skipped = 0;
   for (const c of cases) {
-    const ctl = control(c);
-    // The matcher has to be able to see every garble on its own, and see
-    // exactly it, before the guard's answer means anything.
-    if (c.aliases.length === 0 || !ctl.clean) {
+    // The matcher has to be able to see the garble before the guard's answer
+    // about it means anything.
+    if (c.aliases.length === 0) {
       skipped++;
       continue;
     }

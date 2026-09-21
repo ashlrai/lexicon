@@ -96,6 +96,38 @@ export const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me
 export { STOPLIST };
 
 /**
+ * A token that carries no word sound of its own: a bare numeral ("2", "42",
+ * "3.5") or an abbreviation spelled out with periods ("i.e", "e.g", "a.m").
+ *
+ * Phonetic confidence is a ratio of letter counts, so a numeral costs nothing
+ * at all and a one- or two-letter abbreviation costs almost nothing. The
+ * sliding window could take one in for free, stay above the threshold, and then
+ * win overlap resolution on span length, so the number or the abbreviation was
+ * swallowed by the replacement: "cooper netties i.e. Terraform" came out as
+ * "Kubernetes. Terraform". An inexact multi-token window therefore never starts
+ * or ends on one.
+ *
+ * Deliberately narrow, and not the more general rule it looks like it should
+ * be. Asking instead whether the extra token added anything to the window's
+ * metaphone key sounds more principled and is unusable: a trailing "ai" / "io"
+ * / "ay" adds nothing to a key either, so that rule loses "opin ay" -> OpenAI,
+ * "vertexx ay" -> Vertex AI and "ashlur ay" -> Ashlr.AI. Reweighting the length
+ * penalty cannot separate them either, because a numeral contributes zero
+ * letters and so scores exactly the same as no token at all.
+ *
+ * Phonetic pass only. The exact pass is untouched, because "b 2 b", "auth 0"
+ * and "11 labs" are aliases users really list. The fuzzy pass cannot have the
+ * bug: it only compares a window against aliases of the same token count, so a
+ * swallowed token moves the window into a different bucket.
+ */
+const NO_LETTERS_RE = /^[^\p{L}]+$/u;
+const SPELLED_ABBREVIATION_RE = /^\p{L}{1,2}(?:\.\p{L}{1,2})+$/u;
+
+export function isNonWordToken(lower: string): boolean {
+  return NO_LETTERS_RE.test(lower) || SPELLED_ABBREVIATION_RE.test(lower);
+}
+
+/**
  * Function words: articles, prepositions, conjunctions, pronouns, auxiliaries,
  * wh-words. STT garbles a proper noun into sound-alike syllables; a bare
  * "to" / "is" / "a" next to it belongs to the sentence, so an inexact

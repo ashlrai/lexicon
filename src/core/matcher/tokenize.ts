@@ -44,8 +44,73 @@ const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
  */
 const PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
 
+/**
+ * Markdown's other code block: a run of lines indented by four spaces or a tab.
+ * Nothing above matches it, so a bug report that pasted its repro as an
+ * indented block had the repro corrected out of existence.
+ *
+ * Deliberately narrower than CommonMark, because the two ways of being wrong
+ * are not equally bad. Skipping too little leaves a correction somewhere it was
+ * not wanted, and you can see it. Skipping too much silently stops correcting
+ * ordinary prose, and you cannot. So a run is a code block only when
+ *   - a blank line, or the start of the text, comes directly above it, since
+ *     four spaces in the middle of a paragraph is a wrapped line, not code, and
+ *   - the nearest non-blank line above starts at column zero and is not a
+ *     bullet, a numbered item or a block quote, since a list item's indented
+ *     continuation and a nested bullet are list content.
+ * It runs to the first non-blank line indented less than four spaces; a blank
+ * line inside it does not end it.
+ *
+ * Not covered, and still corrected: an indented code block inside a list item
+ * or a block quote, and one whose paragraph above is itself indented.
+ */
+const INDENT_RE = /^(?: {4}|\t)/;
+const LIST_OR_QUOTE_RE = /^(?:[-*+>]|\d+[.)])(?:\s|$)/;
+
+function isBlank(line: string): boolean {
+  return line.trim().length === 0;
+}
+
+/** True when a code block may open under this line (see indentedCodeRanges). */
+function opensUnder(above: string): boolean {
+  return above === '' || (!/^[ \t]/.test(above) && !LIST_OR_QUOTE_RE.test(above));
+}
+
+export function indentedCodeRanges(text: string): Range[] {
+  const out: Range[] = [];
+  let at = 0;
+  // The start of the text counts as the blank line above the first block.
+  let prevBlank = true;
+  let above = '';
+  let open: { start: number; end: number } | undefined;
+  for (const line of text.split('\n')) {
+    const start = at;
+    const end = at + line.length;
+    at = end + 1;
+    if (isBlank(line)) {
+      prevBlank = true;
+      continue;
+    }
+    const indented = INDENT_RE.test(line);
+    if (open) {
+      if (indented) open.end = end;
+      else {
+        out.push(open);
+        open = undefined;
+      }
+    }
+    if (!open && indented && prevBlank && !LIST_OR_QUOTE_RE.test(line.trim()) && opensUnder(above)) {
+      open = { start, end };
+    }
+    prevBlank = false;
+    above = line;
+  }
+  if (open) out.push(open);
+  return out;
+}
+
 export function collectRanges(text: string): Range[] {
-  const ranges: Range[] = [];
+  const ranges: Range[] = indentedCodeRanges(text);
   for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;

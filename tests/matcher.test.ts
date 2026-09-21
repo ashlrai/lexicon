@@ -331,6 +331,47 @@ describe('phonetic pass', () => {
     expect(find('why is dock her throwing', [{ canonical: 'Docker', aliases: [] }])[0]).toMatchObject({ original: 'dock her', replacement: 'Docker' });
   });
 
+  // A phonetic window used to grow one token past the garble whenever the extra
+  // token made no sound of its own. Phonetic confidence is a ratio of letter
+  // counts, so a bare number costs literally nothing and a two-letter
+  // abbreviation costs almost nothing; the wider window stayed above the
+  // threshold and then won overlap resolution on span length, so the number or
+  // the abbreviation was swallowed by the replacement.
+  it('does not let a phonetic window start or end on a number or an abbreviation (bug K)', () => {
+    const abbrev = 'cooper netties i.e. Terraform';
+    const reps = find(abbrev, [K8S]);
+    expect(reps.map((r) => r.original)).toEqual(['cooper netties']);
+    expect(apply(abbrev, reps)).toBe('Kubernetes i.e. Terraform');
+
+    const numbered = 'Terraform has 1. cooper netties 2. Cooper Netties as variants.';
+    const numberedReps = find(numbered, [K8S]);
+    expect(numberedReps.map((r) => r.original)).toEqual(['cooper netties', 'Cooper Netties']);
+    expect(apply(numbered, numberedReps)).toBe('Terraform has 1. Kubernetes 2. Kubernetes as variants.');
+
+    // The same shape with the number on the left, and across a newline, which
+    // is whitespace and so joins two tokens into one window just as a space does.
+    const leading = 'pick 2 cooper netties please';
+    expect(find(leading, [K8S]).map((r) => r.original)).toEqual(['cooper netties']);
+    const lines = '1. Terraform\n2. cooper netties\n3. Cooper Netties';
+    expect(apply(lines, find(lines, [K8S]))).toBe('1. Terraform\n2. Kubernetes\n3. Kubernetes');
+  });
+
+  // The guard is phonetic-only and never touches the exact pass, because both
+  // of the shapes it refuses are things users really do list as aliases.
+  it('still matches an explicit alias that is a number or an abbreviation (bug K)', () => {
+    expect(find('we sell b 2 b', [{ canonical: 'B2B', aliases: ['b 2 b'] }])[0]).toMatchObject({ original: 'b 2 b', replacement: 'B2B', reason: 'alias' });
+    expect(find('log in with auth 0', [{ canonical: 'Auth0', aliases: ['auth 0'] }])[0]).toMatchObject({ original: 'auth 0', replacement: 'Auth0', reason: 'alias' });
+    expect(find('the 11 labs voice', [{ canonical: 'ElevenLabs', aliases: ['11 labs'] }])[0]).toMatchObject({ original: '11 labs', replacement: 'ElevenLabs', reason: 'alias' });
+  });
+
+  // Why the guard names numbers and abbreviations instead of asking whether the
+  // extra token added anything to the phonetic key: a trailing "ai" adds nothing
+  // to the key either, and it is half the names this product exists for.
+  it('still grows a phonetic window over a trailing syllable that keys as nothing (bug K)', () => {
+    expect(find('we use opin ay for that', [{ canonical: 'OpenAI', aliases: [] }])[0]).toMatchObject({ original: 'opin ay', replacement: 'OpenAI', reason: 'phonetic' });
+    expect(find('we use ashlur ay for that', [{ canonical: 'Ashlr.AI', aliases: [] }])[0]).toMatchObject({ original: 'ashlur ay', replacement: 'Ashlr.AI', reason: 'phonetic' });
+  });
+
   it('fires on a stoplist word when the user lists it as an explicit alias', () => {
     const reps = find('add some sauce', [{ canonical: 'SaaS', aliases: ['sauce'] }]);
     expect(reps[0]).toMatchObject({ original: 'sauce', replacement: 'SaaS', reason: 'alias', confidence: 1 });
@@ -484,6 +525,38 @@ describe('skipCode', () => {
 
   it('rewrites everywhere when skipCode is false', () => {
     expect(find(text, [ASHLR], { skipCode: false }).length).toBeGreaterThan(3);
+  });
+
+  // Markdown's other code block. Nothing matched a run of lines indented by
+  // four spaces, so a bug report that pasted its repro as an indented block had
+  // the repro corrected out of existence before anyone could read it.
+  it('skips an indented code block (bug L)', () => {
+    const block = 'Here is the repro:\n\n    findReplacements("Ashler", index)\n\nand that is it, Ashler.';
+    const reps = find(block, [ASHLR]);
+    expect(reps).toHaveLength(1);
+    expect(reps[0].start).toBe(block.lastIndexOf('Ashler'));
+    // a tab indents a block just as four spaces do
+    expect(find('Repro:\n\n\tAshler\n', [ASHLR])).toHaveLength(0);
+    // the block runs over several lines, is not ended by a blank line inside
+    // it, and ends at the first line that is not indented
+    const multi = 'Repro:\n\n    Ashler\n\n    Ashler again\n\nAshler in prose.';
+    expect(find(multi, [ASHLR]).map((r) => r.start)).toEqual([multi.lastIndexOf('Ashler')]);
+    // and skipCode: false still rewrites inside it
+    expect(find(block, [ASHLR], { skipCode: false })).toHaveLength(2);
+  });
+
+  // The two ways of being wrong are not equal: a missed skip leaves a visible
+  // correction, an over-eager one silently stops correcting ordinary text.
+  it('treats an indented line that Markdown does not call code as prose (bug L)', () => {
+    // four spaces with no blank line above is a wrapped line of a paragraph
+    expect(find('a long sentence that wraps here\n    Ashler is still prose', [ASHLR])).toHaveLength(1);
+    // a list item's indented continuation, and a nested bullet, are list content
+    expect(find('- item one\n\n    Ashler continues the item\n\n- item two', [ASHLR])).toHaveLength(1);
+    expect(find('- item one\n\n    - Ashler nested\n', [ASHLR])).toHaveLength(1);
+    expect(find('1. item one\n\n    Ashler continues the item\n', [ASHLR])).toHaveLength(1);
+    // so is anything hanging under a block quote, or under an indented line
+    expect(find('> quoted line\n\n    Ashler under a quote\n', [ASHLR])).toHaveLength(1);
+    expect(find('  indented paragraph\n\n    Ashler under it\n', [ASHLR])).toHaveLength(1);
   });
 
   it('does not skip an ordinary slash like and/or', () => {

@@ -28,6 +28,7 @@ import {
   PHONETIC_MIN_KEY,
   PHONETIC_MIN_WINDOW,
   VOWEL_RE,
+  isNonWordToken,
   loneTokenMinSim,
 } from './matcher/tuning.js';
 import { alphaOnly, similarity } from './matcher/text.js';
@@ -67,6 +68,12 @@ interface WindowView {
   readonly anyProtected: boolean;
   /** Multi-token window whose first or last token is a function word (see FUNCTION_WORDS). */
   readonly edgeFunctionWord: boolean;
+  /**
+   * Multi-token window whose first or last token carries no word sound: a bare
+   * numeral or a spelled-out abbreviation (see isNonWordToken). Blocks the
+   * phonetic pass only, where such a token is free and widens the span for nothing.
+   */
+  readonly edgeNonWord: boolean;
   /** Single-token window (any case): held to ALIASED_PLAIN_WORD_MIN in the phonetic pass against terms with explicit aliases. */
   readonly loneToken: boolean;
   /** Single all-lowercase alphabetic token: held to ALIASED_PLAIN_WORD_MIN in the fuzzy pass as well. */
@@ -166,6 +173,7 @@ function makeView(
     mostlyStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
+    edgeNonWord: to > from && (isNonWordToken(first.baseLower) || isNonWordToken(last.baseLower)),
     loneToken: from === to,
     plainWord: from === to && /^\p{Ll}+$/u.test(norm),
     digitsOnly: /^\p{N}+$/u.test(collapsedRaw),
@@ -233,7 +241,10 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
     lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
 
   // --- pass b: phonetic -----------------------------------------------------
-  if (opts.phonetic && index.phoneticKeys.size > 0) {
+  // edgeNonWord: a numeral or a spelled-out abbreviation at either end costs the
+  // length ratio nothing, so the window grew over it for free and then won on
+  // span length. See isNonWordToken for why this is lexical and not phonetic.
+  if (opts.phonetic && !view.edgeNonWord && index.phoneticKeys.size > 0) {
     const alpha = alphaOnly(view.collapsed);
     if (
       alpha.length >= 3 &&

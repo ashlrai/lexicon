@@ -48875,6 +48875,11 @@ function loneTokenMinSim(keyLength) {
   return 0;
 }
 var DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
+var NO_LETTERS_RE = /^[^\p{L}]+$/u;
+var SPELLED_ABBREVIATION_RE = new RegExp("^\\p{L}{1,2}(?:\\.\\p{L}{1,2})+$", "u");
+function isNonWordToken(lower) {
+  return NO_LETTERS_RE.test(lower) || SPELLED_ABBREVIATION_RE.test(lower);
+}
 var FUNCTION_WORDS = new Set(
   `
 a an the
@@ -48978,8 +48983,47 @@ var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
 var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
+var INDENT_RE = /^(?: {4}|\t)/;
+var LIST_OR_QUOTE_RE = /^(?:[-*+>]|\d+[.)])(?:\s|$)/;
+function isBlank(line2) {
+  return line2.trim().length === 0;
+}
+function opensUnder(above) {
+  return above === "" || !/^[ \t]/.test(above) && !LIST_OR_QUOTE_RE.test(above);
+}
+function indentedCodeRanges(text) {
+  const out = [];
+  let at = 0;
+  let prevBlank = true;
+  let above = "";
+  let open2;
+  for (const line2 of text.split("\n")) {
+    const start = at;
+    const end = at + line2.length;
+    at = end + 1;
+    if (isBlank(line2)) {
+      prevBlank = true;
+      continue;
+    }
+    const indented = INDENT_RE.test(line2);
+    if (open2) {
+      if (indented) open2.end = end;
+      else {
+        out.push(open2);
+        open2 = void 0;
+      }
+    }
+    if (!open2 && indented && prevBlank && !LIST_OR_QUOTE_RE.test(line2.trim()) && opensUnder(above)) {
+      open2 = { start, end };
+    }
+    prevBlank = false;
+    above = line2;
+  }
+  if (open2) out.push(open2);
+  return out;
+}
 function collectRanges(text) {
-  const ranges = [];
+  const ranges = indentedCodeRanges(text);
   for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m;
@@ -49615,6 +49659,7 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     mostlyStop,
     anyProtected,
     edgeFunctionWord: to > from && (FUNCTION_WORDS.has(first.baseLower) || FUNCTION_WORDS.has(last.baseLower)),
+    edgeNonWord: to > from && (isNonWordToken(first.baseLower) || isNonWordToken(last.baseLower)),
     loneToken: from === to,
     plainWord: from === to && new RegExp("^\\p{Ll}+$", "u").test(norm),
     digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
@@ -49665,7 +49710,7 @@ function findBest(view, index, opts) {
   if (exactHit) return exactHit;
   if (view.allStop || view.mostlyStop || view.anyProtected || view.digitsOnly || view.edgeFunctionWord) return void 0;
   const barFor = (termIndex, lone) => lone && index.hasExplicitAliases[termIndex] ? Math.max(opts.minConfidence, ALIASED_PLAIN_WORD_MIN) : opts.minConfidence;
-  if (opts.phonetic && index.phoneticKeys.size > 0) {
+  if (opts.phonetic && !view.edgeNonWord && index.phoneticKeys.size > 0) {
     const alpha = alphaOnly(view.collapsed);
     if (alpha.length >= 3 && alpha.length * 2 >= index.phoneticMinLen && alpha.length <= index.phoneticMaxLen * 2) {
       const key = doubleMetaphone(alpha)[0];
