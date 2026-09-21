@@ -16,6 +16,7 @@ import {
   emptyLexicon,
   isTrusted,
   readLexiconFile,
+  withLexiconLock,
   refreshTrust,
   resolvePaths,
   writeLexiconFile,
@@ -420,23 +421,33 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
 
   let mergedElsewhere = 0;
   if (changed) {
-    if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
-      try {
-        const disk = await readLexiconFile(file.path, file.scope);
-        const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
-        // The session never touches settings, so the on-disk ones win too.
-        file.lexicon = { ...disk.lexicon, terms: merged.terms };
-        mergedElsewhere = merged.changes;
-      } catch (err) {
-        io.stderr(
-          `lexicon: ${safe(file.path)} changed during review but could not be re-read (${safeLines(errorMessage(err))}); writing the reviewed version\n`,
-        );
+    // The lock goes here and not around the session. A review is interactive
+    // and can sit open for minutes, so holding the file for its duration would
+    // block every other writer on a human reading terms; that is what
+    // `reconcileReview` exists for instead. What must be atomic is the last
+    // few milliseconds: the digest check, the re-read it decides on, the merge
+    // and the write. Without the lock a writer landing between the re-read and
+    // the write is merged against a copy that is already stale, and the write
+    // renames it away while reporting the merge succeeded.
+    await withLexiconLock(file.path, async () => {
+      if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
+        try {
+          const disk = await readLexiconFile(file.path, file.scope);
+          const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
+          // The session never touches settings, so the on-disk ones win too.
+          file.lexicon = { ...disk.lexicon, terms: merged.terms };
+          mergedElsewhere = merged.changes;
+        } catch (err) {
+          io.stderr(
+            `lexicon: ${safe(file.path)} changed during review but could not be re-read (${safeLines(errorMessage(err))}); writing the reviewed version\n`,
+          );
+          file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
+        }
+      } else {
         file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
       }
-    } else {
-      file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
-    }
-    await writeLexiconFile(file);
+      await writeLexiconFile(file);
+    });
     // The user's own edit must not flip a trusted project file to 'changed'.
     if (file.scope === 'project') await refreshTrust(file.path, store);
   }

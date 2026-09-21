@@ -42,6 +42,8 @@ Method, full tables and every failing case are in [docs/BENCHMARK.md](docs/BENCH
 | whisper.cpp's own `--prompt` hint list | 76.0% | n/a, nothing runs |
 | **Lexicon** | **91.0%** | **0 of 72** |
 
+Every row uses the same curated seventy-term lexicon (`bench/lexicon.yaml`). The prose column is a property of the terms in the file as much as of the matcher, so a lexicon assembled some other way is a different measurement.
+
 Exact substitution recovers the spellings someone already wrote down, and nothing else. It cannot reach `Versal`, `Superbase`, `CloudFloor` or `pedantic`, because no table written by hand contains the mistake you have not heard yet. The phonetic and fuzzy tiers exist for that gap and recover 31 of the 279 term slots on their own, which is 11 points. The remaining 9 points over the casing-aware row come from the alias tier's tolerance for how the recognizer breaks a name into words, since that row already matches case. `--prompt` is a complement rather than a rival: stacked with the lexicon it reaches **95.7%**.
 
 Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose because nothing runs, which is the absence of the feature rather than an advantage. `--prompt` is not the same case: it biases the recognizer itself, so whatever it changes is already in the transcript before scoring begins, while the metric counts sentences a post-pass altered. That cell is unmeasured rather than zero. Telling which way it goes would mean diffing prompted transcripts against unprompted ones, which this harness does not do.
@@ -72,7 +74,7 @@ npm i -g @ashlr/lexicon                                        # or npm (Node 20
 
 Then open Claude Code and say a sentence with your company name in it. Done.
 
-The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. Every step is optional and safe to rerun, and `lexicon setup --dry-run` prints the whole plan without writing anything.
+The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. Every step is optional and safe to rerun, and `lexicon setup --dry-run` writes nothing while describing the run you would get from the same command without it: the steps it would perform, and the ones it would stop and ask about, with the answer pressing Enter gives each.
 
 <details>
 <summary>What <code>lexicon setup</code> does, in seven numbered steps</summary>

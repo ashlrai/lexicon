@@ -53659,21 +53659,24 @@ async function installPack(name, opts = {}) {
   const pack = await loadPack(name, opts);
   const scope = opts.scope ?? "global";
   const storeOpts2 = { ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {}, ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {} };
-  let added = 0;
-  let merged = 0;
-  let file2;
-  for (const term of pack.lexicon.terms) {
-    const incoming = { ...term, aliases: [...term.aliases], source: "pack" };
-    if (term.never) incoming.never = [...term.never];
-    const result = await addTerm(incoming, { ...storeOpts2, scope });
-    file2 = result.file;
-    if (result.created) added += 1;
-    else merged += 1;
-  }
-  if (!file2) throw new Error(`pack "${name}" has no terms`);
-  const packs = dedupe([...file2.lexicon.settings?.packs ?? [], name]);
-  await writePacksSetting(file2, packs, storeOpts2);
-  return { pack: info(pack), added, merged, path: file2.path, scope };
+  const targetPath = await resolveScopeWritePath(scope, storeOpts2);
+  return withLexiconLock(targetPath, async () => {
+    let added = 0;
+    let merged = 0;
+    let file2;
+    for (const term of pack.lexicon.terms) {
+      const incoming = { ...term, aliases: [...term.aliases], source: "pack" };
+      if (term.never) incoming.never = [...term.never];
+      const result = await addTerm(incoming, { ...storeOpts2, scope });
+      file2 = result.file;
+      if (result.created) added += 1;
+      else merged += 1;
+    }
+    if (!file2) throw new Error(`pack "${name}" has no terms`);
+    const packs = dedupe([...file2.lexicon.settings?.packs ?? [], name]);
+    await writePacksSetting(file2, packs, storeOpts2);
+    return { pack: info(pack), added, merged, path: file2.path, scope };
+  });
 }
 
 // src/core/demo.ts
@@ -55687,15 +55690,19 @@ async function runInit(opts, io) {
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
   const target = opts.project ? paths.project ?? path18.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
-  if (existsSync8(target)) {
+  const created = await withLexiconLock(target, async () => {
+    if (existsSync8(target)) return false;
+    const lexicon = emptyLexicon();
+    lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
+    const file2 = { path: target, scope, lexicon, exists: false };
+    await writeLexiconFile(file2);
+    await fs12.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+    return true;
+  });
+  if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
     return 0;
   }
-  const lexicon = emptyLexicon();
-  lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
-  const file2 = { path: target, scope, lexicon, exists: false };
-  await writeLexiconFile(file2);
-  await fs12.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
   line(io, `created ${scope} lexicon: ${safe(target)}`);
   if (scope === "project") {
     await trustProject(target, { cwd });

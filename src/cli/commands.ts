@@ -66,6 +66,7 @@ import {
   resolvePaths,
   suggestAliases,
   trustProject,
+  withLexiconLock,
   writeLexiconFile,
 } from '../core/index.js';
 import type {
@@ -218,18 +219,27 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
     ? (paths.project ?? path.join(findGitRoot(cwd) ?? cwd, PROJECT_FILE_NAME))
     : paths.global;
 
-  if (existsSync(target)) {
+  // The existence check, the write and the appended example are one operation.
+  // Apart, two inits race to create the same file and the second overwrites the
+  // first, and an add landing between the write and the append is renamed away
+  // by nothing but read back without the comment. The lock is re-entrant, so
+  // the writeLexiconFile inside takes it again for free.
+  const created = await withLexiconLock(target, async () => {
+    if (existsSync(target)) return false;
+    const lexicon = emptyLexicon();
+    lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
+    const file: LexiconFile = { path: target, scope, lexicon, exists: false };
+    await writeLexiconFile(file);
+    // YAML comments survive round-trips as far as parsing goes (they are simply
+    // ignored), so appending the example after the generated body is safe.
+    await fs.appendFile(target, EXAMPLE_TERM_COMMENT, 'utf8');
+    return true;
+  });
+
+  if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
     return 0;
   }
-
-  const lexicon = emptyLexicon();
-  lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
-  const file: LexiconFile = { path: target, scope, lexicon, exists: false };
-  await writeLexiconFile(file);
-  // YAML comments survive round-trips as far as parsing goes (they are simply
-  // ignored), so appending the example after the generated body is safe.
-  await fs.appendFile(target, EXAMPLE_TERM_COMMENT, 'utf8');
   line(io, `created ${scope} lexicon: ${safe(target)}`);
   if (scope === 'project') {
     // The user asked for this file; that is the approval `lexicon trust` records.

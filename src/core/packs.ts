@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { parseLexicon } from './schema.js';
-import { ProjectTrustError, addTerm, readLexiconFile, resolvePaths, writeLexiconFile } from './store.js';
+import { ProjectTrustError, addTerm, readLexiconFile, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
 import { isTrusted, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
@@ -258,21 +258,32 @@ export async function installPack(
   const pack = await loadPack(name, opts);
   const scope: TermScope = opts.scope ?? 'global';
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
-  let added = 0;
-  let merged = 0;
-  let file: LexiconFile | undefined;
-  for (const term of pack.lexicon.terms) {
-    const incoming: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
-    if (term.never) incoming.never = [...term.never];
-    const result = await addTerm(incoming, { ...storeOpts, scope });
-    file = result.file;
-    if (result.created) added += 1;
-    else merged += 1;
-  }
-  if (!file) throw new Error(`pack "${name}" has no terms`);
-  const packs = dedupe([...(file.lexicon.settings?.packs ?? []), name]);
-  await writePacksSetting(file, packs, storeOpts);
-  return { pack: info(pack), added, merged, path: file.path, scope };
+
+  // One lock around the whole install, not one per term. Each `addTerm` takes
+  // the same lock and the lock is re-entrant, so this costs nothing extra and
+  // closes the window that mattered: `file` below is the snapshot the last
+  // `addTerm` wrote, and `writePacksSetting` rewrites the whole document from
+  // it. A term another writer added in between was read by nobody here and
+  // would be renamed away by that final write, with the pack still reporting
+  // success. The trust gate runs in `resolveScopeWritePath`, ahead of the lock.
+  const targetPath = await resolveScopeWritePath(scope, storeOpts);
+  return withLexiconLock(targetPath, async () => {
+    let added = 0;
+    let merged = 0;
+    let file: LexiconFile | undefined;
+    for (const term of pack.lexicon.terms) {
+      const incoming: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
+      if (term.never) incoming.never = [...term.never];
+      const result = await addTerm(incoming, { ...storeOpts, scope });
+      file = result.file;
+      if (result.created) added += 1;
+      else merged += 1;
+    }
+    if (!file) throw new Error(`pack "${name}" has no terms`);
+    const packs = dedupe([...(file.lexicon.settings?.packs ?? []), name]);
+    await writePacksSetting(file, packs, storeOpts);
+    return { pack: info(pack), added, merged, path: file.path, scope };
+  });
 }
 
 function lower(s: string): string {

@@ -550,8 +550,13 @@ export function findTerm(lexicon: Lexicon, canonical: string): Term | undefined 
 /**
  * The path a scoped write targets. For project scope the trust gate runs here,
  * before the file is locked or read.
+ *
+ * Exported because a caller that performs several writes as one operation has
+ * to lock the same path this resolves, and resolving it a second way would be
+ * a second chance to disagree. `installPack` is the case: it adds every term
+ * and then rewrites `settings.packs`, and those have to be one transaction.
  */
-async function resolveScopeWritePath(scope: TermScope, opts: StoreOptions): Promise<string> {
+export async function resolveScopeWritePath(scope: TermScope, opts: StoreOptions): Promise<string> {
   const paths = resolvePaths(opts);
   if (scope === 'global') return paths.global;
   const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
