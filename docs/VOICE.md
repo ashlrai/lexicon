@@ -69,10 +69,11 @@ uses a file directly and never downloads.
 macOS attributes the microphone to the app that launched the recorder, so the
 **terminal, Raycast, Hammerspoon or whatever runs `lexicon voice`** must be allowed
 under System Settings > Privacy & Security > Microphone. The first recording from a
-new launcher triggers the permission prompt; until it is granted ffmpeg writes an
-empty WAV and `lexicon voice` reports "recording failed (no audio written)" with this
-hint. `--paste` additionally needs Accessibility permission for the same app (it
-sends a keystroke).
+new launcher triggers the permission prompt; until it is granted ffmpeg exits without
+opening its output, so nothing is recorded and `lexicon voice` reports
+"the recorder ... stopped on its own and left no audio", quotes ffmpeg's own last
+line, and prints this hint. `--paste` additionally needs Accessibility permission for
+the same app (it sends a keystroke).
 
 ## Usage
 
@@ -102,20 +103,38 @@ lexicon voice --status                   # "recording since <time>" (exit 0) or 
 The first call spawns ffmpeg detached, writes
 `~/.config/lexicon/voice/recording.json` (`{ pid, wav, startedAt }`), prints
 `recording` and exits immediately. The second call stops that pid, waits up to 3 s,
-transcribes, outputs, and removes the state file and the WAV.
+transcribes, outputs, and removes the state file and the WAV. The recorded length
+reported in `--json` and in `history.jsonl` is wall clock for a recording this command
+stopped, and the audio's own length (bytes over 32000 a second) for one that had
+already ended on its own.
 
 Stopping differs by platform. On macOS and Linux the recorder gets SIGINT and ffmpeg
 finalizes the WAV header on its way out. Windows has no equivalent: Node maps every
 signal to `TerminateProcess`, and a detached recorder stopped by a different process
 shares no console, so there is nothing to deliver a real interrupt through. The
-recorder is killed outright and the header is left unfinalized. That is safe because
-ffmpeg runs with `-flush_packets 1`, so the audio is already on disk, and the
-transcriber validates the container and reads an unfinalized file rather than
-trusting the header. What Windows loses is the clean shutdown, not the recording.
+recorder is killed outright and the header is left unfinalized. The recording itself
+survives, because ffmpeg runs with `-flush_packets 1` and the transcriber validates
+the container rather than trusting the header: measured on macOS with ffmpeg 9.0.2, a
+SIGKILL and a SIGINT at the same point left the same 112,640 bytes of audio and
+differed only in the header. What is lost on Windows is whatever the input device was
+still holding. `ffmpegRecordArgs` passes no `-audio_buffer_size`, so dshow uses the
+device's default, which ffmpeg documents as typically a multiple of 500 ms: budget
+half a second or so off the end of each toggle, not "a fraction of a second". Nothing
+here has measured it, because dshow does not exist off Windows.
 
-A state file whose pid is gone is treated as "start". A
-forgotten recording stops itself after 10 minutes. ffmpeg's stderr for a toggle
-recording goes to `voice/recorder.log`.
+A forgotten recording stops itself after 10 minutes (`-t 600`). **That is a finished
+recording, not a mess to clear up**: the next press finds a pid that is gone, looks at
+the WAV, and transcribes it like any other. The same goes for a recorder that crashed
+partway, whose header ffmpeg never finalized. A recorder that left nothing usable (no
+microphone permission, so ffmpeg never opened its output) is reported with ffmpeg's
+own last lines instead of silently starting another doomed recording, and the command
+exits 1.
+
+Nothing deletes a capture that holds bytes. A WAV is removed when whisper has read it,
+and when it is empty (the placeholder a start creates before ffmpeg runs). A capture
+this command refuses to transcribe is kept, and the error names the file, because a
+refusal is a parser's opinion about a container and the audio is the user's. ffmpeg's
+stderr for a toggle recording goes to `voice/recorder.log`.
 
 ### Hotkey recipes
 

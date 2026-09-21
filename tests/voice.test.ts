@@ -1,3 +1,4 @@
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +18,7 @@ import { installHint, locateWhisperCli } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
 import {
   PROVISIONAL_TTL_MS,
+  captureSeconds,
   claimState,
   ensureVoiceDir,
   ffmpegRecordArgs,
@@ -71,6 +73,19 @@ function wavBytes(opts: { audioBytes: number; finalized: boolean; riff?: string 
   header.write('data', 36, 'latin1');
   header.writeUInt32LE(opts.finalized ? opts.audioBytes : UNKNOWN, 40);
   return Buffer.concat([header, Buffer.alloc(opts.audioBytes, 7)]);
+}
+
+/**
+ * Put a chunk between `fmt ` and `data`, where ffmpeg puts its `LIST`/`INFO`.
+ * `size` is the declared body size; an odd one gets the RIFF pad byte, so a
+ * test can take that byte away again and see what the walk does without it.
+ */
+function withChunkBeforeData(wav: Buffer, id: string, size: number): Buffer {
+  const chunk = Buffer.alloc(8 + size + (size % 2));
+  chunk.write(id, 0, 'latin1');
+  chunk.writeUInt32LE(size, 4);
+  chunk.write('INFOISFT', 8, 'latin1');
+  return Buffer.concat([wav.subarray(0, 36), chunk, wav.subarray(36)]);
 }
 
 const AVFOUNDATION_LIST = `[AVFoundation indev @ 0x86b01c140] AVFoundation video devices:
@@ -271,7 +286,29 @@ function whisperCall(h: Harness): { cmd: string; args: string[] } | undefined {
   return h.execCalls.find((c) => path.basename(c.cmd) === 'whisper-cli');
 }
 
+/**
+ * A state file whose recorder is gone (pid 99999 is not in `h.alive`), holding
+ * `bytes` as its capture. This is what the next hotkey press finds after the
+ * recorder hit the ten-minute cap, crashed, or never started. Returns the WAV.
+ */
+async function deadRecorderState(h: Harness, bytes: Buffer): Promise<string> {
+  const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
+  await fs.mkdir(path.dirname(wav), { recursive: true });
+  await fs.writeFile(wav, bytes);
+  await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 99999, wav, startedAt: '2026-09-19T11:00:00.000Z' }));
+  return wav;
+}
+
 const posix = process.platform !== 'win32';
+
+/** True when ffmpeg is on PATH, so the real-capture checks can run. */
+function hasFfmpeg(): boolean {
+  try {
+    return spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
+  } catch {
+    return false;
+  }
+}
 
 async function modeOf(p: string): Promise<number> {
   return (await fs.stat(p)).mode & 0o777;
@@ -345,23 +382,89 @@ describe('lexicon voice --toggle', () => {
     expect(w?.args).toEqual(expect.arrayContaining(['-f', wav, '-m', path.join(h.dir, 'models', 'ggml-base.en.bin'), '-l', 'en', '-nt', '-np', '-oj']));
   });
 
-  it('cleans up a stale state file (pid not alive) and starts a new recording', async () => {
+  /**
+   * The data-loss bug this file exists to keep fixed. Every `--toggle` capture
+   * is spawned with `-t 600`, so a recording nobody stopped ends itself at ten
+   * minutes: complete, finalized, ten minutes of speech. The next press found a
+   * pid that was gone, called that "stale" and deleted the WAV without opening
+   * it, then printed `recording` as if nothing had happened.
+   */
+  it('transcribes the finished recording a self-terminated recorder left behind', async () => {
     const h = await harness();
-    const staleWav = path.join(h.dir, 'voice', 'recording-stale.wav');
-    await fs.mkdir(path.dirname(staleWav), { recursive: true });
-    await fs.writeFile(staleWav, Buffer.alloc(100));
-    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 99999, wav: staleWav, startedAt: '2026-09-19T11:00:00.000Z' }));
+    const wav = await deadRecorderState(h, wavBytes({ audioBytes: 600 * 32_000, finalized: true }));
 
     h.opts.quiet = false;
     const code = await runVoiceToggle(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_OK);
-    expect(h.out).toEqual(['recording\n']);
-    expect(h.err.join('')).toContain('stale recording state (pid 99999 is gone)');
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(h.err.join('')).toContain('no longer running; transcribing the 600s it recorded');
+    // It was transcribed, not replaced by a new recording.
+    expect(whisperCall(h)?.args).toEqual(expect.arrayContaining(['-f', wav]));
+    expect(h.spawnCalls).toEqual([]);
     expect(h.kills).toEqual([]);
-    expect(h.spawnCalls).toHaveLength(1);
-    const state = await readState(h.globalPath);
-    expect(state?.pid).toBe(4242);
-    await expect(fs.access(staleWav)).rejects.toThrow();
+    expect(await readState(h.globalPath)).toBeUndefined();
+    // The length comes from the audio, not from the wall clock since startedAt.
+    expect((await readHistory(h.globalPath))[0].ms.record).toBe(600_000);
+  });
+
+  it('transcribes what a crashed recorder wrote instead of deleting it', async () => {
+    // Device unplugged partway: ffmpeg is gone and never wrote its trailer, so
+    // the header still says "size unknown". The audio is on disk all the same.
+    const h = await harness();
+    const wav = await deadRecorderState(h, wavBytes({ audioBytes: 112_640, finalized: false }));
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(whisperCall(h)?.args).toEqual(expect.arrayContaining(['-f', wav]));
+    expect(h.spawnCalls).toEqual([]);
+    // Deleted only once whisper had read it.
+    await expect(fs.access(wav)).rejects.toThrow();
+  });
+
+  it('says why a recorder that never started produced nothing, and removes only the empty placeholder', async () => {
+    // Microphone permission denied: ffmpeg exits without ever opening the
+    // output, so what is on disk is the 0-byte file the start pre-created.
+    // The old code printed `recording` here, for ever, with no explanation.
+    const h = await harness();
+    const wav = await deadRecorderState(h, Buffer.alloc(0));
+    await fs.writeFile(recorderLogPath(h.globalPath), '[AVFoundation indev @ 0x1] Error opening input: Input/output error\n');
+
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_ERROR);
+    expect(h.out).toEqual([]);
+    const err = h.err.join('');
+    expect(err).toContain('stopped on its own and left no audio (the recording is empty)');
+    expect(err).toContain('ffmpeg said: [AVFoundation indev @ 0x1] Error opening input: Input/output error');
+    expect(err).toContain('Microphone permission');
+    expect(err).toContain('Press the hotkey again');
+    expect(h.spawnCalls).toEqual([]);
+    expect(await readState(h.globalPath)).toBeUndefined();
+    // Nothing was in it, so nothing is kept.
+    await expect(fs.access(wav)).rejects.toThrow();
+  });
+
+  it('keeps a capture it cannot parse rather than deleting the user audio', async () => {
+    const h = await harness();
+    const wav = await deadRecorderState(h, Buffer.alloc(100_000, 3));
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('the recording is not a WAV file');
+    expect(h.err.join('')).toContain(`the 100000 bytes that were written are kept at ${wav}`);
+    expect((await fs.stat(wav)).size).toBe(100_000);
+  });
+
+  it('the stop half keeps a capture it refuses, and names it', async () => {
+    const h = await harness();
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    const wav = (await readState(h.globalPath))?.wav ?? '';
+    // The recorder is alive, but what it wrote is not something we can read.
+    await fs.writeFile(wav, Buffer.alloc(2048, 9));
+    h.out.length = 0;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.kills).toEqual([{ pid: 4242, signal: 'SIGINT' }]);
+    expect(h.err.join('')).toContain(`the 2048 bytes that were written are kept at ${wav}`);
+    expect((await fs.stat(wav)).size).toBe(2048);
   });
 
   it('SIGKILLs a recorder that ignores SIGINT past the grace period', async () => {
@@ -542,20 +645,43 @@ describe('lexicon voice --toggle start race', () => {
     expect(await readState(h.globalPath)).toBeUndefined();
   });
 
-  it('replaces a stale provisional record (a start that died before spawning)', async () => {
+  it('replaces a stale provisional record (a start that died before recording its pid)', async () => {
     const h = await harness();
     const staleWav = path.join(voiceDir(h.globalPath), 'recording-stale.wav');
     await fs.mkdir(path.dirname(staleWav), { recursive: true });
-    await fs.writeFile(staleWav, Buffer.alloc(100));
+    // The usual case: the claim created the file, the start died before ffmpeg
+    // wrote anything into it. Nothing to lose, so it goes.
+    await fs.writeFile(staleWav, Buffer.alloc(0));
     await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ wav: staleWav, startedAt: '2026-09-19T11:00:00.000Z' }));
     h.opts.quiet = false;
     const code = await runVoiceToggle(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_OK);
     expect(h.out).toEqual(['recording\n']);
-    expect(h.err.join('')).toContain('stale recording state (a start that never spawned)');
+    expect(h.err.join('')).toContain('stale recording state (a start that never recorded its pid)');
     expect(h.spawnCalls).toHaveLength(1);
     expect((await readState(h.globalPath))?.pid).toBe(4242);
     await expect(fs.access(staleWav)).rejects.toThrow();
+  });
+
+  /**
+   * The other way a provisional record goes stale: the start spawned ffmpeg and
+   * then died before writing the pid, so an orphan recorder is still filling
+   * that WAV and we have no pid to stop it with. We cannot transcribe a file
+   * something else is writing, but deleting it is still the wrong answer.
+   */
+  it('keeps the audio an orphaned recorder is still writing, and says where it is', async () => {
+    const h = await harness();
+    const staleWav = path.join(voiceDir(h.globalPath), 'recording-orphan.wav');
+    await fs.mkdir(path.dirname(staleWav), { recursive: true });
+    await fs.writeFile(staleWav, wavBytes({ audioBytes: 64_000, finalized: false }));
+    await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ wav: staleWav, startedAt: '2026-09-19T11:00:00.000Z' }));
+    h.opts.quiet = false;
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.err.join('')).toContain(`the previous start left 64044 bytes at ${staleWav}; it is kept`);
+    expect((await fs.stat(staleWav)).size).toBe(64_044);
+    // and a new recording started, into a different file
+    expect(h.spawnCalls).toHaveLength(1);
+    expect(h.spawnCalls[0].args.at(-1)).not.toBe(staleWav);
   });
 
   it('a failed spawn removes the provisional record so the next press starts cleanly', async () => {
@@ -1024,7 +1150,7 @@ describe('capture validation', () => {
   it('accepts a finalized capture and says so', async () => {
     const wav = await write('finalized.wav', wavBytes({ audioBytes: 640, finalized: true }));
 
-    expect(await inspectWav(wav)).toEqual({ ok: true, audioBytes: 640, finalized: true });
+    expect(await inspectWav(wav)).toEqual({ ok: true, audioBytes: 640, finalized: true, bytes: 684 });
   });
 
   it('rejects a header with no audio behind it', async () => {
@@ -1059,16 +1185,136 @@ describe('capture validation', () => {
   it('walks past the chunks ffmpeg writes before the audio', async () => {
     // ffmpeg puts a LIST/INFO chunk between `fmt ` and `data`; the walk has to
     // step over it rather than give up at the first chunk that is not `data`.
-    const base = wavBytes({ audioBytes: 200, finalized: false });
-    const info = Buffer.alloc(8 + 12);
-    info.write('LIST', 0, 'latin1');
-    info.writeUInt32LE(12, 4);
-    info.write('INFOISFT', 8, 'latin1');
-    const wav = await write('listed.wav', Buffer.concat([base.subarray(0, 36), info, base.subarray(36)]));
+    const wav = await write('listed.wav', withChunkBeforeData(wavBytes({ audioBytes: 200, finalized: false }), 'LIST', 12));
 
     const check = await inspectWav(wav);
     expect(check.ok).toBe(true);
     expect(check.audioBytes).toBe(200);
+  });
+
+  /**
+   * The walk used to read the first 4096 bytes and look for `data` inside them,
+   * so a `data` header past byte 4088 was reported as "no audio data chunk" and
+   * the caller deleted the recording. A long `LIST`/`INFO` (or any writer's
+   * padding chunk) puts it there.
+   */
+  it('finds a data chunk that sits past the first 4 KB', async () => {
+    const wav = await write('far.wav', withChunkBeforeData(wavBytes({ audioBytes: 320, finalized: true }), 'JUNK', 8000));
+
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(true);
+    expect(check.audioBytes).toBe(320);
+  });
+
+  /** RIFF pads an odd chunk to an even offset. Not every writer does. */
+  it('recovers when an odd-sized chunk has no RIFF pad byte', async () => {
+    const padded = withChunkBeforeData(wavBytes({ audioBytes: 160, finalized: true }), 'LIST', 13);
+    expect((await inspectWav(await write('padded.wav', padded))).audioBytes).toBe(160);
+    // Same file with the pad byte the writer was supposed to add left out.
+    const at = padded.indexOf(Buffer.from('data', 'latin1'));
+    const unpadded = Buffer.concat([padded.subarray(0, at - 1), padded.subarray(at)]);
+    const check = await inspectWav(await write('unpadded.wav', unpadded));
+    expect(check.ok).toBe(true);
+    expect(check.audioBytes).toBe(160);
+  });
+
+  /**
+   * A `data` chunk that declares 0 is not ffmpeg's "size unknown" (that is
+   * 0xFFFFFFFF, measured). Reading it as unknown made the trailing `LIST`/`INFO`
+   * behind it look like audio, so 30 bytes of ASCII went to whisper.cpp as PCM.
+   */
+  it('does not read trailing metadata as audio when the data chunk declares 0', async () => {
+    const header = wavBytes({ audioBytes: 0, finalized: true }); // 44 bytes, data size 0
+    const info = Buffer.alloc(8 + 30);
+    info.write('LIST', 0, 'latin1');
+    info.writeUInt32LE(30, 4);
+    info.write('INFOISFTLavf63.1.102 xxxxx', 8, 'latin1');
+    const check = await inspectWav(await write('zerodata.wav', Buffer.concat([header, info])));
+    expect(check.ok).toBe(false);
+    expect(check.reason).toContain('no audio');
+    expect(check.audioBytes).toBe(0);
+  });
+
+  /** A writer that uses 0 as its placeholder still has real audio behind it. */
+  it('accepts audio behind a data chunk that declares 0', async () => {
+    const wav = wavBytes({ audioBytes: 6400, finalized: true });
+    wav.writeUInt32LE(0, 40);
+    const check = await inspectWav(await write('zerostream.wav', wav));
+    expect(check.ok).toBe(true);
+    expect(check.audioBytes).toBe(6400);
+    expect(check.finalized).toBe(false);
+  });
+
+  it('reports the size on disk so a caller can decide whether there is anything to keep', async () => {
+    expect((await inspectWav(await write('some.wav', Buffer.alloc(1000)))).bytes).toBe(1000);
+    expect((await inspectWav(await write('none.wav', Buffer.alloc(0)))).bytes).toBe(0);
+    expect((await inspectWav(path.join(dir, 'gone.wav'))).bytes).toBe(0);
+  });
+});
+
+/**
+ * The fixtures above are what we believe ffmpeg writes. These three run the
+ * real thing through the three ends a `--toggle` capture can come to, and check
+ * the belief. A synthetic `lavfi` source stands in for the microphone: the WAV
+ * muxer, which is what `inspectWav` reads, does not know the difference, and no
+ * CI runner has audio hardware.
+ *
+ * Measured here on macOS with ffmpeg 9.0.2: a capture ended by `-t` carries its
+ * real sizes; one killed mid-flight carries 0xFFFFFFFF in both the RIFF and the
+ * `data` header and keeps every byte ffmpeg had already flushed (a SIGKILL and
+ * a SIGINT at 3 s left the same 112,640 bytes of audio); and an input that
+ * never opens leaves no output file at all, which is why the only file the
+ * toggle deletes is the empty one its own start created.
+ */
+describe.skipIf(process.env.LEXICON_SKIP_E2E || !hasFfmpeg())('capture validation against real ffmpeg', () => {
+  let dir = '';
+  const sine = ['-re', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000'];
+  const encode = ['-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-flush_packets', '1', '-y'];
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-ffmpeg-'));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('accepts a capture that ended itself on -t, the way a forgotten toggle does', async () => {
+    const wav = path.join(dir, 'selfterm.wav');
+    const run = spawnSync('ffmpeg', ['-nostdin', '-hide_banner', '-loglevel', 'error', ...sine, '-t', '0.5', ...encode, wav]);
+    expect(run.status).toBe(0);
+
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(true);
+    expect(check.finalized).toBe(true);
+    expect(check.audioBytes).toBe(16_000); // 0.5 s at 32000 bytes a second
+    expect(captureSeconds(check.audioBytes)).toBe(0.5);
+  });
+
+  it('accepts a capture whose recorder was killed before it could write the trailer', async () => {
+    const wav = path.join(dir, 'killed.wav');
+    const child = spawn('ffmpeg', ['-nostdin', '-hide_banner', '-loglevel', 'error', ...sine, '-t', '600', ...encode, wav]);
+    await new Promise((r) => setTimeout(r, 700));
+    child.kill('SIGKILL');
+    await new Promise((r) => child.once('exit', r));
+
+    const header = await fs.readFile(wav);
+    expect(header.readUInt32LE(4)).toBe(0xffff_ffff); // RIFF size: never patched
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(true);
+    expect(check.finalized).toBe(false);
+    expect(check.audioBytes).toBeGreaterThan(0);
+    expect(check.audioBytes).toBe(check.bytes - 78); // ffmpeg's header, LIST/INFO and all
+  });
+
+  it('leaves no file at all when the input never opens', async () => {
+    const wav = path.join(dir, 'nodev.wav');
+    const run = spawnSync('ffmpeg', ['-nostdin', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'nope=x', ...encode, wav]);
+    expect(run.status).not.toBe(0);
+
+    const check = await inspectWav(wav);
+    expect(check.ok).toBe(false);
+    expect(check.bytes).toBe(0);
+    expect(check.reason).toContain('no file');
   });
 });
 

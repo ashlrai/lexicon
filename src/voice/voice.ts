@@ -9,7 +9,10 @@
  * - `runVoice`: record in this process until Enter, Ctrl-C or `--seconds`.
  * - `runVoiceToggle`: the hotkey mode. First call starts a detached ffmpeg and
  *   writes `<dirname(globalPath)>/voice/recording.json`; second call stops it,
- *   transcribes and outputs. A stale state file (pid gone) counts as "start".
+ *   transcribes and outputs. A recorder that is gone by the second press (it
+ *   hit the ten-minute cap, or crashed) is not a mess to sweep up: its capture
+ *   is transcribed like any other, and a capture with no audio in it is
+ *   reported rather than silently replaced.
  *   The start is atomic: the state file is claimed with an exclusive create
  *   before ffmpeg spawns, so two presses that race start one recorder (the
  *   loser prints `recording` and exits 0).
@@ -21,7 +24,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { diffSummary, loadLexicon, recordHits, resolvePaths } from '../core/index.js';
+import { diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
 import type { Lexicon } from '../core/index.js';
 import { PASTE_APPLESCRIPT } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
@@ -42,6 +45,7 @@ import {
 import type { ChildHandle, VoiceExec, VoiceSpawn } from './process.js';
 import {
   MAX_TOGGLE_SECONDS,
+  captureSeconds,
   claimState,
   clearState,
   ensureVoiceDir,
@@ -57,7 +61,7 @@ import {
   touchPrivateFile,
   writeState,
 } from './recorder.js';
-import type { RecordingState } from './recorder.js';
+import type { RecordingState, WavCheck } from './recorder.js';
 import { MissingToolError, transcribeFile } from './transcribe.js';
 import type { TranscribeResult } from './transcribe.js';
 
@@ -364,6 +368,92 @@ function defaultWaitForStop(): Promise<'enter' | 'sigint'> {
 }
 
 // ---------------------------------------------------------------------------
+// What happens to a capture we will not transcribe
+
+/**
+ * Decide what to do with a capture `inspectWav` refused, and say it.
+ *
+ * The file is removed only when there is nothing in it to lose: no file at all,
+ * or zero bytes (the placeholder `touchPrivateFile` creates before ffmpeg is
+ * spawned, which is exactly what a recorder that never started leaves behind).
+ * Anything else is kept and named. A refusal is this process's reading of a
+ * container, and a reading is not a reason to destroy someone's audio: the
+ * parser has been wrong before (a `data` header past the first 4 KB, a chunk
+ * whose writer skipped the RIFF pad byte), and when it is wrong again the
+ * recording should still be sitting on disk.
+ */
+async function discardOrKeep(capture: WavCheck, wav: string): Promise<string> {
+  if (capture.bytes === 0) {
+    await fs.rm(wav, { force: true }).catch(() => undefined);
+    return '';
+  }
+  return `  the ${capture.bytes} bytes that were written are kept at ${wav}\n`;
+}
+
+/** Microphone-permission hint, which on macOS is the usual reason nothing was recorded. */
+function micPermissionHint(r: Resolved, launcher: string): string {
+  return r.platform === 'darwin'
+    ? `  Check that ${launcher} has Microphone permission: System Settings > Privacy & Security > Microphone.\n`
+    : '';
+}
+
+/** The last few lines of a detached recorder's stderr log, sanitized for a terminal. */
+async function recorderLogTail(r: Resolved, lines = 3): Promise<string> {
+  try {
+    const text = await fs.readFile(recorderLogPath(r.globalPath), 'utf8');
+    return text
+      .trim()
+      .split('\n')
+      .slice(-lines)
+      .map((line) => sanitizeForDisplay(line))
+      .filter((line) => line.length > 0)
+      .join('\n  ');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Transcribe a capture that is already on disk and deliver it. Shared by the
+ * stop half of `--toggle` and by the recovery of a recorder that is no longer
+ * running. The WAV is removed only once whisper has read it; every failure
+ * keeps it and names it.
+ */
+async function transcribeCapture(
+  wav: string,
+  recordMs: number,
+  seconds: number,
+  opts: VoiceOptions,
+  io: VoiceIO,
+  deps: VoiceDeps,
+  r: Resolved,
+): Promise<number> {
+  // ffmpeg is not needed here: the recording exists.
+  const tools = await requireTools(r, io, deps, { ffmpeg: false, whisper: true });
+  if (!tools) {
+    // The audio outlives the missing transcriber; say where it is.
+    io.stderr(`lexicon voice: the recording is kept at ${wav}\n`);
+    return EXIT_MISSING_TOOL;
+  }
+  let lexicon: Lexicon;
+  try {
+    lexicon = await loadMerged(r, opts);
+  } catch (e) {
+    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
+    return EXIT_ERROR;
+  }
+  try {
+    r.log('transcribing ...');
+    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
+    await fs.rm(wav, { force: true }).catch(() => undefined);
+    return await deliver(result, recordMs, seconds, opts, io, deps, r);
+  } catch (e) {
+    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
+    return e instanceof MissingToolError ? EXIT_MISSING_TOOL : EXIT_ERROR;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Foreground mode
 
 /** Record until Enter, Ctrl-C or `--seconds`, then transcribe, normalize and output. Returns the exit code. */
@@ -419,12 +509,12 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 
   const capture = await inspectWav(wav);
   if (!capture.ok) {
-    const err = child.stderr().trim().split('\n').slice(-3).join('\n');
+    const err = sanitizeForDisplay(child.stderr().trim().split('\n').slice(-3).join('\n'));
     io.stderr(
       `lexicon voice: recording failed (${capture.reason})${err ? `: ${err}` : ''}\n` +
-        (r.platform === 'darwin' ? '  Check that this terminal has Microphone permission: System Settings > Privacy & Security > Microphone.\n' : ''),
+        micPermissionHint(r, 'this terminal') +
+        (await discardOrKeep(capture, wav)),
     );
-    await fs.rm(wav, { force: true }).catch(() => undefined);
     return EXIT_ERROR;
   }
 
@@ -455,19 +545,25 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
     if (state && state.pid !== undefined && r.isAlive(state.pid)) {
       return stopAndTranscribe(state as RecordingState & { pid: number }, opts, io, deps, r);
     }
+    if (state && state.pid !== undefined) {
+      return recoverDeadRecorder(state as RecordingState & { pid: number }, opts, io, deps, r);
+    }
     if (state && isProvisional(state) && !isStaleProvisional(state, r.now().getTime())) {
       // A start is in flight (double-tap): idempotent, let it finish.
       io.stdout('recording\n');
       return EXIT_OK;
     }
     if (state) {
-      r.log(
-        isProvisional(state)
-          ? `stale recording state (a start that never spawned); starting a new recording`
-          : `stale recording state (pid ${state.pid} is gone); starting a new recording`,
-      );
+      // A start that died between claiming the state file and recording a pid.
+      // Usually the WAV is the empty file the claim created, but a start can
+      // also die after spawning ffmpeg, in which case an orphan recorder is
+      // still writing to it and we have no pid to stop. Either way the audio
+      // is not ours to delete: keep whatever is there and say so.
+      const orphan = await inspectWav(state.wav);
+      r.log(`stale recording state (a start that never recorded its pid); starting a new recording`);
+      if (orphan.bytes > 0) r.log(`the previous start left ${orphan.bytes} bytes at ${state.wav}; it is kept`);
       await clearState(r.globalPath);
-      await fs.rm(state.wav, { force: true }).catch(() => undefined);
+      if (orphan.bytes === 0) await fs.rm(state.wav, { force: true }).catch(() => undefined);
     }
     const outcome = await startDetached(opts, io, deps, r);
     if (outcome !== 'lost') return outcome;
@@ -490,39 +586,71 @@ async function stopAndTranscribe(
   await clearState(r.globalPath);
   if (stop.killed) r.log('recorder did not stop within 3s; killed (the WAV may be truncated)');
 
-  const tools = await requireTools(r, io, deps, { ffmpeg: false, whisper: true });
-  if (!tools) return EXIT_MISSING_TOOL;
-
   const capture = await inspectWav(state.wav);
   if (!capture.ok) {
+    const tail = await recorderLogTail(r);
     io.stderr(
-      `lexicon voice: recording failed (${capture.reason}: ${state.wav})\n` +
+      `lexicon voice: recording failed (${capture.reason})\n` +
         // Windows cannot interrupt ffmpeg, only terminate it, so say so here
         // rather than let the user hunt for a flush that was never possible.
-        (stop.abrupt ? '  On Windows the recorder is terminated rather than asked to stop; the last fraction of a second is lost.\n' : '') +
-        (r.platform === 'darwin' ? '  Check that the app running this command has Microphone permission: System Settings > Privacy & Security > Microphone.\n' : '') +
+        // How much that costs is the input buffer, not a fraction of a second:
+        // dshow uses the device's default, typically a multiple of 500 ms.
+        (stop.abrupt
+          ? '  On Windows the recorder is terminated rather than asked to stop, so whatever DirectShow still held is lost: the device default is commonly half a second or more.\n'
+          : '') +
+        micPermissionHint(r, 'the app running this command') +
+        (tail ? `  ffmpeg said: ${tail}\n` : '') +
+        (await discardOrKeep(capture, state.wav)) +
         `  ffmpeg log: ${recorderLogPath(r.globalPath)}\n`,
     );
-    await fs.rm(state.wav, { force: true }).catch(() => undefined);
     return EXIT_ERROR;
   }
 
-  let lexicon: Lexicon;
-  try {
-    lexicon = await loadMerged(r, opts);
-  } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${state.wav})\n`);
-    return EXIT_ERROR;
+  return transcribeCapture(state.wav, recordMs, recordMs / 1000, opts, io, deps, r);
+}
+
+/**
+ * The press that finds a recorder that is no longer running.
+ *
+ * This is not an empty state file to sweep up, and the old code treating it as
+ * one silently deleted finished recordings. Every `--toggle` capture is spawned
+ * with `-t MAX_TOGGLE_SECONDS`, so a recording nobody stopped **ends itself at
+ * ten minutes** and leaves a complete, finalized WAV, ten minutes of the user's
+ * speech, which the next press then removed without ever opening it. The same
+ * branch catches a recorder that crashed partway (the device was unplugged) and
+ * one that never started at all (no microphone permission), and for those it
+ * used to print `recording` again and never say why nothing was happening.
+ *
+ * So: look at the capture. Audio is transcribed, whatever killed the recorder.
+ * Nothing usable is reported, with ffmpeg's own last words, and only a file
+ * with no bytes in it is deleted.
+ */
+async function recoverDeadRecorder(
+  state: RecordingState & { pid: number },
+  opts: VoiceOptions,
+  io: VoiceIO,
+  deps: VoiceDeps,
+  r: Resolved,
+): Promise<number> {
+  await clearState(r.globalPath);
+  const capture = await inspectWav(state.wav);
+  if (capture.ok) {
+    // Wall clock since `startedAt` would count the time the recorder was dead
+    // as recording. The bytes cannot: 16 kHz mono s16 is 32000 bytes a second.
+    const seconds = captureSeconds(capture.audioBytes);
+    r.log(`the recorder (pid ${state.pid}) is no longer running; transcribing the ${seconds}s it recorded`);
+    return transcribeCapture(state.wav, Math.round(seconds * 1000), seconds, opts, io, deps, r);
   }
-  try {
-    r.log('transcribing ...');
-    const result = await transcribeFile(state.wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
-    await fs.rm(state.wav, { force: true }).catch(() => undefined);
-    return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r);
-  } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${state.wav})\n`);
-    return e instanceof MissingToolError ? EXIT_MISSING_TOOL : EXIT_ERROR;
-  }
+  const tail = await recorderLogTail(r);
+  io.stderr(
+    `lexicon voice: the recorder (pid ${state.pid}) stopped on its own and left no audio (${capture.reason})\n` +
+      (tail ? `  ffmpeg said: ${tail}\n` : '') +
+      micPermissionHint(r, 'the app running this command') +
+      (await discardOrKeep(capture, state.wav)) +
+      `  ffmpeg log: ${recorderLogPath(r.globalPath)}\n` +
+      '  Press the hotkey again to start a new recording.\n',
+  );
+  return EXIT_ERROR;
 }
 
 /**

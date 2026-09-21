@@ -14,6 +14,7 @@
  * EEXIST and re-reads the file instead of spawning a second ffmpeg.
  */
 import { promises as fs } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { listAudioDevices, pickDevice } from './devices.js';
 import type { AudioDevice } from './devices.js';
@@ -295,14 +296,23 @@ export interface StopResult {
  * stopped by a *different* `lexicon voice` process on the next hotkey press.
  * There is no console in common to signal through.
  *
- * What makes the abrupt stop acceptable is the capture side: with
- * `-flush_packets 1` the audio is already on disk, so terminating ffmpeg costs
- * at most the last partial packet and leaves a WAV whose header says
- * "size unknown" (0xFFFFFFFF). whisper.cpp reads that file — verified against
- * whisper-cli by feeding it exactly such a capture.
+ * What makes the abrupt stop survivable is the capture side: with
+ * `-flush_packets 1` everything ffmpeg has already muxed is on disk, and the
+ * WAV it leaves behind says "size unknown" (0xFFFFFFFF) in its header rather
+ * than being unreadable. whisper.cpp reads that file: verified against
+ * whisper-cli by feeding it exactly such a capture, and measured here on macOS
+ * with ffmpeg 9.0.2, where a SIGKILL at 3 s and a SIGINT at 3 s left the same
+ * 112,640 bytes of audio and differed only in the header.
  *
- * UNVERIFIED on real Windows: the TerminateProcess behaviour is from Node's
- * documented semantics, not from a run on a Windows box.
+ * What it costs is the tail the input device was still holding. On macOS and
+ * Linux that is small. On Windows `ffmpegRecordArgs` passes no
+ * `-audio_buffer_size`, so dshow uses the device's own default, which ffmpeg's
+ * documentation describes as typically a multiple of 500 ms: the loss there is
+ * on the order of half a second, not "the last fraction of a second". Nothing
+ * here measures it, because dshow does not exist off Windows.
+ *
+ * UNVERIFIED on real Windows: both the TerminateProcess behaviour and the
+ * buffer size are from documented semantics, not from a run on a Windows box.
  */
 export async function stopRecorder(opts: StopRecorderOptions): Promise<StopResult> {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -338,14 +348,86 @@ export interface WavCheck {
   audioBytes: number;
   /** True when the header carries real sizes, i.e. ffmpeg wrote its trailer. */
   finalized: boolean;
+  /** The file's size on disk. 0 when it is missing or empty. */
+  bytes: number;
 }
 
 /** ffmpeg's placeholder for a size it does not know yet. */
 const UNKNOWN_SIZE = 0xffff_ffff;
 /** `RIFF` + size + `WAVE`. */
 const RIFF_HEADER = 12;
-/** Enough to walk the chunks ffmpeg writes ahead of `data` (`fmt `, `LIST`/`INFO`). */
-const CHUNK_SCAN_BYTES = 4096;
+/** A chunk header: four-character id plus a 32-bit size. */
+const CHUNK_HEADER = 8;
+/**
+ * Give up after this many chunks. A real capture has three or four; the cap is
+ * only here so a malformed file cannot spin the walk.
+ */
+const MAX_CHUNKS = 64;
+/** 16 kHz mono s16: the capture format, and what a byte count means in seconds. */
+export const CAPTURE_BYTES_PER_SECOND = 16_000 * 2;
+
+/** Seconds of audio in `audioBytes` of the capture format, rounded to milliseconds. */
+export function captureSeconds(audioBytes: number): number {
+  return Math.round((audioBytes / CAPTURE_BYTES_PER_SECOND) * 1000) / 1000;
+}
+
+interface ChunkHeader {
+  id: string;
+  declared: number;
+}
+
+/** Read one chunk header, or undefined when the file ends inside it. */
+async function readChunkHeader(handle: FileHandle, offset: number): Promise<ChunkHeader | undefined> {
+  const buf = Buffer.alloc(CHUNK_HEADER);
+  const { bytesRead } = await handle.read(buf, 0, CHUNK_HEADER, offset);
+  if (bytesRead < CHUNK_HEADER) return undefined;
+  return { id: buf.toString('latin1', 0, 4), declared: buf.readUInt32LE(4) };
+}
+
+/** RIFF chunk ids are four printable ASCII characters; PCM almost never looks like one. */
+function isChunkId(id: string): boolean {
+  return /^[\x20-\x7e]{4}$/.test(id);
+}
+
+/**
+ * Where the chunk whose body starts at `body` is followed by the next one.
+ *
+ * RIFF pads an odd-sized chunk to an even offset, and most writers do. Some do
+ * not, and stepping over a pad byte that is not there lands one byte into the
+ * next id, which used to end the walk with "no audio data chunk" on a file that
+ * had audio in it. So: take the padded offset when a chunk header is really
+ * there, and the unpadded one otherwise.
+ */
+async function nextChunkOffset(handle: FileHandle, body: number, declared: number, size: number): Promise<number> {
+  const unpadded = body + declared;
+  if (declared % 2 === 0) return unpadded;
+  const padded = unpadded + 1;
+  if (padded + CHUNK_HEADER > size) return unpadded;
+  const next = await readChunkHeader(handle, padded);
+  return next && isChunkId(next.id) ? padded : unpadded;
+}
+
+/**
+ * How many of the bytes from `from` to the end of the file are a well-formed
+ * chunk list rather than audio, and 0 when they are not one.
+ *
+ * This is what tells an empty `data` chunk followed by a writer's trailing
+ * `LIST`/`INFO` apart from a `data` chunk whose size is a placeholder. PCM
+ * would have to begin with four printable ASCII bytes and land exactly on the
+ * end of the file to be mistaken for metadata.
+ */
+async function trailingChunkBytes(handle: FileHandle, from: number, size: number): Promise<number> {
+  let offset = from;
+  for (let i = 0; i < MAX_CHUNKS && offset < size; i += 1) {
+    if (offset + CHUNK_HEADER > size) return 0;
+    const chunk = await readChunkHeader(handle, offset);
+    if (!chunk || !isChunkId(chunk.id) || chunk.declared === UNKNOWN_SIZE) return 0;
+    const next = await nextChunkOffset(handle, offset + CHUNK_HEADER, chunk.declared, size);
+    if (next <= offset || next > size) return 0;
+    offset = next;
+  }
+  return offset === size ? size - from : 0;
+}
 
 /**
  * Look at a capture and say whether it is audio.
@@ -358,49 +440,69 @@ const CHUNK_SCAN_BYTES = 4096;
  * until its trailer runs, which on Windows it never does. So: check the
  * container for real, then trust the bytes on disk rather than the header's
  * opinion of how many there are.
+ *
+ * The walk reads chunk headers from the file at the offsets they sit at. It
+ * used to work off the first 4096 bytes, which quietly turned any capture whose
+ * `data` header sat past byte 4088 (a long `LIST`/`INFO`, an embedded cover)
+ * into "no audio data chunk". A refusal here is a refusal to transcribe, so it
+ * has to be about the file rather than about how much of it we bothered to
+ * read. Callers must not delete a file this refuses: see `runVoiceToggle`.
  */
 export async function inspectWav(wav: string): Promise<WavCheck> {
-  const miss = (reason: string): WavCheck => ({ ok: false, reason, audioBytes: 0, finalized: false });
   let handle;
   try {
     handle = await fs.open(wav, 'r');
   } catch {
-    return miss('no file was written');
+    return { ok: false, reason: 'no file was written', audioBytes: 0, finalized: false, bytes: 0 };
   }
+  let size = 0;
+  const miss = (reason: string, finalized = false): WavCheck => ({ ok: false, reason, audioBytes: 0, finalized, bytes: size });
   try {
-    const size = (await handle.stat()).size;
+    size = (await handle.stat()).size;
     if (size === 0) return miss('the recording is empty');
     if (size < RIFF_HEADER) return miss('the recording is truncated');
 
-    const head = Buffer.alloc(Math.min(size, CHUNK_SCAN_BYTES));
-    await handle.read(head, 0, head.length, 0);
+    const head = Buffer.alloc(RIFF_HEADER);
+    await handle.read(head, 0, RIFF_HEADER, 0);
     if (head.toString('latin1', 0, 4) !== 'RIFF' || head.toString('latin1', 8, 12) !== 'WAVE') {
       return miss('the recording is not a WAV file');
     }
 
-    // Walk the chunk list to `data`. Sizes here are ffmpeg's own and may be
-    // placeholders, so a chunk that claims to run past what we read ends the
-    // walk rather than seeking into nothing.
     let offset = RIFF_HEADER;
-    while (offset + 8 <= head.length) {
-      const id = head.toString('latin1', offset, offset + 4);
-      const declared = head.readUInt32LE(offset + 4);
-      const body = offset + 8;
-      if (id === 'data') {
-        // The bytes that are really there. A finalized header's count is
-        // authoritative (ffmpeg may have written padding past it); an
-        // unfinalized one's is a placeholder, and the file length is the truth.
+    for (let i = 0; i < MAX_CHUNKS && offset + CHUNK_HEADER <= size; i += 1) {
+      const chunk = await readChunkHeader(handle, offset);
+      if (!chunk || !isChunkId(chunk.id)) break;
+      const body = offset + CHUNK_HEADER;
+      if (chunk.id === 'data') {
         const onDisk = Math.max(0, size - body);
-        const known = declared !== 0 && declared !== UNKNOWN_SIZE;
-        const finalized = known && body + declared <= size;
-        const audioBytes = finalized ? Math.min(onDisk, declared) : onDisk;
-        if (audioBytes === 0) {
-          return { ...miss('the recording holds no audio (header only)'), finalized };
+        let audioBytes: number;
+        let finalized: boolean;
+        if (chunk.declared === UNKNOWN_SIZE) {
+          // Still ffmpeg's placeholder: the file length is the truth, minus
+          // anything a writer appended after the audio.
+          audioBytes = onDisk - (await trailingChunkBytes(handle, body, size));
+          finalized = false;
+        } else if (chunk.declared === 0) {
+          // Ambiguous. An empty `data` chunk with metadata behind it is a
+          // finished recording of nothing; a zero with audio behind it is
+          // another writer's streaming placeholder, and that audio is real.
+          const trailing = await trailingChunkBytes(handle, body, size);
+          audioBytes = onDisk - trailing;
+          finalized = trailing === onDisk;
+        } else {
+          // A real size. Authoritative when the file is at least that long
+          // (ffmpeg may have written padding past it); a capture cut short
+          // still holds whatever made it to disk.
+          finalized = body + chunk.declared <= size;
+          audioBytes = finalized ? Math.min(onDisk, chunk.declared) : onDisk;
         }
-        return { ok: true, audioBytes, finalized };
+        if (audioBytes <= 0) return miss('the recording holds no audio (header only)', finalized);
+        return { ok: true, audioBytes, finalized, bytes: size };
       }
-      if (declared === UNKNOWN_SIZE) break;
-      offset = body + declared + (declared % 2);
+      if (chunk.declared === UNKNOWN_SIZE) break;
+      const next = await nextChunkOffset(handle, body, chunk.declared, size);
+      if (next <= offset) break;
+      offset = next;
     }
     return miss('the recording has no audio data chunk');
   } catch {
