@@ -225,12 +225,24 @@ parameter accepts them.
 
 ## Measured results
 
-whisper.cpp base.en, proper-noun recall 41.9% -> 86.4%. small.en with the
+whisper.cpp base.en, proper-noun recall 41.9% -> 82.8%. small.en with the
 lexicon also passed as a Whisper initial prompt, 76.0% -> 95.7%. Zero of 72
 ordinary prose sentences changed. About 0.3 ms to normalize one sentence. The
 audio rows use macOS text-to-speech across three voices, which is far cleaner
 than a real microphone, so expect lower raw recall on real speech. Method, corpus
 and remaining failures: ${BENCHMARK}
+
+Against the alternatives, on the same 330 clips through the same recognizer
+(small.en) with the same seventy-term lexicon in every row, only the fixing
+strategy changing: raw whisper.cpp 45.9%, exact-string substitution of the kind
+macOS Text Replacement does 62.0%, the same plus a casing rule per term 71.3%,
+whisper.cpp's own --prompt hint list 76.0%, Lexicon 91.0%. Exact substitution
+cannot reach a mis-hearing nobody wrote down in advance, which is what the
+phonetic and fuzzy tiers are for. The --prompt list is a complement rather than
+a rival, and stacks with the lexicon to 95.7%. The raw and --prompt rows cannot
+wrongly change clean prose because neither runs a rewrite step, which is the
+absence of the feature and not a safety advantage. Reproduce the table with
+npm run bench:compare after one npm run bench:audio.
 
 ## Privacy
 

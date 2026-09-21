@@ -603,8 +603,25 @@ function Composer() {
 /* ------------------------------------------------------------------ numbers */
 
 const STATS: { before: string; after: string; label: string }[] = [
-  { before: '41.9%', after: '86.4%', label: 'proper-noun recall, whisper.cpp base.en' },
+  { before: '41.9%', after: '82.8%', label: 'proper-noun recall, whisper.cpp base.en' },
   { before: '76.0%', after: '95.7%', label: 'small.en, lexicon passed as a Whisper prompt' },
+];
+
+/*
+ * The comparison a reader runs in their head anyway. Same 330 clips, same
+ * recognizer, same 70-term lexicon in every row; only the fixing strategy
+ * changes. Regenerate with `npm run bench:compare`, which re-scores the cached
+ * transcripts rather than running whisper again, so the rows stay comparable.
+ * The two rows that cannot damage prose cannot do so because they run no
+ * rewrite step, which the note below says rather than letting a blank read as
+ * an advantage.
+ */
+const COMPARISON: { how: string; recovered: string; prose: string; ours?: boolean }[] = [
+  { how: 'nothing, raw whisper.cpp', recovered: '45.9%', prose: 'nothing runs' },
+  { how: 'exact-string substitution, the macOS Text Replacement approach', recovered: '62.0%', prose: '0 of 72' },
+  { how: 'the same, plus a casing rule per term', recovered: '71.3%', prose: '0 of 72' },
+  { how: 'whisper.cpp’s own --prompt hint list', recovered: '76.0%', prose: 'nothing runs' },
+  { how: 'Lexicon', recovered: '91.0%', prose: '0 of 72', ours: true },
 ];
 
 function Numbers() {
@@ -641,6 +658,58 @@ function Numbers() {
               to normalize one sentence
             </p>
           </div>
+        </div>
+
+        <div className="mt-14">
+          <h3 className="text-[1.05rem] text-paper">Against the alternatives</h3>
+          <p className="mt-2 max-w-[62ch] text-[0.85rem] leading-relaxed text-paper-3">
+            The same 330 clips through the same recognizer, with the same seventy-term lexicon in
+            every row. The only thing that changes is how the proper nouns get fixed.
+          </p>
+
+          <div className="mt-6 overflow-hidden rounded-lg border border-rule">
+            <table className="w-full border-collapse text-left text-[0.85rem]">
+              <thead>
+                <tr className="border-b border-rule bg-ink-2/60">
+                  <th className="px-5 py-3 font-normal text-paper-3">how the words get fixed</th>
+                  <th className="px-5 py-3 text-right font-normal text-paper-3">recovered</th>
+                  <th className="hidden px-5 py-3 text-right font-normal text-paper-3 sm:table-cell">
+                    prose wrongly changed
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARISON.map((row) => (
+                  <tr key={row.how} className="border-b border-rule-soft last:border-b-0 bg-ink">
+                    <td className={row.ours ? 'px-5 py-3.5 text-paper' : 'px-5 py-3.5 text-paper-2'}>
+                      {row.how}
+                    </td>
+                    <td
+                      className={
+                        row.ours
+                          ? 'px-5 py-3.5 text-right font-mono tabular-nums text-blue'
+                          : 'px-5 py-3.5 text-right font-mono tabular-nums text-paper-2'
+                      }
+                    >
+                      {row.recovered}
+                    </td>
+                    <td className="hidden px-5 py-3.5 text-right font-mono tabular-nums text-paper-3 sm:table-cell">
+                      {row.prose}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mt-4 max-w-[78ch] text-[0.85rem] leading-relaxed text-paper-3">
+            Exact substitution recovers the spellings someone already wrote down and nothing else.
+            It cannot reach a mistake you have not heard yet, which is what the phonetic and fuzzy
+            tiers are for, and here that is worth twenty points. The prompt hint list is a
+            complement rather than a rival: stacked with the lexicon it reaches 95.7%. The two rows
+            that cannot damage prose cannot do so because neither runs a rewrite step at all, which
+            is the absence of the feature rather than an advantage.
+          </p>
         </div>
 
         <div className="mt-8 grid max-w-[78ch] gap-4 text-[0.85rem] leading-relaxed text-paper-3">
