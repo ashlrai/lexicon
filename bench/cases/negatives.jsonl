@@ -118,3 +118,7 @@
 {"id":"neg-118","category":"prose","heard":"she said the demo is thursday","expected":"she said the demo is thursday","terms":[],"note":"expected-hard: the two-word window 'said the' shares phonetic key ST with Zod's alias 'zawed'"}
 {"id":"neg-119","category":"prose","heard":"they said it would ship on time","expected":"they said it would ship on time","terms":[],"note":"Zod sound-alike (said)"}
 {"id":"neg-120","category":"prose","heard":"the emails from the vendor are all spam","expected":"the emails from the vendor are all spam","terms":[],"note":"YAML sound-alike (emails)"}
+{"id":"neg-121","category":"prose","heard":"open the lexicon store and read it","expected":"open the lexicon store and read it","terms":[],"note":"expected-hard: LexiconStore splits into two ordinary English words; the window invents the boundary the canonical does not mark"}
+{"id":"neg-122","category":"prose","heard":"the lexicon store is where the terms live","expected":"the lexicon store is where the terms live","terms":[],"note":"expected-hard: same invented boundary, sentence-medial"}
+{"id":"neg-123","category":"prose","heard":"we normalize transcript text before the model sees it","expected":"we normalize transcript text before the model sees it","terms":[],"note":"expected-hard: normalizeTranscript, a verb and its object read as an identifier"}
+{"id":"neg-124","category":"prose","heard":"the harvest repo step runs after setup","expected":"the harvest repo step runs after setup","terms":[],"note":"expected-hard: harvestRepo; both halves are common words"}

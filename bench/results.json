@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T04:56:14.305Z",
+  "generatedAt": "2026-09-21T05:02:37.393Z",
   "lexicon": "bench/lexicon.yaml",
   "corpus": "bench/corpus.jsonl",
   "config": {
@@ -8,17 +8,17 @@
     "fuzzy": true
   },
   "counts": {
-    "cases": 398,
+    "cases": 402,
     "positives": 278,
-    "negatives": 120,
-    "hard": 47,
+    "negatives": 124,
+    "hard": 51,
     "termSlots": 313
   },
   "sentence": {
     "all": {
       "hit": 367,
-      "total": 398,
-      "rate": 0.9221105527638191
+      "total": 402,
+      "rate": 0.9129353233830846
     },
     "positives": {
       "hit": 262,
@@ -27,8 +27,8 @@
     },
     "negatives": {
       "hit": 105,
-      "total": 120,
-      "rate": 0.875
+      "total": 124,
+      "rate": 0.8467741935483871
     },
     "positivesExcludingHard": {
       "hit": 255,
@@ -68,8 +68,8 @@
       },
       "prose": {
         "hit": 105,
-        "total": 120,
-        "rate": 0.875
+        "total": 124,
+        "rate": 0.8467741935483871
       }
     }
   },
@@ -86,12 +86,12 @@
     },
     "precision": {
       "hit": 302,
-      "total": 318,
-      "rate": 0.949685534591195
+      "total": 322,
+      "rate": 0.937888198757764
     },
-    "f1": 0.9572107765451664,
+    "f1": 0.9511811023622048,
     "tp": 302,
-    "fp": 16,
+    "fp": 20,
     "fn": 11,
     "byCategory": {
       "brand": {
@@ -157,9 +157,9 @@
     }
   },
   "falsePositiveRate": {
-    "hit": 15,
-    "total": 120,
-    "rate": 0.125
+    "hit": 19,
+    "total": 124,
+    "rate": 0.1532258064516129
   },
   "falsePositiveRateExcludingHard": {
     "hit": 0,
@@ -168,10 +168,10 @@
   },
   "byReason": {
     "alias": {
-      "replacements": 242,
+      "replacements": 246,
       "correct": 228,
-      "wrong": 14,
-      "meanConfidence": 0.995247933884297
+      "wrong": 18,
+      "meanConfidence": 0.9945121951219505
     },
     "phonetic": {
       "replacements": 52,
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 490.979553768844,
-    "findReplacementsUs": 77.17861809045318,
+    "normalizeUs": 495.13508059701496,
+    "findReplacementsUs": 78.30645323383001,
     "rounds": 5
   },
   "failures": [
@@ -699,6 +699,138 @@
           "canonical": "Prometheus",
           "reason": "alias",
           "confidence": 1
+        }
+      ]
+    },
+    {
+      "id": "neg-121",
+      "category": "prose",
+      "heard": "open the lexicon store and read it",
+      "expected": "open the lexicon store and read it",
+      "output": "open the LexiconStore and read it",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 9,
+          "end": 22,
+          "original": "lexicon store",
+          "replacement": "LexiconStore",
+          "canonical": "LexiconStore",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 9,
+          "end": 22,
+          "original": "lexicon store",
+          "replacement": "LexiconStore",
+          "canonical": "LexiconStore",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "id": "neg-122",
+      "category": "prose",
+      "heard": "the lexicon store is where the terms live",
+      "expected": "the lexicon store is where the terms live",
+      "output": "the LexiconStore is where the terms live",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 17,
+          "original": "lexicon store",
+          "replacement": "LexiconStore",
+          "canonical": "LexiconStore",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 17,
+          "original": "lexicon store",
+          "replacement": "LexiconStore",
+          "canonical": "LexiconStore",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "id": "neg-123",
+      "category": "prose",
+      "heard": "we normalize transcript text before the model sees it",
+      "expected": "we normalize transcript text before the model sees it",
+      "output": "we normalizeTranscript text before the model sees it",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 3,
+          "end": 23,
+          "original": "normalize transcript",
+          "replacement": "normalizeTranscript",
+          "canonical": "normalizeTranscript",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 3,
+          "end": 23,
+          "original": "normalize transcript",
+          "replacement": "normalizeTranscript",
+          "canonical": "normalizeTranscript",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "id": "neg-124",
+      "category": "prose",
+      "heard": "the harvest repo step runs after setup",
+      "expected": "the harvest repo step runs after setup",
+      "output": "the harvestRepo step runs after setup",
+      "pass": false,
+      "negative": true,
+      "hard": true,
+      "replacements": [
+        {
+          "start": 4,
+          "end": 16,
+          "original": "harvest repo",
+          "replacement": "harvestRepo",
+          "canonical": "harvestRepo",
+          "reason": "alias",
+          "confidence": 0.95
+        }
+      ],
+      "missed": [],
+      "spurious": [
+        {
+          "start": 4,
+          "end": 16,
+          "original": "harvest repo",
+          "replacement": "harvestRepo",
+          "canonical": "harvestRepo",
+          "reason": "alias",
+          "confidence": 0.95
         }
       ]
     },

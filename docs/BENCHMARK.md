@@ -34,23 +34,23 @@ Two notes on honesty, because they change how the numbers should be read:
 
 ## Headline
 
-Corpus: 398 cases. 278 positives (a term misheard inside a dictated sentence, including 16
+Corpus: 402 cases. 278 positives (a term misheard inside a dictated sentence, including 16
 where it is already correct and must stay untouched, 16 multi-term sentences, 10 mixed with
-code/URLs), 120 clean-prose negatives built around sound-alikes, code spans, URLs, emails
-and paths. 47 cases are marked `expected-hard` and are included in every number below unless
+code/URLs), 124 clean-prose negatives built around sound-alikes, code spans, URLs, emails
+and paths. 51 cases are marked `expected-hard` and are included in every number below unless
 the row says otherwise.
 
 | metric | default config (minConfidence 0.82, phonetic + fuzzy on) |
 |---|---|
 | term recall, raw STT (before) | **5.1%** (16/313) |
 | term recall, after lexicon | **96.5%** (302/313) |
-| term precision | 95.0% (302/318) |
-| term F1 | **95.7%** |
+| term precision | 93.8% (302/322) |
+| term F1 | **95.1%** |
 | sentence accuracy, positives | **94.2%** (262/278) |
 | sentence accuracy, positives excl. expected-hard | 99.6% (255/256) |
-| prose false-positive rate | **12.5%** (15/120) |
+| prose false-positive rate | **15.3%** (19/124) |
 | prose false-positive rate excl. expected-hard | **0.0%** (0/95) |
-| sentence accuracy, all cases | 92.2% (367/398) |
+| sentence accuracy, all cases | 91.3% (367/402) |
 | mean latency per case, `normalize()` incl. `buildIndex()` (warm) | about 290 us |
 | mean latency per case, `findReplacements()` with prebuilt index (warm) | about 55 us |
 
@@ -70,7 +70,18 @@ Argmax's 64% baseline on natural speech. The comparable numbers are recall after
 rewriter can do, which is now at the target.
 
 **The target for this benchmark was <= 2% prose false positives excluding expected-hard. The
-matcher meets it (0.0%).** `bench/bench.test.ts` guards it at 0.02 and bounds the
+matcher meets it (0.0%).**
+
+**Four negatives were added on 2026-09-21 for a class the corpus could not see.** An identifier
+whose own words are ordinary English ("open the lexicon store and read it" reaching `LexiconStore`)
+was never represented: every prose negative here was a single-token partial, so the rate excluding
+expected-hard read 0.0% under every variant tried, including one that cost 17 points of recall.
+Adding them moved precision 95.0% to 93.8%, F1 95.7% to 95.1% and the inclusive prose rate 12.5%
+to 15.3%. The matcher did not get worse; the measurement stopped flattering it. The defect is open,
+and both candidate fixes were measured and rejected: refusing invented boundaries in every pass
+costs 17.3 points of term recall, and refusing them for identifier-category terms costs 4.5. What
+shipped instead scores an invented boundary at 0.95 rather than 1.00, so `--min-confidence 0.96`
+turns the class off without touching the rest of the exact pass. `bench/bench.test.ts` guards it at 0.02 and bounds the
 expected-hard-inclusive rate at 0.17.
 
 ## Fix log
