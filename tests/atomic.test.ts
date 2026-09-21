@@ -218,7 +218,15 @@ describe('writeFileAtomic keeps the file it is replacing', () => {
    * their names. `serve.json` passes an explicit mode and was always right,
    * which is what made this one easy to miss.
    */
-  it('leaves an existing file the mode it already had', async () => {
+  /*
+   * POSIX modes only. Windows has no permission bits for Node to preserve:
+   * `fs.stat` reports 0666 for any writable file whatever was asked for, so
+   * these two assert something the platform cannot express. Skipped rather
+   * than loosened, because a weaker assertion on every platform would stop
+   * catching the defect these exist for, which is a lexicon the user chmod'd
+   * to 0600 being widened to 0644 by the next write.
+   */
+  it.skipIf(process.platform === 'win32')('leaves an existing file the mode it already had', async () => {
     const dir = await scratch();
     const target = path.join(dir, 'lexicon.yaml');
     await fs.writeFile(target, 'one\n');
@@ -230,7 +238,7 @@ describe('writeFileAtomic keeps the file it is replacing', () => {
     expect(await fs.readFile(target, 'utf8')).toBe('two\n');
   });
 
-  it('still honours an explicit mode', async () => {
+  it.skipIf(process.platform === 'win32')('still honours an explicit mode', async () => {
     const dir = await scratch();
     const target = path.join(dir, 'serve.json');
     await fs.writeFile(target, '{}');
