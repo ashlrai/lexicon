@@ -39,7 +39,7 @@ jobs:
     name: Core tests + cross-build (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -57,7 +57,7 @@ jobs:
     name: Publish LexiconBar.exe
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v4
         with:
