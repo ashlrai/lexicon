@@ -32,7 +32,15 @@ export const SETUP_APPS = ['wispr', 'superwhisper', 'macos', 'none'] as const;
 export type SetupApp = (typeof SETUP_APPS)[number];
 
 export const HARVEST_LIMIT = 10;
-export const HARVEST_MIN_COUNT = 5;
+/**
+ * Two, not five. The high bar was holding back the flood of PascalCase source
+ * symbols; now that harvestRepo only proposes names with evidence outside the
+ * code, five is just a filter that hides real ones. A brand is named once in
+ * the README and once in `dependencies` and that is the whole of it: at five,
+ * a small project harvested its own directory name and the git author and
+ * missed every service it runs on.
+ */
+export const HARVEST_MIN_COUNT = 2;
 /** A lexicon with at least this many terms is considered seeded already. */
 export const SEEDED_TERMS = 3;
 
@@ -131,28 +139,52 @@ export interface SetupSummary {
   demo?: SetupDemo;
 }
 
-/** What `runSetup` would do, computed by a dry run that writes nothing. */
+/**
+ * What `runSetup` would do, computed by a dry run that writes nothing.
+ *
+ * A dry run has no terminal of its own, so it has to reason about the run the
+ * user would actually make: `interactive` is true when the same command
+ * without `--dry-run` would find a terminal and prompt. The `would*` fields
+ * describe the outcome of taking every default in that mode, and `wouldAsk`
+ * names the steps that are a question rather than a foregone conclusion, so
+ * the plan never promises a write the flags cannot produce nor stays silent
+ * about one they can.
+ */
 export interface SetupPlan {
   plan: true;
+  /** True when a real run with these flags would prompt (a terminal, no --yes / --json). */
+  interactive: boolean;
+  /**
+   * Steps a real run would stop and ask about, in order: any of
+   * `packs`, `harvest`, `clients`, `serve`, `export`. Empty when it would not
+   * prompt at all, which is every `--yes`, `--json` and MCP run.
+   */
+  wouldAsk: string[];
   lexiconPath: string;
   /** False when the global lexicon would be created. */
   lexiconExists: boolean;
   /** Canonicals that would be seeded into the global lexicon (person, company). */
   wouldSeed: string[];
   /**
-   * Starter packs that would be installed: the `--packs` list, else the
-   * defaults (developer, ai, voice-tools) a terminal would show checked, so a
-   * caller can offer them; empty under `--no-packs`. A non-interactive apply
-   * installs only an explicit `--packs` list.
+   * Starter packs on offer: the `--packs` list, else the defaults (developer,
+   * ai, voice-tools) a terminal would show checked, so a caller can offer
+   * them; empty under `--no-packs`. Installed only by an explicit `--packs`
+   * list or by saying yes to the checklist, so read it with `wouldAsk`.
    */
   wouldInstallPacks: string[];
-  /** Repo names that would be added to the project lexicon (names the packs cover are left out). */
+  /**
+   * Repo names on offer (names the packs cover are left out). Written to the
+   * project lexicon only under `--harvest` or a yes at the prompt, whose
+   * default is no, so read it with `wouldAsk`.
+   */
   wouldHarvest: string[];
   /** Every client found on this machine, whether or not it would be installed. */
   detectedClients: string[];
   /** Clients that would get the MCP server (and hooks) written. */
   wouldInstallClients: string[];
+  /** True when the login service would be installed, including by a yes at the prompt (its default). */
   wouldInstallServe: boolean;
+  /** Files a real run would write for the dictation app, including the one the prompt defaults to. */
   wouldExport: { format: string; path: string }[];
   /** The correction a real run would end by demonstrating (computed, never written). */
   demo?: SetupDemo;

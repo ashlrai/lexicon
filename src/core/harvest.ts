@@ -1,7 +1,22 @@
 /**
  * Repo harvester: scans a project directory for proper nouns worth adding to
- * the lexicon (package names, PascalCase identifiers, git authors, README
- * brands, the project directory name) and ranks them by occurrence count.
+ * the lexicon (package names, dependencies, git authors, README brands, the
+ * project directory name) and ranks them by occurrence count.
+ *
+ * Two rules keep it from proposing names that would damage ordinary dictation,
+ * because a harvested term is loaded blind by someone who has not read the
+ * repo:
+ *
+ *   1. External evidence. A name is only proposed when it was seen somewhere
+ *      other than a PascalCase symbol in source: a manifest, a README
+ *      sentence, a git author, the directory name, a dot-TLD brand. A symbol
+ *      that exists only in code is a thing you type, not a thing you say, and
+ *      ranking source symbols by frequency is what puts `TextDiff` and
+ *      `DispatchQueue` at the top of the list in any real repo. Source still
+ *      counts towards a name that has external evidence, and `symbols: true`
+ *      brings the uncorroborated ones back for a caller that wants to review
+ *      them one by one.
+ *   2. No invented word boundaries. See harvestAliases().
  *
  * Synchronous fs is used deliberately: the scan is bounded (5000 files, 512KB
  * each) and a single pass is simpler to reason about than an async walk.
@@ -229,6 +244,12 @@ interface Bucket {
   count: number;
   /** Bypass minCount (project name, git authors, dot-TLD brands). */
   alwaysInclude: boolean;
+  /**
+   * Seen somewhere other than a PascalCase symbol in source: a manifest, a
+   * README sentence, a git author, the directory name, a dot-TLD brand.
+   * Without this the name is a code symbol and is not proposed.
+   */
+  external: boolean;
 }
 
 interface WalkResult {
@@ -247,6 +268,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
   const wantGit = opts.git !== false;
   const wantPackages = opts.packages !== false;
   const wantIdentifiers = opts.identifiers !== false;
+  const wantSymbols = opts.symbols === true;
   const minCount = opts.minCount ?? 2;
   const limit = opts.limit ?? 50;
 
@@ -258,13 +280,14 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     evidence: string,
     count = 1,
     alwaysInclude = false,
+    external = true,
   ): void => {
     const name = canonical.trim();
     if (!name) return;
     const key = name.toLowerCase();
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { canonical: name, category, source, evidence: [], count: 0, alwaysInclude: false };
+      bucket = { canonical: name, category, source, evidence: [], count: 0, alwaysInclude: false, external: false };
       buckets.set(key, bucket);
     } else if (categoryRank(category) < categoryRank(bucket.category)) {
       // A more specific classification (brand/product/person) beats 'identifier'.
@@ -273,6 +296,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     }
     bucket.count += count;
     bucket.alwaysInclude ||= alwaysInclude;
+    bucket.external ||= external;
     if (bucket.evidence.length < MAX_EVIDENCE && !bucket.evidence.includes(evidence)) {
       bucket.evidence.push(evidence);
     }
@@ -341,13 +365,14 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     // 2. PascalCase identifiers
     if (wantIdentifiers && SOURCE_EXTENSIONS.has(ext)) {
       for (const [ident, n] of pascalCaseIdentifiers(text)) {
-        bump(ident, 'identifier', 'harvest:repo', rel, n);
+        bump(ident, 'identifier', 'harvest:repo', rel, n, false, false);
       }
     }
   }
 
   const candidates: HarvestCandidate[] = [];
   for (const bucket of buckets.values()) {
+    if (!bucket.external && !wantSymbols) continue;
     if (!bucket.alwaysInclude && bucket.count < minCount) continue;
     candidates.push({
       canonical: bucket.canonical,
@@ -355,7 +380,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
       source: bucket.source,
       evidence: bucket.evidence,
       count: bucket.count,
-      suggestedAliases: safeSuggest(bucket.canonical),
+      suggestedAliases: harvestAliases(bucket.canonical, bucket.category),
     });
   }
 
@@ -494,8 +519,13 @@ function harvestPackageJson(file: string, rel: string, bump: Bump): void {
     const bare = m ? m[2] : pkg.name;
     // A project literally named "server", "app" or "cli" is not a proper noun; do not
     // seed the lexicon with it (its suggested aliases would misfire on ordinary prose).
+    // Nor is a scaffold's unfilled placeholder: package names are lowercase by
+    // convention, so one with no lowercase letter at all is "__PROJECT_NAME__".
     const generic =
-      bare.length < 4 || GENERIC_DEP_WORDS.has(bare.toLowerCase()) || HARVEST_STOPLIST.has(capitalize(bare));
+      bare.length < 4 ||
+      !/[a-z]/.test(bare) ||
+      GENERIC_DEP_WORDS.has(bare.toLowerCase()) ||
+      HARVEST_STOPLIST.has(capitalize(bare));
     if (!generic) bump(bare, 'product', 'harvest:package', `${rel}#name`, 1, true);
     if (m && m[1].length >= 4 && !GENERIC_DEP_WORDS.has(m[1].toLowerCase())) {
       bump(m[1], 'brand', 'harvest:package', `${rel}#name (@${m[1]}/${bare})`, 1, true);
@@ -633,19 +663,28 @@ function isGenericIdentifier(ident: string): boolean {
 
 function readmeProperNouns(text: string): Map<string, number> {
   const out = new Map<string, number>();
+  // Sentence-initial words are capitalized whatever they are, so they are held
+  // back and only counted for a word that also occurs mid-sentence. Without
+  // that, "Hetzner keeps the bill low." is worth nothing and a brand named
+  // once in prose and once at the start of a sentence misses the threshold.
+  const initial = new Map<string, number>();
   const stripped = stripMarkdownNoise(text);
   const sentences = stripped.split(/(?<=[.!?:])\s+|\n+/);
   for (const sentence of sentences) {
     const tokens = sentence.split(/\s+/).filter(Boolean);
-    for (let i = 1; i < tokens.length; i++) {
-      // i starts at 1: the first token of a sentence is capitalized regardless.
+    for (let i = 0; i < tokens.length; i++) {
       const word = tokens[i].replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, '');
       if (word.length < 4) continue;
       if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
-      out.set(word, (out.get(word) ?? 0) + 1);
+      const bucket = i === 0 ? initial : out;
+      bucket.set(word, (bucket.get(word) ?? 0) + 1);
     }
+  }
+  for (const [word, n] of initial) {
+    const seen = out.get(word);
+    if (seen !== undefined) out.set(word, seen + n);
   }
   return out;
 }
@@ -728,6 +767,37 @@ function safeSuggest(canonical: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The aliases a harvested candidate is allowed to carry.
+ *
+ * suggestAliases() is right for a name the user typed themselves: asked about
+ * "Ashlr.AI" it offers "Ashlr AI", which is exactly what speech-to-text
+ * writes. Applied to a name nobody vouched for it is the one thing in the
+ * harvest that can make dictation worse than no lexicon at all, because an
+ * alias rewrites text the user never meant as a name. The canonical alone is
+ * harmless: it only fires when the user really said it.
+ *
+ * So two limits, and only here (suggest.ts stays as it is for `lexicon add
+ * --suggest`, where a human is vouching for the name):
+ *
+ *   - An identifier gets no aliases. Splitting a code symbol yields ordinary
+ *     English: "InlineData" -> "Inline Data", "TimeInterval" -> "Time
+ *     Interval", and then "let us set a time interval of five minutes" comes
+ *     back with a class name in it.
+ *   - Anything else keeps its aliases, but a canonical with no separator of
+ *     its own keeps only the single-word ones. "Ashlr.AI" and "pasture-notes"
+ *     say where their words break, so "Ashlr AI" and "pasture notes" are the
+ *     user's own spelling; "LexiconBar" does not, so "Lexicon Bar" is our
+ *     guess, and a wrong guess about a word boundary is what rewrites "the
+ *     lexicon bar is a nice place to get a drink".
+ */
+function harvestAliases(canonical: string, category: TermCategory): string[] {
+  if (category === 'identifier') return [];
+  const aliases = safeSuggest(canonical);
+  if (/[\s._\-/]/.test(canonical)) return aliases;
+  return aliases.filter((alias) => !/\s/.test(alias));
 }
 
 function capitalize(s: string): string {

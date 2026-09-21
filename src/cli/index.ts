@@ -143,6 +143,7 @@ program
   .option('--add', 'add candidates (with suggested aliases) to the project lexicon; on a terminal this walks them one by one')
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
   .option('--yes', 'with --add: add every candidate without prompting')
+  .option('--symbols', 'also propose names seen only as a code symbol (off: they are what you type, not what you say)')
   .option('--json', 'print candidates as JSON')
   .action(async (root: string | undefined, opts: HarvestCliOptions) =>
     done(await runHarvest(root, withGlobals(opts), io)),

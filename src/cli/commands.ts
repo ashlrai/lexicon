@@ -515,6 +515,8 @@ export interface HarvestCliOptions extends CommonOptions {
   interactive?: boolean;
   /** With `--add`: add every candidate without prompting even on a terminal. */
   yes?: boolean;
+  /** Also propose names seen only as a PascalCase symbol in source. */
+  symbols?: boolean;
   /** Explicit global lexicon path (test hook, no CLI flag). */
   globalPath?: string;
 }
@@ -549,6 +551,7 @@ export async function runHarvest(
   const minCount = parseIntOption(opts.minCount, '--min-count');
   if (limit !== undefined) harvestOpts.limit = limit;
   if (minCount !== undefined) harvestOpts.minCount = minCount;
+  if (opts.symbols) harvestOpts.symbols = true;
 
   const candidates: HarvestCandidate[] = await harvestRepo(target, harvestOpts);
 

@@ -36,7 +36,7 @@ Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recom
 
 One interactive pass, seven numbered steps, ending in a live correction. Every step prints a one-line result and is safe to rerun (nothing is duplicated), and the starter packs arrive as a checklist you can untick ([PACKS.md](PACKS.md) has what is in each).
 
-`lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service stay opt-in even then, so add `--packs developer,ai,voice-tools`, `--harvest` and `--serve` for those. `--dry-run` prints what a run would do and writes nothing, `--clients none` / `--no-packs` / `--no-harvest` / `--no-serve` / `--app none` skip steps, and `--json` prints a machine-readable summary.
+`lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service stay opt-in even then, so add `--packs developer,ai,voice-tools`, `--harvest` and `--serve` for those. `--dry-run` writes nothing and describes the run you would get from this same command without it: on a terminal every step that would stop and ask is marked `asks`, with the answer Enter gives it, so the login service and the export to your Desktop show up as the questions they are and the repo harvest shows up as a question whose default is no; with `--yes` or off a terminal the same plan shows the opt-in steps doing nothing until you pass their flag. `--clients none` / `--no-packs` / `--no-harvest` / `--no-serve` / `--app none` skip steps, and `--json` prints a machine-readable summary.
 
 ```text
 $ lexicon setup
@@ -61,7 +61,7 @@ lexicon setup
 
 3. Repo harvest
    found 4 names in ~/code/lexicon:  (table of canonical, category, count, aliases)
-   add them to the project lexicon (~/code/lexicon/.lexicon.yaml)? [Y/n]
+   add them to the project lexicon (~/code/lexicon/.lexicon.yaml)? [y/N] y
    added 4 new terms, merged 0 in ~/code/lexicon/.lexicon.yaml (trusted)
 
 4. Agent clients
@@ -90,6 +90,8 @@ Done.
 Next: open Claude Code and dictate a sentence with "Ashlr.AI" in it. That is the whole thing.
    later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)
 ```
+
+Step 3 is the one prompt that defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --interactive` walks the list one name at a time when you do want them.
 
 Step 7 is not a canned example: it takes the terms the run just seeded, writes the sentence speech-to-text would have produced for them, and runs the real normalizer over it. If you skipped everything and the lexicon has nothing to show off, it falls back to the example terms and says so, so the run always ends with the product working.
 

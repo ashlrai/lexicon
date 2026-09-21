@@ -17,12 +17,16 @@ lexicon harvest .          # list candidates
 lexicon harvest . --add    # add them to the project lexicon
 ```
 
-It scans package and module names (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), PascalCase identifiers with two or more humps, git author names, the project directory name and proper nouns in README headings. Common words and generic identifiers (`String`, `Error`, `Component`) are filtered out. Each candidate comes with auto-suggested aliases.
+It scans package and module names (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), git author names, the project directory name and proper nouns in README prose. Common words and generic identifiers (`String`, `Error`, `Component`) are filtered out.
+
+A name is proposed only when the repo says it somewhere other than its own code. PascalCase identifiers are read, and they count towards a name the README or a manifest also names, but a class that exists nowhere but source is something you type rather than something you say, and adding it teaches the lexicon to rewrite ordinary dictation: `InlineData` would arrive with the alias `inline data`. `--symbols` proposes those too, for reviewing one at a time with `--interactive`.
+
+For the same reason a candidate's suggested aliases never invent a word boundary the name does not already have. `Ashlr.AI` and `pasture-notes` say where their words break, so `Ashlr AI` and `pasture notes` are offered; `LexiconBar` does not, so `Lexicon Bar` is not.
 
 ```text
 canonical      category    count  suggested aliases                           evidence
 -------------  ----------  -----  ------------------------------------------  -----------------
-LexiconStore   identifier  5      Lexicon Store, Lexikon Store, LexikonStore  src/store.ts
+openclaw       product     4                                                  package.json#name
 Ashlr.AI       brand       2      Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI  README.md
 ```
 

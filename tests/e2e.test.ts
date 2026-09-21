@@ -469,8 +469,13 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: harvest', () => {
     const candidates = JSON.parse(all.stdout) as HarvestCandidate[];
     expect(candidates.length).toBeGreaterThan(2);
     const names = candidates.map((c) => c.canonical);
-    expect(names).toContain('LexiconStore');
-    expect(names.some((n) => /openclaw/i.test(n))).toBe(true);
+    // LexiconStore exists only as a symbol in the fixture's source, so it is
+    // not proposed; OpenClaw is in the README too, and its evidence still
+    // names the source files that corroborated it. Evidence is built with
+    // path.relative, so the separator is the host's: `src\claw.ts` on Windows.
+    expect(names).not.toContain('LexiconStore');
+    const claw = candidates.find((c) => /openclaw/i.test(c.canonical));
+    expect(claw?.evidence).toContain(path.join('src', 'claw.ts'));
     for (const c of candidates) {
       expect(c.count).toBeGreaterThan(0);
       expect(Array.isArray(c.suggestedAliases)).toBe(true);
@@ -496,10 +501,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: harvest', () => {
     const r = await runCli(['harvest', FAKE_REPO, '--limit', '3'], { env: shared.env });
     expect(r.code).toBe(0);
     expect(r.stdout.split('\n')[0]).toMatch(/^canonical\s+category\s+count\s+suggested aliases\s+evidence$/);
-    expect(r.stdout).toContain('LexiconStore');
-    // harvest reports evidence with path.relative, so the separator is the
-    // host's: `src\claw.ts` on Windows.
-    expect(r.stdout).toContain(path.join('src', 'claw.ts'));
+    expect(r.stdout).toMatch(/openclaw/i);
+    expect(r.stdout).toContain('package.json#name');
   });
 
   it('rejects a non-positive --limit and a missing path', async () => {

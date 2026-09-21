@@ -23,10 +23,15 @@
  * the repo harvest (step c) and the login service (step e) are performed under
  * `--yes` only with an explicit `--packs` / `--harvest` / `--serve` (a harvest
  * is a write plus a trust decision, a service replaces whatever is under its
- * label), and `--dry-run` runs every detection and suggestion but
- * writes nothing, returning a `SetupPlan` of what a real run would do (the
- * MCP `setup_lexicon` tool previews with it; the plan lists the harvest
- * candidates either way so the caller can offer them). Every step is
+ * label), and step c's prompt itself defaults to no, because a stranger this
+ * early cannot judge a list of names that will rewrite everything they
+ * dictate in this repo. `--dry-run` runs every detection and suggestion but
+ * writes nothing, returning a `SetupPlan` of what this same command would do
+ * without it: `plan.interactive` says whether a real run would prompt,
+ * `plan.wouldAsk` names the steps that are questions, and the `would*` fields
+ * are the outcome of taking every default (the MCP `setup_lexicon` tool
+ * previews with it; the plan lists the harvest candidates either way so the
+ * caller can offer them). Every step is
  * idempotent: addTerm merges, the installers skip what is already there and
  * exports overwrite the same file; a person or company already in the global
  * lexicon, or a harvest candidate already covered by a global term, is
@@ -80,17 +85,67 @@ export type {
 } from './setup/types.js';
 export { detectClients, parseClientList, parsePackList, suggestCompany } from './setup/detect.js';
 
+/**
+ * Step h (dry run): the plan card.
+ *
+ * It describes one specific run: this command, without `--dry-run`, answering
+ * every prompt with its default. A dry run never prompts itself, so a line
+ * that says "would install" for a step the same flags cannot reach, or
+ * "skipped" for one a real run would stop and ask about, is worse than no
+ * plan at all -- this is the flag a cautious stranger reaches for first.
+ * Every asked step therefore says so, and says what the default answer is.
+ */
 function printPlan(ctx: Ctx, p: SetupPlan): void {
+  const asks = (step: string): boolean => p.wouldAsk.includes(step);
   ctx.say();
   ctx.say(bold('Plan (nothing written).'));
+  ctx.say(
+    dim(
+      p.interactive
+        ? '   this is what the same command without --dry-run does if you press Enter at every prompt.'
+        : '   this is what the same command without --dry-run does; nothing here is prompted for.',
+    ),
+  );
   ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
   ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(', ')) : dim('nothing')}`);
-  ctx.say(`   would install packs: ${p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(', ') : dim('none')}`);
-  ctx.say(`   would harvest: ${p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(', ')) : dim('nothing')}`);
+  const packs = p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(', ') : dim('none');
+  ctx.say(
+    asks('packs')
+      ? `   starter packs: ${dim('asks')} (checklist, checked: ${packs}; Enter installs them)`
+      : typeof ctx.opts.packs === 'string' && p.wouldInstallPacks.length > 0
+        ? `   starter packs: would install ${packs}`
+        : p.wouldInstallPacks.length > 0
+          ? `   starter packs: ${dim('none')} (--packs ${p.wouldInstallPacks.join(',')} installs the defaults)`
+          : `   starter packs: ${dim('none')}`,
+  );
+  const names = p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(', ')) : dim('nothing');
+  const onOffer = `${p.wouldHarvest.length} name${p.wouldHarvest.length === 1 ? '' : 's'} on offer: ${names}`;
+  ctx.say(
+    p.wouldHarvest.length === 0
+      ? `   repo harvest: ${dim('nothing to add')}`
+      : ctx.opts.harvest === true
+        ? `   repo harvest: would add ${names}`
+        : asks('harvest')
+          ? `   repo harvest: ${dim('asks')} (default no), ${onOffer}`
+          : `   repo harvest: ${dim('nothing added')} (--harvest adds them), ${onOffer}`,
+  );
   ctx.say(`   detected clients: ${p.detectedClients.length > 0 ? p.detectedClients.join(', ') : dim('none')}`);
-  ctx.say(`   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')}`);
-  ctx.say(`   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped')}`);
-  ctx.say(`   would export: ${p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing')}`);
+  ctx.say(
+    asks('clients')
+      ? `   would install into: ${dim('asks')} (checked: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')})`
+      : `   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')}`,
+  );
+  ctx.say(
+    asks('serve')
+      ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
+      : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
+  );
+  const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
+  ctx.say(
+    asks('export')
+      ? `   dictation export: ${dim('asks')} which app, and Enter writes ${exports}`
+      : `   would export: ${p.wouldExport.length > 0 ? exports : dim('nothing (--app <app> writes one)')}`,
+  );
   ctx.say();
   ctx.say(dim('   run again without --dry-run to apply.'));
 }
@@ -157,8 +212,11 @@ export async function runSetup(
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(', ')})`);
   }
   if (typeof opts.packs === 'string') parsePackList(opts.packs, (await (deps.listPacks ?? listPacks)()).map((p) => p.name));
-  // A dry run never prompts: it reports the non-interactive defaults.
-  const interactive = !opts.yes && !opts.json && !opts.dryRun && (deps.isInteractive ?? isInteractive)();
+  // A dry run never prompts, but it has to describe a run that does: `wouldPrompt`
+  // is what the same command without --dry-run would find, so the plan can say
+  // which steps are questions instead of inventing an answer for them.
+  const wouldPrompt = !opts.yes && !opts.json && (deps.isInteractive ?? isInteractive)();
+  const interactive = wouldPrompt && !opts.dryRun;
   const ownPrompter = interactive && !deps.createPrompter;
   const prompter = interactive
     ? (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))()
@@ -189,6 +247,8 @@ export async function runSetup(
   if (opts.dryRun) {
     ctx.plan = {
       plan: true,
+      interactive: wouldPrompt,
+      wouldAsk: [],
       lexiconPath: '',
       lexiconExists: false,
       wouldSeed: [],

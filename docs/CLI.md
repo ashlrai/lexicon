@@ -178,6 +178,8 @@ Options:
   -i, --interactive  walk candidates one by one: y add, n skip, e edit aliases,
                      c category, a add all, q quit
   --yes              with --add: add every candidate without prompting
+  --symbols          also propose names seen only as a code symbol (off: they
+                     are what you type, not what you say)
   --json             print candidates as JSON
   -h, --help         display help for command
 ```

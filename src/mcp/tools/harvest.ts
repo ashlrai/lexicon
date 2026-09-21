@@ -27,7 +27,8 @@ export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Harvest names from a repository',
       description:
-        'Scan a repository for proper nouns an STT engine is likely to mangle: package names, PascalCase identifiers, git authors, README headings. ' +
+        'Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. ' +
+        'Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. ' +
         'WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project ' +
         'would add. Call it without `add` first -- that is a read-only preview. ' +
         "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml and trusts that file. " +

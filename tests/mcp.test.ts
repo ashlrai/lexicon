@@ -113,6 +113,9 @@ const setupSummary: SetupSummary = {
 
 const setupPlan: SetupPlan = {
   plan: true,
+  // The MCP server is never on a terminal, so nothing is prompted for.
+  interactive: false,
+  wouldAsk: [],
   lexiconPath: '/fake/global/lexicon.yaml',
   lexiconExists: false,
   wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],

@@ -60,6 +60,18 @@ const APP_LABELS: Record<Exclude<SetupApp, 'none'>, { label: string; where: stri
   macos: { label: 'macOS Text Replacement', where: 'System Settings > Keyboard > Text Replacements (drag the file in)' },
 };
 
+/**
+ * The dictation apps offered in step 6, in order. The first one is what
+ * pressing Enter picks, so a dry run reads this list too rather than guessing
+ * at what the prompt would have done.
+ */
+function appChoices(): { label: string; value: SetupApp }[] {
+  return [
+    ...(Object.keys(APP_LABELS) as Exclude<SetupApp, 'none'>[]).map((k) => ({ label: APP_LABELS[k].label, value: k as SetupApp })),
+    { label: 'none / something else', value: 'none' as SetupApp },
+  ];
+}
+
 export function stepHeading(ctx: Ctx, n: number, title: string): void {
   ctx.say(bold(`${n}. ${title}`));
 }
@@ -241,12 +253,19 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   if (ctx.plan) {
     const chosen = explicit ?? [...defaults];
     ctx.plan.wouldInstallPacks = chosen;
+    const asks = explicit === undefined && ctx.plan.interactive;
+    if (asks) ctx.plan.wouldAsk.push('packs');
     if (chosen.length === 0) {
       ctx.say(dim('   would install: none'));
       return;
     }
-    ctx.say(`   would install: ${chosen.map(describe).join(', ')}`);
-    if (explicit === undefined) ctx.say(dim('   (the defaults; pass --packs <list> to install them without a terminal)'));
+    if (asks) {
+      ctx.say(`   would ask, with these checked: ${chosen.map(describe).join(', ')}`);
+    } else if (explicit === undefined) {
+      ctx.say(dim(`   would install: none (pass --packs ${chosen.join(',')} to install the defaults)`));
+    } else {
+      ctx.say(`   would install: ${chosen.map(describe).join(', ')}`);
+    }
     for (const name of chosen) {
       try {
         ctx.packCanonicals.push(...(await loadPack(name)).lexicon.terms.map((t) => t.canonical));
@@ -333,17 +352,29 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   }
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
-    ctx.say(
-      `   would add ${candidates.length} name${candidates.length === 1 ? '' : 's'} to ${safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'))}: ${safe(ctx.plan.wouldHarvest.join(', '))}`,
-    );
+    const file = safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'));
+    const found = `${candidates.length} name${candidates.length === 1 ? '' : 's'} in ${safe(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(', '))}`;
+    if (ctx.opts.harvest === true) {
+      ctx.say(`   would add to ${file}: ${found}`);
+    } else if (ctx.plan.interactive) {
+      ctx.plan.wouldAsk.push('harvest');
+      ctx.say(`   would ask (default no) whether to add ${found}`);
+    } else {
+      ctx.say(`   would not add anything; --harvest would add ${found}`);
+    }
     return;
   }
   if (ctx.prompter) {
     ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(', ')]);
     ctx.say(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases']).replace(/\n$/, ''));
-    if (!(await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'))})?`, true))) {
-      ctx.say(dim('   skipped; pick them one by one later with: lexicon harvest --add'));
+    // Default no. This is a write inside the user's repository plus a trust
+    // decision, proposed to someone ninety seconds into their first run who
+    // cannot yet judge the list. Saying no costs one command later; saying yes
+    // by reflex puts terms they have not read in front of everything they
+    // dictate in this repo.
+    if (!(await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'))})?`, false))) {
+      ctx.say(dim('   skipped; add them later with: lexicon harvest --add, or one by one with: lexicon harvest --interactive'));
       return;
     }
   }
@@ -384,7 +415,10 @@ export async function stepClients(ctx: Ctx): Promise<void> {
     );
     const chosen = ctx.opts.clients !== undefined ? parseClientList(ctx.opts.clients) : detected.map((c) => c.name);
     ctx.plan.wouldInstallClients = chosen;
-    ctx.say(chosen.length > 0 ? `   would install into: ${chosen.join(', ')}` : dim('   would install into: none'));
+    const asks = ctx.opts.clients === undefined && ctx.plan.interactive && detected.length > 0;
+    if (asks) ctx.plan.wouldAsk.push('clients');
+    if (chosen.length === 0) ctx.say(dim('   would install into: none'));
+    else ctx.say(`   would ${asks ? 'ask, with these checked' : 'install into'}: ${chosen.join(', ')}`);
     return;
   }
   let chosen: SetupClient[];
@@ -464,6 +498,21 @@ export async function stepServe(ctx: Ctx): Promise<void> {
     ctx.say(dim(`   not automated on ${ctx.platform}; see: lexicon serve --install`));
     return;
   }
+  if (ctx.plan) {
+    // A real run asks on a terminal (default yes) and skips it otherwise, so
+    // the plan must not report "skipped" to someone who would be asked.
+    if (ctx.opts.serve === true) {
+      ctx.plan.wouldInstallServe = true;
+      ctx.say('   would install the login service (lexicon serve --install)');
+    } else if (ctx.plan.interactive) {
+      ctx.plan.wouldAsk.push('serve');
+      ctx.plan.wouldInstallServe = true;
+      ctx.say('   would ask (default yes) to install the local API as a login service');
+    } else {
+      ctx.say(dim('   would skip (not requested); --serve installs it'));
+    }
+    return;
+  }
   if (ctx.prompter && ctx.opts.serve !== true) {
     const ok = await ctx.prompter.confirm(
       '   install the local API (browser extension, Claude Desktop, menu bar app) as a login service?',
@@ -476,11 +525,6 @@ export async function stepServe(ctx: Ctx): Promise<void> {
   } else if (ctx.opts.serve !== true) {
     // No terminal to ask on: a login service is only created when asked for explicitly.
     ctx.say(dim('   skipped (not requested); add --serve to install it, or later: lexicon serve --install'));
-    return;
-  }
-  if (ctx.plan) {
-    ctx.plan.wouldInstallServe = true;
-    ctx.say('   would install the login service (lexicon serve --install)');
     return;
   }
   const install = ctx.deps.installServe ?? runServeInstall;
@@ -517,16 +561,21 @@ export async function stepExport(ctx: Ctx): Promise<void> {
     if (!isSetupApp(value)) throw new Error(`unknown app "${ctx.opts.app}" (expected one of: ${SETUP_APPS.join(', ')})`);
     app = value;
   } else if (ctx.prompter) {
-    const choices = [
-      ...(Object.keys(APP_LABELS) as Exclude<SetupApp, 'none'>[]).map((k) => ({ label: APP_LABELS[k].label, value: k as SetupApp })),
-      { label: 'none / something else', value: 'none' as SetupApp },
-    ];
-    [app] = await ctx.prompter.choose('   which dictation app do you use?', choices);
+    [app] = await ctx.prompter.choose('   which dictation app do you use?', appChoices());
+  } else if (ctx.plan?.interactive) {
+    // A real run on this terminal would ask; pressing Enter takes the first
+    // choice and writes that file, which is the thing a dry run must disclose.
+    ctx.plan.wouldAsk.push('export');
+    [app] = appChoices().map((c) => c.value);
   } else {
     app = 'none';
   }
   if (!app || app === 'none') {
-    ctx.say(dim('   skipped; later: lexicon export wispr|superwhisper|macos --out <file>'));
+    ctx.say(
+      ctx.plan
+        ? dim('   would skip; --app wispr|superwhisper|macos writes an export')
+        : dim('   skipped; later: lexicon export wispr|superwhisper|macos --out <file>'),
+    );
     return;
   }
   const format: ExportFormat = app;
@@ -535,7 +584,11 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   const file = path.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
   if (ctx.plan) {
     ctx.plan.wouldExport.push({ format, path: file });
-    ctx.say(`   would write ${safe(tildify(file, ctx.home))} for ${APP_LABELS[app].label}`);
+    ctx.say(
+      ctx.plan.wouldAsk.includes('export')
+        ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${safe(tildify(file, ctx.home))}`
+        : `   would write ${safe(tildify(file, ctx.home))} for ${APP_LABELS[app].label}`,
+    );
     return;
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd });

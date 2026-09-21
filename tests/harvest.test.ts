@@ -5,10 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// Alias generation is suggest.ts's job and has its own suite; stubbing it keeps
-// these assertions about what harvestRepo finds, not what it suggests.
+// Alias generation is suggest.ts's job and has its own suite. The stub is
+// deterministic and offers every name one suggestion with a space in it and one
+// without, so these tests measure the only alias decision harvestRepo makes:
+// which candidates are allowed to carry a guessed word boundary at all.
 vi.mock('../src/core/suggest.js', () => ({
-  suggestAliases: (): string[] => [],
+  suggestAliases: (canonical: string): string[] => [`${canonical} spaced`, `${canonical}tight`],
 }));
 
 import { harvestRepo, HARVEST_STOPLIST } from '../src/core/harvest.js';
@@ -63,10 +65,14 @@ describe('harvestRepo', () => {
     expect(pkg?.count).toBeGreaterThanOrEqual(4);
     expect(pkg?.evidence.length).toBeLessThanOrEqual(5);
 
-    const store = byName(candidates, 'LexiconStore');
-    expect(store?.category).toBe('identifier');
-    expect(store?.count).toBeGreaterThanOrEqual(2);
-    expect(store?.evidence.some((e) => e.endsWith('store.ts'))).toBe(true);
+    // LexiconStore is only ever a symbol in source, so it is not proposed:
+    // a name nothing outside the code mentions is something you type.
+    expect(byName(candidates, 'LexiconStore')).toBeUndefined();
+    // OpenClaw is the same shape but the README names it, so it survives, and
+    // source still counts towards it.
+    const claw = byName(candidates, 'OpenClaw');
+    expect(claw?.count).toBeGreaterThanOrEqual(2);
+    expect(claw?.evidence.some((e) => e.endsWith('claw.ts'))).toBe(true);
 
     const brand = byName(candidates, 'Ashlr.AI');
     expect(brand?.category).toBe('brand');
@@ -102,8 +108,41 @@ describe('harvestRepo', () => {
     }
 
     for (const c of candidates) {
-      expect(c.suggestedAliases).toEqual([]);
       expect(c.count).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('only proposes names with evidence outside the source, unless symbols is set', async () => {
+    const corroborated = await harvestRepo(repo, { minCount: 1 });
+    expect(corroborated.map((c) => c.canonical)).not.toContain('LexiconStore');
+    expect(corroborated.map((c) => c.canonical)).not.toContain('SnakeHelper');
+    // First-seen spelling wins, and package.json comes before the README in the walk.
+    expect(corroborated.map((c) => c.canonical)).toContain('openclaw');
+
+    const withSymbols = await harvestRepo(repo, { minCount: 1, symbols: true });
+    expect(byName(withSymbols, 'LexiconStore')?.category).toBe('identifier');
+    expect(byName(withSymbols, 'LexiconStore')?.count).toBeGreaterThanOrEqual(2);
+    expect(byName(withSymbols, 'SnakeHelper')?.count).toBe(1);
+    // Still nothing generic, and still nothing out of node_modules.
+    expect(byName(withSymbols, 'TypeError')).toBeUndefined();
+    expect(byName(withSymbols, 'IgnoredVendorThing')).toBeUndefined();
+  });
+
+  it('never guesses a word boundary a name does not already have', async () => {
+    const candidates = await harvestRepo(repo, { minCount: 1, symbols: true });
+
+    // "Ashlr.AI" says where its words break, so the spaced spelling is the
+    // user's own and speech-to-text really does write it that way.
+    expect(byName(candidates, 'Ashlr.AI')?.suggestedAliases).toEqual(['Ashlr.AI spaced', 'Ashlr.AItight']);
+    // "openclaw" does not, so a spaced alias would be our invention, and an
+    // invented word boundary is what rewrites ordinary prose.
+    expect(byName(candidates, 'openclaw')?.suggestedAliases).toEqual(['openclawtight']);
+    // A code symbol gets no aliases at all, whatever its shape.
+    expect(byName(candidates, 'LexiconStore')?.suggestedAliases).toEqual([]);
+    expect(byName(candidates, 'fastest-levenshtein')?.suggestedAliases).toEqual([]);
+
+    if (hasGit) {
+      expect(byName(candidates, 'Mason Wyatt')?.suggestedAliases).toEqual(['Mason Wyatt spaced', 'Mason Wyatttight']);
     }
   });
 
@@ -118,14 +157,13 @@ describe('harvestRepo', () => {
     const body = await fs.readFile(vendored, 'utf8');
     expect(body).toContain('IgnoredVendorThing');
 
-    const candidates = await harvestRepo(repo, { minCount: 1 });
+    const candidates = await harvestRepo(repo, { minCount: 1, symbols: true });
     expect(byName(candidates, 'IgnoredVendorThing')).toBeUndefined();
     expect(byName(candidates, 'IgnoredVendorThing2')).toBeUndefined();
   });
 
   it('respects minCount=1 to surface single occurrences', async () => {
     const candidates = await harvestRepo(repo, { minCount: 1 });
-    expect(byName(candidates, 'SnakeHelper')?.count).toBe(1);
     expect(byName(candidates, 'fastest-levenshtein')?.category).toBe('identifier');
     // Scoped dependency: generic bare name "sdk" is skipped, the scope is kept with evidence.
     expect(candidates.map((c) => c.canonical)).not.toContain('sdk');
@@ -136,7 +174,7 @@ describe('harvestRepo', () => {
   });
 
   it('sorts by count desc then canonical and respects limit', async () => {
-    const all = await harvestRepo(repo, { minCount: 1 });
+    const all = await harvestRepo(repo, { minCount: 1, symbols: true });
     for (let i = 1; i < all.length; i++) {
       const prev = all[i - 1];
       const cur = all[i];
@@ -145,7 +183,7 @@ describe('harvestRepo', () => {
         expect(prev.canonical.localeCompare(cur.canonical) <= 0).toBe(true);
       }
     }
-    const limited = await harvestRepo(repo, { minCount: 1, limit: 2 });
+    const limited = await harvestRepo(repo, { minCount: 1, limit: 2, symbols: true });
     expect(limited).toHaveLength(2);
     expect(limited).toEqual(all.slice(0, 2));
   });
@@ -157,10 +195,13 @@ describe('harvestRepo', () => {
     const noPkg = await harvestRepo(repo, { packages: false, minCount: 1 });
     expect(byName(noPkg, 'modelcontextprotocol')).toBeUndefined();
 
-    const noIdent = await harvestRepo(repo, { identifiers: false, minCount: 1 });
+    // identifiers: false stops the source scan entirely, so symbols cannot even
+    // corroborate a name: OpenClaw is left with its README and manifest count.
+    const noIdent = await harvestRepo(repo, { identifiers: false, minCount: 1, symbols: true });
     expect(byName(noIdent, 'LexiconStore')).toBeUndefined();
+    expect(byName(noIdent, 'OpenClaw')?.evidence.some((e) => e.endsWith('claw.ts'))).toBe(false);
 
-    const ignored = await harvestRepo(repo, { ignore: ['scripts'], minCount: 1 });
+    const ignored = await harvestRepo(repo, { ignore: ['scripts'], minCount: 1, symbols: true });
     expect(byName(ignored, 'SnakeHelper')).toBeUndefined();
   });
 
@@ -168,7 +209,7 @@ describe('harvestRepo', () => {
     const plain = path.join(tmp, 'plain');
     await fs.mkdir(path.join(plain, 'src'), { recursive: true });
     await fs.writeFile(path.join(plain, 'src', 'a.ts'), 'class FooBarBaz {}\nnew FooBarBaz();\n');
-    const candidates = await harvestRepo(plain);
+    const candidates = await harvestRepo(plain, { symbols: true });
     expect(candidates.every((c) => c.category !== 'person')).toBe(true);
     expect(byName(candidates, 'FooBarBaz')?.count).toBe(2);
   });

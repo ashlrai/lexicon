@@ -156,7 +156,12 @@ export interface HarvestCandidate {
   evidence: string[];
   /** Occurrence count across the scan. */
   count: number;
-  /** Auto-generated likely misspellings (may be empty). */
+  /**
+   * Auto-generated likely misspellings. Often empty on purpose: an identifier
+   * never gets one, and a canonical with no separator of its own keeps only
+   * the single-word suggestions, because a guessed word boundary rewrites
+   * ordinary prose. See harvestAliases() in harvest.ts.
+   */
   suggestedAliases: string[];
 }
 
@@ -169,8 +174,15 @@ export interface HarvestOptions {
   git?: boolean;
   /** Include package/module names from manifests. Default true. */
   packages?: boolean;
-  /** Include identifiers from source (PascalCase classes, etc). Default true. */
+  /** Scan source for PascalCase identifiers at all (they corroborate names found elsewhere). Default true. */
   identifiers?: boolean;
+  /**
+   * Also propose names seen *only* as a PascalCase symbol in source. Default
+   * false: a symbol nothing outside the code mentions is something you type,
+   * not something you say, and proposing those by frequency is what fills the
+   * list with `TextDiff` and `DispatchQueue`. Turn it on to review them.
+   */
+  symbols?: boolean;
   /** Extra glob-ish ignore patterns (dir names). node_modules, dist, .git always ignored. */
   ignore?: string[];
 }

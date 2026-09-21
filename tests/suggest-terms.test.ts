@@ -291,6 +291,12 @@ describe('suggestTerms: harvest (cwd)', () => {
         'export const all = [a, b, c, d];',
       ].join('\n'),
     );
+    // A name only ever seen as a symbol in source is not harvested at all, so
+    // the fixture has to name it the way a real project does: in the README.
+    await fs.writeFile(
+      path.join(repo, 'README.md'),
+      ['# widgets', '', 'A tiny ZorbleWidget demo. Every ZorbleWidget is made by makeZorble.', ''].join('\n'),
+    );
   });
   afterAll(async () => {
     await fs.rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
@@ -303,8 +309,11 @@ describe('suggestTerms: harvest (cwd)', () => {
     expect(s?.count).toBeGreaterThanOrEqual(5);
     expect(s?.confidence).toBeLessThan(AUTO_APPLY_CONFIDENCE);
     expect(s?.reason).toMatch(/^seen \d+ times in .* \(harvest/);
-    expect(s?.aliases).toContain('Zorble Widget');
-    expect(s?.category).toBe('identifier');
+    // Never "Zorble Widget": the harvester does not invent a word boundary a
+    // name does not already have, because that alias is what rewrites prose.
+    expect(s?.aliases).not.toContain('Zorble Widget');
+    expect(s?.aliases?.every((a) => !a.includes(' '))).toBe(true);
+    expect(s?.category).toBe('brand');
     expect(s?.evidence.every((e) => e.length <= 120)).toBe(true);
   });
 

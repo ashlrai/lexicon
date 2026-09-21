@@ -283,7 +283,7 @@ describe('runSetup --yes', () => {
     expect(harvestArgs).toEqual([]);
 
     const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true }, f);
-    expect(harvestArgs).toEqual([cwd, { limit: 10, minCount: 5 }]);
+    expect(harvestArgs).toEqual([cwd, { limit: 10, minCount: 2 }]);
     expect(summary.termsAdded).toEqual(['Playwright', 'Kubernetes']);
     const project = await readLexiconFile(path.join(cwd, '.lexicon.yaml'), 'project');
     expect(project.lexicon.terms.map((t) => t.canonical)).toEqual(['Playwright', 'Kubernetes']);
@@ -423,6 +423,10 @@ describe('runSetup --dry-run', () => {
     expect(code).toBe(0);
     expect(plan).toEqual({
       plan: true,
+      // `isInteractive` is false in these fakes, so a real run with these flags
+      // would not prompt for anything and the plan promises nothing it cannot do.
+      interactive: false,
+      wouldAsk: [],
       lexiconPath: globalPath,
       lexiconExists: false,
       wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],
@@ -455,6 +459,58 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('Playwright');
     expect(io.out).toContain('Plan (nothing written)');
     expect(io.err).toBe('');
+  });
+
+  it('describes the run that would actually happen: the prompts, and what Enter does to them', async () => {
+    // The dry run is the flag a cautious stranger reaches for first, so it has
+    // to describe this same command without --dry-run. On a terminal that run
+    // stops four more times, and two of those questions install a login
+    // service and write a file to the Desktop: reporting them as "skipped" is
+    // the opposite of what matters.
+    await fs.mkdir(path.join(cwd, '.git'));
+    const f = fakes(
+      {
+        isInteractive: () => true,
+        harvest: async () => [
+          { canonical: 'Fernwold', category: 'brand', source: 'harvest:repo', evidence: ['README.md'], count: 2, suggestedAliases: [] },
+        ],
+      },
+      [path.join(home, '.claude'), path.join(home, 'Desktop')],
+    );
+    const { plan, io } = await run({ dryRun: true, company: 'Ashlr.AI' }, f);
+    expect(plan?.interactive).toBe(true);
+    expect(plan?.wouldAsk).toEqual(['packs', 'harvest', 'clients', 'serve', 'export']);
+    // Taking every default installs the service and writes the export...
+    expect(plan?.wouldInstallServe).toBe(true);
+    expect(plan?.wouldExport).toEqual([{ format: 'wispr', path: path.join(home, 'Desktop', 'lexicon-wispr.csv') }]);
+    expect(io.out).toContain('login service: asks (default yes)');
+    expect(io.out).toContain('dictation export: asks which app');
+    expect(io.out).toContain('lexicon-wispr.csv');
+    // ...but not the repo harvest, whose prompt defaults to no.
+    expect(plan?.wouldHarvest).toEqual(['Fernwold']);
+    expect(io.out).toContain('repo harvest: asks (default no)');
+    expect(io.out).toContain('starter packs: asks');
+    expect(io.out).toContain('Enter at every prompt');
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('describes a non-interactive run as the opt-in one it is', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Fernwold', category: 'brand', source: 'harvest:repo', evidence: ['README.md'], count: 2, suggestedAliases: [] },
+      ],
+    });
+    const { plan, io } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(plan?.interactive).toBe(false);
+    expect(plan?.wouldAsk).toEqual([]);
+    expect(plan?.wouldInstallServe).toBe(false);
+    expect(plan?.wouldExport).toEqual([]);
+    // The names are still on offer for a caller to show; nothing would be written.
+    expect(plan?.wouldHarvest).toEqual(['Fernwold']);
+    expect(io.out).toContain('repo harvest: nothing added (--harvest adds them)');
+    expect(io.out).toContain('login service: skipped (--serve installs it)');
+    expect(io.out).toContain('nothing here is prompted for');
   });
 
   it('still lists the detected clients under --clients none, and serve/export stay off unless asked', async () => {
@@ -523,7 +579,7 @@ describe('runSetup interactive', () => {
     const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
     expect(terms.find((t) => t.canonical === 'Ashlr.AI')?.phonetic).toBe('ASH-ler');
     expect(terms.find((t) => t.canonical === 'Locus')?.category).toBe('product');
-    expect(io.out).toContain('pick them one by one later');
+    expect(io.out).toContain('one by one with: lexicon harvest --interactive');
     expect(f.installed.map((i) => i.client)).toEqual(['claude']);
     expect(summary.serve).toBe('installed');
     expect(summary.exports).toEqual([{ format: 'superwhisper', path: path.join(exportDir, 'lexicon-superwhisper.json') }]);
@@ -531,7 +587,7 @@ describe('runSetup interactive', () => {
     expect(p.closed).toBe(false); // the caller owns an injected prompter
   });
 
-  it('Enter everywhere takes the defaults: person yes, suggested company, default packs, harvest yes, all clients, serve yes, first app', async () => {
+  it('Enter everywhere takes the defaults: person yes, suggested company, default packs, harvest NO, all clients, serve yes, first app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');
     // The packs checklist starts with developer, ai and voice-tools checked; business is a separate no-by-default question.
@@ -546,10 +602,15 @@ describe('runSetup interactive', () => {
       },
       [path.join(home, '.claude'), '/Applications/Cursor.app'],
     );
-    const { summary } = await run({ exportDir }, f);
+    const { summary, io } = await run({ exportDir }, f);
     expect(summary.packs.map((x) => x.name)).toEqual(['developer', 'ai', 'voice-tools']);
     expect(summary.packs.every((x) => x.added > 0 && x.merged === 0)).toBe(true);
-    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'ashlrai', 'LexiconStore']);
+    // Step 3 is the one prompt whose default is no: a stranger pressing Enter
+    // through the wizard does not end up with the repo's names rewriting their
+    // prose, and nothing is written inside their repository.
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'ashlrai']);
+    expect(existsSync(path.join(cwd, '.lexicon.yaml'))).toBe(false);
+    expect(io.out).toContain('skipped; add them later');
     expect(f.installed.map((i) => i.client)).toEqual(['claude', 'cursor']);
     expect(summary.serve).toBe('installed');
     expect(summary.exports[0]?.format).toBe('wispr');
@@ -733,10 +794,11 @@ describe('runSetup starter packs', () => {
     const defaults = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
     expect(defaults.plan?.wouldInstallPacks).toEqual(['developer', 'ai', 'voice-tools']);
     expect(defaults.plan?.wouldHarvest).toEqual(['LexiconStore']);
-    expect(defaults.io.out).toContain('would install: developer');
-    expect(defaults.io.out).toContain('pass --packs <list>');
+    // The packs are on offer, not on their way in: --yes alone installs none,
+    // and both the step line and the plan card have to say so.
+    expect(defaults.io.out).toContain('would install: none (pass --packs developer,ai,voice-tools');
     expect(defaults.io.out).toContain('already in the global lexicon: Playwright');
-    expect(defaults.io.out).toContain('would install packs: developer, ai, voice-tools');
+    expect(defaults.io.out).toContain('starter packs: none (--packs developer,ai,voice-tools installs the defaults)');
     expect(existsSync(globalPath)).toBe(false);
 
     const picked = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'business' }, f);
@@ -745,7 +807,7 @@ describe('runSetup starter packs', () => {
     const off = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: false }, f);
     expect(off.plan?.wouldInstallPacks).toEqual([]);
     expect(off.io.out).toContain('skipped (--no-packs)');
-    expect(off.io.out).toContain('would install packs: none');
+    expect(off.io.out).toContain('starter packs: none');
   });
 
   it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {
