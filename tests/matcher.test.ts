@@ -670,14 +670,69 @@ describe('bug J: text that quotes a misspelling is not flattened into one spelli
     expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI sounds like Ashler. My company Ashlr.AI ships today.');
   });
 
-  // A known limit, recorded rather than hidden. The contrast has to sit near
-  // the mentions; a long clause between them reads as prose. Widening the
-  // window is what produced the false positives in the test above, so this
-  // trade is deliberate: an unfixed name is cheap, a destroyed sentence is not.
-  it('does not catch a contrast separated by a long clause', () => {
+  // A known limit, recorded rather than hidden. Everything between the two
+  // mentions has to be about spelling, and "what we write, but the recognizer
+  // keeps giving" is about the world. Loosening that is what produced the
+  // false positives in the test above, so this trade is deliberate: an unfixed
+  // name is cheap, a destroyed sentence is not.
+  it('does not catch a contrast separated by a clause about the world', () => {
     const text = 'Ashlr.AI is what we write, but the recognizer keeps giving Ashler.';
     expect(apply(text, find(text, [ASHLR]))).toBe(
       'Ashlr.AI is what we write, but the recognizer keeps giving Ashlr.AI.',
     );
+  });
+
+  // The witnesses from the review that rebuilt this guard. The specification
+  // is tests/enumeration.property.test.ts, which generates the round trip in
+  // both directions; these are the individual strings that were reported
+  // wrong, kept so a regression names itself.
+  it('corrects the ordinary dictation an earlier guard refused', () => {
+    const cases: [string, string][] = [
+      ['I heard red iss went down but Redis Cloud is fine', 'I heard Redis went down but Redis Cloud is fine'],
+      ['We wrote cooper netties scripts for the Kubernetes migration', 'We wrote Kubernetes scripts for the Kubernetes migration'],
+      ['Redis is not caching, the reddis box is down', 'Redis is not caching, the Redis box is down'],
+      ['Kubernetes is down and that means cooper netties is too', 'Kubernetes is down and that means Kubernetes is too'],
+      ['Not cooper netties again, the Kubernetes cluster is flaky', 'Not Kubernetes again, the Kubernetes cluster is flaky'],
+      ['The Kubernetes upgrade becomes cooper netties work next week', 'The Kubernetes upgrade becomes Kubernetes work next week'],
+    ];
+    for (const [input, expected] of cases) expect(apply(input, find(input, [K8S, REDIS]))).toBe(expected);
+  });
+
+  it('keeps the sentence a user types to add an alias, and the lexicon file itself', () => {
+    keeps('Add Ashler as an alias of Ashlr.AI.', [ASHLR]);
+    keeps('canonical: Ashlr.AI, alias: Ashler', [ASHLR]);
+    keeps('aliases for Ashlr.AI include Ashler and Ashlar', [ASHLR]);
+    keeps('Replace Ashler with Ashlr.AI', [ASHLR]);
+    keeps('Ashlr.AI keeps coming out as Ashler', [ASHLR]);
+    keeps('Ashler = Ashlr.AI', [ASHLR]);
+    keeps('Ashler: Ashlr.AI', [ASHLR]);
+    keeps('Ashler => Ashlr.AI', [ASHLR]);
+    keeps('Ashlr.AI vs. Ashler', [ASHLR]);
+  });
+
+  // The canonical was matched with an exact indexOf, so the casing dictation
+  // actually produces defeated the precondition and flattened the one sentence
+  // learn.ts teaches. Any spelling that folds to the canonical anchors now.
+  it('finds the canonical in the casing dictation produces', () => {
+    keeps("it's ashlr.ai, not Ashler", [ASHLR]);
+    keeps('Ashlr AI, not Ashler', [ASHLR]);
+  });
+
+  // A newline used to end a sentence, which put every item of a list or a YAML
+  // block in a sentence of its own with no canonical in it: the guard was off
+  // for exactly the files it exists to protect.
+  it('reads a multi-line list and a YAML block as one passage', () => {
+    keeps('Aliases for Ashlr.AI:\n- Ashler\n- Ashlar', [ASHLR]);
+    keeps('canonical: Ashlr.AI\naliases:\n  - Ashler\n  - Ashlar', [ASHLR]);
+    keeps('| canonical | alias |\n| --- | --- |\n| Ashlr.AI | Ashler |\n| Ashlr.AI | Ashlar |', [ASHLR]);
+  });
+
+  // Sentence bounds cannot be got right - a period after a digit or an
+  // abbreviation does not end a thought - so the refusal is per run of linked
+  // mentions instead. The quoted pair is kept and the ordinary mention after it
+  // is still corrected, whichever side of a bound they fell on.
+  it('declines the run that quotes, not everything that shares a block with it', () => {
+    const text = 'Ashlr.AI, not Ashler, since 2024. My company Ashler ships today.';
+    expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI, not Ashler, since 2024. My company Ashlr.AI ships today.');
   });
 });

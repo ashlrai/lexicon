@@ -1,6 +1,6 @@
 # Real-audio benchmark results
 
-Generated 2026-09-20T19:42:45.128Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
+Generated 2026-09-21T02:44:00.246Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
 
 Sentences: 110 (80 with lexicon terms, 30 clean prose; 6 marked expected-hard) x 3 voice(s) = 330 clips per variant. This invocation took 1 s (synthesis 0 s); cached audio and transcripts are skipped, so a cold run is longer (see the whisper wall time row).
 
