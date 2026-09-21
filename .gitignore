@@ -17,3 +17,9 @@ extension/*.zip
 .scratch/
 .vercel
 .env*
+
+# Lexicon write safety: the backup writeLexiconFile keeps, and the lock it takes
+# across a read-modify-write. Both sit next to the file they protect, so a
+# project .lexicon.yaml produces them inside the repo.
+*.bak
+*.lock
