@@ -37,7 +37,7 @@ settings:
 
 ## Per term
 
-`canonical`, `aliases`, optional `phonetic`, `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place`, `other`), `notes`, `never`, `caseSensitive`. The tool also records `source`, `createdAt` and `hits`.
+`canonical`, `aliases`, optional `phonetic`, `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place`, `other`), `notes`, `never`, `caseSensitive`. The tool also records `source`, `createdAt` and, in the global file, `hits`. A project `.lexicon.yaml` is committed and shared, so your hit counts for its terms are kept in `hits.json` next to the global lexicon instead; `lexicon stats` adds the two together. A `hits:` committed into a project file before this was the rule still counts and is left alone, but nothing adds to it.
 
 ### `never`
 

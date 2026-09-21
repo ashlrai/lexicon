@@ -13,9 +13,11 @@ import {
   ProjectTrustError,
   TERM_CATEGORIES,
   addTerm,
+  effectiveHits,
   emptyLexicon,
   isTrusted,
   readLexiconFile,
+  readProjectHits,
   withLexiconLock,
   refreshTrust,
   resolvePaths,
@@ -198,8 +200,8 @@ export interface ReviewOptions extends InteractiveOptions {
 const REVIEW_KEYS = ['k', 'd', 'e', 'p', 'n', 'q'] as const;
 const REVIEW_HELP = '[k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]uit';
 
-function showTerm(io: IO, t: Term, index: number, total: number): void {
-  const meta = [t.category ?? 'uncategorized', `${t.hits ?? 0} hit${(t.hits ?? 0) === 1 ? '' : 's'}`];
+function showTerm(io: IO, t: Term, index: number, total: number, hits: number): void {
+  const meta = [t.category ?? 'uncategorized', `${hits} hit${hits === 1 ? '' : 's'}`];
   if (t.source) meta.push(t.source);
   line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(t.canonical))}  ${dim(meta.join(', '))}`);
   line(io, `  aliases:  ${t.aliases.length > 0 ? safe(t.aliases.join(', ')) : dim('(none)')}`);
@@ -329,8 +331,13 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   const digestAtStart = await fileDigest(file.path);
   const snapshot = new Map(file.lexicon.terms.map((t) => [termKey(t), termFingerprint(t)]));
 
+  // Review reads and writes the file itself, so its terms stay exactly as they
+  // are on disk and a project term's usage count is not among them any more:
+  // it is in this user's sidecar. `--never-hit` would otherwise offer every
+  // project term for deletion, including the ones that fire every day.
+  const hits = file.scope === 'project' ? await readProjectHits(file.path, store) : {};
   const subject = file.lexicon.terms.filter(
-    (t) => (!opts.neverHit || (t.hits ?? 0) === 0) && (category === undefined || t.category === category),
+    (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || t.category === category),
   );
   if (subject.length === 0) {
     line(io, dim(`no terms to review in ${safe(file.path)}`));
@@ -350,7 +357,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     line(io);
     for (let i = 0; i < subject.length; i += 1) {
       const t = subject[i];
-      showTerm(io, t, i, subject.length);
+      showTerm(io, t, i, subject.length, effectiveHits(t, hits));
       let decided = false;
       let quit = false;
       while (!decided) {

@@ -353,6 +353,28 @@ describe('review', () => {
     expect(again.out).toContain('no terms to review');
   });
 
+  it('--never-hit and the per-term count read a project term from the sidecar', async () => {
+    await fs.writeFile(
+      projectPath,
+      'version: 1\nterms:\n  - canonical: Used\n    aliases: [youzd]\n  - canonical: Cold\n    aliases: [kohld]\n',
+      'utf8',
+    );
+    await trustProject(projectPath, { globalPath });
+    await recordHits(['Used', 'Used'], { cwd: repo, globalPath });
+
+    // The count is not in the file any more, so a review that read only the
+    // file would offer every project term for deletion, `Used` included.
+    const io = makeIO();
+    expect(await runReview({ cwd: repo, project: true, neverHit: true, globalPath }, io, scripted(['q']))).toBe(0);
+    expect(io.out).toContain('1 term in');
+    expect(io.out).toContain('[1/1] Cold');
+    expect(io.out).not.toContain('Used');
+
+    const all = makeIO();
+    expect(await runReview({ cwd: repo, project: true, globalPath }, all, scripted(['q']))).toBe(0);
+    expect(all.out).toContain('[1/2] Used  uncategorized, 2 hits');
+  });
+
   it('reports a missing file, an unknown category and mutually exclusive flags', async () => {
     const io = makeIO();
     expect(await runReview({ globalPath }, io, scripted([]))).toBe(0);

@@ -25,7 +25,7 @@ Your agent can do the same: the MCP tool `list_packs` reports the packs and whic
 
 A pack is a plain lexicon file plus `name`, `title` and `description`. Its terms are added by the same merge rules as `lexicon add`, tagged `source: pack`, so a term you already have keeps your spelling, your aliases and your source, and only gains the pack's aliases. Installing twice is a no-op. The names of the installed packs are recorded in `settings.packs` of the file they went into; [LEXICON-FILE.md](LEXICON-FILE.md#settings) is the schema for that.
 
-`lexicon pack remove <name>` removes that pack's terms from the file, except the ones you have edited since: a term with recorded hits, extra aliases or its own [`never`](LEXICON-FILE.md#never) list stays and is reported as `kept`.
+`lexicon pack remove <name>` removes that pack's terms from the file, except the ones you have edited since: a term with recorded hits, extra aliases or its own [`never`](LEXICON-FILE.md#never) list stays and is reported as `kept`. For a project file the hit count comes from your own `hits.json` rather than from the committed file, so a pack term you use every day is kept even though the file shows no hits for it.
 
 Project-scope installs go through the [trust gate](TRUST.md) like every other write.
 

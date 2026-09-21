@@ -2,6 +2,13 @@
  * Usage statistics over a loaded lexicon: how many terms/aliases exist, which
  * ones actually fire (hits are recorded by normalize_transcript / the hook)
  * and which never do, plus a per-file breakdown. Pure; no IO.
+ *
+ * It reads `loaded.merged`, which is the view `loadLexicon` has already added
+ * this user's project-term counts to, so the two places a count can be stored
+ * (the global lexicon for a global term, the per-user sidecar for a project
+ * one) show up here as a single number per term and a single `totalHits`.
+ * `files` lists the lexicons the terms came from; the sidecar holds no terms
+ * and is not one of them.
  */
 import type { LoadedLexicon, TermScope } from './types.js';
 

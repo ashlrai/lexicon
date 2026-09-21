@@ -33,16 +33,19 @@ import {
   ProjectTrustError,
   addTerm,
   defaultProjectPath,
+  effectiveHits,
   findTerm,
+  getHitsPath,
   loadLexicon,
   mergeLexicons,
   readLexiconFile,
+  readProjectHits,
   recordHits,
   removeTerm,
   resolvePaths,
   writeLexiconFile,
 } from '../src/core/store.js';
-import { getTrustPath, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
+import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
 import { xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
 
@@ -493,6 +496,11 @@ describe('project-scope writes never launder an unreviewed file', () => {
     ).resolves.toBeUndefined();
     expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
     expect(await readTrustRegistry({ globalPath })).toEqual({ version: 1, trusted: {} });
+    // Not into the sidecar either: an unreviewed file's terms are never merged,
+    // so they cannot have produced a hit, and counting them would tell the user
+    // a file they have not approved is in use.
+    await expect(fs.stat(getHitsPath({ globalPath }))).rejects.toThrow();
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
   });
 
   it('addTerm with merge:false is gated the same way', async () => {
@@ -609,15 +617,78 @@ describe('removeTerm', () => {
 });
 
 describe('recordHits', () => {
-  it('increments hits on the file holding each term', async () => {
+  /**
+   * A repo with a trusted project lexicon holding `P`, and a global one
+   * holding `G`. Returns the project path and its bytes before anything ran.
+   */
+  async function counted(): Promise<{ root: string; nested: string; projectPath: string; before: Buffer }> {
     const { root, nested } = await makeRepo();
     await addTerm({ canonical: 'G', aliases: [] }, { cwd: nested, globalPath });
-    await addTerm({ canonical: 'P', aliases: [], hits: 1 }, { cwd: nested, globalPath, scope: 'project' });
-    await recordHits(['g', 'P', 'p', 'unknown'], { cwd: nested, globalPath });
-    const global = await readLexiconFile(globalPath, 'global');
-    const project = await readLexiconFile(path.join(root, '.lexicon.yaml'), 'project');
-    expect(findTerm(global.lexicon, 'G')?.hits).toBe(1);
-    expect(findTerm(project.lexicon, 'P')?.hits).toBe(3);
+    await addTerm({ canonical: 'P', aliases: [] }, { cwd: nested, globalPath, scope: 'project' });
+    const projectPath = path.join(root, '.lexicon.yaml');
+    return { root, nested, projectPath, before: await fs.readFile(projectPath) };
+  }
+
+  it('leaves the committed project file byte-for-byte alone, pin and all', async () => {
+    const { nested, projectPath, before } = await counted();
+    const pinned = await hashFile(projectPath);
+    await recordHits(['p', 'P', 'p'], { cwd: nested, globalPath });
+    // The file a team commits is the thing that must not move: not its bytes,
+    // so no dirty working tree and no conflict per word anybody says; and not
+    // its sha256, so a teammate's `lexicon trust` pin survives everyone else's
+    // dictation.
+    expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
+    expect(await hashFile(projectPath)).toBe(pinned);
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'P')?.hits).toBeUndefined();
+  });
+
+  it('counts a project term in the per-user sidecar, and stats still sees one number', async () => {
+    const { nested, projectPath } = await counted();
+    await recordHits(['p', 'P', 'p'], { cwd: nested, globalPath });
+    expect(getHitsPath({ globalPath })).toBe(path.join(path.dirname(globalPath), 'hits.json'));
+    expect(JSON.parse(await fs.readFile(getHitsPath({ globalPath }), 'utf8'))).toEqual({
+      version: 1,
+      projects: { [await fs.realpath(projectPath)]: { p: 3 } },
+    });
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 3 });
+    // The split is invisible above loadLexicon: merged carries the total.
+    const loaded = await loadLexicon({ cwd: nested, globalPath });
+    expect(findTerm(loaded.merged, 'P')?.hits).toBe(3);
+    // ...and invisible to the file the merged view came from.
+    expect(findTerm(loaded.project!.lexicon, 'P')?.hits).toBeUndefined();
+  });
+
+  it('adds this user\'s count to a count already committed, and never rewrites it', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    // A project file as it looks today: somebody's counters committed in git.
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n    hits: 10\n');
+    await trustProject(projectPath, { globalPath });
+    await recordHits(['ashlr.ai', 'Ashlr.AI'], { cwd: nested, globalPath });
+
+    // Committed counts are somebody's data: kept as a floor, never dropped...
+    expect(await fs.readFile(projectPath, 'utf8')).toBe(
+      'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n    hits: 10\n',
+    );
+    // ...and never grown.
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Ashlr.AI')?.hits).toBe(10);
+    expect(findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'Ashlr.AI')?.hits).toBe(12);
+  });
+
+  it('counts a global term in the global file, and lets the project file claim it first', async () => {
+    const { nested, projectPath, before } = await counted();
+    // 'Shared' is in both files; the project file wins the merge, so only the
+    // project tally may move. 'G' is global-only and moves in the global file.
+    await addTerm({ canonical: 'Shared', aliases: [] }, { cwd: nested, globalPath });
+    await addTerm({ canonical: 'Shared', aliases: [] }, { cwd: nested, globalPath, scope: 'project' });
+    const after = await fs.readFile(projectPath);
+    await recordHits(['g', 'shared'], { cwd: nested, globalPath });
+
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.hits).toBe(1);
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Shared')?.hits).toBeUndefined();
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ shared: 1 });
+    expect(Buffer.compare(await fs.readFile(projectPath), after)).toBe(0);
+    void before;
   });
 
   it('swallows errors (unreadable global file)', async () => {
@@ -625,6 +696,89 @@ describe('recordHits', () => {
     await fs.writeFile(bad, 'terms: [\n  - :::\n');
     await expect(recordHits(['x'], { cwd: tmp, globalPath: bad })).resolves.toBeUndefined();
     await expect(recordHits([], { cwd: tmp, globalPath: path.join(tmp, 'dir-does-not-exist', 'x.yaml') })).resolves.toBeUndefined();
+  });
+
+  it('treats a corrupt sidecar as no counts rather than failing a correction', async () => {
+    const { nested, projectPath } = await counted();
+    await fs.mkdir(path.dirname(getHitsPath({ globalPath })), { recursive: true });
+    await fs.writeFile(getHitsPath({ globalPath }), '{ not json');
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
+    await expect(loadLexicon({ cwd: nested, globalPath })).resolves.toBeDefined();
+    await recordHits(['p'], { cwd: nested, globalPath });
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 1 });
+  });
+
+  it('forgets a removed project term, so re-adding it does not inherit the tally', async () => {
+    const { nested, projectPath } = await counted();
+    await recordHits(['p', 'p'], { cwd: nested, globalPath });
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 2 });
+    expect(await removeTerm('P', { cwd: nested, globalPath, scope: 'project' })).toBe(true);
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
+    await addTerm({ canonical: 'P', aliases: [] }, { cwd: nested, globalPath, scope: 'project' });
+    expect(findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'P')?.hits).toBeUndefined();
+  });
+});
+
+/**
+ * The write path refuses to raise a counter in a project file, whatever it is
+ * handed. This is the guarantee the rest of the codebase leans on: nine call
+ * sites write lexicon files, one of them (`addTerm`) takes a Term straight
+ * from its caller, and `loadLexicon` hands out terms that carry this user's
+ * counts. Rather than trust all of that to stay correct, the write clamps.
+ */
+describe('writeLexiconFile pins a project file\'s hits', () => {
+  async function trustedProject(): Promise<{ nested: string; projectPath: string }> {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: P\n    aliases: []\n    hits: 4\n');
+    await trustProject(projectPath, { globalPath });
+    return { nested, projectPath };
+  }
+
+  it('refuses a raised count from addTerm and drops one on a term the file does not have', async () => {
+    const { nested, projectPath } = await trustedProject();
+    await addTerm({ canonical: 'P', aliases: ['pee'], hits: 99 }, { cwd: nested, globalPath, scope: 'project' });
+    await addTerm({ canonical: 'New', aliases: [], hits: 7 }, { cwd: nested, globalPath, scope: 'project' });
+    const file = await readLexiconFile(projectPath, 'project');
+    expect(findTerm(file.lexicon, 'P')?.hits).toBe(4);
+    expect(findTerm(file.lexicon, 'P')?.aliases).toEqual(['pee']);
+    expect(findTerm(file.lexicon, 'New')?.hits).toBeUndefined();
+  });
+
+  it('refuses one carried in on a term taken from the merged view', async () => {
+    const { nested, projectPath } = await trustedProject();
+    await recordHits(['p', 'p', 'p'], { cwd: nested, globalPath });
+    const merged = await loadLexicon({ cwd: nested, globalPath });
+    expect(findTerm(merged.merged, 'P')?.hits).toBe(7);
+    // Exactly the mistake that put counters in git: write back what you loaded.
+    await writeLexiconFile({ path: projectPath, scope: 'project', lexicon: merged.merged, exists: true });
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'P')?.hits).toBe(4);
+    // The user's own count is untouched and still shows through. (The direct
+    // write changed the file, so the trust pin has to be renewed first; a real
+    // caller does that itself -- see `writeAndTrust` and `refreshTrust`.)
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 3 });
+    await trustProject(projectPath, { globalPath });
+    expect(findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'P')?.hits).toBe(7);
+  });
+
+  it('leaves a global file\'s hits exactly as written', async () => {
+    await writeLexiconFile({
+      path: globalPath,
+      scope: 'global',
+      lexicon: { version: 1, terms: [{ canonical: 'G', aliases: [], hits: 42 }] },
+      exists: false,
+    });
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.hits).toBe(42);
+  });
+});
+
+describe('effectiveHits', () => {
+  it('adds the sidecar count to the committed floor, case-insensitively', () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: [], hits: 10 };
+    expect(effectiveHits(term, {})).toBe(10);
+    expect(effectiveHits(term, { 'ashlr.ai': 2 })).toBe(12);
+    expect(effectiveHits({ canonical: 'Zoe', aliases: [] }, { zoe: 3 })).toBe(3);
+    expect(effectiveHits({ canonical: 'Zoe', aliases: [] }, {})).toBe(0);
   });
 });
 

@@ -27277,6 +27277,11 @@ var TermSchema = external_exports.object({
   notes: SafeString(LIMITS.text).optional(),
   // Not shown to models, but it round-trips through the file: same sanitising as the other strings.
   createdAt: SafeString(64).optional(),
+  // Still accepted on the way in, and still written back out, because project
+  // lexicons committed before hits moved to the per-user sidecar carry it and
+  // rewriting somebody's tracked file to drop a field is not this parser's
+  // call. Only `writeLexiconFile` decides what a project file may gain: see
+  // `pinProjectHits` in store.ts.
   hits: external_exports.number().int().nonnegative().optional(),
   never: WordList(LIMITS.aliases, "never words per term").optional()
 });
@@ -27593,9 +27598,6 @@ async function readTrustRegistry(opts = {}) {
   }
   return { version: 1, trusted };
 }
-async function writeTrustRegistry(registry2, opts = {}) {
-  await writeFileAtomic(getTrustPath(opts), formatJson(registry2));
-}
 async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
   const target = await canonicalPath(filePath);
@@ -27613,17 +27615,6 @@ async function isTrusted(projectFile, opts = {}) {
   const sha = await hashFile(key);
   if (sha === void 0) return "untrusted";
   return sha === entry.sha256 ? "trusted" : "changed";
-}
-async function refreshTrust(projectPath, opts = {}) {
-  const key = await canonicalPath(projectPath);
-  const registry2 = await readTrustRegistry(opts);
-  const existing = registry2.trusted[key];
-  if (!existing) return false;
-  const sha256 = await hashFile(key);
-  if (sha256 === void 0 || sha256 === existing.sha256) return false;
-  registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
-  await writeTrustRegistry(registry2, opts);
-  return true;
 }
 
 // src/util/xdg.ts
@@ -27703,16 +27694,32 @@ async function readLexiconFile(filePath, scope) {
   return { path: filePath, scope, lexicon, exists: true };
 }
 async function writeLexiconFile(file2) {
-  const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
   const header = HEADER_COMMENT.split("\n").map((line) => line ? `# ${line}` : "#").join("\n");
-  const text = `${header}
+  await withLexiconLock(file2.path, async () => {
+    if (file2.scope === "project") await pinProjectHits(file2);
+    const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
+    const text = `${header}
 
 ${body}`;
-  assertReadsBack(text, file2.path);
-  await withLexiconLock(file2.path, async () => {
+    assertReadsBack(text, file2.path);
     await writeFileAtomic(file2.path, text, { backup: true });
   });
   file2.exists = true;
+}
+async function pinProjectHits(file2) {
+  const onDisk = /* @__PURE__ */ new Map();
+  try {
+    const current = await readLexiconFile(file2.path, "project");
+    for (const term of current.lexicon.terms) {
+      if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
+    }
+  } catch {
+  }
+  for (const term of file2.lexicon.terms) {
+    const committed = onDisk.get(hitKey(term.canonical));
+    if (committed === void 0) delete term.hits;
+    else term.hits = committed;
+  }
 }
 function assertReadsBack(text, filePath) {
   let raw;
@@ -27772,6 +27779,74 @@ function stripUndefined(obj) {
   }
   return out;
 }
+var HITS_FILE_NAME = "hits.json";
+function getHitsPath(opts = {}) {
+  return path4.join(path4.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
+}
+function hitKey(canonical) {
+  return canonical.trim().toLowerCase();
+}
+async function canonicalPath2(filePath) {
+  const resolved = path4.resolve(filePath);
+  try {
+    return await fs3.realpath(resolved);
+  } catch {
+    return resolved;
+  }
+}
+function emptyHitsRegistry() {
+  return { version: 1, projects: {} };
+}
+async function readHitsRegistry(opts) {
+  let raw;
+  try {
+    raw = JSON.parse(await fs3.readFile(getHitsPath(opts), "utf8"));
+  } catch {
+    return emptyHitsRegistry();
+  }
+  const projects = raw?.projects;
+  if (typeof projects !== "object" || projects === null || Array.isArray(projects)) return emptyHitsRegistry();
+  const out = emptyHitsRegistry();
+  for (const [file2, counts] of Object.entries(projects)) {
+    if (typeof counts !== "object" || counts === null || Array.isArray(counts)) continue;
+    const entry = {};
+    for (const [canonical, n] of Object.entries(counts)) {
+      if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    }
+    out.projects[file2] = entry;
+  }
+  return out;
+}
+async function readProjectHits(projectPath, opts = {}) {
+  try {
+    const registry2 = await readHitsRegistry(opts);
+    return registry2.projects[await canonicalPath2(projectPath)] ?? {};
+  } catch {
+    return {};
+  }
+}
+async function addProjectHits(projectPath, counts, opts) {
+  const hitsPath = getHitsPath(opts);
+  const key = await canonicalPath2(projectPath);
+  await withFileLock(hitsPath, async () => {
+    const registry2 = await readHitsRegistry(opts);
+    const entry = { ...registry2.projects[key] ?? {} };
+    for (const [canonical, n] of counts) entry[canonical] = (entry[canonical] ?? 0) + n;
+    registry2.projects[key] = entry;
+    await writeFileAtomic(hitsPath, formatJson(registry2));
+  });
+}
+async function hydrateProjectHits(merged, project, opts) {
+  const counts = await readProjectHits(project.path, opts);
+  if (Object.keys(counts).length === 0) return;
+  const owned = new Set(project.lexicon.terms.map((t) => hitKey(t.canonical)));
+  for (const term of merged.terms) {
+    const key = hitKey(term.canonical);
+    if (!owned.has(key)) continue;
+    const n = counts[key];
+    if (n) term.hits = (term.hits ?? 0) + n;
+  }
+}
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
   const global = await readLexiconFile(paths.global, "global");
@@ -27787,7 +27862,9 @@ async function loadLexicon(opts = {}) {
   }
   const projectTrust = await isTrusted(project, opts);
   if (projectTrust === "trusted" || opts.includeUntrusted) {
-    return { merged: mergeLexicons(global.lexicon, project.lexicon), global, project, projectTrust };
+    const merged = mergeLexicons(global.lexicon, project.lexicon);
+    await hydrateProjectHits(merged, project, opts);
+    return { merged, global, project, projectTrust };
   }
   return { merged: mergeLexicons(global.lexicon), global, projectTrust, skippedProject: project };
 }
@@ -27826,40 +27903,40 @@ async function recordHits(canonicals, opts = {}) {
     if (canonicals.length === 0) return;
     const counts = /* @__PURE__ */ new Map();
     for (const c of canonicals) {
-      const key = c.toLowerCase();
+      const key = hitKey(c);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    for (const target of candidatePaths(opts)) {
-      await withLexiconLock(target.path, async () => {
-        const file2 = await readLexiconFile(target.path, target.scope);
-        if (!file2.exists) return;
-        if (file2.scope === "project" && await isTrusted(file2, opts) !== "trusted") return;
-        let touched = false;
+    const paths = resolvePaths(opts);
+    if (paths.project) {
+      const file2 = await readLexiconFile(paths.project, "project");
+      if (file2.exists && await isTrusted(file2, opts) === "trusted") {
+        const mine = /* @__PURE__ */ new Map();
         for (const term of file2.lexicon.terms) {
-          const n = counts.get(term.canonical.toLowerCase());
-          if (n) {
-            term.hits = (term.hits ?? 0) + n;
-            touched = true;
-            counts.delete(term.canonical.toLowerCase());
-          }
+          const key = hitKey(term.canonical);
+          const n = counts.get(key);
+          if (n === void 0) continue;
+          mine.set(key, n);
+          counts.delete(key);
         }
-        if (touched) {
-          await writeLexiconFile(file2);
-          if (file2.scope === "project") await refreshTrust(file2.path, opts);
-        }
-      });
+        if (mine.size > 0) await addProjectHits(paths.project, mine, opts);
+      }
     }
+    if (counts.size === 0) return;
+    await withLexiconLock(paths.global, async () => {
+      const file2 = await readLexiconFile(paths.global, "global");
+      if (!file2.exists) return;
+      let touched = false;
+      for (const term of file2.lexicon.terms) {
+        const n = counts.get(hitKey(term.canonical));
+        if (n) {
+          term.hits = (term.hits ?? 0) + n;
+          touched = true;
+        }
+      }
+      if (touched) await writeLexiconFile(file2);
+    });
   } catch {
   }
-}
-function candidatePaths(opts, scope) {
-  const paths = resolvePaths(opts);
-  if (scope === "global") return [{ path: paths.global, scope: "global" }];
-  if (scope === "project") return paths.project ? [{ path: paths.project, scope: "project" }] : [];
-  const targets = [];
-  if (paths.project) targets.push({ path: paths.project, scope: "project" });
-  targets.push({ path: paths.global, scope: "global" });
-  return targets;
 }
 function sameCanonical(a, b) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();

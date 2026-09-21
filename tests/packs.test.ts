@@ -370,6 +370,26 @@ describe('installPack / uninstallPack', () => {
     expect(after.lexicon.terms).toHaveLength((await loadPack('voice-tools')).terms);
   });
 
+  it('keeps a project pack term this user has actually used, though the file shows no hits', async () => {
+    const repo = path.join(home, 'repo-used');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await installPack('voice-tools', { cwd: repo, globalPath, scope: 'project' });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await recordHits(['Superwhisper'], { cwd: repo, globalPath });
+
+    // The counter is in this user's sidecar, not in the committed file. The
+    // "you have edited this, keep it" guard has to look there, or `pack
+    // remove` deletes the terms the user relies on most.
+    const onDisk = await readLexiconFile(projectPath, 'project');
+    expect(onDisk.lexicon.terms.find((t) => t.canonical === 'Superwhisper')?.hits).toBeUndefined();
+
+    const removed = await uninstallPack('voice-tools', { cwd: repo, globalPath });
+    expect(removed.kept).toContain('Superwhisper');
+    expect(removed.removed).not.toContain('Superwhisper');
+    const after = await readLexiconFile(projectPath, 'project');
+    expect(after.lexicon.terms.map((t) => t.canonical)).toEqual(['Superwhisper']);
+  });
+
   it('installs into a project lexicon (created and trusted) and removes from it under the trust gate', async () => {
     const repo = path.join(home, 'repo');
     await fs.mkdir(path.join(repo, '.git'), { recursive: true });

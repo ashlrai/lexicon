@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NEVER_HIT_CAP, TOP_TERMS, computeStats } from '../src/core/stats.js';
 import { renderStats, runStats } from '../src/cli/cmd-learn.js';
+import { recordHits, trustProject } from '../src/core/index.js';
 import type { IO } from '../src/cli/commands.js';
 import type { Lexicon, LoadedLexicon, Term } from '../src/core/types.js';
 
@@ -86,6 +87,40 @@ describe('lexicon stats (CLI)', () => {
   it('says so when no hits were recorded', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
     expect(text).toContain('no hits yet');
+  });
+
+  it('totals a project term across the committed file and this user\'s sidecar', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-stats-split-')));
+    const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+    const repo = path.join(tmp, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    // A project lexicon as one is committed today: a counter already in git.
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(
+      projectPath,
+      'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n    hits: 10\n  - canonical: Cold\n    aliases: [kohld]\n',
+    );
+    await trustProject(projectPath, { globalPath });
+    await recordHits(['Ashlr.AI', 'Ashlr.AI'], { cwd: repo, globalPath });
+
+    const out: string[] = [];
+    const io: IO = { stdout: (s) => void out.push(s), stderr: () => undefined };
+    const prev = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = globalPath;
+    try {
+      expect(await runStats({ cwd: repo, json: true }, io)).toBe(0);
+      const stats = JSON.parse(out.join('')) as { totalHits: number; topTerms: unknown[]; neverHit: string[] };
+      // 10 committed plus 2 of this user's own, presented as one number.
+      expect(stats.totalHits).toBe(12);
+      expect(stats.topTerms).toEqual([{ canonical: 'Ashlr.AI', hits: 12 }]);
+      expect(stats.neverHit).toEqual(['Cold']);
+      // ...and the committed file still says exactly what it said.
+      expect(await fs.readFile(projectPath, 'utf8')).toContain('hits: 10');
+    } finally {
+      if (prev === undefined) delete process.env.LEXICON_PATH;
+      else process.env.LEXICON_PATH = prev;
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 
   it('runStats --json reads the real lexicon files', async () => {

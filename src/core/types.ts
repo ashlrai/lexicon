@@ -52,7 +52,22 @@ export interface Term {
   notes?: string;
   /** ISO timestamp. */
   createdAt?: string;
-  /** Times normalize_transcript replaced something with this term. */
+  /**
+   * Times normalize_transcript replaced something with this term.
+   *
+   * Where the number lives depends on scope, because the number is personal
+   * and a project lexicon is not. For a global term it is this field, in the
+   * user's own `~/.config/lexicon/lexicon.yaml`. For a project term it is the
+   * per-user sidecar (`hits.json` beside that global file): the project file
+   * is committed and shared, so nothing writes a counter into it. `hits` on a
+   * term read out of a project file is therefore only what somebody committed
+   * before this rule existed, and it never grows.
+   *
+   * `loadLexicon` adds the two together on `LoadedLexicon.merged`, so anything
+   * reading a merged term sees one total and needs to know none of this. Code
+   * holding a term that came straight from `readLexiconFile`, because it is
+   * about to write the file back, wants `effectiveHits(term, counts)` instead.
+   */
   hits?: number;
   /**
    * Common English words that should NEVER be rewritten to this canonical even if

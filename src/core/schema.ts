@@ -172,6 +172,11 @@ export const TermSchema = z.object({
   notes: SafeString(LIMITS.text).optional(),
   // Not shown to models, but it round-trips through the file: same sanitising as the other strings.
   createdAt: SafeString(64).optional(),
+  // Still accepted on the way in, and still written back out, because project
+  // lexicons committed before hits moved to the per-user sidecar carry it and
+  // rewriting somebody's tracked file to drop a field is not this parser's
+  // call. Only `writeLexiconFile` decides what a project file may gain: see
+  // `pinProjectHits` in store.ts.
   hits: z.number().int().nonnegative().optional(),
   never: WordList(LIMITS.aliases, 'never words per term').optional(),
 });
