@@ -145,9 +145,9 @@ This is not a dictation app. It sits between whatever dictation you already use 
 Three tiers over token windows: exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span; matches never overlap. A stoplist of about 3400 common English words, per-term `never` lists, and (with the default `skipCode`) code spans, URLs, emails, paths and glued identifiers are all off limits. That is why zero clean sentences changed in the benchmark. Every replacement reports its `reason` and `confidence`.
 
 ```bash
-lexicon normalize --diff "deploy to head sner with cooper netties"
+lexicon normalize --diff "deploy to head sner with cuban eatties"
 # stderr:  "head sner" -> "Hetzner" (alias, 1.00)
-#          "cooper netties" -> "Kubernetes" (phonetic, 0.85)
+#          "cuban eatties" -> "Kubernetes" (phonetic, 0.86)
 # stdout:  deploy to Hetzner with Kubernetes
 ```
 

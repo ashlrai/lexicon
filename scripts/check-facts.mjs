@@ -572,6 +572,13 @@ function liveLineCount(file, lines) {
  * README.md carried `#v0.4.0` through two releases.
  */
 const VERSION_PIN = /#v(\d+\.\d+\.\d+)/g;
+/**
+ * A version written into the code as a constant, which no pin pattern catches.
+ * The landing page carried `VERSION = '0.5.0'` while the package was at 0.5.2 and
+ * npm served 0.5.1, so a visitor read a third number again. The word boundary
+ * keeps sentinels like UNKNOWN_VERSION out.
+ */
+const VERSION_DECL = /\bVERSION\s*[:=]\s*['\"](\d+\.\d+\.\d+)['\"]/g;
 
 function check(facts, version) {
   const problems = [];
@@ -589,6 +596,17 @@ function check(facts, version) {
           problems.push({
             where,
             message: `pins #v${m[1]}, but package.json is ${version}`,
+            snippet: line.trim().slice(0, 140),
+          });
+        }
+      }
+      for (const m of line.matchAll(VERSION_DECL)) {
+        const where = `${file}:${i + 1}`;
+        if (m[1] === version) agreed.push(`${where}  version constant = ${m[1]}`);
+        else {
+          problems.push({
+            where,
+            message: `declares version ${m[1]}, but package.json is ${version}`,
             snippet: line.trim().slice(0, 140),
           });
         }

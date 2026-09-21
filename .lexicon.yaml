@@ -1,4 +1,4 @@
-# Lexicon — personal vocabulary for voice-to-agents.
+# Lexicon: personal vocabulary for voice-to-agents.
 # canonical: the spelling you want; aliases: what STT actually hears.
 #
 # Each term may also carry: phonetic (pronunciation hint), category
@@ -78,7 +78,7 @@ terms:
     scope: project
     source: harvest:repo
     createdAt: 2026-09-19T20:35:00.822Z
-    hits: 1
+    hits: 2
   - canonical: TermScope
     aliases:
       - Term Scope
