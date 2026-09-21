@@ -302,7 +302,7 @@ final class FixEngine: @unchecked Sendable {
         }
         let outcome = write(plan, to: field.element, before: current, pid: field.pid)
         guard let strategy = outcome.strategy else {
-            report(.failed("Could not write into \(field.appName): \(outcome.detail)"))
+            reportWriteFailure(outcome, in: field)
             return
         }
         detector.markStable(plan.splicedFullText)
@@ -337,15 +337,22 @@ final class FixEngine: @unchecked Sendable {
     /// of a word and drop the rest of the burst. When the app will not say, or
     /// says something else, the whole-value write takes over — it is computed
     /// from `before` alone and so cannot be misaligned.
-    private func write(_ plan: RewritePlan.Plan, to element: AXUIElement, before: String, pid: pid_t) -> (strategy: String?, detail: String) {
+    private func write(_ plan: RewritePlan.Plan, to element: AXUIElement, before: String, pid: pid_t) -> WriteOutcome {
         let selectAttr = kAXSelectedTextRangeAttribute as String
         let selectedTextAttr = kAXSelectedTextAttribute as String
         let valueAttr = kAXValueAttribute as String
         var notes: [String] = []
 
+        // Set as soon as our own keystrokes are known to have half-landed. From
+        // that moment the field no longer holds `before`, and every guard below
+        // that compares against `before` has to compare against this instead:
+        // refusing to touch a field we ourselves left half-written is the one
+        // case where doing nothing is the worse answer.
+        var halfWritten: PartialWrite?
+
         // The plan was made when the API answered; the field has been live
         // since. Re-read it before touching anything.
-        guard (AX.value(element) ?? "") == before else { return (nil, "field changed before the write") }
+        guard (AX.value(element) ?? "") == before else { return WriteOutcome(detail: "field changed before the write") }
 
         // Chromium applies AXSelectedTextRange asynchronously; poll briefly.
         let rangeErr = AX.set(element, selectAttr, range: plan.range)
@@ -369,48 +376,189 @@ final class FixEngine: @unchecked Sendable {
         // The selection round-trip took time; make sure the field is still the
         // one the plan was computed from before the destructive write.
         if selected, (AX.value(element) ?? "") != before {
-            return (nil, "field changed while selecting (\(notes.joined(separator: ", ")))")
+            return WriteOutcome(detail: "field changed while selecting (\(notes.joined(separator: ", ")))")
         }
 
         if selected {
             let textErr = AX.set(element, selectedTextAttr, string: plan.newText)
             if textErr == .success, verify(element, equals: plan.splicedFullText, within: 0.2) {
                 AX.set(element, selectAttr, range: plan.caret)
-                return ("selection", notes.joined(separator: ", "))
+                return WriteOutcome(strategy: "selection", detail: notes.joined(separator: ", "))
             }
             notes.append("selectedText \(textErr.rawValue)")
             let after = AX.value(element) ?? ""
             guard after == before else {
                 // Something landed but not what was planned: stop here rather
                 // than write again on top of a field we no longer understand.
-                return (nil, "the selection write changed the field to something else; left alone (\(notes.joined(separator: ", ")))")
+                return WriteOutcome(detail: "the selection write changed the field to something else; left alone (\(notes.joined(separator: ", ")))")
             }
 
             // Still selected, still holding the right text, untouched: type over it.
             if watcher.activePID == pid, !plan.newText.contains(where: { $0.isNewline }),
                AX.range(element, selectAttr) == plan.range,
                AX.string(element, selectedTextAttr) == plan.previousText {
-                FixEngine.typeUnicode(plan.newText)
-                if verify(element, equals: plan.splicedFullText, within: 0.6) {
-                    return ("keystrokes", notes.joined(separator: ", "))
+                let units = plan.newText.utf16.count
+                let posted = FixEngine.typeUnicode(plan.newText)
+                if posted == units, verify(element, equals: plan.splicedFullText, within: 0.6) {
+                    return WriteOutcome(strategy: "keystrokes", detail: notes.joined(separator: ", "))
                 }
-                notes.append("keystrokes not reflected")
-                guard (AX.value(element) ?? "") == before else {
-                    return (nil, "typing changed the field to something else; left alone (\(notes.joined(separator: ", ")))")
+                notes.append(posted == units ? "keystrokes not reflected"
+                    : posted == 0 ? "no key event could be posted"
+                    : "posted \(posted) of \(units) units")
+
+                // Whatever the count said, the field is the evidence, and it is
+                // read over a window rather than once: posting queues, and the
+                // app consumes on its own event loop. See `KeystrokeSettle`.
+                let settled = KeystrokeSettle.resolve(
+                    before: before, complete: plan.splicedFullText, units: units, posted: posted,
+                    describe: { landed in
+                        landed >= units ? PartialWrite.whole(plan)
+                            : PartialWrite.overSelection(plan: plan, before: before, unitsTyped: landed)
+                    },
+                    poll: AXSettlePoll(element: element, seconds: 0.6))
+
+                switch settled {
+                case .complete:
+                    notes.append("late, but all of it landed")
+                    return WriteOutcome(strategy: "keystrokes", detail: notes.joined(separator: ", "))
+
+                case .half(let partial):
+                    // Carry it down the ladder: the value write below is the
+                    // repair, and if the value write cannot run the caller
+                    // still gets an undo entry that puts the user's text back.
+                    halfWritten = partial
+                    notes.append("\(partial.writtenText.utf16.count) of \(units) units landed; repairing")
+
+                case .untouched where posted == 0:
+                    // Nothing was posted, so nothing is queued and nothing can
+                    // arrive later. The value write below is safe and is the
+                    // whole point of the ladder.
+                    notes.append("the field is unchanged")
+
+                case .untouched(let pending):
+                    // The keystrokes went out and the field has not shown them.
+                    // They may still be queued for the app, in which case
+                    // writing the value now would put them on top of the write
+                    // and leave text nothing has a record of. So this stops, and
+                    // hands up the state the field will hold if they do arrive,
+                    // so that it is undoable when it does.
+                    return WriteOutcome(
+                        detail: "the keystrokes were posted but have not appeared (\(notes.joined(separator: ", ")))",
+                        pending: pending)
+
+                case .unexplained:
+                    return WriteOutcome(detail: "typing landed somewhere this cannot account for; left alone (\(notes.joined(separator: ", ")))")
                 }
             } else {
                 notes.append("keystrokes skipped")
             }
         }
 
-        guard (AX.value(element) ?? "") == before else { return (nil, "field changed (\(notes.joined(separator: ", ")))") }
+        // The whole-value write, and also the repair for a keystroke write that
+        // half-landed: `AXValue` replaces the whole value, so it does not care
+        // what state the field is in, and the "is the field still what the plan
+        // was made from?" guard would otherwise refuse the one case that most
+        // needs repairing.
+        let expected = halfWritten?.fieldText ?? before
+        guard (AX.value(element) ?? "") == expected else {
+            return WriteOutcome(detail: "field changed (\(notes.joined(separator: ", ")))", partial: halfWritten)
+        }
         let valueErr = AX.set(element, valueAttr, string: plan.splicedFullText)
-        guard valueErr == .success else { return (nil, "AXValue \(valueErr.rawValue) (\(notes.joined(separator: ", ")))") }
+        guard valueErr == .success else {
+            return WriteOutcome(detail: "AXValue \(valueErr.rawValue) (\(notes.joined(separator: ", ")))", partial: halfWritten)
+        }
         if verify(element, equals: plan.splicedFullText, within: 0.3) {
             AX.set(element, selectAttr, range: plan.caret)
-            return ("value", notes.joined(separator: ", "))
+            return WriteOutcome(strategy: "value", detail: notes.joined(separator: ", "))
         }
-        return (nil, "value write not reflected (\(notes.joined(separator: ", ")))")
+        return WriteOutcome(detail: "value write not reflected (\(notes.joined(separator: ", ")))", partial: halfWritten)
+    }
+
+    /// What a write managed, and what it left behind if it did not manage all
+    /// of it.
+    ///
+    /// `strategy` is non-nil exactly when the field now holds
+    /// `plan.splicedFullText`.
+    ///
+    /// `partial` is set when synthesized keystrokes landed only in part, in
+    /// which case the field holds `partial.fieldText` and the caller must
+    /// record the matching ledger entry before it tells the user anything.
+    ///
+    /// `pending` is set when keystrokes were posted and never appeared. Nothing
+    /// was written and the field still holds the user's own text, so there is
+    /// nothing to repair; this is what it will hold if they turn up after the
+    /// engine stopped waiting, recorded so that it is reversible if they do.
+    /// Never set together with `partial`.
+    private struct WriteOutcome {
+        var strategy: String?
+        var detail: String
+        var partial: PartialWrite?
+        var pending: PartialWrite?
+    }
+
+    /// The focused field, polled over a window, for `KeystrokeSettle`. The same
+    /// 25 ms cadence `verify` uses, because it is waiting for the same thing.
+    private struct AXSettlePoll: SettlePoll {
+        let element: AXUIElement
+        let deadline: TimeInterval
+
+        init(element: AXUIElement, seconds: TimeInterval) {
+            self.element = element
+            self.deadline = ProcessInfo.processInfo.systemUptime + seconds
+        }
+
+        func read() -> String? { AX.value(element) }
+
+        func keepWaiting() -> Bool {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { return false }
+            usleep(25_000)
+            return true
+        }
+    }
+
+    /// Makes a half-landed keystroke write undoable, and says whether it could.
+    ///
+    /// The field is re-read first. `PartialWrite` is arithmetic about what must
+    /// have happened, not an observation, and an entry that does not match the
+    /// field would offer an undo that splices at the wrong offset, which is the
+    /// same class of damage this whole path exists to stop. When they disagree
+    /// nothing is recorded and the caller says so.
+    private func recordPartial(_ partial: PartialWrite?, in field: FocusWatcher.Field) -> Bool {
+        guard let partial, (AX.value(field.element) ?? "") == partial.fieldText else { return false }
+        undo.record(partial.entry(fieldKey: field.key))
+        detector?.markStable(partial.fieldText)
+        watcher.noteValue(partial.fieldText, for: field)
+        publishUndoAvailability(currentText: partial.fieldText, force: true)
+        return true
+    }
+
+    /// Tells the user what actually happened. "Could not write" is only true
+    /// when nothing was written; a half-written field gets a sentence that says
+    /// so and points at the undo that was just recorded for it.
+    private func reportWriteFailure(_ outcome: WriteOutcome, in field: FocusWatcher.Field) {
+        if outcome.partial == nil, let pending = outcome.pending {
+            // Nothing is in the field, so nothing is recorded about the field as
+            // it is now. The entry describes the state the queued keystrokes
+            // would produce, and the ledger only ever offers an undo to a field
+            // whose text matches its entry exactly, so it sits inert unless they
+            // actually arrive. If they do, the next value change publishes the
+            // offer and the user's own words are one hotkey away.
+            undo.record(pending.entry(fieldKey: field.key))
+            publishUndoAvailability(currentText: AX.value(field.element) ?? "", force: true)
+            report(.failed("Nothing was written into \(field.appName) and your text is as you left it: \(outcome.detail). "
+                + "If the correction appears late, Undo (⌃⌥Z) takes it back out."))
+            return
+        }
+
+        guard outcome.partial != nil else {
+            report(.failed("Could not write into \(field.appName): \(outcome.detail)"))
+            return
+        }
+
+        report(.failed(recordPartial(outcome.partial, in: field)
+            ? "Only part of the correction went into \(field.appName): \(outcome.detail). Undo (⌃⌥Z) puts your text back."
+            : "Part of the correction went into \(field.appName) and the field then changed, "
+                + "so it cannot be put back from here: \(outcome.detail)"))
     }
 
     /// Re-reads the field until it holds `expected` or `seconds` pass.
@@ -423,21 +571,31 @@ final class FixEngine: @unchecked Sendable {
         }
     }
 
-    /// Posts `text` as keyboard events carrying unicode strings (20 units per
-    /// event, no virtual key, no modifiers). Lands in whatever has keyboard
-    /// focus, so callers check the target app is frontmost first.
-    static func typeUnicode(_ text: String) {
-        let units = Array(text.utf16)
-        var index = 0
-        while index < units.count {
-            let chunk = Array(units[index..<min(index + 20, units.count)])
-            for keyDown in [true, false] {
-                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: keyDown) else { continue }
+    /// Posts `text` as keyboard events carrying unicode strings (no virtual
+    /// key, no modifiers), and returns how many UTF-16 units were posted. Lands
+    /// in whatever has keyboard focus, so callers check the target app is
+    /// frontmost first.
+    ///
+    /// The count is the whole point: it used to return nothing, and a chunk
+    /// whose `CGEvent` came back nil was skipped in silence while the following
+    /// chunks went out anyway. That left a hole in the middle of the
+    /// replacement, which is a state no "n of m units landed" arithmetic can
+    /// describe and so nothing could undo. `UnicodeTyping.post` stops at the
+    /// first chunk it cannot build, so what goes out is always a prefix, and
+    /// both events for a chunk are built before either is posted, so a chunk
+    /// goes whole or not at all.
+    @discardableResult
+    static func typeUnicode(_ text: String) -> Int {
+        UnicodeTyping.post(text) { chunk in
+            guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else { return false }
+            let units = Array(chunk)
+            for event in [down, up] {
                 event.flags = []
-                event.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+                event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
                 event.post(tap: .cghidEventTap)
             }
-            index += chunk.count
+            return true
         }
     }
 
@@ -485,6 +643,13 @@ final class FixEngine: @unchecked Sendable {
             detector.markStable(before)
             watcher.noteValue(before, for: field)
             report(.undone(appName: field.appName))
+        } else if recordPartial(outcome.partial, in: field) {
+            // The undo itself half-landed. The ledger now describes that state
+            // instead of the one before it, so undoing again returns the field
+            // to the corrected text rather than leaving it somewhere nothing
+            // has a record of.
+            report(.failed("Undo only partly landed in \(field.appName): \(outcome.detail). "
+                + "Undo again to put it back the way it was."))
         } else {
             // The entry is untouched, so the offer stands and ⌃⌥Z can be
             // pressed again.
