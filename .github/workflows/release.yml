@@ -22,9 +22,16 @@
 # LexiconBar.app.zip, appends its checksum and re-uploads SHA256SUMS. Every upload uses
 # --clobber so a re-run of a failed job replaces its own assets.
 #
-# Release flow (see docs/RELEASING.md):
-#   npm version minor            # bumps package.json + creates the tag
-#   git push --follow-tags       # triggers this workflow
+# Release flow: docs/RELEASING.md, step 1. Follow it rather than any recipe here.
+#
+# There used to be a two-line recipe in this comment, and it was wrong in the way
+# that ships: `npm version minor` bumps package.json and the lockfile and tags in
+# one move, leaving the other eight version carriers behind. The tag-vs-package
+# check below still passes, because it compares the tag with the one file that
+# did get bumped, so the skew reaches the release. That is the failure
+# docs/RELEASING.md has now recorded four separate times.
+#
+# One release recipe in the repo, and it is not this file.
 name: Release
 
 on:
