@@ -42,7 +42,9 @@ Method, full tables and every failing case are in [docs/BENCHMARK.md](docs/BENCH
 | whisper.cpp's own `--prompt` hint list | 76.0% | n/a, nothing runs |
 | **Lexicon** | **91.0%** | **0 of 72** |
 
-Exact substitution recovers the spellings someone already wrote down, and nothing else. It cannot reach `Versal`, `Superbase`, `CloudFloor` or `pedantic`, because no table written by hand contains the mistake you have not heard yet. That gap is what the phonetic and fuzzy tiers are for, and it is worth 20 points here. `--prompt` is a complement rather than a rival: stacked with the lexicon it reaches **95.7%**. The top two rows cannot wrongly change prose because neither runs a rewrite step, which is the absence of the feature rather than an advantage.
+Exact substitution recovers the spellings someone already wrote down, and nothing else. It cannot reach `Versal`, `Superbase`, `CloudFloor` or `pedantic`, because no table written by hand contains the mistake you have not heard yet. The phonetic and fuzzy tiers exist for that gap and recover 31 of the 279 term slots on their own, which is 11 points; the rest of the distance from 71.3% is case-insensitive matching and the alias tier's tolerance for how the recognizer breaks a name into words. `--prompt` is a complement rather than a rival: stacked with the lexicon it reaches **95.7%**.
+
+Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose because nothing runs, which is the absence of the feature rather than an advantage. `--prompt` is not the same case: it biases the recognizer itself, and in this corpus it makes whisper write "GraphQL" and "Playwright" into ordinary prose sentences. That cell is unmeasured rather than zero, because the metric counts sentences a post-pass altered and the prompt's damage is already in the transcript.
 
 **Before and after.**
 

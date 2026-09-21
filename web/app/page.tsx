@@ -612,9 +612,9 @@ const STATS: { before: string; after: string; label: string }[] = [
  * recognizer, same 70-term lexicon in every row; only the fixing strategy
  * changes. Regenerate with `npm run bench:compare`, which re-scores the cached
  * transcripts rather than running whisper again, so the rows stay comparable.
- * The two rows that cannot damage prose cannot do so because they run no
- * rewrite step, which the note below says rather than letting a blank read as
- * an advantage.
+ * The prose column is unmeasured for the top two rows rather than zero: raw
+ * whisper runs nothing, and --prompt biases the recognizer, so its damage is
+ * already in the transcript this metric scores. The note below says so.
  */
 const COMPARISON: { how: string; recovered: string; prose: string; ours?: boolean }[] = [
   { how: 'nothing, raw whisper.cpp', recovered: '45.9%', prose: 'nothing runs' },
@@ -705,10 +705,13 @@ function Numbers() {
           <p className="mt-4 max-w-[78ch] text-[0.85rem] leading-relaxed text-paper-3">
             Exact substitution recovers the spellings someone already wrote down and nothing else.
             It cannot reach a mistake you have not heard yet, which is what the phonetic and fuzzy
-            tiers are for, and here that is worth twenty points. The prompt hint list is a
-            complement rather than a rival: stacked with the lexicon it reaches 95.7%. The two rows
-            that cannot damage prose cannot do so because neither runs a rewrite step at all, which
-            is the absence of the feature rather than an advantage.
+            tiers are for: they recover 31 of the 279 names on their own, about eleven points, and
+            the rest of the distance is case-insensitive matching and tolerance for how the
+            recognizer splits a name into words. The prompt hint list is a complement rather than a
+            rival, and stacked with the lexicon it reaches 95.7%. The last column is blank for the
+            top two rows because it is unmeasured, not zero: raw whisper runs nothing, while the
+            prompt biases the recognizer itself and in this corpus makes it write GraphQL and
+            Playwright into ordinary prose.
           </p>
         </div>
 
