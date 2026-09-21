@@ -302,6 +302,23 @@ function hasExtra(have: readonly string[] | undefined, pack: readonly string[] |
  * canonical is in the pack are candidates; a candidate the user has edited
  * since (hits > 0, or aliases / never-words beyond the pack's) is kept and
  * listed in `kept`. The pack name is dropped from `settings.packs` either way.
+ *
+ * Each file is read, decided about and written inside its own lock, and the
+ * files are taken one at a time. Both halves matter.
+ *
+ * Reading outside the lock was the defect. This read the file, decided which
+ * terms survived, read the hits sidecar, and only then wrote, so a
+ * `lexicon add` that landed anywhere in that window was read by nobody here
+ * and was renamed away by the write, with the uninstall reporting success.
+ * Thirteen of thirteen concurrent runs lost the racing term. The locked
+ * `removeTerm` under the same conditions either keeps the write or fails
+ * loudly, which is the behaviour this now has.
+ *
+ * One at a time, rather than one lock around both, because this is the only
+ * operation that touches the project file and the global file together. Two
+ * locks held at once is how an ordering mistake becomes a wait that never
+ * ends, and there is nothing to gain here: the two files are independent
+ * documents and `removeTerm` has always walked them the same way.
  */
 export async function uninstallPack(
   name: string,
@@ -311,38 +328,41 @@ export async function uninstallPack(
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   const packTerms = new Map(pack.lexicon.terms.map((t) => [lower(t.canonical), t]));
   const paths = resolvePaths(storeOpts);
-  const files: LexiconFile[] = [];
-  if (opts.scope !== 'global' && paths.project) files.push(await readLexiconFile(paths.project, 'project'));
-  if (opts.scope !== 'project') files.push(await readLexiconFile(paths.global, 'global'));
+  const targets: { path: string; scope: TermScope }[] = [];
+  if (opts.scope !== 'global' && paths.project) targets.push({ path: paths.project, scope: 'project' });
+  if (opts.scope !== 'project') targets.push({ path: paths.global, scope: 'global' });
 
   const removed: string[] = [];
   const kept: string[] = [];
   const written: string[] = [];
-  for (const file of files) {
-    if (!file.exists) continue;
-    const listed = (file.lexicon.settings?.packs ?? []).includes(name);
-    // `file` is about to be written back, so its terms have to stay exactly as
-    // they are on disk; a project term's usage count is not on disk any more,
-    // it is in this user's sidecar. Read it alongside rather than into the term.
-    const hits = file.scope === 'project' ? await readProjectHits(file.path, storeOpts) : {};
-    const remaining = file.lexicon.terms.filter((term) => {
-      const packTerm = packTerms.get(lower(term.canonical));
-      if (!packTerm || term.source !== 'pack') return true;
-      if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never)) {
-        kept.push(term.canonical);
-        return true;
+  for (const target of targets) {
+    await withLexiconLock(target.path, async () => {
+      const file = await readLexiconFile(target.path, target.scope);
+      if (!file.exists) return;
+      const listed = (file.lexicon.settings?.packs ?? []).includes(name);
+      // `file` is about to be written back, so its terms have to stay exactly as
+      // they are on disk; a project term's usage count is not on disk any more,
+      // it is in this user's sidecar. Read it alongside rather than into the term.
+      const hits = file.scope === 'project' ? await readProjectHits(file.path, storeOpts) : {};
+      const remaining = file.lexicon.terms.filter((term) => {
+        const packTerm = packTerms.get(lower(term.canonical));
+        if (!packTerm || term.source !== 'pack') return true;
+        if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never)) {
+          kept.push(term.canonical);
+          return true;
+        }
+        removed.push(term.canonical);
+        return false;
+      });
+      if (remaining.length === file.lexicon.terms.length && !listed) return;
+      if (file.scope === 'project') {
+        const status = await isTrusted(file, storeOpts);
+        if (status !== 'trusted') throw new ProjectTrustError(file.path, status);
       }
-      removed.push(term.canonical);
-      return false;
+      file.lexicon.terms = remaining;
+      await writePacksSetting(file, (file.lexicon.settings?.packs ?? []).filter((p) => p !== name), storeOpts);
+      written.push(file.path);
     });
-    if (remaining.length === file.lexicon.terms.length && !listed) continue;
-    if (file.scope === 'project') {
-      const status = await isTrusted(file, storeOpts);
-      if (status !== 'trusted') throw new ProjectTrustError(file.path, status);
-    }
-    file.lexicon.terms = remaining;
-    await writePacksSetting(file, (file.lexicon.settings?.packs ?? []).filter((p) => p !== name), storeOpts);
-    written.push(file.path);
   }
   return { pack: info(pack), removed, kept, files: written };
 }

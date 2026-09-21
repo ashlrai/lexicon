@@ -174,7 +174,7 @@ describe('readLexiconFile / writeLexiconFile', () => {
     );
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     // No leftover temp file.
-    await expect(fs.stat(`${globalPath}.tmp`)).rejects.toThrow();
+    expect(await leftoverTemps(globalPath)).toEqual([]);
 
     const back = await readLexiconFile(globalPath, 'global');
     expect(back.exists).toBe(true);
@@ -423,7 +423,7 @@ describe('project-scope writes never launder an unreviewed file', () => {
     );
     // Byte-for-byte untouched, no tmp file left behind, registry never created.
     expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
-    await expect(fs.stat(`${projectPath}.tmp`)).rejects.toThrow();
+    expect(await leftoverTemps(projectPath)).toEqual([]);
     await expect(fs.stat(getTrustPath({ globalPath }))).rejects.toThrow();
     expect(await readTrustRegistry({ globalPath })).toEqual({ version: 1, trusted: {} });
     expect((await loadLexicon({ cwd: nested, globalPath })).projectTrust).toBe('untrusted');
@@ -793,6 +793,18 @@ describe('effectiveHits', () => {
 const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const STORE_MODULE = new URL('../src/core/store.ts', import.meta.url).href;
 
+/**
+ * Temp files left beside `target`. `<target>.tmp` alone stopped being the
+ * name to look for when the temp started carrying the writer's pid (two
+ * writers inside the critical section together must not share one), so these
+ * assertions look for any sibling temp rather than one spelling of it.
+ */
+async function leftoverTemps(target: string): Promise<string[]> {
+  const base = path.basename(target);
+  const entries = await fs.readdir(path.dirname(target)).catch(() => [] as string[]);
+  return entries.filter((e) => e.startsWith(base) && e.endsWith('.tmp')).sort();
+}
+
 /** A pid that is certainly gone: spawn a process that does nothing, then wait for it. */
 async function deadPid(): Promise<number> {
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
@@ -925,7 +937,7 @@ describe('a write never lands a file that cannot be read back', () => {
     schemaOverride.parseLexicon = undefined;
 
     expect(Buffer.compare(await fs.readFile(globalPath), before)).toBe(0);
-    await expect(fs.stat(`${globalPath}.tmp`)).rejects.toThrow();
+    expect(await leftoverTemps(globalPath)).toEqual([]);
     // The product is still alive: every command reads through this.
     expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Good')).toBeDefined();
   });
@@ -941,7 +953,7 @@ describe('a write never lands a file that cannot be read back', () => {
     // And it is a whole lexicon, so recovery is a copy and not an edit.
     const restored = await readLexiconFile(`${globalPath}${BACKUP_SUFFIX}`, 'global');
     expect(restored.lexicon.terms.map((t) => t.canonical)).toEqual(['One']);
-    await expect(fs.stat(`${globalPath}${BACKUP_SUFFIX}.tmp`)).rejects.toThrow();
+    expect(await leftoverTemps(globalPath)).toEqual([]);
   });
 });
 

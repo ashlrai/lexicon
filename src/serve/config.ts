@@ -12,7 +12,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../core/index.js';
 import type { StoreOptions } from '../core/index.js';
-import { writeFileAtomic } from '../util/atomic.js';
+import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
 
 /** serve.json holds the API token, so it is owner-only. */
@@ -78,10 +78,20 @@ export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeCon
   }
 }
 
+/**
+ * Run `fn` with exclusive access to `serve.json`, across processes.
+ *
+ * Re-entrant, and taken inside a lexicon file's lock rather than around one.
+ * See the lock ordering note in `util/atomic.ts`.
+ */
+export function withServeConfigLock<T>(fn: () => Promise<T>, opts: StoreOptions = {}): Promise<T> {
+  return withFileLock(getServePath(opts), fn);
+}
+
 /** Writes the token, so 0600. Returns the path written. */
 export async function writeServeConfig(config: ServeConfig, opts: StoreOptions = {}): Promise<string> {
   const target = getServePath(opts);
-  await writeFileAtomic(target, formatJson(config), { mode: SERVE_FILE_MODE });
+  await withServeConfigLock(() => writeFileAtomic(target, formatJson(config), { mode: SERVE_FILE_MODE }), opts);
   return target;
 }
 
@@ -89,13 +99,22 @@ export function generateToken(): string {
   return randomBytes(16).toString('hex');
 }
 
-/** Read the config, creating it with a fresh token on first run. */
+/**
+ * Read the config, creating it with a fresh token on first run.
+ *
+ * Read and create are one locked step. Unlocked, two first runs each saw no
+ * file, each minted a token, and the loser's client was left holding a token
+ * the server would answer 401 to; the same race also renamed two writers'
+ * temp files over each other, which is how `trust.json` crashed with ENOENT.
+ */
 export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeConfig> {
-  const existing = await readServeConfig(opts);
-  if (existing) return existing;
-  const config: ServeConfig = { port: DEFAULT_PORT, token: generateToken(), createdAt: new Date().toISOString() };
-  await writeServeConfig(config, opts);
-  return config;
+  return withServeConfigLock(async () => {
+    const existing = await readServeConfig(opts);
+    if (existing) return existing;
+    const config: ServeConfig = { port: DEFAULT_PORT, token: generateToken(), createdAt: new Date().toISOString() };
+    await writeServeConfig(config, opts);
+    return config;
+  }, opts);
 }
 
 /** True when `origin` may receive CORS headers: an extension origin or a listed exact match. Never `*`. */

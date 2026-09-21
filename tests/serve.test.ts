@@ -4,10 +4,12 @@
  * The CLI handlers (`--show`, `--status`, `--install`, `--uninstall`) run with
  * injected deps so no launchctl/systemctl is ever spawned.
  */
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addTerm, readLexiconFile, suggestAliases } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
@@ -185,6 +187,61 @@ describe('serve.json', () => {
 
   it('exposes the fixed default port', () => {
     expect(DEFAULT_PORT).toBe(41733);
+  });
+
+  /**
+   * Catches: `ensureServeConfig` reading and then creating without a lock,
+   * and `writeServeConfig` sharing a temp file name with every other writer.
+   *
+   * serve.json holds the bearer token for the local API, so the loser of that
+   * race walks away with a token the server answers 401 to: the browser
+   * extension, Shortcuts, Raycast and the menu bar app all find the server
+   * and are all refused, with nothing saying why. It is the same gap
+   * `trust.json` had, and the sidecar added in 0.5.3 was correctly locked,
+   * which is what made these two the odd ones out.
+   *
+   * Real processes, because that is the case: several clients starting
+   * `lexicon serve` at login.
+   */
+  it('mints one token when six processes reach first run together', async () => {
+    const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-token-')));
+    try {
+      const globalPath = path.join(home, 'config', 'lexicon.yaml');
+      const script = path.join(home, 'ensure.mts');
+      const configModule = new URL('../src/serve/config.ts', import.meta.url).href;
+      await fs.writeFile(
+        script,
+        [
+          `import { ensureServeConfig } from ${JSON.stringify(configModule)};`,
+          'const [globalPath] = process.argv.slice(2);',
+          'const config = await ensureServeConfig({ globalPath, cwd: process.cwd() });',
+          'process.stdout.write(config.token);',
+        ].join('\n'),
+      );
+
+      const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+      const run = (): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const child = spawn(process.execPath, ['--import', 'tsx', script, globalPath], {
+            cwd: repoRoot,
+            env: { ...process.env, LEXICON_PATH: '', XDG_CONFIG_HOME: '' },
+          });
+          let out = '';
+          let err = '';
+          child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+          child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+          child.once('error', reject);
+          child.once('close', (code) => (code === 0 ? resolve(out.trim()) : reject(new Error(err || out))));
+        });
+
+      const tokens = await Promise.all(Array.from({ length: 6 }, () => run()));
+      const stored = await readServeConfig({ globalPath });
+      expect(stored?.token).toMatch(/^[0-9a-f]{32}$/);
+      // Every client believes the token that is actually on disk.
+      expect(new Set([...tokens, stored?.token]).size).toBe(1);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true }).catch(() => undefined);
+    }
   });
 });
 

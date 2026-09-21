@@ -1,6 +1,8 @@
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LexiconFile } from '../src/core/types.js';
 import {
@@ -188,5 +190,69 @@ describe('listTrusted', () => {
       [projectPath, 'trusted'],
     ]);
     expect(await listTrusted({ globalPath: path.join(tmp, 'empty', 'lexicon.yaml') })).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Concurrency
+// ---------------------------------------------------------------------------
+
+const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const TRUST_MODULE = new URL('../src/core/trust.ts', import.meta.url).href;
+
+/** Run a script in a real, separate process; an in-process test cannot show a cross-process lock. */
+function runChild(script: string, args: readonly string[]): Promise<{ code: number; out: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', script, ...args], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, LEXICON_PATH: '', XDG_CONFIG_HOME: '' },
+    });
+    let out = '';
+    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (out += d.toString()));
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? -1, out: out.trim() }));
+  });
+}
+
+describe('concurrent trust registrations', () => {
+  /**
+   * Catches: `trust.json` having no lock at all. Every mutation here reads
+   * the whole file, edits one key and writes the whole file back, and none of
+   * it was held.
+   *
+   * Six `lexicon add --project` runs in six different repositories: one
+   * process crashed with ENOENT renaming the temp file, which the writers
+   * shared, and three of the six wrote their lexicon, reported success, and
+   * were simply absent from the registry. Absent means untrusted, and an
+   * untrusted project file is silently skipped on the next load, so the
+   * symptom is a team's shared vocabulary quietly not applying. At eight
+   * processes, seven crashed and one entry survived.
+   */
+  it('keeps every entry when eight processes register at once', async () => {
+    const script = path.join(tmp, 'trust-one.mts');
+    await fs.writeFile(
+      script,
+      [
+        `import { trustProject } from ${JSON.stringify(TRUST_MODULE)};`,
+        'const [globalPath, projectFile] = process.argv.slice(2);',
+        'await trustProject(projectFile, { globalPath, cwd: process.cwd() });',
+        "process.stdout.write('trusted');",
+      ].join('\n'),
+    );
+
+    const projects: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const file = path.join(tmp, `repo${i}`, '.lexicon.yaml');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, `version: 1\nterms:\n  - canonical: Term${i}\n    aliases: []\n`);
+      projects.push(await fs.realpath(file));
+    }
+
+    const results = await Promise.all(projects.map((file) => runChild(script, [globalPath, file])));
+    expect(results.map((r) => r.code)).toEqual(projects.map(() => 0));
+
+    const registry = await readTrustRegistry({ globalPath });
+    expect(Object.keys(registry.trusted).sort()).toEqual([...projects].sort());
   });
 });

@@ -8,13 +8,22 @@
  * lost update hide. Every test here was watched failing against the unlocked
  * code before the lock went in.
  */
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addTerm, loadLexicon, readLexiconFile } from '../src/core/index.js';
-import { installPack } from '../src/core/packs.js';
+import { addTerm, loadLexicon, readLexiconFile, writeLexiconFile } from '../src/core/index.js';
+import { installPack, loadPack } from '../src/core/packs.js';
+import { emptyLexicon } from '../src/core/schema.js';
+import type { Term } from '../src/core/types.js';
 import { runInit } from '../src/cli/commands.js';
+import { runEdit } from '../src/cli/cmd-review.js';
+
+const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const PACKS_MODULE = new URL('../src/core/packs.ts', import.meta.url).href;
+const STORE_MODULE = new URL('../src/core/store.ts', import.meta.url).href;
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -30,6 +39,31 @@ async function scratch(): Promise<{ dir: string; globalPath: string }> {
 function io() {
   const out: string[] = [];
   return { out, io: { stdout: (s: string) => out.push(s), stderr: (s: string) => out.push(s) } };
+}
+
+interface ChildResult {
+  code: number;
+  out: string;
+}
+
+/**
+ * Run a script in a real, separate process. Only a second process can show
+ * that a lock works between processes; an in-process test would pass on the
+ * promise queue alone, which is how the defect below survived a suite that
+ * already had a twelve-writer case.
+ */
+function runChild(script: string, args: readonly string[]): Promise<ChildResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', script, ...args], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, LEXICON_PATH: '', XDG_CONFIG_HOME: '' },
+    });
+    let out = '';
+    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (out += d.toString()));
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? -1, out: out.trim() }));
+  });
 }
 
 describe('installPack holds one lock for the whole install', () => {
@@ -104,5 +138,107 @@ describe('runInit creates the file exactly once', () => {
     expect(text.match(/# canonical: the spelling you want/g) ?? []).toHaveLength(1);
     const file = await readLexiconFile(globalPath, 'global');
     expect(file.exists).toBe(true);
+  });
+});
+
+describe('uninstallPack reads and writes inside the lock', () => {
+  /**
+   * Catches: `uninstallPack` reading the lexicon, deciding which terms
+   * survive, reading the hits sidecar and only then writing, with none of it
+   * locked. This is the fourth instance of the class the install lock was
+   * added to fix, sitting directly below the one that was fixed.
+   *
+   * A `lexicon add` landing anywhere in that window was read by nobody here
+   * and was renamed away by the write, with both commands reporting success
+   * and exiting 0. Thirteen of thirteen concurrent runs lost the racing term.
+   * The control is decisive: the locked `removeTerm` under identical
+   * conditions either keeps the write or fails loudly.
+   *
+   * The lexicon is seeded large enough that the read and the serialize are
+   * not instantaneous, which is what makes the window real rather than
+   * theoretical. Two arrival times, because the window has a start and an end.
+   */
+  it('keeps a term another process adds while the pack is being removed', async () => {
+    const uninstallScript = path.join((await scratch()).dir, 'uninstall.mts');
+    await fs.writeFile(
+      uninstallScript,
+      [
+        `import { uninstallPack } from ${JSON.stringify(PACKS_MODULE)};`,
+        'const [globalPath] = process.argv.slice(2);',
+        "const r = await uninstallPack('developer', { globalPath, scope: 'global', cwd: process.cwd() });",
+        "process.stdout.write('removed=' + r.removed.length);",
+      ].join('\n'),
+    );
+    const addScript = path.join(path.dirname(uninstallScript), 'add.mts');
+    await fs.writeFile(
+      addScript,
+      [
+        `import { addTerm } from ${JSON.stringify(STORE_MODULE)};`,
+        'const [globalPath, canonical, delayMs] = process.argv.slice(2);',
+        'await new Promise((r) => setTimeout(r, Number(delayMs)));',
+        "await addTerm({ canonical, aliases: [] }, { globalPath, scope: 'global', cwd: process.cwd() });",
+        "process.stdout.write('added ' + canonical);",
+      ].join('\n'),
+    );
+
+    const pack = await loadPack('developer');
+    for (const delayMs of ['0', '40']) {
+      const { globalPath } = await scratch();
+      const lexicon = emptyLexicon();
+      for (const term of pack.lexicon.terms) {
+        lexicon.terms.push({ ...term, aliases: [...term.aliases], scope: 'global', source: 'pack' } as Term);
+      }
+      for (let i = 0; i < 400; i++) {
+        lexicon.terms.push({ canonical: `Filler${i}`, aliases: [`f${i}a`, `f${i}b`], scope: 'global', source: 'user' } as Term);
+      }
+      lexicon.settings = { packs: ['developer'] };
+      await writeLexiconFile({ path: globalPath, scope: 'global', lexicon, exists: false });
+
+      const [uninstalled, added] = await Promise.all([
+        runChild(uninstallScript, [globalPath]),
+        runChild(addScript, [globalPath, 'Racer', delayMs]),
+      ]);
+
+      expect(uninstalled.out).toBe('removed=70');
+      const back = await readLexiconFile(globalPath, 'global');
+      const present = back.lexicon.terms.some((t) => t.canonical === 'Racer');
+      // Either the write is kept or the writer was told it failed. What must
+      // never happen is the third thing: success reported, term gone.
+      if (added.code === 0) {
+        expect({ delayMs, said: added.out, present }).toEqual({ delayMs, said: 'added Racer', present: true });
+      } else {
+        expect(added.out).toContain('could not lock');
+      }
+      // The uninstall's own work still landed.
+      expect(back.lexicon.settings?.packs ?? []).not.toContain('developer');
+    }
+  });
+});
+
+describe('runEdit creates the file exactly once', () => {
+  /**
+   * Catches: dropping the `withLexiconLock` around `runEdit`'s existence
+   * check and its create. Apart, both callers pass `existsSync`, both write
+   * an empty lexicon, and a term written into the gap by anyone else is
+   * renamed away while both commands report having created the file. It is
+   * the same shape `runInit` was fixed for, in the command directly beside it.
+   */
+  it('reports one creation when two edits race on a missing lexicon', async () => {
+    const { dir, globalPath } = await scratch();
+    const a = io();
+    const b = io();
+    // No $VISUAL or $EDITOR: runEdit does the create-if-missing work and then
+    // prints where the file is, which is the half under test.
+    const env = { PATH: process.env.PATH } as NodeJS.ProcessEnv;
+
+    const codes = await Promise.all([
+      runEdit({ cwd: dir, globalPath }, a.io, undefined, env),
+      runEdit({ cwd: dir, globalPath }, b.io, undefined, env),
+    ]);
+
+    expect(codes).toEqual([0, 0]);
+    const said = [...a.out, ...b.out].join('');
+    expect(said.match(/created global lexicon/g) ?? []).toHaveLength(1);
+    expect((await readLexiconFile(globalPath, 'global')).exists).toBe(true);
   });
 });

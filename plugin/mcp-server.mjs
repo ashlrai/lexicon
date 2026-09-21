@@ -44143,40 +44143,75 @@ function isEnoent(err) {
 
 // src/util/atomic.ts
 var BACKUP_SUFFIX = ".bak";
+var OLDER_BACKUP_SUFFIX = ".1.bak";
+var BACKUP_ROTATE_MS = 15 * 6e4;
 var LOCK_SUFFIX = ".lock";
 var DEFAULT_LOCK_TIMEOUT_MS = 1e4;
 var DEFAULT_LOCK_STALE_MS = 3e4;
+var DEFAULT_LOCK_QUEUE_TIMEOUT_MS = 3e5;
+async function resolveWriteTarget(target) {
+  const abs = path.resolve(target);
+  try {
+    return await fs.realpath(abs);
+  } catch {
+    return abs;
+  }
+}
+async function resolveMode(target, opts) {
+  if (opts.mode !== void 0) return opts.mode;
+  try {
+    return (await fs.stat(target)).mode & 4095;
+  } catch {
+    return void 0;
+  }
+}
 async function writeFileAtomic(target, data, opts = {}) {
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const tmp = opts.unique ? `${target}.${process.pid}.tmp` : `${target}.tmp`;
-  if (opts.mode === void 0) {
+  await fs.mkdir(path.dirname(path.resolve(target)), { recursive: true });
+  const real = await resolveWriteTarget(target);
+  const tmp = `${real}.${process.pid}.tmp`;
+  const mode = await resolveMode(real, opts);
+  if (mode === void 0) {
     await fs.writeFile(tmp, data, "utf8");
   } else {
-    await fs.writeFile(tmp, data, { encoding: "utf8", mode: opts.mode });
-    await fs.chmod(tmp, opts.mode);
+    await fs.writeFile(tmp, data, { encoding: "utf8", mode });
+    await fs.chmod(tmp, mode);
   }
   try {
-    if (opts.backup) await backupExisting(target);
-    await fs.rename(tmp, target);
+    if (opts.backup) await backupExisting(real);
+    await fs.rename(tmp, real);
   } catch (err) {
     await fs.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
 }
 async function backupExisting(target) {
-  const bak = `${target}${BACKUP_SUFFIX}`;
-  const tmpBak = `${bak}.tmp`;
+  const copied = await copyThroughTemp(target, `${target}${BACKUP_SUFFIX}`);
+  if (!copied) return;
+  const older = `${target}${OLDER_BACKUP_SUFFIX}`;
+  if (await isYoungerThan(older, BACKUP_ROTATE_MS)) return;
+  await copyThroughTemp(target, older);
+}
+async function copyThroughTemp(from, to) {
+  const tmp = `${to}.${process.pid}.tmp`;
   try {
-    await fs.copyFile(target, tmpBak);
+    await fs.copyFile(from, tmp);
   } catch (err) {
-    if (isEnoent(err)) return;
+    if (isEnoent(err)) return false;
     throw err;
   }
   try {
-    await fs.rename(tmpBak, bak);
+    await fs.rename(tmp, to);
   } catch (err) {
-    await fs.rm(tmpBak, { force: true }).catch(() => void 0);
+    await fs.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
+  }
+  return true;
+}
+async function isYoungerThan(file2, ms) {
+  try {
+    return Date.now() - (await fs.stat(file2)).mtimeMs < ms;
+  } catch {
+    return false;
   }
 }
 var FileLockError = class extends Error {
@@ -44197,32 +44232,76 @@ async function withFileLock(target, fn, opts = {}) {
   const lockPath = `${path.resolve(target)}${LOCK_SUFFIX}`;
   const held = heldLocks.getStore();
   if (held?.has(lockPath)) return fn();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const staleMs = opts.staleMs ?? DEFAULT_LOCK_STALE_MS;
+  const queueTimeoutMs = opts.queueTimeoutMs ?? DEFAULT_LOCK_QUEUE_TIMEOUT_MS;
   const run = async () => {
-    const token = await acquire(
-      lockPath,
-      target,
-      opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
-      opts.staleMs ?? DEFAULT_LOCK_STALE_MS
-    );
+    const token = await acquire(lockPath, target, timeoutMs, staleMs);
+    const stopHeartbeat = startHeartbeat(lockPath, token, staleMs);
     const next = new Set(held ?? []);
     next.add(lockPath);
     try {
       return await heldLocks.run(next, fn);
     } finally {
+      stopHeartbeat();
       await release(lockPath, token);
     }
   };
+  let started = false;
+  let abandoned = false;
   const previous = queues.get(lockPath) ?? Promise.resolve();
-  const mine = previous.then(run, run);
+  const turn = async () => {
+    if (abandoned) throw new FileLockError(target, lockPath, "the caller stopped waiting for its turn");
+    started = true;
+    return run();
+  };
+  const mine = previous.then(turn, turn);
   const tail = mine.then(ignore, ignore);
   queues.set(lockPath, tail);
   try {
-    return await mine;
+    return await new Promise((resolve4, reject) => {
+      const timer = setTimeout(() => {
+        if (started) return;
+        abandoned = true;
+        reject(
+          new FileLockError(
+            target,
+            lockPath,
+            `another operation in this process still held it after ${queueTimeoutMs}ms (a lock ordering bug, not contention)`
+          )
+        );
+      }, queueTimeoutMs);
+      mine.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve4(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
   } finally {
     if (queues.get(lockPath) === tail) queues.delete(lockPath);
   }
 }
 function ignore() {
+}
+function startHeartbeat(lockPath, token, staleMs) {
+  const every = Math.max(250, Math.min(Math.floor(staleMs / 3), 5e3));
+  const timer = setInterval(() => {
+    void (async () => {
+      try {
+        if (parseOwner(await fs.readFile(lockPath, "utf8"))?.token !== token) return;
+        const now = /* @__PURE__ */ new Date();
+        await fs.utimes(lockPath, now, now);
+      } catch {
+      }
+    })();
+  }, every);
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
 async function acquire(lockPath, target, timeoutMs, staleMs) {
   const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -44256,11 +44335,11 @@ async function breakIfStale(lockPath, staleMs) {
     return isEnoent(err);
   }
   const owner = parseOwner(before);
-  const ours = owner?.host === os.hostname();
-  const abandoned = ours && owner.pid !== process.pid && !pidAlive(owner.pid);
-  const expired = Date.now() - mtimeMs >= staleMs;
-  if (!abandoned && !expired) return false;
-  if (ours && owner.pid === process.pid && pidAlive(owner.pid)) return false;
+  if (owner && owner.host === os.hostname()) {
+    if (pidAlive(owner.pid)) return false;
+  } else if (Date.now() - mtimeMs < staleMs) {
+    return false;
+  }
   try {
     if (await fs.readFile(lockPath, "utf8") !== before) return false;
     await fs.unlink(lockPath);
@@ -44304,6 +44383,7 @@ function parseOwner(text) {
     if (typeof raw !== "object" || raw === null) return void 0;
     const { pid, host, token, at } = raw;
     if (typeof pid !== "number" || typeof host !== "string" || typeof token !== "string") return void 0;
+    if (!Number.isInteger(pid) || pid <= 0) return void 0;
     return { pid, host, token, at: typeof at === "string" ? at : "an unknown time" };
   } catch {
     return void 0;
@@ -44408,8 +44488,11 @@ async function readTrustRegistry(opts = {}) {
   }
   return { version: 1, trusted };
 }
+function withTrustLock(fn, opts = {}) {
+  return withFileLock(getTrustPath(opts), fn);
+}
 async function writeTrustRegistry(registry2, opts = {}) {
-  await writeFileAtomic(getTrustPath(opts), formatJson(registry2));
+  await withTrustLock(() => writeFileAtomic(getTrustPath(opts), formatJson(registry2)), opts);
 }
 async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
@@ -44433,30 +44516,36 @@ async function trustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
   if (sha256 === void 0) throw new Error(`trustProject: cannot read ${projectPath}`);
-  const registry2 = await readTrustRegistry(opts);
-  const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  registry2.trusted[key] = entry;
-  await writeTrustRegistry(registry2, opts);
-  return entry;
+  return withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    registry2.trusted[key] = entry;
+    await writeTrustRegistry(registry2, opts);
+    return entry;
+  }, opts);
 }
 async function refreshTrust(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
-  const registry2 = await readTrustRegistry(opts);
-  const existing = registry2.trusted[key];
-  if (!existing) return false;
-  const sha256 = await hashFile(key);
-  if (sha256 === void 0 || sha256 === existing.sha256) return false;
-  registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
-  await writeTrustRegistry(registry2, opts);
-  return true;
+  return withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    const existing = registry2.trusted[key];
+    if (!existing) return false;
+    const sha256 = await hashFile(key);
+    if (sha256 === void 0 || sha256 === existing.sha256) return false;
+    registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
+    await writeTrustRegistry(registry2, opts);
+    return true;
+  }, opts);
 }
 async function untrustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
-  const registry2 = await readTrustRegistry(opts);
-  if (!(key in registry2.trusted)) return false;
-  delete registry2.trusted[key];
-  await writeTrustRegistry(registry2, opts);
-  return true;
+  return withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    if (!(key in registry2.trusted)) return false;
+    delete registry2.trusted[key];
+    await writeTrustRegistry(registry2, opts);
+    return true;
+  }, opts);
 }
 async function listTrusted(opts = {}) {
   const registry2 = await readTrustRegistry(opts);
@@ -59603,20 +59692,25 @@ async function readServeConfig(opts = {}) {
     return void 0;
   }
 }
+function withServeConfigLock(fn, opts = {}) {
+  return withFileLock(getServePath(opts), fn);
+}
 async function writeServeConfig(config2, opts = {}) {
   const target = getServePath(opts);
-  await writeFileAtomic(target, formatJson(config2), { mode: SERVE_FILE_MODE });
+  await withServeConfigLock(() => writeFileAtomic(target, formatJson(config2), { mode: SERVE_FILE_MODE }), opts);
   return target;
 }
 function generateToken() {
   return randomBytes(16).toString("hex");
 }
 async function ensureServeConfig(opts = {}) {
-  const existing = await readServeConfig(opts);
-  if (existing) return existing;
-  const config2 = { port: DEFAULT_PORT, token: generateToken(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
-  await writeServeConfig(config2, opts);
-  return config2;
+  return withServeConfigLock(async () => {
+    const existing = await readServeConfig(opts);
+    if (existing) return existing;
+    const config2 = { port: DEFAULT_PORT, token: generateToken(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+    await writeServeConfig(config2, opts);
+    return config2;
+  }, opts);
 }
 
 // src/serve/server.ts

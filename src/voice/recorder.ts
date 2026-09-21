@@ -65,12 +65,12 @@ export async function ensureVoiceDir(globalPath: string): Promise<string> {
 }
 
 /**
- * Atomic 0600 write. `unique` because two `lexicon voice --toggle` invocations
- * can race for the recorder state file, and a shared `<target>.tmp` would let
- * one clobber the other's half-written temp.
+ * Atomic 0600 write. Two `lexicon voice --toggle` invocations can race for the
+ * recorder state file; `writeFileAtomic` always puts the writer's pid in the
+ * temp name, so neither can clobber the other's half-written temp.
  */
 export async function writePrivateFile(file: string, data: string): Promise<void> {
-  await writeFileAtomic(file, data, { mode: VOICE_FILE_MODE, unique: true });
+  await writeFileAtomic(file, data, { mode: VOICE_FILE_MODE });
 }
 
 /**

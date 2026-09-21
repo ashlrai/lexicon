@@ -21,7 +21,7 @@ import path from 'node:path';
 import { resolvePaths } from './store.js';
 import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
-import { writeFileAtomic } from '../util/atomic.js';
+import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
 
 export type TrustStatus = 'trusted' | 'untrusted' | 'changed';
@@ -128,8 +128,27 @@ export async function readTrustRegistry(opts: StoreOptions = {}): Promise<TrustR
   return { version: 1, trusted };
 }
 
+/**
+ * Run `fn` with exclusive access to the registry, across processes.
+ *
+ * Every mutation here is a read of the whole file, an edit of one key and a
+ * write of the whole file back, and until this existed none of them was
+ * locked. Six `lexicon add --project` runs in six different repositories:
+ * one crashed renaming the temp file, and three of the six wrote their
+ * lexicon, reported success, and were simply absent from the registry
+ * afterwards, so on the next load those projects were untrusted and silently
+ * skipped. At eight, seven crashed and one entry survived.
+ *
+ * Re-entrant, and always taken *inside* a lexicon file's lock, never outside
+ * one: `addTerm` and `removeTerm` re-pin trust while holding theirs. See the
+ * lock ordering note in `util/atomic.ts`.
+ */
+export function withTrustLock<T>(fn: () => Promise<T>, opts: StoreOptions = {}): Promise<T> {
+  return withFileLock(getTrustPath(opts), fn);
+}
+
 export async function writeTrustRegistry(registry: TrustRegistry, opts: StoreOptions = {}): Promise<void> {
-  await writeFileAtomic(getTrustPath(opts), formatJson(registry));
+  await withTrustLock(() => writeFileAtomic(getTrustPath(opts), formatJson(registry)), opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,11 +194,13 @@ export async function trustProject(projectPath: string, opts: StoreOptions = {})
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
   if (sha256 === undefined) throw new Error(`trustProject: cannot read ${projectPath}`);
-  const registry = await readTrustRegistry(opts);
-  const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
-  registry.trusted[key] = entry;
-  await writeTrustRegistry(registry, opts);
-  return entry;
+  return withTrustLock(async () => {
+    const registry = await readTrustRegistry(opts);
+    const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
+    registry.trusted[key] = entry;
+    await writeTrustRegistry(registry, opts);
+    return entry;
+  }, opts);
 }
 
 /**
@@ -189,24 +210,28 @@ export async function trustProject(projectPath: string, opts: StoreOptions = {})
  */
 export async function refreshTrust(projectPath: string, opts: StoreOptions = {}): Promise<boolean> {
   const key = await canonicalPath(projectPath);
-  const registry = await readTrustRegistry(opts);
-  const existing = registry.trusted[key];
-  if (!existing) return false;
-  const sha256 = await hashFile(key);
-  if (sha256 === undefined || sha256 === existing.sha256) return false;
-  registry.trusted[key] = { sha256, trustedAt: existing.trustedAt };
-  await writeTrustRegistry(registry, opts);
-  return true;
+  return withTrustLock(async () => {
+    const registry = await readTrustRegistry(opts);
+    const existing = registry.trusted[key];
+    if (!existing) return false;
+    const sha256 = await hashFile(key);
+    if (sha256 === undefined || sha256 === existing.sha256) return false;
+    registry.trusted[key] = { sha256, trustedAt: existing.trustedAt };
+    await writeTrustRegistry(registry, opts);
+    return true;
+  }, opts);
 }
 
 /** Remove `projectPath` from the registry. Returns false when it was not registered. */
 export async function untrustProject(projectPath: string, opts: StoreOptions = {}): Promise<boolean> {
   const key = await canonicalPath(projectPath);
-  const registry = await readTrustRegistry(opts);
-  if (!(key in registry.trusted)) return false;
-  delete registry.trusted[key];
-  await writeTrustRegistry(registry, opts);
-  return true;
+  return withTrustLock(async () => {
+    const registry = await readTrustRegistry(opts);
+    if (!(key in registry.trusted)) return false;
+    delete registry.trusted[key];
+    await writeTrustRegistry(registry, opts);
+    return true;
+  }, opts);
 }
 
 /** Every registered file with its current status, sorted by path. */

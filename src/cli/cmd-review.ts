@@ -516,10 +516,15 @@ export async function runEdit(
     scope = 'global';
   }
 
-  if (!existsSync(target)) {
+  // The existence check and the create are one locked step, the way `runInit`
+  // does it. Apart, a `lexicon add` landing between them wrote the file this
+  // had just decided was missing, and the empty lexicon written here was
+  // renamed straight over the new term.
+  await withLexiconLock(target, async () => {
+    if (existsSync(target)) return;
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
     line(io, `created ${scope} lexicon: ${safe(target)}`);
-  }
+  });
   const trustedBefore =
     scope === 'project'
       ? (await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) === 'trusted'
