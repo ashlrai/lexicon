@@ -623,3 +623,33 @@ describe('formatAdditionalContext', () => {
     expect(text.endsWith('Corrected prompt:\nhi Ashlr.AI')).toBe(true);
   });
 });
+
+/**
+ * A lexicon that will not parse used to throw out to `main`, which writes one
+ * line to stderr and exits 0. Through Claude Code that is invisible: the
+ * corrections stop and nothing ever says why, and the user's first clue is
+ * that their company name is wrong again. Fails against the unfixed hook,
+ * where the rejection escapes `runHook` instead of becoming a note.
+ */
+describe('bug M: a lexicon that does not parse is reported, not swallowed', () => {
+  it('tells the agent which command fixes it, on both hook events', async () => {
+    mocks.loadLexicon.mockRejectedValue(
+      new Error('Failed to parse lexicon YAML at /x/lexicon.yaml: Missing closing "quote at line 3'),
+    );
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+
+    for (const input of [
+      JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'ping Ashler about it', cwd: '/fake/repo' }),
+      JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/fake/repo' }),
+    ]) {
+      const out = await runHook(input);
+      expect(out).toBeTruthy();
+      const said = (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput
+        .additionalContext;
+      expect(said).toContain('does not parse');
+      expect(said).toContain('lexicon edit');
+      // Whatever else happens, the hook never rewrites the prompt.
+      expect(said).not.toContain('Ashlr.AI');
+    }
+  });
+});

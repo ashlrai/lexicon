@@ -33431,6 +33431,17 @@ function parseInput(raw) {
   if (!parsed || typeof parsed !== "object") return {};
   return parsed;
 }
+async function loadOrExplain(cwd) {
+  try {
+    return { loaded: await loadLexicon({ cwd }) };
+  } catch (err) {
+    const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    return {
+      note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
+Tell the user to run \`lexicon edit\` and fix the parse error. \`lexicon setup\` will not repair this, and \`lexicon doctor\` will show the same thing.`
+    };
+  }
+}
 function emit(hookEventName, parts) {
   const output2 = {
     hookSpecificOutput: { hookEventName, additionalContext: parts.join("\n") }
@@ -33441,7 +33452,9 @@ async function userPromptSubmit(payload, opts) {
   const prompt = payload.prompt;
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
-  const loaded = await loadLexicon({ cwd });
+  const attempt = await loadOrExplain(cwd);
+  if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
+  const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
   const parsed = parseCorrection(prompt);
   const correction = parsed && parsed.heard.trim() !== "" && parsed.meant.trim() !== "" ? parsed : void 0;
@@ -33460,7 +33473,9 @@ async function userPromptSubmit(payload, opts) {
 }
 async function sessionStart(payload, opts) {
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
-  const loaded = await loadLexicon({ cwd });
+  const attempt = await loadOrExplain(cwd);
+  if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
+  const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
   if (loaded.merged.terms.length === 0) {
     if (!await shouldEmitOnboardNote(loaded.global.path)) return "";

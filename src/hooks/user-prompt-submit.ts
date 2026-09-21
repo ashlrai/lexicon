@@ -367,6 +367,30 @@ function parseInput(raw: string): HookInput {
   return parsed as HookInput;
 }
 
+/**
+ * Load the lexicon, or explain why it could not be loaded.
+ *
+ * A file that will not parse used to throw all the way out to `main`, which
+ * writes one line to stderr and exits 0. Through Claude Code that line goes
+ * nowhere a person looks, so corrections simply stop and nothing ever says
+ * why; the user's next clue is that their company name is wrong again. The
+ * hook still must not fail and must never touch the prompt, so the problem is
+ * reported through the one channel the hook is already allowed to use.
+ */
+async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType<typeof loadLexicon>>; note?: string }> {
+  try {
+    return { loaded: await loadLexicon({ cwd }) };
+  } catch (err) {
+    const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    return {
+      note:
+        `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
+        'Tell the user to run `lexicon edit` and fix the parse error. `lexicon setup` will not repair this, ' +
+        'and `lexicon doctor` will show the same thing.',
+    };
+  }
+}
+
 function emit(hookEventName: HookEventName, parts: readonly string[]): string {
   const output: HookOutput = {
     hookSpecificOutput: { hookEventName, additionalContext: parts.join('\n') },
@@ -381,7 +405,9 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
-  const loaded = await loadLexicon({ cwd });
+  const attempt = await loadOrExplain(cwd);
+  if (!attempt.loaded) return emit('UserPromptSubmit', [attempt.note ?? '']);
+  const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
 
   const parsed = parseCorrection(prompt);
@@ -407,7 +433,9 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
-  const loaded = await loadLexicon({ cwd });
+  const attempt = await loadOrExplain(cwd);
+  if (!attempt.loaded) return emit('SessionStart', [attempt.note ?? '']);
+  const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
 
   if (loaded.merged.terms.length === 0) {
