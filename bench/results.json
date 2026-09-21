@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-20T19:41:19.441Z",
+  "generatedAt": "2026-09-21T01:05:48.170Z",
   "lexicon": "bench/lexicon.yaml",
   "corpus": "bench/corpus.jsonl",
   "config": {
@@ -187,8 +187,8 @@
     }
   },
   "latency": {
-    "normalizeUs": 528.7618984924635,
-    "findReplacementsUs": 95.18863266331648,
+    "normalizeUs": 310.6759190954751,
+    "findReplacementsUs": 57.663612562812354,
     "rounds": 5
   },
   "failures": [

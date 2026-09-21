@@ -48840,37 +48840,37 @@ function tokenize(text, skipCode) {
 }
 
 // src/core/matcher/enumeration.ts
-var SPELLING_CUES = [
-  "sounds like",
-  "sound like",
-  "sounded like",
+var CONTRAST_WORDS = /* @__PURE__ */ new Set([
+  "not",
+  "instead",
+  "vs",
+  "versus",
+  "rather",
+  "nor",
+  "aka",
+  "sounds",
+  "sounded",
   "spelled",
-  "spelling",
+  "spelt",
   "spells",
-  "misspell",
   "misheard",
   "mishears",
-  "hears it as",
-  "heard as",
-  "writes it",
-  "writes as",
-  "write it as",
-  "written as",
-  "wrote it as",
-  "comes out as",
-  "turns into",
-  "transcrib",
-  "renders it",
-  "mangles",
-  "autocorrect",
-  "typo",
-  "alias",
-  "canonical",
-  "stt",
-  "speech-to-text",
-  "speech to text"
-];
-var LIST_DELIMITERS = /* @__PURE__ */ new Set(["/", "|", ",", ";", "	", ">", "\u2192"]);
+  "hears",
+  "heard",
+  "writes",
+  "wrote",
+  "written",
+  "renders",
+  "transcribes",
+  "transcribed",
+  "becomes",
+  "means",
+  "eg",
+  "ie"
+]);
+var MAX_CONTRAST_GAP = 30;
+var LIST_PUNCTUATION = /^[\s/|;>→()[\]"'“”‘’-]+$/u;
+var NUMBERED_ITEM = /^[\s\d.)\]]*\d[\s\d.)\]]*$/u;
 function isWordChar(ch) {
   return ch !== "" && /[\p{L}\p{N}]/u.test(ch);
 }
@@ -48880,7 +48880,12 @@ function sentenceBounds(text) {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     const isNewline = ch === "\n" || ch === "\r";
-    const isTerminal2 = (ch === "." || ch === "!" || ch === "?") && /[ \t]/.test(text[i + 1] ?? "\n");
+    let isTerminal2 = (ch === "." || ch === "!" || ch === "?") && /[ \t]/.test(text[i + 1] ?? "\n");
+    if (isTerminal2 && ch === ".") {
+      const prev = text[i - 1] ?? "";
+      if (/\d/.test(prev)) isTerminal2 = false;
+      else if (new RegExp("\\p{L}", "u").test(prev) && (text[i - 2] ?? "") === ".") isTerminal2 = false;
+    }
     if (!isNewline && !isTerminal2) continue;
     const end = isNewline ? i : i + 1;
     if (end > start) bounds.push([start, end]);
@@ -48903,59 +48908,59 @@ function bareOccurrences(text, from, to, needle, covered) {
   }
   return found;
 }
-function delimiterAdjacent(text, leftEnd, rightStart) {
-  if (rightStart < leftEnd) return false;
-  const between = text.slice(leftEnd, rightStart);
-  if (between.length === 0 || between.length > 8) return false;
-  let sawDelimiter = false;
-  for (const ch of between) {
-    if (LIST_DELIMITERS.has(ch)) {
-      sawDelimiter = true;
-      continue;
-    }
-    if (ch === "-" || ch === "\u2013" || ch === "\u2014") {
-      sawDelimiter = true;
-      continue;
-    }
-    if (!/\s/.test(ch)) return false;
+function hasContrastWord(fragment) {
+  if (/\b(?:e\.g|i\.e)\./i.test(fragment)) return true;
+  for (const word of fragment.toLowerCase().split(/[^\p{L}]+/u)) {
+    if (word && CONTRAST_WORDS.has(word)) return true;
   }
-  return sawDelimiter;
+  return false;
 }
-function hasSpellingCue(sentence) {
-  const lower = sentence.toLowerCase();
-  return SPELLING_CUES.some((cue) => lower.includes(cue));
+function contrastsBetween(gap) {
+  if (gap.length === 0) return false;
+  if (LIST_PUNCTUATION.test(gap)) return true;
+  if (gap.length <= 12 && NUMBERED_ITEM.test(gap)) return true;
+  if (gap.length > MAX_CONTRAST_GAP) return false;
+  return hasContrastWord(gap);
+}
+var MAX_LEAD_IN = 8;
+function contrastsBefore(text, from, firstMention) {
+  const lead = text.slice(Math.max(from, firstMention - MAX_LEAD_IN), firstMention);
+  return hasContrastWord(lead);
 }
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
+  let cursor = 0;
   for (const [from, to] of sentenceBounds(text)) {
+    while (cursor < spans.length && spans[cursor].start < from) cursor++;
     const here = [];
-    for (let i = 0; i < spans.length; i++) {
-      if (spans[i].start >= from && spans[i].end <= to) here.push({ span: spans[i], index: i });
+    for (let i = cursor; i < spans.length && spans[i].start < to; i++) {
+      if (spans[i].end <= to) here.push({ span: spans[i], index: i });
     }
     if (here.length === 0) continue;
     const covered = here.map((h) => h.span);
-    const cued = hasSpellingCue(text.slice(from, to));
     const byResult = /* @__PURE__ */ new Map();
     for (const { span, index } of here) {
       let group = byResult.get(span.replacement);
       if (!group) {
-        group = { originals: /* @__PURE__ */ new Set(), indices: [], points: [] };
+        group = { indices: [], points: [] };
         byResult.set(span.replacement, group);
       }
-      group.originals.add(span.original);
       group.indices.push(index);
       group.points.push([span.start, span.end]);
     }
     for (const [result, group] of byResult) {
       const bare = bareOccurrences(text, from, to, result, covered);
-      for (const at of bare) {
-        group.originals.add(result);
-        group.points.push([at, at + result.length]);
+      if (bare.length === 0) continue;
+      for (const at of bare) group.points.push([at, at + result.length]);
+      const points = group.points.slice().sort((a, b) => a[0] - b[0]);
+      let contrasted = contrastsBefore(text, from, points[0][0]);
+      for (let i = 0; i + 1 < points.length && !contrasted; i++) {
+        const gapStart = points[i][1];
+        const gapEnd = points[i + 1][0];
+        if (gapEnd >= gapStart) contrasted = contrastsBetween(text.slice(gapStart, gapEnd));
       }
-      if (group.originals.size < 2) continue;
-      const adjacent = group.points.slice().sort((a, b) => a[0] - b[0]).some(([, end], i, sorted) => i + 1 < sorted.length && delimiterAdjacent(text, end, sorted[i + 1][0]));
-      if (cued || bare.length > 0 && adjacent) for (const index of group.indices) declined.add(index);
+      if (contrasted) for (const index of group.indices) declined.add(index);
     }
   }
   if (declined.size === 0) return spans;

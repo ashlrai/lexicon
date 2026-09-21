@@ -597,56 +597,87 @@ describe('bug I: stoplist words plus abbreviations never match phonetically', ()
   });
 });
 
-describe('bug J: text that quotes misspellings is not flattened into one spelling', () => {
+describe('bug J: text that quotes a misspelling is not flattened into one spelling', () => {
   const MASON = { canonical: 'Mason Wyatt', aliases: ['Mason Wyat', 'mason white'], category: 'person' as const };
   const REDIS = { canonical: 'Redis', aliases: ['reddis', 'red iss'] };
 
-  // The report that prompted this: a sentence naming two example misspellings
-  // came back naming the canonical twice, so it no longer said anything.
+  const keeps = (text: string, terms: Parameters<typeof find>[1]) =>
+    expect(apply(text, find(text, terms))).toBe(text);
+
+  // Quoting. Each of these names a spelling rather than committing one, and
+  // flattening it destroys the only thing the sentence says.
   it('leaves a slash-delimited pair of misspellings alone', () => {
-    const text = 'Rewritten to name Mason Wyatt, the chips Mason Wiatt / Mason Wyat, and the Try it box.';
-    expect(apply(text, find(text, [MASON]))).toBe(text);
+    keeps('Rewritten to name Mason Wyatt, the chips Mason Wiatt / Mason Wyat, and the Try it box.', [MASON]);
   });
 
-  it('leaves a docs table row listing a canonical and its aliases alone', () => {
-    const row = '| Ashlr.AI | Ashler, Ashlar | brand |';
-    expect(apply(row, find(row, [ASHLR]))).toBe(row);
+  it('leaves a docs table row alone, with one alias or several', () => {
+    keeps('| Ashlr.AI | Ashler, Ashlar | brand |', [ASHLR]);
+    keeps('| Ashlr.AI | Ashler | brand |', [ASHLR]);
   });
 
-  it('leaves a row alone when it lists only one alias', () => {
-    const row = '| Ashlr.AI | Ashler | brand |';
-    expect(apply(row, find(row, [ASHLR]))).toBe(row);
+  // These are the phrasings src/core/learn.ts teaches users to say. Rewriting
+  // them to "X not X" makes learnCorrection reject its own documented example.
+  it('leaves every "it is X not Y" correction phrasing alone', () => {
+    keeps("it's Ashlr.AI, not Ashler", [ASHLR]);
+    keeps('I said Ashlr.AI not Ashler', [ASHLR]);
+    keeps('"Ashlr.AI" not "Ashler"', [ASHLR]);
+    keeps('not Ashler, Ashlr.AI', [ASHLR]);
   });
 
-  it('leaves an enumeration alone when the sentence says it is about spelling', () => {
-    const text = 'Ashlr.AI sounds like Ashler or Ashlar to the recognizer.';
-    expect(apply(text, find(text, [ASHLR]))).toBe(text);
+  it('leaves other contrastive phrasings alone', () => {
+    keeps('It keeps giving Ashler instead of Ashlr.AI.', [ASHLR]);
+    keeps('Ashler vs Ashlr.AI in the logs.', [ASHLR]);
+    keeps('Ashlr.AI sounds like Ashler or Ashlar to the recognizer.', [ASHLR]);
   });
 
-  it('leaves a canonical paired with one quoted misspelling alone', () => {
-    const text = 'Ashlr.AI is what we write, but STT gives Ashler.';
-    expect(apply(text, find(text, [ASHLR]))).toBe(text);
+  // A period followed by a space used to end the sentence here, stranding the
+  // aliases away from the canonical they are contrasted with.
+  it('does not treat list scaffolding as the end of a sentence', () => {
+    keeps('Ashlr.AI is often wrong, e.g. Ashler and Ashlar.', [ASHLR]);
+    keeps('Ashlr.AI has 1. Ashler 2. Ashlar as variants.', [ASHLR]);
   });
 
-  // The other half of the guard, and the reason it is not simply "never collapse
-  // two spellings": these are people dictating, not quoting, and must still be fixed.
-  it('still corrects two different garbles of one term joined by prose', () => {
+  // Dictation. The evidence for quoting has to sit next to the mentions: words
+  // like alias, canonical, spelling and typography are a working programmer's
+  // ordinary vocabulary, and an earlier version refused to correct all of these.
+  it('still corrects ordinary prose that merely contains a spelling word', () => {
+    const cases: [string, string][] = [
+      ['Kubernetes is fine but the canonical cooper netties docs are not', 'Kubernetes is fine but the canonical Kubernetes docs are not'],
+      ['That sounds like the Kubernetes issue, cooper netties keeps crashing', 'That sounds like the Kubernetes issue, Kubernetes keeps crashing'],
+      ['Add a shell alias so Kubernetes and cooper netties both resolve', 'Add a shell alias so Kubernetes and Kubernetes both resolve'],
+      ['Fix the anti-aliasing before Kubernetes and cooper netties ship', 'Fix the anti-aliasing before Kubernetes and Kubernetes ship'],
+      ['The typography on the Kubernetes page and the cooper netties page differ', 'The typography on the Kubernetes page and the Kubernetes page differ'],
+      ['Check the spelling on the Kubernetes and cooper netties pages', 'Check the spelling on the Kubernetes and Kubernetes pages'],
+    ];
+    for (const [input, expected] of cases) expect(apply(input, find(input, [K8S]))).toBe(expected);
+  });
+
+  it('still corrects a comma splice, which is dictation and not a list', () => {
+    expect(apply('I pushed to Redis, reddis went down', find('I pushed to Redis, reddis went down', [REDIS]))).toBe(
+      'I pushed to Redis, Redis went down',
+    );
+    const mason = 'Ping Mason Wyatt, Mason Wyat is on call tonight';
+    expect(apply(mason, find(mason, [MASON]))).toBe('Ping Mason Wyatt, Mason Wyatt is on call tonight');
+  });
+
+  it('still corrects two garbles of one term with no canonical present', () => {
     const text = 'the reddis and red iss instances are the same box';
     expect(apply(text, find(text, [REDIS]))).toBe('the Redis and Redis instances are the same box');
-  });
-
-  it('still corrects a garble in a sentence that already names the canonical', () => {
-    const text = 'Kubernetes is fine but the cooper netties docs are not';
-    expect(apply(text, find(text, [K8S]))).toBe('Kubernetes is fine but the Kubernetes docs are not');
-  });
-
-  it('still corrects the same misspelling repeated, which is repetition not quotation', () => {
-    const text = 'Ashler and Ashler both appear here.';
-    expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI and Ashlr.AI both appear here.');
   });
 
   it('confines the guard to the sentence that quotes', () => {
     const text = 'Ashlr.AI sounds like Ashler. My company Ashler ships today.';
     expect(apply(text, find(text, [ASHLR]))).toBe('Ashlr.AI sounds like Ashler. My company Ashlr.AI ships today.');
+  });
+
+  // A known limit, recorded rather than hidden. The contrast has to sit near
+  // the mentions; a long clause between them reads as prose. Widening the
+  // window is what produced the false positives in the test above, so this
+  // trade is deliberate: an unfixed name is cheap, a destroyed sentence is not.
+  it('does not catch a contrast separated by a long clause', () => {
+    const text = 'Ashlr.AI is what we write, but the recognizer keeps giving Ashler.';
+    expect(apply(text, find(text, [ASHLR]))).toBe(
+      'Ashlr.AI is what we write, but the recognizer keeps giving Ashlr.AI.',
+    );
   });
 });
