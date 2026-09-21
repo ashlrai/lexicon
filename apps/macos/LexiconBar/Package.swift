@@ -18,9 +18,13 @@ let package = Package(
             name: "LexiconBar",
             dependencies: ["LexiconBarKit"]
         ),
+        // The tests link the executable too. `Settings`, `FocusWatcher` and
+        // `FixEngine` are where the "Fix everywhere" read gate is actually
+        // wired together, and a gate whose pure half alone is tested is how a
+        // publisher that fed it the previous exclusion list shipped green.
         .testTarget(
             name: "LexiconBarKitTests",
-            dependencies: ["LexiconBarKit"]
+            dependencies: ["LexiconBarKit", "LexiconBar"]
         ),
     ]
 )

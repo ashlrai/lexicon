@@ -73,6 +73,41 @@ final class Settings: ObservableObject {
         set { fixExcludedApps = newValue.bundleIDs }
     }
 
+    /// The four knobs "Fix everywhere" runs on, as one value.
+    struct FixSettings: Equatable {
+        var enabled: Bool
+        var settleMs: Double
+        var minWords: Int
+        var exclusions: AppExclusions
+    }
+
+    var fixSettings: FixSettings {
+        FixSettings(enabled: fixEverywhere, settleMs: fixSettleMs, minWords: fixMinWords, exclusions: exclusions)
+    }
+
+    /// Every change to those four knobs, carrying the **new** values, starting
+    /// with the current ones as soon as anything subscribes.
+    ///
+    /// This exists because of one detail of `@Published`: it emits from
+    /// `willSet`, before the property holds the new value. A sink that
+    /// discards the value it is handed and reads `settings` back therefore
+    /// sees the value from *before* the change. That is exactly how excluding
+    /// an app used to reach `FocusWatcher` as the list that did not contain
+    /// it: the watcher compared it to the list it already had, found them
+    /// equal, and kept reading the field the user had just excluded.
+    ///
+    /// `CombineLatest` carries the new value through instead. Whichever knob
+    /// moved, its own publisher emits the value being assigned, the other
+    /// three contribute their latest, and nothing is read off the object at
+    /// all. Sinks get a whole `FixSettings` and have nothing left to read
+    /// back.
+    var fixSettingsChanges: AnyPublisher<FixSettings, Never> {
+        Publishers.CombineLatest4($fixEverywhere, $fixSettleMs, $fixMinWords, $fixExcludedApps)
+            .map { FixSettings(enabled: $0, settleMs: $1, minWords: $2, exclusions: AppExclusions(bundleIDs: $3)) }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     var accessibilityHintShown: Bool {
         get { defaults.bool(forKey: Keys.accessibilityHintShown) }
         set { defaults.set(newValue, forKey: Keys.accessibilityHintShown) }

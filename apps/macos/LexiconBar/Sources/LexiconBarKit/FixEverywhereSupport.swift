@@ -53,19 +53,25 @@ public struct AppExclusions: Equatable, Sendable {
         self.bundleIDs = bundleIDs
     }
 
-    public func isExcluded(_ bundleID: String?) -> Bool {
-        guard let bundleID, !bundleID.isEmpty else { return false }
+    public func isExcluded(_ bundleID: String?) -> Bool { matchingEntry(bundleID) != nil }
+
+    /// The entry that keeps `bundleID` out, as it is written in the list
+    /// (`com.1password.*` for a vendor rule, the id itself for an exact one),
+    /// or nil when the app is admitted. The menu shows it, because "the switch
+    /// you just flicked did nothing" needs a reason next to it.
+    public func matchingEntry(_ bundleID: String?) -> String? {
+        guard let bundleID, !bundleID.isEmpty else { return nil }
         let id = bundleID.lowercased()
         for entry in bundleIDs {
             let pattern = entry.trimmingCharacters(in: .whitespaces).lowercased()
             if pattern.isEmpty { continue }
             if pattern.hasSuffix(".*") {
-                if id.hasPrefix(String(pattern.dropLast(1))) { return true }
+                if id.hasPrefix(String(pattern.dropLast(1))) { return entry }
             } else if pattern == id {
-                return true
+                return entry
             }
         }
-        return false
+        return nil
     }
 
     /// Adds `bundleID` (exact, no wildcard) if not already matched.
@@ -75,14 +81,31 @@ public struct AppExclusions: Equatable, Sendable {
         bundleIDs.append(id)
     }
 
-    /// Removes every entry that matches `bundleID` (exact entries and wildcards alike).
-    public mutating func include(_ bundleID: String) {
-        let id = bundleID.lowercased()
-        bundleIDs.removeAll { entry in
-            let pattern = entry.trimmingCharacters(in: .whitespaces).lowercased()
-            if pattern.hasSuffix(".*") { return id.hasPrefix(String(pattern.dropLast(1))) }
-            return pattern == id
-        }
+    /// Removes the exact entry for `bundleID`. A vendor wildcard that also
+    /// matches is **left alone**, and returned.
+    ///
+    /// This used to remove the wildcard too, which made "Fix everywhere in
+    /// 1Password" a switch that silently deleted `com.1password.*` and so
+    /// admitted every other 1Password process, current and future, on the
+    /// strength of one click about one of them. Widening a rule that exists to
+    /// keep a vault out is not what that click means. So the narrow removal is
+    /// all that happens, and the caller is handed the rule that still covers
+    /// the app so it can say why nothing changed.
+    @discardableResult
+    public mutating func include(_ bundleID: String) -> String? {
+        let id = bundleID.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !id.isEmpty else { return nil }
+        bundleIDs.removeAll { $0.trimmingCharacters(in: .whitespaces).lowercased() == id }
+        return matchingEntry(id)
+    }
+
+    /// The menu's per-app switch: exclude the app, or take the exact entry
+    /// back out. Returns the rule that still excludes it afterwards, if any.
+    @discardableResult
+    public mutating func toggle(_ bundleID: String) -> String? {
+        if isExcluded(bundleID) { return include(bundleID) }
+        exclude(bundleID)
+        return matchingEntry(bundleID)
     }
 }
 

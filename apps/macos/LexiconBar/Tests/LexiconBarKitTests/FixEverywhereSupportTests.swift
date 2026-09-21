@@ -94,11 +94,58 @@ final class FixEverywhereSupportTests: XCTestCase {
         ex.bundleIDs.append("com.jetbrains.*")
         XCTAssertTrue(ex.isExcluded("com.jetbrains.intellij"))
         XCTAssertFalse(ex.isExcluded("com.jetbrainsX"))
-        ex.include("com.jetbrains.intellij")
-        XCTAssertFalse(ex.isExcluded("com.jetbrains.intellij"), "removing an id drops the wildcard that matched it")
 
         ex.include("com.apple.Terminal")
         XCTAssertFalse(ex.isExcluded("com.apple.Terminal"), "defaults can be removed")
+    }
+
+    /// Taking one app back out of the list must not widen a vendor rule.
+    ///
+    /// `include` used to remove every entry that matched, wildcards included,
+    /// so "Fix everywhere in 1Password" deleted `com.1password.*` and admitted
+    /// every other 1Password process with it, on the strength of one click
+    /// about one of them. Now the exact entry is all that goes, and the caller
+    /// is handed the rule that still covers the app so the menu can say why
+    /// nothing changed.
+    func testIncludingOneAppLeavesTheVendorRuleStanding() {
+        var ex = AppExclusions()
+        XCTAssertEqual(ex.matchingEntry("com.1password.1password"), "com.1password.*")
+
+        let stillExcludedBy = ex.include("com.1password.1password")
+
+        XCTAssertEqual(stillExcludedBy, "com.1password.*")
+        XCTAssertTrue(ex.bundleIDs.contains("com.1password.*"), "the vendor rule stays")
+        XCTAssertTrue(ex.isExcluded("com.1password.1password7"), "and still covers the vendor")
+    }
+
+    func testIncludingAnAppOnlyTheExactEntryCoversAdmitsIt() {
+        var ex = AppExclusions(bundleIDs: ["com.apple.Terminal", "com.obscurevault.desktop"])
+
+        XCTAssertNil(ex.include("com.obscurevault.desktop"))
+        XCTAssertFalse(ex.isExcluded("com.obscurevault.desktop"))
+        XCTAssertEqual(ex.bundleIDs, ["com.apple.Terminal"])
+    }
+
+    /// The menu's per-app switch, both ways round.
+    func testToggleAddsThenRemovesTheExactEntry() {
+        var ex = AppExclusions(bundleIDs: ["com.apple.Terminal"])
+
+        XCTAssertEqual(ex.toggle("com.apple.TextEdit"), "com.apple.TextEdit")
+        XCTAssertTrue(ex.isExcluded("com.apple.TextEdit"))
+
+        XCTAssertNil(ex.toggle("com.apple.TextEdit"))
+        XCTAssertFalse(ex.isExcluded("com.apple.TextEdit"))
+        XCTAssertEqual(ex.bundleIDs, ["com.apple.Terminal"])
+
+        // Excluding answers with the entry that now does the excluding, which
+        // is the id itself.
+        XCTAssertEqual(ex.toggle("com.1password.1password"), "com.1password.1password")
+
+        // Un-excluding one covered by a vendor rule answers with that rule:
+        // nothing changed, and the caller has the reason to show.
+        var vendor = AppExclusions()
+        XCTAssertEqual(vendor.toggle("com.1password.1password"), "com.1password.*")
+        XCTAssertTrue(vendor.isExcluded("com.1password.1password"))
     }
 
     // MARK: undo

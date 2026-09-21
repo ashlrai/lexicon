@@ -20,6 +20,20 @@ final class FixEngine: @unchecked Sendable {
         var maxRunMs = 12_000
         /// One API call per element per this many seconds.
         var rateLimit: TimeInterval = 0.3
+
+        init() {}
+
+        /// The four user-facing knobs, as `Settings` hands them over. Taking
+        /// the whole snapshot is the point: nothing here reads a published
+        /// property back off `Settings`, where it would still hold the value
+        /// from before the change.
+        init(_ fix: Settings.FixSettings) {
+            self.init()
+            enabled = fix.enabled
+            settleMs = Int(fix.settleMs)
+            minWords = fix.minWords
+            exclusions = fix.exclusions
+        }
     }
 
     struct Fix: Equatable {
@@ -72,25 +86,55 @@ final class FixEngine: @unchecked Sendable {
         ax.async { [self] in
             let wasEnabled = self.config.enabled
             self.config = config
-            // The watcher gates its own reads, so it needs the list too, and it
-            // needs it before anything below looks at `field`: excluding the
-            // app that has focus right now has to drop the cached text there
-            // and here in the same breath.
+            // The watcher gates its own reads, so it needs both the master
+            // switch and the list, and it needs them before anything below
+            // looks at `field`: excluding the app that has focus right now has
+            // to drop the cached text there and here in the same breath.
+            watcher.setReading(config.enabled)
             watcher.setExclusions(config.exclusions)
             detector?.config = detectorConfig
-            if wasEnabled, !config.enabled { detector = nil; settleGeneration += 1 }
-            if !wasEnabled, config.enabled, let field {
-                // Refusal first, read second: the config that just arrived may
-                // be the one that excludes this very app.
-                let read = FieldGate.read(field, exclusions: config.exclusions)
-                if let why = read.refusal {
+            if wasEnabled != config.enabled { settleGeneration += 1 }
+            guard config.enabled else {
+                // Off is off. The detector's copy of the field's text goes,
+                // and so does the undo ledger's copy of the last correction:
+                // turning "Fix everywhere" off is the mitigation SECURITY.md
+                // offers, and it would not be one if ⌃⌥Z could still read the
+                // field and write into it afterwards.
+                forgetField()
+                return
+            }
+            guard let field else { return }
+            // The config that just arrived may be the one that excludes this
+            // very app, and this class is holding that app's text. Re-decide
+            // on every push, not only on the off-to-on edge.
+            if let why = refusal(for: field) {
+                if detector != nil || undo.last != nil {
                     log("not watching this field in \(field.appName): \(why)")
-                    detector = nil
-                } else {
-                    detector = BurstDetector(initialText: read.value ?? "", config: detectorConfig)
                 }
+                forgetField()
+                return
+            }
+            // Admitted, and nothing cached for it: that is either the on edge
+            // or the user putting this app back. Refusal first, read second.
+            if detector == nil {
+                let read = FieldGate.read(field, exclusions: config.exclusions)
+                guard read.refusal == nil else { return }
+                detector = BurstDetector(initialText: read.value ?? "", config: detectorConfig)
             }
         }
+    }
+
+    /// Drops everything this class holds about the focused field: the
+    /// detector, which caches the field's text to tell dictation from typing,
+    /// and the undo ledger, which holds the last correction and the text it
+    /// replaced. Called when the field stops being one we may read, so that
+    /// "excluded" means the text goes now rather than at the next focus
+    /// change.
+    private func forgetField() {
+        detector = nil
+        settleGeneration += 1
+        undo.clear()
+        publishUndoAvailability(currentText: "", force: true)
     }
 
     /// ⌃⌥Z: put the previous text back if the same field still holds the corrected text.
@@ -375,8 +419,24 @@ final class FixEngine: @unchecked Sendable {
     }
 
     private func performUndo() {
-        guard let field, let detector else { report(.skipped("Nothing to undo: no text field focused.")); return }
-        let current = AX.value(field.element) ?? ""
+        guard let field else { report(.skipped("Nothing to undo: no text field focused.")); return }
+        // Undo reads the field and then writes into it, so it is a read like
+        // any other and asks the gate first. It used to go straight to
+        // `AX.value`, which meant ⌃⌥Z on a field in an app the user had just
+        // excluded both read that field and typed into it, while every other
+        // path in the engine refused it.
+        guard config.enabled else { report(.skipped("Fix everywhere is off.")); return }
+        let read = FieldGate.read(field, exclusions: config.exclusions)
+        if let why = read.refusal {
+            log("skip undo in \(field.appName): \(why)")
+            // The entry holds that field's text; it goes with the refusal.
+            undo.clear()
+            report(.skipped("Not undoing in \(field.appName): \(why)"))
+            publishUndoAvailability(currentText: "", force: true)
+            return
+        }
+        guard let detector else { report(.skipped("Nothing to undo: no text field focused.")); return }
+        let current = read.value ?? ""
         guard let entry = undo.take(fieldKey: field.key, currentText: current), let before = entry.fieldTextBefore else {
             report(.skipped("Nothing to undo in \(field.appName)."))
             publishUndoAvailability(currentText: current, force: true)

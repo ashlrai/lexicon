@@ -311,11 +311,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         master.state = settings.fixEverywhere ? .on : .off
         master.toolTip = "Correct dictated text in the focused field of any app, about a second after it lands."
         if let app = focusWatcher.frontmostApp, let bundleID = app.bundleID {
-            let excluded = settings.exclusions.isExcluded(bundleID)
-            let item = add("Fix everywhere in \(app.name)", #selector(toggleFixEverywhereForFrontmostApp), enabled: settings.fixEverywhere, indent: 1)
-            item.state = excluded ? .off : .on
+            // A vendor rule (`com.1password.*`) is not something this switch
+            // can undo for one process without widening the rule for every
+            // other one, so the switch is disabled and the rule is named.
+            let rule = settings.exclusions.matchingEntry(bundleID)
+            let byRule = rule?.hasSuffix(".*") ?? false
+            let item = add("Fix everywhere in \(app.name)", #selector(toggleFixEverywhereForFrontmostApp),
+                           enabled: settings.fixEverywhere && !byRule, indent: 1)
+            item.state = rule == nil ? .on : .off
             item.representedObject = bundleID
             item.toolTip = bundleID
+            if byRule, let rule {
+                addInfo("Excluded by the rule \(rule); edit the list in Preferences.", indent: 2)
+            }
         }
         let undo = add("Undo last fix (\(settings.undoFixHotKey.displayString))", #selector(undoLastFix), enabled: settings.fixEverywhere && undoAvailable, indent: 1)
         undo.toolTip = "Puts the dictated text back if the field still holds the corrected text."
@@ -468,7 +476,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func startFixEverywhere() {
         fixEngine.onEvent = { [weak self] event in self?.handleFixEvent(event) }
-        pushFixConfig()
+        // One subscription, and it is also the first push: `CombineLatest`
+        // emits the current values the moment it is subscribed, and every
+        // change after that. The config is built from the values the publisher
+        // hands over and never read back off `settings`, which is what makes
+        // an exclusion the user adds right now the list the watcher gets right
+        // now. See `Settings.fixSettingsChanges` for why reading it back was
+        // wrong.
+        settings.fixSettingsChanges
+            .sink { [weak self] fix in self?.fixEngine.update(FixEngine.Config(fix)) }
+            .store(in: &cancellables)
         focusWatcher.start()
         // The watcher is up: publish what this process — the one the user
         // actually launched — sees, and keep republishing it so a reader can
@@ -477,12 +494,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         accessibilityStateTimer = Timer.scheduledTimer(withTimeInterval: AccessibilityStateStore.heartbeat,
                                                        repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.writeAccessibilityState() }
-        }
-        for publisher in [settings.$fixEverywhere.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-                          settings.$fixSettleMs.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-                          settings.$fixMinWords.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-                          settings.$fixExcludedApps.dropFirst().map { _ in () }.eraseToAnyPublisher()] {
-            publisher.sink { [weak self] in self?.pushFixConfig() }.store(in: &cancellables)
         }
         settings.$undoFixHotKey.dropFirst().sink { [weak self] _ in self?.registerHotKeys() }.store(in: &cancellables)
         if settings.fixEverywhere, !accessibilityTrusted {
@@ -503,15 +514,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
-    }
-
-    private func pushFixConfig() {
-        var config = FixEngine.Config()
-        config.enabled = settings.fixEverywhere
-        config.settleMs = Int(settings.fixSettleMs)
-        config.minWords = settings.fixMinWords
-        config.exclusions = settings.exclusions
-        fixEngine.update(config)
     }
 
     private func handleFixEvent(_ event: FixEngine.Event) {
@@ -636,8 +638,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleFixEverywhereForFrontmostApp(_ sender: NSMenuItem) {
         guard let bundleID = sender.representedObject as? String else { return }
         var exclusions = settings.exclusions
-        if exclusions.isExcluded(bundleID) { exclusions.include(bundleID) } else { exclusions.exclude(bundleID) }
+        let stillExcludedBy = exclusions.toggle(bundleID)
         settings.exclusions = exclusions
+        // Taking an app off the list leaves a vendor rule that also covers it
+        // in place, so say so rather than let the switch look broken. The menu
+        // shows the same rule the next time it opens.
+        if let stillExcludedBy, stillExcludedBy.hasSuffix(".*") {
+            lastError = "\(bundleID) stays excluded by the rule \(stillExcludedBy); edit the list in Preferences."
+        }
     }
 
     @objc private func undoLastFix() {

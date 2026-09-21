@@ -30,6 +30,11 @@ final class FocusWatcher: @unchecked Sendable {
         /// metadata, which is exactly what may be looked at before that
         /// decision is made.
         let hints: SecretFieldHeuristic.FieldHints
+        /// The one call that brings this field's text across the process
+        /// boundary, held as a value so the tests can stand in for it and
+        /// count the calls that a refusal is supposed to prevent. `AX.value`
+        /// everywhere in the app; there is no other way to read a field here.
+        var value: (AXUIElement) -> String? = { AX.value($0) }
 
         static func == (a: Field, b: Field) -> Bool { a.key == b.key && CFEqual(a.element, b.element) }
     }
@@ -59,7 +64,9 @@ final class FocusWatcher: @unchecked Sendable {
     /// The list the gate matches on. Starts as the defaults rather than empty:
     /// the watcher runs before any settings are pushed into it, and "no
     /// exclusions yet" must never be the state something gets read in.
-    private var exclusions = AppExclusions()
+    /// Readable from the test target (`@testable`) so a test can assert the
+    /// list the user just edited actually arrived here.
+    private(set) var exclusions = AppExclusions()
     /// The key of the field we last refused, so the log says so once rather
     /// than twice a second, and so the poll does not re-read a refused field's
     /// labels twice a second either.
@@ -70,6 +77,13 @@ final class FocusWatcher: @unchecked Sendable {
     /// user edits the list, and not before.
     private var exclusionsVersion = 0
     private var refusedVersion = -1
+    /// Whether "Fix everywhere" is on at all. False means this class reads
+    /// nothing: the master switch is the other mitigation SECURITY.md offers,
+    /// and it would not be one if the watcher kept pulling every focused
+    /// field's text into memory with the feature off. Starts false because the
+    /// watcher exists before the first config is pushed into it, and "nobody
+    /// has said yet" must never be the state something gets read in.
+    private(set) var reading = false
     private var pollTimer: DispatchSourceTimer?
     private var workspaceTokens: [NSObjectProtocol] = []
     private var running = false
@@ -127,9 +141,25 @@ final class FocusWatcher: @unchecked Sendable {
 
     private func activate(_ app: FrontmostApp) {
         activeApp = app
-        guard app.pid != ownPID else { setCurrent(nil, value: ""); return }
+        guard app.pid != ownPID, reading else { setCurrent(nil, value: ""); return }
         ensureObserver(for: app.pid)
         refreshFocus(pid: app.pid)
+    }
+
+    /// Turns the whole read side on or off. AX thread.
+    ///
+    /// With it off nothing here touches a field: no focus resolution, no
+    /// value-changed read, no poll, and whatever the last field held is
+    /// dropped on the spot rather than at the next focus change.
+    func setReading(_ on: Bool) {
+        guard on != reading else { return }
+        reading = on
+        guard on else {
+            setCurrent(nil, value: "")
+            refusedKey = ""
+            return
+        }
+        if let activeApp { activate(activeApp) }
     }
 
     private func ensureObserver(for pid: pid_t) {
@@ -176,7 +206,7 @@ final class FocusWatcher: @unchecked Sendable {
     }
 
     private func handle(notification: String, element: AXUIElement) {
-        guard running, let pid = AX.pid(of: element), pid == activeApp?.pid else { return }
+        guard running, reading, let pid = AX.pid(of: element), pid == activeApp?.pid else { return }
         switch notification {
         case kAXFocusedUIElementChangedNotification, kAXFocusedWindowChangedNotification:
             refreshFocus(pid: pid)
@@ -192,6 +222,7 @@ final class FocusWatcher: @unchecked Sendable {
     }
 
     private func refreshFocus(pid: pid_t) {
+        guard reading else { setCurrent(nil, value: ""); return }
         let appElement = AXUIElementCreateApplication(pid)
         guard let focused = AX.element(appElement, kAXFocusedUIElementAttribute as String) else {
             escalateAccessibility(pid: pid, appElement: appElement)
@@ -267,15 +298,20 @@ final class FocusWatcher: @unchecked Sendable {
     /// the corrections. `AppExclusions` is a value type, so the watcher gets
     /// its own copy and the menu can keep editing the settings' one.
     func setExclusions(_ exclusions: AppExclusions) {
-        guard exclusions != self.exclusions else { return }
-        self.exclusions = exclusions
-        // A field we already refused has to be re-examined against the new
-        // list, so the user un-excluding the app they are typing in takes
-        // effect on the next poll rather than at the next focus change.
-        exclusionsVersion += 1
+        if exclusions != self.exclusions {
+            self.exclusions = exclusions
+            // A field we already refused has to be re-examined against the new
+            // list, so the user un-excluding the app they are typing in takes
+            // effect on the next poll rather than at the next focus change.
+            exclusionsVersion += 1
+        }
         // The user can exclude the app that has focus right now, from the menu
         // or from Preferences, while its text is in `lastValue`. Drop it at
-        // once rather than at the next focus change.
+        // once rather than at the next focus change. Run unconditionally, even
+        // for a list that compares equal to the one already held: the check is
+        // pure string work over labels already in hand, and making it depend
+        // on the comparison above is what let a stale push leave a refused
+        // field being read.
         dropCurrentIfRefused()
     }
 
@@ -323,7 +359,10 @@ final class FocusWatcher: @unchecked Sendable {
         observedElements[pid] = element
     }
 
-    private func setCurrent(_ field: Field?, value: String) {
+    /// Internal rather than private so the test target can stand a focused
+    /// field up: a headless test has no Accessibility grant and no focused
+    /// element to be handed one from. Nothing outside this file calls it.
+    func setCurrent(_ field: Field?, value: String) {
         if field == nil, current == nil { return }
         current = field
         lastValue = value
@@ -333,7 +372,12 @@ final class FocusWatcher: @unchecked Sendable {
     /// The read behind both the value-changed notification and the poll. Both
     /// are reads like any other, so both are the gate's decision and not only
     /// the focus change: focus has not moved, but the exclusion list may have.
-    private func readValue(of field: Field) {
+    ///
+    /// Internal rather than private for the same reason as `setCurrent`: this
+    /// is the call a test drives to prove that a field in an app excluded
+    /// mid-focus stops being read.
+    func readValue(of field: Field) {
+        guard reading else { setCurrent(nil, value: ""); return }
         let read = FieldGate.read(field, exclusions: exclusions)
         if let refusal = read.refusal {
             refuse(field, refusal)
@@ -358,7 +402,7 @@ final class FocusWatcher: @unchecked Sendable {
     }
 
     private func poll() {
-        guard running, let app = activeApp, app.pid != ownPID else { return }
+        guard running, reading, let app = activeApp, app.pid != ownPID else { return }
         let appElement = AXUIElementCreateApplication(app.pid)
         let focused = AX.element(appElement, kAXFocusedUIElementAttribute as String)
         switch (current, focused) {
@@ -397,5 +441,5 @@ final class FocusWatcher: @unchecked Sendable {
 extension FocusWatcher.Field: InspectableField {
     /// The single Accessibility call that brings the user's own text into this
     /// process. Nothing else in `Field` touches `AXValue`.
-    func readValue() -> String? { AX.value(element) }
+    func readValue() -> String? { value(element) }
 }
