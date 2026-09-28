@@ -344,7 +344,7 @@ Three places, in priority order:
    ```markdown
    ## License
 
-   MIT. Copyright 2026 Ashlr.AI.
+   MIT. Copyright 2026 AshlrAI, Inc.
 
    Everything in this repository is MIT-licensed and stays that way. Nothing
    here is time-limited, seat-limited or waiting behind a plan, and no

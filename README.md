@@ -76,6 +76,8 @@ Then open Claude Code and say a sentence with your company name in it. Done.
 
 The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. Every step is optional and safe to rerun, and `lexicon setup --dry-run` writes nothing while describing the run you would get from the same command without it: the steps it would perform, and the ones it would stop and ask about, with the answer pressing Enter gives each.
 
+With Homebrew, always use the full tap name `ashlrai/tap/lexicon`. Plain `brew install lexicon` installs [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), an unrelated DNS tool in homebrew-core.
+
 <details>
 <summary>What <code>lexicon setup</code> does, in seven numbered steps</summary>
 
@@ -195,4 +197,4 @@ Found a name it gets wrong? [Open a misheard term issue](https://github.com/ashl
 
 ## License
 
-MIT. Copyright 2026 Ashlr.AI.
+MIT. Copyright 2026 AshlrAI, Inc.
