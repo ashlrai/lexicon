@@ -63,7 +63,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Import an existing dictionary',
       description:
-        "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. " +
+        "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. " +
         'Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). ' +
         'Use dryRun: true first to show the user what would be added, then run again without it.',
       inputSchema: {

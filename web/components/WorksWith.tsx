@@ -98,7 +98,7 @@ const ROWS: Row[] = [
       { name: 'espanso', mono: 'ES' },
       { name: 'macOS Text Replacement', mono: 'TR' },
     ],
-    note: 'Fifteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and seven importers read the dictionaries back out again.',
+    note: 'Fifteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and eight importers read the dictionaries back out again.',
   },
 ];
 

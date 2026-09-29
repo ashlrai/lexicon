@@ -169,7 +169,8 @@ waiting for exactly that.
 ### `import_dictionary { path?, content?, format?, scope?, dryRun? }`
 
 Same importers as `lexicon import` (Wispr Flow, Superwhisper, macOS Text
-Replacement, espanso, plain text, CSV, lexicon JSON; `format: 'auto'` by
+Replacement, espanso, markdown (the CLAUDE.md table or bullets), plain text,
+CSV, lexicon JSON; `format: 'auto'` by
 default). Pass `path` for a file on this machine or `content` (up to 8 MB) for
 text the user pasted. Returns the import report: `{ format, scope, path?,
 dryRun, terms: [{ canonical, aliases, created }], skipped, counts }`.

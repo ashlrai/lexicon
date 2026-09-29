@@ -713,3 +713,98 @@ describe('runImport', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// markdown (claude-md table + markdown bullets), issue #5
+// ---------------------------------------------------------------------------
+
+describe('markdown importer', () => {
+  const CLAUDE_MD = [
+    '# Project notes',
+    '',
+    '- **Build**: npm run build',
+    '',
+    '| Command | What |',
+    '| --- | --- |',
+    '| canonical | not a lexicon table |',
+    '',
+    '## Voice lexicon',
+    '',
+    'The user dictates with speech-to-text.',
+    '',
+    '| Canonical | Sounds like / STT writes | Note |',
+    '| --- | --- | --- |',
+    '| Ashlr.AI | Ashler, Ashley AI | brand (ASH-ler) |',
+    '| Mason Wyatt | Mason White | person |',
+    '| A\\|B Labs | a b labs | brand spelled with a pipe |',
+    '| lonely |',
+    '|  | orphan alias | |',
+    '',
+    'If a word looks like a garbled proper noun and is not listed, ask rather than guess.',
+    '',
+    '## Conventions',
+    '',
+    '- **Style**: tabs',
+    '',
+  ].join('\n');
+
+  it('reads only the Voice lexicon section of a CLAUDE.md', () => {
+    const result = importLexicon(CLAUDE_MD, 'auto', { filename: 'CLAUDE.md' });
+    expect(result.format).toBe('markdown');
+    expect(result.terms).toEqual([
+      { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashley AI'], source: 'import', category: 'brand', phonetic: 'ASH-ler' },
+      { canonical: 'Mason Wyatt', aliases: ['Mason White'], source: 'import', category: 'person' },
+      { canonical: 'A|B Labs', aliases: ['a b labs'], source: 'import', category: 'brand', notes: 'spelled with a pipe' },
+    ]);
+    expect(result.skipped).toEqual([
+      { line: 18, reason: 'table row needs a canonical and an aliases cell' },
+      { line: 19, reason: 'empty canonical' },
+    ]);
+  });
+
+  it('reads markdown bullets, with and without category and aliases', () => {
+    const md = '- **Ashlr.AI** (brand): Ashler, Ashlar\n- **Kubernetes**\n* **Supabase** (product)\n- **Hetzner** (hosting, EU): head sner\n';
+    const result = importLexicon(md, 'auto');
+    expect(result.format).toBe('markdown');
+    expect(result.terms.map((t) => [t.canonical, t.aliases, t.category])).toEqual([
+      ['Ashlr.AI', ['Ashler', 'Ashlar'], 'brand'],
+      ['Kubernetes', [], undefined],
+      ['Supabase', [], 'product'],
+      ['Hetzner', ['head sner'], undefined],
+    ]);
+    // An unknown parenthetical is kept as a note, not dropped.
+    expect(result.terms[3]?.notes).toBe('hosting, EU');
+    expect(result.skipped).toEqual([]);
+  });
+
+  it('does not steal plain text or CSV from their importers', () => {
+    expect(detectImportFormat('Ashlr.AI: Ashler, Ashlar\n')).toBe('text');
+    expect(detectImportFormat('canonical,alias\nAshlr.AI,Ashler\n')).toBe('csv');
+    expect(detectImportFormat('notes\n', 'notes.md')).toBe('markdown');
+  });
+
+  const LEX: Lexicon = {
+    version: 1,
+    terms: [
+      { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashley AI'], category: 'brand', phonetic: 'ASH-ler' },
+      { canonical: 'Mason Wyatt', aliases: ['Mason White'], category: 'person' },
+      { canonical: 'Kubernetes', aliases: ['cooper nettie'] },
+    ],
+  };
+
+  it.each(['claude-md', 'markdown'] as const)('round-trips lexicon export %s', (format) => {
+    const exported = exportLexicon(LEX, format);
+    const result = importLexicon(exported, 'markdown');
+    const byName = (ts: readonly Term[]) =>
+      Object.fromEntries(ts.map((t) => [t.canonical, { aliases: t.aliases, category: t.category }]));
+    expect(byName(result.terms)).toEqual(byName(LEX.terms));
+    expect(result.skipped).toEqual([]);
+    if (format === 'claude-md') expect(result.terms.find((t) => t.canonical === 'Ashlr.AI')?.phonetic).toBe('ASH-ler');
+  });
+
+  it('is listed as an import format', () => {
+    expect(isImportFormat('markdown')).toBe(true);
+    expect(IMPORT_FORMATS).toContain('markdown');
+    expect(IMPORT_FORMAT_INFO.markdown.description).toMatch(/Voice lexicon/);
+  });
+});
