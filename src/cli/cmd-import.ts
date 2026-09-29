@@ -1,6 +1,6 @@
 /**
  * `lexicon import <file> [format]`: bring an existing dictionary (Wispr Flow,
- * Superwhisper, macOS Text Replacement, espanso, plain text, CSV, or a lexicon
+ * Superwhisper, macOS Text Replacement, espanso, markdown, plain text, CSV, or a lexicon
  * file) into the global or project lexicon in one command. The handler lives in
  * runImport so it is unit-testable; registerImportCommands only wires commander.
  */
@@ -232,7 +232,7 @@ function printReport(report: ImportReport, io: IO): void {
 export function registerImportCommands(program: Command, io: IO): void {
   program
     .command('import')
-    .description('import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, text, csv, json) into the lexicon')
+    .description('import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon')
     .argument('<file>', 'file to import, or - for stdin')
     .argument('[format]', `one of: ${IMPORT_FORMATS.join(', ')} (default: auto)`)
     .option('--format <format>', 'same as the positional format argument')

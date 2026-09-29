@@ -55,7 +55,7 @@ export const INSTALL_CLIENT_VALUES = ['claude', 'codex', 'cursor', 'windsurf', '
 
 export const INSTALL_SCOPES = ['user', 'project'] as const;
 
-export const IMPORT_FORMAT_VALUES = ['auto', 'wispr', 'superwhisper', 'macos', 'espanso', 'text', 'csv', 'json'] as const satisfies readonly ImportFormat[];
+export const IMPORT_FORMAT_VALUES = ['auto', 'wispr', 'superwhisper', 'macos', 'espanso', 'markdown', 'text', 'csv', 'json'] as const satisfies readonly ImportFormat[];
 
 export const SUGGESTION_KINDS = ['alias', 'term', 'never', 'stale'] as const satisfies readonly TermSuggestion['kind'][];
 

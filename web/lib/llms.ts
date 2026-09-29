@@ -218,7 +218,7 @@ optional per-project \`.lexicon.yaml\` at a repository root.
 
 Fifteen export formats: wispr, superwhisper, macos, espanso, whisper-prompt,
 openai, deepgram, assemblyai, azure, google, claude-md, markdown, text, csv,
-json. Seven importers read back: wispr, superwhisper, macos, espanso, text, csv,
+json. Eight importers read back: wispr, superwhisper, macos, espanso, markdown, text, csv,
 json. So an existing Wispr Flow or Superwhisper dictionary comes over in one
 command, and the same words go back out into whichever engine's own biasing
 parameter accepts them.

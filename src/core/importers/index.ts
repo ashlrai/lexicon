@@ -1,6 +1,6 @@
 /**
  * Import an existing dictionary (Wispr Flow, Superwhisper, macOS Text
- * Replacement, espanso, plain text, CSV, or our own lexicon file) into Term
+ * Replacement, espanso, markdown, plain text, CSV, or our own lexicon file) into Term
  * objects. Pure: no IO. The CLI (`lexicon import`) reads the file and writes
  * the terms with addTerm.
  */
@@ -11,6 +11,7 @@ import { parseCsv } from './csv-parse.js';
 import { looksLikeEspanso, parseEspansoImport } from './espanso.js';
 import { looksLikeLexiconJson, parseJsonImport } from './json.js';
 import { looksLikePlist, parseMacosImport } from './macos.js';
+import { looksLikeMarkdown, parseMarkdownImport } from './markdown.js';
 import type { ImportRow, ImportSkip, RawImport } from './shared.js';
 import { looksLikeSuperwhisper, parseSuperwhisperImport } from './superwhisper.js';
 import { parseTextImport } from './text.js';
@@ -21,6 +22,7 @@ export {
   parseEspansoImport,
   parseJsonImport,
   parseMacosImport,
+  parseMarkdownImport,
   parseSuperwhisperImport,
   parseTextImport,
   parseWisprImport,
@@ -34,7 +36,16 @@ export {
 export type { DecodedImport, ImportEncoding, ImportSource, UnsupportedImportEncoding } from './encoding.js';
 export type { ImportRow, ImportSkip, RawImport };
 
-export type ImportFormat = 'wispr' | 'superwhisper' | 'macos' | 'csv' | 'espanso' | 'text' | 'json' | 'auto';
+export type ImportFormat =
+  | 'wispr'
+  | 'superwhisper'
+  | 'macos'
+  | 'csv'
+  | 'espanso'
+  | 'markdown'
+  | 'text'
+  | 'json'
+  | 'auto';
 
 export type ConcreteImportFormat = Exclude<ImportFormat, 'auto'>;
 
@@ -44,6 +55,7 @@ export const IMPORT_FORMATS: readonly ImportFormat[] = [
   'superwhisper',
   'macos',
   'espanso',
+  'markdown',
   'text',
   'csv',
   'json',
@@ -55,6 +67,7 @@ export const IMPORT_FORMAT_INFO: Record<ImportFormat, { description: string }> =
   'superwhisper': { description: 'Superwhisper replacements JSON [{ original, replacement }]' },
   'macos': { description: 'macOS Text Replacement plist (phrase = canonical, shortcut = alias)' },
   'espanso': { description: 'espanso match YAML (trigger = alias, replace = canonical)' },
+  'markdown': { description: 'Markdown: the `## Voice lexicon` table (lexicon export claude-md) or `- **Canonical** (category): aliases` bullets' },
   'text': { description: 'Plain text, one term per line: "Canonical: alias1, alias2" or "Canonical = alias1 | alias2"' },
   'csv': { description: 'Generic CSV with a canonical,alias,category,phonetic header' },
   'json': { description: 'A lexicon JSON/YAML file (what `lexicon export json` writes)' },
@@ -85,6 +98,7 @@ const PARSERS: Record<ConcreteImportFormat, (content: string) => RawImport> = {
   macos: parseMacosImport,
   csv: parseCsvImport,
   espanso: parseEspansoImport,
+  markdown: parseMarkdownImport,
   text: parseTextImport,
   json: parseJsonImport,
 };
@@ -117,6 +131,9 @@ export function detectImportFormat(content: string, filename?: string): Concrete
   if (looksLikeEspanso(text)) return 'espanso';
   if (/^(version|terms)\s*:/m.test(text) && /^terms\s*:/m.test(text)) return 'json';
 
+  // Loose sniffing, so after every format with an unambiguous marker.
+  if (looksLikeMarkdown(text)) return 'markdown';
+
   const firstLine = parseCsv(text)[0]?.fields;
   if (firstLine) {
     if (isWisprHeader(firstLine)) return 'wispr';
@@ -125,6 +142,7 @@ export function detectImportFormat(content: string, filename?: string): Concrete
 
   const ext = filename ? filename.toLowerCase().replace(/^.*\./, '') : '';
   if (ext === 'plist') return 'macos';
+  if (ext === 'md' || ext === 'markdown') return 'markdown';
   if (ext === 'csv') return 'wispr';
   if (ext === 'yml' || ext === 'yaml') return 'espanso';
   return 'text';

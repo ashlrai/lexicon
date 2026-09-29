@@ -45,7 +45,7 @@ required.**
 | Browser chat | An extension for ChatGPT, Claude.ai, Gemini, Grok, Perplexity, Copilot and Poe |
 | Any macOS text field | A menu bar app using the Accessibility API: Slack, Mail, Notes, your editor |
 | Your own tooling | A loopback HTTP API, and the matcher as an importable library |
-| Existing dictation apps | Fifteen export formats and seven importers, including Wispr Flow, Superwhisper, macOS Text Replacement, Deepgram, Azure and Google |
+| Existing dictation apps | Fifteen export formats and eight importers, including Wispr Flow, Superwhisper, macOS Text Replacement, Deepgram, Azure and Google |
 | Sharing within a repository | Commit `.lexicon.yaml`; each engineer approves it once with `lexicon trust` |
 
 There is no seat limit, no term limit, no time limit and no telemetry. If your

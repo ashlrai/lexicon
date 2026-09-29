@@ -271,7 +271,7 @@ experience tomorrow:
 - The matcher, the CLI, the MCP server (nineteen tools), the Claude Code plugin
   and hooks, the browser extension, the macOS menu bar app, the loopback HTTP
   API, the clipboard daemon, local voice, the starter packs, fifteen exporters
-  and seven importers, the importable library.
+  and eight importers, the importable library.
 - Sharing a lexicon by committing `.lexicon.yaml` to a repository, with the
   trust gate.
 - **`lexicon remote`: *planned, week 1*.** Pull a lexicon layer from any URL
@@ -401,7 +401,7 @@ commands); the MCP server (nineteen tools, two resources, two prompts); the
 Claude Code plugin with `SessionStart` and `UserPromptSubmit` hooks; the
 browser extension; the macOS menu bar app; the loopback HTTP API; the clipboard
 daemon; local voice via ffmpeg and whisper.cpp; four starter packs (155 terms);
-fifteen exporters and seven importers; the trust gate; the benchmark.
+fifteen exporters and eight importers; the trust gate; the benchmark.
 
 **Shipped with a distribution caveat:** the browser extension is not in the
 Chrome or Firefox stores (unpacked install only), and the macOS app is ad-hoc

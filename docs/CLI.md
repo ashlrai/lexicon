@@ -22,7 +22,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
-| [`lexicon import [options] <file> [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, text, csv, json) into the lexicon |
+| [`lexicon import [options] <file> [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
 | [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview first) |
 | [`lexicon untrust [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
@@ -62,7 +62,7 @@ Commands:
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
-  import [options] <file> [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, text, csv, json) into the lexicon
+  import [options] <file> [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
   trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview first)
   untrust [path]                          revoke approval for a project .lexicon.yaml
@@ -268,13 +268,13 @@ Options:
 ```text
 Usage: lexicon import [options] <file> [format]
 
-import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, text,
-csv, json) into the lexicon
+import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso,
+markdown, text, csv, json) into the lexicon
 
 Arguments:
   file                   file to import, or - for stdin
   format                 one of: auto, wispr, superwhisper, macos, espanso,
-                         text, csv, json (default: auto)
+                         markdown, text, csv, json (default: auto)
 
 Options:
   --format <format>      same as the positional format argument

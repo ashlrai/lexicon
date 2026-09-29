@@ -454,6 +454,8 @@ const CLAIMS = [
     patterns: [
       new RegExp(`\\b${NUM}\\s+import\\s+formats\\b`, 'i'),
       new RegExp(`\\bimports?\\s+(?:from\\s+)?${NUM}\\s+formats\\b`, 'i'),
+      new RegExp(`\\b${NUM}\\s+importers\\b`, 'i'),
+      new RegExp(`\\b${NUM}\\s+ways\\s+in\\b`, 'i'),
     ],
   },
   {

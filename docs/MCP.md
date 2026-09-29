@@ -37,7 +37,7 @@ The agent calls `normalize_transcript` on dictated input and reads `lexicon://me
 | `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, checks: [{ level, message }], paths, versions }` |
 | `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or `claude-desktop` |
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
-| `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, text, CSV or JSON dictionary |
+| `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |
 | `list_packs` | none | The starter packs in `packs/`, their size and which are installed. See [PACKS.md](PACKS.md) |
 | `add_pack` | `name`, `scope?` | Install a starter pack into the global or project lexicon. See [PACKS.md](PACKS.md) |
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |

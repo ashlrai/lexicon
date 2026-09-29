@@ -10,7 +10,7 @@
  *
  * Every number below is derived from the repo and checked by
  * `node scripts/check-facts.mjs`: nineteen MCP tools, two resources, two
- * prompts, fifteen export formats, seven importers, four packs, 155 terms.
+ * prompts, fifteen export formats, eight importers, four packs, 155 terms.
  */
 
 export const SITE_URL = 'https://lexicon.ashlr.ai';

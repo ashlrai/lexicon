@@ -53030,6 +53030,116 @@ function parseMacosImport(content) {
   return out;
 }
 
+// src/core/importers/markdown.ts
+var BULLET = /^[-*+]\s+\*\*(.+?)\*\*(?:\s+\(([^)]*)\))?\s*(?::\s*(.*))?$/;
+var SEPARATOR_CELL = /^:?-{3,}:?$/;
+var HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+function splitTableRow(line2) {
+  const text = line2.trim();
+  if (!text.startsWith("|")) return void 0;
+  const cells = [];
+  let cell = "";
+  for (let i = 1; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\" && text[i + 1] === "|") {
+      cell += "|";
+      i++;
+    } else if (ch === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell.trim()) cells.push(cell.trim());
+  return cells;
+}
+function splitAliases(cell) {
+  return (cell ?? "").split(",").map((a) => a.trim()).filter(Boolean);
+}
+function parseNoteCell(cell) {
+  let rest = (cell ?? "").trim();
+  const out = {};
+  const hint = /\(([^()]*)\)$/.exec(rest);
+  if (hint) {
+    out.phonetic = hint[1].trim() || void 0;
+    rest = rest.slice(0, hint.index).trim();
+  }
+  const [first, ...more] = rest.split(/\s+/);
+  const category = parseCategoryCell(first);
+  if (category) {
+    out.category = category;
+    rest = more.join(" ");
+  }
+  if (rest.trim()) out.notes = rest.trim();
+  return out;
+}
+function sectionLines(lines) {
+  const heading = CLAUDE_MD_HEADING.replace(/^#+\s*/, "").toLowerCase();
+  for (let i = 0; i < lines.length; i++) {
+    const m = HEADING.exec(lines[i].trim());
+    if (!m || m[2].toLowerCase() !== heading) continue;
+    const level = m[1].length;
+    let end = lines.length;
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = HEADING.exec(lines[j].trim());
+      if (next && next[1].length <= level) {
+        end = j;
+        break;
+      }
+    }
+    return { start: i + 1, end };
+  }
+  return { start: 0, end: lines.length };
+}
+function isLexiconTableHeader(cells) {
+  return !!cells && cells.length >= 2 && cells[0].toLowerCase() === "canonical";
+}
+function looksLikeMarkdown(content) {
+  const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const heading = CLAUDE_MD_HEADING.toLowerCase();
+  if (lines.some((l) => l.trim().toLowerCase() === heading)) return true;
+  if (lines.some((l) => isLexiconTableHeader(splitTableRow(l)))) return true;
+  const nonBlank = lines.map((l) => l.trim()).filter(Boolean);
+  return nonBlank.length > 0 && nonBlank.every((l) => BULLET.test(l));
+}
+function parseMarkdownImport(content) {
+  const out = { rows: [], skipped: [] };
+  const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const { start, end } = sectionLines(lines);
+  let inTable = false;
+  for (let i = start; i < end; i++) {
+    const lineNo = i + 1;
+    const text = lines[i].trim();
+    const cells = splitTableRow(text);
+    if (cells) {
+      if (isLexiconTableHeader(cells)) {
+        inTable = true;
+        continue;
+      }
+      if (!inTable) continue;
+      if (cells.length > 0 && cells.every((c) => SEPARATOR_CELL.test(c))) continue;
+      if (cells.length < 2) {
+        out.skipped.push({ line: lineNo, reason: "table row needs a canonical and an aliases cell" });
+        continue;
+      }
+      const { row: row2, skip: skip2 } = rowFor(lineNo, cells[0], splitAliases(cells[1]), parseNoteCell(cells[2]));
+      if (row2) out.rows.push(row2);
+      if (skip2) out.skipped.push(skip2);
+      continue;
+    }
+    inTable = false;
+    const bullet = BULLET.exec(text);
+    if (!bullet) continue;
+    const category = parseCategoryCell(bullet[2]);
+    const extra = category ? { category } : bullet[2]?.trim() ? { notes: bullet[2] } : {};
+    const { row, skip } = rowFor(lineNo, bullet[1], splitAliases(bullet[3]), extra);
+    if (row) out.rows.push(row);
+    if (skip) out.skipped.push(skip);
+  }
+  return out;
+}
+
 // src/core/importers/superwhisper.ts
 function looksLikeSuperwhisper(value) {
   const list = Array.isArray(value) ? value : isRecord(value) ? value.replacements : void 0;
@@ -53119,6 +53229,7 @@ var IMPORT_FORMATS = [
   "superwhisper",
   "macos",
   "espanso",
+  "markdown",
   "text",
   "csv",
   "json"
@@ -53129,6 +53240,7 @@ var IMPORT_FORMAT_INFO = {
   "superwhisper": { description: "Superwhisper replacements JSON [{ original, replacement }]" },
   "macos": { description: "macOS Text Replacement plist (phrase = canonical, shortcut = alias)" },
   "espanso": { description: "espanso match YAML (trigger = alias, replace = canonical)" },
+  "markdown": { description: "Markdown: the `## Voice lexicon` table (lexicon export claude-md) or `- **Canonical** (category): aliases` bullets" },
   "text": { description: 'Plain text, one term per line: "Canonical: alias1, alias2" or "Canonical = alias1 | alias2"' },
   "csv": { description: "Generic CSV with a canonical,alias,category,phonetic header" },
   "json": { description: "A lexicon JSON/YAML file (what `lexicon export json` writes)" }
@@ -53142,6 +53254,7 @@ var PARSERS = {
   macos: parseMacosImport,
   csv: parseCsvImport,
   espanso: parseEspansoImport,
+  markdown: parseMarkdownImport,
   text: parseTextImport,
   json: parseJsonImport
 };
@@ -53166,6 +53279,7 @@ function detectImportFormat(content, filename) {
   }
   if (looksLikeEspanso(text)) return "espanso";
   if (/^(version|terms)\s*:/m.test(text) && /^terms\s*:/m.test(text)) return "json";
+  if (looksLikeMarkdown(text)) return "markdown";
   const firstLine = parseCsv(text)[0]?.fields;
   if (firstLine) {
     if (isWisprHeader(firstLine)) return "wispr";
@@ -53173,6 +53287,7 @@ function detectImportFormat(content, filename) {
   }
   const ext = filename ? filename.toLowerCase().replace(/^.*\./, "") : "";
   if (ext === "plist") return "macos";
+  if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "csv") return "wispr";
   if (ext === "yml" || ext === "yaml") return "espanso";
   return "text";
@@ -54261,7 +54376,7 @@ function bufferIO() {
 }
 var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", "vscode", "claude-desktop"];
 var INSTALL_SCOPES = ["user", "project"];
-var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "text", "csv", "json"];
+var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "markdown", "text", "csv", "json"];
 var SUGGESTION_KINDS = ["alias", "term", "never", "stale"];
 var SERVE_HEALTH_URL = "http://127.0.0.1:41733/health";
 var TRUST_PREVIEW_ROWS = 25;
@@ -60958,7 +61073,7 @@ var registerPackTools = (server, { cwd, load }) => {
     "import_dictionary",
     {
       title: "Import an existing dictionary",
-      description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it.",
+      description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it.",
       inputSchema: {
         path: external_exports.string().optional().describe("File to import. Its extension helps auto-detection."),
         content: external_exports.string().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine."),
