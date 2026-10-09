@@ -110,7 +110,23 @@ claude plugin marketplace add ashlrai/lexicon
 claude plugin install lexicon@ashlrai
 ```
 
-`lexicon doctor` checks the install. There is no telemetry and all state is local files: the CLI, hooks, MCP server, local API and extension make no request beyond loopback, except for two the user asks for by name: `lexicon voice` fetching a whisper model on first use, and `lexicon pack` fetching community packs from a `--registry` URL (every download is checksum-verified). The install script, npm and Homebrew fetch the package itself. See [SECURITY.md](SECURITY.md).
+`lexicon doctor` checks the install. There is no telemetry. Vocabulary and
+application state are local files; ordinary hooks, correction, MCP, local API
+and extension paths do not send transcripts to a remote service. Explicit
+network operations include `lexicon voice` fetching a whisper model on first
+use, `lexicon pack` fetching community packs from a `--registry` URL with
+checksum verification, and opting into the GitHub source in
+`lexicon import --guided`. That source uses your existing `gh` login to call
+`api.github.com` for profile, organization membership, member-login and
+repository-name metadata; no new OAuth scopes are requested. The source is
+selected before inspection, and candidates are reviewed before writes. The
+install script, npm and Homebrew fetch the package itself. See
+[SECURITY.md](SECURITY.md).
+
+The guided GitHub importer is implemented in this source candidate. Source
+version `0.5.5` is separate from the public npm `latest` version `0.5.4`
+requeried on 2026-10-09. These source notes do not establish publication,
+installation or a successful authenticated import on your machine.
 
 ## Why
 
