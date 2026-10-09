@@ -13,7 +13,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
-- **Flaky voice test** (`tests/voice.test.ts`, "two presses that race"): the second press fired from inside the fake `spawn`, racing its `readState` against the first press's pid rewrite with no guaranteed ordering; CI went red on 2026-09-30. Rewritten with a publication barrier: both real toggle handlers run while the first pid rewrite is held until the second has observed the provisional record.
+- **Flaky voice test** (`tests/voice.test.ts`, "two presses that race"): the second press fired from inside the fake `spawn`, racing its `readState` against the first press's pid rewrite with no guaranteed ordering; CI went red on 2026-09-30. Rewritten with a publication barrier: both real toggle handlers run while the first pid rewrite is held until the second has observed the provisional record. Synthetic ffmpeg capture tests wait for actual flushed audio before killing the recorder.
 - `tests/lexicon-lock.test.ts` derived the expected removed-count from the loaded pack instead of a hardcoded 70, which the pack expansion above had broken.
 - Reinstalling a JSON MCP client now preserves its custom Lexicon path, environment, disabled state, timeouts and approval settings while refreshing the launch command. Invalid configs and conflicting remote transports are refused before writing.
 - The POSIX installer pins a validated stable registry version or release tag and stops when discovery fails, instead of silently installing main. Setup is refused when PATH selects a different installed version.
