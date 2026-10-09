@@ -37,11 +37,11 @@ function deps(overrides: ImportSourceDeps = {}): Required<ImportSourceDeps> {
   };
 }
 
-const DB = '/fake/home/Library/Application Support/AddressBook/AddressBook-v22.abcddb';
+const DB = path.join('/fake/home', 'Library', 'Application Support', 'AddressBook', 'AddressBook-v22.abcddb');
 
 function contactsDeps(rows: string): Required<ImportSourceDeps> {
   return deps({
-    exists: (p) => p === DB || p === '/fake/home/Library/Application Support/AddressBook/Sources',
+    exists: (p) => p === DB || p === path.join('/fake/home', 'Library', 'Application Support', 'AddressBook', 'Sources'),
     readDir: (p) => (p.endsWith('Sources') ? [] : []),
     exec: (file, args) => {
       if (file === 'sqlite3' && args[0] === '--version') return '3.46.1';
@@ -184,17 +184,17 @@ END:VCALENDAR
 `;
 
 function calendarDeps(): Required<ImportSourceDeps> {
-  const calDir = '/fake/home/Library/Calendars';
-  const icsPath = `${calDir}/ABC.calendar/Events/1.ics`;
+  const calDir = path.join('/fake/home', 'Library', 'Calendars');
+  const icsPath = path.join(calDir, 'ABC.calendar', 'Events', '1.ics');
   return deps({
     exists: (p) => p === calDir,
     readDir: (p) => {
       if (p === calDir) return ['ABC.calendar'];
-      if (p === `${calDir}/ABC.calendar`) return ['Events'];
-      if (p === `${calDir}/ABC.calendar/Events`) return ['1.ics'];
+      if (p === path.join(calDir, 'ABC.calendar')) return ['Events'];
+      if (p === path.join(calDir, 'ABC.calendar', 'Events')) return ['1.ics'];
       return [];
     },
-    isDirectory: (p) => p === `${calDir}/ABC.calendar` || p === `${calDir}/ABC.calendar/Events`,
+    isDirectory: (p) => p === path.join(calDir, 'ABC.calendar') || p === path.join(calDir, 'ABC.calendar', 'Events'),
     fileSize: (p) => (p === icsPath ? ICS.length : undefined),
     readText: (p) => {
       if (p === icsPath) return ICS;

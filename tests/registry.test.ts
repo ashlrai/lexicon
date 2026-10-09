@@ -3,7 +3,7 @@
  * verification, publish validation and the install/update/remove round trip,
  * all against fixture indexes in a temp dir (no network).
  */
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, realpathSync, promises as fs } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -267,7 +267,7 @@ describe('install / update / remove round trip', () => {
     const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
     await installRegistryPack(entry, base, indexPath, { globalPath });
     const previous = readFileSync(globalPath, 'utf8'); const state = await readRegistryState({ globalPath });
-    const statePath = realpathSync(path.join(registryDir({ globalPath }), 'registry.json')); const rename = fs.rename;
+    const statePath = await fs.realpath(path.join(registryDir({ globalPath }), 'registry.json')); const rename = fs.rename;
     let fail = true;
     vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
       if (String(to) === statePath && fail) { fail = false; throw new Error('synthetic metadata failure'); }
@@ -290,7 +290,7 @@ describe('install / update / remove round trip', () => {
     const previous = readFileSync(installed.path, 'utf8');
     const state = await readRegistryState(opts);
     const cache = readFileSync(cachedPackPath(entry.ref, opts), 'utf8');
-    const statePath = realpathSync(path.join(registryDir(opts), 'registry.json'));
+    const statePath = await fs.realpath(path.join(registryDir(opts), 'registry.json'));
     const rename = fs.rename;
     let fail = true;
     vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
