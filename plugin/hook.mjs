@@ -34329,7 +34329,7 @@ var CONTACTS_QUERY = "SELECT ZFIRSTNAME, ZLASTNAME, ZORGANIZATION FROM ZABCDCONT
 var contactsSource = {
   id: "contacts",
   label: "macOS Contacts",
-  privacy: "Reads first/last names and organizations from your local macOS Contacts database. Nothing leaves this machine.",
+  privacy: "Reads first/last names and organizations from your local macOS Contacts database. Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.",
   implemented: true,
   async checkAvailable(deps = {}) {
     const d = resolved(deps);
@@ -34344,7 +34344,7 @@ var contactsSource = {
     const d = resolved(deps);
     const db = addressBookDb(d);
     if (!db) return [];
-    const out = tryExec(d, "sqlite3", ["-separator", "	", db, CONTACTS_QUERY]);
+    const out = tryExec(d, "sqlite3", ["-readonly", "-separator", "	", db, CONTACTS_QUERY]);
     if (out === void 0) return [];
     const candidates = [];
     for (const line of out.split("\n")) {
@@ -34452,7 +34452,7 @@ function icsFiles(deps, dir) {
 var calendarSource = {
   id: "calendar",
   label: "macOS Calendar",
-  privacy: "Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Nothing leaves this machine.",
+  privacy: "Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.",
   implemented: true,
   async checkAvailable(deps = {}) {
     const d = resolved(deps);

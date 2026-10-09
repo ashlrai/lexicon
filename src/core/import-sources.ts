@@ -241,7 +241,7 @@ const contactsSource: VocabImportSource = {
     const d = resolved(deps);
     const db = addressBookDb(d);
     if (!db) return [];
-    const out = tryExec(d, 'sqlite3', ['-separator', '\t', db, CONTACTS_QUERY]);
+    const out = tryExec(d, 'sqlite3', ['-readonly', '-separator', '\t', db, CONTACTS_QUERY]);
     if (out === undefined) return [];
     const candidates: HarvestCandidate[] = [];
     for (const line of out.split('\n')) {

@@ -4,6 +4,10 @@
  * test touches the real machine (no AddressBook, no Calendars, no gh).
  */
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   IMPLEMENTED_IMPORT_SOURCES,
   IMPORT_SOURCE_IDS,
@@ -106,6 +110,25 @@ describe('contacts source', () => {
     const ada = candidates.find((c) => c.canonical === 'Ada Lovelace');
     expect(ada?.category).toBe('person');
     expect(ada?.source).toBe('import:contacts');
+  });
+
+  it('requests a read-only Contacts database connection', async () => {
+    let queryArgs: readonly string[] = [];
+    await source.harvest({ ...contactsDeps(''), exec: (_file, args) => { queryArgs = args; return ''; } });
+    expect(queryArgs).toEqual(['-readonly', '-separator', '\t', DB, expect.stringContaining('SELECT')]);
+  });
+
+  it.skipIf(process.platform !== 'darwin' || !existsSync('/usr/bin/sqlite3'))('never creates a Contacts database if it disappears before the query', async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), 'lexicon-contacts-race-'));
+    const missing = path.join(home, 'Library', 'Application Support', 'AddressBook', 'AddressBook-v22.abcddb');
+    mkdirSync(path.dirname(missing), { recursive: true });
+    try {
+      const result = await source.harvest(deps({ home, exists: (file) => file === missing,
+        exec: (_file, args) => execFileSync('/usr/bin/sqlite3', [...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }),
+      }));
+      expect(result).toEqual([]);
+      expect(existsSync(missing)).toBe(false);
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
   it('harvests organizations as brands', async () => {
