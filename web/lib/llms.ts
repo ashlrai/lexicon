@@ -135,7 +135,7 @@ no build step):
 What \`lexicon setup\` does, in order: creates ~/.config/lexicon/lexicon.yaml;
 asks how the user's own name and their company or product should be spelled, and
 generates the aliases speech-to-text is likely to produce for each; offers the
-four starter packs (155 curated terms); offers to harvest proper nouns from the
+four starter packs (176 curated terms); offers to harvest proper nouns from the
 repository the user is standing in; registers the MCP server (and, for Claude
 Code, the hooks) in every agent client it detects; optionally installs the
 loopback API as a login service; optionally exports into the user's dictation

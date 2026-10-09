@@ -8,7 +8,7 @@
  *                         the CLI cannot drift apart.
  *   lexicon-core.d.ts  <- hand-written types for the above, so `tsc --noEmit`
  *                         and the Next build stay fully typed.
- *   demo-lexicon.json  <- the four starter packs (155 terms) plus the Ashlr.AI
+ *   demo-lexicon.json  <- the four starter packs (176 terms) plus the Ashlr.AI
  *                         entry from examples/lexicon.example.yaml, parsed from
  *                         the same YAML the CLI ships. Parsed here rather than
  *                         in the browser so the bundle needs no YAML parser.
