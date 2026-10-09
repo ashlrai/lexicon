@@ -37,9 +37,32 @@ One rule decides the hard cases: **an ordinary English word is never an alias on
 
 This is the same precision rule the benchmark measures: zero of 95 clean synthetic sentences and zero of 72 clean spoken sentences were changed. See [BENCHMARK.md](BENCHMARK.md).
 
-## Adding a pack
+## Community packs
 
-A new pack is one file and one test.
+The four above are curated and ship with the package. Everything else lives in community registries: an index file anyone can host (a YAML file in a git repo is enough), listing packs as `<author>/<name>`. `registry/index.example.yaml` in this repo documents the index format.
+
+```bash
+lexicon pack search cardiology --registry https://example.com/packs/index.yaml
+lexicon pack add example/cardiology --registry https://example.com/packs/index.yaml
+lexicon pack add example/cardiology@2 --registry ./packs/index.yaml  # pin a version
+lexicon pack update --registry https://example.com/packs/index.yaml  # re-check every installed community pack
+lexicon pack remove example/cardiology                               # no --registry needed; the pack file is cached
+lexicon pack validate ./my-pack.yaml                                 # the publish bar, before you list it
+```
+
+A community pack installs through the same merge rules as the vendored four, with three extra guarantees, because installed terms reach model context on every hooked prompt:
+
+- **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `~/.config/lexicon/registry.json`. `pack update` re-checks it.
+- **Preview before the first write.** `pack add <author>/<name>` shows the whole term list and asks (default no; `--yes` off a terminal). Updates are re-approved one by one, never silent.
+- **The ordinary-word guard, enforced.** `lexicon pack validate` runs the publish bar: schema, author present, and no canonical or alias that is an everyday English word. Run it in CI on the pack's own repo.
+
+Updates key on checksum, not on the display version: when the pack file changes, its checksum changes and `pack update` offers the new file, showing which terms were added and which the new file drops (dropped terms are reported, never deleted from your lexicon). A pack pinned with `@version` is never moved by `pack update`.
+
+Over MCP, `list_packs` takes the same `registry` parameter, and `add_pack` takes a community ref: without `confirm: true` it returns the term-list preview and writes nothing; with it, installs after the user approved.
+
+## Adding a pack to this repo
+
+A new vendored pack is one file and one test.
 
 1. Write `packs/<name>.yaml`. It needs `name` (lowercase letters, digits and dashes), `title`, `description`, `version: 1` and `terms`. The schema is the same as [the lexicon file](LEXICON-FILE.md), so `lexicon export json` from a real lexicon is a fine starting point.
 2. Give every term a `category` and real aliases. Leave an alias out rather than ship one that is an ordinary word; add `never` when a term sounds like one.
@@ -47,6 +70,13 @@ A new pack is one file and one test.
 4. `lexicon pack show <name>` and `lexicon normalize` a sentence that uses three of its terms.
 
 Pack files are read from the package's `packs/` directory only, and the name is validated before any path is built, so a name arriving from the local API or an MCP call can never escape that directory.
+
+## Publishing a pack
+
+1. Write the pack YAML: the same schema as above, plus `author` (required for community packs) and `homepage`.
+2. Run `lexicon pack validate <file>` until it is clean.
+3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`/`file://`, or relative to the index).
+4. Host the index and the pack files anywhere a URL reaches. Point users at `lexicon pack search --registry <your index>`.
 
 ## See also
 

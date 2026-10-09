@@ -2,7 +2,7 @@
 
 Every tool, resource and prompt the `lexicon` server exposes, for anyone wiring it into an MCP client or writing an agent that calls it. To *register* the server in a client, use [CLIENTS.md](CLIENTS.md); this page is what it answers once it is running.
 
-Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Nineteen tools, two resources, two prompts.
+Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Twenty tools, two resources, two prompts.
 
 Registering it in a client is one command: see [CLIENTS.md](CLIENTS.md). Point any other MCP client at the stdio server directly:
 
@@ -38,8 +38,9 @@ The agent calls `normalize_transcript` on dictated input and reads `lexicon://me
 | `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or `claude-desktop` |
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
 | `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |
-| `list_packs` | none | The starter packs in `packs/`, their size and which are installed. See [PACKS.md](PACKS.md) |
-| `add_pack` | `name`, `scope?` | Install a starter pack into the global or project lexicon. See [PACKS.md](PACKS.md) |
+| `import_vocabulary` | `sources?`, `apply?`, `scope?` | Harvest proper nouns from the user's own sources (`contacts`, `calendar`, `github`, all local-first). Without `apply` returns availability per source plus the merged candidates and writes nothing; `apply: true` writes them after the user approved the preview |
+| `list_packs` | `registry?` | The starter packs in `packs/`, their size and which are installed; with `registry` also the community packs in that index. See [PACKS.md](PACKS.md) |
+| `add_pack` | `name`, `scope?`, `registry?`, `confirm?` | Install a starter pack into the global or project lexicon. `name` as `<author>/<name>` with `registry` installs a community pack: without `confirm: true` it returns the term-list preview and writes nothing; with it, installs after the user approved. See [PACKS.md](PACKS.md) |
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
 | `apply_suggestion` | `suggestion`, `scope?` | Applies one suggestion from `suggest_terms`, passed back as received |
 | `setup_lexicon` | `company?`, `person?`, `clients?`, `packs?`, `harvest?`, `serve?`, `apply?` | Without `apply` returns a plan computed by a dry run (what it would seed and harvest, the clients it detected, whether it would install the login service) and writes nothing. With `apply: true` runs `lexicon setup` non-interactively for exactly the `clients` given (omitted = none). The three that write a lot are each opt-in and separately confirmed: `packs` names the starter packs to install (omitted = none), `harvest: true` writes the repo names in `wouldHarvest` into the project `.lexicon.yaml` and trusts it, and `serve: true` installs the local API as a login service. Returns the `SetupSummary` |
