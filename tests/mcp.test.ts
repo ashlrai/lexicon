@@ -797,7 +797,7 @@ describe('lexicon MCP server', () => {
       it('previews availability and candidates without writing', async () => {
         const { client, close } = await connect();
         try {
-          const result = await client.callTool({ name: 'import_vocabulary', arguments: {} });
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } });
           expect(result.isError).toBe(false);
           const payload = JSON.parse(textOf(result)) as {
             applied: boolean;
@@ -818,19 +818,57 @@ describe('lexicon MCP server', () => {
         }
       });
 
-      it('applies only with apply: true, through the shared write path', async () => {
+      it('without sources returns descriptions without probing or harvesting', async () => {
+        const probe = vi.fn(async () => ({ available: true }));
+        mocks.listImportSources.mockReturnValue([{ ...githubSource, checkAvailable: probe }]);
         const { client, close } = await connect();
         try {
-          const result = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'] } });
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: {} });
           expect(result.isError).toBe(false);
-          const payload = JSON.parse(textOf(result)) as { applied: boolean; added: number; merged: number; summary: string };
-          expect(payload).toMatchObject({ applied: true, added: 1, merged: 0 });
-          expect(payload.summary).toMatch(/1 new/);
-          expect(mocks.harvestImportSources).toHaveBeenCalledWith(['github'], {}, { limit: 50 });
+          expect(JSON.parse(textOf(result)).candidates).toEqual([]);
+          expect(probe).not.toHaveBeenCalled();
+          expect(mocks.harvestImportSources).not.toHaveBeenCalled();
+        } finally { await close(); }
+      });
+
+      it('requires explicit sources and candidate approval before applying', async () => {
+        const { client, close } = await connect();
+        try {
+          for (const arguments_ of [{ apply: true }, { apply: true, sources: ['github'] }]) {
+            const result = await client.callTool({ name: 'import_vocabulary', arguments: arguments_ });
+            expect(result.isError).toBe(true);
+          }
+          expect(mocks.harvestImportSources).not.toHaveBeenCalled();
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+        } finally { await close(); }
+      });
+
+      it('applies selected snapshot ids only and never re-harvests changed sources', async () => {
+        const omitted = { ...candidate, canonical: 'Unapproved Person' };
+        mocks.harvestImportSources.mockResolvedValue([candidate, omitted]);
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          mocks.harvestImportSources.mockResolvedValue([{ ...candidate, canonical: 'New After Preview' }]);
+          const args = { apply: true, sources: ['github'], previewToken: preview.previewToken, approvedCandidateIds: [preview.candidates[0].id] };
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: args });
+          expect(result.isError).toBe(false);
+          expect(JSON.parse(textOf(result))).toMatchObject({ applied: true, added: 1 });
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
           expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo' });
-        } finally {
-          await close();
-        }
+          expect((await client.callTool({ name: 'import_vocabulary', arguments: args })).isError).toBe(true);
+        } finally { await close(); }
+      });
+
+      it('rejects ids absent from a preview and changed destination scope', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          const args = { apply: true, sources: ['github'], previewToken: preview.previewToken };
+          expect((await client.callTool({ name: 'import_vocabulary', arguments: { ...args, approvedCandidateIds: ['00'.repeat(32)] } })).isError).toBe(true);
+          expect((await client.callTool({ name: 'import_vocabulary', arguments: { ...args, approvedCandidateIds: [preview.candidates[0].id], scope: 'project' } })).isError).toBe(true);
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+        } finally { await close(); }
       });
     });
 
@@ -861,7 +899,7 @@ describe('lexicon MCP server', () => {
         mocks.parsePackText.mockReturnValue({
           name: 'cardiology',
           title: 'Cardiology terms',
-          lexicon: { version: 1, terms: [{ canonical: 'Metoprolol', aliases: ['metoprolol'], category: 'brand' }] },
+          lexicon: { version: 1, terms: [{ canonical: 'Metoprolol', aliases: ['metoprolol'], category: 'brand', notes: 'Preview this context note', phonetic: ['met-oh-pro-lol'], caseSensitive: true }] },
         });
         mocks.installRegistryPack.mockResolvedValue({
           ref: 'example/cardiology',
@@ -902,16 +940,16 @@ describe('lexicon MCP server', () => {
             arguments: { name: 'example/cardiology', registry: '/fake/index.yaml' },
           });
           expect(preview.isError).toBe(false);
-          const p = JSON.parse(textOf(preview)) as { installed: boolean; preview: { ref: string; terms: { canonical: string }[] }; next: string };
+          const p = JSON.parse(textOf(preview)) as { installed: boolean; previewDigest: string; preview: { ref: string; terms: { canonical: string }[] }; next: string };
           expect(p.installed).toBe(false);
           expect(p.preview.ref).toBe('example/cardiology');
-          expect(p.preview.terms).toMatchObject([{ canonical: 'Metoprolol' }]);
+          expect(p.preview.terms).toMatchObject([{ canonical: 'Metoprolol', notes: 'Preview this context note', phonetic: ['met-oh-pro-lol'], caseSensitive: true }]);
           expect(p.next).toMatch(/confirm: true/);
           expect(mocks.installRegistryPack).not.toHaveBeenCalled();
 
           const applied = await client.callTool({
             name: 'add_pack',
-            arguments: { name: 'example/cardiology', registry: '/fake/index.yaml', confirm: true },
+            arguments: { name: 'example/cardiology', registry: '/fake/index.yaml', confirm: true, previewDigest: p.previewDigest },
           });
           expect(applied.isError).toBe(false);
           const a = JSON.parse(textOf(applied)) as { name: string; summary: string };
@@ -921,6 +959,23 @@ describe('lexicon MCP server', () => {
         } finally {
           await close();
         }
+      });
+
+      it('rejects confirmation without a preview digest and alias-only content drift', async () => {
+        const { client, close } = await connect();
+        try {
+          const args = { name: 'example/cardiology', registry: '/fake/index.yaml' };
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'add_pack', arguments: args })));
+          expect((await client.callTool({ name: 'add_pack', arguments: { ...args, confirm: true } })).isError).toBe(true);
+          mocks.downloadPack.mockResolvedValue(Buffer.from('changed-alias-only-content'));
+          mocks.parsePackText.mockReturnValue({ name: 'cardiology', title: 'Cardiology terms', lexicon: { version: 1, terms: [{ canonical: 'Metoprolol', aliases: ['new alias'], notes: 'New context note', category: 'brand' }] } });
+          const changed = await client.callTool({ name: 'add_pack', arguments: { ...args, confirm: true, previewDigest: preview.previewDigest } });
+          expect(changed.isError).toBe(true);
+          expect(textOf(changed)).toMatch(/changed/);
+          expect(mocks.installRegistryPack).not.toHaveBeenCalled();
+          const fresh = JSON.parse(textOf(await client.callTool({ name: 'add_pack', arguments: args })));
+          expect(fresh.preview.terms[0]).toMatchObject({ aliases: ['new alias'], notes: 'New context note' });
+        } finally { await close(); }
       });
 
       it('add_pack still installs vendored packs directly', async () => {

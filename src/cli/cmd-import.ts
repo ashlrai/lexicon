@@ -244,9 +244,11 @@ export function registerImportCommands(program: Command, io: IO): void {
     .option('--source <source>', 'source recorded on each term (default: import)')
     .option('--category <category>', 'category applied to imported terms that lack one')
     .option('--guided', 'guided vocabulary import: pick sources (contacts, calendar, github) and approve each candidate before it is written')
-    .option('--sources <list>', 'with --guided: comma-separated sources to harvest (default: every available one)')
+    .option('--sources <list>', 'with --guided: explicit comma-separated sources to harvest (required non-interactively)')
     .option('--limit <n>', 'with --guided: max candidates to review (default: 50)')
-    .option('-y, --yes', 'with --guided: accept every candidate without prompting (requires --sources)')
+    .option('-y, --yes', 'with --guided: apply approved candidate ids (requires --sources, --preview-id and --accept)')
+    .option('--preview-id <digest>', 'with --guided --yes: digest returned by the prior JSON preview')
+    .option('--accept <ids>', 'with --guided --yes: comma-separated candidate ids the user approved')
     .option('--home <dir>', 'with --guided: treat <dir> as the home directory (mainly for tests)')
     .option('--json', 'print the result as JSON')
     .action(async (file: string | undefined, formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions) => {

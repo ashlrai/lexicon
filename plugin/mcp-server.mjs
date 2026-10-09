@@ -3270,8 +3270,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path26) {
-      let input2 = path26;
+    function removeDotSegments(path28) {
+      let input2 = path28;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -3680,8 +3680,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path26 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path26 && path26 !== "/" ? path26 : void 0;
+        const path28 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path28 && path28 !== "/" ? path28 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -3870,17 +3870,17 @@ var require_fast_uri = __commonJS({
       if (baseMalformed || relativeMalformed || baseMalformedPercentEncoding || relativeMalformedPercentEncoding || baseMalformedSchemeSpecific || relativeMalformedSchemeSpecific || baseMalformedHost || relativeMalformedHost || baseMalformedScheme || relativeMalformedScheme) {
         throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
       }
-      const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
-      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
-      const resolvedHost = resolved.host;
+      const resolved2 = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
+      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved2.scheme);
+      const resolvedHost = resolved2.host;
       const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
-      canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
+      canonicalizeHost(resolved2, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
-      if (resolved.error && !encodedASCIIHost) {
-        throw new Error(resolved.error);
+      if (resolved2.error && !encodedASCIIHost) {
+        throw new Error(resolved2.error);
       }
       schemelessOptions.skipEscape = true;
-      return serialize(resolved, schemelessOptions);
+      return serialize(resolved2, schemelessOptions);
     }
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
@@ -7194,12 +7194,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs19, exportName) {
+    function addFormats(ajv, list, fs20, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs19[f]);
+        ajv.addFormat(f, fs20[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -7284,17 +7284,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path26) {
-      const ctrl = callVisitor(key, node2, visitor, path26);
+    function visit_(key, node2, visitor, path28) {
+      const ctrl = callVisitor(key, node2, visitor, path28);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path26, ctrl);
-        return visit_(key, ctrl, visitor, path26);
+        replaceNode(key, path28, ctrl);
+        return visit_(key, ctrl, visitor, path28);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path26 = Object.freeze(path26.concat(node2));
+          path28 = Object.freeze(path28.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path26);
+            const ci = visit_(i, node2.items[i], visitor, path28);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7305,13 +7305,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path26 = Object.freeze(path26.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path26);
+          path28 = Object.freeze(path28.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path28);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path26);
+          const cv = visit_("value", node2.value, visitor, path28);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7332,17 +7332,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path26) {
-      const ctrl = await callVisitor(key, node2, visitor, path26);
+    async function visitAsync_(key, node2, visitor, path28) {
+      const ctrl = await callVisitor(key, node2, visitor, path28);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path26, ctrl);
-        return visitAsync_(key, ctrl, visitor, path26);
+        replaceNode(key, path28, ctrl);
+        return visitAsync_(key, ctrl, visitor, path28);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path26 = Object.freeze(path26.concat(node2));
+          path28 = Object.freeze(path28.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path26);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path28);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7353,13 +7353,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path26 = Object.freeze(path26.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path26);
+          path28 = Object.freeze(path28.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path28);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path26);
+          const cv = await visitAsync_("value", node2.value, visitor, path28);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7386,23 +7386,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path26) {
+    function callVisitor(key, node2, visitor, path28) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path26);
+        return visitor(key, node2, path28);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path26);
+        return visitor.Map?.(key, node2, path28);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path26);
+        return visitor.Seq?.(key, node2, path28);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path26);
+        return visitor.Pair?.(key, node2, path28);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path26);
+        return visitor.Scalar?.(key, node2, path28);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path26);
+        return visitor.Alias?.(key, node2, path28);
       return void 0;
     }
-    function replaceNode(key, path26, node2) {
-      const parent = path26[path26.length - 1];
+    function replaceNode(key, path28, node2) {
+      const parent = path28[path28.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -8014,10 +8014,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path26, value) {
+    function collectionFromPath(schema, path28, value) {
       let v = value;
-      for (let i = path26.length - 1; i >= 0; --i) {
-        const k = path26[i];
+      for (let i = path28.length - 1; i >= 0; --i) {
+        const k = path28[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -8036,7 +8036,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path26) => path26 == null || typeof path26 === "object" && !!path26[Symbol.iterator]().next().done;
+    var isEmptyPath = (path28) => path28 == null || typeof path28 === "object" && !!path28[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -8066,11 +8066,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path26, value) {
-        if (isEmptyPath(path26))
+      addIn(path28, value) {
+        if (isEmptyPath(path28))
           this.add(value);
         else {
-          const [key, ...rest] = path26;
+          const [key, ...rest] = path28;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -8084,8 +8084,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path26) {
-        const [key, ...rest] = path26;
+      deleteIn(path28) {
+        const [key, ...rest] = path28;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -8099,8 +8099,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path26, keepScalar) {
-        const [key, ...rest] = path26;
+      getIn(path28, keepScalar) {
+        const [key, ...rest] = path28;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -8118,8 +8118,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path26) {
-        const [key, ...rest] = path26;
+      hasIn(path28) {
+        const [key, ...rest] = path28;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -8129,8 +8129,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path26, value) {
-        const [key, ...rest] = path26;
+      setIn(path28, value) {
+        const [key, ...rest] = path28;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -10645,9 +10645,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path26, value) {
+      addIn(path28, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path26, value);
+          this.contents.addIn(path28, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -10722,14 +10722,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path26) {
-        if (Collection.isEmptyPath(path26)) {
+      deleteIn(path28) {
+        if (Collection.isEmptyPath(path28)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path26) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path28) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -10744,10 +10744,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path26, keepScalar) {
-        if (Collection.isEmptyPath(path26))
+      getIn(path28, keepScalar) {
+        if (Collection.isEmptyPath(path28))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path26, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path28, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -10758,10 +10758,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path26) {
-        if (Collection.isEmptyPath(path26))
+      hasIn(path28) {
+        if (Collection.isEmptyPath(path28))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path26) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path28) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -10778,13 +10778,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path26, value) {
-        if (Collection.isEmptyPath(path26)) {
+      setIn(path28, value) {
+        if (Collection.isEmptyPath(path28)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path26), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path28), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path26, value);
+          this.contents.setIn(path28, value);
         }
       }
       /**
@@ -12745,9 +12745,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path26) => {
+    visit2.itemAtPath = (cst, path28) => {
       let item = cst;
-      for (const [field, index] of path26) {
+      for (const [field, index] of path28) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -12756,23 +12756,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path26) => {
-      const parent = visit2.itemAtPath(cst, path26.slice(0, -1));
-      const field = path26[path26.length - 1][0];
+    visit2.parentCollection = (cst, path28) => {
+      const parent = visit2.itemAtPath(cst, path28.slice(0, -1));
+      const field = path28[path28.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path26, item, visitor) {
-      let ctrl = visitor(item, path26);
+    function _visit(path28, item, visitor) {
+      let ctrl = visitor(item, path28);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path26.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path28.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -12783,10 +12783,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path26);
+            ctrl = ctrl(item, path28);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path26) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path28) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -14088,14 +14088,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs19 = this.flowScalar(this.type);
+              const fs20 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs19, sep: [] });
+                map2.items.push({ start, key: fs20, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs19);
+                this.stack.push(fs20);
               } else {
-                Object.assign(it, { key: fs19, sep: [] });
+                Object.assign(it, { key: fs20, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -14223,13 +14223,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs19 = this.flowScalar(this.type);
+              const fs20 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs19, sep: [] });
+                fc.items.push({ start: [], key: fs20, sep: [] });
               else if (it.sep)
-                this.stack.push(fs19);
+                this.stack.push(fs20);
               else
-                Object.assign(it, { key: fs19, sep: [] });
+                Object.assign(it, { key: fs20, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -15064,8 +15064,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path26, errorMaps, issueData } = params;
-  const fullPath = [...path26, ...issueData.path || []];
+  const { data, path: path28, errorMaps, issueData } = params;
+  const fullPath = [...path28, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -15180,11 +15180,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path26, key) {
+  constructor(parent, value, path28, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path26;
+    this._path = path28;
     this._key = key;
   }
   get path() {
@@ -19138,10 +19138,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path26) {
-  if (!path26)
+function getElementAtPath(obj, path28) {
+  if (!path28)
     return obj;
-  return path26.reduce((acc, key) => acc?.[key], obj);
+  return path28.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -19481,11 +19481,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path26, issues) {
+function prefixIssues(path28, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path26);
+    iss.path.unshift(path28);
     return iss;
   });
 }
@@ -19935,16 +19935,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path26 = []) => {
+  const processError = (error63, path28 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path26, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path28, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path26, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path26, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else {
-        const fullpath = [...path26, ...issue2.path];
+        const fullpath = [...path28, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19983,17 +19983,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path26 = []) => {
+  const processError = (error63, path28 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path26, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path28, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path26, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path26, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else {
-        const fullpath = [...path26, ...issue2.path];
+        const fullpath = [...path28, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -20032,8 +20032,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path26 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path26) {
+  const path28 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path28) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -35548,11 +35548,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path26) {
-  if (path26.length === 0) {
+function getDotPath(path28) {
+  if (path28.length === 0) {
     return "object root";
   }
-  return path26.reduce((acc, seg, index) => {
+  return path28.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -37779,13 +37779,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path26 = ref.slice(1).split("/").filter(Boolean);
-  if (path26.length === 0) {
+  const path28 = ref.slice(1).split("/").filter(Boolean);
+  if (path28.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path26[0] === defsKey) {
-    const key = path26[1] === void 0 ? void 0 : decodeJSONPointerSegment(path26[1]);
+  if (path28[0] === defsKey) {
+    const key = path28[1] === void 0 ? void 0 : decodeJSONPointerSegment(path28[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -38018,8 +38018,8 @@ function convertBaseSchema(schema, ctx) {
       });
     }
     ctx.processing.add(refPath);
-    const resolved = resolveRef(refPath, ctx);
-    const zodSchema2 = convertSchema(resolved, ctx);
+    const resolved2 = resolveRef(refPath, ctx);
+    const zodSchema2 = convertSchema(resolved2, ctx);
     ctx.refs.set(refPath, zodSchema2);
     ctx.processing.delete(refPath);
     return zodSchema2;
@@ -43977,6 +43977,9 @@ var TERM_SOURCES = [
   "harvest:git",
   "harvest:package",
   "import",
+  "import:contacts",
+  "import:calendar",
+  "import:github",
   "learned",
   "pack"
 ];
@@ -44085,10 +44088,10 @@ var LexiconSchema = external_exports.object({
   terms: external_exports.array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
   settings: LexiconSettingsSchema.optional()
 });
-function formatPath(path26) {
-  if (path26.length === 0) return "(root)";
+function formatPath(path28) {
+  if (path28.length === 0) return "(root)";
   let out = "";
-  for (const seg of path26) {
+  for (const seg of path28) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -44441,11 +44444,11 @@ function getTrustPath(opts = {}) {
   return path3.join(path3.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
 }
 async function canonicalPath(filePath) {
-  const resolved = path3.resolve(filePath);
+  const resolved2 = path3.resolve(filePath);
   try {
-    return await fs3.realpath(resolved);
+    return await fs3.realpath(resolved2);
   } catch {
-    return resolved;
+    return resolved2;
   }
 }
 async function hashFile(filePath) {
@@ -44740,11 +44743,11 @@ function hitKey(canonical) {
   return canonical.trim().toLowerCase();
 }
 async function canonicalPath2(filePath) {
-  const resolved = path5.resolve(filePath);
+  const resolved2 = path5.resolve(filePath);
   try {
-    return await fs4.realpath(resolved);
+    return await fs4.realpath(resolved2);
   } catch {
-    return resolved;
+    return resolved2;
   }
 }
 function emptyHitsRegistry() {
@@ -50156,13 +50159,13 @@ function findBest(view, index, opts) {
 }
 function findReplacements(text, index, opts = {}) {
   if (text.length === 0 || index.lexicon.terms.length === 0) return [];
-  const resolved = {
+  const resolved2 = {
     minConfidence: clamp01(opts.minConfidence ?? index.minConfidence),
     phonetic: opts.phonetic ?? index.phonetic,
     fuzzy: opts.fuzzy ?? index.fuzzy,
     skipCode: opts.skipCode ?? index.skipCode
   };
-  const tokens = tokenize(text, resolved.skipCode);
+  const tokens = tokenize(text, resolved2.skipCode);
   const candidates = [];
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].skipped) continue;
@@ -50174,10 +50177,10 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved);
+      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved2);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved);
+        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved2);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (best) candidates.push(best);
@@ -52386,6 +52389,498 @@ function capitalize(s) {
   return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 }
 
+// src/core/import-sources.ts
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { existsSync as existsSync2, readdirSync, readFileSync, statSync } from "node:fs";
+import os4 from "node:os";
+import path7 from "node:path";
+var IMPORT_SOURCE_IDS = ["contacts", "calendar", "github", "email", "slack"];
+var IMPLEMENTED_IMPORT_SOURCES = ["contacts", "calendar", "github"];
+var defaultDeps = () => ({
+  platform: process.platform,
+  home: os4.homedir(),
+  exists: existsSync2,
+  readText: (p) => readFileSync(p, "utf8"),
+  readDir: (p) => readdirSync(p),
+  isDirectory: (p) => {
+    try {
+      return statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+  fileSize: (p) => {
+    try {
+      return statSync(p).size;
+    } catch {
+      return void 0;
+    }
+  },
+  exec: ((file2, args) => execFileSync2(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "ignore"] }))
+});
+function resolveImportSourceDeps(deps = {}) {
+  const d = defaultDeps();
+  return {
+    platform: deps.platform ?? d.platform,
+    home: deps.home ?? d.home,
+    exists: deps.exists ?? d.exists,
+    readText: deps.readText ?? d.readText,
+    readDir: deps.readDir ?? d.readDir,
+    isDirectory: deps.isDirectory ?? d.isDirectory,
+    fileSize: deps.fileSize ?? d.fileSize,
+    exec: deps.exec ?? d.exec
+  };
+}
+function resolved(deps = {}) {
+  return resolveImportSourceDeps(deps);
+}
+function tryExec(deps, file2, args) {
+  try {
+    return deps.exec(file2, args);
+  } catch {
+    return void 0;
+  }
+}
+function importAliases(canonical, category) {
+  if (category === "identifier") {
+    return harvestAliases(canonical, "person").filter((a) => !/\s/.test(a));
+  }
+  return harvestAliases(canonical, category);
+}
+function personCandidate(name, source, evidence, count = 1) {
+  const canonical = name.trim().replace(/\s+/g, " ");
+  if (canonical.length < 2 || canonical.length > 80) return void 0;
+  if (/@/.test(canonical) || /\[bot\]$/i.test(canonical) || /\bbot\b/i.test(canonical)) return void 0;
+  return {
+    canonical,
+    category: "person",
+    source,
+    evidence: [evidence],
+    count,
+    suggestedAliases: importAliases(canonical, "person")
+  };
+}
+function mergeCandidates(candidates) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const c of candidates) {
+    const key = c.canonical.toLowerCase();
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...c, evidence: [...c.evidence], suggestedAliases: [...c.suggestedAliases] });
+      continue;
+    }
+    if (c.count > prev.count) {
+      const demoted = prev.canonical;
+      prev.canonical = c.canonical;
+      prev.category = c.category;
+      prev.source = c.source;
+      if (!prev.suggestedAliases.some((a) => a.toLowerCase() === demoted.toLowerCase())) {
+        prev.suggestedAliases.push(demoted);
+      }
+    }
+    prev.count += c.count;
+    for (const e of c.evidence) if (!prev.evidence.includes(e)) prev.evidence.push(e);
+    for (const a of c.suggestedAliases) {
+      if (a.toLowerCase() !== prev.canonical.toLowerCase() && !prev.suggestedAliases.some((x) => x.toLowerCase() === a.toLowerCase())) {
+        prev.suggestedAliases.push(a);
+      }
+    }
+  }
+  const out = [...byKey.values()];
+  out.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
+  return out;
+}
+function addressBookDirs(deps) {
+  const base = path7.join(deps.home, "Library", "Application Support", "AddressBook");
+  const dirs = [base];
+  try {
+    for (const entry of deps.readDir(path7.join(base, "Sources"))) {
+      const full = path7.join(base, "Sources", entry);
+      if (deps.isDirectory(full)) dirs.push(full);
+    }
+  } catch {
+  }
+  return dirs;
+}
+function addressBookDb(deps) {
+  for (const dir of addressBookDirs(deps)) {
+    for (const name of ["AddressBook-v22.abcddb", "AddressBook.abcddb"]) {
+      const p = path7.join(dir, name);
+      if (deps.exists(p)) return p;
+    }
+  }
+  return void 0;
+}
+var CONTACTS_QUERY = "SELECT ZFIRSTNAME, ZLASTNAME, ZORGANIZATION FROM ZABCDCONTACT WHERE ZFIRSTNAME IS NOT NULL OR ZLASTNAME IS NOT NULL OR ZORGANIZATION IS NOT NULL;";
+var contactsSource = {
+  id: "contacts",
+  label: "macOS Contacts",
+  privacy: "Reads first/last names and organizations from your local macOS Contacts database. Nothing leaves this machine.",
+  implemented: true,
+  async checkAvailable(deps = {}) {
+    const d = resolved(deps);
+    if (d.platform !== "darwin") return { available: false, reason: "macOS Contacts only exists on macOS" };
+    if (!addressBookDb(d)) return { available: false, reason: "no AddressBook database found under ~/Library/Application Support/AddressBook" };
+    if (tryExec(d, "sqlite3", ["--version"]) === void 0) {
+      return { available: false, reason: "the sqlite3 command-line tool is not on PATH" };
+    }
+    return { available: true };
+  },
+  async harvest(deps = {}) {
+    const d = resolved(deps);
+    const db = addressBookDb(d);
+    if (!db) return [];
+    const out = tryExec(d, "sqlite3", ["-separator", "	", db, CONTACTS_QUERY]);
+    if (out === void 0) return [];
+    const candidates = [];
+    for (const line2 of out.split("\n")) {
+      const [first = "", last = "", org = ""] = line2.split("	");
+      const name = `${first} ${last}`.trim();
+      const person = personCandidate(name, "import:contacts", "macOS Contacts");
+      if (person) candidates.push(person);
+      const organization = org.trim();
+      if (organization.length >= 3 && organization.length <= 80 && !/@/.test(organization)) {
+        candidates.push({
+          canonical: organization,
+          category: "brand",
+          source: "import:contacts",
+          evidence: ["macOS Contacts organization"],
+          count: 1,
+          suggestedAliases: importAliases(organization, "brand")
+        });
+      }
+    }
+    return mergeCandidates(candidates);
+  }
+};
+var MAX_ICS_FILES = 2e3;
+var MAX_ICS_BYTES = 512 * 1024;
+function unfoldIcs(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (/^[ \t]/.test(raw) && out.length > 0) out[out.length - 1] += raw.slice(1);
+    else out.push(raw);
+  }
+  return out;
+}
+function icsParamCN(line2) {
+  const m = /;CN=([^;:]+)/i.exec(line2);
+  return m ? m[1].trim() : void 0;
+}
+function parseIcsEvents(text) {
+  const events = [];
+  let current;
+  for (const line2 of unfoldIcs(text)) {
+    if (/^BEGIN:VEVENT/i.test(line2)) current = { attendees: [] };
+    else if (/^END:VEVENT/i.test(line2)) {
+      if (current) events.push(current);
+      current = void 0;
+    } else if (current) {
+      if (/^SUMMARY[:;]/i.test(line2)) current.summary = line2.replace(/^SUMMARY[^:]*:/i, "").trim();
+      else if (/^ATTENDEE/i.test(line2)) {
+        const cn = icsParamCN(line2);
+        if (cn) current.attendees.push(cn);
+      } else if (/^ORGANIZER/i.test(line2)) {
+        const cn = icsParamCN(line2);
+        if (cn) current.organizer = cn;
+      }
+    }
+  }
+  return events;
+}
+function titleProperNouns(summary) {
+  const out = [];
+  const words = summary.split(/\s+/).map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ""));
+  let phrase = [];
+  const flush = () => {
+    if (phrase.length >= 2) out.push(phrase.join(" "));
+    else if (phrase.length === 1) {
+      const [w] = phrase;
+      if (w.length >= 4 && !HARVEST_STOPLIST.has(w)) out.push(w);
+    }
+    phrase = [];
+  };
+  for (const w of words) {
+    if (/^[A-Z][a-z]+$/.test(w) && !HARVEST_STOPLIST.has(w)) phrase.push(w);
+    else flush();
+  }
+  flush();
+  return out;
+}
+function calendarDir(deps) {
+  const dir = path7.join(deps.home, "Library", "Calendars");
+  return deps.exists(dir) ? dir : void 0;
+}
+function icsFiles(deps, dir) {
+  const out = [];
+  const walk2 = (d) => {
+    if (out.length >= MAX_ICS_FILES) return;
+    let entries;
+    try {
+      entries = deps.readDir(d);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (out.length >= MAX_ICS_FILES) return;
+      const full = path7.join(d, entry);
+      if (entry.endsWith(".ics")) {
+        const size = deps.fileSize(full);
+        if (size !== void 0 && size <= MAX_ICS_BYTES) out.push(full);
+      } else if (!entry.startsWith(".")) {
+        if (deps.isDirectory(full)) walk2(full);
+      }
+    }
+  };
+  walk2(dir);
+  return out;
+}
+var calendarSource = {
+  id: "calendar",
+  label: "macOS Calendar",
+  privacy: "Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Nothing leaves this machine.",
+  implemented: true,
+  async checkAvailable(deps = {}) {
+    const d = resolved(deps);
+    if (d.platform !== "darwin") return { available: false, reason: "macOS Calendar only exists on macOS" };
+    if (!calendarDir(d)) return { available: false, reason: "no ~/Library/Calendars directory found" };
+    return { available: true };
+  },
+  async harvest(deps = {}) {
+    const d = resolved(deps);
+    const dir = calendarDir(d);
+    if (!dir) return [];
+    const candidates = [];
+    for (const file2 of icsFiles(d, dir)) {
+      let text;
+      try {
+        text = d.readText(file2);
+      } catch {
+        continue;
+      }
+      for (const event of parseIcsEvents(text)) {
+        for (const name of event.attendees) {
+          const c = personCandidate(name, "import:calendar", event.summary ? `calendar: ${event.summary}` : "calendar attendee");
+          if (c) candidates.push(c);
+        }
+        if (event.organizer) {
+          const c = personCandidate(event.organizer, "import:calendar", event.summary ? `calendar: ${event.summary}` : "calendar organizer");
+          if (c) candidates.push(c);
+        }
+        if (event.summary) {
+          for (const noun of titleProperNouns(event.summary)) {
+            candidates.push({
+              canonical: noun,
+              category: "other",
+              source: "import:calendar",
+              evidence: [`calendar event title: ${event.summary.slice(0, 60)}`],
+              count: 1,
+              suggestedAliases: importAliases(noun, "other")
+            });
+          }
+        }
+      }
+    }
+    const merged = mergeCandidates(candidates);
+    return merged.filter((c) => c.category !== "other" || /\s/.test(c.canonical) || c.count >= 2);
+  }
+};
+function ghJson(d, args) {
+  const paginated = args.includes("--paginate");
+  const out = tryExec(d, "gh", [...args, ...paginated ? ["--slurp"] : [], "--jq", "."]);
+  if (out === void 0) return void 0;
+  try {
+    const parsed = JSON.parse(out);
+    return paginated && Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  } catch {
+    return void 0;
+  }
+}
+function isRecord2(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function loginCandidate(login, evidence) {
+  const canonical = login.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,38}$/.test(canonical)) return void 0;
+  return {
+    canonical,
+    category: "identifier",
+    source: "import:github",
+    evidence: [evidence],
+    count: 1,
+    suggestedAliases: importAliases(canonical, "identifier")
+  };
+}
+var githubSource = {
+  id: "github",
+  label: "GitHub (gh CLI)",
+  privacy: "Calls api.github.com with your existing gh login: your username, org memberships, member logins and repo names. No new OAuth scopes.",
+  implemented: true,
+  async checkAvailable(deps = {}) {
+    const d = resolved(deps);
+    const status = tryExec(d, "gh", ["auth", "status"]);
+    if (status === void 0) return { available: false, reason: "gh is not installed or not logged in (run gh auth login)" };
+    return { available: true };
+  },
+  async harvest(deps = {}) {
+    const d = resolved(deps);
+    const candidates = [];
+    const user = ghJson(d, ["api", "user"]);
+    if (isRecord2(user)) {
+      if (typeof user.name === "string" && user.name.trim()) {
+        const c = personCandidate(user.name, "import:github", "GitHub profile name");
+        if (c) candidates.push(c);
+      }
+      if (typeof user.login === "string") {
+        const c = loginCandidate(user.login, "GitHub username");
+        if (c) candidates.push(c);
+      }
+    }
+    const orgs = ghJson(d, ["api", "user/orgs"]);
+    const orgLogins = Array.isArray(orgs) ? orgs.filter(isRecord2).map((o) => o.login).filter((l) => typeof l === "string") : [];
+    for (const org of orgLogins.slice(0, 20)) {
+      const members2 = ghJson(d, ["api", `orgs/${org}/members`, "--paginate"]);
+      if (Array.isArray(members2)) {
+        for (const m of members2.filter(isRecord2)) {
+          if (typeof m.login === "string") {
+            const c = loginCandidate(m.login, `GitHub org ${org} member`);
+            if (c) candidates.push(c);
+          }
+        }
+      }
+      const orgRepos = ghJson(d, ["api", `orgs/${org}/repos`, "--paginate"]);
+      if (Array.isArray(orgRepos)) {
+        for (const r of orgRepos.filter(isRecord2)) {
+          if (typeof r.name === "string" && r.name.trim()) {
+            candidates.push({
+              canonical: r.name,
+              category: "product",
+              source: "import:github",
+              evidence: [`GitHub repo ${org}/${r.name}`],
+              count: 1,
+              suggestedAliases: importAliases(r.name, "product")
+            });
+          }
+        }
+      }
+    }
+    const repos = ghJson(d, ["api", "user/repos", "--paginate"]);
+    if (Array.isArray(repos)) {
+      for (const r of repos.filter(isRecord2).slice(0, 200)) {
+        if (typeof r.name === "string" && r.name.trim()) {
+          const owner = isRecord2(r.owner) && typeof r.owner.login === "string" ? r.owner.login : void 0;
+          candidates.push({
+            canonical: r.name,
+            category: "product",
+            source: "import:github",
+            evidence: [`GitHub repo ${owner ? `${owner}/` : ""}${r.name}`],
+            count: 1,
+            suggestedAliases: importAliases(r.name, "product")
+          });
+        }
+      }
+    }
+    return mergeCandidates(candidates);
+  }
+};
+function unimplemented(id, label, privacy, reason) {
+  return {
+    id,
+    label,
+    privacy,
+    implemented: false,
+    checkAvailable: async () => ({ available: false, reason }),
+    harvest: async () => []
+  };
+}
+var SOURCES = {
+  contacts: contactsSource,
+  calendar: calendarSource,
+  github: githubSource,
+  email: unimplemented(
+    "email",
+    "Email correspondents",
+    "Would read sender and recipient names from recent threads. Not implemented: that needs new OAuth scopes, which is a conversation, not a default.",
+    "not yet supported: reading mail needs new OAuth scopes; local-only sources ship first"
+  ),
+  slack: unimplemented(
+    "slack",
+    "Slack / Discord workspace",
+    "Would read workspace member and channel names. Not implemented: that needs a workspace token, which is a conversation, not a default.",
+    "not yet supported: needs a workspace token; local-only sources ship first"
+  )
+};
+function listImportSources() {
+  return IMPORT_SOURCE_IDS.map((id) => SOURCES[id]);
+}
+function getImportSource(id) {
+  const found = Object.values(SOURCES).find((s) => s.id === id);
+  if (!found) throw new Error(`unknown import source "${id}" (expected one of: ${IMPORT_SOURCE_IDS.join(", ")})`);
+  return found;
+}
+async function harvestImportSources(ids, deps = {}, opts = {}) {
+  const all = [];
+  for (const id of ids) {
+    const source = getImportSource(id);
+    if (!source.implemented) continue;
+    const availability = await source.checkAvailable(deps);
+    if (!availability.available) continue;
+    all.push(...await source.harvest(deps));
+  }
+  const merged = mergeCandidates(all);
+  const limit = opts.limit ?? 50;
+  return merged.slice(0, Math.max(0, limit));
+}
+async function applyImportCandidates(candidates, opts = {}) {
+  const scope = opts.scope ?? "global";
+  let added = 0;
+  let merged = 0;
+  let path28;
+  for (const c of candidates) {
+    const term = {
+      canonical: c.canonical,
+      aliases: c.suggestedAliases,
+      category: c.category,
+      source: c.source
+    };
+    const result = await addTerm(term, { ...opts, scope });
+    path28 ??= result.file.path;
+    if (result.created) added += 1;
+    else merged += 1;
+  }
+  return { added, merged, skipped: 0, ...path28 !== void 0 ? { path: path28 } : {} };
+}
+
+// src/core/import-preview.ts
+import { createHash as createHash2 } from "node:crypto";
+function importCandidatePreview(candidate) {
+  return {
+    canonical: candidate.canonical,
+    category: candidate.category,
+    source: candidate.source,
+    aliases: [...candidate.suggestedAliases],
+    evidence: [...candidate.evidence],
+    count: candidate.count
+  };
+}
+function importCandidateId(candidate) {
+  return createHash2("sha256").update(JSON.stringify(importCandidatePreview(candidate))).digest("hex");
+}
+function importPreviewDigest(sources, candidates, destination) {
+  return createHash2("sha256").update(JSON.stringify({
+    sources: [...new Set(sources)].sort(),
+    destination,
+    candidates: candidates.map(importCandidatePreview)
+  })).digest("hex");
+}
+function selectImportCandidates(candidates, approvedIds) {
+  const byId = new Map(candidates.map((candidate) => [importCandidateId(candidate), candidate]));
+  for (const id of approvedIds) {
+    if (!byId.has(id)) throw new Error("approved candidate is absent from the preview; preview again before importing");
+  }
+  return [...new Set(approvedIds)].map((id) => byId.get(id));
+}
+
 // src/core/exporters/shared.ts
 var CATEGORY_ORDER = {
   brand: 0,
@@ -53296,11 +53791,11 @@ function importLexicon(content, format, opts = {}) {
   if (!isImportFormat(format)) {
     throw new Error(`Unknown import format "${String(format)}". Known: ${IMPORT_FORMATS.join(", ")}`);
   }
-  const resolved = format === "auto" ? detectImportFormat(content, opts.filename) : format;
-  const raw = PARSERS[resolved](content);
+  const resolved2 = format === "auto" ? detectImportFormat(content, opts.filename) : format;
+  const raw = PARSERS[resolved2](content);
   const { terms, skipped } = mergeRows(raw.rows, opts.source);
   assertNoLostCharacters(terms, opts.filename);
-  return { terms, format: resolved, skipped: [...raw.skipped, ...skipped].sort((a, b) => a.line - b.line) };
+  return { terms, format: resolved2, skipped: [...raw.skipped, ...skipped].sort((a, b) => a.line - b.line) };
 }
 function assertNoLostCharacters(terms, filename) {
   for (const term of terms) {
@@ -53492,7 +53987,7 @@ function computeStats(loaded) {
 
 // src/core/suggestTerms.ts
 import { promises as fs6 } from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 var import_fastest_levenshtein3 = __toESM(require_mod(), 1);
 var SUGGEST_DEFAULT_LIMIT = 20;
 var STALE_AFTER_DAYS = 30;
@@ -53522,13 +54017,13 @@ can could may might must shall should will would
 not no yes there here now when where why how`.split(/\s+/).filter((w) => w.length > 0)
 );
 function voiceHistoryPath(globalPath) {
-  return path7.join(path7.dirname(globalPath), "voice", "history.jsonl");
+  return path8.join(path8.dirname(globalPath), "voice", "history.jsonl");
 }
 async function loadVoiceHistory(globalPath) {
-  const resolved = globalPath ?? resolvePaths().global;
+  const resolved2 = globalPath ?? resolvePaths().global;
   let text;
   try {
-    text = await fs6.readFile(voiceHistoryPath(resolved), "utf8");
+    text = await fs6.readFile(voiceHistoryPath(resolved2), "utf8");
   } catch {
     return [];
   }
@@ -54031,7 +54526,7 @@ async function suggestTerms(input2) {
   }
   if (input2.cwd) {
     const candidates = await harvestRepo(input2.cwd, { limit: HARVEST_LIMIT, minCount: HARVEST_MIN_COUNT });
-    const repoName = path7.basename(path7.resolve(input2.cwd)) || input2.cwd;
+    const repoName = path8.basename(path8.resolve(input2.cwd)) || input2.cwd;
     for (const c of candidates) {
       if (cat.known.has(fold(c.canonical)) || cat.known.has(collapse2(c.canonical))) continue;
       suggestions.push({
@@ -54075,8 +54570,8 @@ async function suggestTerms(input2) {
 
 // src/core/packs.ts
 var import_yaml5 = __toESM(require_dist2(), 1);
-import { promises as fs7, readFileSync } from "node:fs";
-import path8 from "node:path";
+import { promises as fs7, readFileSync as readFileSync2 } from "node:fs";
+import path9 from "node:path";
 import { fileURLToPath } from "node:url";
 var PACKS_DIR_NAME = "packs";
 var PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -54095,26 +54590,29 @@ var PackFileSchema = external_exports.object({
   title: external_exports.string().trim().min(1).max(80),
   description: external_exports.string().trim().max(300).default(""),
   version: external_exports.literal(1).default(1),
+  /** Community packs name their author; the vendored four leave it empty. */
+  author: external_exports.string().trim().max(40).default(""),
+  homepage: external_exports.string().trim().max(200).default(""),
   terms: external_exports.array(external_exports.unknown()).min(1, "a pack needs at least one term")
 });
 function findPackageRoot(from = import.meta.url) {
-  let dir = from.startsWith("file:") ? path8.dirname(fileURLToPath(from)) : path8.resolve(from);
+  let dir = from.startsWith("file:") ? path9.dirname(fileURLToPath(from)) : path9.resolve(from);
   for (; ; ) {
     try {
-      const parsed = JSON.parse(readFileSync(path8.join(dir, "package.json"), "utf8"));
+      const parsed = JSON.parse(readFileSync2(path9.join(dir, "package.json"), "utf8"));
       if (isRecord(parsed) && parsed.name === PACKAGE_NAME) return dir;
     } catch {
     }
-    const parent = path8.dirname(dir);
+    const parent = path9.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packsDir(opts = {}) {
-  if (opts.dir) return path8.resolve(opts.dir);
+  if (opts.dir) return path9.resolve(opts.dir);
   const root = findPackageRoot();
   if (!root) throw new Error(`could not locate the ${PACKAGE_NAME} package root (no package.json above ${fileURLToPath(import.meta.url)})`);
-  return path8.join(root, PACKS_DIR_NAME);
+  return path9.join(root, PACKS_DIR_NAME);
 }
 async function packNames(dir) {
   let entries;
@@ -54153,30 +54651,45 @@ ${lines.join("\n")}`);
     title: head.data.title,
     description: head.data.description,
     version: 1,
+    author: head.data.author,
+    homepage: head.data.homepage,
     terms: lexicon.terms.length,
     aliases: lexicon.terms.reduce((n, t) => n + t.aliases.length, 0),
     path: file2,
     lexicon
   };
 }
-async function loadPack(name, opts = {}) {
-  const dir = packsDir(opts);
-  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, await packNames(dir));
-  const file2 = path8.join(dir, `${name}.yaml`);
+async function loadPackFile(file2, expectedName) {
+  const name = expectedName ?? path9.basename(file2, ".yaml");
+  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, []);
   let text;
   try {
     text = await fs7.readFile(file2, "utf8");
   } catch (err) {
-    if (isEnoent(err)) throw new PackNotFoundError(name, await packNames(dir));
+    if (isEnoent(err)) throw new PackNotFoundError(name, []);
     throw err;
   }
+  return parsePackText(text, file2, name);
+}
+function parsePackText(text, file2, expectedName) {
   let raw;
   try {
     raw = (0, import_yaml5.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`Invalid pack at ${file2}: ${errorMessage(err)}`);
   }
-  return parsePack(raw, file2, name);
+  return parsePack(raw, file2, expectedName);
+}
+async function loadPack(name, opts = {}) {
+  const dir = packsDir(opts);
+  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, await packNames(dir));
+  const file2 = path9.join(dir, `${name}.yaml`);
+  try {
+    return await loadPackFile(file2, name);
+  } catch (err) {
+    if (err instanceof PackNotFoundError) throw new PackNotFoundError(name, await packNames(dir));
+    throw err;
+  }
 }
 function info(pack) {
   const { lexicon: _lexicon, ...rest } = pack;
@@ -54211,8 +54724,7 @@ async function writePacksSetting(file2, packs, opts) {
   await writeLexiconFile(file2);
   if (file2.scope === "project") await refreshTrust(file2.path, opts);
 }
-async function installPack(name, opts = {}) {
-  const pack = await loadPack(name, opts);
+async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";
   const storeOpts2 = { ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {}, ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {} };
   const targetPath = await resolveScopeWritePath(scope, storeOpts2);
@@ -54228,11 +54740,209 @@ async function installPack(name, opts = {}) {
       if (result.created) added += 1;
       else merged += 1;
     }
-    if (!file2) throw new Error(`pack "${name}" has no terms`);
-    const packs = dedupe([...file2.lexicon.settings?.packs ?? [], name]);
+    if (!file2) throw new Error(`pack "${pack.name}" has no terms`);
+    const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2);
     return { pack: info(pack), added, merged, path: file2.path, scope };
   });
+}
+async function installPack(name, opts = {}) {
+  return installLoadedPack(await loadPack(name, opts), name, opts);
+}
+
+// src/core/registry.ts
+var import_yaml6 = __toESM(require_dist2(), 1);
+import { createHash as createHash3 } from "node:crypto";
+import { promises as fs8 } from "node:fs";
+import path10 from "node:path";
+var REGISTRY_REF_RE = /^([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9][a-z0-9-]{0,63})(?:@([A-Za-z0-9][A-Za-z0-9._-]{0,31}))?$/;
+function parseRegistryRef(s) {
+  const m = REGISTRY_REF_RE.exec(s.trim());
+  if (!m) {
+    throw new Error(
+      `invalid pack ref "${s}" (expected <author>/<name> or <author>/<name>@<version>, lowercase letters, digits and dashes)`
+    );
+  }
+  return {
+    author: m[1],
+    name: m[2],
+    ref: `${m[1]}/${m[2]}`,
+    ...m[3] !== void 0 ? { version: m[3] } : {}
+  };
+}
+function isRegistryRef(s) {
+  return s.includes("/");
+}
+var RegistryIndexEntrySchema = external_exports.object({
+  author: external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,38}$/),
+  name: external_exports.string().regex(PACK_NAME_RE),
+  title: external_exports.string().trim().min(1).max(80),
+  description: external_exports.string().trim().max(300).default(""),
+  homepage: external_exports.string().trim().max(200).default(""),
+  /** Free-form display version ("2", "2026.10.08"); updates key on checksum, not this. */
+  version: external_exports.string().trim().max(32).default(""),
+  terms: external_exports.number().int().min(1),
+  aliases: external_exports.number().int().min(0),
+  /** sha256 hex of the pack file bytes. */
+  checksum: external_exports.string().regex(/^[0-9a-f]{64}$/i, "checksum must be a sha256 hex digest"),
+  /** Where the pack file lives: https:// URL, file:// URL, or a path relative to the index. */
+  url: external_exports.string().trim().min(1)
+});
+var RegistryIndexSchema = external_exports.object({
+  version: external_exports.literal(1).default(1),
+  packs: external_exports.array(RegistryIndexEntrySchema).default([])
+});
+async function defaultFetchText(url2) {
+  const res = await fetch(url2);
+  if (!res.ok) throw new Error(`registry: GET ${url2} failed (HTTP ${res.status})`);
+  return res.text();
+}
+async function defaultFetchBytes(url2) {
+  const res = await fetch(url2);
+  if (!res.ok) throw new Error(`registry: GET ${url2} failed (HTTP ${res.status})`);
+  return Buffer.from(await res.arrayBuffer());
+}
+function resolvedDeps(deps) {
+  return {
+    fetchText: deps.fetchText ?? defaultFetchText,
+    fetchBytes: deps.fetchBytes ?? defaultFetchBytes
+  };
+}
+function parseIndexYaml(text, source) {
+  let raw;
+  try {
+    raw = (0, import_yaml6.parse)(text);
+  } catch (err) {
+    throw new Error(`invalid registry index at ${source}: ${errorMessage(err)}`);
+  }
+  const parsed = RegistryIndexSchema.safeParse(raw);
+  if (!parsed.success) {
+    const lines = parsed.error.issues.map((i) => `  - ${i.path.length > 0 ? i.path.join(".") : "(root)"}: ${i.message}`);
+    throw new Error(`invalid registry index at ${source}:
+${lines.join("\n")}`);
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const packs = [];
+  for (const e of parsed.data.packs) {
+    const ref = `${e.author}/${e.name}`;
+    if (seen.has(ref)) throw new Error(`invalid registry index at ${source}: "${ref}" is listed twice`);
+    seen.add(ref);
+    packs.push({ ref, ...e });
+  }
+  packs.sort((a, b) => a.ref.localeCompare(b.ref));
+  return { packs };
+}
+async function loadRegistryIndex(source, deps = {}) {
+  const d = resolvedDeps(deps);
+  const trimmed = source.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    const text2 = await d.fetchText(trimmed);
+    const base = trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
+    return { index: parseIndexYaml(text2, trimmed), base };
+  }
+  const file2 = trimmed.startsWith("file://") ? trimmed.slice("file://".length) : trimmed;
+  const abs = path10.resolve(file2);
+  let text;
+  try {
+    text = await fs8.readFile(abs, "utf8");
+  } catch (err) {
+    if (isEnoent(err)) throw new Error(`registry index not found: ${abs}`);
+    throw err;
+  }
+  return { index: parseIndexYaml(text, abs), base: path10.dirname(abs) + path10.sep };
+}
+function resolvePackUrl(entry, base) {
+  if (/^https?:\/\//i.test(entry.url) || path10.isAbsolute(entry.url)) return entry.url;
+  if (/^https?:\/\//i.test(base)) return base + entry.url.replace(/^\.\//, "");
+  return path10.resolve(base, entry.url);
+}
+function sha256Hex(data) {
+  return createHash3("sha256").update(data).digest("hex");
+}
+function verifyPackChecksum(data, expected, ref) {
+  const actual = sha256Hex(data);
+  if (actual.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(
+      `checksum mismatch for ${ref}: index says ${expected}, downloaded file is ${actual} (the index entry or the file changed; refusing to install)`
+    );
+  }
+}
+function findRegistryEntry(index, ref) {
+  const entry = index.packs.find((p) => p.ref === ref);
+  if (!entry) {
+    const known = index.packs.map((p) => p.ref);
+    throw new Error(`unknown pack "${ref}" in this registry (known: ${known.length > 0 ? known.join(", ") : "none"})`);
+  }
+  return entry;
+}
+function registryDir(opts = {}) {
+  return path10.join(path10.dirname(resolvePaths(opts).global), "registry");
+}
+function stateFile(opts = {}) {
+  return path10.join(registryDir(opts), "registry.json");
+}
+function cachedPackPath(ref, opts = {}) {
+  const { author, name } = parseRegistryRef(ref);
+  return path10.join(registryDir(opts), "packs", author, `${name}.yaml`);
+}
+async function readRegistryState(opts = {}) {
+  try {
+    const raw = await fs8.readFile(stateFile(opts), "utf8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const packs = parsed.packs;
+      if (packs !== void 0 && (typeof packs !== "object" || packs === null || Array.isArray(packs))) {
+        throw new Error("bad shape");
+      }
+      return { packs: packs ?? {} };
+    }
+    throw new Error("bad shape");
+  } catch (err) {
+    if (isEnoent(err)) return { packs: {} };
+    if (err instanceof Error && err.message === "bad shape") {
+      throw new Error(`invalid registry state at ${stateFile(opts)}: expected { "packs": { "<author>/<name>": {...} } }`);
+    }
+    throw err;
+  }
+}
+async function writeRegistryState(state, opts = {}) {
+  await fs8.mkdir(registryDir(opts), { recursive: true });
+  await fs8.writeFile(stateFile(opts), `${JSON.stringify(state, null, 2)}
+`, "utf8");
+}
+async function downloadPack(entry, base, deps = {}) {
+  const d = resolvedDeps(deps);
+  const url2 = resolvePackUrl(entry, base);
+  const bytes = /^https?:\/\//i.test(url2) ? await d.fetchBytes(url2) : await fs8.readFile(url2);
+  verifyPackChecksum(bytes, entry.checksum, entry.ref);
+  return bytes;
+}
+async function writeCache(ref, bytes, opts) {
+  const dest = cachedPackPath(ref, opts);
+  await fs8.mkdir(path10.dirname(dest), { recursive: true });
+  await fs8.writeFile(dest, bytes);
+  return dest;
+}
+async function installRegistryPack(entry, base, indexSource, opts = {}, deps = {}) {
+  const bytes = await downloadPack(entry, base, deps);
+  const file2 = await writeCache(entry.ref, bytes, opts);
+  const pack = await loadPackFile(file2, entry.name);
+  if (pack.name !== entry.name || pack.title !== entry.title) {
+    throw new Error(
+      `pack file at ${entry.url} does not match the index entry for ${entry.ref} (name/title differ; refusing to install)`
+    );
+  }
+  const result = await installLoadedPack(pack, entry.ref, opts);
+  const state = await readRegistryState(opts);
+  state.packs[entry.ref] = {
+    checksum: entry.checksum,
+    version: entry.version,
+    ...opts.pinnedVersion !== void 0 ? { pinnedVersion: opts.pinnedVersion } : {},
+    indexSource,
+    installedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await writeRegistryState(state, opts);
+  return { ...result, ref: entry.ref };
 }
 
 // src/core/demo.ts
@@ -54328,28 +55038,28 @@ function demonstrate(lexicon, prefer = []) {
 import { join } from "node:path";
 
 // src/util/package.ts
-import { readFileSync as readFileSync2 } from "node:fs";
-import path9 from "node:path";
+import { readFileSync as readFileSync3 } from "node:fs";
+import path11 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var PACKAGE_NAME2 = "@ashlr/lexicon";
 var UNKNOWN_VERSION = "0.0.0";
 function findPackageRoot2(from) {
-  let dir = from.startsWith("file:") ? path9.dirname(fileURLToPath2(from)) : path9.resolve(from);
+  let dir = from.startsWith("file:") ? path11.dirname(fileURLToPath2(from)) : path11.resolve(from);
   for (; ; ) {
-    if (readPackageJson(path9.join(dir, "package.json"))) return dir;
-    const parent = path9.dirname(dir);
+    if (readPackageJson(path11.join(dir, "package.json"))) return dir;
+    const parent = path11.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packageVersion(moduleUrl) {
   const root = findPackageRoot2(moduleUrl);
-  const pkg = root ? readPackageJson(path9.join(root, "package.json")) : void 0;
+  const pkg = root ? readPackageJson(path11.join(root, "package.json")) : void 0;
   return pkg?.version ?? UNKNOWN_VERSION;
 }
 function readPackageJson(file2) {
   try {
-    const parsed = JSON.parse(readFileSync2(file2, "utf8"));
+    const parsed = JSON.parse(readFileSync3(file2, "utf8"));
     if (isRecord(parsed) && parsed.name === PACKAGE_NAME2 && typeof parsed.version === "string") {
       return { version: parsed.version };
     }
@@ -54636,8 +55346,8 @@ var registerHarvestTools = (server, { cwd, load }) => {
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon.")
       }
     },
-    async ({ path: path26, limit, minCount, add }) => guarded(async () => {
-      const root = path26 ? resolve(cwd, path26) : cwd;
+    async ({ path: path28, limit, minCount, add }) => guarded(async () => {
+      const root = path28 ? resolve(cwd, path28) : cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -54752,8 +55462,8 @@ var registerTrustTools = (server, { cwd, load }) => {
         path: external_exports.string().optional().describe("Lexicon file to act on. Defaults to the project .lexicon.yaml resolved from the server working directory.")
       }
     },
-    async ({ action, path: path26 }) => guarded(async () => {
-      const filePath = path26 ? resolve2(cwd, path26) : resolvePaths({ cwd }).project;
+    async ({ action, path: path28 }) => guarded(async () => {
+      const filePath = path28 ? resolve2(cwd, path28) : resolvePaths({ cwd }).project;
       const registry2 = getTrustPath({ cwd });
       const shown = sanitizeForDisplay;
       const safePath = filePath === void 0 ? void 0 : shown(filePath);
@@ -54813,17 +55523,17 @@ var registerTrustTools = (server, { cwd, load }) => {
 };
 
 // src/cli/commands.ts
-import { existsSync as existsSync8, promises as fs12 } from "node:fs";
-import path18 from "node:path";
+import { existsSync as existsSync9, promises as fs13 } from "node:fs";
+import path20 from "node:path";
 
 // src/cli/io.ts
-import path10 from "node:path";
+import path12 from "node:path";
 function line(io, s = "") {
   io.stdout(`${s}
 `);
 }
 function resolveCwd(opts) {
-  return path10.resolve(opts.cwd ?? process.cwd());
+  return path12.resolve(opts.cwd ?? process.cwd());
 }
 function styler(output2 = process.stdout, env = process.env) {
   const on = () => Boolean(output2?.isTTY) && !env.NO_COLOR;
@@ -54839,8 +55549,8 @@ function indent(s, prefix) {
   return s.split("\n").map((l) => prefix + l).join("\n");
 }
 function tildify(p, home) {
-  const rel = path10.relative(home, p);
-  return rel && !rel.startsWith("..") && !path10.isAbsolute(rel) ? `~/${rel.split(path10.sep).join("/")}` : p;
+  const rel = path12.relative(home, p);
+  return rel && !rel.startsWith("..") && !path12.isAbsolute(rel) ? `~/${rel.split(path12.sep).join("/")}` : p;
 }
 function renderTable(rows, header) {
   const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
@@ -54869,19 +55579,19 @@ function fail(io, err) {
 }
 
 // src/cli/claude-settings.ts
-import { existsSync as existsSync4 } from "node:fs";
-import { execFileSync as execFileSync2 } from "node:child_process";
-import os4 from "node:os";
-import path13 from "node:path";
+import { existsSync as existsSync5 } from "node:fs";
+import { execFileSync as execFileSync3 } from "node:child_process";
+import os5 from "node:os";
+import path15 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/cli/cli-entry.ts
-import { existsSync as existsSync3, realpathSync } from "node:fs";
-import path12 from "node:path";
+import { existsSync as existsSync4, realpathSync } from "node:fs";
+import path14 from "node:path";
 
 // src/util/which.ts
-import { constants as fsConstants, existsSync as existsSync2, promises as fs8 } from "node:fs";
-import path11 from "node:path";
+import { constants as fsConstants, existsSync as existsSync3, promises as fs9 } from "node:fs";
+import path13 from "node:path";
 var DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 var WELL_KNOWN_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 function pathDirs(env, win) {
@@ -54890,14 +55600,14 @@ function pathDirs(env, win) {
 }
 function candidateNames(bin, env, win) {
   if (!win) return [bin];
-  const p = path11.win32;
+  const p = path13.win32;
   if (p.extname(bin) !== "") return [bin];
   const exts = (env.PATHEXT ?? DEFAULT_PATHEXT).split(";").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...exts.map((ext) => bin + ext), ...exts.map((ext) => bin + ext.toLowerCase()), bin])];
 }
 async function accessible(candidate, win) {
   try {
-    await fs8.access(candidate, win ? fsConstants.F_OK : fsConstants.X_OK);
+    await fs9.access(candidate, win ? fsConstants.F_OK : fsConstants.X_OK);
     return true;
   } catch {
     return false;
@@ -54907,7 +55617,7 @@ async function findOnPath(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? path11.win32 : path11.posix;
+  const p = win ? path13.win32 : path13.posix;
   const exists = opts.exists ?? ((candidate) => accessible(candidate, win));
   const names = candidateNames(bin, env, win);
   for (const dir of pathDirs(env, win)) {
@@ -54922,12 +55632,12 @@ function findOnPathSync(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? path11.win32 : path11.posix;
+  const p = win ? path13.win32 : path13.posix;
   const names = candidateNames(bin, env, win);
   for (const dir of pathDirs(env, win)) {
     for (const name of names) {
       const candidate = p.join(dir, name);
-      if (existsSync2(candidate)) return candidate;
+      if (existsSync3(candidate)) return candidate;
     }
   }
   return void 0;
@@ -54941,11 +55651,11 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
     if (onPath) return onPath;
   }
   const win = platform === "win32";
-  const p = win ? path11.win32 : path11.posix;
+  const p = win ? path13.win32 : path13.posix;
   for (const dir of extraDirsFor({}, platform)) {
     for (const name of names) {
       const candidate = p.join(dir, win ? `${name}.exe` : name);
-      if (existsSync2(candidate)) return candidate;
+      if (existsSync3(candidate)) return candidate;
     }
   }
   return void 0;
@@ -54954,13 +55664,13 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
 // src/cli/cli-entry.ts
 var CLI_ENV_VAR = "LEXICON_CLI";
 function resolveCliEntry(opts = {}) {
-  if (opts.cliPath !== void 0 && opts.cliPath !== "") return path12.resolve(opts.cliPath);
+  if (opts.cliPath !== void 0 && opts.cliPath !== "") return path14.resolve(opts.cliPath);
   const env = opts.env ?? process.env;
   const override = env[CLI_ENV_VAR];
-  if (override !== void 0 && override.trim() !== "") return path12.resolve(override.trim());
+  if (override !== void 0 && override.trim() !== "") return path14.resolve(override.trim());
   const root = findPackageRoot2(opts.moduleUrl ?? import.meta.url);
-  const built = root ? path12.join(root, "dist", "cli", "index.js") : void 0;
-  if (built && existsSync3(built)) return built;
+  const built = root ? path14.join(root, "dist", "cli", "index.js") : void 0;
+  if (built && existsSync4(built)) return built;
   const onPath = findOnPathSync("lexicon", { env });
   if (onPath) {
     let real = onPath;
@@ -54980,9 +55690,9 @@ function resolveCliEntry(opts = {}) {
 
 // src/cli/claude-settings.ts
 var HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"];
-function claudeConfigDir(env = process.env, home = os4.homedir()) {
+function claudeConfigDir(env = process.env, home = os5.homedir()) {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
-  return override ? override : path13.join(home, ".claude");
+  return override ? override : path15.join(home, ".claude");
 }
 var LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;
 function findInstalledLexiconPlugin(settings, installedPlugins) {
@@ -55036,16 +55746,16 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
 }
 function resolveIntegrationPaths(cliDir) {
   const pkgRoot = cliDir === void 0 ? findPackageRoot2(import.meta.url) : void 0;
-  const dir = cliDir ?? (pkgRoot ? path13.join(pkgRoot, "dist", "cli") : path13.dirname(fileURLToPath3(import.meta.url)));
-  const root = path13.resolve(dir, "..", "..");
-  const bundledServer = path13.join(root, "plugin", "mcp-server.mjs");
-  const bundledHook = path13.join(root, "plugin", "hook.mjs");
-  if (existsSync4(bundledServer) && existsSync4(bundledHook)) {
+  const dir = cliDir ?? (pkgRoot ? path15.join(pkgRoot, "dist", "cli") : path15.dirname(fileURLToPath3(import.meta.url)));
+  const root = path15.resolve(dir, "..", "..");
+  const bundledServer = path15.join(root, "plugin", "mcp-server.mjs");
+  const bundledHook = path15.join(root, "plugin", "hook.mjs");
+  if (existsSync5(bundledServer) && existsSync5(bundledHook)) {
     return { server: bundledServer, hook: bundledHook, bundled: true };
   }
   return {
-    server: path13.resolve(dir, "../mcp/server.js"),
-    hook: path13.resolve(dir, "../hooks/user-prompt-submit.js"),
+    server: path15.resolve(dir, "../mcp/server.js"),
+    hook: path15.resolve(dir, "../hooks/user-prompt-submit.js"),
     bundled: false
   };
 }
@@ -55064,7 +55774,7 @@ function hookTimeoutFor(launch) {
 }
 function launchCommandLine(launch, platform = process.platform) {
   const win = platform === "win32";
-  const p = win ? path13.win32 : path13.posix;
+  const p = win ? path15.win32 : path15.posix;
   const quote = (s) => {
     if (win) return /[\s"]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
     return /[\s"'$`\\]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
@@ -55073,7 +55783,7 @@ function launchCommandLine(launch, platform = process.platform) {
 }
 function defaultExec(file2, args) {
   try {
-    return execFileSync2(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"] });
+    return execFileSync3(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
     const text = (stream) => typeof stream === "string" ? stream.trim() : "";
     const detail = text(err.stderr) || text(err.stdout);
@@ -55083,9 +55793,9 @@ function defaultExec(file2, args) {
 }
 
 // src/cli/cmd-doctor.ts
-import { existsSync as existsSync6, promises as fs10 } from "node:fs";
-import os6 from "node:os";
-import path16 from "node:path";
+import { existsSync as existsSync7, promises as fs11 } from "node:fs";
+import os7 from "node:os";
+import path18 from "node:path";
 
 // src/daemon/clipboard-backends.ts
 import { spawn } from "node:child_process";
@@ -55241,9 +55951,9 @@ async function detectClipboardBackend(platform = process.platform, env = process
 }
 
 // src/voice/models.ts
-import { createWriteStream, existsSync as existsSync5, promises as fs9 } from "node:fs";
-import os5 from "node:os";
-import path14 from "node:path";
+import { createWriteStream, existsSync as existsSync6, promises as fs10 } from "node:fs";
+import os6 from "node:os";
+import path16 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var DEFAULT_MODEL = "base.en";
 var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
@@ -55255,30 +55965,30 @@ function modelUrl(name) {
   return `${MODEL_BASE_URL}/${modelFileName(name)}`;
 }
 function modelsDir(globalPath, env = process.env) {
-  return env.LEXICON_WHISPER_MODELS || path14.join(path14.dirname(globalPath), "models");
+  return env.LEXICON_WHISPER_MODELS || path16.join(path16.dirname(globalPath), "models");
 }
-function expandTilde(spec, home = os5.homedir()) {
+function expandTilde(spec, home = os6.homedir()) {
   if (spec === "~") return home;
-  if (spec.startsWith("~/")) return path14.join(home, spec.slice(2));
-  if (process.platform === "win32" && spec.startsWith("~\\")) return path14.join(home, spec.slice(2));
+  if (spec.startsWith("~/")) return path16.join(home, spec.slice(2));
+  if (process.platform === "win32" && spec.startsWith("~\\")) return path16.join(home, spec.slice(2));
   return spec;
 }
 function isModelPath(value) {
   return value.endsWith(".bin") || value.includes("/") || value.includes("\\") || value.startsWith(".") || value.startsWith("~");
 }
 function resolveModel(spec, opts) {
-  const exists = opts.exists ?? existsSync5;
+  const exists = opts.exists ?? existsSync6;
   if (isModelPath(spec)) {
-    const abs = path14.resolve(expandTilde(spec));
-    const base = path14.basename(abs);
+    const abs = path16.resolve(expandTilde(spec));
+    const base = path16.basename(abs);
     const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
     return { name, path: abs, present: exists(abs) };
   }
   const file2 = modelFileName(spec);
-  const primary = path14.join(modelsDir(opts.globalPath, opts.env), file2);
+  const primary = path16.join(modelsDir(opts.globalPath, opts.env), file2);
   if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
   for (const dir of opts.fallbackDirs ?? [REPO_MODELS_DIR]) {
-    const candidate = path14.join(dir, file2);
+    const candidate = path16.join(dir, file2);
     if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
   return { name: spec, path: primary, present: false, url: modelUrl(spec) };
@@ -55299,7 +56009,7 @@ function installHint(platform) {
 }
 
 // src/cli/serve-paths.ts
-import path15 from "node:path";
+import path17 from "node:path";
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
 var SCHEDULED_TASK_NAME = "Lexicon";
@@ -55313,13 +56023,13 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return path15.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return path17.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return path15.join(home, "Library", "Logs", "lexicon", "serve.log");
+  return path17.join(home, "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  return path15.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+  return path17.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -55450,7 +56160,7 @@ async function checkLoginService(probe) {
     if (!loaded) {
       return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
     }
-    if (program2 !== void 0 && !existsSync6(program2)) {
+    if (program2 !== void 0 && !existsSync7(program2)) {
       return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
     }
     return { level: "ok", message: `${name} is registered and runs at logon` };
@@ -55459,7 +56169,7 @@ async function checkLoginService(probe) {
   }
   let fileExists = false;
   try {
-    const text = await fs10.readFile(file2, "utf8");
+    const text = await fs11.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch {
@@ -55468,7 +56178,7 @@ async function checkLoginService(probe) {
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
   }
-  if (program2 !== void 0 && !existsSync6(program2)) {
+  if (program2 !== void 0 && !existsSync7(program2)) {
     return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
   }
   if (!loaded) {
@@ -55639,8 +56349,8 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? path16.join(claudeConfigDir(), "settings.json");
-  const installedPluginsPath = deps.installedPluginsPath ?? path16.join(claudeConfigDir(), "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? path18.join(claudeConfigDir(), "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? path18.join(claudeConfigDir(), "plugins", "installed_plugins.json");
   const settings = await readJsonFile(settingsPath);
   const installed = await readJsonFile(installedPluginsPath);
   if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
@@ -55677,7 +56387,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
     }
   }
-  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os6.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
+  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os7.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
   try {
     const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
     push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
@@ -55685,11 +56395,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `no clipboard backend found (${errorMessage(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? existsSync6(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  const whisperCli = whisperOverride ? existsSync7(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
   else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? existsSync6(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  const ffmpegBin = ffmpegOverride ? existsSync7(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
@@ -55716,9 +56426,9 @@ async function runDoctorReport(opts, deps = {}) {
 }
 
 // src/cli/cmd-install.ts
-import { existsSync as existsSync7, promises as fs11 } from "node:fs";
-import os7 from "node:os";
-import path17 from "node:path";
+import { existsSync as existsSync8, promises as fs12 } from "node:fs";
+import os8 from "node:os";
+import path19 from "node:path";
 var INSTALL_CLIENTS = [
   "claude",
   "codex",
@@ -55736,41 +56446,41 @@ function resolveServerPath(cliDir) {
   return resolveIntegrationPaths(cliDir).server;
 }
 function appData(ctx) {
-  return ctx.env.APPDATA ?? path17.join(ctx.home, "AppData", "Roaming");
+  return ctx.env.APPDATA ?? path19.join(ctx.home, "AppData", "Roaming");
 }
 function codexHome(ctx) {
   const override = ctx.env.CODEX_HOME?.trim();
-  return override ? override : path17.join(ctx.home, ".codex");
+  return override ? override : path19.join(ctx.home, ".codex");
 }
 function geminiHome(ctx) {
   const override = ctx.env.GEMINI_CLI_HOME?.trim();
-  return path17.join(override ? override : ctx.home, ".gemini");
+  return path19.join(override ? override : ctx.home, ".gemini");
 }
 function configPathFor(client, ctx) {
   const { home, cwd, platform, project } = ctx;
   switch (client) {
     case "codex":
-      return project ? path17.join(cwd, ".codex", "config.toml") : path17.join(codexHome(ctx), "config.toml");
+      return project ? path19.join(cwd, ".codex", "config.toml") : path19.join(codexHome(ctx), "config.toml");
     case "cursor":
-      return project ? path17.join(cwd, ".cursor", "mcp.json") : path17.join(home, ".cursor", "mcp.json");
+      return project ? path19.join(cwd, ".cursor", "mcp.json") : path19.join(home, ".cursor", "mcp.json");
     case "windsurf":
       if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
-      return path17.join(home, ".codeium", "windsurf", "mcp_config.json");
+      return path19.join(home, ".codeium", "windsurf", "mcp_config.json");
     case "gemini":
-      return project ? path17.join(cwd, ".gemini", "settings.json") : path17.join(geminiHome(ctx), "settings.json");
+      return project ? path19.join(cwd, ".gemini", "settings.json") : path19.join(geminiHome(ctx), "settings.json");
     case "claude-desktop": {
       if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
       if (platform === "darwin") {
-        return path17.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+        return path19.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
-      if (platform === "win32") return path17.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return path17.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
+      if (platform === "win32") return path19.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return path19.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
-      if (project) return path17.join(cwd, ".vscode", "mcp.json");
-      if (platform === "darwin") return path17.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return path17.join(appData(ctx), "Code", "User", "mcp.json");
-      return path17.join(home, ".config", "Code", "User", "mcp.json");
+      if (project) return path19.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return path19.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return path19.join(appData(ctx), "Code", "User", "mcp.json");
+      return path19.join(home, ".config", "Code", "User", "mcp.json");
     }
   }
 }
@@ -55914,15 +56624,15 @@ ${block}
 }
 async function readText2(file2) {
   try {
-    return { text: await fs11.readFile(file2, "utf8"), existed: true };
+    return { text: await fs12.readFile(file2, "utf8"), existed: true };
   } catch (err) {
     if (isEnoent(err)) return { text: "", existed: false };
     throw new Error(`could not read ${file2}: ${errorMessage(err)}`);
   }
 }
 async function writeText(file2, text) {
-  await fs11.mkdir(path17.dirname(file2), { recursive: true });
-  await fs11.writeFile(file2, text, "utf8");
+  await fs12.mkdir(path19.dirname(file2), { recursive: true });
+  await fs12.writeFile(file2, text, "utf8");
 }
 async function applyJson(target) {
   const read = await readJsonFile(target.file);
@@ -55967,8 +56677,8 @@ function printGeneric(io, serverPath) {
 async function runInstall(client, opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? path17.resolve(opts.home) : os7.homedir();
-  const cwd = path17.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? path19.resolve(opts.home) : os8.homedir();
+  const cwd = path19.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
   if (scope !== "user" && scope !== "project") {
@@ -55989,7 +56699,7 @@ async function runInstall(client, opts, io, deps = {}) {
     const claudeOpts = { ...opts, scope: project ? "project" : "user" };
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: path17.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      ...opts.home ? { settingsPath: path19.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {}
     };
@@ -56026,7 +56736,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const settingsPath = deps.settingsPath ?? path17.join(claudeConfigDir(), "settings.json");
+  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(), "settings.json");
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
@@ -56036,7 +56746,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
-    if (!serverLaunch.viaNpx && !existsSync7(serverPath)) {
+    if (!serverLaunch.viaNpx && !existsSync8(serverPath)) {
       line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
@@ -56089,7 +56799,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   return failed ? 1 : 0;
 }
 function quoteArg(s, platform = process.platform) {
-  if (platform === "win32") return /[\s"]/.test(s) || path17.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
+  if (platform === "win32") return /[\s"]/.test(s) || path19.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 
@@ -56232,10 +56942,10 @@ function createPrompter(io = {}) {
 // src/cli/commands.ts
 var PROJECT_FILE_NAME2 = ".lexicon.yaml";
 function findGitRoot2(start) {
-  let dir = path18.resolve(start);
+  let dir = path20.resolve(start);
   for (; ; ) {
-    if (existsSync8(path18.join(dir, ".git"))) return dir;
-    const parent = path18.dirname(dir);
+    if (existsSync9(path20.join(dir, ".git"))) return dir;
+    const parent = path20.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -56256,14 +56966,14 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? path18.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? path20.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await withLexiconLock(target, async () => {
-    if (existsSync8(target)) return false;
+    if (existsSync9(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
     const file2 = { path: target, scope, lexicon, exists: false };
     await writeLexiconFile(file2);
-    await fs12.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+    await fs13.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
   if (!created) {
@@ -56279,9 +56989,9 @@ async function runInit(opts, io) {
 }
 
 // src/cli/cmd-setup.ts
-import os10 from "node:os";
-import path24 from "node:path";
-import { existsSync as existsSync10 } from "node:fs";
+import os11 from "node:os";
+import path26 from "node:path";
+import { existsSync as existsSync11 } from "node:fs";
 
 // src/cli/setup/types.ts
 var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
@@ -56291,10 +57001,10 @@ var HARVEST_MIN_COUNT2 = 2;
 var SEEDED_TERMS = 3;
 
 // src/cli/setup/detect.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
-import { existsSync as existsSync9, promises as fs13 } from "node:fs";
-import os8 from "node:os";
-import path19 from "node:path";
+import { execFileSync as execFileSync4 } from "node:child_process";
+import { existsSync as existsSync10, promises as fs14 } from "node:fs";
+import os9 from "node:os";
+import path21 from "node:path";
 function captureIO() {
   const sink = {
     out: "",
@@ -56343,10 +57053,10 @@ function parsePackList(value, available) {
   return out;
 }
 function findGitRoot3(start, exists) {
-  let dir = path19.resolve(start);
+  let dir = path21.resolve(start);
   for (; ; ) {
-    if (exists(path19.join(dir, ".git"))) return dir;
-    const parent = path19.dirname(dir);
+    if (exists(path21.join(dir, ".git"))) return dir;
+    const parent = path21.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -56362,15 +57072,15 @@ function suggestCompany(packageName, remoteUrl) {
 }
 async function readPackageName(cwd) {
   try {
-    const raw = await fs13.readFile(path19.join(cwd, "package.json"), "utf8");
+    const raw = await fs14.readFile(path21.join(cwd, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
     return typeof pkg.name === "string" ? pkg.name : void 0;
   } catch {
     return void 0;
   }
 }
-var defaultSetupExec = (file2, args) => execFileSync3(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
-function tryExec(exec, file2, args) {
+var defaultSetupExec = (file2, args) => execFileSync4(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+function tryExec2(exec, file2, args) {
   try {
     const out = exec(file2, args).trim();
     return out || void 0;
@@ -56395,15 +57105,15 @@ var CLI_NAMES = {
 function configDirFor(client, ctx) {
   if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
   const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
-  return client === "vscode" ? path19.dirname(path19.dirname(file2)) : path19.dirname(file2);
+  return client === "vscode" ? path21.dirname(path21.dirname(file2)) : path21.dirname(file2);
 }
 async function detectClients(deps = {}, cwd = process.cwd()) {
   const ctx = {
-    home: deps.home ?? os8.homedir(),
+    home: deps.home ?? os9.homedir(),
     cwd,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? existsSync9
+    exists: deps.exists ?? existsSync10
   };
   const out = [];
   for (const name of SETUP_CLIENTS) {
@@ -56411,7 +57121,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
     const dir = configDirFor(name, ctx);
     if (ctx.exists(dir)) evidence = dir;
     if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
-      const bundle = path19.join("/Applications", APP_BUNDLES[name]);
+      const bundle = path21.join("/Applications", APP_BUNDLES[name]);
       if (ctx.exists(bundle)) evidence = bundle;
     }
     if (!evidence && CLI_NAMES[name]) {
@@ -56428,14 +57138,14 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
 }
 
 // src/cli/setup/steps.ts
-import { promises as fs17 } from "node:fs";
-import path23 from "node:path";
+import { promises as fs18 } from "node:fs";
+import path25 from "node:path";
 
 // src/cli/cmd-serve.ts
 import { spawn as spawn2 } from "node:child_process";
-import { promises as fs16 } from "node:fs";
-import os9 from "node:os";
-import path22 from "node:path";
+import { promises as fs17 } from "node:fs";
+import os10 from "node:os";
+import path24 from "node:path";
 
 // node_modules/commander/lib/error.js
 var CommanderError = class extends Error {
@@ -56590,8 +57300,8 @@ function humanReadableArgName(arg) {
 // node_modules/commander/lib/command.js
 import { EventEmitter } from "node:events";
 import childProcess from "node:child_process";
-import path20 from "node:path";
-import fs14 from "node:fs";
+import path22 from "node:path";
+import fs15 from "node:fs";
 import process3 from "node:process";
 import { stripVTControlCharacters as stripVTControlCharacters2 } from "node:util";
 
@@ -58559,7 +59269,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @param {string} subcommandName
    */
   _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-    if (fs14.existsSync(executableFile)) return;
+    if (fs15.existsSync(executableFile)) return;
     const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
     const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -58576,11 +59286,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
     args = args.slice();
     const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
     function findFile(baseDir, baseName) {
-      const localBin = path20.resolve(baseDir, baseName);
-      if (fs14.existsSync(localBin)) return localBin;
-      if (sourceExt.includes(path20.extname(baseName))) return void 0;
+      const localBin = path22.resolve(baseDir, baseName);
+      if (fs15.existsSync(localBin)) return localBin;
+      if (sourceExt.includes(path22.extname(baseName))) return void 0;
       const foundExt = sourceExt.find(
-        (ext) => fs14.existsSync(`${localBin}${ext}`)
+        (ext) => fs15.existsSync(`${localBin}${ext}`)
       );
       if (foundExt) return `${localBin}${foundExt}`;
       return void 0;
@@ -58592,21 +59302,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
     if (this._scriptPath) {
       let resolvedScriptPath;
       try {
-        resolvedScriptPath = fs14.realpathSync(this._scriptPath);
+        resolvedScriptPath = fs15.realpathSync(this._scriptPath);
       } catch {
         resolvedScriptPath = this._scriptPath;
       }
-      executableDir = path20.resolve(
-        path20.dirname(resolvedScriptPath),
+      executableDir = path22.resolve(
+        path22.dirname(resolvedScriptPath),
         executableDir
       );
     }
     if (executableDir) {
       let localFile = findFile(executableDir, executableFile);
       if (!localFile && !subcommand._executableFile && this._scriptPath) {
-        const legacyName = path20.basename(
+        const legacyName = path22.basename(
           this._scriptPath,
-          path20.extname(this._scriptPath)
+          path22.extname(this._scriptPath)
         );
         if (legacyName !== this._name) {
           localFile = findFile(
@@ -58617,7 +59327,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
       }
       executableFile = localFile || executableFile;
     }
-    const launchWithNode = sourceExt.includes(path20.extname(executableFile));
+    const launchWithNode = sourceExt.includes(path22.extname(executableFile));
     let proc;
     if (process3.platform !== "win32") {
       if (launchWithNode) {
@@ -59534,7 +60244,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @return {Command}
    */
   nameFromFilename(filename) {
-    this._name = path20.basename(filename, path20.extname(filename));
+    this._name = path22.basename(filename, path22.extname(filename));
     return this;
   }
   /**
@@ -59548,9 +60258,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @param {string} [path]
    * @return {(string|null|Command)}
    */
-  executableDir(path26) {
-    if (path26 === void 0) return this._executableDir;
-    this._executableDir = path26;
+  executableDir(path28) {
+    if (path28 === void 0) return this._executableDir;
+    this._executableDir = path28;
     return this;
   }
   /**
@@ -59807,14 +60517,14 @@ var program = new Command();
 
 // src/serve/config.ts
 import { randomBytes } from "node:crypto";
-import { promises as fs15 } from "node:fs";
-import path21 from "node:path";
+import { promises as fs16 } from "node:fs";
+import path23 from "node:path";
 var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
 var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
 function getServePath(opts = {}) {
-  return path21.join(path21.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
+  return path23.join(path23.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
 }
 function parseServeConfig(raw) {
   if (typeof raw !== "object" || raw === null) return void 0;
@@ -59834,7 +60544,7 @@ function parseServeConfig(raw) {
 async function readServeConfig(opts = {}) {
   let text;
   try {
-    text = await fs15.readFile(getServePath(opts), "utf8");
+    text = await fs16.readFile(getServePath(opts), "utf8");
   } catch {
     return void 0;
   }
@@ -60050,7 +60760,7 @@ async function runAndReport(exec, io, cmd, args) {
 }
 async function runServeInstall(opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
-  const home = deps.home ?? os9.homedir();
+  const home = deps.home ?? os10.homedir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
   const nodePath = deps.nodePath ?? process.execPath;
@@ -60069,7 +60779,7 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "darwin" || platform === "linux" || platform === "win32") {
     try {
-      await fs16.access(cliPath);
+      await fs17.access(cliPath);
     } catch {
       io.stderr(
         `lexicon: refusing to install the login service: ${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js); nothing was written
@@ -60083,9 +60793,9 @@ async function runServeInstall(opts, io, deps = {}) {
     const label = serveLabel(env);
     const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
-    await fs16.mkdir(path22.dirname(plistPath), { recursive: true });
-    await fs16.mkdir(path22.dirname(logPath), { recursive: true });
-    await fs16.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), "utf8");
+    await fs17.mkdir(path24.dirname(plistPath), { recursive: true });
+    await fs17.mkdir(path24.dirname(logPath), { recursive: true });
+    await fs17.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), "utf8");
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
@@ -60104,8 +60814,8 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
-    await fs16.mkdir(path22.dirname(unitPath), { recursive: true });
-    await fs16.writeFile(unitPath, systemdUnit(nodePath, cliPath), "utf8");
+    await fs17.mkdir(path24.dirname(unitPath), { recursive: true });
+    await fs17.writeFile(unitPath, systemdUnit(nodePath, cliPath), "utf8");
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
@@ -60120,8 +60830,8 @@ async function runServeInstall(opts, io, deps = {}) {
   if (platform === "win32") {
     const taskName = scheduledTaskName(env);
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env));
-    const xmlPath = path22.join(await fs16.mkdtemp(path22.join(os9.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
-    await fs16.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
+    const xmlPath = path24.join(await fs17.mkdtemp(path24.join(os10.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
+    await fs17.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
       if (created.code !== 0) {
@@ -60130,7 +60840,7 @@ async function runServeInstall(opts, io, deps = {}) {
         return 1;
       }
     } finally {
-      await fs16.rm(path22.dirname(xmlPath), { recursive: true, force: true });
+      await fs17.rm(path24.dirname(xmlPath), { recursive: true, force: true });
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
@@ -60205,8 +60915,8 @@ async function stepLexicon(ctx) {
     return;
   }
   if (ctx.plan) {
-    const person2 = ctx.opts.person ?? tryExec(ctx.exec, "git", ["config", "--global", "user.name"]);
-    const company2 = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+    const person2 = ctx.opts.person ?? tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]);
+    const company2 = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
       [person2, "person"],
@@ -60225,7 +60935,7 @@ async function stepLexicon(ctx) {
     if (ctx.plan.wouldSeed.length === 0) ctx.say(dim("   nothing to seed (no git user.name, no company guess)"));
     return;
   }
-  const gitName = ctx.opts.person ?? tryExec(ctx.exec, "git", ["config", "--global", "user.name"]);
+  const gitName = ctx.opts.person ?? tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]);
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true) ? gitName : void 0;
@@ -60235,7 +60945,7 @@ async function stepLexicon(ctx) {
   } else {
     ctx.say(dim('   no person term (git user.name is unset; add one later: lexicon add "Your Name" --category person)'));
   }
-  const suggestion = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+  const suggestion = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
   let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
   let phonetic = ctx.opts.phonetic;
   if (ctx.prompter && !ctx.opts.company) {
@@ -60389,7 +61099,7 @@ async function stepHarvest(ctx) {
   }
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
-    const file3 = safe(path23.join(tildify(root, ctx.home), ".lexicon.yaml"));
+    const file3 = safe(path25.join(tildify(root, ctx.home), ".lexicon.yaml"));
     const found = `${candidates.length} name${candidates.length === 1 ? "" : "s"} in ${safe(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`;
     if (ctx.opts.harvest === true) {
       ctx.say(`   would add to ${file3}: ${found}`);
@@ -60405,7 +61115,7 @@ async function stepHarvest(ctx) {
     ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
     ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
-    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path23.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
+    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path25.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
       ctx.say(dim("   skipped; add them later with: lexicon harvest --add, or one by one with: lexicon harvest --interactive"));
       return;
     }
@@ -60548,7 +61258,7 @@ async function stepServe(ctx) {
   const install = ctx.deps.installServe ?? runServeInstall;
   const serveDeps = { platform: ctx.platform, env: ctx.env };
   if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  if (ctx.deps.cliDir) serveDeps.cliPath = path23.join(ctx.deps.cliDir, "index.js");
+  if (ctx.deps.cliDir) serveDeps.cliPath = path25.join(ctx.deps.cliDir, "index.js");
   const captured = captureIO();
   let code;
   try {
@@ -60589,9 +61299,9 @@ async function stepExport(ctx) {
     return;
   }
   const format = app;
-  const desktop = path23.join(ctx.home, "Desktop");
-  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path23.dirname(ctx.summary.lexiconPath));
-  const file2 = path23.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  const desktop = path25.join(ctx.home, "Desktop");
+  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path25.dirname(ctx.summary.lexiconPath));
+  const file2 = path25.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
   if (ctx.plan) {
     ctx.plan.wouldExport.push({ format, path: file2 });
     ctx.say(
@@ -60601,8 +61311,8 @@ async function stepExport(ctx) {
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd });
   const text = exportLexicon(loaded.merged, format);
-  await fs17.mkdir(dir, { recursive: true });
-  await fs17.writeFile(file2, text, "utf8");
+  await fs18.mkdir(dir, { recursive: true });
+  await fs18.writeFile(file2, text, "utf8");
   ctx.summary.exports.push({ format, path: file2 });
   ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${loaded.merged.terms.length} terms)`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
@@ -60692,8 +61402,8 @@ function printSummary(ctx) {
   printNext(ctx);
 }
 async function runSetup(opts, io, deps = {}) {
-  const cwd = path24.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? path24.resolve(opts.home) : deps.home ?? os10.homedir();
+  const cwd = path26.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? path26.resolve(opts.home) : deps.home ?? os11.homedir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
@@ -60721,7 +61431,7 @@ async function runSetup(opts, io, deps = {}) {
     home,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? existsSync10,
+    exists: deps.exists ?? existsSync11,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
@@ -60890,15 +61600,18 @@ var registerSetupTools = (server, { cwd, load }) => {
   );
 };
 
+// src/mcp/tools/packs.ts
+import { createHash as createHash4, randomUUID } from "node:crypto";
+
 // src/cli/cmd-import.ts
-import { promises as fs18 } from "node:fs";
-import path25 from "node:path";
-var SOURCES = ["user", "harvest:repo", "harvest:git", "harvest:package", "import", "learned"];
+import { promises as fs19 } from "node:fs";
+import path27 from "node:path";
+var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
 function parseSource(value) {
   if (value === void 0) return void 0;
-  if (!SOURCES.includes(value)) {
-    throw new Error(`unknown source "${value}" (expected one of: ${SOURCES.join(", ")})`);
+  if (!SOURCES2.includes(value)) {
+    throw new Error(`unknown source "${value}" (expected one of: ${SOURCES2.join(", ")})`);
   }
   return value;
 }
@@ -60937,22 +61650,22 @@ async function readStdinBytes(maxBytes) {
 }
 async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
-  const resolved = path25.resolve(cwd, file2);
+  const resolved2 = path27.resolve(cwd, file2);
   try {
-    const stat = await fs18.stat(resolved);
-    if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved}`);
-    if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved, stat.size);
-    return { bytes: await fs18.readFile(resolved), path: resolved };
+    const stat = await fs19.stat(resolved2);
+    if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
+    if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved2, stat.size);
+    return { bytes: await fs19.readFile(resolved2), path: resolved2 };
   } catch (err) {
     const code = err.code;
-    if (code === "ENOENT") throw new Error(`file not found: ${resolved}`);
-    if (code === "EISDIR") throw new Error(`expected a file, got a directory: ${resolved}`);
+    if (code === "ENOENT") throw new Error(`file not found: ${resolved2}`);
+    if (code === "EISDIR") throw new Error(`expected a file, got a directory: ${resolved2}`);
     throw err;
   }
 }
 async function defaultReadInput(file2, cwd) {
-  const { bytes, path: resolved } = await readInputBytes(file2, cwd);
-  return decodeImportBytes(bytes, resolved !== void 0 ? { path: resolved } : { label: "standard input" }).text;
+  const { bytes, path: resolved2 } = await readInputBytes(file2, cwd);
+  return decodeImportBytes(bytes, resolved2 !== void 0 ? { path: resolved2 } : { label: "standard input" }).text;
 }
 async function runImport(file2, opts, io, readInput = defaultReadInput) {
   const format = opts.format ?? "auto";
@@ -60964,7 +61677,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   }
   const source = parseSource(opts.source);
   const category = parseCategory(opts.category);
-  const cwd = path25.resolve(opts.cwd ?? process.cwd());
+  const cwd = path27.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
   const content = await readInput(file2, cwd);
@@ -60972,7 +61685,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
   const result = importLexicon(content, format, {
     ...source ? { source } : {},
-    ...file2 !== "-" ? { filename: path25.basename(file2) } : {}
+    ...file2 !== "-" ? { filename: path27.basename(file2) } : {}
   });
   if (category) {
     for (const term of result.terms) term.category ??= category;
@@ -61040,34 +61753,112 @@ function printReport(report, io) {
 }
 
 // src/mcp/tools/packs.ts
+var REGISTRY_SOURCE_DESC = "Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.";
 var registerPackTools = (server, { cwd, load }) => {
+  const imports = /* @__PURE__ */ new Map();
+  const destination = (scope) => JSON.stringify({ cwd, scope: scope ?? "global", ...resolvePaths({ cwd }) });
+  const pruneImports = () => {
+    for (const [token, preview] of imports) if (Date.now() - preview.at > 3e5) imports.delete(token);
+    while (imports.size >= 20) imports.delete(imports.keys().next().value);
+  };
   server.registerTool(
     "list_packs",
     {
       title: "List the starter term packs",
-      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
-      inputSchema: {}
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      inputSchema: {
+        registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
+      }
     },
-    async () => guarded(async () => {
+    async ({ registry: registry2 }) => guarded(async () => {
       const [packs, loaded] = await Promise.all([listPacks(), load()]);
       const installed = installedPacks(loaded);
-      return textResult({
+      const result = {
         packs: packs.map((p) => ({ name: p.name, title: p.title, description: p.description, terms: p.terms, aliases: p.aliases, installed: installed.includes(p.name) })),
         installed
-      });
+      };
+      if (registry2) {
+        const { index } = await loadRegistryIndex(registry2);
+        result.community = index.packs.map((p) => ({
+          ref: p.ref,
+          name: p.name,
+          author: p.author,
+          title: p.title,
+          description: p.description,
+          version: p.version,
+          terms: p.terms,
+          aliases: p.aliases,
+          checksum: p.checksum,
+          installed: installed.includes(p.ref)
+        }));
+      }
+      return textResult(result);
     })
   );
   server.registerTool(
     "add_pack",
     {
       title: "Install a starter term pack",
-      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`.",
+      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`. For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.",
       inputSchema: {
-        name: external_exports.string().regex(/^[a-z0-9-]+$/).describe("Pack name from list_packs, e.g. developer."),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'.")
+        name: external_exports.string().describe("Pack name from list_packs (e.g. developer) or a community ref like example/cardiology."),
+        scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
+        registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC + " Required for community refs."),
+        confirm: external_exports.boolean().optional().describe("Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing."),
+        previewDigest: external_exports.string().regex(/^[a-f0-9]{64}$/).optional().describe("Community packs: digest returned by the approved full-content preview; required with confirm.")
       }
     },
-    async ({ name, scope }) => guarded(async () => {
+    async ({ name, scope, registry: registry2, confirm, previewDigest }) => guarded(async () => {
+      if (isRegistryRef(name)) {
+        if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
+        const parsed = parseRegistryRef(name);
+        const { index, base } = await loadRegistryIndex(registry2);
+        const entry = findRegistryEntry(index, parsed.ref);
+        const bytes = await downloadPack(entry, base);
+        verifyPackChecksum(bytes, entry.checksum, entry.ref);
+        const pack = parsePackText(bytes.toString("utf8"), entry.url, entry.name);
+        const preview = {
+          ref: entry.ref,
+          title: entry.title,
+          author: entry.author,
+          homepage: entry.homepage,
+          version: entry.version,
+          checksum: entry.checksum,
+          terms: pack.lexicon.terms.map((t) => ({ ...t }))
+        };
+        const digest = createHash4("sha256").update(JSON.stringify({
+          name,
+          registry: registry2,
+          destination: destination(scope),
+          entry,
+          preview,
+          bytes: createHash4("sha256").update(bytes).digest("hex")
+        })).digest("hex");
+        if (confirm !== true) {
+          return textResult({
+            preview,
+            previewDigest: digest,
+            installed: false,
+            next: "Show this term list to the user; call again with confirm: true and this previewDigest only after they approve every term field."
+          });
+        }
+        if (previewDigest !== digest) throw new Error("community pack contents or destination changed, or preview digest is missing; preview again before installing");
+        const result2 = await installRegistryPack(entry, base, registry2, {
+          cwd,
+          ...scope !== void 0 ? { scope } : {},
+          ...parsed.version !== void 0 ? { pinnedVersion: parsed.version } : {}
+        });
+        return textResult({
+          name: result2.ref,
+          title: result2.pack.title,
+          added: result2.added,
+          merged: result2.merged,
+          path: result2.path,
+          scope: result2.scope,
+          summary: `installed community pack ${result2.ref}: ${result2.added} new term${result2.added === 1 ? "" : "s"}, ${result2.merged} merged into ${result2.path}`
+        });
+      }
+      if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
       const result = await installPack(name, { cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({
         name: result.pack.name,
@@ -61077,6 +61868,69 @@ var registerPackTools = (server, { cwd, load }) => {
         path: result.path,
         scope: result.scope,
         summary: `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? "" : "s"}, ${result.merged} merged into ${result.path}`
+      });
+    })
+  );
+  server.registerTool(
+    "import_vocabulary",
+    {
+      title: "Import proper nouns from the user's own sources (preview, then apply)",
+      description: "Guided vocabulary import: harvest candidate terms from where the user's proper nouns live (contacts: macOS Contacts names; calendar: macOS Calendar event titles and attendee names; github: the gh CLI's username, org members and repo names). Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email/Slack are not implemented (reading mail needs new OAuth scopes, which is a conversation, not a default). Ask which sources to read first, then pass explicit sources without apply to preview candidates. Show the candidate contents and ids; apply requires the returned previewToken and only approvedCandidateIds. Applying consumes the same snapshot without reading the sources again. Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible.",
+      inputSchema: {
+        sources: external_exports.array(external_exports.enum(IMPLEMENTED_IMPORT_SOURCES)).optional().describe("Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting."),
+        apply: external_exports.boolean().optional().describe("false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview."),
+        scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
+        previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply. Expires after five minutes or a server restart."),
+        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe("Only candidate ids approved by the user from that preview; required to apply, empty means import nothing.")
+      }
+    },
+    async ({ sources, apply, scope, previewToken, approvedCandidateIds }) => guarded(async () => {
+      pruneImports();
+      if (apply === true) {
+        if (sources === void 0 || previewToken === void 0 || approvedCandidateIds === void 0) {
+          throw new Error("apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview");
+        }
+        const saved = imports.get(previewToken);
+        if (!saved || saved.destination !== destination(scope) || JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify(saved.sources)) {
+          throw new Error("preview is missing, expired, or belongs to different sources/destination; preview again");
+        }
+        const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
+        imports.delete(previewToken);
+        const result = await applyImportCandidates(accepted, { cwd, ...scope !== void 0 ? { scope } : {} });
+        return textResult({
+          applied: true,
+          candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
+          added: result.added,
+          merged: result.merged,
+          path: result.path,
+          summary: `imported ${result.added + result.merged} terms (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ""}`
+        });
+      }
+      const wanted = [...new Set(sources ?? [])];
+      const availability = [];
+      for (const source of listImportSources()) {
+        const chosen2 = wanted.includes(source.id);
+        const checked = chosen2 ? await source.checkAvailable() : { available: false, reason: "not selected; availability was not probed" };
+        availability.push({
+          id: source.id,
+          label: source.label,
+          privacy: source.privacy,
+          implemented: source.implemented,
+          ...checked,
+          chosen: chosen2
+        });
+      }
+      const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
+      const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: 50 });
+      const token = randomUUID();
+      imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
+      return textResult({
+        sources: availability,
+        candidates: candidates.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
+        previewToken: token,
+        previewDigest: importPreviewDigest(wanted, candidates, destination(scope)),
+        applied: false,
+        next: sources === void 0 ? "Ask which sources the user wants read, then preview with explicit sources." : "Show the contents and ids to the user; call with apply: true, the same sources/scope, previewToken and only approvedCandidateIds."
       });
     })
   );
@@ -61093,11 +61947,11 @@ var registerPackTools = (server, { cwd, load }) => {
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")
       }
     },
-    async ({ path: path26, content, format, scope, dryRun }) => guarded(async () => {
-      if (path26 === void 0 && content === void 0) throw new Error("pass path or content");
+    async ({ path: path28, content, format, scope, dryRun }) => guarded(async () => {
+      if (path28 === void 0 && content === void 0) throw new Error("pass path or content");
       const io = bufferIO();
       const code = await runImport(
-        path26 ?? "-",
+        path28 ?? "-",
         { cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
         io,
         content !== void 0 ? async () => content : void 0

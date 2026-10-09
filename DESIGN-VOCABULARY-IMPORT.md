@@ -46,8 +46,10 @@ possible.
 ## Decisions made (MVP)
 
 1. **Sources and order.** contacts, calendar, github, in that order. Email and Slack are listed in the wizard as known-but-unimplemented with the reason stated, rather than silently omitted.
-2. **Privacy posture.** Local-first only: macOS Contacts and Calendar are read from their on-disk databases, GitHub through the user's existing `gh` login. No new OAuth, no new network calls beyond the source's own API. `--yes` requires an explicit `--sources` list: the wizard never reads an address book on a default. Email/Slack stay out until the OAuth conversation happens.
+2. **Privacy posture.** Local-first only: macOS Contacts and Calendar are read from their on-disk databases, GitHub through the user's existing `gh` login. No new OAuth, no new network calls beyond the source's own API. `--yes` requires an explicit `--sources` list, preview digest and approved candidate ids: the wizard never reads an address book on a default. Email/Slack stay out until the OAuth conversation happens.
 3. **Dedup and merge.** Candidates merge case-insensitively across sources (higher count wins a spelling conflict, the loser survives as an alias); writes go through `addTerm`, so an existing term keeps its spelling and only gains aliases. New terms are stamped `source: import:<name>`; merged terms keep the source they had.
 4. **Scope.** Vocabulary-shaped only: sources are inputs to term candidates, never a CRM. Alias policy is the cautious harvest one, with GitHub handles keeping single-word aliases (they are dictated as words, unlike code symbols).
 
 **Open for later:** email/Slack sources (needs the OAuth conversation); folding the wizard into `lexicon setup` as an optional step; per-source cleanup (`pack remove`-style by `import:<name>`).
+
+Noninteractive CLI use previews with `--guided --sources github --json`, then applies only approved ids with `--yes --preview-id <digest> --accept <ids>`. Any source/destination change requires a new preview. MCP uses a short-lived one-use preview token and selected candidate ids; apply consumes that snapshot without re-reading sources. Omitted MCP sources lists descriptions only.

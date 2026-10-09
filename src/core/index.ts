@@ -10,6 +10,7 @@ export * from './matcher.js';
 export * from './normalize.js';
 export * from './harvest.js';
 export * from './import-sources.js';
+export * from './import-preview.js';
 export * from './exporters/index.js';
 export * from './importers/index.js';
 export * from './suggest.js';

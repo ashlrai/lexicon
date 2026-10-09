@@ -118,17 +118,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path5) {
-      const ctrl = callVisitor(key, node2, visitor, path5);
+    function visit_(key, node2, visitor, path6) {
+      const ctrl = callVisitor(key, node2, visitor, path6);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visit_(key, ctrl, visitor, path5);
+        replaceNode(key, path6, ctrl);
+        return visit_(key, ctrl, visitor, path6);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path5 = Object.freeze(path5.concat(node2));
+          path6 = Object.freeze(path6.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path5);
+            const ci = visit_(i, node2.items[i], visitor, path6);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -139,13 +139,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path5 = Object.freeze(path5.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path5);
+          path6 = Object.freeze(path6.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path6);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path5);
+          const cv = visit_("value", node2.value, visitor, path6);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -166,17 +166,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path5) {
-      const ctrl = await callVisitor(key, node2, visitor, path5);
+    async function visitAsync_(key, node2, visitor, path6) {
+      const ctrl = await callVisitor(key, node2, visitor, path6);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visitAsync_(key, ctrl, visitor, path5);
+        replaceNode(key, path6, ctrl);
+        return visitAsync_(key, ctrl, visitor, path6);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path5 = Object.freeze(path5.concat(node2));
+          path6 = Object.freeze(path6.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path5);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path6);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -187,13 +187,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path5 = Object.freeze(path5.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path5);
+          path6 = Object.freeze(path6.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path6);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path5);
+          const cv = await visitAsync_("value", node2.value, visitor, path6);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -220,23 +220,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path5) {
+    function callVisitor(key, node2, visitor, path6) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path5);
+        return visitor(key, node2, path6);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path5);
+        return visitor.Map?.(key, node2, path6);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path5);
+        return visitor.Seq?.(key, node2, path6);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path5);
+        return visitor.Pair?.(key, node2, path6);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path5);
+        return visitor.Scalar?.(key, node2, path6);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path5);
+        return visitor.Alias?.(key, node2, path6);
       return void 0;
     }
-    function replaceNode(key, path5, node2) {
-      const parent = path5[path5.length - 1];
+    function replaceNode(key, path6, node2) {
+      const parent = path6[path6.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -848,10 +848,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path5, value) {
+    function collectionFromPath(schema, path6, value) {
       let v = value;
-      for (let i = path5.length - 1; i >= 0; --i) {
-        const k = path5[i];
+      for (let i = path6.length - 1; i >= 0; --i) {
+        const k = path6[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -870,7 +870,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path5) => path5 == null || typeof path5 === "object" && !!path5[Symbol.iterator]().next().done;
+    var isEmptyPath = (path6) => path6 == null || typeof path6 === "object" && !!path6[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -900,11 +900,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path5, value) {
-        if (isEmptyPath(path5))
+      addIn(path6, value) {
+        if (isEmptyPath(path6))
           this.add(value);
         else {
-          const [key, ...rest] = path5;
+          const [key, ...rest] = path6;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -918,8 +918,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        const [key, ...rest] = path5;
+      deleteIn(path6) {
+        const [key, ...rest] = path6;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -933,8 +933,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        const [key, ...rest] = path5;
+      getIn(path6, keepScalar) {
+        const [key, ...rest] = path6;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -952,8 +952,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path5) {
-        const [key, ...rest] = path5;
+      hasIn(path6) {
+        const [key, ...rest] = path6;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -963,8 +963,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        const [key, ...rest] = path5;
+      setIn(path6, value) {
+        const [key, ...rest] = path6;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -3479,9 +3479,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path5, value) {
+      addIn(path6, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path5, value);
+          this.contents.addIn(path6, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -3556,14 +3556,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        if (Collection.isEmptyPath(path5)) {
+      deleteIn(path6) {
+        if (Collection.isEmptyPath(path6)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path5) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path6) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -3578,10 +3578,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        if (Collection.isEmptyPath(path5))
+      getIn(path6, keepScalar) {
+        if (Collection.isEmptyPath(path6))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path5, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path6, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -3592,10 +3592,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path5) {
-        if (Collection.isEmptyPath(path5))
+      hasIn(path6) {
+        if (Collection.isEmptyPath(path6))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path5) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path6) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -3612,13 +3612,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        if (Collection.isEmptyPath(path5)) {
+      setIn(path6, value) {
+        if (Collection.isEmptyPath(path6)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path5), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path6), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path5, value);
+          this.contents.setIn(path6, value);
         }
       }
       /**
@@ -5579,9 +5579,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path5) => {
+    visit2.itemAtPath = (cst, path6) => {
       let item = cst;
-      for (const [field, index] of path5) {
+      for (const [field, index] of path6) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -5590,23 +5590,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path5) => {
-      const parent = visit2.itemAtPath(cst, path5.slice(0, -1));
-      const field = path5[path5.length - 1][0];
+    visit2.parentCollection = (cst, path6) => {
+      const parent = visit2.itemAtPath(cst, path6.slice(0, -1));
+      const field = path6[path6.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path5, item, visitor) {
-      let ctrl = visitor(item, path5);
+    function _visit(path6, item, visitor) {
+      let ctrl = visitor(item, path6);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path5.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path6.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -5617,10 +5617,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path5);
+            ctrl = ctrl(item, path6);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path5) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path6) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -7533,6 +7533,9 @@ var TERM_SOURCES = [
   "harvest:git",
   "harvest:package",
   "import",
+  "import:contacts",
+  "import:calendar",
+  "import:github",
   "learned",
   "pack"
 ];
@@ -8370,10 +8373,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path5) {
-  if (!path5)
+function getElementAtPath(obj, path6) {
+  if (!path6)
     return obj;
-  return path5.reduce((acc, key) => acc?.[key], obj);
+  return path6.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -8713,11 +8716,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path5, issues) {
+function prefixIssues(path6, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path5);
+    iss.path.unshift(path6);
     return iss;
   });
 }
@@ -9167,16 +9170,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path5 = []) => {
+  const processError = (error63, path6 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path5, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path6, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path5, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path5, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
       } else {
-        const fullpath = [...path5, ...issue2.path];
+        const fullpath = [...path6, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -9215,17 +9218,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path5 = []) => {
+  const processError = (error63, path6 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path5, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path6, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path5, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path5, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
       } else {
-        const fullpath = [...path5, ...issue2.path];
+        const fullpath = [...path6, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -9264,8 +9267,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path5 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path5) {
+  const path6 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path6) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -26367,13 +26370,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path5 = ref.slice(1).split("/").filter(Boolean);
-  if (path5.length === 0) {
+  const path6 = ref.slice(1).split("/").filter(Boolean);
+  if (path6.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path5[0] === defsKey) {
-    const key = path5[1] === void 0 ? void 0 : decodeJSONPointerSegment(path5[1]);
+  if (path6[0] === defsKey) {
+    const key = path6[1] === void 0 ? void 0 : decodeJSONPointerSegment(path6[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -26606,8 +26609,8 @@ function convertBaseSchema(schema, ctx) {
       });
     }
     ctx.processing.add(refPath);
-    const resolved = resolveRef(refPath, ctx);
-    const zodSchema2 = convertSchema(resolved, ctx);
+    const resolved2 = resolveRef(refPath, ctx);
+    const zodSchema2 = convertSchema(resolved2, ctx);
     ctx.refs.set(refPath, zodSchema2);
     ctx.processing.delete(refPath);
     return zodSchema2;
@@ -27298,10 +27301,10 @@ var LexiconSchema = external_exports.object({
   terms: external_exports.array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
   settings: LexiconSettingsSchema.optional()
 });
-function formatPath(path5) {
-  if (path5.length === 0) return "(root)";
+function formatPath(path6) {
+  if (path6.length === 0) return "(root)";
   let out = "";
-  for (const seg of path5) {
+  for (const seg of path6) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -27631,11 +27634,11 @@ function getTrustPath(opts = {}) {
   return path2.join(path2.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
 }
 async function canonicalPath(filePath) {
-  const resolved = path2.resolve(filePath);
+  const resolved2 = path2.resolve(filePath);
   try {
-    return await fs2.realpath(resolved);
+    return await fs2.realpath(resolved2);
   } catch {
-    return resolved;
+    return resolved2;
   }
 }
 async function hashFile(filePath) {
@@ -27867,11 +27870,11 @@ function hitKey(canonical) {
   return canonical.trim().toLowerCase();
 }
 async function canonicalPath2(filePath) {
-  const resolved = path4.resolve(filePath);
+  const resolved2 = path4.resolve(filePath);
   try {
-    return await fs3.realpath(resolved);
+    return await fs3.realpath(resolved2);
   } catch {
-    return resolved;
+    return resolved2;
   }
 }
 function emptyHitsRegistry() {
@@ -33149,13 +33152,13 @@ function findBest(view, index, opts) {
 }
 function findReplacements(text, index, opts = {}) {
   if (text.length === 0 || index.lexicon.terms.length === 0) return [];
-  const resolved = {
+  const resolved2 = {
     minConfidence: clamp01(opts.minConfidence ?? index.minConfidence),
     phonetic: opts.phonetic ?? index.phonetic,
     fuzzy: opts.fuzzy ?? index.fuzzy,
     skipCode: opts.skipCode ?? index.skipCode
   };
-  const tokens = tokenize(text, resolved.skipCode);
+  const tokens = tokenize(text, resolved2.skipCode);
   const candidates = [];
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].skipped) continue;
@@ -33167,10 +33170,10 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved);
+      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved2);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved);
+        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved2);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (best) candidates.push(best);
@@ -33229,8 +33232,1398 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
+// src/core/suggest.ts
+var DOMAIN_SUFFIX2 = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
+var VOWELS = /* @__PURE__ */ new Set(["a", "e", "i", "o", "u", "y"]);
+var DIGRAPHS = /* @__PURE__ */ new Set(["sh", "ch", "th", "ph", "wh", "ck", "ng"]);
+function suggestAliases(canonical) {
+  const base = canonical.trim();
+  const out = [];
+  const seen = /* @__PURE__ */ new Set([base.toLowerCase()]);
+  const add = (s) => {
+    const v = s.replace(/\s+/g, " ").trim();
+    if (!v) return;
+    const key = v.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(v);
+  };
+  if (!base) return out;
+  const acronym = isAcronym(base);
+  const words = acronym ? [base] : splitWords(base);
+  const spaced = words.join(" ");
+  if (!acronym) add(spaced);
+  const stemMatch = DOMAIN_SUFFIX2.exec(base);
+  const stem = stemMatch ? stemMatch[1] : void 0;
+  if (stem) add(stem);
+  const vowelTargets = stem ? [stem, spaced] : [spaced];
+  for (const target of vowelTargets) {
+    for (const variant of insertVowels(target)) add(variant);
+  }
+  if (acronym) {
+    add(pronounceAcronym(base));
+    add(base.replace(/[^\p{L}\p{N}]/gu, "").split("").join(" "));
+  }
+  for (const target of stem ? [stem, spaced] : [spaced, base]) {
+    for (const variant of confusions(target)) add(variant);
+  }
+  return out.slice(0, 8);
+}
+function splitWords(s) {
+  return s.replace(new RegExp("([\\p{Ll}\\p{N}])(\\p{Lu})", "gu"), "$1 $2").replace(new RegExp("(\\p{Lu}+)(\\p{Lu}\\p{Ll})", "gu"), "$1 $2").split(/[\s._\-/]+/u).filter((w) => w.length > 0);
+}
+function isVowel(ch) {
+  return VOWELS.has(ch.toLowerCase());
+}
+function consonantUnits(tail) {
+  const units = [];
+  let i = 0;
+  while (i < tail.length) {
+    const pair = tail.slice(i, i + 2).toLowerCase();
+    if (pair.length === 2 && DIGRAPHS.has(pair)) {
+      units.push(tail.slice(i, i + 2));
+      i += 2;
+    } else {
+      units.push(tail[i]);
+      i += 1;
+    }
+  }
+  return units;
+}
+function insertVowels(phrase) {
+  const results = [];
+  const words = phrase.split(" ");
+  words.forEach((word, wi) => {
+    const letters = word.replace(/[^\p{L}]/gu, "");
+    if (letters.length < 4) return;
+    let k = letters.length;
+    while (k > 0 && !isVowel(letters[k - 1])) k--;
+    const tail = letters.slice(k);
+    const units = consonantUnits(tail);
+    if (units.length < 3) return;
+    const head = letters.slice(0, k) + units.slice(0, -1).join("");
+    const last = units[units.length - 1];
+    for (const vowel of ["e", "a"]) {
+      const next = [...words];
+      next[wi] = head + vowel + last;
+      results.push(next.join(" "));
+    }
+  });
+  return results;
+}
+function isAcronym(s) {
+  const letters = s.replace(/[^\p{L}]/gu, "");
+  if (letters.length < 2 || letters.length > 6) return false;
+  const upper = (letters.match(new RegExp("\\p{Lu}", "gu")) ?? []).length;
+  return upper >= 2 && upper >= letters.length / 2;
+}
+function pronounceAcronym(s) {
+  let w = s.replace(/[^\p{L}]/gu, "").toLowerCase();
+  w = w.replace(/([aeiou])\1+/g, "$1");
+  if (w.length >= 3) {
+    const last = w[w.length - 1];
+    const prev = w[w.length - 2];
+    if (!isVowel(last) && isVowel(prev) && last !== "w" && last !== "y") w += last;
+  }
+  return w;
+}
+function confusions(s) {
+  const results = [];
+  const tryAdd = (v) => {
+    if (v !== s) results.push(v);
+  };
+  tryAdd(s.replace(/ph/gi, (m) => m[0] === "P" ? "F" : "f"));
+  tryAdd(s.replace(/c(?=[aou]|[^\p{L}eihy]|$)/giu, (m) => m === "C" ? "K" : "k"));
+  tryAdd(s.replace(/k(?!e|i|y)/gi, (m) => m === "K" ? "C" : "c"));
+  tryAdd(s.replace(new RegExp("(?<=\\p{L})y", "giu"), (m) => m === "Y" ? "I" : "i"));
+  tryAdd(s.replace(new RegExp("(\\p{L})\\1", "giu"), "$1"));
+  return results;
+}
+
 // src/core/harvest.ts
 var MAX_FILE_BYTES = 512 * 1024;
+var HARVEST_STOPLIST = /* @__PURE__ */ new Set([
+  // articles, pronouns, determiners, conjunctions
+  "The",
+  "This",
+  "That",
+  "These",
+  "Those",
+  "There",
+  "Here",
+  "They",
+  "Them",
+  "Their",
+  "Then",
+  "Than",
+  "Thus",
+  "What",
+  "When",
+  "Where",
+  "Which",
+  "While",
+  "Whom",
+  "Whose",
+  "With",
+  "Without",
+  "Within",
+  "Your",
+  "Yours",
+  "Ours",
+  "Some",
+  "Such",
+  "Same",
+  "Each",
+  "Every",
+  "Either",
+  "Neither",
+  "Both",
+  "Also",
+  "Only",
+  "Just",
+  "Even",
+  "Ever",
+  "Never",
+  "Always",
+  "Often",
+  "Once",
+  "Again",
+  "Still",
+  "Already",
+  "Almost",
+  "Although",
+  "Because",
+  "Before",
+  "After",
+  "Since",
+  "Until",
+  "Unless",
+  "Whether",
+  "Though",
+  "However",
+  "Therefore",
+  "Otherwise",
+  "Instead",
+  "Please",
+  "Thanks",
+  "Thank",
+  "Welcome",
+  "Hello",
+  "About",
+  "Above",
+  "Below",
+  "Under",
+  "Over",
+  "Into",
+  "Onto",
+  "From",
+  "Through",
+  "Between",
+  "Among",
+  "Around",
+  "Across",
+  "Along",
+  "Against",
+  "Toward",
+  "Towards",
+  "Upon",
+  "Down",
+  "Back",
+  "Away",
+  "Very",
+  "Much",
+  "More",
+  "Most",
+  "Many",
+  "Less",
+  "Least",
+  "Other",
+  "Another",
+  "Others",
+  "Else",
+  "Next",
+  "Last",
+  "First",
+  "Second",
+  "Third",
+  "Final",
+  "Finally",
+  "Then",
+  "Now",
+  "Today",
+  "Soon",
+  "Later",
+  "Earlier",
+  "Recently",
+  "Currently",
+  "Yes",
+  "None",
+  "Nothing",
+  "Something",
+  "Anything",
+  "Everything",
+  "Someone",
+  "Anyone",
+  "Everyone",
+  "Nobody",
+  "Does",
+  "Do",
+  "Did",
+  "Done",
+  "Doing",
+  "Have",
+  "Has",
+  "Had",
+  "Having",
+  "Will",
+  "Would",
+  "Should",
+  "Could",
+  "Must",
+  "Might",
+  "May",
+  "Can",
+  "Cannot",
+  "Shall",
+  "Make",
+  "Makes",
+  "Made",
+  "Making",
+  "Take",
+  "Takes",
+  "Took",
+  "Taking",
+  "Give",
+  "Gives",
+  "Gave",
+  "Given",
+  "Need",
+  "Needs",
+  "Needed",
+  "Want",
+  "Wants",
+  "Wanted",
+  "Know",
+  "Known",
+  "Knows",
+  "See",
+  "Sees",
+  "Seen",
+  "Look",
+  "Looks",
+  "Looking",
+  "Find",
+  "Finds",
+  "Found",
+  "Keep",
+  "Keeps",
+  "Kept",
+  "Let",
+  "Lets",
+  "Like",
+  "Likes",
+  "Think",
+  "Thinks",
+  "Thought",
+  "Feel",
+  "Feels",
+  "Felt",
+  "Come",
+  "Comes",
+  "Came",
+  "Coming",
+  "Goes",
+  "Going",
+  "Gone",
+  "Went",
+  "Say",
+  "Says",
+  "Said",
+  "Tell",
+  "Tells",
+  "Told",
+  "Ask",
+  "Asks",
+  "Asked",
+  "Try",
+  "Tries",
+  "Tried",
+  "Call",
+  "Calls",
+  "Called",
+  "Work",
+  "Works",
+  "Worked",
+  "Working",
+  "Turn",
+  "Turns",
+  "Show",
+  "Shows",
+  "Shown",
+  "Read",
+  "Reads",
+  "Write",
+  "Writes",
+  "Written",
+  "Open",
+  "Opens",
+  "Close",
+  "Closes",
+  "Closed",
+  "Start",
+  "Starts",
+  "Started",
+  "Starting",
+  "Stop",
+  "Stops",
+  "Stopped",
+  "Getting",
+  "Get",
+  "Gets",
+  "Got",
+  "Put",
+  "Puts",
+  "Set",
+  "Sets",
+  "Setting",
+  "Settings",
+  "Add",
+  "Adds",
+  "Added",
+  "Adding",
+  "Remove",
+  "Removes",
+  "Removed",
+  "Removing",
+  "Delete",
+  "Deletes",
+  "Deleted",
+  "Update",
+  "Updates",
+  "Updated",
+  "Updating",
+  "Create",
+  "Creates",
+  "Created",
+  "Creating",
+  "Build",
+  "Builds",
+  "Building",
+  "Built",
+  "Run",
+  "Runs",
+  "Running",
+  "Ran",
+  "Test",
+  "Tests",
+  "Testing",
+  "Tested",
+  "Check",
+  "Checks",
+  "Checked",
+  "Checking",
+  "Change",
+  "Changes",
+  "Changed",
+  "Changelog",
+  "Configure",
+  "Configuration",
+  "Config",
+  "Configs",
+  "Setup",
+  "Install",
+  "Installation",
+  "Installing",
+  "Installed",
+  "Uninstall",
+  "Usage",
+  "Use",
+  "Uses",
+  "Used",
+  "Using",
+  "User",
+  "Users",
+  "Example",
+  "Examples",
+  "Note",
+  "Notes",
+  "Todo",
+  "Todos",
+  "Readme",
+  "License",
+  "Licence",
+  "Licensed",
+  "Copyright",
+  "Contributing",
+  "Contributors",
+  "Contribute",
+  "Contribution",
+  "Contributions",
+  "Author",
+  "Authors",
+  "Maintainer",
+  "Maintainers",
+  "Credits",
+  "Acknowledgements",
+  "Acknowledgments",
+  "Thanks",
+  "Overview",
+  "Introduction",
+  "Intro",
+  "Background",
+  "Motivation",
+  "Features",
+  "Feature",
+  "Requirements",
+  "Requirement",
+  "Prerequisites",
+  "Prerequisite",
+  "Dependencies",
+  "Dependency",
+  "Quick",
+  "Quickstart",
+  "Guide",
+  "Guides",
+  "Tutorial",
+  "Tutorials",
+  "Documentation",
+  "Docs",
+  "Doc",
+  "Reference",
+  "References",
+  "Roadmap",
+  "Status",
+  "Support",
+  "Supported",
+  "Supports",
+  "Options",
+  "Option",
+  "Arguments",
+  "Argument",
+  "Parameters",
+  "Parameter",
+  "Returns",
+  "Return",
+  "Result",
+  "Results",
+  "Output",
+  "Outputs",
+  "Input",
+  "Inputs",
+  "Command",
+  "Commands",
+  "Flag",
+  "Flags",
+  "Default",
+  "Defaults",
+  "Advanced",
+  "Basic",
+  "Basics",
+  "Simple",
+  "Custom",
+  "Manual",
+  "Automatic",
+  "Optional",
+  "Required",
+  "Recommended",
+  "Deprecated",
+  "Experimental",
+  "Stable",
+  "Beta",
+  "Alpha",
+  "Preview",
+  "Release",
+  "Releases",
+  "Version",
+  "Versions",
+  "Versioning",
+  "Latest",
+  "Current",
+  "Previous",
+  "Upgrade",
+  "Upgrading",
+  "Migration",
+  "Migrating",
+  "Migrate",
+  "Breaking",
+  "Fixed",
+  "Fixes",
+  "Fix",
+  "Bug",
+  "Bugs",
+  "Issue",
+  "Issues",
+  "Pull",
+  "Request",
+  "Requests",
+  "Merge",
+  "Commit",
+  "Commits",
+  "Branch",
+  "Branches",
+  "Fork",
+  "Clone",
+  "Push",
+  "Repository",
+  "Repo",
+  "Project",
+  "Projects",
+  "Package",
+  "Packages",
+  "Module",
+  "Modules",
+  "Library",
+  "Libraries",
+  "Framework",
+  "Frameworks",
+  "Tool",
+  "Tools",
+  "Toolkit",
+  "Plugin",
+  "Plugins",
+  "Extension",
+  "Extensions",
+  "Script",
+  "Scripts",
+  "File",
+  "Files",
+  "Folder",
+  "Folders",
+  "Directory",
+  "Directories",
+  "Path",
+  "Paths",
+  "Source",
+  "Sources",
+  "Code",
+  "Server",
+  "Servers",
+  "Client",
+  "Clients",
+  "Service",
+  "Services",
+  "Development",
+  "Develop",
+  "Developer",
+  "Developers",
+  "Production",
+  "Environment",
+  "Environments",
+  "Local",
+  "Remote",
+  "Global",
+  "Public",
+  "Private",
+  "Security",
+  "Secure",
+  "Performance",
+  "Fast",
+  "Faster",
+  "Simple",
+  "Simply",
+  "Easy",
+  "Easily",
+  "Powerful",
+  "Lightweight",
+  "Modern",
+  "Minimal",
+  "Free",
+  "Open",
+  "Community",
+  "Team",
+  "Company",
+  "Home",
+  "Page",
+  "Pages",
+  "Website",
+  "Site",
+  "Link",
+  "Links",
+  "Image",
+  "Images",
+  "Screenshot",
+  "Screenshots",
+  "Demo",
+  "Demos",
+  "Live",
+  "Table",
+  "Contents",
+  "Content",
+  "Section",
+  "Sections",
+  "Chapter",
+  "Part",
+  "Step",
+  "Steps",
+  "Warning",
+  "Caution",
+  "Important",
+  "Tip",
+  "Tips",
+  "Trick",
+  "Tricks",
+  "Hint",
+  "Hints",
+  "Info",
+  "Information",
+  "Details",
+  "Detail",
+  "Summary",
+  "Description",
+  "Purpose",
+  "Goal",
+  "Goals",
+  "Why",
+  "How",
+  "Who",
+  "Yes",
+  "No",
+  "Not",
+  "And",
+  "But",
+  "For",
+  "Nor",
+  "Yet",
+  "So",
+  "If",
+  "Or",
+  "As",
+  "At",
+  "By",
+  "In",
+  "Of",
+  "On",
+  "To",
+  "Up",
+  "Is",
+  "It",
+  "Its",
+  "Be",
+  "Been",
+  "Being",
+  "Are",
+  "Was",
+  "Were",
+  "Am",
+  "An",
+  "A",
+  "I",
+  "We",
+  "You",
+  "He",
+  "She",
+  "Me",
+  "Him",
+  "Her",
+  "Us",
+  "My",
+  "Our",
+  "His",
+  "Hers",
+  "Mine",
+  "All",
+  "Any",
+  "Few",
+  "Several",
+  "One",
+  "Two",
+  "Three",
+  "Four",
+  "Five",
+  "Six",
+  "Seven",
+  "Eight",
+  "Nine",
+  "Ten",
+  "Zero",
+  "Hundred",
+  "Thousand",
+  "Million",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+  "January",
+  "February",
+  "March",
+  "April",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+  "English",
+  "True",
+  "False",
+  "Null",
+  "Undefined",
+  "Nil",
+  "Error",
+  "Errors",
+  "Exception",
+  "Exceptions",
+  "Debug",
+  "Debugging",
+  "Logging",
+  "Logs",
+  "Log",
+  "Verbose",
+  "Silent",
+  "Quiet",
+  "Help",
+  "Helper",
+  "Helpers",
+  "Utility",
+  "Utilities",
+  "Data",
+  "Database",
+  "Databases",
+  "Model",
+  "Models",
+  "Schema",
+  "Schemas",
+  "Type",
+  "Types",
+  "Interface",
+  "Interfaces",
+  "Class",
+  "Classes",
+  "Function",
+  "Functions",
+  "Method",
+  "Methods",
+  "Property",
+  "Properties",
+  "Object",
+  "Objects",
+  "Array",
+  "Arrays",
+  "String",
+  "Strings",
+  "Number",
+  "Numbers",
+  "Boolean",
+  "Booleans",
+  "Value",
+  "Values",
+  "Key",
+  "Keys",
+  "Name",
+  "Names",
+  "Id",
+  "Ids",
+  "Index",
+  "Indices",
+  "List",
+  "Lists",
+  "Map",
+  "Maps",
+  "Item",
+  "Items",
+  "Element",
+  "Elements",
+  "Node",
+  "Nodes",
+  "Tree",
+  "Graph",
+  "Event",
+  "Events",
+  "Handler",
+  "Handlers",
+  "Hook",
+  "Hooks",
+  "Context",
+  "Store",
+  "Action",
+  "Actions",
+  "Reducer",
+  "State",
+  "Component",
+  "Components",
+  "Render",
+  "Rendering",
+  "Style",
+  "Styles",
+  "Theme",
+  "Themes",
+  "Layout",
+  "Design",
+  "Icon",
+  "Icons",
+  "Font",
+  "Fonts",
+  "Color",
+  "Colors",
+  "Dark",
+  "Light",
+  "Mode",
+  "Modes",
+  "Window",
+  "Windows",
+  "Mac",
+  "Linux",
+  "Unix",
+  "Browser",
+  "Browsers",
+  "Mobile",
+  "Desktop",
+  "Web",
+  "Native",
+  "Cloud",
+  "Edge",
+  "Network",
+  "Networks",
+  "Internet",
+  "Online",
+  "Offline",
+  "Sync",
+  "Async",
+  "Await",
+  "Promise",
+  "Promises",
+  "Stream",
+  "Streams",
+  "Buffer",
+  "Buffers",
+  "Memory",
+  "Disk",
+  "Cache",
+  "Caching",
+  "Speed",
+  "Size",
+  "Limit",
+  "Limits",
+  "Rate",
+  "Rates",
+  "Count",
+  "Counts",
+  "Total",
+  "Totals",
+  "Average",
+  "Maximum",
+  "Minimum",
+  "Max",
+  "Min",
+  "Range",
+  "Ranges",
+  "Level",
+  "Levels",
+  "Priority",
+  "Order",
+  "Sort",
+  "Sorted",
+  "Filter",
+  "Filtered",
+  "Search",
+  "Searching",
+  "Match",
+  "Matches",
+  "Matching",
+  "Replace",
+  "Replaces",
+  "Replacement",
+  "Replacements",
+  "Pattern",
+  "Patterns",
+  "Regex",
+  "Format",
+  "Formats",
+  "Formatting",
+  "Parse",
+  "Parser",
+  "Parsing",
+  "Export",
+  "Exports",
+  "Import",
+  "Imports",
+  "Load",
+  "Loads",
+  "Loading",
+  "Save",
+  "Saves",
+  "Saving",
+  "Print",
+  "Prints",
+  "Display",
+  "Displays",
+  "Enable",
+  "Enabled",
+  "Disable",
+  "Disabled",
+  "Allow",
+  "Allowed",
+  "Deny",
+  "Denied",
+  "Accept",
+  "Accepted",
+  "Reject",
+  "Rejected",
+  "Confirm",
+  "Cancel",
+  "Continue",
+  "Skip",
+  "Retry",
+  "Refresh",
+  "Reload",
+  "Reset",
+  "Restore",
+  "Clear",
+  "Clean",
+  "Cleanup",
+  "Voice",
+  "Speech",
+  "Text",
+  "Audio",
+  "Video",
+  "Word",
+  "Words",
+  "Sentence",
+  "Sentences",
+  "Line",
+  "Lines",
+  "Paragraph",
+  "Language",
+  "Languages"
+]);
+function safeSuggest(canonical) {
+  try {
+    const result = suggestAliases(canonical);
+    return Array.isArray(result) ? result : [];
+  } catch {
+    return [];
+  }
+}
+function harvestAliases(canonical, category) {
+  if (category === "identifier") return [];
+  const aliases = safeSuggest(canonical);
+  if (/[\s._\-/]/.test(canonical)) return aliases;
+  return aliases.filter((alias) => !/\s/.test(alias));
+}
+
+// src/core/import-sources.ts
+import { execFileSync } from "node:child_process";
+import { existsSync as existsSync2, readdirSync, readFileSync, statSync } from "node:fs";
+import os4 from "node:os";
+import path5 from "node:path";
+var defaultDeps = () => ({
+  platform: process.platform,
+  home: os4.homedir(),
+  exists: existsSync2,
+  readText: (p) => readFileSync(p, "utf8"),
+  readDir: (p) => readdirSync(p),
+  isDirectory: (p) => {
+    try {
+      return statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+  fileSize: (p) => {
+    try {
+      return statSync(p).size;
+    } catch {
+      return void 0;
+    }
+  },
+  exec: ((file2, args) => execFileSync(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "ignore"] }))
+});
+function resolveImportSourceDeps(deps = {}) {
+  const d = defaultDeps();
+  return {
+    platform: deps.platform ?? d.platform,
+    home: deps.home ?? d.home,
+    exists: deps.exists ?? d.exists,
+    readText: deps.readText ?? d.readText,
+    readDir: deps.readDir ?? d.readDir,
+    isDirectory: deps.isDirectory ?? d.isDirectory,
+    fileSize: deps.fileSize ?? d.fileSize,
+    exec: deps.exec ?? d.exec
+  };
+}
+function resolved(deps = {}) {
+  return resolveImportSourceDeps(deps);
+}
+function tryExec(deps, file2, args) {
+  try {
+    return deps.exec(file2, args);
+  } catch {
+    return void 0;
+  }
+}
+function importAliases(canonical, category) {
+  if (category === "identifier") {
+    return harvestAliases(canonical, "person").filter((a) => !/\s/.test(a));
+  }
+  return harvestAliases(canonical, category);
+}
+function personCandidate(name, source, evidence, count = 1) {
+  const canonical = name.trim().replace(/\s+/g, " ");
+  if (canonical.length < 2 || canonical.length > 80) return void 0;
+  if (/@/.test(canonical) || /\[bot\]$/i.test(canonical) || /\bbot\b/i.test(canonical)) return void 0;
+  return {
+    canonical,
+    category: "person",
+    source,
+    evidence: [evidence],
+    count,
+    suggestedAliases: importAliases(canonical, "person")
+  };
+}
+function mergeCandidates(candidates) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const c of candidates) {
+    const key = c.canonical.toLowerCase();
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...c, evidence: [...c.evidence], suggestedAliases: [...c.suggestedAliases] });
+      continue;
+    }
+    if (c.count > prev.count) {
+      const demoted = prev.canonical;
+      prev.canonical = c.canonical;
+      prev.category = c.category;
+      prev.source = c.source;
+      if (!prev.suggestedAliases.some((a) => a.toLowerCase() === demoted.toLowerCase())) {
+        prev.suggestedAliases.push(demoted);
+      }
+    }
+    prev.count += c.count;
+    for (const e of c.evidence) if (!prev.evidence.includes(e)) prev.evidence.push(e);
+    for (const a of c.suggestedAliases) {
+      if (a.toLowerCase() !== prev.canonical.toLowerCase() && !prev.suggestedAliases.some((x) => x.toLowerCase() === a.toLowerCase())) {
+        prev.suggestedAliases.push(a);
+      }
+    }
+  }
+  const out = [...byKey.values()];
+  out.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
+  return out;
+}
+function addressBookDirs(deps) {
+  const base = path5.join(deps.home, "Library", "Application Support", "AddressBook");
+  const dirs = [base];
+  try {
+    for (const entry of deps.readDir(path5.join(base, "Sources"))) {
+      const full = path5.join(base, "Sources", entry);
+      if (deps.isDirectory(full)) dirs.push(full);
+    }
+  } catch {
+  }
+  return dirs;
+}
+function addressBookDb(deps) {
+  for (const dir of addressBookDirs(deps)) {
+    for (const name of ["AddressBook-v22.abcddb", "AddressBook.abcddb"]) {
+      const p = path5.join(dir, name);
+      if (deps.exists(p)) return p;
+    }
+  }
+  return void 0;
+}
+var CONTACTS_QUERY = "SELECT ZFIRSTNAME, ZLASTNAME, ZORGANIZATION FROM ZABCDCONTACT WHERE ZFIRSTNAME IS NOT NULL OR ZLASTNAME IS NOT NULL OR ZORGANIZATION IS NOT NULL;";
+var contactsSource = {
+  id: "contacts",
+  label: "macOS Contacts",
+  privacy: "Reads first/last names and organizations from your local macOS Contacts database. Nothing leaves this machine.",
+  implemented: true,
+  async checkAvailable(deps = {}) {
+    const d = resolved(deps);
+    if (d.platform !== "darwin") return { available: false, reason: "macOS Contacts only exists on macOS" };
+    if (!addressBookDb(d)) return { available: false, reason: "no AddressBook database found under ~/Library/Application Support/AddressBook" };
+    if (tryExec(d, "sqlite3", ["--version"]) === void 0) {
+      return { available: false, reason: "the sqlite3 command-line tool is not on PATH" };
+    }
+    return { available: true };
+  },
+  async harvest(deps = {}) {
+    const d = resolved(deps);
+    const db = addressBookDb(d);
+    if (!db) return [];
+    const out = tryExec(d, "sqlite3", ["-separator", "	", db, CONTACTS_QUERY]);
+    if (out === void 0) return [];
+    const candidates = [];
+    for (const line of out.split("\n")) {
+      const [first = "", last = "", org = ""] = line.split("	");
+      const name = `${first} ${last}`.trim();
+      const person = personCandidate(name, "import:contacts", "macOS Contacts");
+      if (person) candidates.push(person);
+      const organization = org.trim();
+      if (organization.length >= 3 && organization.length <= 80 && !/@/.test(organization)) {
+        candidates.push({
+          canonical: organization,
+          category: "brand",
+          source: "import:contacts",
+          evidence: ["macOS Contacts organization"],
+          count: 1,
+          suggestedAliases: importAliases(organization, "brand")
+        });
+      }
+    }
+    return mergeCandidates(candidates);
+  }
+};
+var MAX_ICS_FILES = 2e3;
+var MAX_ICS_BYTES = 512 * 1024;
+function unfoldIcs(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (/^[ \t]/.test(raw) && out.length > 0) out[out.length - 1] += raw.slice(1);
+    else out.push(raw);
+  }
+  return out;
+}
+function icsParamCN(line) {
+  const m = /;CN=([^;:]+)/i.exec(line);
+  return m ? m[1].trim() : void 0;
+}
+function parseIcsEvents(text) {
+  const events = [];
+  let current;
+  for (const line of unfoldIcs(text)) {
+    if (/^BEGIN:VEVENT/i.test(line)) current = { attendees: [] };
+    else if (/^END:VEVENT/i.test(line)) {
+      if (current) events.push(current);
+      current = void 0;
+    } else if (current) {
+      if (/^SUMMARY[:;]/i.test(line)) current.summary = line.replace(/^SUMMARY[^:]*:/i, "").trim();
+      else if (/^ATTENDEE/i.test(line)) {
+        const cn = icsParamCN(line);
+        if (cn) current.attendees.push(cn);
+      } else if (/^ORGANIZER/i.test(line)) {
+        const cn = icsParamCN(line);
+        if (cn) current.organizer = cn;
+      }
+    }
+  }
+  return events;
+}
+function titleProperNouns(summary) {
+  const out = [];
+  const words = summary.split(/\s+/).map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ""));
+  let phrase = [];
+  const flush = () => {
+    if (phrase.length >= 2) out.push(phrase.join(" "));
+    else if (phrase.length === 1) {
+      const [w] = phrase;
+      if (w.length >= 4 && !HARVEST_STOPLIST.has(w)) out.push(w);
+    }
+    phrase = [];
+  };
+  for (const w of words) {
+    if (/^[A-Z][a-z]+$/.test(w) && !HARVEST_STOPLIST.has(w)) phrase.push(w);
+    else flush();
+  }
+  flush();
+  return out;
+}
+function calendarDir(deps) {
+  const dir = path5.join(deps.home, "Library", "Calendars");
+  return deps.exists(dir) ? dir : void 0;
+}
+function icsFiles(deps, dir) {
+  const out = [];
+  const walk = (d) => {
+    if (out.length >= MAX_ICS_FILES) return;
+    let entries;
+    try {
+      entries = deps.readDir(d);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (out.length >= MAX_ICS_FILES) return;
+      const full = path5.join(d, entry);
+      if (entry.endsWith(".ics")) {
+        const size = deps.fileSize(full);
+        if (size !== void 0 && size <= MAX_ICS_BYTES) out.push(full);
+      } else if (!entry.startsWith(".")) {
+        if (deps.isDirectory(full)) walk(full);
+      }
+    }
+  };
+  walk(dir);
+  return out;
+}
+var calendarSource = {
+  id: "calendar",
+  label: "macOS Calendar",
+  privacy: "Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Nothing leaves this machine.",
+  implemented: true,
+  async checkAvailable(deps = {}) {
+    const d = resolved(deps);
+    if (d.platform !== "darwin") return { available: false, reason: "macOS Calendar only exists on macOS" };
+    if (!calendarDir(d)) return { available: false, reason: "no ~/Library/Calendars directory found" };
+    return { available: true };
+  },
+  async harvest(deps = {}) {
+    const d = resolved(deps);
+    const dir = calendarDir(d);
+    if (!dir) return [];
+    const candidates = [];
+    for (const file2 of icsFiles(d, dir)) {
+      let text;
+      try {
+        text = d.readText(file2);
+      } catch {
+        continue;
+      }
+      for (const event of parseIcsEvents(text)) {
+        for (const name of event.attendees) {
+          const c = personCandidate(name, "import:calendar", event.summary ? `calendar: ${event.summary}` : "calendar attendee");
+          if (c) candidates.push(c);
+        }
+        if (event.organizer) {
+          const c = personCandidate(event.organizer, "import:calendar", event.summary ? `calendar: ${event.summary}` : "calendar organizer");
+          if (c) candidates.push(c);
+        }
+        if (event.summary) {
+          for (const noun of titleProperNouns(event.summary)) {
+            candidates.push({
+              canonical: noun,
+              category: "other",
+              source: "import:calendar",
+              evidence: [`calendar event title: ${event.summary.slice(0, 60)}`],
+              count: 1,
+              suggestedAliases: importAliases(noun, "other")
+            });
+          }
+        }
+      }
+    }
+    const merged = mergeCandidates(candidates);
+    return merged.filter((c) => c.category !== "other" || /\s/.test(c.canonical) || c.count >= 2);
+  }
+};
+function ghJson(d, args) {
+  const paginated = args.includes("--paginate");
+  const out = tryExec(d, "gh", [...args, ...paginated ? ["--slurp"] : [], "--jq", "."]);
+  if (out === void 0) return void 0;
+  try {
+    const parsed = JSON.parse(out);
+    return paginated && Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  } catch {
+    return void 0;
+  }
+}
+function isRecord2(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function loginCandidate(login, evidence) {
+  const canonical = login.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,38}$/.test(canonical)) return void 0;
+  return {
+    canonical,
+    category: "identifier",
+    source: "import:github",
+    evidence: [evidence],
+    count: 1,
+    suggestedAliases: importAliases(canonical, "identifier")
+  };
+}
+var githubSource = {
+  id: "github",
+  label: "GitHub (gh CLI)",
+  privacy: "Calls api.github.com with your existing gh login: your username, org memberships, member logins and repo names. No new OAuth scopes.",
+  implemented: true,
+  async checkAvailable(deps = {}) {
+    const d = resolved(deps);
+    const status = tryExec(d, "gh", ["auth", "status"]);
+    if (status === void 0) return { available: false, reason: "gh is not installed or not logged in (run gh auth login)" };
+    return { available: true };
+  },
+  async harvest(deps = {}) {
+    const d = resolved(deps);
+    const candidates = [];
+    const user = ghJson(d, ["api", "user"]);
+    if (isRecord2(user)) {
+      if (typeof user.name === "string" && user.name.trim()) {
+        const c = personCandidate(user.name, "import:github", "GitHub profile name");
+        if (c) candidates.push(c);
+      }
+      if (typeof user.login === "string") {
+        const c = loginCandidate(user.login, "GitHub username");
+        if (c) candidates.push(c);
+      }
+    }
+    const orgs = ghJson(d, ["api", "user/orgs"]);
+    const orgLogins = Array.isArray(orgs) ? orgs.filter(isRecord2).map((o) => o.login).filter((l) => typeof l === "string") : [];
+    for (const org of orgLogins.slice(0, 20)) {
+      const members2 = ghJson(d, ["api", `orgs/${org}/members`, "--paginate"]);
+      if (Array.isArray(members2)) {
+        for (const m of members2.filter(isRecord2)) {
+          if (typeof m.login === "string") {
+            const c = loginCandidate(m.login, `GitHub org ${org} member`);
+            if (c) candidates.push(c);
+          }
+        }
+      }
+      const orgRepos = ghJson(d, ["api", `orgs/${org}/repos`, "--paginate"]);
+      if (Array.isArray(orgRepos)) {
+        for (const r of orgRepos.filter(isRecord2)) {
+          if (typeof r.name === "string" && r.name.trim()) {
+            candidates.push({
+              canonical: r.name,
+              category: "product",
+              source: "import:github",
+              evidence: [`GitHub repo ${org}/${r.name}`],
+              count: 1,
+              suggestedAliases: importAliases(r.name, "product")
+            });
+          }
+        }
+      }
+    }
+    const repos = ghJson(d, ["api", "user/repos", "--paginate"]);
+    if (Array.isArray(repos)) {
+      for (const r of repos.filter(isRecord2).slice(0, 200)) {
+        if (typeof r.name === "string" && r.name.trim()) {
+          const owner = isRecord2(r.owner) && typeof r.owner.login === "string" ? r.owner.login : void 0;
+          candidates.push({
+            canonical: r.name,
+            category: "product",
+            source: "import:github",
+            evidence: [`GitHub repo ${owner ? `${owner}/` : ""}${r.name}`],
+            count: 1,
+            suggestedAliases: importAliases(r.name, "product")
+          });
+        }
+      }
+    }
+    return mergeCandidates(candidates);
+  }
+};
+function unimplemented(id, label, privacy, reason) {
+  return {
+    id,
+    label,
+    privacy,
+    implemented: false,
+    checkAvailable: async () => ({ available: false, reason }),
+    harvest: async () => []
+  };
+}
+var SOURCES = {
+  contacts: contactsSource,
+  calendar: calendarSource,
+  github: githubSource,
+  email: unimplemented(
+    "email",
+    "Email correspondents",
+    "Would read sender and recipient names from recent threads. Not implemented: that needs new OAuth scopes, which is a conversation, not a default.",
+    "not yet supported: reading mail needs new OAuth scopes; local-only sources ship first"
+  ),
+  slack: unimplemented(
+    "slack",
+    "Slack / Discord workspace",
+    "Would read workspace member and channel names. Not implemented: that needs a workspace token, which is a conversation, not a default.",
+    "not yet supported: needs a workspace token; local-only sources ship first"
+  )
+};
 
 // src/core/exporters/shared.ts
 var CATEGORY_ORDER = {
@@ -33601,7 +34994,32 @@ var PackFileSchema = external_exports.object({
   title: external_exports.string().trim().min(1).max(80),
   description: external_exports.string().trim().max(300).default(""),
   version: external_exports.literal(1).default(1),
+  /** Community packs name their author; the vendored four leave it empty. */
+  author: external_exports.string().trim().max(40).default(""),
+  homepage: external_exports.string().trim().max(200).default(""),
   terms: external_exports.array(external_exports.unknown()).min(1, "a pack needs at least one term")
+});
+
+// src/core/registry.ts
+var import_yaml6 = __toESM(require_dist(), 1);
+var RegistryIndexEntrySchema = external_exports.object({
+  author: external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,38}$/),
+  name: external_exports.string().regex(PACK_NAME_RE),
+  title: external_exports.string().trim().min(1).max(80),
+  description: external_exports.string().trim().max(300).default(""),
+  homepage: external_exports.string().trim().max(200).default(""),
+  /** Free-form display version ("2", "2026.10.08"); updates key on checksum, not this. */
+  version: external_exports.string().trim().max(32).default(""),
+  terms: external_exports.number().int().min(1),
+  aliases: external_exports.number().int().min(0),
+  /** sha256 hex of the pack file bytes. */
+  checksum: external_exports.string().regex(/^[0-9a-f]{64}$/i, "checksum must be a sha256 hex digest"),
+  /** Where the pack file lives: https:// URL, file:// URL, or a path relative to the index. */
+  url: external_exports.string().trim().min(1)
+});
+var RegistryIndexSchema = external_exports.object({
+  version: external_exports.literal(1).default(1),
+  packs: external_exports.array(RegistryIndexEntrySchema).default([])
 });
 
 // src/hooks/user-prompt-submit.ts

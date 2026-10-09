@@ -1007,3 +1007,62 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: MCP server over stdio', () =
     expect(yaml).toMatch(/hits: 1/);
   });
 });
+
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: guided import consent', () => {
+  it.each([['--yes', '--json'], ['--dry-run'], ['--json']])('rejects absent source consent before reads: %j', async (...flags) => {
+    const h = await freshHome('guided-no-sources');
+    const result = await runCli(['import', '--guided', ...flags], { env: h.env, cwd: h.repo });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('--sources');
+    await expect(fs.access(h.globalPath)).rejects.toThrow();
+  });
+
+  async function fakeGitHub(h: TestHome): Promise<NodeJS.ProcessEnv> {
+    const bin = path.join(h.home, 'bin');
+    await fs.mkdir(bin);
+    const gh = `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'auth') { console.log('fixture auth available'); process.exit(0); }
+const data = {
+  user: { login: 'fixture-user', name: process.env.FIXTURE_CHANGED ? 'Changed Person' : 'Ada Lovelace' },
+  'user/orgs': [],
+  'user/repos': [[{ name: 'SampleProject', owner: { login: 'fixture-user' } }]],
+};
+if (!(args[1] in data)) process.exit(1);
+console.log(JSON.stringify(data[args[1]]));
+`;
+    await fs.writeFile(path.join(bin, 'gh'), gh, { mode: 0o700 });
+    return { ...h.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
+  }
+
+  it.skipIf(process.platform === 'win32')('previews and applies only selected candidates through the real CLI', async () => {
+    const h = await freshHome('guided-selected');
+    const env = await fakeGitHub(h);
+    const preview = await runCli(['import', '--guided', '--sources', 'github', '--json'], { env, cwd: h.repo });
+    expect(preview.code).toBe(0);
+    const report = JSON.parse(preview.stdout);
+    const selected = report.candidates.find((c: { canonical: string }) => c.canonical === 'Ada Lovelace');
+    const applied = await runCli(['import', '--guided', '--sources', 'github', '--yes', '--json',
+      '--preview-id', report.previewId, '--accept', selected.id], { env, cwd: h.repo });
+    expect(applied.code).toBe(0);
+    const stored = await fs.readFile(h.globalPath, 'utf8');
+    expect(stored).toContain('Ada Lovelace');
+    expect(stored).toContain('import:github');
+    expect(stored).not.toContain('SampleProject');
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses changed source contents between real CLI preview and apply', async () => {
+    const h = await freshHome('guided-changed');
+    const env = await fakeGitHub(h);
+    const preview = await runCli(['import', '--guided', '--sources', 'github', '--json'], { env, cwd: h.repo });
+    expect(preview.code).toBe(0);
+    const report = JSON.parse(preview.stdout);
+    const applied = await runCli(['import', '--guided', '--sources', 'github', '--yes', '--json',
+      '--preview-id', report.previewId, '--accept', report.candidates[0].id],
+      { env: { ...env, FIXTURE_CHANGED: '1' }, cwd: h.repo });
+    expect(applied.code).toBe(1);
+    expect(applied.stderr).toMatch(/changed since preview/);
+    await expect(fs.access(h.globalPath)).rejects.toThrow();
+  });
+});

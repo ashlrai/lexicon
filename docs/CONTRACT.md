@@ -77,7 +77,7 @@ Executable lookup without spawning `which` / `where`.
 
 ## src/core/types.ts
 Dependency-free shared types.
-- `TermCategory = 'brand' | 'person' | 'product' | 'acronym' | 'identifier' | 'place' | 'other'`, `TermScope = 'global' | 'project'`, `TermSource = 'user' | 'harvest:repo' | 'harvest:git' | 'harvest:package' | 'import' | 'learned' | 'pack'` (`TERM_SOURCES`; `'pack'` is written by `installPack`).
+- `TermCategory = 'brand' | 'person' | 'product' | 'acronym' | 'identifier' | 'place' | 'other'`, `TermScope = 'global' | 'project'`, `TermSource = 'user' | 'harvest:repo' | 'harvest:git' | 'harvest:package' | 'import' | 'import:contacts' | 'import:calendar' | 'import:github' | 'learned' | 'pack'` (`TERM_SOURCES`; `'pack'` is written by `installPack`).
 - `Term { canonical; aliases: string[]; phonetic?; category?; caseSensitive?; scope?; source?; notes?; createdAt?; hits?; never?: string[] }`.
 - `LexiconSettings { minConfidence?; phonetic?; fuzzy?; protectedWords?; skipCode? }`, `Lexicon { version: 1; terms: Term[]; settings? }`.
 - `LexiconFile { path; scope; lexicon; exists }`, `LoadedLexicon { merged; global: LexiconFile; project?: LexiconFile; projectTrust?: 'trusted' | 'untrusted' | 'changed'; skippedProject?: LexiconFile }`.
@@ -164,6 +164,13 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 - `installPack(name, opts?): Promise<InstallPackResult>` adds each term with `addTerm` and `source: 'pack'`, so a term the user already has keeps its own spelling, aliases and source and only gains the pack's aliases. Goes through the same trust gate as any other write (throws `ProjectTrustError` for an unreviewed project file).
 - `uninstallPack(name, opts?): Promise<UninstallPackResult>` removes the pack's terms from that file unless the user has edited them since (recorded hits, aliases or never-words beyond the pack's); those stay and come back as `kept`. For a project file the hits come from `readProjectHits`, not from the file, so a term this user relies on is still kept. Each file is read, decided about and written inside its own `withLexiconLock`, and the project and global files are taken one at a time rather than both at once: reading outside the lock lost a racing `lexicon add` in thirteen of thirteen runs, and one lock around both files is the shape that would risk a wait with no end.
 - `findPackageRoot(from = import.meta.url)`: see the collision note under `src/util/package.ts`.
+
+## src/core/import-sources.ts and import-preview.ts
+- `IMPORT_SOURCE_IDS = ['contacts','calendar','github','email','slack']`; `IMPLEMENTED_IMPORT_SOURCES` contains contacts, calendar and github. `ImportSourceId` is the union. Email and Slack are descriptive unavailable entries; no OAuth or mailbox integration is implemented.
+- `VocabImportSource { id; label; privacy; implemented; checkAvailable(deps?): Promise<SourceAvailability>; harvest(deps?): Promise<HarvestCandidate[]> }`. `SourceAvailability { available; reason? }`. `ImportSourceDeps` injects platform/home, filesystem probes/readers and an exec function; `resolveImportSourceDeps(deps?)` fills defaults. `listImportSources()` returns the source descriptors; `getImportSource(id)` rejects unknown ids.
+- `harvestImportSources(ids, deps?, { limit? }): Promise<HarvestCandidate[]>` reads only the chosen implemented, available sources, merges candidates case-insensitively and limits the result (default50). `mergeCandidates(candidates)` preserves losing spellings as aliases and sorts by count/name. Contacts uses the local AddressBook sqlite source; Calendar uses local `.ics` files; GitHub uses existing `gh` auth and paginated JSON arrays slurped into one flattened array.
+- `applyImportCandidates(candidates, StoreOptions & { scope? }): Promise<ApplyImportResult { added; merged; skipped; path? }>` writes only the supplied approved candidates through `addTerm`, stamps their import source and observes the normal project trust gate. It does not harvest.
+- `importCandidatePreview(candidate)` returns canonical/category/source/aliases/evidence/count. `importCandidateId(candidate)` hashes that complete data with SHA256. `importPreviewDigest(sources, candidates, destination)` binds the selected source ids, destination and all candidate data. `selectImportCandidates(candidates, approvedIds)` preserves the approved subset and rejects an absent id.
 
 ## src/core/normalize.ts
 - `normalize(text: string, lexicon: Lexicon, opts?: NormalizeOptions): NormalizeResult` applies findReplacements, preserves surrounding whitespace/punctuation, writes the canonical exactly as stored. `dryRun` returns `changed: false` with the candidate `replacements`; callers inspect `replacements.length`.
@@ -351,8 +358,13 @@ Everything the CLI knows about Claude Code's own files, extracted from `commands
 
 ## src/cli/cmd-import.ts
 - `MAX_IMPORT_BYTES` (8 MB; files and stdin over it are refused before parsing).
-- `registerImportCommands(program, io)` adds `import <file> [format]` (`-` reads stdin) with `--format <f>` (default auto), `--project`, `--dry-run`, `--source <s>`, `--category <c>` (applied to terms lacking one), `--json`.
+- `registerImportCommands(program, io)` adds `import [file]` (`-` reads stdin) with `--format <f>` (default auto), `--project`, `--dry-run`, `--source <s>`, `--category <c>` (applied to terms lacking one), `--json`, plus `--guided`, `--sources`, `--limit`, `--yes`, `--preview-id`, `--accept` and `--home` for the guided flow.
 - `runImport(file, opts: ImportCliOptions, io, readInput?): Promise<number>` the testable handler. Prints a canonical/aliases/status table and `imported N terms (M new, K merged, S skipped)`; skipped reasons go to stderr; unknown format lists `IMPORT_FORMAT_INFO` and returns 1. `--dry-run` reads the target file to label new vs merged without writing. Project-scope writes go through `addTerm` and therefore the trust gate.
+
+## src/cli/cmd-import-guided.ts
+- `runImportGuided(opts: ImportGuidedOptions, io, deps?: ImportGuidedDeps): Promise<number>` handles `import --guided`. Options include sources/limit/dryRun/project/yes/home/json/globalPath plus previewId/accept. Dependencies add an injected prompter and interactive probe to ImportSourceDeps.
+- Interactive mode lists each source's privacy description, asks for the source selection, then reviews candidates before writing. Noninteractive reads require explicit `--sources`, including JSON/dry-run previews; rejected defaults cause no availability probes or source reads. Only named sources are probed.
+- `--json --sources <list>` returns `ImportGuidedReport { sources; candidates: { id; canonical; category; source; aliases; evidence; count; accepted? }[]; previewId?; dryRun; added; merged; skipped; path? }` without writing. Noninteractive apply needs `--yes --sources <list> --preview-id <digest> --accept <ids>`; it rechecks the complete source/destination digest and refuses drift or unknown candidate ids before writing. An empty explicit acceptance imports nothing. Project writes remain subject to trust.
 
 ## src/cli/cmd-install.ts
 `lexicon install [client]` (`install-claude` stays in index.ts). Registered via `registerInstallCommands(program, io)`.
@@ -423,7 +435,7 @@ Claude Code hook entry for two events, dispatched on the payload's `hook_event_n
 
 ## src/mcp (server.ts, shared.ts, tools/)  (bin: lexicon-mcp; bundled as plugin/mcp-server.mjs)
 
-`server.ts` exports only `ServerOptions`, `createServer` and `main`; it owns the server object, the two resources, the two prompts and the stdio wiring. The nineteen tools live in `tools/*.ts`, one registrar per module, collected in registration order by `TOOL_REGISTRARS` in `tools/index.ts`:
+`server.ts` exports only `ServerOptions`, `createServer` and `main`; it owns the server object, the two resources, the two prompts and the stdio wiring. The twenty tools live in `tools/*.ts`, one registrar per module, collected in registration order by `TOOL_REGISTRARS` in `tools/index.ts`:
 
 | module | registrar | tools |
 | --- | --- | --- |
@@ -431,7 +443,7 @@ Claude Code hook entry for two events, dispatched on the payload's `hook_event_n
 | `tools/harvest.ts` | `registerHarvestTools` | `harvest_repo`, `suggest_terms`, `apply_suggestion` |
 | `tools/trust.ts` | `registerTrustTools` | `trust_project` |
 | `tools/setup.ts` | `registerSetupTools` | `lexicon_doctor`, `install_client`, `setup_lexicon`, `serve_status` |
-| `tools/packs.ts` | `registerPackTools` | `list_packs`, `add_pack`, `import_dictionary` |
+| `tools/packs.ts` | `registerPackTools` | `list_packs`, `add_pack`, `import_vocabulary`, `import_dictionary` |
 
 `scripts/check-facts.mjs` asks the built server for this list over stdio and fails if a doc states a different count, so add the row here when a tool is added.
 
@@ -453,6 +465,8 @@ Claude Code hook entry for two events, dispatched on the payload's `hook_event_n
   - `lexicon_doctor({})` -> `DoctorReport` from `runDoctorReport({ cwd })` (src/cli/commands.ts).
   - `install_client({ client: 'claude'|'codex'|'cursor'|'windsurf'|'gemini'|'vscode'|'claude-desktop', apply?, scope?: 'user'|'project' })` -> `{ client, scope, applied, ok, output, stderr?, next? }`; runs `runInstall` (cmd-install.ts) with a buffered `IO` and `cliDir` from `cliDirForInstall()`; `apply` omitted or false is a preview that writes nothing (`next` tells the model to confirm with the user first).
   - `trust_project({ action: 'status'|'trust'|'untrust', path? })`; `path` resolves against `cwd`, default `resolvePaths({ cwd }).project`. `status` -> `{ action, registry, trustAll, trusted: TrustListEntry[], path?, status: TrustStatus|'none'|'missing'|'invalid', termCount?, preview?, more?, error? }`; `trust` parses first (invalid -> error `refusing to trust an invalid lexicon: ...`, missing -> error), then `trustProject` -> `{ action, path, previousStatus, status: 'trusted', result: 'trusted'|'updated'|'re-pinned', sha256 (12 chars), trustedAt, registry, termCount, preview, more, note }`; `untrust` -> `{ action, path, removed, registry, summary }`. `preview` is `trustPreview(file)`: the first 25 terms as `{ canonical, firstAlias?, aliasCount, hasNotes }` with every string through `sanitizeForDisplay`; notes are never quoted.
+  - `list_packs({ registry? })` lists vendored packs and optionally community index entries with installed flags. `add_pack({ name; scope?; registry?; confirm?; previewDigest? })` retains the starter-pack flow. A community ref requires its registry: preview returns every term field (including notes, phonetic, never and caseSensitive) plus a digest binding raw bytes, entry metadata and destination. Confirmation requires that same digest; changed metadata/bytes/scope or an absent digest is rejected before installation.
+  - `import_vocabulary({ sources?, apply?, scope?, previewToken?, approvedCandidateIds? })`: omitted sources returns source descriptions without availability probes or harvesting. Explicit chosen sources produce candidate data/ids and a previewToken in process memory (five-minute lifetime, maximum20 pending previews). Applying requires the same sources/scope/destination and an explicit approved id list. Unknown ids, expired tokens and destination changes fail before writes. Only the saved approved candidates are written; apply never re-harvests. A token is consumed before writing; after a failure or restart, preview again. No preview names/tokens are persisted.
   - `import_dictionary({ path?, content? (max MAX_IMPORT_BYTES), format?: ImportFormat (default 'auto'), scope?, dryRun? })` -> the `ImportReport` JSON `runImport` (cmd-import.ts) prints with `json: true` (`content` is fed through the injected reader with `file: path ?? '-'`, so a `path` given alongside `content` only serves format detection); throws `pass path or content` when neither is given and relays the CLI's stderr when it exits non-zero.
   - `suggest_terms({ cwd?, limit? })` -> `TermSuggestion[]` from `suggestTerms({ loaded, history: await loadVoiceHistory(loaded.global.path), cwd, limit? })`; a failing `loadVoiceHistory` is logged and treated as empty.
   - `apply_suggestion({ suggestion: { kind, canonical, alias?, aliases?, category?, reason?, confidence?, evidence?, count? }, scope? })`: `alias` -> `addTerm({ canonical, aliases: [alias], source: 'user' })` (merge); `term` -> `addTerm` with the suggestion's `aliases` (trimmed, empties dropped), else `[alias]`, else `suggestAliases(canonical)`, plus its `category`; `never` -> `addTerm({ canonical, aliases: [], never: [alias] })`; `stale` -> `removeTerm(canonical)`. `alias`/`never` without an alias is an error. Returns `{ kind, canonical, term?, path?, created?, removed?, summary }`.

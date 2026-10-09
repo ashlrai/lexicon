@@ -211,6 +211,21 @@ function githubDeps(): Required<ImportSourceDeps> {
 describe('github source', () => {
   const source = getImportSource('github');
 
+  it('slurps and flattens multiple actual gh pagination arrays', async () => {
+    const base = githubDeps();
+    const paged = { ...base, exec: (file: string, args: readonly string[]) => {
+      if (args.includes('--paginate')) {
+        expect(args).toContain('--slurp');
+        if (args[1] === 'orgs/ashlrai/members') return JSON.stringify([[{ login: 'first-member' }], [{ login: 'second-member' }]]);
+        if (args[1] === 'orgs/ashlrai/repos') return JSON.stringify([[{ name: 'FirstRepo' }], [{ name: 'SecondRepo' }]]);
+        return JSON.stringify([[{ name: 'FirstPersonalRepo' }], [{ name: 'SecondPersonalRepo' }]]);
+      }
+      return base.exec(file, args);
+    } };
+    const names = (await source.harvest(paged)).map((c) => c.canonical);
+    expect(names).toEqual(expect.arrayContaining(['first-member', 'second-member', 'FirstRepo', 'SecondRepo', 'FirstPersonalRepo', 'SecondPersonalRepo']));
+  });
+
   it('is unavailable without gh auth', async () => {
     const d = deps({ platform: 'linux', exec: () => { throw new Error('not found'); } });
     expect(await source.checkAvailable(d)).toEqual({

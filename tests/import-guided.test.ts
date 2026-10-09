@@ -6,7 +6,7 @@
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runImportGuided } from '../src/cli/cmd-import-guided.js';
 import type { ImportGuidedDeps } from '../src/cli/cmd-import-guided.js';
 import type { ImportSourceDeps } from '../src/core/index.js';
@@ -92,14 +92,61 @@ describe('runImportGuided', () => {
     expect(existsSync(globalPath)).toBe(false);
   });
 
-  it('--yes --sources writes every candidate with the import source tag', async () => {
+  it('--yes applies only selected ids from an unchanged preview', async () => {
+    const preview = makeIO();
+    expect(await runImportGuided({ json: true, sources: 'github', globalPath }, preview, fakeDeps())).toBe(0);
+    const report = JSON.parse(preview.out);
+    const selected = report.candidates.find((c: { canonical: string }) => c.canonical === 'Mason Wyatt');
     const io = makeIO();
-    const code = await runImportGuided({ yes: true, sources: 'github', globalPath }, io, fakeDeps());
-    expect(code).toBe(0);
-    expect(io.out).toContain('new');
+    expect(await runImportGuided({ yes: true, sources: 'github', globalPath,
+      previewId: report.previewId, accept: selected.id }, io, fakeDeps())).toBe(0);
     const text = readFileSync(globalPath, 'utf8');
     expect(text).toContain('Mason Wyatt');
     expect(text).toContain('import:github');
+    expect(text).not.toContain('dotfiles');
+  });
+
+  it.each([{ yes: true }, { yes: true, json: true }, { dryRun: true }, { json: true }])(
+    'rejects default sources before any availability probe or read: %j', async (flags) => {
+      const exec = vi.fn(githubExec);
+      const exists = vi.fn(() => false);
+      const io = makeIO();
+      expect(await runImportGuided({ ...flags, globalPath }, io, fakeDeps({ exec, exists }))).toBe(1);
+      expect(exec).not.toHaveBeenCalled();
+      expect(exists).not.toHaveBeenCalled();
+      expect(existsSync(globalPath)).toBe(false);
+    });
+
+  it('refuses a write without candidate approval', async () => {
+    const exec = vi.fn(githubExec);
+    const io = makeIO();
+    expect(await runImportGuided({ yes: true, json: true, sources: 'github', globalPath }, io, fakeDeps({ exec }))).toBe(1);
+    expect(exec).not.toHaveBeenCalled();
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('refuses changed source contents after preview without writing', async () => {
+    const io = makeIO();
+    await runImportGuided({ json: true, sources: 'github', globalPath }, io, fakeDeps());
+    const preview = JSON.parse(io.out);
+    const changed = fakeDeps({ exec: (file, args) => args[1] === 'user' ?
+      JSON.stringify({ login: 'changed-user', name: 'Changed Person' }) : githubExec(file, args) });
+    const applied = makeIO();
+    expect(await runImportGuided({ yes: true, sources: 'github', globalPath,
+      previewId: preview.previewId, accept: preview.candidates[0].id }, applied, changed)).toBe(1);
+    expect(applied.err).toMatch(/changed since preview/);
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('refuses candidate ids absent from the preview', async () => {
+    const io = makeIO();
+    await runImportGuided({ json: true, sources: 'github', globalPath }, io, fakeDeps());
+    const preview = JSON.parse(io.out);
+    const applied = makeIO();
+    expect(await runImportGuided({ yes: true, sources: 'github', globalPath,
+      previewId: preview.previewId, accept: '00'.repeat(32) }, applied, fakeDeps())).toBe(1);
+    expect(applied.err).toMatch(/absent from the preview/);
+    expect(existsSync(globalPath)).toBe(false);
   });
 
   it('interactive: choose sources, then approve each candidate', async () => {

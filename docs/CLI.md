@@ -286,11 +286,15 @@ Options:
   --guided               guided vocabulary import: pick sources (contacts,
                          calendar, github) and approve each candidate before it
                          is written
-  --sources <list>       with --guided: comma-separated sources to harvest
-                         (default: every available one)
+  --sources <list>       with --guided: explicit comma-separated sources to
+                         harvest (required non-interactively)
   --limit <n>            with --guided: max candidates to review (default: 50)
-  -y, --yes              with --guided: accept every candidate without prompting
-                         (requires --sources)
+  -y, --yes              with --guided: apply approved candidate ids (requires
+                         --sources, --preview-id and --accept)
+  --preview-id <digest>  with --guided --yes: digest returned by the prior JSON
+                         preview
+  --accept <ids>         with --guided --yes: comma-separated candidate ids the
+                         user approved
   --home <dir>           with --guided: treat <dir> as the home directory
                          (mainly for tests)
   --json                 print the result as JSON

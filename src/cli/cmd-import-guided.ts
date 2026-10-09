@@ -21,6 +21,9 @@ import {
   getImportSource,
   harvestImportSources,
   isTrusted,
+  importCandidateId,
+  importPreviewDigest,
+  selectImportCandidates,
   listImportSources,
   resolveImportSourceDeps,
   resolvePaths,
@@ -51,6 +54,10 @@ export interface ImportGuidedOptions extends CommonOptions {
   project?: boolean;
   /** Take every default without prompting; requires --sources. */
   yes?: boolean;
+  /** Digest from a prior preview, required for non-interactive writes. */
+  previewId?: string;
+  /** Comma-separated candidate ids approved from that preview. */
+  accept?: string;
   /** Treat <dir> as the home directory (mainly for tests). */
   home?: string;
   /** Print the result as JSON (a preview unless --yes --sources are also passed). */
@@ -66,7 +73,8 @@ export interface ImportGuidedDeps extends ImportSourceDeps {
 
 export interface ImportGuidedReport {
   sources: { id: ImportSourceId; label: string; available: boolean; reason?: string; chosen: boolean }[];
-  candidates: { canonical: string; category: TermCategory; source: string; aliases: string[]; evidence: string[]; count: number; accepted?: boolean }[];
+  previewId?: string;
+  candidates: { id: string; canonical: string; category: TermCategory; source: string; aliases: string[]; evidence: string[]; count: number; accepted?: boolean }[];
   dryRun: boolean;
   added: number;
   merged: number;
@@ -80,7 +88,7 @@ function parseSourceList(value: string | undefined): ImportSourceId[] {
   if (value === undefined) return [...IMPLEMENTED_IMPORT_SOURCES];
   const ids = splitList(value).map((s) => s.toLowerCase());
   // getImportSource throws on an unknown id with the expected list.
-  return ids.map((id) => getImportSource(id).id);
+  return [...new Set(ids.map((id) => getImportSource(id).id))];
 }
 
 function showImportCandidate(io: IO, c: HarvestCandidate, index: number, total: number): void {
@@ -119,16 +127,36 @@ export async function runImportGuided(
   } catch (err) {
     return fail(io, err);
   }
-  const limit = opts.limit !== undefined ? Number.parseInt(opts.limit, 10) : 50;
+  const limit = opts.limit !== undefined ? Number(opts.limit) : 50;
   if (!Number.isInteger(limit) || limit < 0) {
     io.stderr(`lexicon: --limit must be a non-negative integer, got "${safe(opts.limit ?? '')}"\n`);
     return 1;
   }
 
+  const interactive = !opts.yes && !opts.json && (deps.isInteractive ?? isInteractive)();
+  // JSON and dry-run still read source data: neither authorizes default sources.
+  if (!interactive && opts.sources === undefined) {
+    io.stderr('lexicon: --yes needs --sources <list>; all non-interactive previews and imports must name their sources.\n');
+    return 1;
+  }
+  if (opts.yes && !opts.dryRun && (opts.previewId === undefined || opts.accept === undefined)) {
+    io.stderr('lexicon: preview with --json --sources first, then pass --preview-id and --accept candidate ids with --yes.\n');
+    return 1;
+  }
+  if (opts.previewId !== undefined && !/^[a-f0-9]{64}$/.test(opts.previewId)) {
+    io.stderr('lexicon: --preview-id must be the digest from the candidate preview.\n');
+    return 1;
+  }
+  const dryRun = (opts.dryRun ?? false) || Boolean(opts.json && !opts.yes);
+
   // Availability first, so the checklist only offers what can actually run.
   const sources: VocabImportSource[] = listImportSources();
   const availability = new Map<ImportSourceId, { available: boolean; reason?: string }>();
-  for (const s of sources) availability.set(s.id, await s.checkAvailable(sdeps));
+  for (const s of sources) {
+    availability.set(s.id, interactive || wanted.includes(s.id)
+      ? await s.checkAvailable(sdeps)
+      : { available: false, reason: 'not selected; availability was not probed' });
+  }
 
   const report: ImportGuidedReport = {
     sources: sources.map((s) => ({
@@ -139,22 +167,14 @@ export async function runImportGuided(
       chosen: false,
     })),
     candidates: [],
-    dryRun: false,
+    dryRun,
     added: 0,
     merged: 0,
     skipped: 0,
   };
 
-  const interactive = !opts.yes && !opts.json && (deps.isInteractive ?? isInteractive)();
   if (!interactive && !opts.yes && !opts.dryRun && !opts.json) {
-    io.stderr('lexicon: not a terminal. Pass --sources <list> with --yes to import non-interactively, or --dry-run to preview the candidates.\n');
-    return 1;
-  }
-  if (opts.yes && opts.sources === undefined && !opts.dryRun && !opts.json) {
-    // The privacy posture, stated as a flag rule: reading contacts, calendars
-    // or GitHub because a default said so would be exactly the access this
-    // command promises to ask about first.
-    io.stderr('lexicon: --yes needs --sources <list> (contacts, calendar, github): the wizard never reads your address book, calendars or GitHub on a default.\n');
+    io.stderr('lexicon: not a terminal. Preview with --sources <list> --json, then approve candidate ids with --yes.\n');
     return 1;
   }
 
@@ -211,7 +231,7 @@ export async function runImportGuided(
   const scope = opts.project ? 'project' : 'global';
   // Check the trust gate up front so the user is not asked twenty questions
   // only to have the first write refused.
-  if (opts.project && !opts.dryRun) {
+  if (opts.project && !dryRun) {
     const projectPath = resolvePaths({ cwd }).project;
     if (projectPath && existsSync(projectPath)) {
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, { cwd });
@@ -224,6 +244,7 @@ export async function runImportGuided(
 
   const candidates = await harvestImportSources(chosen, sdeps, { limit });
   report.candidates = candidates.map((c) => ({
+    id: importCandidateId(c),
     canonical: c.canonical,
     category: c.category,
     source: c.source,
@@ -232,8 +253,12 @@ export async function runImportGuided(
     count: c.count,
   }));
 
-  const dryRun = (opts.dryRun ?? false) || Boolean(opts.json && !opts.yes);
-  report.dryRun = dryRun;
+  const paths = resolvePaths(storeOpts);
+  report.previewId = importPreviewDigest(chosen, candidates, JSON.stringify({ scope, cwd, ...paths }));
+  if (!interactive && !dryRun && report.previewId !== opts.previewId) {
+    io.stderr('lexicon: source contents or destination changed since preview; preview again before importing.\n');
+    return 1;
+  }
   if (candidates.length === 0) {
     if (opts.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
     else line(io, dim('no candidates found in the chosen sources.'));
@@ -312,9 +337,12 @@ export async function runImportGuided(
       if (!deps.createPrompter) p.close();
     }
   } else {
-    // --yes with --sources: every candidate is accepted, because the user
-    // named the sources explicitly.
-    accepted.push(...work);
+    try {
+      accepted.push(...selectImportCandidates(work, splitList(opts.accept ?? '')));
+      skipped = work.length - accepted.length;
+    } catch (err) {
+      return fail(io, err);
+    }
   }
 
   let result;

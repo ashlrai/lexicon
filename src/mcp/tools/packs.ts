@@ -4,6 +4,7 @@
  * another dictation tool.
  */
 import { z } from 'zod';
+import { createHash, randomUUID } from 'node:crypto';
 import { isRecord } from '../../util/json.js';
 import {
   IMPLEMENTED_IMPORT_SOURCES,
@@ -15,6 +16,11 @@ import {
   installRegistryPack,
   installedPacks,
   isRegistryRef,
+  importCandidateId,
+  importCandidatePreview,
+  importPreviewDigest,
+  selectImportCandidates,
+  resolvePaths,
   listImportSources,
   listPacks,
   loadRegistryIndex,
@@ -24,6 +30,7 @@ import {
   parseRegistryRef,
   verifyPackChecksum,
 } from '../../core/index.js';
+import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
 import { IMPORT_FORMAT_VALUES, bufferIO, guarded, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
@@ -32,6 +39,14 @@ const REGISTRY_SOURCE_DESC =
   'Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.';
 
 export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
+  // Short-lived process memory only: neither previewed personal names nor
+  // tokens are persisted. Applying uses this exact snapshot, never a re-harvest.
+  const imports = new Map<string, { at: number; sources: string[]; destination: string; candidates: HarvestCandidate[] }>();
+  const destination = (scope: string | undefined) => JSON.stringify({ cwd, scope: scope ?? 'global', ...resolvePaths({ cwd }) });
+  const pruneImports = () => {
+    for (const [token, preview] of imports) if (Date.now() - preview.at > 300_000) imports.delete(token);
+    while (imports.size >= 20) imports.delete(imports.keys().next().value!);
+  };
   server.registerTool(
     'list_packs',
     {
@@ -85,9 +100,10 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
         registry: z.string().optional().describe(REGISTRY_SOURCE_DESC + ' Required for community refs.'),
         confirm: z.boolean().optional().describe('Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing.'),
+        previewDigest: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Community packs: digest returned by the approved full-content preview; required with confirm.'),
       },
     },
-    async ({ name, scope, registry, confirm }) =>
+    async ({ name, scope, registry, confirm, previewDigest }) =>
       guarded(async () => {
         if (isRegistryRef(name)) {
           if (!registry) throw new Error('a community pack ref needs the registry parameter (the index it was listed from)');
@@ -104,15 +120,21 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
             homepage: entry.homepage,
             version: entry.version,
             checksum: entry.checksum,
-            terms: pack.lexicon.terms.map((t) => ({ canonical: t.canonical, aliases: t.aliases, category: t.category })),
+            terms: pack.lexicon.terms.map((t) => ({ ...t })),
           };
+          const digest = createHash('sha256').update(JSON.stringify({
+            name, registry, destination: destination(scope), entry, preview,
+            bytes: createHash('sha256').update(bytes).digest('hex'),
+          })).digest('hex');
           if (confirm !== true) {
             return textResult({
               preview,
+              previewDigest: digest,
               installed: false,
-              next: 'Show this term list to the user; call again with confirm: true only after they approve it.',
+              next: 'Show this term list to the user; call again with confirm: true and this previewDigest only after they approve every term field.',
             });
           }
+          if (previewDigest !== digest) throw new Error('community pack contents or destination changed, or preview digest is missing; preview again before installing');
           const result = await installRegistryPack(entry, base, registry, {
             cwd,
             ...(scope !== undefined ? { scope } : {}),
@@ -149,64 +171,57 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
       description:
         'Guided vocabulary import: harvest candidate terms from where the user\'s proper nouns live (contacts: macOS Contacts names; calendar: macOS Calendar event titles and attendee names; github: the gh CLI\'s username, org members and repo names). ' +
         'Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email/Slack are not implemented (reading mail needs new OAuth scopes, which is a conversation, not a default). ' +
-        'Call without apply first: that is a preview that lists each source\'s availability and the merged candidates (canonical, aliases, evidence) and writes nothing. Show it to the user, let them strike candidates, then call again with apply: true and sources limited to what they chose. ' +
+        'Ask which sources to read first, then pass explicit sources without apply to preview candidates. Show the candidate contents and ids; apply requires the returned previewToken and only approvedCandidateIds. Applying consumes the same snapshot without reading the sources again. ' +
         'Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible.',
       inputSchema: {
         sources: z
           .array(z.enum(IMPLEMENTED_IMPORT_SOURCES))
           .optional()
-          .describe('Sources to harvest (default: every available one). Ask the user which of contacts, calendar, github they want before applying.'),
+          .describe('Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting.'),
         apply: z.boolean().optional().describe('false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview.'),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
+        previewToken: z.string().optional().describe('Token from the approved preview; required to apply. Expires after five minutes or a server restart.'),
+        approvedCandidateIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe('Only candidate ids approved by the user from that preview; required to apply, empty means import nothing.'),
       },
     },
-    async ({ sources, apply, scope }) =>
+    async ({ sources, apply, scope, previewToken, approvedCandidateIds }) =>
       guarded(async () => {
-        const wanted = sources ?? [...IMPLEMENTED_IMPORT_SOURCES];
-        const availability = [];
-        for (const s of listImportSources()) {
-          const checked = await s.checkAvailable();
-          availability.push({
-            id: s.id,
-            label: s.label,
-            privacy: s.privacy,
-            implemented: s.implemented,
-            available: checked.available,
-            ...(checked.reason ? { reason: checked.reason } : {}),
-            chosen: wanted.includes(s.id as (typeof IMPLEMENTED_IMPORT_SOURCES)[number]),
-          });
-        }
-        const chosen = wanted.filter((id) => {
-          const s = getImportSource(id);
-          return s.implemented;
-        });
-        const candidates = await harvestImportSources(chosen, {}, { limit: 50 });
-        const preview = {
-          sources: availability,
-          candidates: candidates.map((c) => ({
-            canonical: c.canonical,
-            category: c.category,
-            source: c.source,
-            aliases: c.suggestedAliases,
-            evidence: c.evidence,
-            count: c.count,
-          })),
-        };
-        if (apply !== true) {
+        pruneImports();
+        if (apply === true) {
+          if (sources === undefined || previewToken === undefined || approvedCandidateIds === undefined) {
+            throw new Error('apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview');
+          }
+          const saved = imports.get(previewToken);
+          if (!saved || saved.destination !== destination(scope) ||
+              JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify(saved.sources)) {
+            throw new Error('preview is missing, expired, or belongs to different sources/destination; preview again');
+          }
+          const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
+          imports.delete(previewToken);
+          const result = await applyImportCandidates(accepted, { cwd, ...(scope !== undefined ? { scope } : {}) });
           return textResult({
-            ...preview,
-            applied: false,
-            next: 'Show the candidates to the user, let them strike any, then call again with apply: true and sources limited to what they chose.',
+            applied: true, candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
+            added: result.added, merged: result.merged, path: result.path,
+            summary: `imported ${result.added + result.merged} terms (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ''}`,
           });
         }
-        const result = await applyImportCandidates(candidates, { cwd, ...(scope !== undefined ? { scope } : {}) });
-        return textResult({
-          ...preview,
-          applied: true,
-          added: result.added,
-          merged: result.merged,
-          path: result.path,
-          summary: `imported ${result.added + result.merged} terms (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ''}`,
+        const wanted = [...new Set(sources ?? [])];
+        const availability: { id: ImportSourceId; label: string; privacy: string; implemented: boolean; available: boolean; reason?: string; chosen: boolean }[] = [];
+        for (const source of listImportSources()) {
+          const chosen = wanted.includes(source.id);
+          const checked = chosen ? await source.checkAvailable() : { available: false, reason: 'not selected; availability was not probed' };
+          availability.push({ id: source.id, label: source.label, privacy: source.privacy,
+            implemented: source.implemented, ...checked, chosen });
+        }
+        const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
+        const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: 50 });
+        const token = randomUUID();
+        imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
+        return textResult({ sources: availability,
+          candidates: candidates.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
+          previewToken: token, previewDigest: importPreviewDigest(wanted, candidates, destination(scope)), applied: false,
+          next: sources === undefined ? 'Ask which sources the user wants read, then preview with explicit sources.' :
+            'Show the contents and ids to the user; call with apply: true, the same sources/scope, previewToken and only approvedCandidateIds.',
         });
       }),
   );

@@ -429,10 +429,12 @@ const calendarSource: VocabImportSource = {
 // ---------------------------------------------------------------------------
 
 function ghJson(d: Required<ImportSourceDeps>, args: readonly string[]): unknown {
-  const out = tryExec(d, 'gh', [...args, '--jq', '.']);
+  const paginated = args.includes('--paginate');
+  const out = tryExec(d, 'gh', [...args, ...(paginated ? ['--slurp'] : []), '--jq', '.']);
   if (out === undefined) return undefined;
   try {
-    return JSON.parse(out);
+    const parsed: unknown = JSON.parse(out);
+    return paginated && Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
   } catch {
     return undefined;
   }
