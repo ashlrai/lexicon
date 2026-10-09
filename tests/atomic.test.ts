@@ -317,11 +317,20 @@ describe('the in-process queue is bounded', () => {
     const dir = await scratch();
     const target = path.join(dir, 'lexicon.yaml');
     const order: string[] = [];
+    let holderEntered!: () => void;
+    const holderIsInside = new Promise<void>((resolve) => {
+      holderEntered = resolve;
+    });
+    const first = withFileLock(target, async () => {
+      holderEntered();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      order.push('first');
+    });
+    // Physical-path resolution is asynchronous, so submission order does not
+    // prove acquisition order. Establish the holder before adding its waiter.
+    await holderIsInside;
     await Promise.all([
-      withFileLock(target, async () => {
-        await new Promise((resolve) => setTimeout(resolve, 80));
-        order.push('first');
-      }),
+      first,
       withFileLock(target, async () => {
         order.push('second');
       }),
