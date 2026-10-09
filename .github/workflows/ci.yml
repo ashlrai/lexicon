@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload the browser extension
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: lexicon-extension
           path: extension/dist
