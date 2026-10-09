@@ -45,7 +45,7 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           cp extension/lexicon-extension.zip extension/lexicon-extension-firefox.zip release/
           node scripts/release-contract.mjs checksum release "$VERSION" ubuntu
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: lexicon-release-ubuntu
           path: release/*
@@ -78,7 +78,7 @@ jobs:
           cp apps/macos/build/LexiconBar.app.zip release/
           version=$(node scripts/release-contract.mjs source . "$GITHUB_REF_NAME")
           node scripts/release-contract.mjs checksum release "$version" macos
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: lexicon-release-macos
           path: release/*
