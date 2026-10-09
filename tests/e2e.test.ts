@@ -740,6 +740,40 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: install', () => {
     expect(r.stdout).toContain('lexicon install codex');
     expect(r.stdout).toContain('lexicon install cursor');
   });
+
+  it('reinstall cursor refreshes its launch command while preserving custom roots and client options', async () => {
+    const h = await freshHome('install-cursor-options');
+    const file = path.join(h.home, '.cursor', 'mcp.json');
+    const options = {
+      env: { LEXICON_PATH: path.join(h.home, 'custom-root', 'lexicon.yaml') },
+      disabled: true,
+      timeout: 12345,
+      autoApprove: [],
+    };
+    const other = { command: 'other-tool', args: ['keep-me'] };
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const original = JSON.stringify({ theme: 'dark', mcpServers: {
+      other,
+      lexicon: { command: 'old-node', args: ['/old/server.js'], ...options },
+    } });
+    await fs.writeFile(file, original, 'utf8');
+
+    const preview = await runCli(['install', 'cursor', '--home', h.home], { env: h.env });
+    expect(preview.code, preview.stderr).toBe(0);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+    const first = await runCli(['install', 'cursor', '--home', h.home, '--apply'], { env: h.env });
+    expect(first.code, first.stderr).toBe(0);
+    const updated = await fs.readFile(file, 'utf8');
+    const parsed = JSON.parse(updated);
+    expect(parsed.theme).toBe('dark');
+    expect(parsed.mcpServers.other).toEqual(other);
+    expect(parsed.mcpServers.lexicon).toMatchObject({ ...options, command: 'node' });
+    expect(parsed.mcpServers.lexicon.args).toEqual([expect.stringMatching(/server[^/]*\.m?js$/)]);
+    const second = await runCli(['install', 'cursor', '--home', h.home, '--apply'], { env: h.env });
+    expect(second.code, second.stderr).toBe(0);
+    expect(second.stdout).toContain('already present, nothing changed');
+    expect(await fs.readFile(file, 'utf8')).toBe(updated);
+  });
 });
 
 // ---------------------------------------------------------------------------

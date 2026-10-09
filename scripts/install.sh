@@ -4,8 +4,8 @@
 #   curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 #
 # Needs Node 20 or newer. Installs from the npm registry when the package is
-# published there, otherwise straight from GitHub at the latest tag (falls
-# back to main). POSIX sh only: no bashisms.
+# published there, otherwise from GitHub at its latest stable release tag.
+# Failed discovery stops without installing a mutable branch. POSIX sh only.
 #
 #   LEXICON_NO_SETUP=1   skip `lexicon setup` afterwards
 #   LEXICON_REF=<ref>    install this git ref instead of the latest tag
@@ -48,20 +48,35 @@ say "node v${NODE_VERSION} ok"
 
 # 2. Install ------------------------------------------------------------------
 SPEC=""
+EXPECTED_VERSION=""
 if [ -n "${LEXICON_REF:-}" ]; then
   SPEC="github:${REPO}#${LEXICON_REF}"
-elif npm view "$PKG" version >/dev/null 2>&1; then
-  SPEC="$PKG"
 else
-  TAG=""
-  if have curl; then
-    TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
-      | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-  fi
-  if [ -n "$TAG" ]; then
-    SPEC="github:${REPO}#${TAG}"
+  # Pin the actual version we discovered; @latest could change between this
+  # lookup and npm install. Validate responses before constructing a spec.
+  if NPM_VERSION="$(npm view "$PKG" version 2>/dev/null)" && \
+    node -e 'process.exit(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(process.argv[1]) ? 0 : 1)' -- "$NPM_VERSION"; then
+    EXPECTED_VERSION="$NPM_VERSION"
+    SPEC="${PKG}@${NPM_VERSION}"
   else
-    SPEC="github:${REPO}#main"
+    have curl || fail "could not resolve a published version; install curl and retry, or set LEXICON_REF to an explicit reviewed ref"
+    RELEASE_JSON="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null)" \
+      || fail "could not resolve a published version; retry later or set LEXICON_REF to an explicit reviewed ref"
+    TAG="$(printf '%s' "$RELEASE_JSON" | node -e '
+      let raw = "";
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", chunk => { raw += chunk; });
+      process.stdin.on("end", () => {
+        try {
+          const release = JSON.parse(raw);
+          const tag = release.tag_name;
+          if (release.draft === true || release.prerelease === true || typeof tag !== "string" || !/^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag)) process.exit(1);
+          process.stdout.write(tag);
+        } catch { process.exit(1); }
+      });
+    ')" || fail "latest release did not identify a stable version; retry later or set LEXICON_REF to an explicit reviewed ref"
+    EXPECTED_VERSION="${TAG#v}"
+    SPEC="github:${REPO}#${TAG}"
   fi
 fi
 say "installing ${SPEC} (npm install -g)..."
@@ -81,7 +96,11 @@ if ! have lexicon; then
   fi
   fail "lexicon not on PATH"
 fi
-say "installed lexicon $(lexicon --version)"
+INSTALLED_VERSION="$(lexicon --version)" || fail "the installed lexicon did not answer --version"
+if [ -n "$EXPECTED_VERSION" ] && [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then
+  fail "lexicon on PATH reports ${INSTALLED_VERSION}, expected ${EXPECTED_VERSION}; fix PATH before running setup"
+fi
+say "installed lexicon ${INSTALLED_VERSION}"
 
 # 4. Setup --------------------------------------------------------------------
 if [ "${LEXICON_NO_SETUP:-0}" = "1" ]; then

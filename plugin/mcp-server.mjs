@@ -55847,16 +55847,27 @@ function deepEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 function mergeServerIntoJson(current, key, entry) {
-  const base = isRecord(current) ? structuredClone(current) : {};
+  if (!isRecord(current)) {
+    throw new Error("client config is not an object; refusing to overwrite it");
+  }
+  const base = structuredClone(current);
   const existingMap = base[key];
   if (existingMap !== void 0 && !isRecord(existingMap)) {
     throw new Error(`"${key}" is not an object; refusing to overwrite it`);
   }
   const servers = isRecord(existingMap) ? existingMap : {};
-  if (deepEqual(servers.lexicon, entry)) {
+  const existingEntry = servers.lexicon;
+  if (existingEntry !== void 0 && !isRecord(existingEntry)) {
+    throw new Error('"lexicon" is not an object; refusing to overwrite it');
+  }
+  if (isRecord(existingEntry) && (["url", "httpUrl", "serverUrl", "sseUrl"].some((key2) => key2 in existingEntry) || existingEntry.type !== void 0 && existingEntry.type !== "stdio")) {
+    throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
+  }
+  const mergedEntry = { ...isRecord(existingEntry) ? existingEntry : {}, ...structuredClone(entry) };
+  if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
   }
-  servers.lexicon = structuredClone(entry);
+  servers.lexicon = mergedEntry;
   base[key] = servers;
   return { next: base, changed: true };
 }
@@ -55918,7 +55929,7 @@ async function applyJson(target) {
   if (read.error !== void 0) {
     throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
   }
-  const { next, changed } = mergeServerIntoJson(read.value ?? {}, target.key, target.entry);
+  const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
   if (!changed) return "unchanged";
   await writeJsonFile(target.file, next);
   return read.exists ? "updated" : "created";
