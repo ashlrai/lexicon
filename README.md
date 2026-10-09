@@ -123,9 +123,9 @@ selected before inspection, and candidates are reviewed before writes. The
 install script, npm and Homebrew fetch the package itself. See
 [SECURITY.md](SECURITY.md).
 
-The guided GitHub importer is implemented in this source candidate. Source
-version `0.5.5` is separate from the public npm `latest` version `0.5.4`
-requeried on 2026-10-09. These source notes do not establish publication,
+The guided GitHub importer is implemented in repository source and is part
+of the pending [0.5.5 release candidate](https://github.com/ashlrai/lexicon/pull/25).
+Public npm `latest` remained `0.5.4` when requeried on 2026-10-09. These source notes do not establish publication,
 installation or a successful authenticated import on your machine.
 
 ## Why
