@@ -54897,10 +54897,10 @@ function registryIdentity(opts) {
   const paths = resolvePaths(opts);
   const file2 = opts.scope === "project" ? paths.project ?? defaultProjectPath(opts.cwd) : paths.global;
   try {
-    return realpathSync(file2);
+    return realpathSync.native(file2);
   } catch {
     try {
-      return path10.join(realpathSync(path10.dirname(file2)), path10.basename(file2));
+      return path10.join(realpathSync.native(path10.dirname(file2)), path10.basename(file2));
     } catch {
       return path10.resolve(file2);
     }

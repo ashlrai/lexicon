@@ -293,8 +293,8 @@ export interface RegistryStoreOptions extends StoreOptions {
 function registryIdentity(opts: RegistryStoreOptions): string {
   const paths = resolvePaths(opts);
   const file = opts.scope === 'project' ? paths.project ?? defaultProjectPath(opts.cwd) : paths.global;
-  try { return realpathSync(file); } catch {
-    try { return path.join(realpathSync(path.dirname(file)), path.basename(file)); } catch { return path.resolve(file); }
+  try { return realpathSync.native(file); } catch {
+    try { return path.join(realpathSync.native(path.dirname(file)), path.basename(file)); } catch { return path.resolve(file); }
   }
 }
 

@@ -226,6 +226,27 @@ terms:
 });
 
 describe('install / update / remove round trip', () => {
+  it('shares project registry identity across raw and OS-canonical directory aliases', async () => {
+    // Windows tmp paths may contain an 8.3 user-directory spelling; async
+    // realpath expands it. On macOS this also exercises /var -> /private/var.
+    const cwd = path.join(dir, 'canonical-project');
+    mkdirSync(path.join(cwd, '.git'), { recursive: true });
+    const canonicalCwd = await fs.realpath(cwd);
+    const raw = { globalPath, cwd, scope: 'project' as const };
+    const canonical = { globalPath, cwd: canonicalCwd, scope: 'project' as const };
+    expect(registryDir(raw)).toBe(registryDir(canonical));
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    const entry = entryFor(index);
+    await installRegistryPack(entry, base, indexPath, raw);
+    expect(registryDir(raw)).toBe(registryDir(canonical));
+    expect(cachedPackPath(entry.ref, raw)).toBe(cachedPackPath(entry.ref, canonical));
+    expect(await installedRegistryPacks(canonical)).toEqual([entry.ref]);
+    expect(await readRegistryState(canonical)).toEqual(await readRegistryState(raw));
+    await uninstallRegistryPack(entry.ref, undefined, canonical);
+    expect(await installedRegistryPacks(raw)).toEqual([]);
+  });
+
   it('keeps the same pack separate in two projects and global, including updates/removal', async () => {
     const a = path.join(dir, 'project-a'); const b = path.join(dir, 'project-b');
     mkdirSync(path.join(a, '.git'), { recursive: true }); mkdirSync(path.join(b, '.git'), { recursive: true });
