@@ -54875,6 +54875,24 @@ function findRegistryEntry(index, ref) {
   }
   return entry;
 }
+var RegistryPackStateSchema = external_exports.object({
+  checksum: external_exports.string().regex(/^[0-9a-f]{64}$/i),
+  version: external_exports.string().max(32),
+  pinnedVersion: external_exports.string().max(32).optional(),
+  indexSource: external_exports.string().min(1),
+  installedAt: external_exports.string().datetime()
+}).strict();
+function installedStateDigest(state) {
+  const parsed = RegistryPackStateSchema.safeParse(state);
+  if (!parsed.success) throw new Error("invalid installed pack state; inspect it before approving an update");
+  return sha256Hex(JSON.stringify({
+    checksum: parsed.data.checksum,
+    version: parsed.data.version,
+    pinnedVersion: parsed.data.pinnedVersion ?? null,
+    indexSource: parsed.data.indexSource,
+    installedAt: parsed.data.installedAt
+  }));
+}
 function registryIdentity(opts) {
   const paths = resolvePaths(opts);
   const file2 = opts.scope === "project" ? paths.project ?? defaultProjectPath(opts.cwd) : paths.global;
@@ -54959,12 +54977,12 @@ async function snapshot(file2) {
     throw err;
   }
 }
-async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstalledChecksum) {
+async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstalledChecksum, expectedInstalledStateDigest) {
   opts = { ...opts, globalPath: resolvePaths(opts).global };
   const target = await resolveScopeWritePath(opts.scope ?? "global", opts);
   return withLexiconLock(target, async () => {
     const state = await readRegistryState(opts);
-    if (expectedInstalledChecksum !== void 0 && state.packs[entry.ref]?.checksum !== expectedInstalledChecksum) {
+    if (expectedInstalledChecksum !== void 0 && (state.packs[entry.ref]?.checksum !== expectedInstalledChecksum || !expectedInstalledStateDigest || installedStateDigest(state.packs[entry.ref]) !== expectedInstalledStateDigest)) {
       throw new Error("installed pack changed after preview; preview and approve it again");
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];

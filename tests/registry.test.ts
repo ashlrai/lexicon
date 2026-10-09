@@ -28,6 +28,7 @@ import {
   uninstallRegistryPack,
   validateCommunityPack,
   verifyPackChecksum,
+  writeRegistryState,
 } from '../src/core/index.js';
 import type { RegistryIndex, RegistryIndexEntry } from '../src/core/index.js';
 
@@ -278,6 +279,38 @@ describe('install / update / remove round trip', () => {
     expect(await readRegistryState({ globalPath })).toEqual(state);
   });
 
+  it.each(['global', 'project'] as const)('rolls back %s removal when the metadata commit fails', async (scope) => {
+    const cwd = path.join(dir, 'project');
+    mkdirSync(path.join(cwd, '.git'), { recursive: true });
+    const opts = { globalPath, cwd, scope };
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    const entry = entryFor(index);
+    const installed = await installRegistryPack(entry, base, indexPath, opts);
+    const previous = readFileSync(installed.path, 'utf8');
+    const state = await readRegistryState(opts);
+    const cache = readFileSync(cachedPackPath(entry.ref, opts), 'utf8');
+    const statePath = realpathSync(path.join(registryDir(opts), 'registry.json'));
+    const rename = fs.rename;
+    let fail = true;
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === statePath && fail) {
+        fail = false;
+        throw new Error('synthetic removal metadata failure');
+      }
+      return rename(from, to);
+    });
+    await expect(uninstallRegistryPack(entry.ref, undefined, opts))
+      .rejects.toThrow('synthetic removal metadata failure');
+    expect(readFileSync(installed.path, 'utf8')).toBe(previous);
+    expect(readFileSync(cachedPackPath(entry.ref, opts), 'utf8')).toBe(cache);
+    expect(await readRegistryState(opts)).toEqual(state);
+    // The restored project must remain trusted and support a subsequent removal.
+    expect((await uninstallRegistryPack(entry.ref, undefined, opts)).removed.sort())
+      .toEqual(['Echocardiogram', 'Metoprolol']);
+    expect(await installedRegistryPacks(opts)).toEqual([]);
+  });
+
   it('copies approved bytes and rejects payload drift without fetching a replacement', async () => {
     const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
     const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
@@ -285,6 +318,31 @@ describe('install / update / remove round trip', () => {
     await expect(installRegistryPack(entry, base, indexPath, { globalPath, approvedBytes: Buffer.from(PACK_V2) }, { fetchBytes })).rejects.toThrow('checksum mismatch');
     expect(fetchBytes).not.toHaveBeenCalled();
     expect(await installedRegistryPacks({ globalPath })).toEqual([]);
+  });
+
+  it('rejects a stale update after a version pin changes without changing installed bytes', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    const entry = entryFor(index);
+    await installRegistryPack(entry, base, indexPath, { globalPath });
+    writeFileSync(path.join(dir, 'cardiology.yaml'), PACK_V2);
+    const index2 = writeIndex(dir, [{ file: 'cardiology.yaml', version: '2' }]);
+    const [preview] = await previewRegistryUpdates([entry.ref], index2, { globalPath });
+    expect(preview.status).toBe('available');
+    const legacyPreview = { ...preview };
+    delete legacyPreview.installedStateDigest;
+    expect((await applyRegistryUpdate(legacyPreview, index2, { globalPath })).status).toBe('failed');
+    const state = await readRegistryState({ globalPath });
+    state.packs[entry.ref].pinnedVersion = '1';
+    await writeRegistryState(state, { globalPath });
+    const previous = readFileSync(globalPath, 'utf8');
+    const cache = readFileSync(cachedPackPath(entry.ref, { globalPath }), 'utf8');
+    const applied = await applyRegistryUpdate(preview, index2, { globalPath });
+    expect(applied.status).toBe('failed');
+    expect(applied.error).toContain('preview and approve it again');
+    expect(readFileSync(globalPath, 'utf8')).toBe(previous);
+    expect(readFileSync(cachedPackPath(entry.ref, { globalPath }), 'utf8')).toBe(cache);
+    expect(await readRegistryState({ globalPath })).toEqual(state);
   });
 
   it('shows alias-only updates and all applied note/pronunciation/case metadata', async () => {

@@ -35021,6 +35021,13 @@ var RegistryIndexSchema = external_exports.object({
   version: external_exports.literal(1).default(1),
   packs: external_exports.array(RegistryIndexEntrySchema).default([])
 });
+var RegistryPackStateSchema = external_exports.object({
+  checksum: external_exports.string().regex(/^[0-9a-f]{64}$/i),
+  version: external_exports.string().max(32),
+  pinnedVersion: external_exports.string().max(32).optional(),
+  indexSource: external_exports.string().min(1),
+  installedAt: external_exports.string().datetime()
+}).strict();
 
 // src/hooks/user-prompt-submit.ts
 var SESSION_CONTEXT_MAX_CHARS = 4e3;
