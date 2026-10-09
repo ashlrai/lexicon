@@ -95,7 +95,8 @@ terms:
     aliases: [eleven labs, eleven laps, 11 labs]
   - canonical: vLLM
     category: product
-    aliases: [vellum, v l l m]
+    aliases: [v l l m]
+    never: [vellum]
     notes: the inference server
   - canonical: OpenRouter
     category: brand

@@ -17,7 +17,6 @@ import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
 import {
-  MAX_TOGGLE_SECONDS,
   PROVISIONAL_TTL_MS,
   captureSeconds,
   claimState,
@@ -29,11 +28,8 @@ import {
   isStaleProvisional,
   readState,
   recorderLogPath,
-  resolveInput,
-  startRecorder,
   stateFilePath,
   stopRecorder,
-  touchPrivateFile,
   voiceDir,
   wavHasAudio,
   writeState,
@@ -595,42 +591,37 @@ describe('lexicon voice --toggle start race', () => {
 
   it('two presses that race (second starts while the first is spawning) produce one recorder and one state file', async () => {
     const h = await harness();
-    // The first press has claimed the provisional record and is inside its
-    // spawn call: no pid on the state file yet. Setting this up directly is
-    // deliberate. The old version of this test fired the second press from
-    // inside `spawn`, which races the second press's read against the first
-    // press's pid rewrite with no guaranteed ordering; on Node 20 the write
-    // can win, the second press then stops the first instead of double
-    // tapping, and CI went red on 2026-09-30.
-    const startedAt = '2026-09-19T12:00:00.000Z';
-    const wav = path.join(voiceDir(h.globalPath), `recording-${startedAt.replace(/[:.]/g, '-')}.wav`);
-    expect(await claimState(h.globalPath, { wav, startedAt })).toBe(true);
-
-    // The second press lands while the first is still spawning: the
-    // provisional record makes it idempotent. "recording", no new recorder.
-    const second = await runVoiceToggle(h.opts, h.io, h.deps);
-    expect(second).toBe(EXIT_OK);
-    expect(h.out).toEqual(['recording\n']);
-    expect(h.spawnCalls).toEqual([]);
-
-    // The first press's spawn returns and it rewrites the claim with the pid.
-    // This replays startDetached's tail with the real primitives, in order.
-    const logFile = recorderLogPath(h.globalPath);
-    await touchPrivateFile(wav);
-    await touchPrivateFile(logFile);
-    const child = startRecorder({
-      ffmpeg: '/fake/bin/ffmpeg',
-      spawn: h.deps.spawn as VoiceSpawn,
-      input: await resolveInput({ platform: 'darwin', ffmpeg: '/fake/bin/ffmpeg', exec: h.deps.exec as VoiceExec }),
-      wav,
-      seconds: MAX_TOGGLE_SECONDS,
-      detached: true,
-      logFile,
+    // Hold the real first toggle immediately before its atomic pid publication.
+    // The second toggle must finish against the provisional record while the
+    // first is still blocked. Both execute the production handler.
+    let unblock!: () => void;
+    let reached!: () => void;
+    const blocked = new Promise<void>((resolve) => { unblock = resolve; });
+    const entered = new Promise<void>((resolve) => { reached = resolve; });
+    const rename = fs.rename.bind(fs);
+    const publication = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === stateFilePath(h.globalPath)) {
+        reached();
+        await blocked;
+      }
+      return rename(from, to);
     });
-    expect(child.pid).toBe(4242);
-    await writeState(h.globalPath, { pid: child.pid as number, wav, startedAt });
-    await sweepVoiceDir(h.globalPath, wav, new Date(startedAt).getTime());
-    h.io.stdout('recording\n');
+    const first = runVoiceToggle(h.opts, h.io, h.deps);
+    try {
+      await entered;
+      const provisional = await readState(h.globalPath);
+      expect(provisional?.pid).toBeUndefined();
+      expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+      expect(h.spawnCalls).toHaveLength(1);
+      expect(await readState(h.globalPath)).toEqual(provisional);
+      unblock();
+      expect(await first).toBe(EXIT_OK);
+      expect(h.out).toEqual(['recording\n', 'recording\n']);
+    } finally {
+      unblock();
+      await first;
+      publication.mockRestore();
+    }
 
     expect(h.spawnCalls).toHaveLength(1);
     expect(h.kills).toEqual([]);

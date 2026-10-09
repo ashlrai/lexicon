@@ -1,6 +1,6 @@
 # Starter packs
 
-Four curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 176 terms and 377 aliases across developer tooling, AI, business and dictation apps.
+Four curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 176 terms and 376 aliases across developer tooling, AI, business and dictation apps.
 
 ```bash
 lexicon pack list                    # what exists, and which you have

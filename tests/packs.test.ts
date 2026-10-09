@@ -82,6 +82,13 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 
 describe('shipped packs', () => {
+  it('protects ordinary vellum prose while correcting spelled-out vLLM', async () => {
+    const pack = await loadPack('ai');
+    const prose = 'print the invitation on vellum';
+    expect(normalize(prose, pack.lexicon).output).toBe(prose);
+    expect(normalize('serve this model with v l l m', pack.lexicon).output).toBe('serve this model with vLLM');
+  });
+
   it('live in <package root>/packs and are all listed, sorted', async () => {
     const root = findPackageRoot();
     expect(root).toBeDefined();
