@@ -13,6 +13,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The interactive import checklist shows source descriptions before checking availability; cancellation performs no profile/provider probes, and only selected sources are checked afterward.
 - Community registry state and caches are isolated by global/project destination. Installation and removal restore their prior state after metadata failure; update previews bind the complete installation record and show alias-only, pronunciation, case and note changes. MCP installs use exactly the approved preview bytes.
 - **Flaky voice test** (`tests/voice.test.ts`, "two presses that race"): the second press fired from inside the fake `spawn`, racing its `readState` against the first press's pid rewrite with no guaranteed ordering; CI went red on 2026-09-30. Rewritten with a publication barrier: both real toggle handlers run while the first pid rewrite is held until the second has observed the provisional record. Synthetic ffmpeg capture tests wait for actual flushed audio before killing the recorder.
 - `tests/lexicon-lock.test.ts` derived the expected removed-count from the loaded pack instead of a hardcoded 70, which the pack expansion above had broken.

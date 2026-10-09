@@ -149,28 +149,13 @@ export async function runImportGuided(
   }
   const dryRun = (opts.dryRun ?? false) || Boolean(opts.json && !opts.yes);
 
-  // Availability first, so the checklist only offers what can actually run.
+  // Source descriptions are safe to show before consent. Availability checks
+  // can inspect local profiles or invoke gh, so defer them until selection.
   const sources: VocabImportSource[] = listImportSources();
-  const availability = new Map<ImportSourceId, { available: boolean; reason?: string }>();
-  for (const s of sources) {
-    availability.set(s.id, interactive || wanted.includes(s.id)
-      ? await s.checkAvailable(sdeps)
-      : { available: false, reason: 'not selected; availability was not probed' });
-  }
-
+  const implemented = sources.filter((s) => s.implemented);
   const report: ImportGuidedReport = {
-    sources: sources.map((s) => ({
-      id: s.id,
-      label: s.label,
-      available: availability.get(s.id)?.available ?? false,
-      ...(availability.get(s.id)?.reason ? { reason: availability.get(s.id)?.reason } : {}),
-      chosen: false,
-    })),
-    candidates: [],
-    dryRun,
-    added: 0,
-    merged: 0,
-    skipped: 0,
+    sources: sources.map((s) => ({ id: s.id, label: s.label, available: false, chosen: false })),
+    candidates: [], dryRun, added: 0, merged: 0, skipped: 0,
   };
 
   if (!interactive && !opts.yes && !opts.dryRun && !opts.json) {
@@ -178,24 +163,14 @@ export async function runImportGuided(
     return 1;
   }
 
-  const implemented = sources.filter((s) => s.implemented);
-  const unavailableChosen = wanted.filter((id) => !(availability.get(id)?.available ?? false));
-  for (const id of unavailableChosen) {
-    const s = implemented.find((x) => x.id === id) ?? sources.find((x) => x.id === id);
-    const reason = availability.get(id)?.reason ?? 'unavailable';
-    if (!opts.json) line(io, dim(`${s?.label ?? id}: skipped (${reason})`));
-  }
-  let chosen = wanted.filter((id) => availability.get(id)?.available ?? false);
-
+  let chosen = wanted;
   if (interactive) {
-    if (!opts.json) {
-      for (const s of sources.filter((x) => !x.implemented)) {
-        line(io, dim(`${s.label}: ${availability.get(s.id)?.reason ?? 'not supported yet'}`));
-      }
+    for (const s of sources.filter((source) => !source.implemented)) {
+      line(io, dim(`${s.label}: ${s.privacy}`));
     }
-    const offer = implemented.filter((s) => availability.get(s.id)?.available);
+    const offer = implemented.filter((s) => opts.sources === undefined || wanted.includes(s.id));
     if (offer.length === 0) {
-      io.stderr('lexicon: no import source is available on this machine (need macOS Contacts/Calendar, or gh auth login).\n');
+      io.stderr('lexicon: no implemented import source selected.\n');
       return 1;
     }
     const prompter = deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout }));
@@ -204,13 +179,11 @@ export async function runImportGuided(
       line(io, bold('Where do your proper nouns live?'));
       for (const s of offer) line(io, dim(`   ${s.label}: ${s.privacy}`));
       line(io);
-      const picked = await p.choose(
+      chosen = [...new Set(await p.choose(
         'sources to import from',
-        offer.map((s) => ({ label: `${s.label}`, value: s.id })),
+        offer.map((s) => ({ label: s.label, value: s.id })),
         { multi: true },
-      );
-      chosen = picked;
-      report.sources.forEach((r) => { r.chosen = chosen.includes(r.id); });
+      ))];
       if (chosen.length === 0) {
         line(io, dim('nothing chosen; nothing imported.'));
         return 0;
@@ -218,8 +191,23 @@ export async function runImportGuided(
     } finally {
       if (!deps.createPrompter) p.close();
     }
-  } else {
-    report.sources.forEach((r) => { r.chosen = chosen.includes(r.id); });
+  }
+
+  const availability = new Map<ImportSourceId, { available: boolean; reason?: string }>();
+  for (const s of sources) {
+    availability.set(s.id, chosen.includes(s.id) ? await s.checkAvailable(sdeps)
+      : { available: false, reason: 'not selected; availability was not probed' });
+  }
+  for (const id of chosen.filter((id) => !availability.get(id)?.available)) {
+    const s = sources.find((source) => source.id === id);
+    if (!opts.json) line(io, dim(`${s?.label ?? id}: skipped (${availability.get(id)?.reason ?? 'unavailable'})`));
+  }
+  chosen = chosen.filter((id) => availability.get(id)?.available ?? false);
+  for (const source of report.sources) {
+    const status = availability.get(source.id)!;
+    source.available = status.available;
+    source.chosen = chosen.includes(source.id);
+    if (status.reason) source.reason = status.reason;
   }
 
   if (chosen.length === 0) {

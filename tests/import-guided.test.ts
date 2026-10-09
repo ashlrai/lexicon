@@ -149,10 +149,31 @@ describe('runImportGuided', () => {
     expect(existsSync(globalPath)).toBe(false);
   });
 
+  it.each([undefined, 'calendar'])('interactive cancellation never probes sources before consent: %s', async (sources) => {
+    const exec = vi.fn(() => '{}');
+    const readDir = vi.fn(() => []);
+    const exists = vi.fn(() => false);
+    const p = { ...scripted([]), choose: async () => {
+      expect(exec).not.toHaveBeenCalled();
+      expect(readDir).not.toHaveBeenCalled();
+      expect(exists).not.toHaveBeenCalled();
+      return [];
+    } };
+    const code = await runImportGuided({ sources, globalPath }, makeIO(), fakeDeps({
+      platform: 'darwin', exec, readDir, exists,
+      isInteractive: () => true, createPrompter: () => p,
+    }));
+    expect(code).toBe(0);
+    expect(exec).not.toHaveBeenCalled();
+    expect(readDir).not.toHaveBeenCalled();
+    expect(exists).not.toHaveBeenCalled();
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
   it('interactive: choose sources, then approve each candidate', async () => {
     const io = makeIO();
     const p = scripted([
-      [1], // sources checklist: github only
+      [3], // sources checklist: github only
       'n', // first candidate: skip
       'a', // add all remaining
     ]);
@@ -170,10 +191,33 @@ describe('runImportGuided', () => {
     expect(io.out).toContain('4 new');
   });
 
+  it('interactive selection probes only the chosen source after the checklist', async () => {
+    const exec = vi.fn(githubExec);
+    const readDir = vi.fn(() => []);
+    const exists = vi.fn(() => false);
+    const p = scripted([[3]]);
+    const choose = p.choose.bind(p);
+    p.choose = async (...args) => {
+      expect(exec).not.toHaveBeenCalled();
+      expect(readDir).not.toHaveBeenCalled();
+      expect(exists).not.toHaveBeenCalled();
+      return choose(...args);
+    };
+    expect(await runImportGuided({ globalPath, dryRun: true }, makeIO(), fakeDeps({
+      platform: 'darwin', exec, readDir, exists,
+      isInteractive: () => true, createPrompter: () => p,
+    }))).toBe(0);
+    expect(exec).toHaveBeenCalledWith('gh', ['auth', 'status']);
+    expect(exec.mock.calls.every(([file]) => file === 'gh')).toBe(true);
+    expect(readDir).not.toHaveBeenCalled();
+    expect(exists).not.toHaveBeenCalled();
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
   it('interactive: quitting writes only what was accepted', async () => {
     const io = makeIO();
     const p = scripted([
-      [1], // sources checklist: github only
+      [3], // sources checklist: github only
       'y', // first candidate: yes
       'q', // quit
     ]);

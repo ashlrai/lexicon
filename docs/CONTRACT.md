@@ -372,7 +372,7 @@ Everything the CLI knows about Claude Code's own files, extracted from `commands
 
 ## src/cli/cmd-import-guided.ts
 - `runImportGuided(opts: ImportGuidedOptions, io, deps?: ImportGuidedDeps): Promise<number>` handles `import --guided`. Options include sources/limit/dryRun/project/yes/home/json/globalPath plus previewId/accept. Dependencies add an injected prompter and interactive probe to ImportSourceDeps.
-- Interactive mode lists each source's privacy description, asks for the source selection, then reviews candidates before writing. Noninteractive reads require explicit `--sources`, including JSON/dry-run previews; rejected defaults cause no availability probes or source reads. Only named sources are probed.
+- Interactive mode lists source privacy descriptions without probing local profiles or providers, asks for source selection, then probes and harvests only those choices and reviews candidates before writing. Cancellation probes nothing. Noninteractive reads require explicit `--sources`, including JSON/dry-run previews; rejected defaults cause no availability probes or source reads. Only named sources are probed.
 - `--json --sources <list>` returns `ImportGuidedReport { sources; candidates: { id; canonical; category; source; aliases; evidence; count; accepted? }[]; previewId?; dryRun; added; merged; skipped; path? }` without writing. Noninteractive apply needs `--yes --sources <list> --preview-id <digest> --accept <ids>`; it rechecks the complete source/destination digest and refuses drift or unknown candidate ids before writing. An empty explicit acceptance imports nothing. Project writes remain subject to trust.
 
 ## src/cli/cmd-install.ts
