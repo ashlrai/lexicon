@@ -132,14 +132,17 @@ none) and creates the login service only with `serve: true`.
 
 **Guided vocabulary import.** `lexicon import --guided` reads only sources
 selected by the operator. Contacts and calendar are local OS sources. The
-GitHub source uses the existing `gh` login and calls `api.github.com` for
-profile names/logins, organization membership, organization member logins and
-repository names. It requests no new OAuth scopes. Candidate previews can
+GitHub source calls the GitHub API through the existing `gh` configuration
+and login (normally `api.github.com`) for profile names/logins, organization
+membership, organization member logins and repository names. It requests no new OAuth scopes. Candidate previews can
 contain personal or organization names; a CLI/MCP client receiving them may
 share them with its model, so source consent precedes inspection and candidate
-approval precedes writes. Non-interactive previews must name their sources;
-applying requires the matching preview ID and explicitly accepted candidate
-IDs. No email or chat importer is implemented. The importer is reachable in
+approval precedes writes. Interactive CLI import approves candidates directly
+in its review prompts. Non-interactive CLI previews must name their sources;
+applying requires `--yes`, the matching `--preview-id` and explicit `--accept`
+candidate IDs. The `import_vocabulary` MCP tool instead requires the returned
+`previewToken`, explicit sources and `approvedCandidateIds`, and consumes that
+saved snapshot without rereading sources. No email or chat importer is implemented. The importer is reachable in
 this `0.5.5` source candidate; public npm `latest` remained `0.5.4` when
 requeried on 2026-10-09. Source implementation is not authenticated-import or
 published-release acceptance.

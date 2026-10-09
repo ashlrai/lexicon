@@ -116,9 +116,9 @@ and extension paths do not send transcripts to a remote service. Explicit
 network operations include `lexicon voice` fetching a whisper model on first
 use, `lexicon pack` fetching community packs from a `--registry` URL with
 checksum verification, and opting into the GitHub source in
-`lexicon import --guided`. That source uses your existing `gh` login to call
-`api.github.com` for profile, organization membership, member-login and
-repository-name metadata; no new OAuth scopes are requested. The source is
+`lexicon import --guided`. That source calls the GitHub API through your existing `gh` configuration
+and login (normally `api.github.com`) for profile, organization membership,
+member-login and repository-name metadata; no new OAuth scopes are requested. The source is
 selected before inspection, and candidates are reviewed before writes. The
 install script, npm and Homebrew fetch the package itself. See
 [SECURITY.md](SECURITY.md).
