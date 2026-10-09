@@ -1,0 +1,31 @@
+# Example community pack registry index.
+#
+# A registry is an index file, not a service. Host this file anywhere a URL or
+# a path reaches (a git repo, a gist, a static site) and point lexicon at it:
+#
+#   lexicon pack search cardiology --registry https://example.com/packs/index.yaml
+#   lexicon pack add example/cardiology --registry https://example.com/packs/index.yaml
+#
+# Publishing a pack is three steps:
+#   1. Write the pack YAML (same schema as packs/*.yaml, plus `author`).
+#   2. Run `lexicon pack validate <file>`: the ordinary-word guard and the
+#      schema, the same bar CI should enforce on the pack's own repo.
+#   3. Add an entry below. `checksum` is the sha256 of the pack FILE bytes:
+#      `shasum -a 256 cardiology.yaml`. `url` may be absolute (https:// or
+#      file://) or relative to this index file.
+#
+# Updates key on checksum, not on `version`: when the file changes, its entry's
+# checksum changes, and `lexicon pack update` offers the new file for review.
+# `version` is only the display string ("2", "2026.10.08").
+version: 1
+packs:
+  - author: example
+    name: cardiology
+    title: Cardiology terms
+    description: Common cardiology drugs, procedures and devices with the misspellings STT produces for them.
+    homepage: https://example.com/packs/cardiology
+    version: "1"
+    terms: 3
+    aliases: 8
+    checksum: f4469b3efced0482aebc1a87b3ca556112a89869085dcea3e347272c5e779da1
+    url: ./packs/cardiology.yaml

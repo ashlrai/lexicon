@@ -793,7 +793,7 @@ function safeSuggest(canonical: string): string[] {
  *     guess, and a wrong guess about a word boundary is what rewrites "the
  *     lexicon bar is a nice place to get a drink".
  */
-function harvestAliases(canonical: string, category: TermCategory): string[] {
+export function harvestAliases(canonical: string, category: TermCategory): string[] {
   if (category === 'identifier') return [];
   const aliases = safeSuggest(canonical);
   if (/[\s._\-/]/.test(canonical)) return aliases;

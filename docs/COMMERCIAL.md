@@ -268,7 +268,7 @@ which features a binary is willing to execute.
 Everything that exists today and everything that would be built for the local
 experience tomorrow:
 
-- The matcher, the CLI, the MCP server (nineteen tools), the Claude Code plugin
+- The matcher, the CLI, the MCP server (twenty tools), the Claude Code plugin
   and hooks, the browser extension, the macOS menu bar app, the loopback HTTP
   API, the clipboard daemon, local voice, the starter packs, fifteen exporters
   and eight importers, the importable library.
@@ -397,7 +397,7 @@ lose a month.
 The landing page must not blur this line, so it is stated once, precisely.
 
 **Shipped, working, in the public repository today:** the matcher; the CLI (25
-commands); the MCP server (nineteen tools, two resources, two prompts); the
+commands); the MCP server (twenty tools, two resources, two prompts); the
 Claude Code plugin with `SessionStart` and `UserPromptSubmit` hooks; the
 browser extension; the macOS menu bar app; the loopback HTTP API; the clipboard
 daemon; local voice via ffmpeg and whisper.cpp; four starter packs (176 terms);

@@ -51,6 +51,20 @@ const mocks = vi.hoisted(() => ({
   // suggest_terms (built alongside; reached through the core index)
   suggestTerms: vi.fn(),
   loadVoiceHistory: vi.fn(),
+  // packs / registry
+  listPacks: vi.fn(),
+  installPack: vi.fn(),
+  loadRegistryIndex: vi.fn(),
+  findRegistryEntry: vi.fn(),
+  downloadPack: vi.fn(),
+  verifyPackChecksum: vi.fn(),
+  parsePackText: vi.fn(),
+  installRegistryPack: vi.fn(),
+  // import_vocabulary
+  listImportSources: vi.fn(),
+  getImportSource: vi.fn(),
+  harvestImportSources: vi.fn(),
+  applyImportCandidates: vi.fn(),
 }));
 
 // CLI handlers the agent-native tools reuse. Each is mocked at its module so
@@ -246,7 +260,7 @@ function textOf(result: unknown): string {
 }
 
 describe('lexicon MCP server', () => {
-  it('lists the nineteen tools', async () => {
+  it('lists the twenty tools', async () => {
     const { client, close } = await connect();
     try {
       const { tools } = await client.listTools();
@@ -266,6 +280,7 @@ describe('lexicon MCP server', () => {
           'install_client',
           'trust_project',
           'import_dictionary',
+          'import_vocabulary',
           'suggest_terms',
           'apply_suggestion',
           'setup_lexicon',
@@ -751,6 +766,186 @@ describe('lexicon MCP server', () => {
       } finally {
         await close();
       }
+    });
+
+    describe('import_vocabulary', () => {
+      const fakeSource = (id: string) => ({
+        id,
+        label: `${id} source`,
+        privacy: `Reads ${id}.`,
+        implemented: true,
+        checkAvailable: async () => ({ available: id === 'github' }),
+        harvest: async () => [],
+      });
+      const githubSource = fakeSource('github');
+      const candidate = {
+        canonical: 'Mason Wyatt',
+        category: 'person',
+        source: 'import:github',
+        evidence: ['GitHub profile name'],
+        count: 1,
+        suggestedAliases: [],
+      };
+
+      beforeEach(() => {
+        mocks.listImportSources.mockReturnValue([fakeSource('contacts'), fakeSource('calendar'), githubSource]);
+        mocks.getImportSource.mockImplementation((id: string) => fakeSource(id));
+        mocks.harvestImportSources.mockResolvedValue([candidate]);
+        mocks.applyImportCandidates.mockResolvedValue({ added: 1, merged: 0, skipped: 0, path: '/fake/global/lexicon.yaml' });
+      });
+
+      it('previews availability and candidates without writing', async () => {
+        const { client, close } = await connect();
+        try {
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: {} });
+          expect(result.isError).toBe(false);
+          const payload = JSON.parse(textOf(result)) as {
+            applied: boolean;
+            sources: { id: string; available: boolean; privacy: string }[];
+            candidates: { canonical: string; source: string }[];
+            next: string;
+          };
+          expect(payload.applied).toBe(false);
+          const byId = new Map(payload.sources.map((s) => [s.id, s]));
+          expect(byId.get('github')).toMatchObject({ id: 'github', available: true, chosen: true });
+          expect(byId.get('contacts')).toMatchObject({ available: false });
+          expect(payload.sources[2].privacy).toMatch(/github/);
+          expect(payload.candidates).toMatchObject([{ canonical: 'Mason Wyatt', source: 'import:github' }]);
+          expect(payload.next).toMatch(/apply: true/);
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+        } finally {
+          await close();
+        }
+      });
+
+      it('applies only with apply: true, through the shared write path', async () => {
+        const { client, close } = await connect();
+        try {
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'] } });
+          expect(result.isError).toBe(false);
+          const payload = JSON.parse(textOf(result)) as { applied: boolean; added: number; merged: number; summary: string };
+          expect(payload).toMatchObject({ applied: true, added: 1, merged: 0 });
+          expect(payload.summary).toMatch(/1 new/);
+          expect(mocks.harvestImportSources).toHaveBeenCalledWith(['github'], {}, { limit: 50 });
+          expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+    });
+
+    describe('community packs over MCP', () => {
+      const entry = {
+        ref: 'example/cardiology',
+        author: 'example',
+        name: 'cardiology',
+        title: 'Cardiology terms',
+        description: 'Heart words.',
+        homepage: '',
+        version: '1',
+        terms: 1,
+        aliases: 2,
+        checksum: 'ab'.repeat(32),
+        url: './cardiology.yaml',
+      };
+
+      beforeEach(() => {
+        mocks.listPacks.mockResolvedValue([
+          { name: 'developer', title: 'Dev', description: 'd', version: 1, author: '', homepage: '', terms: 2, aliases: 3, path: '/fake/developer.yaml' },
+        ]);
+        mocks.loadLexicon.mockResolvedValue({ ...loaded, global: { ...loaded.global, lexicon: { version: 1, terms: [] } } });
+        mocks.loadRegistryIndex.mockResolvedValue({ index: { packs: [entry] }, base: '/fake' });
+        mocks.findRegistryEntry.mockReturnValue(entry);
+        mocks.downloadPack.mockResolvedValue(Buffer.from('pack-bytes'));
+        mocks.verifyPackChecksum.mockReturnValue(undefined);
+        mocks.parsePackText.mockReturnValue({
+          name: 'cardiology',
+          title: 'Cardiology terms',
+          lexicon: { version: 1, terms: [{ canonical: 'Metoprolol', aliases: ['metoprolol'], category: 'brand' }] },
+        });
+        mocks.installRegistryPack.mockResolvedValue({
+          ref: 'example/cardiology',
+          pack: { name: 'cardiology', title: 'Cardiology terms' },
+          added: 1,
+          merged: 0,
+          path: '/fake/global/lexicon.yaml',
+          scope: 'global',
+        });
+        mocks.installPack.mockResolvedValue({
+          pack: { name: 'developer', title: 'Dev' },
+          added: 2,
+          merged: 0,
+          path: '/fake/global/lexicon.yaml',
+          scope: 'global',
+        });
+      });
+
+      it('list_packs includes community entries with a registry', async () => {
+        const { client, close } = await connect();
+        try {
+          const result = await client.callTool({ name: 'list_packs', arguments: { registry: '/fake/index.yaml' } });
+          expect(result.isError).toBe(false);
+          const payload = JSON.parse(textOf(result)) as { packs: unknown[]; community: { ref: string; installed: boolean }[] };
+          expect(payload.packs.length).toBe(1);
+          expect(payload.community).toMatchObject([{ ref: 'example/cardiology', installed: false }]);
+          expect(mocks.loadRegistryIndex).toHaveBeenCalledWith('/fake/index.yaml');
+        } finally {
+          await close();
+        }
+      });
+
+      it('add_pack previews a community pack until confirm: true', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = await client.callTool({
+            name: 'add_pack',
+            arguments: { name: 'example/cardiology', registry: '/fake/index.yaml' },
+          });
+          expect(preview.isError).toBe(false);
+          const p = JSON.parse(textOf(preview)) as { installed: boolean; preview: { ref: string; terms: { canonical: string }[] }; next: string };
+          expect(p.installed).toBe(false);
+          expect(p.preview.ref).toBe('example/cardiology');
+          expect(p.preview.terms).toMatchObject([{ canonical: 'Metoprolol' }]);
+          expect(p.next).toMatch(/confirm: true/);
+          expect(mocks.installRegistryPack).not.toHaveBeenCalled();
+
+          const applied = await client.callTool({
+            name: 'add_pack',
+            arguments: { name: 'example/cardiology', registry: '/fake/index.yaml', confirm: true },
+          });
+          expect(applied.isError).toBe(false);
+          const a = JSON.parse(textOf(applied)) as { name: string; summary: string };
+          expect(a.name).toBe('example/cardiology');
+          expect(a.summary).toMatch(/1 new/);
+          expect(mocks.installRegistryPack).toHaveBeenCalled();
+        } finally {
+          await close();
+        }
+      });
+
+      it('add_pack still installs vendored packs directly', async () => {
+        const { client, close } = await connect();
+        try {
+          const result = await client.callTool({ name: 'add_pack', arguments: { name: 'developer' } });
+          expect(result.isError).toBe(false);
+          const payload = JSON.parse(textOf(result)) as { name: string };
+          expect(payload.name).toBe('developer');
+          expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
+      it('add_pack refuses a community ref without a registry', async () => {
+        const { client, close } = await connect();
+        try {
+          const result = await client.callTool({ name: 'add_pack', arguments: { name: 'example/cardiology' } });
+          expect(result.isError).toBe(true);
+          expect(textOf(result)).toMatch(/needs the registry parameter/);
+        } finally {
+          await close();
+        }
+      });
     });
 
     it('suggest_terms loads the lexicon and voice history and returns the suggestions', async () => {

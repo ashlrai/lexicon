@@ -19,9 +19,11 @@ import {
   listPacks,
   loadLexicon,
   loadPack,
+  loadPackFile,
   normalize,
   packsDir,
   parseLexicon,
+  parsePackText,
   readLexiconFile,
   recordHits,
   uninstallPack,
@@ -239,6 +241,19 @@ describe('loadPack', () => {
     // listPacks surfaces the first broken file rather than hiding it; an empty dir lists nothing.
     await expect(listPacks({ dir })).rejects.toThrow(/Invalid pack/);
     expect(await listPacks({ dir: path.join(dir, 'missing') })).toEqual([]);
+  });
+
+  it('reads community manifest fields and defaults them for the vendored packs', async () => {
+    await fs.writeFile(
+      path.join(dir, 'community.yaml'),
+      'name: community\ntitle: Community\nauthor: example\nhomepage: https://example.com\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n',
+    );
+    const community = await loadPack('community', { dir });
+    expect(community).toMatchObject({ author: 'example', homepage: 'https://example.com' });
+    await fs.writeFile(path.join(dir, 'plain.yaml'), 'name: plain\ntitle: Plain\nterms:\n  - canonical: A\n    aliases: [b]\n');
+    const plain = await loadPackFile(path.join(dir, 'plain.yaml'));
+    expect(plain).toMatchObject({ author: '', homepage: '' });
+    expect(parsePackText('name: plain\ntitle: Plain\nauthor: x\nterms:\n  - canonical: A\n    aliases: [b]\n', 'inline', 'plain').author).toBe('x');
   });
 
   it('ignores files that are not packs', async () => {
@@ -463,8 +478,12 @@ describe('installPack / uninstallPack', () => {
     expect(await runPackAdd(['nope'], { cwd }, bad)).toBe(1);
     expect(bad.err).toContain('unknown pack "nope"');
     const badShow = makeIO();
-    expect(await runPackShow('../x', { cwd }, badShow)).toBe(1);
+    expect(await runPackShow('nope', { cwd }, badShow)).toBe(1);
     expect(badShow.err).toContain('unknown pack');
+    // A ref-shaped name routes to the registry flow instead of the filesystem.
+    const refShow = makeIO();
+    expect(await runPackShow('../x', { cwd }, refShow)).toBe(1);
+    expect(refShow.err).toContain('--registry');
 
     await recordHits(['Kubernetes'], { cwd, globalPath });
     const rm = makeIO();

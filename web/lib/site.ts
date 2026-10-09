@@ -9,7 +9,7 @@
  * nobody ever looks at it. So they all import from here.
  *
  * Every number below is derived from the repo and checked by
- * `node scripts/check-facts.mjs`: nineteen MCP tools, two resources, two
+ * `node scripts/check-facts.mjs`: twenty MCP tools, two resources, two
  * prompts, fifteen export formats, eight importers, 176 terms across the four packs.
  */
 
@@ -64,7 +64,7 @@ export const MCP_SERVER_CONFIG = {
   },
 } as const;
 
-/** Nineteen tools. Order and names from the running server (scripts/check-facts.mjs). */
+/** Twenty tools. Order and names from the running server (scripts/check-facts.mjs). */
 export const MCP_TOOLS: { name: string; summary: string }[] = [
   { name: 'normalize_transcript', summary: 'Correct a dictated transcript and report what changed.' },
   { name: 'add_term', summary: 'Add a canonical spelling, with aliases suggested when omitted.' },
@@ -82,9 +82,10 @@ export const MCP_TOOLS: { name: string; summary: string }[] = [
   { name: 'install_client', summary: 'Preview or write the MCP config for a named client.' },
   { name: 'setup_lexicon', summary: 'Plan or run first-time setup non-interactively.' },
   { name: 'serve_status', summary: 'Whether the loopback API on 127.0.0.1:41733 is up.' },
-  { name: 'list_packs', summary: 'The four starter packs and which are installed.' },
-  { name: 'add_pack', summary: 'Install a starter pack.' },
+  { name: 'list_packs', summary: 'The four starter packs (and a registry\'s community packs) and which are installed.' },
+  { name: 'add_pack', summary: 'Install a starter pack, or a community pack after a preview.' },
   { name: 'import_dictionary', summary: 'Import a Wispr, Superwhisper, macOS, espanso, CSV or JSON dictionary.' },
+  { name: 'import_vocabulary', summary: 'Preview or harvest proper nouns from contacts, calendar and GitHub.' },
 ];
 
 export const MCP_RESOURCES = [
@@ -151,7 +152,7 @@ export const FAQ: Faq[] = [
   {
     q: 'What is an MCP server, and do I need one?',
     a:
-      'MCP, the Model Context Protocol, is a standard way for an AI agent to call tools that run on your own machine. Lexicon ships one, named `lexicon`, over stdio, with nineteen tools, two resources and two prompts, so an agent can normalize a transcript, add a term, learn a correction or run setup without you opening a terminal. You want it if you talk to an agent and need the names fixed before the agent acts. You do not need it for the browser extension, the menu bar app or the CLI, which read the same file directly.',
+      'MCP, the Model Context Protocol, is a standard way for an AI agent to call tools that run on your own machine. Lexicon ships one, named `lexicon`, over stdio, with twenty tools, two resources and two prompts, so an agent can normalize a transcript, add a term, learn a correction or run setup without you opening a terminal. You want it if you talk to an agent and need the names fixed before the agent acts. You do not need it for the browser extension, the menu bar app or the CLI, which read the same file directly.',
   },
   {
     q: 'How is this different from a dictation app’s custom dictionary?',
@@ -170,7 +171,7 @@ export const FAQ: Faq[] = [
 export const DOC_LINKS: { label: string; href: string; blurb: string }[] = [
   { label: 'Quickstart', href: DOC('docs/QUICKSTART.md'), blurb: 'Nothing to working in five minutes.' },
   { label: 'Install into your agents', href: DOC('docs/CLIENTS.md'), blurb: 'Per-client config for the seven supported clients.' },
-  { label: 'MCP server reference', href: DOC('docs/MCP.md'), blurb: 'The nineteen tools, two resources and two prompts.' },
+  { label: 'MCP server reference', href: DOC('docs/MCP.md'), blurb: 'The twenty tools, two resources and two prompts.' },
   { label: 'Agent-native usage', href: DOC('docs/AGENT-NATIVE.md'), blurb: 'How an agent is meant to chain the tools.' },
   { label: 'For agents', href: DOC('docs/AGENTS.md'), blurb: 'Install and verify Lexicon on a user’s behalf.' },
   { label: 'FAQ', href: DOC('docs/FAQ.md'), blurb: 'The same answers as this page, as markdown.' },

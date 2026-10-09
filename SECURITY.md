@@ -231,11 +231,14 @@ treated as the user's own words).
 - **Markdown safety.** The `claude-md` export escapes `|` and replaces every
   kind of line break (`\n`, `\r\n`, NEL, U+2028, U+2029) in table cells so a
   term cannot break out of its row.
-- **No telemetry, one download.** The tool collects nothing and all state is
+- **No telemetry, two user-initiated downloads.** The tool collects nothing and all state is
   local files. The CLI, hooks, MCP server, local API and extension make no
-  request beyond loopback. The only outbound request in the codebase is
-  `lexicon voice` fetching a whisper model on first use (see above); the install
-  script and Homebrew fetch the package itself.
+  request beyond loopback, except when the user asks for one by name:
+  `lexicon voice` fetching a whisper model on first use (see above), and
+  `lexicon pack` fetching a community pack index and pack files from the
+  `--registry` URL the user passed. Every pack download is sha256-verified
+  against the index before it is read, and a checksum mismatch refuses the
+  install; the install script and Homebrew fetch the package itself.
 - **Escape hatch.** `LEXICON_TRUST_ALL=1` treats every project lexicon as
   trusted. It is meant for CI or throwaway containers where the repository is
   already vetted; do not set it in an interactive shell.

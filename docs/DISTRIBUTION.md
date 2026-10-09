@@ -263,7 +263,7 @@ after the "Tools for converting text-to-speech and vice-versa" line and its blan
 directly above the existing `daisys-ai/daisys-mcp` entry.
 
 ```markdown
-- [ashlrai/lexicon](https://github.com/ashlrai/lexicon) 📇 🏠 🍎 🪟 🐧 - A personal vocabulary for dictated prompts: fixes the names, brands and jargon speech-to-text mishears before the agent acts on them. One local YAML file, 19 tools. Normalize a transcript, learn a correction from "I said X not Y", harvest terms from a repo, import a Wispr Flow or Superwhisper dictionary. No API key, nothing leaves the machine. `npx -y @ashlr/lexicon mcp`
+- [ashlrai/lexicon](https://github.com/ashlrai/lexicon) 📇 🏠 🍎 🪟 🐧 - A personal vocabulary for dictated prompts: fixes the names, brands and jargon speech-to-text mishears before the agent acts on them. One local YAML file, 20 tools. Normalize a transcript, learn a correction from "I said X not Y", harvest terms from a repo, import a Wispr Flow or Superwhisper dictionary. No API key, nothing leaves the machine. `npx -y @ashlr/lexicon mcp`
 ```
 
 Emoji, per their legend: 📇 TypeScript, 🏠 local service, 🍎 🪟 🐧 macOS/Windows/Linux.
