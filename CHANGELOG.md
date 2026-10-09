@@ -4,6 +4,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+## 0.5.5 (2026-10-09)
+
 ### Added
 
 - **Guided vocabulary import** (`lexicon import --guided`, MCP `import_vocabulary`): "Where do your proper nouns live?" The wizard lists sources, the user checks the ones they want, and each source yields candidate terms approved one screen at a time before anything is written. Sources: macOS Contacts, macOS Calendar, GitHub (through the user's existing `gh` login). Email and Slack are listed as known-but-unimplemented, with the reason stated, rather than silently omitted. Local-first only: nothing is read until the user opts a source in, `--yes` requires explicit sources, the prior preview digest and selected candidate ids; MCP applies a short-lived saved preview with only approved ids, no new OAuth. Candidates merge case-insensitively across sources (higher count wins a spelling conflict, the loser survives as an alias); new terms are stamped `source: import:<name>`. See DESIGN-VOCABULARY-IMPORT.md.
@@ -13,6 +15,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- Release publication now waits for both platform builds, verifies the qualified archives and all checksums, and confirms exact npm and hosted bytes before making the GitHub release public. Missing npm credentials fail before publication.
 - File symlinks share their real dictionary's writer lock, and nested calls through directory aliases reuse the held lock. Missing targets keep a stable lock identity when created; unrelated projects retain independent locks.
 - Contacts queries open SQLite read-only with an empty startup file, so import previews never execute user `.sqliterc` commands or recreate a database that disappeared after discovery.
 - The interactive import checklist shows source descriptions before checking availability; cancellation performs no profile/provider probes, and only selected sources are checked afterward.
