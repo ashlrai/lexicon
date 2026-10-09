@@ -55,6 +55,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
+      - name: Release publication contract (offline synthetic fixtures)
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: node --test scripts/release-contract.test.mjs
+
       - run: npm ci
 
       - run: npm run typecheck

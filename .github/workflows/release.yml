@@ -1,37 +1,5 @@
-# Cuts a release when a `v*` tag is pushed: publishes @ashlr/lexicon to npm (when
-# NPM_TOKEN is set), creates the GitHub release, and attaches the download assets.
-#
-# Assets on every release (names are load-bearing; the README, the demo site and
-# the Homebrew formula link to them by name):
-#   ashlr-lexicon-<version>.tgz     npm pack tarball, `npm i -g <url>` works on it
-#   lexicon-extension.zip           Chrome / Edge extension (Load unpacked or drag in)
-#   lexicon-extension-firefox.zip   Firefox variant of the extension
-#   LexiconBar.app.zip              macOS menu bar app, ad-hoc signed
-#   SHA256SUMS                      sha256 of every asset above
-#
-# Required repository secret:
-#   NPM_TOKEN  - an npm "Automation" (or granular, publish-enabled) access token for the
-#                @ashlr scope. Provenance attestation additionally needs the `id-token: write`
-#                permission below; nothing else to configure. Without it the npm publish is
-#                skipped and everything else still happens.
-#
-# GITHUB_TOKEN is provided automatically and is used by `gh release ...`.
-#
-# Job order: `publish` (ubuntu) tests, publishes, creates the release and uploads the
-# tarball, the extension zips and a first SHA256SUMS. `macos` waits for it, builds
-# LexiconBar.app.zip, appends its checksum and re-uploads SHA256SUMS. Every upload uses
-# --clobber so a re-run of a failed job replaces its own assets.
-#
-# Release flow: docs/RELEASING.md, step 1. Follow it rather than any recipe here.
-#
-# There used to be a two-line recipe in this comment, and it was wrong in the way
-# that ships: `npm version minor` bumps package.json and the lockfile and tags in
-# one move, leaving the other eight version carriers behind. The tag-vs-package
-# check below still passes, because it compares the tag with the one file that
-# did get bumped, so the skew reaches the release. That is the failure
-# docs/RELEASING.md has now recorded four separate times.
-#
-# One release recipe in the repo, and it is not this file.
+# Qualify every asset before publication. Preserve the original npm archive.
+# An existing release/version is refused; recovery is a reviewed fix-forward release.
 name: Release
 
 on:
@@ -39,129 +7,146 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
-  id-token: write
-
-env:
-  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  contents: read
 
 jobs:
-  publish:
+  ubuntu:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
-
-      - run: npm ci
-
-      - run: npm run typecheck
-
-      - run: npm run build
-
-      - run: npm run build:bundle
-
-      - run: npm test
-
-      - name: Check the tag matches package.json
+      - name: Validate all source version carriers
         id: meta
         run: |
-          version="$(node -p "require('./package.json').version")"
-          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match package.json version v${version}"
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Publish to npm
-        if: ${{ env.NPM_TOKEN != '' }}
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Skipped npm publish
-        if: ${{ env.NPM_TOKEN == '' }}
-        run: echo "NPM_TOKEN secret not set; skipping npm publish (GitHub release and assets are still produced)"
-
+          version=$(node scripts/release-contract.mjs source . "$GITHUB_REF_NAME")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: node --test scripts/release-contract.test.mjs
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run check:bundle
+      - run: npm test
+      - run: npm run check:facts
+      - run: npm run check:server-json -- --offline
+      - name: Verify generated CLI documentation
+        run: npm run docs:cli && git diff --exit-code -- docs/CLI.md
       - name: Build the browser extension zips
+        run: npm run build:extension
+      - name: Pack qualified npm bytes once
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          npm run build:extension
-          test -f extension/lexicon-extension.zip
-          test -f extension/lexicon-extension-firefox.zip
-
-      - name: Pack the npm tarball
-        run: |
-          # build, bundle and tests already ran above; skip prepublishOnly.
-          mkdir -p release
+          mkdir release
           npm pack --ignore-scripts --pack-destination release
-          test -f "release/ashlr-lexicon-${{ steps.meta.outputs.version }}.tgz"
-
-      - name: Collect assets and write SHA256SUMS
-        run: |
           cp extension/lexicon-extension.zip extension/lexicon-extension-firefox.zip release/
-          cd release
-          sha256sum "ashlr-lexicon-${{ steps.meta.outputs.version }}.tgz" lexicon-extension.zip lexicon-extension-firefox.zip > SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Create GitHub release
-        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release assets
-        run: |
-          gh release upload "${GITHUB_REF_NAME}" --clobber \
-            "release/ashlr-lexicon-${{ steps.meta.outputs.version }}.tgz" \
-            release/lexicon-extension.zip \
-            release/lexicon-extension-firefox.zip \
-            release/SHA256SUMS
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          node scripts/release-contract.mjs checksum release "$VERSION" ubuntu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexicon-release-ubuntu
+          path: release/*
+          if-no-files-found: error
 
   macos:
-    needs: publish
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Validate all source version carriers
+        run: node scripts/release-contract.mjs source . "$GITHUB_REF_NAME"
       - name: Toolchain
         run: |
           sw_vers
           xcodebuild -version
           swift --version
-
       - name: Unit tests (LexiconBarKit)
         working-directory: apps/macos/LexiconBar
         run: swift test
-
       - name: Package LexiconBar.app
         run: scripts/build-macos-app.sh
-
-      - name: Verify bundle
+      - name: Verify bundle and capture qualified checksum
         run: |
           plutil -lint apps/macos/build/LexiconBar.app/Contents/Info.plist
           codesign --verify --verbose=2 apps/macos/build/LexiconBar.app
-          test -f apps/macos/build/LexiconBar.app.zip
-
-      - name: Append LexiconBar.app.zip to SHA256SUMS
-        run: |
-          mkdir -p release
+          mkdir release
           cp apps/macos/build/LexiconBar.app.zip release/
-          # The publish job uploaded SHA256SUMS for its own assets; extend it.
-          gh release download "${GITHUB_REF_NAME}" --pattern SHA256SUMS --dir release --clobber
-          cd release
-          shasum -a 256 LexiconBar.app.zip >> SHA256SUMS
-          cat SHA256SUMS
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version=$(node scripts/release-contract.mjs source . "$GITHUB_REF_NAME")
+          node scripts/release-contract.mjs checksum release "$version" macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexicon-release-macos
+          path: release/*
+          if-no-files-found: error
 
-      - name: Upload release assets
-        run: gh release upload "${GITHUB_REF_NAME}" --clobber release/LexiconBar.app.zip release/SHA256SUMS
+  publish:
+    needs: [ubuntu, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.ubuntu.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Revalidate source identity
+        run: |
+          version=$(node scripts/release-contract.mjs source . "$GITHUB_REF_NAME")
+          test "$version" = "$VERSION"
+      - uses: actions/download-artifact@v4
+        with:
+          name: lexicon-release-ubuntu
+          path: staged/ubuntu
+      - uses: actions/download-artifact@v4
+        with:
+          name: lexicon-release-macos
+          path: staged/macos
+      - name: Validate complete qualified artifact closure
+        run: node scripts/release-contract.mjs assemble staged release "$VERSION"
+      - name: Require existing credentials and prove publication absence
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-contract.mjs preflight "$VERSION"
+      - name: Publish original qualified npm archive
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish "./release/ashlr-lexicon-${VERSION}.tgz" --provenance --access public
+      - name: Accept exact npm version and archive integrity
+        run: node scripts/release-contract.mjs registry release "$VERSION"
+      - name: Create draft and upload complete assets without overwrite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --generate-notes --verify-tag
+          gh release upload "$GITHUB_REF_NAME" \
+            "release/ashlr-lexicon-${VERSION}.tgz" \
+            release/lexicon-extension.zip release/lexicon-extension-firefox.zip \
+            release/LexiconBar.app.zip release/SHA256SUMS
+      - name: Verify exact draft asset inventory and hosted bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json tagName,isDraft,isPrerelease,assets > draft-receipt.json
+          gh release download "$GITHUB_REF_NAME" --dir hosted
+          node scripts/release-contract.mjs hosted hosted "$VERSION" draft-receipt.json draft
+          cmp release/SHA256SUMS hosted/SHA256SUMS
+      - name: Recheck registry acceptance and publish verified draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release-contract.mjs registry release "$VERSION"
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          gh release view "$GITHUB_REF_NAME" --json tagName,isDraft,isPrerelease,assets > public-receipt.json
+          gh release download "$GITHUB_REF_NAME" --dir public-hosted
+          node scripts/release-contract.mjs hosted public-hosted "$VERSION" public-receipt.json public
+          cmp release/SHA256SUMS public-hosted/SHA256SUMS
