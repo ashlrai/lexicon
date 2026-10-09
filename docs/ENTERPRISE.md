@@ -40,7 +40,7 @@ required.**
 | Capability | How it reaches your people |
 | --- | --- |
 | The correction engine | A CLI (`lexicon`) on macOS, Linux and Windows, Node 20+ |
-| AI agents | An MCP server with nineteen tools, registered automatically into Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI and VS Code |
+| AI agents | An MCP server with twenty tools, registered automatically into Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI and VS Code |
 | Claude Code specifically | A plugin with `SessionStart` and `UserPromptSubmit` hooks, so corrections land before the model reads the prompt |
 | Browser chat | An extension for ChatGPT, Claude.ai, Gemini, Grok, Perplexity, Copilot and Poe |
 | Any macOS text field | A menu bar app using the Accessibility API: Slack, Mail, Notes, your editor |

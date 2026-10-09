@@ -31,7 +31,7 @@ No. Your lexicon is a plain YAML file at `~/.config/lexicon/lexicon.yaml`: there
 
 ## What is an MCP server, and do I need one?
 
-MCP, the Model Context Protocol, is a standard way for an AI agent to call tools that run on your own machine. Lexicon ships one, named `lexicon`, over stdio, with nineteen tools, two resources and two prompts, so an agent can normalize a transcript, add a term, learn a correction or run setup without you opening a terminal. You want it if you talk to an agent and need the names fixed before the agent acts. You do not need it for the browser extension, the menu bar app or the CLI, which read the same file directly.
+MCP, the Model Context Protocol, is a standard way for an AI agent to call tools that run on your own machine. Lexicon ships one, named `lexicon`, over stdio, with twenty tools, two resources and two prompts, so an agent can normalize a transcript, add a term, learn a correction or run setup without you opening a terminal. You want it if you talk to an agent and need the names fixed before the agent acts. You do not need it for the browser extension, the menu bar app or the CLI, which read the same file directly.
 
 ## How is this different from a dictation app’s custom dictionary?
 
@@ -45,7 +45,7 @@ Nothing. Lexicon is free and MIT-licensed, with no paid tier, no account and no 
 
 - [Quickstart](QUICKSTART.md): nothing to working, in five minutes.
 - [Install into your agents](CLIENTS.md): the per-client commands.
-- [MCP server reference](MCP.md): the nineteen tools, two resources and two prompts.
+- [MCP server reference](MCP.md): the twenty tools, two resources and two prompts.
 - [For agents](AGENTS.md): how an agent installs and verifies Lexicon for its user.
 - [Security](../SECURITY.md): the threat model and the trust gate.
 - [Benchmark](BENCHMARK.md): the measurements, the method and what still fails.

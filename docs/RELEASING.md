@@ -70,7 +70,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin main --follow-tags
 ```
 
-The release workflow refuses to run when the tag does not match `package.json`, so a missed bump fails fast instead of publishing the wrong number.
+The release workflow validates all eleven source version fields and the dated changelog before building and again before publishing. A missed bump fails before external writes.
 
 **Build the plugin bundle from a clean checkout, not from your working tree.** A bundle built where `node_modules` is a symlink bakes hundreds of absolute paths to the maintainer's home directory into the published artifact: esbuild names every bundled module by the path it resolved to rather than by `node_modules/...`, and the result is committed. The count in this paragraph has been guessed at twice, so here is what the repository can actually be asked: `git log --format=%H --all -- plugin/hook.mjs` piped through `git show <sha>:plugin/hook.mjs | grep -c /Users/` finds exactly one commit that shipped them, 385c412, carrying 453 in `mcp-server.mjs` and 242 in `hook.mjs`, which is the 695 the 0.5.3 notes report. Any earlier occurrence was caught before it was committed and left no record, so run that command rather than trusting a number here. Clone the repo to a scratch directory, `npm ci` there, `npm run build:bundle`, and copy `plugin/` back. Then check the artifact before you tag, because a bundle is not something anyone reads by eye:
 
@@ -86,28 +86,61 @@ grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs   # both must be 0
 
 ## 2. What the tag triggers
 
-`.github/workflows/release.yml` runs on any `v*` tag, in two jobs.
+`.github/workflows/release.yml` keeps the existing `v*` tag trigger and owner
+protections. It has two parallel qualification jobs with default
+`contents: read`, followed by one publication job that needs both to succeed.
+Neither build job receives the npm publication secret or OIDC write authority.
 
-**`publish` (ubuntu)**
+**`ubuntu`** validates eleven source version fields plus the dated changelog
+before building: package version, both lockfile versions, plugin and marketplace
+versions, both MCP Registry versions, README install pin, Windows assembly
+version, landing-page constant and generated CLI header. Homebrew's source-archive
+checksum is deliberately updated after the tag, as described in step 4.
+It then runs the release contract tests, clean dependency install, typecheck,
+build, committed-bundle drift check, full tests, facts, offline server manifest
+check and generated CLI-doc check. It builds both extension zips and packs the
+npm archive once with lifecycle scripts disabled, because qualification already
+ran. It uploads these original three assets and their canonical `SHA256SUMS`.
 
-1. `npm ci`, typecheck, build, bundle, `npm test`.
-2. Tag check against `package.json`.
-3. `npm publish --provenance --access public` when the `NPM_TOKEN` secret is set. Without it the step is skipped and the run still succeeds; the log says so.
-4. `npm run build:extension` for the two extension zips.
-5. `npm pack` for the tarball.
-6. `gh release create vX.Y.Z --generate-notes`, then `gh release upload --clobber` of:
-   - `ashlr-lexicon-X.Y.Z.tgz`
-   - `lexicon-extension.zip`
-   - `lexicon-extension-firefox.zip`
-   - `SHA256SUMS` (covering the three above)
+**`macos`** checks the same source versions, runs `swift test`, builds the app,
+verifies its plist and code signature, and uploads `LexiconBar.app.zip` with its
+own checksum. The runner signs ad-hoc, not with a distributable Developer ID.
 
-**`macos` (macos-latest, after `publish`)**
+**`publish`** runs only after both qualification jobs pass. It rechecks the source
+version, downloads artifacts from this workflow run, verifies both producer
+checksum inventories and assembles exactly four assets plus a complete
+`SHA256SUMS`. Missing, extra, changed or symlinked assets fail before publication.
+Copied bytes must still match the producer checksums captured before assembly.
+It requires the existing `NPM_TOKEN` and workflow GitHub token, and proves that
+neither this tag's release nor this exact npm version already exists. An HTTP
+failure is not treated as absence.
 
-1. `swift test` for LexiconBarKit.
-2. `scripts/build-macos-app.sh`: release build, `.app` assembly, icon, codesign, zip. On a CI runner there is no local signing identity, so the build signs ad-hoc and says so.
-3. Downloads `SHA256SUMS` from the release, appends `LexiconBar.app.zip`, uploads both with `--clobber`.
+The job publishes the original qualified `ashlr-lexicon-X.Y.Z.tgz` with
+`--provenance`; it does not rebuild or repack in the privileged job. It checks the
+exact registry name/version, SHA-512 integrity and downloaded archive bytes,
+with bounded retries for registry propagation. Only then does it create a draft
+GitHub release and upload the complete assets without overwrite. It verifies
+hosted inventory, sizes, checksums and bytes against the qualified files,
+rechecks npm acceptance, and makes the draft public. A final download verifies
+the public release too. A successful publish command alone is insufficient.
 
-Every upload uses `--clobber`, so re-running a failed job replaces its own assets without touching the others. The release exists as soon as the `publish` job creates it; `LexiconBar.app.zip` appears a few minutes later.
+These registry and GitHub mutations are not an atomic transaction. A failure
+after npm accepts the immutable version can leave npm published and GitHub
+absent or draft. Report each delivery layer separately. The workflow refuses
+existing versions/releases instead of overwriting them on a rerun; preserve the
+failed attempt for review and follow the fix-forward policy below.
+
+Run the dependency-free contract checks before the tag:
+
+```bash
+node --test scripts/release-contract.test.mjs
+node scripts/release-contract.mjs source . vX.Y.Z
+```
+
+The ordinary pull-request CI also runs the synthetic contract tests in its
+Ubuntu Node 22 job. Those fixtures supply their own dated changelog, so an
+unreleased candidate can be reviewed while the actual release source command
+continues to reject an undated release.
 
 ### Signing for other people
 
@@ -121,25 +154,21 @@ The asset names are referenced by the README, the demo site (`site/index.html`) 
 
 ## 3. NPM_TOKEN
 
-The npm publish needs a repository secret named `NPM_TOKEN`: an npm Automation token, or a granular token with publish rights on the `@ashlr` scope. Provenance attestation uses the workflow's `id-token: write` permission, already set; nothing else to configure.
+The normal release job requires the repository's existing `NPM_TOKEN` to have
+publish rights for `@ashlr/lexicon`. The job's existing `id-token: write`
+permission supplies GitHub Actions provenance. Build jobs have neither secret
+nor OIDC publication authority. This workflow does not provision credentials.
 
-If the secret is missing, the `Skipped npm publish` step says so and the run still succeeds: the GitHub release and every asset on it are produced either way. Only npm is left.
+If the token is absent, the job fails before npm or GitHub writes. It does not
+report a successful npm skip or publish a GitHub-only release. The maintainer
+must resolve existing access through the normal owner process; a missing token
+is not authority to create one, broaden account access or use another publisher.
 
-**Publishing by hand: drop `--provenance`.** It is not an optional extra there, it is a hard error. `libnpmpublish` generates an attestation from the CI provider's OIDC token and nothing else, so outside GitHub Actions or GitLab CI it throws `EUSAGE: Automatic provenance generation not supported for provider: <name>` before it reaches the registry. This page said to publish by hand *with* that flag until 0.5.2.
-
-Publish the tarball the release already carries, rather than rebuilding from a checkout. It is the artifact CI produced and the one whose sha256 is in `SHA256SUMS`, so what reaches npm is the thing that was tested:
-
-```bash
-V=X.Y.Z
-gh release download "v$V" --repo ashlrai/lexicon --pattern "ashlr-lexicon-$V.tgz"
-shasum -a 256 "ashlr-lexicon-$V.tgz"            # must match SHA256SUMS on the release
-npm publish "./ashlr-lexicon-$V.tgz" --access public
-npm run check:server-json                        # now meaningful: the 404 is gone and mcpName is checked
-```
-
-Publishing a prebuilt tarball does not run `prepublishOnly`, which is correct here because CI already ran the build, the bundle and the tests to produce it.
-
-The release keeps its provenance attestation only if npm does the publish from the workflow, which means an `NPM_TOKEN` in repository secrets. That is a token that publishes without a second factor, so it is a real trade against a hardware key on the account, and it is the maintainer's call rather than this page's.
+Publishing the prebuilt archive deliberately skips `prepublishOnly`: the exact
+source was already qualified by the preceding jobs. The bytes published to npm
+are the bytes preserved in the release, and both registry integrity and hosted
+checksums must agree before the draft is made public. Existing versions cannot
+be republished, and existing release assets cannot be replaced by a rerun.
 
 ## 4. Update the Homebrew formula
 
@@ -173,7 +202,7 @@ cd /tmp/homebrew-tap && git add Formula/lexicon.rb && git commit -m "lexicon X.Y
 
 ## 5. Check the first 60 seconds
 
-After both jobs are green, on a machine without the tool:
+After all three jobs and exact public-byte acceptance are green, on a machine without the tool:
 
 ```bash
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
@@ -185,7 +214,7 @@ The demo site's Install section links `releases/latest/download/<asset>`, so tho
 
 ## Hotfixes
 
-Patch releases follow the same steps with `npm version patch`. If a job fails after the release was created, fix the cause on `main`, delete the tag and release (`gh release delete vX.Y.Z --cleanup-tag`) and tag again, or re-run the failed job when the fix needs no code change (a flaky runner, a missing secret).
+Patch releases follow the same source, qualification and owner tag steps with a new version. Never delete, move or reuse a published tag, version or release asset to repair a failed attempt. Preserve any partial npm publication or draft as incident evidence, report what actually succeeded, and have the release owner review a new fix-forward version. A rerun is not an overwrite or partial-publication recovery path.
 
 ## See also
 

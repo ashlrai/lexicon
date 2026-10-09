@@ -292,23 +292,40 @@ function deepEqual(a: unknown, b: unknown): boolean {
 /**
  * Merge `entry` as `<key>.lexicon` into a parsed JSON config. Never mutates the
  * input; every other key (and every other server) is preserved. `changed` is
- * false when an identical entry is already present.
+ * false when the managed launch fields already match. Client-owned options
+ * such as env, disabled, timeouts and allowlists survive a reinstall.
  */
 export function mergeServerIntoJson(
   current: unknown,
   key: 'mcpServers' | 'servers',
   entry: StdioServerEntry | VsCodeServerEntry,
 ): MergeResult<Record<string, unknown>> {
-  const base: Record<string, unknown> = isRecord(current) ? (structuredClone(current) as Record<string, unknown>) : {};
+  if (!isRecord(current)) {
+    throw new Error('client config is not an object; refusing to overwrite it');
+  }
+  const base: Record<string, unknown> = structuredClone(current);
   const existingMap = base[key];
   if (existingMap !== undefined && !isRecord(existingMap)) {
     throw new Error(`"${key}" is not an object; refusing to overwrite it`);
   }
   const servers: Record<string, unknown> = isRecord(existingMap) ? existingMap : {};
-  if (deepEqual(servers.lexicon, entry)) {
+  const existingEntry = servers.lexicon;
+  if (existingEntry !== undefined && !isRecord(existingEntry)) {
+    throw new Error('"lexicon" is not an object; refusing to overwrite it');
+  }
+  // A remote entry cannot safely become stdio by retaining its URL or
+  // transport discriminator. Leave it intact for an explicit manual choice.
+  if (isRecord(existingEntry) && (
+    ['url', 'httpUrl', 'serverUrl', 'sseUrl'].some(key => key in existingEntry)
+    || (existingEntry.type !== undefined && existingEntry.type !== 'stdio')
+  )) {
+    throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
+  }
+  const mergedEntry = { ...(isRecord(existingEntry) ? existingEntry : {}), ...structuredClone(entry) };
+  if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
   }
-  servers.lexicon = structuredClone(entry);
+  servers.lexicon = mergedEntry;
   base[key] = servers;
   return { next: base, changed: true };
 }
@@ -393,7 +410,7 @@ async function applyJson(target: InstallTarget): Promise<InstallOutcome> {
   if (read.error !== undefined) {
     throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
   }
-  const { next, changed } = mergeServerIntoJson(read.value ?? {}, target.key, target.entry);
+  const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
   if (!changed) return 'unchanged';
   await writeJsonFile(target.file, next);
   return read.exists ? 'updated' : 'created';

@@ -98,8 +98,8 @@ API daemon and the menu bar app were running on the machine and bump hit
 counters, and the parent session's own hooks also write it. Not attributable
 to these experiments.
 
-Claude Code defers MCP tool schemas here too: with a single MCP server (45
-tools total: 25 built-in, 19 lexicon, 3 MCP helpers) the model still spent one
+Claude Code defers MCP tool schemas here too: with a single MCP server (46
+tools total: 25 built-in, 20 lexicon, 3 MCP helpers) the model still spent one
 `ToolSearch` turn before its first `mcp__lexicon__*` call in every experiment
 that used a tool.
 
@@ -334,7 +334,7 @@ Acme Rocketry's aliases. Answer:
 > Got it - Acme Rocketry. Added "Acme Rocket tree" as an alias in your global lexicon, so it'll be corrected automatically from now on.
 > There wasn't anything else in your message for me to fix up - was there a task you wanted me to do with it?
 
-## 8. Latency: 19 extra tools cost nothing per prompt; the first call costs one turn
+## 8. Latency: 20 extra tools cost nothing per prompt; the first call costs one turn
 
 `say ok`, `settings-nohooks.json`, alternating without / with `--mcp-config`:
 

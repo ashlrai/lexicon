@@ -101,6 +101,8 @@ lexicon normalize "tell Ashler to ship it"
 # tell Ashlr.AI to ship it
 ```
 
+Ten minutes in, teach it the names you actually say. `lexicon import --guided` asks where your proper nouns live (your contacts, your calendar, your GitHub), shows each candidate with where it was seen, and writes only the ones you approve. Nothing is read until you check its box, and email and chat stay out entirely.
+
 **Claude Code plugin**, if you would rather not install a CLI at all. No Node install step, no build:
 
 ```bash
@@ -108,7 +110,7 @@ claude plugin marketplace add ashlrai/lexicon
 claude plugin install lexicon@ashlrai
 ```
 
-`lexicon doctor` checks the install. There is no telemetry and all state is local files: the CLI, hooks, MCP server, local API and extension make no request beyond loopback. The one outbound request in the codebase is `lexicon voice` fetching a whisper model on first use. The install script, npm and Homebrew fetch the package itself. See [SECURITY.md](SECURITY.md).
+`lexicon doctor` checks the install. There is no telemetry and all state is local files: the CLI, hooks, MCP server, local API and extension make no request beyond loopback, except for two the user asks for by name: `lexicon voice` fetching a whisper model on first use, and `lexicon pack` fetching community packs from a `--registry` URL (every download is checksum-verified). The install script, npm and Homebrew fetch the package itself. See [SECURITY.md](SECURITY.md).
 
 ## Why
 
@@ -120,12 +122,12 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 ## What you get
 
-- **Nineteen MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` shows the file's terms before pinning it, and `import_dictionary` takes `dryRun`.
+- **Twenty MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` shows the file's terms before pinning it, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
 - **A CLI with 25 commands**, from `lexicon add` to `lexicon voice`.
-- **176 starter terms** in four packs (developer, AI, business, voice tools), one command each.
+- **176 starter terms** in four packs (developer, AI, business, voice tools), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
 - **Fifteen export formats** (Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON) and **eight importers** (including the CLAUDE.md table it writes) for the dictionary you already trained.
-- **Repo harvesting**, correction learning ("it's Ashlr.AI not Ashler"), usage stats, suggestions mined from your voice history, and a trust gate for project lexicons.
+- **Repo harvesting**, a guided vocabulary import (`lexicon import --guided`: your contacts, calendar and GitHub, each source opt-in, every candidate approved before it is written), correction learning ("it's Ashlr.AI not Ashler"), usage stats, suggestions mined from your voice history, and a trust gate for project lexicons.
 - **A plain library.** `normalize()` is a pure function: text plus lexicon in, corrected text and a replacement list out.
 
 ## Where it applies
@@ -134,7 +136,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 |---|---|---|
 | Claude Code | Plugin, or MCP server plus two hooks that correct the prompt before the model reads it | [CLIENTS.md](docs/CLIENTS.md) |
 | Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop | `lexicon install <client> --apply` registers the MCP server | [CLIENTS.md](docs/CLIENTS.md) |
-| Any MCP client | stdio server, nineteen tools | [MCP.md](docs/MCP.md) |
+| Any MCP client | stdio server, twenty tools | [MCP.md](docs/MCP.md) |
 | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe, Copilot | Browser extension: rewrites the composer when you press send | [EXTENSION.md](docs/EXTENSION.md) |
 | Any macOS app, any dictation tool | LexiconBar menu bar app: rewrites dictated text in the focused field through Accessibility, with an undo bubble | [MACOS-APP.md](docs/MACOS-APP.md) |
 | Shortcuts, Raycast, scripts, your own app | `lexicon serve`: loopback HTTP API on `127.0.0.1:41733` behind a bearer token | [LOCAL-API.md](docs/LOCAL-API.md) |

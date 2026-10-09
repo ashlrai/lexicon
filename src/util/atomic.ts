@@ -139,6 +139,30 @@ async function resolveWriteTarget(target: string): Promise<string> {
 }
 
 /**
+ * One physical lock identity for the path the atomic writer will replace.
+ * Native realpath also expands directory aliases and Windows short names.
+ * For a target whose parents do not exist yet, resolve the nearest existing
+ * ancestor and retain the missing suffix, so mkdir and the first write cannot
+ * change the identity while its caller holds the lock. A dangling file link
+ * retains its own filename rather than inventing its missing destination.
+ */
+async function resolveLockTarget(target: string): Promise<string> {
+  const abs = path.resolve(target);
+  let candidate = abs;
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      return path.join(await fs.realpath(candidate), ...suffix);
+    } catch {
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return abs;
+      suffix.unshift(path.basename(candidate));
+      candidate = parent;
+    }
+  }
+}
+
+/**
  * The mode the finished file should have: the caller's, else the one the
  * target already carries, else undefined for "create under the umask".
  */
@@ -315,7 +339,7 @@ export async function withFileLock<T>(
   fn: () => Promise<T>,
   opts: FileLockOptions = {},
 ): Promise<T> {
-  const lockPath = `${path.resolve(target)}${LOCK_SUFFIX}`;
+  const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
   const held = heldLocks.getStore();
   if (held?.has(lockPath)) return fn();
 

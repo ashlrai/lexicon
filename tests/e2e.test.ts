@@ -740,6 +740,40 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: install', () => {
     expect(r.stdout).toContain('lexicon install codex');
     expect(r.stdout).toContain('lexicon install cursor');
   });
+
+  it('reinstall cursor refreshes its launch command while preserving custom roots and client options', async () => {
+    const h = await freshHome('install-cursor-options');
+    const file = path.join(h.home, '.cursor', 'mcp.json');
+    const options = {
+      env: { LEXICON_PATH: path.join(h.home, 'custom-root', 'lexicon.yaml') },
+      disabled: true,
+      timeout: 12345,
+      autoApprove: [],
+    };
+    const other = { command: 'other-tool', args: ['keep-me'] };
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const original = JSON.stringify({ theme: 'dark', mcpServers: {
+      other,
+      lexicon: { command: 'old-node', args: ['/old/server.js'], ...options },
+    } });
+    await fs.writeFile(file, original, 'utf8');
+
+    const preview = await runCli(['install', 'cursor', '--home', h.home], { env: h.env });
+    expect(preview.code, preview.stderr).toBe(0);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+    const first = await runCli(['install', 'cursor', '--home', h.home, '--apply'], { env: h.env });
+    expect(first.code, first.stderr).toBe(0);
+    const updated = await fs.readFile(file, 'utf8');
+    const parsed = JSON.parse(updated);
+    expect(parsed.theme).toBe('dark');
+    expect(parsed.mcpServers.other).toEqual(other);
+    expect(parsed.mcpServers.lexicon).toMatchObject({ ...options, command: 'node' });
+    expect(parsed.mcpServers.lexicon.args).toEqual([expect.stringMatching(/server[^/]*\.m?js$/)]);
+    const second = await runCli(['install', 'cursor', '--home', h.home, '--apply'], { env: h.env });
+    expect(second.code, second.stderr).toBe(0);
+    expect(second.stdout).toContain('already present, nothing changed');
+    expect(await fs.readFile(file, 'utf8')).toBe(updated);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -828,11 +862,11 @@ class StdioRpc {
   readonly stdoutLines: string[] = [];
   stderr = '';
 
-  constructor(env: NodeJS.ProcessEnv, projectCwd: string) {
+  constructor(env: NodeJS.ProcessEnv, projectCwd: string, script = MCP_SERVER) {
     // `--import tsx` resolves the loader from the process cwd, so the server is
     // launched from the repo root and told about the project dir via LEXICON_CWD
     // (the same knob a real MCP client config would set).
-    this.child = spawn(process.execPath, ['--import', 'tsx', MCP_SERVER], {
+    this.child = spawn(process.execPath, script.endsWith('.mjs') ? [script] : ['--import', 'tsx', script], {
       cwd: REPO_ROOT,
       env: { ...env, LEXICON_CWD: projectCwd },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -971,5 +1005,111 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: MCP server over stdio', () =
     // normalize_transcript recorded hits in the (cloned) global file.
     const yaml = await fs.readFile(h.globalPath, 'utf8');
     expect(yaml).toMatch(/hits: 1/);
+  });
+});
+
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: committed plugin import sources', () => {
+  async function importedHome(label: string): Promise<TestHome> {
+    const h = await freshHome(label);
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    await fs.writeFile(h.globalPath, JSON.stringify({ version: 1, terms: [
+      { canonical: 'Ada Lovelace', aliases: ['ada love lace'], source: 'import:contacts' },
+      { canonical: 'Orion Summit', aliases: ['orion some it'], source: 'import:calendar' },
+      { canonical: 'SignalForge', aliases: ['signal forge'], source: 'import:github' },
+    ] }));
+    return h;
+  }
+
+  it('committed hook accepts all guided source tags and corrects their aliases', async () => {
+    const h = await importedHome('bundle-hook');
+    const result = await runNode(path.join(REPO_ROOT, 'plugin', 'hook.mjs'), [], { env: h.env, stdin: JSON.stringify({
+      session_id: 'bundled-test', cwd: h.repo, hook_event_name: 'UserPromptSubmit',
+      prompt: 'ask ada love lace about orion some it and signal forge',
+    }) });
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext)
+      .toContain('ask Ada Lovelace about Orion Summit and SignalForge');
+  });
+
+  it('committed MCP bundle exposes20 tools and loads all guided source tags', async () => {
+    const h = await importedHome('bundle-mcp');
+    const rpc = new StdioRpc(h.env, h.repo, path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs'));
+    try {
+      const initialized = await rpc.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'bundle-e2e', version: '0.0.0' } });
+      expect(initialized.error).toBeUndefined();
+      rpc.notify('notifications/initialized');
+      const tools = await rpc.request('tools/list');
+      const names = (tools.result as { tools: { name: string }[] }).tools.map((tool) => tool.name);
+      expect(names).toHaveLength(20);
+      expect(names).toContain('import_vocabulary');
+      const called = await rpc.request('tools/call', { name: 'normalize_transcript', arguments: { text: 'ada love lace at orion some it uses signal forge' } });
+      const result = called.result as ToolCallResult;
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content[0].text).output).toBe('Ada Lovelace at Orion Summit uses SignalForge');
+      const resource = await rpc.request('resources/read', { uri: 'lexicon://json' });
+      const contents = (resource.result as { contents: { text: string }[] }).contents;
+      const sources = JSON.parse(contents[0].text).terms.map((term: { source: string }) => term.source);
+      expect(sources.sort()).toEqual(['import:calendar', 'import:contacts', 'import:github']);
+    } finally { expect(await rpc.close()).toBe(0); }
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: guided import consent', () => {
+  it.each([['--yes', '--json'], ['--dry-run'], ['--json']])('rejects absent source consent before reads: %j', async (...flags) => {
+    const h = await freshHome('guided-no-sources');
+    const result = await runCli(['import', '--guided', ...flags], { env: h.env, cwd: h.repo });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('--sources');
+    await expect(fs.access(h.globalPath)).rejects.toThrow();
+  });
+
+  async function fakeGitHub(h: TestHome): Promise<NodeJS.ProcessEnv> {
+    const bin = path.join(h.home, 'bin');
+    await fs.mkdir(bin);
+    const gh = `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'auth') { console.log('fixture auth available'); process.exit(0); }
+const data = {
+  user: { login: 'fixture-user', name: process.env.FIXTURE_CHANGED ? 'Changed Person' : 'Ada Lovelace' },
+  'user/orgs': [],
+  'user/repos': [[{ name: 'SampleProject', owner: { login: 'fixture-user' } }]],
+};
+if (!(args[1] in data)) process.exit(1);
+console.log(JSON.stringify(data[args[1]]));
+`;
+    await fs.writeFile(path.join(bin, 'gh'), gh, { mode: 0o700 });
+    return { ...h.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
+  }
+
+  it.skipIf(process.platform === 'win32')('previews and applies only selected candidates through the real CLI', async () => {
+    const h = await freshHome('guided-selected');
+    const env = await fakeGitHub(h);
+    const preview = await runCli(['import', '--guided', '--sources', 'github', '--json'], { env, cwd: h.repo });
+    expect(preview.code).toBe(0);
+    const report = JSON.parse(preview.stdout);
+    const selected = report.candidates.find((c: { canonical: string }) => c.canonical === 'Ada Lovelace');
+    const applied = await runCli(['import', '--guided', '--sources', 'github', '--yes', '--json',
+      '--preview-id', report.previewId, '--accept', selected.id], { env, cwd: h.repo });
+    expect(applied.code).toBe(0);
+    const stored = await fs.readFile(h.globalPath, 'utf8');
+    expect(stored).toContain('Ada Lovelace');
+    expect(stored).toContain('import:github');
+    expect(stored).not.toContain('SampleProject');
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses changed source contents between real CLI preview and apply', async () => {
+    const h = await freshHome('guided-changed');
+    const env = await fakeGitHub(h);
+    const preview = await runCli(['import', '--guided', '--sources', 'github', '--json'], { env, cwd: h.repo });
+    expect(preview.code).toBe(0);
+    const report = JSON.parse(preview.stdout);
+    const applied = await runCli(['import', '--guided', '--sources', 'github', '--yes', '--json',
+      '--preview-id', report.previewId, '--accept', report.candidates[0].id],
+      { env: { ...env, FIXTURE_CHANGED: '1' }, cwd: h.repo });
+    expect(applied.code).toBe(1);
+    expect(applied.stderr).toMatch(/changed since preview/);
+    await expect(fs.access(h.globalPath)).rejects.toThrow();
   });
 });

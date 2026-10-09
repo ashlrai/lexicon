@@ -15,8 +15,8 @@ The matrix is `ubuntu-latest`, `windows-latest` and `macos-latest`, with Node 20
 
 | Feature | macOS | Windows | Linux | What the mark rests on |
 |---|---|---|---|---|
-| CLI: all twenty-five `lexicon` commands | **Tested in CI** | **Tested in CI** | **Tested in CI** | The TypeScript test suite runs on every matrix job, followed by a smoke test that drives the built binary rather than the source. Only the jsdom extension file is conditional, and only on Node 20. |
-| MCP server (stdio, nineteen tools) | **Tested in CI** | **Tested in CI** | **Tested in CI** | The smoke step starts the real server as a child process and speaks stdio JSON-RPC to it on every job. |
+| CLI: all twenty-five `lexicon` commands | **Tested in CI** | **Tested in CI** | **Tested in CI** | The TypeScript test suite runs on every matrix job, followed by a smoke test that drives the built binary rather than the source. The jsdom extension file is skipped on Node 20; the POSIX installer script tests are skipped on Windows. |
+| MCP server (stdio, twenty tools) | **Tested in CI** | **Tested in CI** | **Tested in CI** | The smoke step starts the real server as a child process and speaks stdio JSON-RPC to it on every job. |
 | Claude Code hooks and the plugin bundle | **Tested in CI** | **Tested in CI** | **Tested in CI** | The end-to-end suite spawns the real hook and the real CLI as child processes; a separate gate fails if the committed plugin bundle has drifted from source. |
 | `lexicon install <client> --apply` | **Tested in CI** | **Tested in CI** | **Tested in CI** | Covered by the portable suite everywhere. On Windows all five client configs are additionally written into a scratch `%USERPROFILE%` and read back off disk, so the paths are checked against the filesystem rather than against our own constant. |
 | Config and data file locations | **Tested in CI** | **Tested in CI** | **Tested in CI** | Linux checks that `XDG_CONFIG_HOME` moves the lexicon and that a relative value is ignored per the spec; Windows checks `%APPDATA%\Claude` and `%APPDATA%\Code\User` against the real directories. |
@@ -64,7 +64,7 @@ The daemon picks its backend from the platform and the environment, and `lexicon
 
 ## What is the same everywhere
 
-Worth saying plainly, because the differences above can make the project look more platform-dependent than it is. The lexicon file, the matcher, the trust gate, the hit counters, the nineteen MCP tools, the twenty-five CLI commands, the hooks, the starter packs and every export format behave identically on all three operating systems, and the same test suite proves it on all three. The platform-specific surface is narrow: how text gets into a field, how the clipboard is read, how a service starts at login, and whether an accessibility API exists to write through.
+Worth saying plainly, because the differences above can make the project look more platform-dependent than it is. The lexicon file, the matcher, the trust gate, the hit counters, the twenty MCP tools, the twenty-five CLI commands, the hooks, the starter packs and every export format behave identically on all three operating systems, and the same test suite proves it on all three. The platform-specific surface is narrow: how text gets into a field, how the clipboard is read, how a service starts at login, and whether an accessibility API exists to write through.
 
 ## Reporting a platform bug
 

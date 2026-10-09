@@ -40,7 +40,7 @@ primitives Phantom can call, in order of preference:
 1. `normalize()`: pure function, `npm i @ashlr/lexicon`. Text plus lexicon
    in, corrected text plus a replacement list out. No processes, no files
    beyond the YAML. Best when Phantom already holds the transcript.
-2. MCP server (`lexicon-mcp`, stdio, 19 tools): `normalize_transcript`,
+2. MCP server (`lexicon-mcp`, stdio, 20 tools): `normalize_transcript`,
    `learn_correction`, `add_term`, `setup_lexicon`, `lexicon_doctor`. Best when
    Phantom talks to an assistant over MCP anyway.
 3. Local HTTP API (`lexicon serve`, loopback `127.0.0.1:41733`, Bearer <redacted>,

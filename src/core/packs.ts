@@ -38,6 +38,10 @@ export interface PackInfo {
   title: string;
   description: string;
   version: 1;
+  /** Pack author (community packs); empty for the vendored four. */
+  author: string;
+  /** Author homepage (community packs); empty when unset. */
+  homepage: string;
   /** Term count. */
   terms: number;
   /** Alias count across every term. */
@@ -94,6 +98,9 @@ const PackFileSchema = z.object({
   title: z.string().trim().min(1).max(80),
   description: z.string().trim().max(300).default(''),
   version: z.literal(1).default(1),
+  /** Community packs name their author; the vendored four leave it empty. */
+  author: z.string().trim().max(40).default(''),
+  homepage: z.string().trim().max(200).default(''),
   terms: z.array(z.unknown()).min(1, 'a pack needs at least one term'),
 });
 
@@ -165,6 +172,8 @@ function parsePack(raw: unknown, file: string, expectedName: string): Pack {
     title: head.data.title,
     description: head.data.description,
     version: 1,
+    author: head.data.author,
+    homepage: head.data.homepage,
     terms: lexicon.terms.length,
     aliases: lexicon.terms.reduce((n, t) => n + t.aliases.length, 0),
     path: file,
@@ -172,25 +181,46 @@ function parsePack(raw: unknown, file: string, expectedName: string): Pack {
   };
 }
 
-/** Read and validate one pack. Throws `PackNotFoundError` for an unknown name and a readable error for a broken file. */
-export async function loadPack(name: string, opts: PackOptions = {}): Promise<Pack> {
-  const dir = packsDir(opts);
-  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, await packNames(dir));
-  const file = path.join(dir, `${name}.yaml`);
+/** Read and validate one pack file. `expectedName` (default: the file's base name) must match the pack's `name`. */
+export async function loadPackFile(file: string, expectedName?: string): Promise<Pack> {
+  const name = expectedName ?? path.basename(file, '.yaml');
+  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, []);
   let text: string;
   try {
     text = await fs.readFile(file, 'utf8');
   } catch (err) {
-    if (isEnoent(err)) throw new PackNotFoundError(name, await packNames(dir));
+    if (isEnoent(err)) throw new PackNotFoundError(name, []);
     throw err;
   }
+  return parsePackText(text, file, name);
+}
+
+/**
+ * Parse and validate pack text that is already in hand (a downloaded file,
+ * an editor buffer). `file` names the source in errors; `expectedName` must
+ * match the pack's `name`.
+ */
+export function parsePackText(text: string, file: string, expectedName: string): Pack {
   let raw: unknown;
   try {
     raw = parseYaml(text, { prettyErrors: false }); // see readLexiconFile: never quote the source line back
   } catch (err) {
     throw new Error(`Invalid pack at ${file}: ${errorMessage(err)}`);
   }
-  return parsePack(raw, file, name);
+  return parsePack(raw, file, expectedName);
+}
+
+/** Read and validate one pack. Throws `PackNotFoundError` for an unknown name and a readable error for a broken file. */
+export async function loadPack(name: string, opts: PackOptions = {}): Promise<Pack> {
+  const dir = packsDir(opts);
+  if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, await packNames(dir));
+  const file = path.join(dir, `${name}.yaml`);
+  try {
+    return await loadPackFile(file, name);
+  } catch (err) {
+    if (err instanceof PackNotFoundError) throw new PackNotFoundError(name, await packNames(dir));
+    throw err;
+  }
 }
 
 function info(pack: Pack): PackInfo {
@@ -244,18 +274,17 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
 }
 
 /**
- * Add every term of a pack to the global (default) or project lexicon through
- * `addTerm` with `source: 'pack'`: a term the user already has keeps its own
- * fields and only gains the pack's aliases (and never-words); new terms are
- * created. Then the pack name is recorded in that file's `settings.packs`.
- * Idempotent: a second install adds nothing. Project scope goes through the
- * same trust gate as any other project write (ProjectTrustError).
+ * Install an already-loaded pack. `recordAs` is the name recorded in the
+ * file's `settings.packs`: the plain pack name for the vendored four, the
+ * `author/name` ref for registry packs. See `installPack` for the semantics;
+ * this is the half the registry reuses after downloading and verifying a
+ * community pack file.
  */
-export async function installPack(
-  name: string,
+export async function installLoadedPack(
+  pack: Pack,
+  recordAs: string,
   opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
 ): Promise<InstallPackResult> {
-  const pack = await loadPack(name, opts);
   const scope: TermScope = opts.scope ?? 'global';
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
 
@@ -279,11 +308,26 @@ export async function installPack(
       if (result.created) added += 1;
       else merged += 1;
     }
-    if (!file) throw new Error(`pack "${name}" has no terms`);
-    const packs = dedupe([...(file.lexicon.settings?.packs ?? []), name]);
+    if (!file) throw new Error(`pack "${pack.name}" has no terms`);
+    const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
     await writePacksSetting(file, packs, storeOpts);
     return { pack: info(pack), added, merged, path: file.path, scope };
   });
+}
+
+/**
+ * Add every term of a pack to the global (default) or project lexicon through
+ * `addTerm` with `source: 'pack'`: a term the user already has keeps its own
+ * fields and only gains the pack's aliases (and never-words); new terms are
+ * created. Then the pack name is recorded in that file's `settings.packs`.
+ * Idempotent: a second install adds nothing. Project scope goes through the
+ * same trust gate as any other project write (ProjectTrustError).
+ */
+export async function installPack(
+  name: string,
+  opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
+): Promise<InstallPackResult> {
+  return installLoadedPack(await loadPack(name, opts), name, opts);
 }
 
 function lower(s: string): string {
@@ -320,11 +364,18 @@ function hasExtra(have: readonly string[] | undefined, pack: readonly string[] |
  * ends, and there is nothing to gain here: the two files are independent
  * documents and `removeTerm` has always walked them the same way.
  */
-export async function uninstallPack(
-  name: string,
+/**
+ * Remove an already-loaded pack. `recordAs` is the name dropped from the
+ * files' `settings.packs` (the plain name for vendored packs, the
+ * `author/name` ref for registry ones). See `uninstallPack` for the
+ * semantics; the registry reuses this after resolving the community pack
+ * file from its cache or a fresh download.
+ */
+export async function uninstallLoadedPack(
+  pack: Pack,
+  recordAs: string,
   opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
 ): Promise<UninstallPackResult> {
-  const pack = await loadPack(name, opts);
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   const packTerms = new Map(pack.lexicon.terms.map((t) => [lower(t.canonical), t]));
   const paths = resolvePaths(storeOpts);
@@ -339,7 +390,7 @@ export async function uninstallPack(
     await withLexiconLock(target.path, async () => {
       const file = await readLexiconFile(target.path, target.scope);
       if (!file.exists) return;
-      const listed = (file.lexicon.settings?.packs ?? []).includes(name);
+      const listed = (file.lexicon.settings?.packs ?? []).includes(recordAs);
       // `file` is about to be written back, so its terms have to stay exactly as
       // they are on disk; a project term's usage count is not on disk any more,
       // it is in this user's sidecar. Read it alongside rather than into the term.
@@ -360,9 +411,26 @@ export async function uninstallPack(
         if (status !== 'trusted') throw new ProjectTrustError(file.path, status);
       }
       file.lexicon.terms = remaining;
-      await writePacksSetting(file, (file.lexicon.settings?.packs ?? []).filter((p) => p !== name), storeOpts);
+      await writePacksSetting(file, (file.lexicon.settings?.packs ?? []).filter((p) => p !== recordAs), storeOpts);
       written.push(file.path);
     });
   }
   return { pack: info(pack), removed, kept, files: written };
+}
+
+/**
+ * Remove a pack's terms from the project file (when one exists) and the global
+ * file, or from the one `scope` names. Only terms with `source: 'pack'` whose
+ * canonical is in the pack are candidates; a candidate the user has edited
+ * since (hits > 0, or aliases / never-words beyond the pack's) is kept and
+ * listed in `kept`. The pack name is dropped from `settings.packs` either way.
+ *
+ * Each file is read, decided about and written inside its own lock, and the
+ * files are taken one at a time. Both halves matter. See `uninstallLoadedPack`.
+ */
+export async function uninstallPack(
+  name: string,
+  opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
+): Promise<UninstallPackResult> {
+  return uninstallLoadedPack(await loadPack(name, opts), name, opts);
 }

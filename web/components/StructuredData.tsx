@@ -81,7 +81,7 @@ const graph = [
     },
     featureList: [
       'Corrects mis-transcribed proper nouns in dictated text',
-      'MCP server with nineteen tools, two resources and two prompts',
+      'MCP server with twenty tools, two resources and two prompts',
       'Claude Code plugin with SessionStart and UserPromptSubmit hooks',
       'Browser extension for ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe',
       'macOS menu bar app that rewrites any focused text field',
