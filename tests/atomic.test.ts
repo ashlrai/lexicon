@@ -61,6 +61,96 @@ async function leftoverTemps(target: string): Promise<string[]> {
   return entries.filter((e) => e.startsWith(base) && e.endsWith('.tmp')).sort();
 }
 
+describe('physical target aliases share one lock', () => {
+  const opts = { timeoutMs: 150, queueTimeoutMs: 150 };
+
+  async function held(target: string) {
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = withFileLock(target, async () => { enter(); await gate; }, opts);
+    await entered;
+    return { first, release };
+  }
+
+  it('does not enter a file-symlink writer while the real target writer holds its lock', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'real.yaml');
+    const alias = path.join(dir, 'linked.yaml');
+    await fs.writeFile(target, 'before');
+    await fs.symlink(target, alias);
+    const first = await held(target);
+    let entered = false;
+    try {
+      await expect(withFileLock(alias, async () => { entered = true; }, opts)).rejects.toMatchObject({ name: 'FileLockError' });
+      expect(entered).toBe(false);
+    } finally { first.release(); await first.first; }
+  });
+
+  it('directory aliases already share the physical exclusive lock file', async () => {
+    const dir = await scratch();
+    const real = path.join(dir, 'real');
+    const alias = path.join(dir, 'alias');
+    await fs.mkdir(real);
+    await fs.symlink(real, alias, 'junction');
+    const target = path.join(real, 'lexicon.yaml');
+    await fs.writeFile(target, 'before');
+    const first = await held(target);
+    try {
+      await expect(withFileLock(path.join(alias, 'lexicon.yaml'), async () => 'entered', opts))
+        .rejects.toMatchObject({ name: 'FileLockError' });
+    } finally { first.release(); await first.first; }
+  });
+
+  it('reuses its held lock for a nested directory alias', async () => {
+    const dir = await scratch();
+    const real = path.join(dir, 'real');
+    const alias = path.join(dir, 'alias');
+    await fs.mkdir(real);
+    await fs.symlink(real, alias, 'junction');
+    await fs.writeFile(path.join(real, 'lexicon.yaml'), 'before');
+    await expect(withFileLock(path.join(real, 'lexicon.yaml'),
+      async () => withFileLock(path.join(alias, 'lexicon.yaml'), async () => 'nested', opts), opts)).resolves.toBe('nested');
+  });
+
+  it('keeps missing-parent lock identity stable after the target is created', async () => {
+    const dir = await scratch();
+    const real = path.join(dir, 'real');
+    const alias = path.join(dir, 'alias');
+    await fs.mkdir(real);
+    await fs.symlink(real, alias, 'junction');
+    const target = path.join(real, 'new', 'deep', 'lexicon.yaml');
+    const other = path.join(alias, 'new', 'deep', 'lexicon.yaml');
+    await expect(withFileLock(target, async () => {
+      await writeFileAtomic(target, 'created');
+      return withFileLock(other, async () => fs.readFile(other, 'utf8'), opts);
+    }, opts)).resolves.toBe('created');
+  });
+
+  it('lets an unrelated project proceed while another lock is held', async () => {
+    const dir = await scratch();
+    const first = await held(path.join(dir, 'project-a.yaml'));
+    try {
+      await expect(withFileLock(path.join(dir, 'project-b.yaml'), async () => 'independent', opts)).resolves.toBe('independent');
+    } finally { first.release(); await first.first; }
+  });
+
+  it('locks a dangling file link without creating its missing destination', async () => {
+    const dir = await scratch();
+    const destination = path.join(dir, 'unmounted', 'lexicon.yaml');
+    const alias = path.join(dir, 'linked.yaml');
+    await fs.symlink(destination, alias);
+    await withFileLock(alias, async () => {
+      await expect(fs.stat(`${alias}${LOCK_SUFFIX}`)).resolves.toBeDefined();
+      await expect(fs.stat(path.dirname(destination))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.readlink(alias)).resolves.toBe(destination);
+    }, opts);
+    await expect(fs.stat(`${alias}${LOCK_SUFFIX}`)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.readlink(alias)).resolves.toBe(destination);
+  });
+});
+
 describe('a lock held by a live process is never broken by age', () => {
   /**
    * Catches: the stale rule breaking on age alone. The doc comment promised

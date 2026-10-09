@@ -13,6 +13,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- File symlinks share their real dictionary's writer lock, and nested calls through directory aliases reuse the held lock. Missing targets keep a stable lock identity when created; unrelated projects retain independent locks.
 - Contacts queries open SQLite read-only with an empty startup file, so import previews never execute user `.sqliterc` commands or recreate a database that disappeared after discovery.
 - The interactive import checklist shows source descriptions before checking availability; cancellation performs no profile/provider probes, and only selected sources are checked afterward.
 - Community registry state and caches are isolated by global/project destination; OS-canonical paths keep Windows short and long aliases of the same project together. Installation and removal restore their prior state after metadata failure; update previews bind the complete installation record and show alias-only, pronunciation, case and note changes. MCP installs use exactly the approved preview bytes.
