@@ -52,13 +52,17 @@ lexicon pack validate ./my-pack.yaml                                 # the publi
 
 A community pack installs through the same merge rules as the vendored four, with three extra guarantees, because installed terms reach model context on every hooked prompt:
 
-- **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `~/.config/lexicon/registry.json`. `pack update` re-checks it.
+- **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `<global-lexicon-dir>/registry/registry.json`. `pack update` re-checks it.
 - **Preview before the first write.** `pack add <author>/<name>` shows the whole term list and asks (default no; `--yes` off a terminal). Updates are re-approved one by one, never silent.
 - **The ordinary-word guard, enforced.** `lexicon pack validate` runs the publish bar: schema, author present, and no canonical or alias that is an everyday English word. Run it in CI on the pack's own repo.
 
-Updates key on checksum, not on the display version: when the pack file changes, its checksum changes and `pack update` offers the new file, showing which terms were added and which the new file drops (dropped terms are reported, never deleted from your lexicon). A pack pinned with `@version` is never moved by `pack update`.
+Updates key on checksum, not on the display version: when the pack file changes, its checksum changes and `pack update` offers the new file, showing every incoming term field, including notes, phonetic spellings, case sensitivity and aliases, along with changed content, added terms and terms the new file drops (dropped terms are reported, never deleted from your lexicon). A pack pinned with `@version` is never moved by `pack update`.
 
-Over MCP, `list_packs` takes the same `registry` parameter, and `add_pack` takes a community ref: without `confirm: true` it returns the term-list preview and writes nothing; with it, installs after the user approved.
+Over MCP, `list_packs` takes the same `registry` parameter, and `add_pack` takes a community ref: without `confirm: true` it returns the term-list preview and writes nothing; confirmation also requires the returned `previewDigest` for the same destination and all approved term fields. Changed content or metadata is refused, and installation uses the exact reviewed bytes.
+
+Project community packs keep separate pins and caches for each canonical project file. Pass `--project` to `pack list`, `pack add`, `pack update` and `pack remove` to operate on that project's installation. Global packs and other projects keep their own records. Metadata without a verified scope/target is refused; inspect and explicitly migrate or remove old metadata before reinstalling.
+
+`pack update --json` previews without writing unless `--yes` is also given. Installation rolls back lexicon and cache changes if publishing its registry metadata fails.
 
 ## Adding a pack to this repo
 
