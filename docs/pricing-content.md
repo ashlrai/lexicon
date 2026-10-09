@@ -128,7 +128,7 @@ two bigger cards. It is the product.
 - macOS menu bar app for any text field (ad-hoc signed, not notarized)
 - Loopback HTTP API, and the matcher as a library
 - Fifteen export formats and eight importers, including Wispr Flow and Superwhisper
-- Four starter packs, 155 terms
+- Four starter packs, 176 terms
 - Share a lexicon by committing `.lexicon.yaml` to a repository
 - **`PLANNED`** Pull a shared lexicon from any URL you host yourself (unlimited)
 

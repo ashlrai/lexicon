@@ -41,7 +41,7 @@ into `web/lib/generated/` (gitignored, rebuilt on every build):
 | --- | --- |
 | `lexicon-core.js` | `lib/demo-entry.ts` bundled by esbuild: `normalize`, `suggestAliases` and `DEFAULT_MIN_CONFIDENCE` straight out of `src/core`. 41 KB. |
 | `lexicon-core.d.ts` | Hand-written types for the above, so the app type-checks. |
-| `demo-lexicon.json` | The four starter packs (155 terms) plus the `Ashlr.AI` entry from `examples/lexicon.example.yaml`, parsed from the same YAML the CLI ships. |
+| `demo-lexicon.json` | The four starter packs (176 terms) plus the `Ashlr.AI` entry from `examples/lexicon.example.yaml`, parsed from the same YAML the CLI ships. |
 | `brand-icons.json` | Monochrome SVG paths from `simple-icons` for the "works with" wall. |
 
 This mirrors `scripts/build-site.mjs` at the repo root, which does the same job
