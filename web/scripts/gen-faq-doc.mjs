@@ -69,7 +69,7 @@ ${FAQ.map((f) => `## ${f.q}\n\n${f.a}`).join('\n\n')}
 
 - [Quickstart](QUICKSTART.md): nothing to working, in five minutes.
 - [Install into your agents](CLIENTS.md): the per-client commands.
-- [MCP server reference](MCP.md): the nineteen tools, two resources and two prompts.
+- [MCP server reference](MCP.md): the twenty tools, two resources and two prompts.
 - [For agents](AGENTS.md): how an agent installs and verifies Lexicon for its user.
 - [Security](../SECURITY.md): the threat model and the trust gate.
 - [Benchmark](BENCHMARK.md): the measurements, the method and what still fails.

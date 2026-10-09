@@ -389,7 +389,7 @@ function Surfaces() {
           <Surface
             label="agents"
             title="Before the prompt is read"
-            body="An MCP server with nineteen tools, plus a Claude Code plugin whose SessionStart and UserPromptSubmit hooks correct the prompt on its way in. Your agent never sees the wrong spelling."
+            body="An MCP server with twenty tools, plus a Claude Code plugin whose SessionStart and UserPromptSubmit hooks correct the prompt on its way in. Your agent never sees the wrong spelling."
           >
             <Flow
               rows={[
@@ -883,7 +883,7 @@ function ForAgents() {
               <AgentLink
                 href="/llms-full.txt"
                 title="/llms-full.txt"
-                body="The whole thing in one fetch: the problem, the install, the nineteen MCP tools, the exports, the measured numbers, the privacy claims and the FAQ."
+                body="The whole thing in one fetch: the problem, the install, the twenty MCP tools, the exports, the measured numbers, the privacy claims and the FAQ."
               />
               <AgentLink
                 href="/mcp.json"
