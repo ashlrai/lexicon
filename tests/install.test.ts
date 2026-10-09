@@ -157,6 +157,40 @@ describe('lexicon install <json client> --apply', () => {
         expect(io.out).toContain('--apply');
         await expect(fs.access(file)).rejects.toThrow();
       });
+
+      it('keeps client-owned options when previewing and refreshing an existing launch', async () => {
+        const file = path.join(home, c.rel);
+        const options = {
+          env: { LEXICON_PATH: path.join(home, 'custom dictionary', 'lexicon.yaml') },
+          disabled: true,
+          timeout: 12345,
+          autoApprove: [],
+          customClientOption: { enabled: false },
+        };
+        const original = JSON.stringify({ [c.key]: { lexicon: { command: 'old-node', args: ['/old/server.js'], ...options } } });
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, original);
+        await run(c.client);
+        expect(await fs.readFile(file, 'utf8')).toBe(original);
+        await run(c.client, { apply: true });
+        const written = await readJson(file);
+        expect((written[c.key] as Record<string, unknown>).lexicon).toEqual({ ...options, ...c.entry });
+        const refreshed = await fs.readFile(file, 'utf8');
+        const second = await run(c.client, { apply: true });
+        expect(second.io.out).toContain('nothing changed');
+        expect(await fs.readFile(file, 'utf8')).toBe(refreshed);
+      });
+
+      it.each([null, [], 'invalid', { url: 'http://example.invalid/mcp' }, { type: 'http', url: 'http://example.invalid/mcp' }])(
+        'refuses an incompatible existing Lexicon entry without changing the file: %j', async (entry) => {
+          const file = path.join(home, c.rel);
+          const original = JSON.stringify({ [c.key]: { lexicon: entry } });
+          await fs.mkdir(path.dirname(file), { recursive: true });
+          await fs.writeFile(file, original);
+          await expect(run(c.client, { apply: true })).rejects.toThrow(/refusing|different transport/);
+          expect(await fs.readFile(file, 'utf8')).toBe(original);
+        },
+      );
     });
   }
 
@@ -311,6 +345,15 @@ describe('pure helpers', () => {
     expect(() => mergeServerIntoJson({ mcpServers: 'nope' }, 'mcpServers', { command: 'node', args: [] })).toThrow(
       /not an object/,
     );
+  });
+
+  it.each([null, [], 'invalid', 123])('does not replace a valid JSON non-object config: %j', async (value) => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    const original = JSON.stringify(value);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, original);
+    await expect(run('cursor', { apply: true })).rejects.toThrow(/not an object/);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
   });
 
   it('upsertTomlTable handles an empty file, a header with comment, and idempotence', () => {

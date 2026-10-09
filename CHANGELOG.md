@@ -2,6 +2,13 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## Unreleased
+
+### Fixed
+
+- Reinstalling a JSON MCP client now preserves its custom Lexicon path, environment, disabled state, timeouts and approval settings while refreshing the launch command. Invalid configs and conflicting remote transports are refused before writing.
+- The POSIX installer pins a validated stable registry version or release tag and stops when discovery fails, instead of silently installing main. Setup is refused when PATH selects a different installed version.
+
 ## 0.5.4 (2026-09-21)
 
 Thirteen commits, and a fix release rather than a routine one. 0.5.3 shipped a defect that throws away a term you had just written while telling you it saved it, and three more paths that lose a write without saying so. Everything below was reproduced before it was touched, and every regression test here was watched failing against 0.5.3 first.
