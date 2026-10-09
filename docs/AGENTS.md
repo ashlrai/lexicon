@@ -100,7 +100,7 @@ hook (corrects each dictated prompt on the way in) into
 
 ## The tools you will actually call
 
-Nineteen in all; [MCP.md](MCP.md) is the full table. These five cover almost
+Twenty in all; [MCP.md](MCP.md) is the full table. These five cover almost
 everything:
 
 - `normalize_transcript { text }` - correct a dictated string. Returns `output`,
@@ -169,9 +169,11 @@ they judge whether it worked.
 
 The lexicon is a plain YAML file at `~/.config/lexicon/lexicon.yaml`. No account,
 no sync, no telemetry. The CLI, hooks, MCP server, loopback API and extension
-make no network request beyond 127.0.0.1. The one outbound request in the
-codebase is `lexicon voice` fetching a whisper.cpp model on first use. Full
-threat model: [SECURITY.md](../SECURITY.md).
+make no network request beyond 127.0.0.1, except for two the user asks for by
+name: `lexicon voice` fetching a whisper.cpp model on first use, and
+`lexicon pack` fetching a community pack index and pack files from the
+`--registry` URL the user passed (every download is checksum-verified against
+the index before it is read). Full threat model: [SECURITY.md](../SECURITY.md).
 
 ## Where the machine-readable files are in this repository
 

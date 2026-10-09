@@ -1,7 +1,6 @@
 # Design proposal: community pack registry
 
-**Status:** proposal only. Nothing here is implemented. Needs Mason's input
-before any work starts, especially the hosting call in point 1.
+**Status:** implemented (MVP) in `src/core/registry.ts` and the `lexicon pack` subcommands (`search`, `add <author>/<name>`, `update`, `remove`, `show`, `validate`, all with `--registry`). The decisions below are the ones this section asked Mason for; they are recorded here so a future change knows what it is revisiting.
 
 ## The gap
 
@@ -57,17 +56,11 @@ like the vendored four do. Minimum viable trust story:
 - Install preview: `pack add` shows the term list before writing, the way
   `trust_project` shows a project file before pinning it.
 
-## Decisions for Mason
+## Decisions made (MVP)
 
-1. **Hosted index or git-based?** This is the fork in the road. The hosted
-   index is the better product and the bigger commitment; the git-based
-   index ships as a markdown file and a `--registry` flag.
-2. **Curation bar.** Who decides a pack is good enough to list: automated
-   checks only, or human review? The vendored four keep their curated badge
-   either way.
-3. **Namespace and squatting.** First-come `<author>/<name>` needs a dispute
-   policy the day two cardiology packs appear.
-4. **Non-goal check.** The README says no hosted accounts and no sync
-   service. A read-only pack index is arguably neither, but it is a service
-   with uptime. If that line is load-bearing for the project's positioning,
-   the git-based shape is the honest one.
+1. **Git-based.** The registry is an index file, not a service: anyone hosts the YAML anywhere a URL or path reaches. This keeps the README's no-hosted-accounts stance intact; `registry/index.example.yaml` documents the format.
+2. **Curation bar.** Automated checks (`lexicon pack validate`: schema, author present, the ordinary-word guard), meant for CI on the pack's own repo. No human review gate; the install-time preview and checksum pinning carry the trust instead.
+3. **Namespace.** First-come `<author>/<name>`; no dispute policy yet beyond the checksum binding a ref to exact bytes. Flagged as the first thing to revisit when two cardiology packs appear.
+4. **Updates key on checksum, not version.** `version` is a display string; a changed checksum is what makes an update available, and every update is previewed and confirmed, never silent. `@version` pins opt out of `pack update`.
+
+**Open for later:** a hosted index if discovery outgrows files; signed packs (author identity beyond the GitHub-shaped `author` field); an MCP `search_packs` tool (currently `list_packs` takes the registry); namespace disputes.

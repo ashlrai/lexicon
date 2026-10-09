@@ -12,7 +12,7 @@ Good shapes for a first PR:
 
 | Shape | Recipe | Roughly |
 |---|---|---|
-| A term pack for a profession the packs do not cover (law, medicine, finance, design) | [docs/PACKS.md](docs/PACKS.md#adding-a-pack) | One YAML file plus one test |
+| A term pack for a profession the packs do not cover (law, medicine, finance, design) | [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo) | One YAML file plus one test |
 | An export format for another dictation app or STT engine | [Adding an exporter](#adding-an-exporter) | Three files plus a test |
 | An import format for a dictionary the tool cannot read yet | [Adding an importer](#adding-an-importer) | Three files plus a test |
 | A harvester source (a new manifest type, a new identifier convention) | [Adding a harvester source](#adding-a-harvester-source) | One function plus a fixture |
@@ -148,7 +148,7 @@ To add a journey test:
 
 ## Adding a starter pack
 
-A pack for a profession the four shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack).
+A pack for a profession the four shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
 
 ## Adding an exporter
 

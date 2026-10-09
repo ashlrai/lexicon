@@ -1,7 +1,6 @@
 # Design proposal: guided vocabulary import
 
-**Status:** proposal only. Nothing here is implemented. Needs Mason's input
-before any work starts, especially the privacy call in point 4.
+**Status:** implemented (MVP) in `src/core/import-sources.ts`, `src/cli/cmd-import-guided.ts` (`lexicon import --guided`) and the MCP `import_vocabulary` tool. The decisions below are the ones this section asked Mason for; they are recorded here so a future change knows what it is revisiting.
 
 ## The gap
 
@@ -44,22 +43,11 @@ possible.
 - MCP: extend `setup_lexicon` or add `import_vocabulary { sources, apply? }`,
   following the preview-before-write rule the other setup tools follow.
 
-## Decisions for Mason
+## Decisions made (MVP)
 
-1. **Which sources, and in what order?** Contacts and calendar are the
-   highest signal for most people; GitHub orgs for developers. Email is the
-   richest and the most sensitive.
-2. **The privacy posture.** Reading someone's email or contacts to build a
-   vocabulary file is exactly the kind of access this repo's docs tell agents
-   to ask about first. The wizard must be explicit about what is read, keep
-   everything local (no new network calls beyond the source's own API), and
-   ideally work from locally synced data (macOS Contacts, `gh` CLI auth)
-   before reaching for OAuth scopes.
-3. **Dedup and merge policy.** A colleague who is also a GitHub org member
-   appears twice. The merge rules from `lexicon pack add` (existing term keeps
-   the user's spelling and aliases, gains the new source tag) mostly apply,
-   but need a stated rule for conflicting canonicals.
-4. **Scope creep check.** This edges toward "Lexicon manages your contacts,"
-   which it does not. The proposal stays vocabulary-shaped: sources are
-   inputs to term candidates, never a CRM. If a source cannot be framed that
-   way, it does not belong.
+1. **Sources and order.** contacts, calendar, github, in that order. Email and Slack are listed in the wizard as known-but-unimplemented with the reason stated, rather than silently omitted.
+2. **Privacy posture.** Local-first only: macOS Contacts and Calendar are read from their on-disk databases, GitHub through the user's existing `gh` login. No new OAuth, no new network calls beyond the source's own API. `--yes` requires an explicit `--sources` list: the wizard never reads an address book on a default. Email/Slack stay out until the OAuth conversation happens.
+3. **Dedup and merge.** Candidates merge case-insensitively across sources (higher count wins a spelling conflict, the loser survives as an alias); writes go through `addTerm`, so an existing term keeps its spelling and only gains aliases. New terms are stamped `source: import:<name>`; merged terms keep the source they had.
+4. **Scope.** Vocabulary-shaped only: sources are inputs to term candidates, never a CRM. Alias policy is the cautious harvest one, with GitHub handles keeping single-word aliases (they are dictated as words, unlike code symbols).
+
+**Open for later:** email/Slack sources (needs the OAuth conversation); folding the wizard into `lexicon setup` as an optional step; per-source cleanup (`pack remove`-style by `import:<name>`).
