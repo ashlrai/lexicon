@@ -814,12 +814,12 @@ describe('runSetup starter packs', () => {
     const calls: { name: string; opts: unknown }[] = [];
     const f = fakes({
       listPacks: async () => [
-        { name: 'developer', title: 'Dev', description: 'd', version: 1, terms: 2, aliases: 3, path: '/fake/developer.yaml' },
-        { name: 'custom', title: 'Custom', description: 'c', version: 1, terms: 1, aliases: 1, path: '/fake/custom.yaml' },
+        { name: 'developer', title: 'Dev', description: 'd', version: 1, author: '', homepage: '', terms: 2, aliases: 3, path: '/fake/developer.yaml' },
+        { name: 'custom', title: 'Custom', description: 'c', version: 1, author: '', homepage: '', terms: 1, aliases: 1, path: '/fake/custom.yaml' },
       ],
       installPack: async (name, opts) => {
         calls.push({ name, opts });
-        return { pack: { name, title: 'x', description: '', version: 1, terms: 2, aliases: 3, path: '/fake' }, added: 2, merged: 0, path: globalPath, scope: 'global' };
+        return { pack: { name, title: 'x', description: '', version: 1, author: '', homepage: '', terms: 2, aliases: 3, path: '/fake' }, added: 2, merged: 0, path: globalPath, scope: 'global' };
       },
     });
     const { summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'custom,developer' }, f);
@@ -854,7 +854,7 @@ describe('runSetup starter packs', () => {
       createPrompter: () => p,
       installPack: async (name) => {
         calls.push(name);
-        return { pack: { name, title: 'x', description: '', version: 1, terms: 1, aliases: 1, path: '/fake' }, added: 1, merged: 0, path: globalPath, scope: 'global' };
+        return { pack: { name, title: 'x', description: '', version: 1, author: '', homepage: '', terms: 1, aliases: 1, path: '/fake' }, added: 1, merged: 0, path: globalPath, scope: 'global' };
       },
     });
     // No git repo (no harvest prompt), no clients detected, serve prompt answered by '[]' -> confirm reads '' -> default yes.
