@@ -17,6 +17,7 @@ import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
 import {
+  MAX_TOGGLE_SECONDS,
   PROVISIONAL_TTL_MS,
   captureSeconds,
   claimState,
@@ -28,8 +29,11 @@ import {
   isStaleProvisional,
   readState,
   recorderLogPath,
+  resolveInput,
+  startRecorder,
   stateFilePath,
   stopRecorder,
+  touchPrivateFile,
   voiceDir,
   wavHasAudio,
   writeState,
@@ -591,20 +595,43 @@ describe('lexicon voice --toggle start race', () => {
 
   it('two presses that race (second starts while the first is spawning) produce one recorder and one state file', async () => {
     const h = await harness();
-    // The first press's spawn fires the second press before returning: the
-    // second runs while the state file still holds the first's provisional
-    // record, exactly the window between the claim and the pid rewrite.
-    let second: Promise<number> | undefined;
-    const base = h.deps.spawn as VoiceSpawn;
-    h.deps.spawn = (cmd, args, o) => {
-      const handle = base(cmd, args, o);
-      if (!second) second = runVoiceToggle(h.opts, h.io, h.deps);
-      return handle;
-    };
-    const first = await runVoiceToggle(h.opts, h.io, h.deps);
-    expect(first).toBe(EXIT_OK);
-    expect(await second).toBe(EXIT_OK);
-    expect(h.out).toEqual(['recording\n', 'recording\n']);
+    // The first press has claimed the provisional record and is inside its
+    // spawn call: no pid on the state file yet. Setting this up directly is
+    // deliberate. The old version of this test fired the second press from
+    // inside `spawn`, which races the second press's read against the first
+    // press's pid rewrite with no guaranteed ordering; on Node 20 the write
+    // can win, the second press then stops the first instead of double
+    // tapping, and CI went red on 2026-09-30.
+    const startedAt = '2026-09-19T12:00:00.000Z';
+    const wav = path.join(voiceDir(h.globalPath), `recording-${startedAt.replace(/[:.]/g, '-')}.wav`);
+    expect(await claimState(h.globalPath, { wav, startedAt })).toBe(true);
+
+    // The second press lands while the first is still spawning: the
+    // provisional record makes it idempotent. "recording", no new recorder.
+    const second = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(second).toBe(EXIT_OK);
+    expect(h.out).toEqual(['recording\n']);
+    expect(h.spawnCalls).toEqual([]);
+
+    // The first press's spawn returns and it rewrites the claim with the pid.
+    // This replays startDetached's tail with the real primitives, in order.
+    const logFile = recorderLogPath(h.globalPath);
+    await touchPrivateFile(wav);
+    await touchPrivateFile(logFile);
+    const child = startRecorder({
+      ffmpeg: '/fake/bin/ffmpeg',
+      spawn: h.deps.spawn as VoiceSpawn,
+      input: await resolveInput({ platform: 'darwin', ffmpeg: '/fake/bin/ffmpeg', exec: h.deps.exec as VoiceExec }),
+      wav,
+      seconds: MAX_TOGGLE_SECONDS,
+      detached: true,
+      logFile,
+    });
+    expect(child.pid).toBe(4242);
+    await writeState(h.globalPath, { pid: child.pid as number, wav, startedAt });
+    await sweepVoiceDir(h.globalPath, wav, new Date(startedAt).getTime());
+    h.io.stdout('recording\n');
+
     expect(h.spawnCalls).toHaveLength(1);
     expect(h.kills).toEqual([]);
     const state = await readState(h.globalPath);
