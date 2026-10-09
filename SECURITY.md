@@ -97,8 +97,7 @@ or delete the file at any time. `--toggle` keeps a `voice/recording.json` state
 file with the recorder's pid and WAV path while a recording is in progress. The
 `voice/` directory is created with mode 0700 and every file in it (state,
 history, recorder log, WAV) with mode 0600, because they hold whatever was said
-near the microphone. The
-one network request the tool ever makes is the first-run download of a whisper
+near the microphone. The voice path's network operation is the first-run download of a whisper
 model (`ggml-<name>.bin`) from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main` into
 `<config dir>/models/` (`LEXICON_WHISPER_MODELS` overrides). Point `--model` at a
@@ -130,6 +129,23 @@ duplicate terms or hook entries. The `setup_lexicon` MCP tool runs the same code
 non-interactively: without `apply` it returns the dry-run plan, and with
 `apply: true` it installs only into the `clients` it is given (omitted means
 none) and creates the login service only with `serve: true`.
+
+**Guided vocabulary import.** `lexicon import --guided` reads only sources
+selected by the operator. Contacts and calendar are local OS sources. The
+GitHub source calls the GitHub API through the existing `gh` configuration
+and login (normally `api.github.com`) for profile names/logins, organization
+membership, organization member logins and repository names. It requests no new OAuth scopes. Candidate previews can
+contain personal or organization names; a CLI/MCP client receiving them may
+share them with its model, so source consent precedes inspection and candidate
+approval precedes writes. Interactive CLI import approves candidates directly
+in its review prompts. Non-interactive CLI previews must name their sources;
+applying requires `--yes`, the matching `--preview-id` and explicit `--accept`
+candidate IDs. The `import_vocabulary` MCP tool instead requires the returned
+`previewToken`, explicit sources and `approvedCandidateIds`, and consumes that
+saved snapshot without rereading sources. No email or chat importer is implemented. The importer is reachable in
+this `0.5.5` source candidate; public npm `latest` remained `0.5.4` when
+requeried on 2026-10-09. Source implementation is not authenticated-import or
+published-release acceptance.
 
 **Install script (`curl | sh`).** `scripts/install.sh` (served from
 `https://ashlrai.github.io/lexicon/install.sh`) is POSIX sh. It checks for Node
