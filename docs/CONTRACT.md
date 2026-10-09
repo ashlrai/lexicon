@@ -242,7 +242,7 @@ Pure, no IO.
 - The MCP server's zod enums live in `src/mcp/shared.ts` (`INSTALL_CLIENT_VALUES`, `INSTALL_SCOPES`, `IMPORT_FORMAT_VALUES`, `SUGGESTION_KINDS`), each `as const satisfies readonly <T>[]` so it fails to compile when the union grows. `export_lexicon` validates its format against `isExportFormat` instead of a tuple.
 
 ## src/core/index.ts
-Re-exports everything above: `types`, `schema`, `store`, `trust`, `matcher`, `normalize`, `harvest`, `exporters`, `importers`, `suggest`, `learn`, `stats`, `suggestTerms`, `packs`. The only cross-module import path inside core; also the package entry point (`main` / `exports["."]`). Note that `export * from './packs.js'` also surfaces `packs.ts`'s own `findPackageRoot`, which is a *different* function from the one in `src/util/package.ts` (see below).
+Re-exports everything above: `types`, `schema`, `store`, `trust`, `matcher`, `normalize`, `harvest`, `exporters`, `importers`, `suggest`, `learn`, `stats`, `suggestTerms`, `packs`, `registry`, `import-sources`, `import-preview`. The only cross-module import path inside core; also the package entry point (`main` / `exports["."]`). Note that `export * from './packs.js'` also surfaces `packs.ts`'s own `findPackageRoot`, which is a *different* function from the one in `src/util/package.ts` (see below).
 
 ## src/daemon/clipboard-backends.ts
 - `ClipboardBackend { name; description?; read(): Promise<string>; write(text): Promise<void> }`. `read` resolves `''` for an empty or non-text clipboard (the tool exits non-zero or prints nothing); a missing binary (`ENOENT`) or a display/session error still rejects.
