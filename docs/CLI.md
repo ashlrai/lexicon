@@ -22,7 +22,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
-| [`lexicon import [options] <file> [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon |
+| [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
 | [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview first) |
 | [`lexicon untrust [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
@@ -34,7 +34,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon suggest [options]`](#lexicon-suggest) | suggest aliases, new terms, never-words and stale terms from your voice history |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
-| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools): list, add, remove, show |
+| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
 
 ## `lexicon`
 
@@ -62,7 +62,7 @@ Commands:
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
-  import [options] <file> [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon
+  import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
   trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview first)
   untrust [path]                          revoke approval for a project .lexicon.yaml
@@ -74,7 +74,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
-  pack                                    starter term packs (developer, ai, business, voice-tools): list, add, remove, show
+  pack                                    starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
 ```
 
@@ -266,13 +266,14 @@ Options:
 ## `lexicon import`
 
 ```text
-Usage: lexicon import [options] <file> [format]
+Usage: lexicon import [options] [file] [format]
 
 import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso,
-markdown, text, csv, json) into the lexicon
+markdown, text, csv, json) into the lexicon, or --guided to harvest names from
+your contacts, calendar and GitHub
 
 Arguments:
-  file                   file to import, or - for stdin
+  file                   file to import, or - for stdin (not used with --guided)
   format                 one of: auto, wispr, superwhisper, macos, espanso,
                          markdown, text, csv, json (default: auto)
 
@@ -282,6 +283,16 @@ Options:
   --dry-run              print what would be added without writing
   --source <source>      source recorded on each term (default: import)
   --category <category>  category applied to imported terms that lack one
+  --guided               guided vocabulary import: pick sources (contacts,
+                         calendar, github) and approve each candidate before it
+                         is written
+  --sources <list>       with --guided: comma-separated sources to harvest
+                         (default: every available one)
+  --limit <n>            with --guided: max candidates to review (default: 50)
+  -y, --yes              with --guided: accept every candidate without prompting
+                         (requires --sources)
+  --home <dir>           with --guided: treat <dir> as the home directory
+                         (mainly for tests)
   --json                 print the result as JSON
   -h, --help             display help for command
 ```
@@ -518,8 +529,9 @@ Options:
 ```text
 Usage: lexicon pack [options] [command]
 
-starter term packs (developer, ai, business, voice-tools): list, add, remove,
-show
+starter term packs (developer, ai, business, voice-tools) and community packs
+(<author>/<name> via --registry): list, add, remove, show, search, update,
+validate
 
 Options:
   -h, --help                  display help for command
@@ -527,10 +539,19 @@ Options:
 Commands:
   list|ls [options]           list the available packs and which are installed
   add [options] <name...>     install one or more packs into the global lexicon
-                              (existing terms only gain aliases)
+                              (existing terms only gain aliases);
+                              <author>/<name> installs a community pack after a
+                              preview
   remove|rm [options] <name>  remove a pack; terms you edited since (hits, extra
                               aliases) are kept
   show [options] <name>       print the terms and aliases a pack contains
+  search [options] <query>    search community packs in a registry index by
+                              name, title, description or author
+  update [options] [refs...]  re-check installed community packs against a fresh
+                              index; every changed pack is previewed and
+                              confirmed, never silent
+  validate [options] <file>   check a pack file against the community publish
+                              bar (schema, author, the ordinary-word guard)
 ```
 
 ## See also
