@@ -143,7 +143,9 @@ applying requires `--yes`, the matching `--preview-id` and explicit `--accept`
 candidate IDs. The `import_vocabulary` MCP tool instead requires the returned
 `previewToken`, explicit sources and `approvedCandidateIds`, and consumes that
 saved snapshot without rereading sources. No email or chat importer is implemented. The importer is reachable in
-this `0.5.5` source candidate; public npm `latest` remained `0.5.4` when
+repository source and the pending
+[0.5.5 release candidate](https://github.com/ashlrai/lexicon/pull/25); public npm
+`latest` remained `0.5.4` when
 requeried on 2026-10-09. Source implementation is not authenticated-import or
 published-release acceptance.
 

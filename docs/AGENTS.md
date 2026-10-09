@@ -187,7 +187,8 @@ Previews can contain personal or organization names, and sending them to an
 agent client can make those names model input. Email and chat importers are
 not implemented. Full threat model: [SECURITY.md](../SECURITY.md).
 
-This guided importer is implemented in source candidate `0.5.5`. Public npm
+This guided importer is implemented in repository source and the pending
+[0.5.5 release candidate](https://github.com/ashlrai/lexicon/pull/25). Public npm
 `latest` was `0.5.4` when requeried on 2026-10-09; source documentation does not
 prove publication, installation or authenticated-import acceptance.
 

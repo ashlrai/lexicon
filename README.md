@@ -123,9 +123,9 @@ selected before inspection, and candidates are reviewed before writes. The
 install script, npm and Homebrew fetch the package itself. See
 [SECURITY.md](SECURITY.md).
 
-The guided GitHub importer is implemented in this source candidate. Source
-version `0.5.5` is separate from the public npm `latest` version `0.5.4`
-requeried on 2026-10-09. These source notes do not establish publication,
+The guided GitHub importer is implemented in repository source and is part
+of the pending [0.5.5 release candidate](https://github.com/ashlrai/lexicon/pull/25).
+Public npm `latest` remained `0.5.4` when requeried on 2026-10-09. These source notes do not establish publication,
 installation or a successful authenticated import on your machine.
 
 ## Why
@@ -195,7 +195,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap); `npm i -g github:ashlrai/lexicon#v0.5.5` installs a tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.5 is published, `npm i -g github:ashlrai/lexicon#v0.5.5` installs that tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 
