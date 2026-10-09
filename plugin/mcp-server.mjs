@@ -44160,6 +44160,21 @@ async function resolveWriteTarget(target) {
     return abs;
   }
 }
+async function resolveLockTarget(target) {
+  const abs = path.resolve(target);
+  let candidate = abs;
+  const suffix = [];
+  for (; ; ) {
+    try {
+      return path.join(await fs.realpath(candidate), ...suffix);
+    } catch {
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return abs;
+      suffix.unshift(path.basename(candidate));
+      candidate = parent;
+    }
+  }
+}
 async function resolveMode(target, opts) {
   if (opts.mode !== void 0) return opts.mode;
   try {
@@ -44232,7 +44247,7 @@ var exitHookInstalled = false;
 var heldLocks = new AsyncLocalStorage();
 var queues = /* @__PURE__ */ new Map();
 async function withFileLock(target, fn, opts = {}) {
-  const lockPath = `${path.resolve(target)}${LOCK_SUFFIX}`;
+  const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
   const held = heldLocks.getStore();
   if (held?.has(lockPath)) return fn();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
