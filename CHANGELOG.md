@@ -2,6 +2,20 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## Unreleased
+
+### Added
+
+- **Guided vocabulary import** (`lexicon import --guided`, MCP `import_vocabulary`): "Where do your proper nouns live?" The wizard lists sources, the user checks the ones they want, and each source yields candidate terms approved one screen at a time before anything is written. Sources: macOS Contacts, macOS Calendar, GitHub (through the user's existing `gh` login). Email and Slack are listed as known-but-unimplemented, with the reason stated, rather than silently omitted. Local-first only: nothing is read until the user opts a source in, `--yes` requires an explicit `--sources` list, no new OAuth. Candidates merge case-insensitively across sources (higher count wins a spelling conflict, the loser survives as an alias); new terms are stamped `source: import:<name>`. See DESIGN-VOCABULARY-IMPORT.md.
+- **Community pack registry** (git-based MVP): `lexicon pack search <query> --registry <index>`, `pack add <author>/<name> --registry <index>`, `pack update [refs...]`, `pack remove <author>/<name>`, `pack show <author>/<name> --registry <index>`, `pack validate <file>`. The registry is an index file anyone hosts (no service, no accounts); the shipped four packs stay vendored and curated. The trust story, stated plainly: installed pack terms reach model context on every hooked prompt, so community packs do not install like the vendored four. Checksums are pinned at install in `<config>/registry/registry.json`; the full term list is previewed and confirmed before the first write (never silent); updates are re-approved one by one and key on checksum, not the display version; `pack validate` enforces the ordinary-word guard at publish time (meant for CI on the pack's own repo). MCP: `list_packs` takes `registry?`, `add_pack` takes a community ref and returns the preview unless `confirm: true`. See DESIGN-PACK-MARKETPLACE.md and `registry/index.example.yaml`.
+- 21 new starter-pack terms: `packs/ai.yaml` +9 (Qwen, Kimi, NotebookLM, vLLM, OpenRouter, LangSmith, Langfuse, Devin, CrewAI) and `packs/developer.yaml` +12 (Tailscale, ngrok, Gunicorn, Uvicorn, ClickHouse, DuckDB, Elasticsearch, PlanetScale, Mixpanel, PostHog, 1Password, Snyk); stated term/alias counts 155->176 / 349->377 everywhere they appear.
+- `INTEGRATION.md`: how Phantom consumes the lexicon (single-YAML source of truth, two-way vocabulary flow, surfaces, opt-in/out, hard boundaries).
+
+### Fixed
+
+- **Flaky voice test** (`tests/voice.test.ts`, "two presses that race"): the second press fired from inside the fake `spawn`, racing its `readState` against the first press's pid rewrite with no guaranteed ordering; CI went red on 2026-09-30. Rewritten deterministically: the provisional window is constructed directly and `startDetached`'s tail is replayed with the real primitives.
+- `tests/lexicon-lock.test.ts` derived the expected removed-count from the loaded pack instead of a hardcoded 70, which the pack expansion above had broken.
+
 ## 0.5.4 (2026-09-21)
 
 Thirteen commits, and a fix release rather than a routine one. 0.5.3 shipped a defect that throws away a term you had just written while telling you it saved it, and three more paths that lose a write without saying so. Everything below was reproduced before it was touched, and every regression test here was watched failing against 0.5.3 first.
