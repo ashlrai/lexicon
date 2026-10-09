@@ -7,7 +7,9 @@
  * The privacy posture is the whole design. Every source here reads only data
  * already on this machine or reachable with credentials the user set up
  * themselves (`gh` CLI auth); there is no new OAuth, no new network call
- * beyond the source's own API, and nothing leaves the machine. Email and
+ * beyond the source's own API. Lexicon adds no automatic upload or telemetry;
+ * previews are returned to the requesting CLI/MCP client, which may share
+ * them with its model provider. Email and
  * Slack are listed as sources the wizard knows about but does not implement:
  * reading someone's mail or workspace messages to build a vocabulary file is
  * exactly the access this project tells agents to ask about first, so they
@@ -224,7 +226,7 @@ const CONTACTS_QUERY =
 const contactsSource: VocabImportSource = {
   id: 'contacts',
   label: 'macOS Contacts',
-  privacy: 'Reads first/last names and organizations from your local macOS Contacts database. Nothing leaves this machine.',
+  privacy: 'Reads first/last names and organizations from your local macOS Contacts database. Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.',
   implemented: true,
   async checkAvailable(deps = {}): Promise<SourceAvailability> {
     const d = resolved(deps);
@@ -373,7 +375,7 @@ function icsFiles(deps: Required<ImportSourceDeps>, dir: string): string[] {
 const calendarSource: VocabImportSource = {
   id: 'calendar',
   label: 'macOS Calendar',
-  privacy: 'Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Nothing leaves this machine.',
+  privacy: 'Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.',
   implemented: true,
   async checkAvailable(deps = {}): Promise<SourceAvailability> {
     const d = resolved(deps);

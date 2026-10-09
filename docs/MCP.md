@@ -21,6 +21,8 @@ Registering it in a client is one command: see [CLIENTS.md](CLIENTS.md). Point a
 
 The agent calls `normalize_transcript` on dictated input and reads `lexicon://me` for the full vocabulary. The server also sends one-screen `instructions` at connect time, so a client that honours them knows the workflow without the Claude Code skill.
 
+Guided import harvests only explicitly selected sources. Lexicon adds no automatic upload or telemetry, but candidate names and evidence are returned to the requesting MCP client and may be shared with that client's model provider. Review that client's privacy settings before requesting a source. GitHub requests use the user's existing `gh` session.
+
 ## Tools
 
 | Tool | Arguments | Returns |
