@@ -179,7 +179,7 @@ the GitHub API through the existing `gh` configuration and login (normally
 repository-name metadata; no new OAuth scopes are requested.
 
 Ask before reading any import source, then show candidates before writes.
-Interactive CLI import reviews candidates in prompts. Non-interactive CLI uses
+Interactive CLI import reviews candidates in prompts. Non-interactive CLI application uses
 explicit sources, `--yes`, a matching `--preview-id` and accepted `--accept`
 candidate IDs. MCP `import_vocabulary` uses explicit sources, the returned
 `previewToken` and `approvedCandidateIds`; apply consumes the saved snapshot.
