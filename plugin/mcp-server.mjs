@@ -52530,7 +52530,7 @@ var contactsSource = {
     const d = resolved(deps);
     const db = addressBookDb(d);
     if (!db) return [];
-    const out = tryExec(d, "sqlite3", ["-readonly", "-separator", "	", db, CONTACTS_QUERY]);
+    const out = tryExec(d, "sqlite3", ["-init", "/dev/null", "-readonly", "-separator", "	", db, CONTACTS_QUERY]);
     if (out === void 0) return [];
     const candidates = [];
     for (const line2 of out.split("\n")) {

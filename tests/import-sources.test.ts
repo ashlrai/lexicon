@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -115,7 +115,7 @@ describe('contacts source', () => {
   it('requests a read-only Contacts database connection', async () => {
     let queryArgs: readonly string[] = [];
     await source.harvest({ ...contactsDeps(''), exec: (_file, args) => { queryArgs = args; return ''; } });
-    expect(queryArgs).toEqual(['-readonly', '-separator', '\t', DB, expect.stringContaining('SELECT')]);
+    expect(queryArgs).toEqual(['-init', '/dev/null', '-readonly', '-separator', '\t', DB, expect.stringContaining('SELECT')]);
   });
 
   it.skipIf(process.platform !== 'darwin' || !existsSync('/usr/bin/sqlite3'))('never creates a Contacts database if it disappears before the query', async () => {
@@ -124,10 +124,30 @@ describe('contacts source', () => {
     mkdirSync(path.dirname(missing), { recursive: true });
     try {
       const result = await source.harvest(deps({ home, exists: (file) => file === missing,
-        exec: (_file, args) => execFileSync('/usr/bin/sqlite3', [...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }),
+        exec: (_file, args) => execFileSync('/usr/bin/sqlite3', [...args], {
+          env: { ...process.env, HOME: home, USERPROFILE: home, PATH: '/usr/bin:/bin' },
+          encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        }),
       }));
       expect(result).toEqual([]);
       expect(existsSync(missing)).toBe(false);
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
+
+  it.skipIf(process.platform !== 'darwin' || !existsSync('/usr/bin/sqlite3'))('never executes a user SQLite startup file during Contacts preview', async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), 'lexicon-contacts-init-'));
+    const database = path.join(home, 'Library', 'Application Support', 'AddressBook', 'AddressBook-v22.abcddb');
+    const marker = path.join(home, 'startup-output.txt');
+    const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: '/usr/bin:/bin' };
+    mkdirSync(path.dirname(database), { recursive: true });
+    try {
+      execFileSync('/usr/bin/sqlite3', ['-init', '/dev/null', database,
+        'CREATE TABLE ZABCDCONTACT (ZFIRSTNAME TEXT, ZLASTNAME TEXT, ZORGANIZATION TEXT);'], { env });
+      writeFileSync(path.join(home, '.sqliterc'), `.output "${marker}"\nSELECT 1;\n`);
+      expect(await source.harvest(deps({ home, exists: (file) => file === database,
+        exec: (_file, args) => execFileSync('/usr/bin/sqlite3', [...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }),
+      }))).toEqual([]);
+      expect(existsSync(marker)).toBe(false);
     } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
