@@ -45,7 +45,6 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
   const destination = (scope: string | undefined) => JSON.stringify({ cwd, scope: scope ?? 'global', ...resolvePaths({ cwd }) });
   const pruneImports = () => {
     for (const [token, preview] of imports) if (Date.now() - preview.at > 300_000) imports.delete(token);
-    while (imports.size >= 20) imports.delete(imports.keys().next().value!);
   };
   server.registerTool(
     'list_packs',
@@ -137,6 +136,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
           if (previewDigest !== digest) throw new Error('community pack contents or destination changed, or preview digest is missing; preview again before installing');
           const result = await installRegistryPack(entry, base, registry, {
             cwd,
+            approvedBytes: bytes,
             ...(scope !== undefined ? { scope } : {}),
             ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
           });
@@ -215,6 +215,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
         }
         const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
         const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: 50 });
+        while (imports.size >= 20) imports.delete(imports.keys().next().value!);
         const token = randomUUID();
         imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
         return textResult({ sources: availability,

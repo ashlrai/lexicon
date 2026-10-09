@@ -3,10 +3,10 @@
  * verification, publish validation and the install/update/remove round trip,
  * all against fixture indexes in a temp dir (no network).
  */
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, realpathSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyRegistryUpdate,
   cachedPackPath,
@@ -21,6 +21,7 @@ import {
   previewRegistryUpdates,
   readLexiconFile,
   readRegistryState,
+  registryDir,
   resolvePackUrl,
   searchRegistryIndex,
   sha256Hex,
@@ -93,6 +94,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   // tmpdir() is ephemeral; no cleanup needed.
 });
 
@@ -223,6 +225,81 @@ terms:
 });
 
 describe('install / update / remove round trip', () => {
+  it('keeps the same pack separate in two projects and global, including updates/removal', async () => {
+    const a = path.join(dir, 'project-a'); const b = path.join(dir, 'project-b');
+    mkdirSync(path.join(a, '.git'), { recursive: true }); mkdirSync(path.join(b, '.git'), { recursive: true });
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
+    const scopes = [{ globalPath }, { globalPath, cwd: a, scope: 'project' as const }, { globalPath, cwd: b, scope: 'project' as const }];
+    for (const opts of scopes) await installRegistryPack(entry, base, indexPath, opts);
+    expect(new Set(scopes.map(opts => cachedPackPath(entry.ref, opts))).size).toBe(3);
+    writeFileSync(path.join(dir, 'cardiology.yaml'), PACK_V2);
+    const index2 = writeIndex(dir, [{ file: 'cardiology.yaml', version: '2' }]);
+    const [preview] = await previewRegistryUpdates([entry.ref], index2, scopes[1]);
+    expect((await applyRegistryUpdate(preview, index2, scopes[0])).status).toBe('failed');
+    expect((await applyRegistryUpdate(preview, index2, scopes[2])).status).toBe('failed');
+    expect((await applyRegistryUpdate(preview, index2, scopes[1])).status).toBe('updated');
+    expect((await readLexiconFile(path.join(a, '.lexicon.yaml'), 'project')).lexicon.terms.map(t => t.canonical)).toContain('Stent');
+    expect((await readLexiconFile(path.join(b, '.lexicon.yaml'), 'project')).lexicon.terms.map(t => t.canonical)).not.toContain('Stent');
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms.map(t => t.canonical)).not.toContain('Stent');
+    await uninstallRegistryPack(entry.ref, undefined, scopes[1]);
+    expect(await installedRegistryPacks(scopes[1])).toEqual([]);
+    expect(await installedRegistryPacks(scopes[0])).toEqual([entry.ref]);
+    expect(await installedRegistryPacks(scopes[2])).toEqual([entry.ref]);
+  });
+
+  it('rejected replacement preserves the original cache, state and removable terms', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
+    await installRegistryPack(entry, base, indexPath, { globalPath });
+    const cache = cachedPackPath(entry.ref, { globalPath }); const previousState = await readRegistryState({ globalPath });
+    const bad = PACK_V2.replace('title: Cardiology terms', 'title: Unapproved replacement');
+    const badEntry = { ...entry, checksum: sha256Hex(bad) };
+    await expect(installRegistryPack(badEntry, base, indexPath, { globalPath, approvedBytes: Buffer.from(bad) })).rejects.toThrow(/name\/title/);
+    expect(readFileSync(cache, 'utf8')).toBe(PACK_V1);
+    expect(await readRegistryState({ globalPath })).toEqual(previousState);
+    expect((await uninstallRegistryPack(entry.ref, undefined, { globalPath })).removed.sort()).toEqual(['Echocardiogram', 'Metoprolol']);
+  });
+
+  it('rolls back lexicon and cache when the metadata commit fails after install', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
+    await installRegistryPack(entry, base, indexPath, { globalPath });
+    const previous = readFileSync(globalPath, 'utf8'); const state = await readRegistryState({ globalPath });
+    const statePath = realpathSync(path.join(registryDir({ globalPath }), 'registry.json')); const rename = fs.rename;
+    let fail = true;
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === statePath && fail) { fail = false; throw new Error('synthetic metadata failure'); }
+      return rename(from, to);
+    });
+    await expect(installRegistryPack({ ...entry, checksum: sha256Hex(PACK_V2) }, base, indexPath, { globalPath, approvedBytes: Buffer.from(PACK_V2) })).rejects.toThrow('synthetic metadata failure');
+    expect(readFileSync(globalPath, 'utf8')).toBe(previous);
+    expect(readFileSync(cachedPackPath(entry.ref, { globalPath }), 'utf8')).toBe(PACK_V1);
+    expect(await readRegistryState({ globalPath })).toEqual(state);
+  });
+
+  it('copies approved bytes and rejects payload drift without fetching a replacement', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
+    const fetchBytes = vi.fn();
+    await expect(installRegistryPack(entry, base, indexPath, { globalPath, approvedBytes: Buffer.from(PACK_V2) }, { fetchBytes })).rejects.toThrow('checksum mismatch');
+    expect(fetchBytes).not.toHaveBeenCalled();
+    expect(await installedRegistryPacks({ globalPath })).toEqual([]);
+  });
+
+  it('shows alias-only updates and all applied note/pronunciation/case metadata', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath); const entry = entryFor(index);
+    await installRegistryPack(entry, base, indexPath, { globalPath });
+    const changed = PACK_V1.replace('metropolol]', 'metropolol, approved-new-alias]').replace('    category: brand', '    category: brand\n    notes: "model-visible note payload"\n    phonetic: "met-oh"\n    caseSensitive: true');
+    writeFileSync(path.join(dir, 'cardiology.yaml'), changed);
+    const index2 = writeIndex(dir, [{ file: 'cardiology.yaml', version: '2' }]);
+    const [preview] = await previewRegistryUpdates([entry.ref], index2, { globalPath });
+    expect(preview.added).toEqual([]); expect(preview.removed).toEqual([]);
+    expect(preview.changed?.[0].after).toMatchObject({ notes: 'model-visible note payload', phonetic: 'met-oh', caseSensitive: true });
+    expect(preview.terms?.[0].aliases).toContain('approved-new-alias');
+  });
+
   it('installs, pins the checksum, updates on checksum change, removes cleanly', async () => {
     const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
     const { index, base } = await loadRegistryIndex(indexPath);

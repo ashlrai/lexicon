@@ -40,7 +40,7 @@ import {
   verifyPackChecksum,
 } from '../core/index.js';
 import { loadLexicon } from '../core/index.js';
-import type { InstallPackResult, RegistryDeps, RegistryIndexEntry, TermScope, UninstallPackResult } from '../core/index.js';
+import type { InstallPackResult, RegistryDeps, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
 import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -78,7 +78,7 @@ function scopeOf(opts: PackCliOptions): TermScope {
 /** `lexicon pack list`: every pack with its size and whether it is installed. With --registry, the index's community packs. */
 export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
-  const storeOpts = { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
+  const storeOpts = { cwd, scope: scopeOf(opts), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   try {
     const packs = await listPacks(deps);
     const installed = installedPacks(await loadLexicon(storeOpts));
@@ -123,7 +123,7 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
       } else {
         io.stdout(
           renderTable(
-            index.packs.map((p) => [p.ref, p.title, String(p.terms), installed.includes(p.ref) ? 'yes' : '', p.description]),
+            index.packs.map((p) => [p.ref, p.title, String(p.terms), communityInstalled.includes(p.ref) ? 'yes' : '', p.description]),
             ['ref', 'title', 'terms', 'installed', 'description'],
           ),
         );
@@ -204,16 +204,11 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
   }
 }
 
-function printPackTerms(io: IO, pack: { name: string; title: string; description: string; lexicon: { terms: { canonical: string; category?: string; aliases: string[]; never?: string[] }[] } }): void {
+function printPackTerms(io: IO, pack: { name: string; title: string; description: string; lexicon: { terms: Term[] } }): void {
   line(io, `${pack.name}: ${pack.title} (${pack.lexicon.terms.length} terms)`);
   if (pack.description) line(io, pack.description);
   line(io);
-  io.stdout(
-    renderTable(
-      pack.lexicon.terms.map((t) => [t.canonical, t.category ?? '', t.aliases.join(', '), t.never ? `never: ${t.never.join(', ')}` : '']),
-      ['canonical', 'category', 'aliases', ''],
-    ),
-  );
+  line(io, JSON.stringify(pack.lexicon.terms, null, 2));
 }
 
 /** `lexicon pack search <query> --registry <index>`: search the community packs. */
@@ -311,7 +306,7 @@ async function runPackAddRegistry(
   const pack = parsePackText(bytes.toString('utf8'), entry.url, entry.name);
 
   if (opts.json && !opts.yes) {
-    line(io, JSON.stringify({ preview: true, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms.map((t) => ({ canonical: t.canonical, aliases: t.aliases, category: t.category })) }, null, 2));
+    line(io, JSON.stringify({ preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms }, null, 2));
     throw new PreviewOnly();
   }
   if (!opts.json) {
@@ -328,6 +323,7 @@ async function runPackAddRegistry(
   const result = await installRegistryPack(entry, base, opts.registry as string, {
     cwd,
     scope,
+    approvedBytes: bytes,
     ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
     ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
   }, deps.registry);
@@ -391,7 +387,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
 /** `lexicon pack update [ref...]`: re-check installed community packs against a fresh index. Never silent: every changed pack is previewed and confirmed. */
 export async function runPackUpdate(refs: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
-  const storeOpts = { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
+  const storeOpts = { cwd, scope: scopeOf(opts), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   try {
     // Group by index so packs installed from different registries each get a fresh read of their own.
     const state = await readRegistryState(storeOpts);
@@ -412,9 +408,9 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
       else line(io, JSON.stringify({ updates: [] }, null, 2));
       return 0;
     }
-    const reports: { ref: string; status: string; from?: string; to?: string; added?: number; merged?: number; dropped?: string[]; error?: string }[] = [];
+    const reports: { ref: string; status: string; from?: string; to?: string; added?: number | string[]; merged?: number; dropped?: string[]; error?: string }[] = [];
     for (const [source, group] of byIndex) {
-      const previews = await previewRegistryUpdates(group, source, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) }, deps.registry);
+      const previews = await previewRegistryUpdates(group, source, storeOpts, deps.registry);
       for (const preview of previews) {
         if (preview.status === 'current') {
           if (!opts.json) line(io, dim(`${preview.ref}: already current${preview.to ? ` (version ${preview.to})` : ''}`));
@@ -438,6 +434,13 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           if (preview.added.length > 0) line(io, `  new terms: ${safe(preview.added.join(', '))}`);
           if (preview.removed.length > 0) line(io, `  dropped by the new file (kept in your lexicon): ${safe(preview.removed.join(', '))}`);
           if (preview.added.length === 0 && preview.removed.length === 0) line(io, dim('  (only aliases or metadata changed)'));
+          line(io, '  complete incoming terms (notes are shown to agents):');
+          line(io, JSON.stringify(preview.terms, null, 2));
+          if (preview.changed?.length) line(io, JSON.stringify({ changed: preview.changed }, null, 2));
+        }
+        if (opts.json && !opts.yes) {
+          reports.push({ ...preview, status: 'preview' });
+          continue;
         }
         const ok = await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, opts, deps);
         if (!ok) {
@@ -445,7 +448,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           reports.push({ ref: preview.ref, status: 'skipped', from: preview.from, to: preview.to });
           continue;
         }
-        const applied = await applyRegistryUpdate(preview, source, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) }, deps.registry);
+        const applied = await applyRegistryUpdate(preview, source, storeOpts, deps.registry);
         if (applied.status === 'updated' && !opts.json) {
           line(io, `  updated ${safe(applied.ref)}: ${applied.added} added, ${applied.merged} merged`);
         } else if (!opts.json) {
@@ -455,7 +458,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
       }
     }
     if (opts.json) line(io, JSON.stringify({ updates: reports }, null, 2));
-    return 0;
+    return reports.some(report => report.status === 'failed' || report.status === 'not-installed') ? 1 : 0;
   } catch (err) {
     return fail(io, err);
   }
@@ -504,6 +507,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
     .description('list the available packs and which are installed')
     .option('--json', 'print the packs as JSON')
     .option('--registry <index>', 'also list the community packs in this registry index')
+    .option('--project', 'list community packs installed in this project')
     .action(async (opts: PackRegistryCliOptions) => done(await runPackList({ ...opts, ...globals() }, io, deps)));
 
   pack
@@ -546,6 +550,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
     .command('update')
     .description('re-check installed community packs against a fresh index; every changed pack is previewed and confirmed, never silent')
     .argument('[refs...]', 'community refs to update (default: every installed community pack)')
+    .option('--project', 'update only community packs installed in this project')
     .option('--registry <index>', 'registry index to check (default: the index each pack was installed from)')
     .option('-y, --yes', 'apply every available update without prompting (required off a terminal)')
     .option('--json', 'print the update report as JSON')

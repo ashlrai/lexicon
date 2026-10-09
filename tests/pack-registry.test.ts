@@ -2,7 +2,7 @@
  * `lexicon pack` community commands: search, add (preview + confirm), update,
  * remove, show and validate, against a fixture registry index in a temp dir.
  */
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -134,6 +134,32 @@ describe('pack add (community)', () => {
 });
 
 describe('pack update', () => {
+  it('keeps project-only updates in that project and never creates global state', async () => {
+    const cwd = path.join(dir, 'project'); mkdirSync(path.join(cwd, '.git'), { recursive: true });
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), cwd, project: true, yes: true }, makeIO())).toBe(0);
+    const changed = PACK + '  - canonical: Echocardiogram\n    aliases: [echo cardiogram]\n';
+    writeIndex('2', changed);
+    expect(await runPackUpdate([], { ...baseOpts(), cwd, project: true, yes: true }, makeIO())).toBe(0);
+    expect(readFileSync(path.join(cwd, '.lexicon.yaml'), 'utf8')).toContain('Echocardiogram');
+    expect(existsSync(globalPath)).toBe(false);
+    const globalList = makeIO(); await runPackList({ globalPath, json: true }, globalList);
+    expect(JSON.parse(globalList.out).communityInstalled).toEqual([]);
+  });
+
+  it('previews alias and note changes in JSON without writing', async () => {
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, makeIO())).toBe(0);
+    const before = readFileSync(globalPath, 'utf8');
+    const changed = PACK.replace('metropolol]', 'metropolol, newly-reviewed-alias]').replace('    category: brand', '    category: brand\n    notes: "agent-visible payload"\n    phonetic: "met-oh"\n    caseSensitive: true');
+    writeIndex('2', changed);
+    const io = makeIO();
+    expect(await runPackUpdate([], { ...baseOpts(), json: true }, io)).toBe(0);
+    const preview = JSON.parse(io.out).updates[0];
+    expect(preview.status).toBe('preview');
+    expect(preview.terms[0]).toMatchObject({ notes: 'agent-visible payload', phonetic: 'met-oh', caseSensitive: true });
+    expect(preview.changed[0].after.aliases).toContain('newly-reviewed-alias');
+    expect(readFileSync(globalPath, 'utf8')).toBe(before);
+  });
+
   it('reports current when the index is unchanged', async () => {
     const io = makeIO();
     expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, io)).toBe(0);

@@ -27,16 +27,18 @@
  * from a local file, which keeps the README's non-goals intact.
  */
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as fs, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { HARVEST_STOPLIST } from './harvest.js';
-import { PACK_NAME_RE, installLoadedPack, loadPackFile, parsePackText, uninstallLoadedPack } from './packs.js';
+import { PACK_NAME_RE, installLoadedPack, parsePackText, uninstallLoadedPack } from './packs.js';
 import type { InstallPackResult, Pack, UninstallPackResult } from './packs.js';
-import { resolvePaths } from './store.js';
+import { defaultProjectPath, MAX_LEXICON_BYTES, resolvePaths, resolveScopeWritePath, withLexiconLock } from './store.js';
+import { refreshTrust, untrustProject } from './trust.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import type { StoreOptions } from './store.js';
-import type { TermScope } from './types.js';
+import type { Term, TermScope } from './types.js';
 import { STOPLIST } from './stoplist.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 
@@ -262,26 +264,44 @@ export interface RegistryState {
   packs: Record<string, RegistryPackState>;
 }
 
-/** Directory holding `registry.json` and the cached pack files, beside the global lexicon. */
-export function registryDir(opts: StoreOptions = {}): string {
-  return path.join(path.dirname(resolvePaths(opts).global), 'registry');
+export interface RegistryStoreOptions extends StoreOptions {
+  scope?: TermScope;
 }
 
-function stateFile(opts: StoreOptions = {}): string {
+/** Canonical target binds preview approval, state and cache to one installation scope. */
+function registryIdentity(opts: RegistryStoreOptions): string {
+  const paths = resolvePaths(opts);
+  const file = opts.scope === 'project' ? paths.project ?? defaultProjectPath(opts.cwd) : paths.global;
+  try { return realpathSync(file); } catch {
+    try { return path.join(realpathSync(path.dirname(file)), path.basename(file)); } catch { return path.resolve(file); }
+  }
+}
+
+/** User-owned sidecars; project packs never overwrite global or another project's records. */
+export function registryDir(opts: RegistryStoreOptions = {}): string {
+  const base = path.join(path.dirname(resolvePaths(opts).global), 'registry');
+  return opts.scope === 'project' ? path.join(base, 'projects', sha256Hex(registryIdentity(opts))) : base;
+}
+
+function stateFile(opts: RegistryStoreOptions = {}): string {
   return path.join(registryDir(opts), 'registry.json');
 }
 
 /** Path of the cached pack file for a ref. */
-export function cachedPackPath(ref: string, opts: StoreOptions = {}): string {
+export function cachedPackPath(ref: string, opts: RegistryStoreOptions = {}): string {
   const { author, name } = parseRegistryRef(ref);
   return path.join(registryDir(opts), 'packs', author, `${name}.yaml`);
 }
 
-export async function readRegistryState(opts: StoreOptions = {}): Promise<RegistryState> {
+export async function readRegistryState(opts: RegistryStoreOptions = {}): Promise<RegistryState> {
   try {
     const raw = await fs.readFile(stateFile(opts), 'utf8');
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      const identity = parsed as { target?: unknown; scope?: unknown };
+      if (identity.target !== registryIdentity(opts) || identity.scope !== (opts.scope ?? 'global')) {
+        throw new Error('registry state belongs to a different or unknown installation scope; inspect its scope metadata before modifying packs');
+      }
       const packs = (parsed as { packs?: unknown }).packs;
       if (packs !== undefined && (typeof packs !== 'object' || packs === null || Array.isArray(packs))) {
         throw new Error('bad shape');
@@ -298,13 +318,13 @@ export async function readRegistryState(opts: StoreOptions = {}): Promise<Regist
   }
 }
 
-export async function writeRegistryState(state: RegistryState, opts: StoreOptions = {}): Promise<void> {
+export async function writeRegistryState(state: RegistryState, opts: RegistryStoreOptions = {}): Promise<void> {
   await fs.mkdir(registryDir(opts), { recursive: true });
-  await fs.writeFile(stateFile(opts), `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  await writeFileAtomic(stateFile(opts), `${JSON.stringify({ ...state, scope: opts.scope ?? 'global', target: registryIdentity(opts) }, null, 2)}\n`, { mode: 0o600 });
 }
 
 /** Refs currently recorded as installed from a registry. */
-export async function installedRegistryPacks(opts: StoreOptions = {}): Promise<string[]> {
+export async function installedRegistryPacks(opts: RegistryStoreOptions = {}): Promise<string[]> {
   return Object.keys((await readRegistryState(opts)).packs).sort();
 }
 
@@ -329,17 +349,76 @@ export async function downloadPack(
   return bytes;
 }
 
-async function writeCache(ref: string, bytes: Buffer, opts: StoreOptions): Promise<string> {
+async function writeCache(ref: string, bytes: Buffer, opts: RegistryStoreOptions): Promise<string> {
   const dest = cachedPackPath(ref, opts);
   await fs.mkdir(path.dirname(dest), { recursive: true });
-  await fs.writeFile(dest, bytes);
+  await writeFileAtomic(dest, bytes.toString('utf8'), { mode: 0o600 });
   return dest;
 }
 
-export interface InstallRegistryOptions extends StoreOptions {
-  scope?: TermScope;
+export interface InstallRegistryOptions extends RegistryStoreOptions {
   /** Version pin from `pack add author/name@version`; `pack update` will not move a pinned pack. */
   pinnedVersion?: string;
+  /** Exact reviewed bytes. Copied and checksum-verified before any write. */
+  approvedBytes?: Uint8Array;
+}
+
+function validatedPack(bytes: Buffer, entry: RegistryIndexEntry): Pack {
+  verifyPackChecksum(bytes, entry.checksum, entry.ref);
+  if (bytes.length > MAX_LEXICON_BYTES) throw new Error('community pack exceeds the lexicon size limit');
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const pack = parsePackText(text, entry.url, entry.name);
+  if (pack.title !== entry.title) throw new Error(`pack file does not match the index entry for ${entry.ref} (name/title differ; refusing to install)`);
+  const validation = validateCommunityPack(pack);
+  if (validation.errors.length) throw new Error(`community pack rejected: ${validation.errors.join('; ')}`);
+  return pack;
+}
+
+async function snapshot(file: string): Promise<Buffer | undefined> {
+  try { return await fs.readFile(file); } catch (err) { if (isEnoent(err)) return undefined; throw err; }
+}
+
+/** Serialize lexicon and scoped metadata together; rejected writes preserve the last good cache. */
+async function commitPack(
+  pack: Pack, bytes: Buffer, entry: RegistryIndexEntry, indexSource: string,
+  opts: InstallRegistryOptions, expectedInstalledChecksum?: string,
+): Promise<InstallPackResult> {
+  opts = { ...opts, globalPath: resolvePaths(opts).global };
+  const target = await resolveScopeWritePath(opts.scope ?? 'global', opts);
+  return withLexiconLock(target, async () => {
+    const state = await readRegistryState(opts);
+    if (expectedInstalledChecksum !== undefined && state.packs[entry.ref]?.checksum !== expectedInstalledChecksum) {
+      throw new Error('installed pack changed after preview; preview and approve it again');
+    }
+    const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
+    const before = await Promise.all(files.map(snapshot));
+    try {
+      const result = await installLoadedPack(pack, entry.ref, opts);
+      await writeCache(entry.ref, bytes, opts);
+      const pinnedVersion = opts.pinnedVersion ?? (expectedInstalledChecksum !== undefined ? state.packs[entry.ref]?.pinnedVersion : undefined);
+      state.packs[entry.ref] = {
+        checksum: entry.checksum, version: entry.version,
+        ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
+        indexSource, installedAt: new Date().toISOString(),
+      };
+      await writeRegistryState(state, opts);
+      return result;
+    } catch (err) {
+      try {
+        for (let i = files.length - 1; i >= 0; i--) {
+          if (before[i] === undefined) await fs.rm(files[i], { force: true });
+          else await writeFileAtomic(files[i], before[i]!.toString('utf8'));
+        }
+        if (opts.scope === 'project') {
+          if (before[0] !== undefined) await refreshTrust(target, opts);
+          else await untrustProject(target, opts);
+        }
+      } catch (rollback) {
+        throw new AggregateError([err, rollback], 'registry install failed and rollback was incomplete');
+      }
+      throw err;
+    }
+  });
 }
 
 /**
@@ -355,24 +434,9 @@ export async function installRegistryPack(
   opts: InstallRegistryOptions = {},
   deps: RegistryDeps = {},
 ): Promise<InstallPackResult & { ref: string }> {
-  const bytes = await downloadPack(entry, base, deps);
-  const file = await writeCache(entry.ref, bytes, opts);
-  const pack = await loadPackFile(file, entry.name);
-  if (pack.name !== entry.name || pack.title !== entry.title) {
-    throw new Error(
-      `pack file at ${entry.url} does not match the index entry for ${entry.ref} (name/title differ; refusing to install)`,
-    );
-  }
-  const result = await installLoadedPack(pack, entry.ref, opts);
-  const state = await readRegistryState(opts);
-  state.packs[entry.ref] = {
-    checksum: entry.checksum,
-    version: entry.version,
-    ...(opts.pinnedVersion !== undefined ? { pinnedVersion: opts.pinnedVersion } : {}),
-    indexSource,
-    installedAt: new Date().toISOString(),
-  };
-  await writeRegistryState(state, opts);
+  const bytes = opts.approvedBytes === undefined ? await downloadPack(entry, base, deps) : Buffer.from(opts.approvedBytes);
+  const pack = validatedPack(bytes, entry);
+  const result = await commitPack(pack, bytes, entry, indexSource, opts);
   return { ...result, ref: entry.ref };
 }
 
@@ -401,6 +465,12 @@ export interface RegistryUpdatePreview {
   /** Present when status is 'available': what `applyRegistryUpdate` installs. */
   entry?: RegistryIndexEntry;
   base?: string;
+  /** Complete incoming content, including aliases and model-visible notes. */
+  terms?: Term[];
+  changed?: { before: Term; after: Term }[];
+  scopeIdentity?: string;
+  installedChecksum?: string;
+  approvedChecksum?: string;
 }
 
 /**
@@ -442,8 +512,8 @@ export async function previewRegistryUpdates(
     }
     try {
       const bytes = await downloadPack(entry, base, deps);
-      const pack = parsePackText(bytes.toString('utf8'), entry.url, entry.name);
-      const installed = await readCachedPack(ref, opts);
+      const pack = validatedPack(bytes, entry);
+      const installed = await readCachedPack(ref, opts, pinned.checksum);
       const have = new Set((installed?.lexicon.terms ?? []).map((t) => t.canonical.toLowerCase()));
       const incoming = pack.lexicon.terms.map((t) => t.canonical);
       const incomingSet = new Set(incoming.map((c) => c.toLowerCase()));
@@ -456,6 +526,14 @@ export async function previewRegistryUpdates(
         removed: (installed?.lexicon.terms ?? []).map((t) => t.canonical).filter((c) => !incomingSet.has(c.toLowerCase())),
         entry,
         base,
+        terms: pack.lexicon.terms,
+        changed: pack.lexicon.terms.flatMap(after => {
+          const before = installed?.lexicon.terms.find(t => t.canonical.toLowerCase() === after.canonical.toLowerCase());
+          return before && JSON.stringify(before) !== JSON.stringify(after) ? [{ before, after }] : [];
+        }),
+        scopeIdentity: registryIdentity(opts),
+        installedChecksum: pinned.checksum,
+        approvedChecksum: entry.checksum,
       });
     } catch (err) {
       previews.push({ ref, status: 'failed', added: [], removed: [], error: errorMessage(err) });
@@ -464,11 +542,15 @@ export async function previewRegistryUpdates(
   return previews;
 }
 
-async function readCachedPack(ref: string, opts: StoreOptions): Promise<Pack | undefined> {
+async function readCachedPack(ref: string, opts: RegistryStoreOptions, checksum: string): Promise<Pack | undefined> {
   try {
-    return await loadPackFile(cachedPackPath(ref, opts), parseRegistryRef(ref).name);
-  } catch {
-    return undefined;
+    const file = cachedPackPath(ref, opts);
+    const bytes = await fs.readFile(file);
+    verifyPackChecksum(bytes, checksum, ref);
+    return parsePackText(new TextDecoder('utf-8', { fatal: true }).decode(bytes), file, parseRegistryRef(ref).name);
+  } catch (err) {
+    if (isEnoent(err)) return undefined;
+    throw err;
   }
 }
 
@@ -490,20 +572,12 @@ export async function applyRegistryUpdate(
     return { ref, status: preview.status === 'available' ? 'failed' : preview.status, error: preview.error };
   }
   try {
+    if (preview.scopeIdentity !== registryIdentity(opts) || preview.approvedChecksum !== entry.checksum || !preview.installedChecksum) {
+      throw new Error('update approval does not match this scope or content; preview and approve it again');
+    }
     const bytes = await downloadPack(entry, base, deps);
-    const file = await writeCache(ref, bytes, opts);
-    const pack = await loadPackFile(file, entry.name);
-    const result = await installLoadedPack(pack, ref, opts);
-    const state = await readRegistryState(opts);
-    const pinned = state.packs[ref];
-    state.packs[ref] = {
-      checksum: entry.checksum,
-      version: entry.version,
-      ...(pinned?.pinnedVersion !== undefined ? { pinnedVersion: pinned.pinnedVersion } : {}),
-      indexSource,
-      installedAt: new Date().toISOString(),
-    };
-    await writeRegistryState(state, opts);
+    const pack = validatedPack(bytes, entry);
+    const result = await commitPack(pack, bytes, entry, indexSource, opts, preview.installedChecksum);
     return {
       ref,
       status: 'updated',
@@ -529,32 +603,29 @@ export async function uninstallRegistryPack(
   deps: RegistryDeps = {},
 ): Promise<UninstallPackResult> {
   const parsed = parseRegistryRef(ref);
-  let file = cachedPackPath(parsed.ref, opts);
-  try {
-    await fs.stat(file);
-  } catch (err) {
-    if (!isEnoent(err)) throw err;
-    if (!indexSource) {
-      throw new Error(
-        `no cached pack file for ${parsed.ref} (and no --registry to re-fetch it): install it again with \`lexicon pack add ${parsed.ref} --registry <index>\` or pass --registry to remove`,
-      );
+  const scoped = { ...opts, globalPath: resolvePaths(opts).global, scope: opts.scope ?? 'global' as const };
+  const target = await resolveScopeWritePath(scoped.scope, scoped);
+  return withLexiconLock(target, async () => {
+    const state = await readRegistryState(scoped);
+    const pinned = state.packs[parsed.ref];
+    if (!pinned) throw new Error(`${parsed.ref} is not installed in the requested scope`);
+    let pack = await readCachedPack(parsed.ref, scoped, pinned.checksum);
+    if (!pack) {
+      if (!indexSource) {
+        throw new Error(`no cached pack file for ${parsed.ref}; pass --registry to recover the pinned original before removal`);
+      }
+      const { index, base } = await loadRegistryIndex(indexSource, deps);
+      const entry = findRegistryEntry(index, parsed.ref);
+      const bytes = await downloadPack(entry, base, deps);
+      verifyPackChecksum(bytes, pinned.checksum, parsed.ref);
+      pack = validatedPack(bytes, entry);
     }
-    const { index, base } = await loadRegistryIndex(indexSource, deps);
-    const entry = findRegistryEntry(index, parsed.ref);
-    const bytes = await downloadPack(entry, base, deps);
-    file = await writeCache(parsed.ref, bytes, opts);
-  }
-  const pack = await loadPackFile(file, parsed.name);
-  const result = await uninstallLoadedPack(pack, parsed.ref, opts);
-  const state = await readRegistryState(opts);
-  delete state.packs[parsed.ref];
-  await writeRegistryState(state, opts);
-  try {
-    await fs.unlink(cachedPackPath(parsed.ref, opts));
-  } catch {
-    // The cache file is a convenience; its absence is not a failure.
-  }
-  return result;
+    const result = await uninstallLoadedPack(pack, parsed.ref, scoped);
+    delete state.packs[parsed.ref];
+    await writeRegistryState(state, scoped);
+    try { await fs.unlink(cachedPackPath(parsed.ref, scoped)); } catch { /* Missing cache is harmless. */ }
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------

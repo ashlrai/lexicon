@@ -860,6 +860,23 @@ describe('lexicon MCP server', () => {
         } finally { await close(); }
       });
 
+      it('retains an approved preview when the snapshot cache is at capacity', async () => {
+        const { client, close } = await connect();
+        try {
+          const previews = [];
+          for (let i = 0; i < 20; i++) {
+            previews.push(JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } }))));
+          }
+          const first = previews[0];
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: {
+            apply: true, sources: ['github'], previewToken: first.previewToken,
+            approvedCandidateIds: [first.candidates[0].id],
+          } });
+          expect(result.isError).toBe(false);
+          expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo' });
+        } finally { await close(); }
+      });
+
       it('rejects ids absent from a preview and changed destination scope', async () => {
         const { client, close } = await connect();
         try {
@@ -955,7 +972,7 @@ describe('lexicon MCP server', () => {
           const a = JSON.parse(textOf(applied)) as { name: string; summary: string };
           expect(a.name).toBe('example/cardiology');
           expect(a.summary).toMatch(/1 new/);
-          expect(mocks.installRegistryPack).toHaveBeenCalled();
+          expect(mocks.installRegistryPack).toHaveBeenCalledWith(entry, '/fake', '/fake/index.yaml', { cwd: '/fake/repo', approvedBytes: Buffer.from('pack-bytes') });
         } finally {
           await close();
         }

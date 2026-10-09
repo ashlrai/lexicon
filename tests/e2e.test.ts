@@ -862,11 +862,11 @@ class StdioRpc {
   readonly stdoutLines: string[] = [];
   stderr = '';
 
-  constructor(env: NodeJS.ProcessEnv, projectCwd: string) {
+  constructor(env: NodeJS.ProcessEnv, projectCwd: string, script = MCP_SERVER) {
     // `--import tsx` resolves the loader from the process cwd, so the server is
     // launched from the repo root and told about the project dir via LEXICON_CWD
     // (the same knob a real MCP client config would set).
-    this.child = spawn(process.execPath, ['--import', 'tsx', MCP_SERVER], {
+    this.child = spawn(process.execPath, script.endsWith('.mjs') ? [script] : ['--import', 'tsx', script], {
       cwd: REPO_ROOT,
       env: { ...env, LEXICON_CWD: projectCwd },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -1008,6 +1008,53 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: MCP server over stdio', () =
   });
 });
 
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: committed plugin import sources', () => {
+  async function importedHome(label: string): Promise<TestHome> {
+    const h = await freshHome(label);
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    await fs.writeFile(h.globalPath, JSON.stringify({ version: 1, terms: [
+      { canonical: 'Ada Lovelace', aliases: ['ada love lace'], source: 'import:contacts' },
+      { canonical: 'Orion Summit', aliases: ['orion some it'], source: 'import:calendar' },
+      { canonical: 'SignalForge', aliases: ['signal forge'], source: 'import:github' },
+    ] }));
+    return h;
+  }
+
+  it('committed hook accepts all guided source tags and corrects their aliases', async () => {
+    const h = await importedHome('bundle-hook');
+    const result = await runNode(path.join(REPO_ROOT, 'plugin', 'hook.mjs'), [], { env: h.env, stdin: JSON.stringify({
+      session_id: 'bundled-test', cwd: h.repo, hook_event_name: 'UserPromptSubmit',
+      prompt: 'ask ada love lace about orion some it and signal forge',
+    }) });
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext)
+      .toContain('ask Ada Lovelace about Orion Summit and SignalForge');
+  });
+
+  it('committed MCP bundle exposes20 tools and loads all guided source tags', async () => {
+    const h = await importedHome('bundle-mcp');
+    const rpc = new StdioRpc(h.env, h.repo, path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs'));
+    try {
+      const initialized = await rpc.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'bundle-e2e', version: '0.0.0' } });
+      expect(initialized.error).toBeUndefined();
+      rpc.notify('notifications/initialized');
+      const tools = await rpc.request('tools/list');
+      const names = (tools.result as { tools: { name: string }[] }).tools.map((tool) => tool.name);
+      expect(names).toHaveLength(20);
+      expect(names).toContain('import_vocabulary');
+      const called = await rpc.request('tools/call', { name: 'normalize_transcript', arguments: { text: 'ada love lace at orion some it uses signal forge' } });
+      const result = called.result as ToolCallResult;
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content[0].text).output).toBe('Ada Lovelace at Orion Summit uses SignalForge');
+      const resource = await rpc.request('resources/read', { uri: 'lexicon://json' });
+      const contents = (resource.result as { contents: { text: string }[] }).contents;
+      const sources = JSON.parse(contents[0].text).terms.map((term: { source: string }) => term.source);
+      expect(sources.sort()).toEqual(['import:calendar', 'import:contacts', 'import:github']);
+    } finally { expect(await rpc.close()).toBe(0); }
+  });
+});
 
 describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: guided import consent', () => {
   it.each([['--yes', '--json'], ['--dry-run'], ['--json']])('rejects absent source consent before reads: %j', async (...flags) => {

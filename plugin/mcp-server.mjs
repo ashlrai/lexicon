@@ -14686,7 +14686,7 @@ var require_mod = __commonJS({
 });
 
 // src/mcp/server.ts
-import { realpathSync as realpathSync2 } from "node:fs";
+import { realpathSync as realpathSync3 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 
@@ -54753,7 +54753,7 @@ async function installPack(name, opts = {}) {
 // src/core/registry.ts
 var import_yaml6 = __toESM(require_dist2(), 1);
 import { createHash as createHash3 } from "node:crypto";
-import { promises as fs8 } from "node:fs";
+import { promises as fs8, realpathSync } from "node:fs";
 import path10 from "node:path";
 var REGISTRY_REF_RE = /^([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9][a-z0-9-]{0,63})(?:@([A-Za-z0-9][A-Za-z0-9._-]{0,31}))?$/;
 function parseRegistryRef(s) {
@@ -54875,8 +54875,22 @@ function findRegistryEntry(index, ref) {
   }
   return entry;
 }
+function registryIdentity(opts) {
+  const paths = resolvePaths(opts);
+  const file2 = opts.scope === "project" ? paths.project ?? defaultProjectPath(opts.cwd) : paths.global;
+  try {
+    return realpathSync(file2);
+  } catch {
+    try {
+      return path10.join(realpathSync(path10.dirname(file2)), path10.basename(file2));
+    } catch {
+      return path10.resolve(file2);
+    }
+  }
+}
 function registryDir(opts = {}) {
-  return path10.join(path10.dirname(resolvePaths(opts).global), "registry");
+  const base = path10.join(path10.dirname(resolvePaths(opts).global), "registry");
+  return opts.scope === "project" ? path10.join(base, "projects", sha256Hex(registryIdentity(opts))) : base;
 }
 function stateFile(opts = {}) {
   return path10.join(registryDir(opts), "registry.json");
@@ -54890,6 +54904,10 @@ async function readRegistryState(opts = {}) {
     const raw = await fs8.readFile(stateFile(opts), "utf8");
     const parsed = JSON.parse(raw);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const identity = parsed;
+      if (identity.target !== registryIdentity(opts) || identity.scope !== (opts.scope ?? "global")) {
+        throw new Error("registry state belongs to a different or unknown installation scope; inspect its scope metadata before modifying packs");
+      }
       const packs = parsed.packs;
       if (packs !== void 0 && (typeof packs !== "object" || packs === null || Array.isArray(packs))) {
         throw new Error("bad shape");
@@ -54907,8 +54925,8 @@ async function readRegistryState(opts = {}) {
 }
 async function writeRegistryState(state, opts = {}) {
   await fs8.mkdir(registryDir(opts), { recursive: true });
-  await fs8.writeFile(stateFile(opts), `${JSON.stringify(state, null, 2)}
-`, "utf8");
+  await writeFileAtomic(stateFile(opts), `${JSON.stringify({ ...state, scope: opts.scope ?? "global", target: registryIdentity(opts) }, null, 2)}
+`, { mode: 384 });
 }
 async function downloadPack(entry, base, deps = {}) {
   const d = resolvedDeps(deps);
@@ -54920,29 +54938,99 @@ async function downloadPack(entry, base, deps = {}) {
 async function writeCache(ref, bytes, opts) {
   const dest = cachedPackPath(ref, opts);
   await fs8.mkdir(path10.dirname(dest), { recursive: true });
-  await fs8.writeFile(dest, bytes);
+  await writeFileAtomic(dest, bytes.toString("utf8"), { mode: 384 });
   return dest;
 }
-async function installRegistryPack(entry, base, indexSource, opts = {}, deps = {}) {
-  const bytes = await downloadPack(entry, base, deps);
-  const file2 = await writeCache(entry.ref, bytes, opts);
-  const pack = await loadPackFile(file2, entry.name);
-  if (pack.name !== entry.name || pack.title !== entry.title) {
-    throw new Error(
-      `pack file at ${entry.url} does not match the index entry for ${entry.ref} (name/title differ; refusing to install)`
-    );
+function validatedPack(bytes, entry) {
+  verifyPackChecksum(bytes, entry.checksum, entry.ref);
+  if (bytes.length > MAX_LEXICON_BYTES) throw new Error("community pack exceeds the lexicon size limit");
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const pack = parsePackText(text, entry.url, entry.name);
+  if (pack.title !== entry.title) throw new Error(`pack file does not match the index entry for ${entry.ref} (name/title differ; refusing to install)`);
+  const validation = validateCommunityPack(pack);
+  if (validation.errors.length) throw new Error(`community pack rejected: ${validation.errors.join("; ")}`);
+  return pack;
+}
+async function snapshot(file2) {
+  try {
+    return await fs8.readFile(file2);
+  } catch (err) {
+    if (isEnoent(err)) return void 0;
+    throw err;
   }
-  const result = await installLoadedPack(pack, entry.ref, opts);
-  const state = await readRegistryState(opts);
-  state.packs[entry.ref] = {
-    checksum: entry.checksum,
-    version: entry.version,
-    ...opts.pinnedVersion !== void 0 ? { pinnedVersion: opts.pinnedVersion } : {},
-    indexSource,
-    installedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await writeRegistryState(state, opts);
+}
+async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstalledChecksum) {
+  opts = { ...opts, globalPath: resolvePaths(opts).global };
+  const target = await resolveScopeWritePath(opts.scope ?? "global", opts);
+  return withLexiconLock(target, async () => {
+    const state = await readRegistryState(opts);
+    if (expectedInstalledChecksum !== void 0 && state.packs[entry.ref]?.checksum !== expectedInstalledChecksum) {
+      throw new Error("installed pack changed after preview; preview and approve it again");
+    }
+    const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
+    const before = await Promise.all(files.map(snapshot));
+    try {
+      const result = await installLoadedPack(pack, entry.ref, opts);
+      await writeCache(entry.ref, bytes, opts);
+      const pinnedVersion = opts.pinnedVersion ?? (expectedInstalledChecksum !== void 0 ? state.packs[entry.ref]?.pinnedVersion : void 0);
+      state.packs[entry.ref] = {
+        checksum: entry.checksum,
+        version: entry.version,
+        ...pinnedVersion !== void 0 ? { pinnedVersion } : {},
+        indexSource,
+        installedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      await writeRegistryState(state, opts);
+      return result;
+    } catch (err) {
+      try {
+        for (let i = files.length - 1; i >= 0; i--) {
+          if (before[i] === void 0) await fs8.rm(files[i], { force: true });
+          else await writeFileAtomic(files[i], before[i].toString("utf8"));
+        }
+        if (opts.scope === "project") {
+          if (before[0] !== void 0) await refreshTrust(target, opts);
+          else await untrustProject(target, opts);
+        }
+      } catch (rollback) {
+        throw new AggregateError([err, rollback], "registry install failed and rollback was incomplete");
+      }
+      throw err;
+    }
+  });
+}
+async function installRegistryPack(entry, base, indexSource, opts = {}, deps = {}) {
+  const bytes = opts.approvedBytes === void 0 ? await downloadPack(entry, base, deps) : Buffer.from(opts.approvedBytes);
+  const pack = validatedPack(bytes, entry);
+  const result = await commitPack(pack, bytes, entry, indexSource, opts);
   return { ...result, ref: entry.ref };
+}
+function validateCommunityPack(pack) {
+  const errors = [];
+  const warnings = [];
+  if (!pack.author) errors.push("author is required for a community pack (who maintains these terms?)");
+  if (!pack.homepage) warnings.push("no homepage: users cannot check who you are or report a bad term");
+  for (const term of pack.lexicon.terms) {
+    const canonical = term.canonical.trim();
+    const lower = canonical.toLowerCase();
+    if (!/\s/.test(canonical) && STOPLIST.has(lower)) {
+      errors.push(`"${canonical}" is an ordinary English word and would rewrite everyday prose; drop it or move it to never-words`);
+      continue;
+    }
+    if (!/\s/.test(canonical) && HARVEST_STOPLIST.has(canonical)) {
+      errors.push(`"${canonical}" is an ordinary capitalized word and would rewrite everyday prose; drop it`);
+      continue;
+    }
+    if (term.aliases.length === 0) {
+      warnings.push(`"${canonical}" has no aliases: a term nobody misspells is dead weight, but harmless`);
+    }
+    for (const alias of term.aliases) {
+      if (STOPLIST.has(alias.toLowerCase()) && !/\s/.test(alias)) {
+        errors.push(`alias "${alias}" of "${canonical}" is an ordinary English word and would rewrite everyday prose`);
+      }
+    }
+  }
+  return { errors, warnings };
 }
 
 // src/core/demo.ts
@@ -55586,7 +55674,7 @@ import path15 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/cli/cli-entry.ts
-import { existsSync as existsSync4, realpathSync } from "node:fs";
+import { existsSync as existsSync4, realpathSync as realpathSync2 } from "node:fs";
 import path14 from "node:path";
 
 // src/util/which.ts
@@ -55675,7 +55763,7 @@ function resolveCliEntry(opts = {}) {
   if (onPath) {
     let real = onPath;
     try {
-      real = realpathSync(onPath);
+      real = realpathSync2(onPath);
     } catch {
     }
     if (/\.(?:[cm]?js)$/i.test(real)) return real;
@@ -61759,7 +61847,6 @@ var registerPackTools = (server, { cwd, load }) => {
   const destination = (scope) => JSON.stringify({ cwd, scope: scope ?? "global", ...resolvePaths({ cwd }) });
   const pruneImports = () => {
     for (const [token, preview] of imports) if (Date.now() - preview.at > 3e5) imports.delete(token);
-    while (imports.size >= 20) imports.delete(imports.keys().next().value);
   };
   server.registerTool(
     "list_packs",
@@ -61845,6 +61932,7 @@ var registerPackTools = (server, { cwd, load }) => {
         if (previewDigest !== digest) throw new Error("community pack contents or destination changed, or preview digest is missing; preview again before installing");
         const result2 = await installRegistryPack(entry, base, registry2, {
           cwd,
+          approvedBytes: bytes,
           ...scope !== void 0 ? { scope } : {},
           ...parsed.version !== void 0 ? { pinnedVersion: parsed.version } : {}
         });
@@ -61922,6 +62010,7 @@ var registerPackTools = (server, { cwd, load }) => {
       }
       const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
       const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: 50 });
+      while (imports.size >= 20) imports.delete(imports.keys().next().value);
       const token = randomUUID();
       imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
       return textResult({
@@ -62108,7 +62197,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return realpathSync2(resolve3(entry)) === realpathSync2(fileURLToPath5(import.meta.url));
+    return realpathSync3(resolve3(entry)) === realpathSync3(fileURLToPath5(import.meta.url));
   } catch {
     return false;
   }
