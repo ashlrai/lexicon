@@ -591,20 +591,39 @@ describe('lexicon voice --toggle start race', () => {
 
   it('two presses that race (second starts while the first is spawning) produce one recorder and one state file', async () => {
     const h = await harness();
-    // The first press's spawn fires the second press before returning: the
-    // second runs while the state file still holds the first's provisional
-    // record, exactly the window between the claim and the pid rewrite.
-    let second: Promise<number> | undefined;
-    const base = h.deps.spawn as VoiceSpawn;
-    h.deps.spawn = (cmd, args, o) => {
-      const handle = base(cmd, args, o);
-      if (!second) second = runVoiceToggle(h.opts, h.io, h.deps);
-      return handle;
-    };
-    const first = await runVoiceToggle(h.opts, h.io, h.deps);
-    expect(first).toBe(EXIT_OK);
-    expect(await second).toBe(EXIT_OK);
-    expect(h.out).toEqual(['recording\n', 'recording\n']);
+    // Hold the real first toggle immediately before its atomic pid publication.
+    // The second toggle must finish against the provisional record while the
+    // first is still blocked. Both execute the production handler.
+    let unblock!: () => void;
+    let reached!: () => void;
+    const blocked = new Promise<void>((resolve) => { unblock = resolve; });
+    const entered = new Promise<void>((resolve) => { reached = resolve; });
+    const publicationPath = path.join(await fs.realpath(await ensureVoiceDir(h.globalPath)), 'recording.json');
+    const rename = fs.rename.bind(fs);
+    const publication = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === publicationPath) {
+        reached();
+        await blocked;
+      }
+      return rename(from, to);
+    });
+    const first = runVoiceToggle(h.opts, h.io, h.deps);
+    try {
+      await entered;
+      const provisional = await readState(h.globalPath);
+      expect(provisional?.pid).toBeUndefined();
+      expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+      expect(h.spawnCalls).toHaveLength(1);
+      expect(await readState(h.globalPath)).toEqual(provisional);
+      unblock();
+      expect(await first).toBe(EXIT_OK);
+      expect(h.out).toEqual(['recording\n', 'recording\n']);
+    } finally {
+      unblock();
+      await first;
+      publication.mockRestore();
+    }
+
     expect(h.spawnCalls).toHaveLength(1);
     expect(h.kills).toEqual([]);
     const state = await readState(h.globalPath);
@@ -1343,9 +1362,18 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E || !hasFfmpeg())('capture validatio
   it('accepts a capture whose recorder was killed before it could write the trailer', async () => {
     const wav = path.join(dir, 'killed.wav');
     const child = spawn('ffmpeg', ['-nostdin', '-hide_banner', '-loglevel', 'error', ...sine, '-t', '600', ...encode, wav]);
-    await new Promise((r) => setTimeout(r, 700));
-    child.kill('SIGKILL');
-    await new Promise((r) => child.once('exit', r));
+    const exited = new Promise<void>((resolve, reject) => {
+      child.once('exit', () => resolve());
+      child.once('error', reject);
+    });
+    try {
+      // Kill only after the real recorder has flushed audio, rather than
+      // assuming process startup always finishes within a fixed sleep.
+      await vi.waitFor(async () => expect((await inspectWav(wav)).audioBytes).toBeGreaterThan(0), { timeout: 5_000 });
+    } finally {
+      child.kill('SIGKILL');
+      await exited;
+    }
 
     const header = await fs.readFile(wav);
     expect(header.readUInt32LE(4)).toBe(0xffff_ffff); // RIFF size: never patched

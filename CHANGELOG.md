@@ -2,6 +2,17 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## Unreleased
+
+### Added
+
+- Starter packs include 21 more AI and developer-tool names, with 176 terms and 376 aliases across the four shipped packs. Integration and import/registry design documents describe the planned follow-on work.
+
+### Fixed
+
+- The voice toggle race test runs both real handlers with a barrier before atomic pid publication, so the second press deterministically observes the in-flight claim. Synthetic ffmpeg capture tests wait for actual flushed audio before killing the recorder.
+- vLLM protects ordinary vellum prose while accepting the spelled-out acronym. Pack lock tests derive removal counts from the loaded pack.
+
 ## 0.5.4 (2026-09-21)
 
 Thirteen commits, and a fix release rather than a routine one. 0.5.3 shipped a defect that throws away a term you had just written while telling you it saved it, and three more paths that lose a write without saying so. Everything below was reproduced before it was touched, and every regression test here was watched failing against 0.5.3 first.

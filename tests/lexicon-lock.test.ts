@@ -199,7 +199,7 @@ describe('uninstallPack reads and writes inside the lock', () => {
         runChild(addScript, [globalPath, 'Racer', delayMs]),
       ]);
 
-      expect(uninstalled.out).toBe('removed=70');
+      expect(uninstalled.out).toBe(`removed=${pack.lexicon.terms.length}`);
       const back = await readLexiconFile(globalPath, 'global');
       const present = back.lexicon.terms.some((t) => t.canonical === 'Racer');
       // Either the write is kept or the writer was told it failed. What must

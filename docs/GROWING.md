@@ -2,7 +2,7 @@
 
 Four ways terms get in after the first one, and one way to take them out again: a starter pack, your repo, your corrections, your own voice history, and a review pass over what never fires.
 
-- [Starter packs](PACKS.md) are one command and 155 curated terms.
+- [Starter packs](PACKS.md) are one command and 176 curated terms.
 - [Harvest your repo](#harvest-your-repo) mines the names already in your code.
 - [Learn from corrections](#learn-from-corrections) turns "it's Ashlr.AI, not Ashler" into an alias.
 - [Suggestions](SUGGEST.md) mine your voice history for what to add next.

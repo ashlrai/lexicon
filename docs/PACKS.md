@@ -1,6 +1,6 @@
 # Starter packs
 
-Four curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 155 terms and 349 aliases across developer tooling, AI, business and dictation apps.
+Four curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 176 terms and 376 aliases across developer tooling, AI, business and dictation apps.
 
 ```bash
 lexicon pack list                    # what exists, and which you have
@@ -12,8 +12,8 @@ lexicon pack remove business         # take one back out
 
 | Pack | Terms | Aliases | What is in it |
 |---|---|---|---|
-| `developer` | 70 | 184 | Infrastructure, languages, frameworks, hosting and the everyday SaaS a software team says out loud (Kubernetes, PostgreSQL, Nginx, Hetzner, Vercel, pnpm) |
-| `ai` | 36 | 86 | Labs, models, frameworks, coding agents and the vocabulary of working with LLMs (Anthropic, Claude Code, Ollama, LangChain, RAG) |
+| `developer` | 82 | 199 | Infrastructure, languages, frameworks, hosting and the everyday SaaS a software team says out loud (Kubernetes, PostgreSQL, Nginx, Hetzner, Vercel, pnpm) |
+| `ai` | 45 | 99 | Labs, models, frameworks, coding agents and the vocabulary of working with LLMs (Anthropic, Claude Code, Ollama, LangChain, RAG) |
 | `business` | 35 | 58 | Metrics, acronyms, fundraising terms and the SaaS a founder talks to every day (SaaS, ARR, cap table, Rippling) |
 | `voice-tools` | 14 | 21 | Dictation apps, speech models and meeting recorders (Wispr Flow, Superwhisper, whisper.cpp, Granola) |
 

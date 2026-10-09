@@ -55,6 +55,17 @@ terms:
   - canonical: Perplexity
     category: brand
     aliases: [per plexity]
+  - canonical: Qwen
+    category: product
+    aliases: [quinn, kwen, q wen]
+    notes: the Alibaba model family
+  - canonical: Kimi
+    category: product
+    aliases: [kimmy]
+    notes: the Moonshot model
+  - canonical: NotebookLM
+    category: product
+    aliases: [notebook l m, notebook lm]
 
   # ---------------------------------------------------------- frameworks, infra
   - canonical: PyTorch
@@ -82,6 +93,20 @@ terms:
   - canonical: ElevenLabs
     category: brand
     aliases: [eleven labs, eleven laps, 11 labs]
+  - canonical: vLLM
+    category: product
+    aliases: [v l l m]
+    never: [vellum]
+    notes: the inference server
+  - canonical: OpenRouter
+    category: brand
+    aliases: [open router]
+  - canonical: LangSmith
+    category: product
+    aliases: [lang smith]
+  - canonical: Langfuse
+    category: product
+    aliases: [lang fuse]
 
   # ---------------------------------------------------------- coding agents
   - canonical: Cursor
@@ -97,6 +122,14 @@ terms:
   - canonical: Copilot
     category: product
     aliases: [co pilot, coe pilot]
+  - canonical: Devin
+    category: product
+    aliases: [devon]
+    notes: the Cognition coding agent
+  - canonical: CrewAI
+    category: product
+    aliases: [crew a i]
+    notes: the multi-agent framework
 
   # ------------------------------------------------------------- vocabulary
   - canonical: RAG
