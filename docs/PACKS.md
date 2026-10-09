@@ -62,7 +62,7 @@ Over MCP, `list_packs` takes the same `registry` parameter, and `add_pack` takes
 
 Project community packs keep separate pins and caches for each canonical project file. Pass `--project` to `pack list`, `pack add`, `pack update` and `pack remove` to operate on that project's installation. Global packs and other projects keep their own records. Metadata without a verified scope/target is refused; inspect and explicitly migrate or remove old metadata before reinstalling.
 
-`pack update --json` previews without writing unless `--yes` is also given. Installation rolls back lexicon and cache changes if publishing its registry metadata fails.
+`pack update --json` previews without writing unless `--yes` is also given. Installation and removal restore the dictionary, cache and state if publishing registry metadata fails. Update approval also binds the installation record: a new version pin or registry source requires a fresh preview even when the installed bytes are unchanged.
 
 ## Adding a pack to this repo
 
