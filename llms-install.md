@@ -4,7 +4,7 @@ Instructions for an AI assistant installing this MCP server on behalf of its use
 Follow them in order. Lexicon needs no API key, no account and no network access —
 do not ask the user for credentials at any point.
 
-Lexicon is a stdio MCP server (19 tools) that holds the user's personal vocabulary:
+Lexicon is a stdio MCP server (20 tools) that holds the user's personal vocabulary:
 the names, brands and identifiers speech-to-text mishears, and the canonical spelling
 for each. Call `normalize_transcript` on dictated input before acting on it.
 

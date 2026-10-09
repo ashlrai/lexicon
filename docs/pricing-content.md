@@ -122,7 +122,7 @@ two bigger cards. It is the product.
 
 - Unlimited terms, unlimited machines, unlimited people
 - The `lexicon` CLI for macOS, Linux and Windows
-- The MCP server: nineteen tools, two resources, two prompts
+- The MCP server: twenty tools, two resources, two prompts
 - Claude Code plugin, with `SessionStart` and `UserPromptSubmit` hooks
 - Browser extension for ChatGPT, Claude.ai, Gemini, Grok, Perplexity, Copilot and Poe (not in the Chrome or Firefox stores yet; unpacked install)
 - macOS menu bar app for any text field (ad-hoc signed, not notarized)

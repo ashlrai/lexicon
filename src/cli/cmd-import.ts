@@ -19,8 +19,11 @@ import {
   resolvePaths,
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
+import { TERM_SOURCES } from '../core/index.js';
 import { renderTable, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
+import { runImportGuided } from './cmd-import-guided.js';
+import type { ImportGuidedOptions } from './cmd-import-guided.js';
 
 export interface ImportCliOptions extends CommonOptions {
   /** Import format; `auto` (default) sniffs the content. */
@@ -54,7 +57,7 @@ export interface ImportReport {
   counts: { total: number; created: number; merged: number; skipped: number };
 }
 
-const SOURCES: readonly TermSource[] = ['user', 'harvest:repo', 'harvest:git', 'harvest:package', 'import', 'learned'];
+const SOURCES: readonly TermSource[] = TERM_SOURCES;
 const CATEGORIES: readonly TermCategory[] = ['brand', 'person', 'product', 'acronym', 'identifier', 'place', 'other'];
 
 function parseSource(value: string | undefined): TermSource | undefined {
@@ -232,22 +235,42 @@ function printReport(report: ImportReport, io: IO): void {
 export function registerImportCommands(program: Command, io: IO): void {
   program
     .command('import')
-    .description('import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon')
-    .argument('<file>', 'file to import, or - for stdin')
+    .description('import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub')
+    .argument('[file]', 'file to import, or - for stdin (not used with --guided)')
     .argument('[format]', `one of: ${IMPORT_FORMATS.join(', ')} (default: auto)`)
     .option('--format <format>', 'same as the positional format argument')
     .option('--project', 'write to the project lexicon instead of the global one')
     .option('--dry-run', 'print what would be added without writing')
     .option('--source <source>', 'source recorded on each term (default: import)')
     .option('--category <category>', 'category applied to imported terms that lack one')
+    .option('--guided', 'guided vocabulary import: pick sources (contacts, calendar, github) and approve each candidate before it is written')
+    .option('--sources <list>', 'with --guided: comma-separated sources to harvest (default: every available one)')
+    .option('--limit <n>', 'with --guided: max candidates to review (default: 50)')
+    .option('-y, --yes', 'with --guided: accept every candidate without prompting (requires --sources)')
+    .option('--home <dir>', 'with --guided: treat <dir> as the home directory (mainly for tests)')
     .option('--json', 'print the result as JSON')
-    .action(async (file: string, formatArg: string | undefined, opts: ImportCliOptions) => {
+    .action(async (file: string | undefined, formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();
-      const merged: ImportCliOptions = {
+      const merged: ImportCliOptions & ImportGuidedOptions = {
         ...opts,
         ...(formatArg !== undefined ? { format: formatArg } : {}),
         ...(cwd ? { cwd } : {}),
       };
+      if (merged.guided) {
+        if (file !== undefined) {
+          io.stderr('lexicon: --guided takes no file argument (it harvests from your sources instead)\n');
+          process.exitCode = 1;
+          return;
+        }
+        const code = await runImportGuided(merged, io);
+        if (code !== 0) process.exitCode = code;
+        return;
+      }
+      if (file === undefined) {
+        io.stderr('lexicon: pass a file to import, - for stdin, or --guided for the vocabulary import wizard\n');
+        process.exitCode = 1;
+        return;
+      }
       const code = await runImport(file, merged, io);
       if (code !== 0) process.exitCode = code;
     });

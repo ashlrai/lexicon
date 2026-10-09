@@ -1,0 +1,18 @@
+# Example community pack: the shape `lexicon pack validate` expects.
+# `author` is required for community packs; the vendored four leave it empty.
+name: cardiology
+title: Cardiology terms
+description: Common cardiology drugs, procedures and devices with the misspellings STT produces for them.
+version: 1
+author: example
+homepage: https://example.com/packs/cardiology
+terms:
+  - canonical: Metoprolol
+    aliases: [metoprolol, metropolol, metoprolol succinate]
+    category: brand
+  - canonical: Echocardiogram
+    aliases: [echocardiogram, echo cardiogram]
+    category: product
+  - canonical: Atrial fibrillation
+    aliases: [atrial fibrillation, AFib, a fib]
+    category: other
