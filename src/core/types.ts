@@ -23,6 +23,9 @@ export const TERM_SOURCES = [
   'harvest:git',
   'harvest:package',
   'import',
+  'import:contacts',
+  'import:calendar',
+  'import:github',
   'learned',
   'pack',
 ] as const;
