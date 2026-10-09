@@ -167,13 +167,29 @@ they judge whether it worked.
 
 ## What to tell your user about privacy
 
-The lexicon is a plain YAML file at `~/.config/lexicon/lexicon.yaml`. No account,
-no sync, no telemetry. The CLI, hooks, MCP server, loopback API and extension
-make no network request beyond 127.0.0.1, except for two the user asks for by
-name: `lexicon voice` fetching a whisper.cpp model on first use, and
-`lexicon pack` fetching a community pack index and pack files from the
-`--registry` URL the user passed (every download is checksum-verified against
-the index before it is read). Full threat model: [SECURITY.md](../SECURITY.md).
+The lexicon is a plain YAML file at `~/.config/lexicon/lexicon.yaml`. Local
+correction needs no account; there is no sync or telemetry. Ordinary hooks,
+correction, the loopback API and extension do not send transcripts to a remote
+service. Explicit network operations include `lexicon voice` fetching a
+whisper.cpp model on first use, `lexicon pack` fetching a community pack index
+and files from the selected `--registry` URL with checksum verification, and
+opting into the GitHub source for guided vocabulary import. That source calls
+the GitHub API through the existing `gh` configuration and login (normally
+`api.github.com`) for profile, organization membership, member-login and
+repository-name metadata; no new OAuth scopes are requested.
+
+Ask before reading any import source, then show candidates before writes.
+Interactive CLI import reviews candidates in prompts. Non-interactive CLI uses
+explicit sources, `--yes`, a matching `--preview-id` and accepted `--accept`
+candidate IDs. MCP `import_vocabulary` uses explicit sources, the returned
+`previewToken` and `approvedCandidateIds`; apply consumes the saved snapshot.
+Previews can contain personal or organization names, and sending them to an
+agent client can make those names model input. Email and chat importers are
+not implemented. Full threat model: [SECURITY.md](../SECURITY.md).
+
+This guided importer is implemented in source candidate `0.5.5`. Public npm
+`latest` was `0.5.4` when requeried on 2026-10-09; source documentation does not
+prove publication, installation or authenticated-import acceptance.
 
 ## Where the machine-readable files are in this repository
 
