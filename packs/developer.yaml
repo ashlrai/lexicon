@@ -79,6 +79,12 @@ terms:
   - canonical: Upstash
     category: brand
     aliases: [up stash, upstache, up stache]
+  - canonical: Tailscale
+    category: brand
+    aliases: [tail scale]
+  - canonical: ngrok
+    category: product
+    aliases: [en grok]
 
   # ------------------------------------------------ protocols, formats, auth
   - canonical: GraphQL
@@ -124,6 +130,12 @@ terms:
     aliases: []
     never: [flask]
     notes: the Python web framework
+  - canonical: Gunicorn
+    category: product
+    aliases: [g unicorn, gun corn]
+  - canonical: Uvicorn
+    category: product
+    aliases: [u vicorn, you vicorn]
   - canonical: NumPy
     category: product
     aliases: [num pie, numpie, num py]
@@ -249,3 +261,27 @@ terms:
     category: brand
     aliases: []
     never: [zoom]
+  - canonical: ClickHouse
+    category: product
+    aliases: [click house]
+  - canonical: DuckDB
+    category: product
+    aliases: [duck d b, duck db]
+  - canonical: Elasticsearch
+    category: product
+    aliases: [elastic search]
+  - canonical: PlanetScale
+    category: brand
+    aliases: [planet scale]
+  - canonical: Mixpanel
+    category: brand
+    aliases: [mix panel]
+  - canonical: PostHog
+    category: brand
+    aliases: [post hog]
+  - canonical: 1Password
+    category: product
+    aliases: [one password]
+  - canonical: Snyk
+    category: brand
+    aliases: [snick]

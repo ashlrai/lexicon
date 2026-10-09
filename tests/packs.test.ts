@@ -67,6 +67,13 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
   Datadog: ['data dog'],
   Auth0: ['auth zero', 'off zero'],
   Fireflies: ['fire flies'],
+  OpenRouter: ['open router'],
+  CrewAI: ['crew a i'],
+  ClickHouse: ['click house'],
+  Elasticsearch: ['elastic search'],
+  PlanetScale: ['planet scale'],
+  Mixpanel: ['mix panel'],
+  '1Password': ['one password'],
 };
 
 
