@@ -103,6 +103,22 @@ lexicon install codex --apply    # write it
 | VS Code | `lexicon install vscode` | `~/Library/Application Support/Code/User/mcp.json` (macOS), `~/.config/Code/User/mcp.json` (Linux), `%APPDATA%\Code\User\mcp.json` (Windows). Note: VS Code uses `servers`, not `mcpServers`, and each entry carries `"type": "stdio"` |
 | Anything else | `lexicon install` | prints the generic `mcpServers` snippet |
 
+### Cursor on Windows
+
+For a user-level Cursor MCP installation on Windows, the configuration file is
+`%USERPROFILE%\.cursor\mcp.json` (the Windows form of `~/.cursor/mcp.json`).
+From PowerShell, install Lexicon and write the configuration with:
+
+```powershell
+npx -y @ashlr/lexicon@latest install cursor --apply
+```
+
+When Lexicon is run through `npx`, the generated Cursor entry starts the MCP
+server with `npx -y @ashlr/lexicon@<version> mcp`, so it does not point at an
+npm cache directory that may later be deleted. To configure only the current
+project, add `--project --apply`; that writes `.cursor\mcp.json` in the project
+directory instead.
+
 `--project` (or `--scope project`) writes the repo-level file instead where the client has one: `./.codex/config.toml`, `./.cursor/mcp.json`, `./.gemini/settings.json`, `./.vscode/mcp.json`. Windsurf and Claude Desktop have no project-level config and `--project` is refused for them. Every client ends with the same hint: `lexicon export claude-md >> <rules file>` (`CLAUDE.md`, `AGENTS.md` for Codex, `.cursor/rules/lexicon.mdc`, `GEMINI.md`, `.windsurfrules`, `.github/copilot-instructions.md`) so the model prefers the canonical spellings even when it does not call the tool.
 
 ### Where writing the file is not quite enough

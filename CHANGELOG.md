@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Changed
+
+- Document the Windows Cursor MCP configuration path and the `npx` installation command in `docs/CLIENTS.md`.
+
 ## 0.5.5 (2026-10-09)
 
 ### Added
