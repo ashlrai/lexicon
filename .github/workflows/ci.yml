@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -30,12 +30,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, node: 20 }
-          - { os: ubuntu-latest, node: 22 }
-          - { os: ubuntu-latest, node: 24 }
-          - { os: windows-latest, node: 22 }
-          - { os: macos-latest, node: 22 }
+        # macOS runners bill ~10x Linux and queue ~3 min, so pull requests run
+        # the Linux + Windows rows (the fast gate) and the macOS row runs on
+        # every push to main and ci/** (and again in release.yml before any
+        # publish). Coverage is unchanged; only when macOS runs moves.
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22}]' || '[{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22},{"os":"macos-latest","node":22}]') }}
     steps:
       # Before checkout, or it has already rewritten the worktree. Git for
       # Windows sets core.autocrlf=true globally, which would hand every
