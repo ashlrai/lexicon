@@ -32,6 +32,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `suggest --limit abc` names the option in its error, and counts read "1 term" instead of "1 terms".
 - `commander` is pinned to `^14`, so the CLI runs on Node 20 as `engines` promises (commander 15 needs Node 22.12).
 
+### Changed
+
+- Document the Windows Cursor MCP configuration path and the `npx` installation command in `docs/CLIENTS.md`.
+
 ## 0.5.5 (2026-10-14)
 
 ### Added
