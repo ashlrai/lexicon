@@ -84,7 +84,10 @@ async function request(url, options = {}, fetcher = fetch) {
 }
 export async function preflight(version, env = process.env, fetcher = fetch) {
   releaseVersion(version);
-  assert.ok(env.NODE_AUTH_TOKEN?.trim(), 'existing NPM_TOKEN is required before publication');
+  // Either a trusted-publishing OIDC token request (GitHub Actions with
+  // id-token: write) or an existing NPM_TOKEN must be available.
+  const oidc = Boolean(env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim());
+  assert.ok(oidc || env.NODE_AUTH_TOKEN?.trim(), 'npm trusted publishing (id-token: write) or an existing NPM_TOKEN is required before publication');
   assert.ok(env.GH_TOKEN?.trim(), 'workflow GitHub token is required');
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY, 'unexpected release repository');
   const release = await request(`https://api.github.com/repos/${REPOSITORY}/releases/tags/v${version}`, {

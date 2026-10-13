@@ -98,6 +98,11 @@ for (const mutation of ['missing-mac', 'tampered-mac', 'tampered-npm', 'extra-as
     assert.throws(() => lstatSync(release), /ENOENT/);
   });
 }
+test('trusted publishing OIDC satisfies the credential requirement without NPM_TOKEN', async () => {
+  let calls = 0;
+  await preflight(version, { ...env, NODE_AUTH_TOKEN: '', ACTIONS_ID_TOKEN_REQUEST_URL: 'https://synthetic', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'synthetic' }, async () => { calls++; return { status: 404 }; });
+  assert.equal(calls, 2);
+});
 test('missing token refuses before any network read or external write', async () => {
   let calls = 0;
   await assert.rejects(preflight(version, { ...env, NODE_AUTH_TOKEN: '' }, async () => { calls++; }), /NPM_TOKEN/);
