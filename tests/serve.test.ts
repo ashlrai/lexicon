@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1099,5 +1100,104 @@ describe('packs and aliases routes', () => {
     const res = await fetch(`${info2.url}/packs/developer`, { method: 'OPTIONS', headers: { Origin: 'chrome-extension://abc' } });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-methods')).toBe('GET, POST, DELETE');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Consumer contract: Phantom desktop voice
+// ---------------------------------------------------------------------------
+
+/**
+ * Phantom's desktop app (ashlrai/phantom desktop/src-tauri/src/voice/lexicon.rs)
+ * reads serve.json, then talks raw HTTP/1.0 over loopback: a dry-run
+ * POST /normalize whose replacements it applies itself by UTF-16 offset,
+ * GET /lexicon for an offline cache of global terms, and
+ * GET /export/whisper-prompt. These tests pin exactly the fields it reads.
+ */
+function phantomRequest(method: string, route: string, body = ''): Promise<{ head: string; body: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(info.port, '127.0.0.1');
+    const chunks: Buffer[] = [];
+    socket.on('data', (d: Buffer) => chunks.push(d));
+    socket.on('error', reject);
+    socket.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      const split = raw.indexOf('\r\n\r\n');
+      resolve({ head: raw.slice(0, split), body: raw.slice(split + 4) });
+    });
+    socket.write(
+      `${method} ${route} HTTP/1.0\r\nHost: 127.0.0.1:${info.port}\r\nAuthorization: Bearer ${info.token}\r\n` +
+        `Content-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
+    );
+  });
+}
+
+describe('consumer contract: Phantom desktop voice client', () => {
+  it('serve.json sits beside LEXICON_PATH with a numeric port and a header-safe token', async () => {
+    expect(getServePath()).toBe(path.join(path.dirname(env.globalPath), 'serve.json'));
+    const raw = JSON.parse(await fs.readFile(getServePath(), 'utf8')) as { port: unknown; token: unknown };
+    expect(typeof raw.port).toBe('number');
+    expect(raw.token).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('a dry-run /normalize over HTTP/1.0 returns UTF-16 spans that rebuild the real output', async () => {
+    const text = 'deploy 🚀 to ashler, then ping Ashlar ✅';
+    const dry = await phantomRequest('POST', '/normalize', JSON.stringify({ text, dryRun: true, cwd: env.cwd }));
+    expect(dry.head).toMatch(/^HTTP\/1\.[01] 200 /);
+    expect(dry.head.toLowerCase()).not.toContain('transfer-encoding: chunked');
+    const out = JSON.parse(dry.body) as { input: string; replacements: Array<{ start: number; end: number; original: string; replacement: string }> };
+    expect(out.input).toBe(text);
+    expect(out.replacements.length).toBe(2);
+    let rebuilt = text;
+    let floor = Number.POSITIVE_INFINITY;
+    for (const r of [...out.replacements].sort((a, b) => b.start - a.start)) {
+      expect(text.slice(r.start, r.end)).toBe(r.original);
+      expect(r.end).toBeLessThanOrEqual(floor);
+      rebuilt = rebuilt.slice(0, r.start) + r.replacement + rebuilt.slice(r.end);
+      floor = r.start;
+    }
+    const real = (await (await api('POST', '/normalize', { text, dryRun: true, cwd: env.cwd })).json()) as { output: string };
+    const applied = (await (await api('POST', '/normalize', { text, cwd: env.cwd })).json()) as { output: string };
+    expect(real.output).toBe(text);
+    expect(rebuilt).toBe(applied.output);
+    expect(rebuilt).toBe('deploy 🚀 to Ashlr.AI, then ping Ashlr.AI ✅');
+  });
+
+  it('GET /lexicon gives global terms with provenance Phantom can cache', async () => {
+    const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.cwd)}`);
+    const body = JSON.parse(res.body) as {
+      lexicon: { terms: Array<{ canonical: unknown; aliases: unknown; caseSensitive?: unknown; scope?: unknown }> };
+      paths: { global?: string; project?: string };
+      projectTrust?: string;
+    };
+    expect(body.paths.global).toBe(env.globalPath);
+    expect(body.paths.project).toBeUndefined();
+    expect(body.projectTrust).toBeUndefined();
+    const term = body.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI');
+    expect(term).toBeDefined();
+    expect(term?.scope).toBe('global');
+    expect(Array.isArray(term?.aliases) && term.aliases.every((a) => typeof a === 'string')).toBe(true);
+    for (const t of body.lexicon.terms) {
+      if ('caseSensitive' in t) expect(typeof t.caseSensitive).toBe('boolean');
+    }
+  });
+
+  it('GET /lexicon reports project context, which Phantom keeps out of its cache', async () => {
+    const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`);
+    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string };
+    expect(body.paths.project).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    expect(body.projectTrust).toBe('untrusted');
+  });
+
+  it('GET /export/whisper-prompt is plain comma-separated canonicals', async () => {
+    const res = await phantomRequest('GET', `/export/whisper-prompt?cwd=${encodeURIComponent(env.cwd)}`);
+    expect(res.head).toMatch(/^HTTP\/1\.[01] 200 /);
+    expect(res.head.toLowerCase()).toContain('content-type: text/plain');
+    expect(res.body.trim().split(', ')).toContain('Ashlr.AI');
+  });
+
+  it('answers 401 without the bearer token, which makes Phantom drop its cache', async () => {
+    const res = await rawGet('/lexicon', {});
+    expect(res.status).toBe(401);
   });
 });
