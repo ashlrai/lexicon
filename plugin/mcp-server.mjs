@@ -55914,9 +55914,9 @@ function defaultExec(file2, args) {
 }
 
 // src/cli/cmd-doctor.ts
-import { existsSync as existsSync7, promises as fs11 } from "node:fs";
-import os7 from "node:os";
-import path18 from "node:path";
+import { existsSync as existsSync8, promises as fs12 } from "node:fs";
+import os8 from "node:os";
+import path19 from "node:path";
 
 // src/daemon/clipboard-backends.ts
 import { spawn } from "node:child_process";
@@ -56129,427 +56129,10 @@ function installHint(platform) {
   return INSTALL_HINTS.other;
 }
 
-// src/cli/serve-paths.ts
-import path17 from "node:path";
-var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
-var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
-var SCHEDULED_TASK_NAME = "Lexicon";
-var SERVE_LABEL_ENV_VAR = "LEXICON_SERVE_LABEL";
-function serveLabel(env = process.env) {
-  const override = env[SERVE_LABEL_ENV_VAR]?.trim();
-  return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : LAUNCH_AGENT_LABEL;
-}
-function scheduledTaskName(env = process.env) {
-  const override = env[SERVE_LABEL_ENV_VAR]?.trim();
-  return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
-}
-function launchAgentPath(home, env = process.env) {
-  return path17.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
-}
-function launchAgentLogPath(home) {
-  return path17.join(home, "Library", "Logs", "lexicon", "serve.log");
-}
-function systemdUnitPath(home, env) {
-  return path17.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
-}
-function programPathFromPlist(plist) {
-  const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
-  if (!block) return void 0;
-  const strings = [...block[1].matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => xmlUnescape2(m[1]));
-  return strings[1];
-}
-function programPathFromTaskXml(xml) {
-  const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml);
-  if (!args) return void 0;
-  const quoted = /"([^"]*)"/.exec(xmlUnescape2(args[1]));
-  return quoted ? quoted[1] : void 0;
-}
-function programPathFromUnit(unit) {
-  const line2 = unit.split("\n").find((l) => l.startsWith("ExecStart="));
-  if (!line2) return void 0;
-  const words = [...line2.slice("ExecStart=".length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1"));
-  return words[1];
-}
-function xmlUnescape2(s) {
-  return s.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
-}
-
-// src/cli/cmd-doctor.ts
-var COMMON_WORDS = /* @__PURE__ */ new Set([
-  "the",
-  "and",
-  "for",
-  "are",
-  "but",
-  "not",
-  "you",
-  "all",
-  "any",
-  "can",
-  "had",
-  "her",
-  "was",
-  "one",
-  "our",
-  "out",
-  "has",
-  "his",
-  "how",
-  "its",
-  "may",
-  "new",
-  "now",
-  "old",
-  "see",
-  "way",
-  "who",
-  "did",
-  "get",
-  "let",
-  "say",
-  "she",
-  "too",
-  "use",
-  "off",
-  "ash",
-  "sauce",
-  "with",
-  "this",
-  "that",
-  "from",
-  "they",
-  "have",
-  "been",
-  "will",
-  "what",
-  "when",
-  "your",
-  "there",
-  "their",
-  "about",
-  "which",
-  "time",
-  "like",
-  "just",
-  "over",
-  "also",
-  "into",
-  "some",
-  "than",
-  "then",
-  "them",
-  "well",
-  "were",
-  "more"
-]);
-var SERVE_REINSTALL_HINT = "run: lexicon serve --uninstall && lexicon serve --install";
-async function checkLoginService(probe) {
-  const { platform, env, exec, home } = probe;
-  let loaded = false;
-  let file2;
-  let program2;
-  let name;
-  if (platform === "darwin") {
-    name = `login service ${serveLabel(env)}`;
-    const uid = probe.uid ?? process.getuid?.() ?? 501;
-    try {
-      exec("launchctl", ["print", `gui/${uid}/${serveLabel(env)}`]);
-      loaded = true;
-    } catch {
-      loaded = false;
-    }
-    file2 = launchAgentPath(home, env);
-  } else if (platform === "linux") {
-    name = `login service ${SYSTEMD_UNIT_NAME}`;
-    try {
-      loaded = exec("systemctl", ["--user", "is-active", SYSTEMD_UNIT_NAME]).trim() === "active";
-    } catch {
-      loaded = false;
-    }
-    file2 = systemdUnitPath(home, env);
-  } else if (platform === "win32") {
-    const taskName = scheduledTaskName(env);
-    name = `login service ${taskName}`;
-    let xml;
-    try {
-      xml = exec("schtasks", ["/Query", "/TN", taskName, "/XML"]);
-      loaded = true;
-    } catch {
-      loaded = false;
-    }
-    if (xml !== void 0) program2 = programPathFromTaskXml(xml);
-    if (!loaded) {
-      return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
-    }
-    if (program2 !== void 0 && !existsSync7(program2)) {
-      return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
-    }
-    return { level: "ok", message: `${name} is registered and runs at logon` };
-  } else {
-    return { level: "info", message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
-  }
-  let fileExists = false;
-  try {
-    const text = await fs11.readFile(file2, "utf8");
-    fileExists = true;
-    program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
-  } catch {
-    fileExists = false;
-  }
-  if (!loaded && !fileExists) {
-    return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
-  }
-  if (program2 !== void 0 && !existsSync7(program2)) {
-    return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
-  }
-  if (!loaded) {
-    return { level: "warn", message: `${name} is installed at ${file2} but not loaded (${SERVE_REINSTALL_HINT})` };
-  }
-  if (!fileExists) {
-    return { level: "info", message: `${name} is loaded, but not from this install (${SERVE_REINSTALL_HINT}; no service file at ${file2})` };
-  }
-  return { level: "ok", message: `${name} loaded${program2 !== void 0 ? ` (${program2} exists)` : ""}` };
-}
-function parseReason(error62, filePath, max = 110) {
-  const marker = `${filePath}: `;
-  const at = error62.lastIndexOf(marker);
-  const body = at >= 0 ? error62.slice(at + marker.length) : error62;
-  const flat = body.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
-}
-function editCommand(scope) {
-  return scope === "project" ? "lexicon edit --project" : "lexicon edit";
-}
-function summarize(checks, state) {
-  const fails = checks.filter((c) => c.level === "fail");
-  const warns = checks.filter((c) => c.level === "warn");
-  const counts = `${state.terms} term${state.terms === 1 ? "" : "s"}`;
-  const ready = state.terms > 0 && state.wired && fails.length === 0;
-  if (state.unreadable.length > 0) {
-    const first = state.unreadable[0];
-    const alsoProject = state.unreadable.length > 1 ? " The project lexicon does not parse either." : "";
-    return {
-      ready: false,
-      summary: `The ${first.scope} lexicon exists but does not parse, so no corrections are happening: ${parseReason(first.error, first.path)}${alsoProject}`,
-      // Command first, path second: a rendered line is capped at 200
-      // characters and an absolute path can use most of that, so what gets
-      // cut has to be the part the check list already showed.
-      nextStep: `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
-    };
-  }
-  if (state.terms === 0) {
-    return {
-      ready: false,
-      summary: "Lexicon is not set up yet: there are no terms, so nothing will be corrected.",
-      nextStep: "Run: lexicon setup"
-    };
-  }
-  if (fails.length > 0) {
-    return {
-      ready: false,
-      summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? "" : "s"} failed: ${fails[0].message}`,
-      // Every failing message ends in its own "(run: ...)" hint, so the first
-      // failure carries its fix with it.
-      nextStep: `Fix the first failure: ${fails[0].message}`
-    };
-  }
-  if (!state.wired) {
-    return {
-      ready: false,
-      summary: `Lexicon has ${counts}, but no agent is wired up to use them yet.`,
-      nextStep: "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)"
-    };
-  }
-  if (state.untrustedProject) {
-    return {
-      ready: true,
-      summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
-      nextStep: 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
-    };
-  }
-  return {
-    ready: true,
-    summary: `Lexicon is set up and working: ${counts}, wired into your agent${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? "" : "s"} not configured` : ""}.`,
-    nextStep: "Nothing to fix. Dictate a sentence with one of your names in it and watch it come out spelled right."
-  };
-}
-async function runDoctorReport(opts, deps = {}) {
-  const platform = deps.platform ?? process.platform;
-  const env = deps.env ?? process.env;
-  const exec = deps.exec ?? defaultExec;
-  const cwd = resolveCwd(opts);
-  const checks = [];
-  const push2 = (level, message) => {
-    checks.push({ level, message });
-  };
-  let wired = false;
-  let untrustedProject = false;
-  const unreadable = [];
-  const paths = resolvePaths({ cwd });
-  const files = [];
-  try {
-    const g = await readLexiconFile(paths.global, "global");
-    if (g.exists) {
-      push2("ok", `global lexicon parses: ${paths.global} (${g.lexicon.terms.length} terms)`);
-      files.push(g);
-    } else {
-      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
-    }
-  } catch (err) {
-    const error62 = errorMessage(err);
-    unreadable.push({ path: paths.global, scope: "global", error: error62 });
-    push2("fail", `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`);
-  }
-  if (paths.project) {
-    try {
-      const p = await readLexiconFile(paths.project, "project");
-      push2("ok", `project lexicon parses: ${paths.project} (${p.lexicon.terms.length} terms)`);
-      const trust = await isTrusted(p, { cwd });
-      if (trust === "trusted") {
-        push2("ok", "project lexicon is trusted and merged");
-        files.push(p);
-      } else if (trust === "changed") {
-        untrustedProject = true;
-        push2("warn", `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
-      } else {
-        untrustedProject = true;
-        push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
-      }
-    } catch (err) {
-      const error62 = errorMessage(err);
-      unreadable.push({ path: paths.project, scope: "project", error: error62 });
-      push2("fail", `project lexicon does not parse (run: ${editCommand("project")}): ${error62}`);
-    }
-  } else {
-    push2("info", "no project lexicon (.lexicon.yaml) found from " + cwd);
-  }
-  const canonicalOwners = /* @__PURE__ */ new Map();
-  const allTerms = [];
-  for (const f of files) {
-    for (const term of f.lexicon.terms) {
-      const entry = { term, scope: f.scope };
-      allTerms.push(entry);
-      const key = term.canonical.trim().toLowerCase();
-      const list = canonicalOwners.get(key) ?? [];
-      list.push(entry);
-      canonicalOwners.set(key, list);
-    }
-  }
-  push2("info", `${canonicalOwners.size} unique terms across ${files.length} file${files.length === 1 ? "" : "s"}`);
-  for (const [, owners] of canonicalOwners) {
-    const scopes = new Set(owners.map((o) => o.scope));
-    if (scopes.size > 1) {
-      push2("warn", `"${owners[0].term.canonical}" is defined in both global and project lexicons (project wins, aliases merge)`);
-    } else if (owners.length > 1) {
-      push2("fail", `"${owners[0].term.canonical}" is defined ${owners.length} times in the ${owners[0].scope} lexicon`);
-    }
-  }
-  const aliasOwners = /* @__PURE__ */ new Map();
-  for (const { term } of allTerms) {
-    for (const alias of term.aliases) {
-      const key = alias.trim().toLowerCase();
-      if (!key) continue;
-      const other = canonicalOwners.get(key);
-      if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
-        push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
-      }
-      if (COMMON_WORDS.has(key)) {
-        push2("warn", `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
-      }
-      const list = aliasOwners.get(key) ?? [];
-      list.push(term);
-      aliasOwners.set(key, list);
-    }
-  }
-  for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => t.canonical.toLowerCase()));
-    if (distinct.size > 1) {
-      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
-    }
-  }
-  if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
-    push2("ok", "no alias/canonical conflicts");
-  }
-  const settingsPath = deps.settingsPath ?? path18.join(claudeConfigDir(), "settings.json");
-  const installedPluginsPath = deps.installedPluginsPath ?? path18.join(claudeConfigDir(), "plugins", "installed_plugins.json");
-  const settings = await readJsonFile(settingsPath);
-  const installed = await readJsonFile(installedPluginsPath);
-  if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
-  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
-  if (pluginId) {
-    wired = true;
-    push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
-  } else {
-    for (const event of HOOK_EVENTS) {
-      if (settingsHasLexiconHook(settings.value, event)) {
-        wired = true;
-        push2("ok", `${event} hook found in ${settingsPath}`);
-      } else {
-        push2(
-          "warn",
-          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
-        );
-      }
-    }
-  }
-  const claudeBin = findOnPathSync("claude", { env });
-  if (!claudeBin) {
-    push2("warn", "claude CLI not found on PATH (MCP + hook integration unavailable)");
-  } else {
-    push2("ok", `claude CLI found: ${claudeBin}`);
-    try {
-      const out = exec("claude", ["mcp", "list"]);
-      if (/lexicon/i.test(out)) {
-        wired = true;
-        push2("ok", "lexicon MCP server is registered with claude");
-      } else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
-      else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install claude --apply)");
-    } catch (err) {
-      push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
-    }
-  }
-  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os7.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
-  try {
-    const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
-    push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
-  } catch (err) {
-    push2("warn", `no clipboard backend found (${errorMessage(err)})`);
-  }
-  const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? existsSync7(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
-  if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
-  else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
-  const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? existsSync7(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
-  if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
-  else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
-  const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
-  push2("info", model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
-  if (platform === "darwin") {
-    push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
-  }
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable });
-  return {
-    ok: !checks.some((c) => c.level === "fail"),
-    ready: verdict.ready,
-    summary: verdict.summary,
-    nextStep: verdict.nextStep,
-    checks,
-    paths: {
-      global: paths.global,
-      ...paths.project ? { project: paths.project } : {},
-      trust: getTrustPath({ cwd }),
-      settings: settingsPath,
-      installedPlugins: installedPluginsPath
-    },
-    versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }
-  };
-}
-
 // src/cli/cmd-install.ts
-import { existsSync as existsSync8, promises as fs12 } from "node:fs";
-import os8 from "node:os";
-import path19 from "node:path";
+import { existsSync as existsSync7, promises as fs11 } from "node:fs";
+import os7 from "node:os";
+import path17 from "node:path";
 var INSTALL_CLIENTS = [
   "claude",
   "codex",
@@ -56567,41 +56150,41 @@ function resolveServerPath(cliDir) {
   return resolveIntegrationPaths(cliDir).server;
 }
 function appData(ctx) {
-  return ctx.env.APPDATA ?? path19.join(ctx.home, "AppData", "Roaming");
+  return ctx.env.APPDATA ?? path17.join(ctx.home, "AppData", "Roaming");
 }
 function codexHome(ctx) {
   const override = ctx.env.CODEX_HOME?.trim();
-  return override ? override : path19.join(ctx.home, ".codex");
+  return override ? override : path17.join(ctx.home, ".codex");
 }
 function geminiHome(ctx) {
   const override = ctx.env.GEMINI_CLI_HOME?.trim();
-  return path19.join(override ? override : ctx.home, ".gemini");
+  return path17.join(override ? override : ctx.home, ".gemini");
 }
 function configPathFor(client, ctx) {
   const { home, cwd, platform, project } = ctx;
   switch (client) {
     case "codex":
-      return project ? path19.join(cwd, ".codex", "config.toml") : path19.join(codexHome(ctx), "config.toml");
+      return project ? path17.join(cwd, ".codex", "config.toml") : path17.join(codexHome(ctx), "config.toml");
     case "cursor":
-      return project ? path19.join(cwd, ".cursor", "mcp.json") : path19.join(home, ".cursor", "mcp.json");
+      return project ? path17.join(cwd, ".cursor", "mcp.json") : path17.join(home, ".cursor", "mcp.json");
     case "windsurf":
       if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
-      return path19.join(home, ".codeium", "windsurf", "mcp_config.json");
+      return path17.join(home, ".codeium", "windsurf", "mcp_config.json");
     case "gemini":
-      return project ? path19.join(cwd, ".gemini", "settings.json") : path19.join(geminiHome(ctx), "settings.json");
+      return project ? path17.join(cwd, ".gemini", "settings.json") : path17.join(geminiHome(ctx), "settings.json");
     case "claude-desktop": {
       if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
       if (platform === "darwin") {
-        return path19.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+        return path17.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
-      if (platform === "win32") return path19.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return path19.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
+      if (platform === "win32") return path17.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return path17.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
-      if (project) return path19.join(cwd, ".vscode", "mcp.json");
-      if (platform === "darwin") return path19.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return path19.join(appData(ctx), "Code", "User", "mcp.json");
-      return path19.join(home, ".config", "Code", "User", "mcp.json");
+      if (project) return path17.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return path17.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return path17.join(appData(ctx), "Code", "User", "mcp.json");
+      return path17.join(home, ".config", "Code", "User", "mcp.json");
     }
   }
 }
@@ -56745,15 +56328,15 @@ ${block}
 }
 async function readText2(file2) {
   try {
-    return { text: await fs12.readFile(file2, "utf8"), existed: true };
+    return { text: await fs11.readFile(file2, "utf8"), existed: true };
   } catch (err) {
     if (isEnoent(err)) return { text: "", existed: false };
     throw new Error(`could not read ${file2}: ${errorMessage(err)}`);
   }
 }
 async function writeText(file2, text) {
-  await fs12.mkdir(path19.dirname(file2), { recursive: true });
-  await fs12.writeFile(file2, text, "utf8");
+  await fs11.mkdir(path17.dirname(file2), { recursive: true });
+  await fs11.writeFile(file2, text, "utf8");
 }
 async function applyJson(target) {
   const read = await readJsonFile(target.file);
@@ -56798,8 +56381,8 @@ function printGeneric(io, serverPath) {
 async function runInstall(client, opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? path19.resolve(opts.home) : os8.homedir();
-  const cwd = path19.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? path17.resolve(opts.home) : os7.homedir();
+  const cwd = path17.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
   if (scope !== "user" && scope !== "project") {
@@ -56820,7 +56403,7 @@ async function runInstall(client, opts, io, deps = {}) {
     const claudeOpts = { ...opts, scope: project ? "project" : "user" };
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: path19.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      ...opts.home ? { settingsPath: path17.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {}
     };
@@ -56857,7 +56440,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(), "settings.json");
+  const settingsPath = deps.settingsPath ?? path17.join(claudeConfigDir(), "settings.json");
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
@@ -56867,7 +56450,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
-    if (!serverLaunch.viaNpx && !existsSync8(serverPath)) {
+    if (!serverLaunch.viaNpx && !existsSync7(serverPath)) {
       line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
@@ -56920,8 +56503,548 @@ async function runInstallClaude(opts, io, deps = {}) {
   return failed ? 1 : 0;
 }
 function quoteArg(s, platform = process.platform) {
-  if (platform === "win32") return /[\s"]/.test(s) || path19.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
+  if (platform === "win32") return /[\s"]/.test(s) || path17.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
+}
+
+// src/cli/serve-paths.ts
+import path18 from "node:path";
+var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
+var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
+var SCHEDULED_TASK_NAME = "Lexicon";
+var SERVE_LABEL_ENV_VAR = "LEXICON_SERVE_LABEL";
+function serveLabel(env = process.env) {
+  const override = env[SERVE_LABEL_ENV_VAR]?.trim();
+  return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : LAUNCH_AGENT_LABEL;
+}
+function scheduledTaskName(env = process.env) {
+  const override = env[SERVE_LABEL_ENV_VAR]?.trim();
+  return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
+}
+function launchAgentPath(home, env = process.env) {
+  return path18.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+}
+function launchAgentLogPath(home) {
+  return path18.join(home, "Library", "Logs", "lexicon", "serve.log");
+}
+function systemdUnitPath(home, env) {
+  return path18.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+}
+function programPathFromPlist(plist) {
+  const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
+  if (!block) return void 0;
+  const strings = [...block[1].matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => xmlUnescape2(m[1]));
+  return strings[1];
+}
+function programPathFromTaskXml(xml) {
+  const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml);
+  if (!args) return void 0;
+  const quoted = /"([^"]*)"/.exec(xmlUnescape2(args[1]));
+  return quoted ? quoted[1] : void 0;
+}
+function programPathFromUnit(unit) {
+  const line2 = unit.split("\n").find((l) => l.startsWith("ExecStart="));
+  if (!line2) return void 0;
+  const words = [...line2.slice("ExecStart=".length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1"));
+  return words[1];
+}
+function xmlUnescape2(s) {
+  return s.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+}
+
+// src/cli/cmd-doctor.ts
+var COMMON_WORDS = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "are",
+  "but",
+  "not",
+  "you",
+  "all",
+  "any",
+  "can",
+  "had",
+  "her",
+  "was",
+  "one",
+  "our",
+  "out",
+  "has",
+  "his",
+  "how",
+  "its",
+  "may",
+  "new",
+  "now",
+  "old",
+  "see",
+  "way",
+  "who",
+  "did",
+  "get",
+  "let",
+  "say",
+  "she",
+  "too",
+  "use",
+  "off",
+  "ash",
+  "sauce",
+  "with",
+  "this",
+  "that",
+  "from",
+  "they",
+  "have",
+  "been",
+  "will",
+  "what",
+  "when",
+  "your",
+  "there",
+  "their",
+  "about",
+  "which",
+  "time",
+  "like",
+  "just",
+  "over",
+  "also",
+  "into",
+  "some",
+  "than",
+  "then",
+  "them",
+  "well",
+  "were",
+  "more"
+]);
+var FILE_CLIENTS = ["codex", "cursor", "windsurf", "gemini", "claude-desktop", "vscode"];
+function declaresTransport(entry) {
+  if (!isRecord(entry) || entry.enabled === false || entry.disabled === true) return false;
+  if (entry.enabled !== void 0 && typeof entry.enabled !== "boolean") return false;
+  if (entry.disabled !== void 0 && typeof entry.disabled !== "boolean") return false;
+  if (entry.command !== void 0) {
+    return typeof entry.command === "string" && entry.command.trim() !== "" && entry.url === void 0 && (entry.type === void 0 || entry.type === "stdio") && (entry.args === void 0 || Array.isArray(entry.args) && entry.args.every((arg) => typeof arg === "string"));
+  }
+  return typeof entry.url === "string" && entry.url.trim() !== "" && entry.args === void 0 && (entry.type === void 0 || entry.type === "http" || entry.type === "sse");
+}
+function withoutTomlComment(line2) {
+  let quote;
+  for (let i = 0; i < line2.length; i++) {
+    const ch = line2[i];
+    if (quote !== void 0) {
+      if (quote === '"' && ch === "\\") i++;
+      else if (ch === quote) quote = void 0;
+    } else if (ch === "#") return line2.slice(0, i).trimEnd();
+    else if (ch === '"' || ch === "'") quote = ch;
+  }
+  return line2;
+}
+function codexDeclaration(text) {
+  let quote;
+  let active = false;
+  let entry;
+  for (const line2 of text.split(/\r?\n/)) {
+    if (quote === void 0) {
+      if (/^\s*\[/.test(line2)) {
+        active = /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/.test(line2);
+        if (active) {
+          if (entry) return void 0;
+          entry = {};
+        }
+      } else if (active) {
+        const field = /^\s*("(?:[^"\\]|\\.)*"|'[^'\r\n]*'|[A-Za-z0-9_-]+)\s*=\s*(.*?)\s*$/.exec(line2);
+        if (field && entry) {
+          let key;
+          try {
+            key = field[1].startsWith('"') ? JSON.parse(field[1]) : field[1].startsWith("'") ? field[1].slice(1, -1) : field[1];
+          } catch {
+            return void 0;
+          }
+          if (["command", "url", "args", "type", "enabled", "disabled"].includes(key)) {
+            if (Object.hasOwn(entry, key)) return void 0;
+            const raw = withoutTomlComment(field[2]).trim();
+            const literal2 = /^'([^'\r\n]*)'\s*(?:#.*)?$/.exec(raw);
+            try {
+              entry[key] = literal2 ? literal2[1] : JSON.parse(raw);
+            } catch {
+              return void 0;
+            }
+          }
+        }
+      }
+    }
+    for (let i = 0; i < line2.length; i++) {
+      const ch = line2[i];
+      if (quote !== void 0) {
+        if (quote.startsWith('"') && ch === "\\") {
+          i++;
+          continue;
+        }
+        if (line2.startsWith(quote, i)) {
+          const closing = quote[0];
+          i += quote.length - 1;
+          if (quote.length === 3) while (line2[i + 1] === closing) i++;
+          quote = void 0;
+        }
+      } else if (ch === "#") break;
+      else if (ch === '"' || ch === "'") {
+        quote = line2.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch;
+        i += quote.length - 1;
+      }
+    }
+  }
+  return quote === void 0 ? entry : void 0;
+}
+function registersLexicon(client, text) {
+  if (client === "codex") return declaresTransport(codexDeclaration(text));
+  try {
+    const cfg = JSON.parse(text);
+    if (!isRecord(cfg)) return false;
+    const servers = client === "vscode" ? cfg.servers : cfg.mcpServers;
+    return isRecord(servers) && declaresTransport(servers.lexicon);
+  } catch {
+    return false;
+  }
+}
+function parsesAsJson(text) {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+var SERVE_REINSTALL_HINT = "run: lexicon serve --uninstall && lexicon serve --install";
+async function checkLoginService(probe) {
+  const { platform, env, exec, home } = probe;
+  let loaded = false;
+  let file2;
+  let program2;
+  let name;
+  if (platform === "darwin") {
+    name = `login service ${serveLabel(env)}`;
+    const uid = probe.uid ?? process.getuid?.() ?? 501;
+    try {
+      exec("launchctl", ["print", `gui/${uid}/${serveLabel(env)}`]);
+      loaded = true;
+    } catch {
+      loaded = false;
+    }
+    file2 = launchAgentPath(home, env);
+  } else if (platform === "linux") {
+    name = `login service ${SYSTEMD_UNIT_NAME}`;
+    try {
+      loaded = exec("systemctl", ["--user", "is-active", SYSTEMD_UNIT_NAME]).trim() === "active";
+    } catch {
+      loaded = false;
+    }
+    file2 = systemdUnitPath(home, env);
+  } else if (platform === "win32") {
+    const taskName = scheduledTaskName(env);
+    name = `login service ${taskName}`;
+    let xml;
+    try {
+      xml = exec("schtasks", ["/Query", "/TN", taskName, "/XML"]);
+      loaded = true;
+    } catch {
+      loaded = false;
+    }
+    if (xml !== void 0) program2 = programPathFromTaskXml(xml);
+    if (!loaded) {
+      return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
+    }
+    if (program2 !== void 0 && !existsSync8(program2)) {
+      return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
+    }
+    return { level: "ok", message: `${name} is registered and runs at logon` };
+  } else {
+    return { level: "info", message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
+  }
+  let fileExists = false;
+  try {
+    const text = await fs12.readFile(file2, "utf8");
+    fileExists = true;
+    program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
+  } catch {
+    fileExists = false;
+  }
+  if (!loaded && !fileExists) {
+    return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
+  }
+  if (program2 !== void 0 && !existsSync8(program2)) {
+    return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
+  }
+  if (!loaded) {
+    return { level: "warn", message: `${name} is installed at ${file2} but not loaded (${SERVE_REINSTALL_HINT})` };
+  }
+  if (!fileExists) {
+    return { level: "info", message: `${name} is loaded, but not from this install (${SERVE_REINSTALL_HINT}; no service file at ${file2})` };
+  }
+  return { level: "ok", message: `${name} loaded${program2 !== void 0 ? ` (${program2} exists)` : ""}` };
+}
+function parseReason(error62, filePath, max = 110) {
+  const marker = `${filePath}: `;
+  const at = error62.lastIndexOf(marker);
+  const body = at >= 0 ? error62.slice(at + marker.length) : error62;
+  const flat = body.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+function editCommand(scope) {
+  return scope === "project" ? "lexicon edit --project" : "lexicon edit";
+}
+function summarize(checks, state) {
+  const fails = checks.filter((c) => c.level === "fail");
+  const warns = checks.filter((c) => c.level === "warn");
+  const counts = `${state.terms} term${state.terms === 1 ? "" : "s"}`;
+  const ready = state.terms > 0 && state.wired && fails.length === 0;
+  if (state.unreadable.length > 0) {
+    const first = state.unreadable[0];
+    const alsoProject = state.unreadable.length > 1 ? " The project lexicon does not parse either." : "";
+    return {
+      ready: false,
+      summary: `The ${first.scope} lexicon exists but does not parse, so no corrections are happening: ${parseReason(first.error, first.path)}${alsoProject}`,
+      // Command first, path second: a rendered line is capped at 200
+      // characters and an absolute path can use most of that, so what gets
+      // cut has to be the part the check list already showed.
+      nextStep: `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
+    };
+  }
+  if (state.terms === 0) {
+    return {
+      ready: false,
+      summary: "Lexicon is not set up yet: there are no terms, so nothing will be corrected.",
+      nextStep: "Run: lexicon setup"
+    };
+  }
+  if (fails.length > 0) {
+    return {
+      ready: false,
+      summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? "" : "s"} failed: ${fails[0].message}`,
+      // Every failing message ends in its own "(run: ...)" hint, so the first
+      // failure carries its fix with it.
+      nextStep: `Fix the first failure: ${fails[0].message}`
+    };
+  }
+  if (!state.wired) {
+    return {
+      ready: false,
+      summary: `Lexicon has ${counts}, but no agent is wired up to use them yet.`,
+      nextStep: "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)"
+    };
+  }
+  if (state.untrustedProject) {
+    return {
+      ready: true,
+      summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
+      nextStep: 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
+    };
+  }
+  return {
+    ready: true,
+    summary: `Lexicon is configured: ${counts}, with an agent integration declared${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? "" : "s"} not configured` : ""}.`,
+    nextStep: "Nothing to fix in the configuration. Dictate a sentence with one of your names to verify the client applies it."
+  };
+}
+async function runDoctorReport(opts, deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const home = deps.home ?? os8.homedir();
+  const exec = deps.exec ?? defaultExec;
+  const cwd = resolveCwd(opts);
+  const checks = [];
+  const push2 = (level, message) => {
+    checks.push({ level, message });
+  };
+  let wired = false;
+  let untrustedProject = false;
+  const unreadable = [];
+  const paths = resolvePaths({ cwd, env, home });
+  const files = [];
+  try {
+    const g = await readLexiconFile(paths.global, "global");
+    if (g.exists) {
+      push2("ok", `global lexicon parses: ${paths.global} (${g.lexicon.terms.length} terms)`);
+      files.push(g);
+    } else {
+      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
+    }
+  } catch (err) {
+    const error62 = errorMessage(err);
+    unreadable.push({ path: paths.global, scope: "global", error: error62 });
+    push2("fail", `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`);
+  }
+  if (paths.project) {
+    try {
+      const p = await readLexiconFile(paths.project, "project");
+      push2("ok", `project lexicon parses: ${paths.project} (${p.lexicon.terms.length} terms)`);
+      const trust = await isTrusted(p, { cwd });
+      if (trust === "trusted") {
+        push2("ok", "project lexicon is trusted and merged");
+        files.push(p);
+      } else if (trust === "changed") {
+        untrustedProject = true;
+        push2("warn", `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
+      } else {
+        untrustedProject = true;
+        push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
+      }
+    } catch (err) {
+      const error62 = errorMessage(err);
+      unreadable.push({ path: paths.project, scope: "project", error: error62 });
+      push2("fail", `project lexicon does not parse (run: ${editCommand("project")}): ${error62}`);
+    }
+  } else {
+    push2("info", "no project lexicon (.lexicon.yaml) found from " + cwd);
+  }
+  const canonicalOwners = /* @__PURE__ */ new Map();
+  const allTerms = [];
+  for (const f of files) {
+    for (const term of f.lexicon.terms) {
+      const entry = { term, scope: f.scope };
+      allTerms.push(entry);
+      const key = term.canonical.trim().toLowerCase();
+      const list = canonicalOwners.get(key) ?? [];
+      list.push(entry);
+      canonicalOwners.set(key, list);
+    }
+  }
+  push2("info", `${canonicalOwners.size} unique terms across ${files.length} file${files.length === 1 ? "" : "s"}`);
+  for (const [, owners] of canonicalOwners) {
+    const scopes = new Set(owners.map((o) => o.scope));
+    if (scopes.size > 1) {
+      push2("warn", `"${owners[0].term.canonical}" is defined in both global and project lexicons (project wins, aliases merge)`);
+    } else if (owners.length > 1) {
+      push2("fail", `"${owners[0].term.canonical}" is defined ${owners.length} times in the ${owners[0].scope} lexicon`);
+    }
+  }
+  const aliasOwners = /* @__PURE__ */ new Map();
+  for (const { term } of allTerms) {
+    for (const alias of term.aliases) {
+      const key = alias.trim().toLowerCase();
+      if (!key) continue;
+      const other = canonicalOwners.get(key);
+      if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
+        push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
+      }
+      if (COMMON_WORDS.has(key)) {
+        push2("warn", `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
+      }
+      const list = aliasOwners.get(key) ?? [];
+      list.push(term);
+      aliasOwners.set(key, list);
+    }
+  }
+  for (const [alias, owners] of aliasOwners) {
+    const distinct = new Set(owners.map((t) => t.canonical.toLowerCase()));
+    if (distinct.size > 1) {
+      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
+    }
+  }
+  if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
+    push2("ok", "no alias/canonical conflicts");
+  }
+  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(env, home), "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? path19.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
+  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  if (pluginId) {
+    wired = true;
+    push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
+  } else {
+    for (const event of HOOK_EVENTS) {
+      if (settingsHasLexiconHook(settings.value, event)) {
+        wired = true;
+        push2("ok", `${event} hook found in ${settingsPath}`);
+      } else {
+        push2(
+          "warn",
+          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
+        );
+      }
+    }
+  }
+  const otherClients = [];
+  for (const client of FILE_CLIENTS) {
+    let file2;
+    try {
+      file2 = configPathFor(client, { home, cwd, platform, env, project: false });
+    } catch {
+      continue;
+    }
+    let text;
+    try {
+      text = await fs12.readFile(file2, "utf8");
+    } catch {
+      continue;
+    }
+    if (client !== "codex" && !parsesAsJson(text)) {
+      push2("warn", `could not parse ${file2} as JSON, so a lexicon entry there was not checked`);
+      continue;
+    }
+    if (registersLexicon(client, text)) {
+      otherClients.push(client);
+      wired = true;
+      push2("ok", `lexicon MCP server configuration found for ${client}: ${file2}`);
+    }
+  }
+  const claudeBin = findOnPathSync("claude", { env });
+  if (!claudeBin) {
+    push2("warn", "claude CLI not found on PATH (MCP + hook integration unavailable)");
+  } else {
+    push2("ok", `claude CLI found: ${claudeBin}`);
+    try {
+      const out = exec("claude", ["mcp", "list"]);
+      if (/lexicon/i.test(out)) {
+        wired = true;
+        push2("ok", "lexicon MCP server is registered with claude");
+      } else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
+      else if (otherClients.length > 0) push2("warn", `lexicon MCP server not registered with claude (using ${otherClients.join(", ")}; to add claude too, run: lexicon install claude --apply)`);
+      else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install claude --apply)");
+    } catch (err) {
+      push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
+    }
+  }
+  checks.push(await checkLoginService({ platform, env, exec, home, ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
+  try {
+    const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
+    push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
+  } catch (err) {
+    push2("warn", `no clipboard backend found (${errorMessage(err)})`);
+  }
+  const whisperOverride = env.LEXICON_WHISPER_BIN;
+  const whisperCli = whisperOverride ? existsSync8(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
+  else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
+  const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
+  const ffmpegBin = ffmpegOverride ? existsSync8(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
+  else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
+  const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
+  push2("info", model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+  if (platform === "darwin") {
+    push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
+  }
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable });
+  return {
+    ok: !checks.some((c) => c.level === "fail"),
+    ready: verdict.ready,
+    summary: verdict.summary,
+    nextStep: verdict.nextStep,
+    checks,
+    paths: {
+      global: paths.global,
+      ...paths.project ? { project: paths.project } : {},
+      trust: getTrustPath({ cwd }),
+      settings: settingsPath,
+      installedPlugins: installedPluginsPath
+    },
+    versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }
+  };
 }
 
 // src/cli/prompt.ts
