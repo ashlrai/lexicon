@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Lexicon, NormalizeResult } from '../src/core/types.js';
 
 const state = vi.hoisted(() => ({
@@ -102,8 +102,8 @@ import {
   settingsHasLexiconHook,
   renderTable,
   runAdd,
-  runDoctor,
-  runDoctorReport,
+  runDoctor as runDoctorRaw,
+  runDoctorReport as runDoctorReportRaw,
   renderDoctorReport,
   runExport,
   runInstallClaude,
@@ -113,12 +113,45 @@ import {
   runRemove,
 } from '../src/cli/commands.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
+import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
+import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
 import { makeIO } from './helpers.js';
 
+let doctorHome: string;
 
-beforeEach(() => {
+/** Every report call gets complete scratch injection, even when a case overrides PATH. */
+function doctorDeps(deps: DoctorDeps): DoctorDeps {
+  const home = deps.home ?? doctorHome;
+  const env = {
+    HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, '.config'),
+    CODEX_HOME: path.join(home, '.codex'), GEMINI_CLI_HOME: home,
+    APPDATA: path.join(home, 'AppData', 'Roaming'), CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+    PATH: '', ...deps.env,
+  };
+  return {
+    platform: 'linux', exec: () => '', ...deps, home, env,
+    settingsPath: deps.settingsPath ?? path.join(env.CLAUDE_CONFIG_DIR, 'settings.json'),
+    installedPluginsPath: deps.installedPluginsPath ?? path.join(env.CLAUDE_CONFIG_DIR, 'plugins', 'installed_plugins.json'),
+  };
+}
+
+function runDoctorReport(opts: Parameters<typeof runDoctorReportRaw>[0], deps: DoctorDeps = {}) {
+  return runDoctorReportRaw({ cwd: deps.home ?? doctorHome, ...opts }, doctorDeps(deps));
+}
+
+function runDoctor(opts: Parameters<typeof runDoctorRaw>[0], io: Parameters<typeof runDoctorRaw>[1], deps: DoctorDeps = {}) {
+  return runDoctorRaw({ cwd: deps.home ?? doctorHome, ...opts }, io, doctorDeps(deps));
+}
+
+beforeEach(async () => {
+  doctorHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-report-fixture-'));
   state.projectPath = undefined;
   vi.clearAllMocks();
+});
+
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await fs.rm(doctorHome, { recursive: true, force: true });
 });
 
 describe('normalize', () => {
@@ -521,7 +554,7 @@ describe('doctor: other MCP clients', () => {
     const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: home }, exec: () => 'no servers', home });
     expect(report.ok).toBe(true);
     expect(report.ready).toBe(true);
-    expect(report.checks).toContainEqual({ level: 'ok', message: `lexicon MCP server is registered with cursor: ${path.join(home, '.cursor', 'mcp.json')}` });
+    expect(report.checks).toContainEqual({ level: 'ok', message: `lexicon MCP server configuration found for cursor: ${path.join(home, '.cursor', 'mcp.json')}` });
     expect(report.checks.some((c) => c.level === 'warn' && c.message.startsWith('lexicon MCP server not registered with claude (using cursor;'))).toBe(true);
   });
 
@@ -548,13 +581,118 @@ describe('doctor: other MCP clients', () => {
     expect(registersLexicon('codex', '[mcp_servers.lexicon]\ncommand = "lexicon-mcp"\n')).toBe(true);
     expect(registersLexicon('codex', '[mcp_servers.lexicon-extra]\n')).toBe(false);
     expect(registersLexicon('codex', '# [mcp_servers.lexicon]\n')).toBe(false);
-    expect(registersLexicon('codex', '[ mcp_servers.lexicon ] # added by lexicon\n')).toBe(true);
-    expect(registersLexicon('codex', "[mcp_servers.'lexicon']\n")).toBe(true);
+    expect(registersLexicon('codex', '[ mcp_servers.lexicon ] # added by lexicon\ncommand = "lexicon-mcp"\n')).toBe(true);
+    expect(registersLexicon('codex', "[mcp_servers.'lexicon']\ncommand = 'lexicon-mcp'\n")).toBe(true);
     expect(registersLexicon('codex', '[mcp_servers.lexicon.env]\nX = "1"\n')).toBe(false);
-    expect(registersLexicon('vscode', JSON.stringify({ servers: { lexicon: {} } }))).toBe(true);
+    expect(registersLexicon('vscode', JSON.stringify({ servers: { lexicon: { type: 'stdio', command: 'lexicon-mcp' } } }))).toBe(true);
     expect(registersLexicon('vscode', JSON.stringify({ mcpServers: { lexicon: {} } }))).toBe(false);
-    expect(registersLexicon('windsurf', JSON.stringify({ mcpServers: { lexicon: {} } }))).toBe(true);
+    expect(registersLexicon('windsurf', JSON.stringify({ mcpServers: { lexicon: { command: 'lexicon-mcp' } } }))).toBe(true);
     expect(registersLexicon('cursor', '{ not json')).toBe(false);
+  });
+
+  it.each(['codex', 'cursor', 'windsurf', 'gemini', 'claude-desktop', 'vscode'] as const)('accepts the actual install-generated %s declaration', (client) => {
+    const target = targetFor(client, '/opt/lexicon/plugin/mcp-server.mjs', {
+      home: doctorHome, cwd: doctorHome, platform: 'linux', env: {}, project: false,
+    });
+    const text = target.format === 'toml' ? codexBlock(target.entry)
+      : JSON.stringify({ [target.key]: { lexicon: target.entry } });
+    expect(registersLexicon(client, text)).toBe(true);
+  });
+
+  it.each([
+    null, 'lexicon-mcp', [], {}, { command: '' }, { command: '  ' }, { command: [] },
+    { command: 'lexicon-mcp', args: 'mcp' }, { command: 'lexicon-mcp', args: [1] },
+    { command: 'lexicon-mcp', type: 'http' }, { url: {} }, { url: '' },
+    { url: 'http://127.0.0.1:1', type: 'stdio' }, { command: 'lexicon-mcp', enabled: false },
+  ])('refuses an unusable JSON transport %j', (entry) => {
+    expect(registersLexicon('cursor', JSON.stringify({ mcpServers: { lexicon: entry } }))).toBe(false);
+  });
+
+  it('accepts declared remote transports and rejects malformed server maps', () => {
+    for (const type of [undefined, 'http', 'sse']) {
+      expect(registersLexicon('cursor', JSON.stringify({ mcpServers: { lexicon: { url: 'http://127.0.0.1:1', type } } }))).toBe(true);
+    }
+    for (const cfg of [null, [], 1, { mcpServers: null }, { mcpServers: [] }, { mcpServers: 'lexicon' }]) {
+      expect(registersLexicon('cursor', JSON.stringify(cfg))).toBe(false);
+    }
+  });
+
+  it.each(["'''", '"""'])('ignores TOML table text in %s strings but finds a subsequent declaration', (delimiter) => {
+    const decoy = `notes = ${delimiter}\n[mcp_servers.lexicon]\ncommand = "decoy"\n${delimiter}\n`;
+    expect(registersLexicon('codex', decoy)).toBe(false);
+    expect(registersLexicon('codex', `${decoy}# a comment containing \"\"\" and '''\n${codexBlock({ command: 'lexicon-mcp', args: [] })}\n`)).toBe(true);
+  });
+
+  it('preserves escaped/quoted hashes and refuses empty, malformed or duplicate TOML declarations', () => {
+    expect(registersLexicon('codex', '[mcp_servers."lexicon"] # config\ncommand = "bin # name" # comment\nargs = ["mcp", "say \\\"hello\\\""]\n')).toBe(true);
+    expect(registersLexicon('codex', "[mcp_servers.lexicon]\nurl = 'http://127.0.0.1:1' # local\n")).toBe(true);
+    for (const body of ['', 'command = ""', 'command = []', 'command = "lexicon-mcp"\nargs = [1]', 'command = "lexicon-mcp"\nenabled = false']) {
+      expect(registersLexicon('codex', `[mcp_servers.lexicon]\n${body}\n`)).toBe(false);
+    }
+    expect(registersLexicon('codex', `${codexBlock({ command: 'lexicon-mcp', args: [] })}\n${codexBlock({ command: 'other', args: [] })}`)).toBe(false);
+  });
+
+  it('holds ready and the missing-Claude failure for malformed alternate declarations', async () => {
+    await fs.writeFile(path.join(doctorHome, 'claude'), '');
+    await fs.mkdir(path.join(doctorHome, '.cursor'));
+    await fs.mkdir(path.join(doctorHome, '.codex'));
+    await fs.writeFile(path.join(doctorHome, '.cursor', 'mcp.json'), '{"mcpServers":{"lexicon":null}}');
+    await fs.writeFile(path.join(doctorHome, '.codex', 'config.toml'), "notes = '''\n[mcp_servers.lexicon]\ncommand = \"decoy\"\n'''\n");
+    const report = await runDoctorReport({}, { home: doctorHome, env: { PATH: doctorHome }, exec: () => 'no servers' });
+    expect(report.ready).toBe(false);
+    expect(report.ok).toBe(false);
+    expect(report.checks).toContainEqual({ level: 'fail', message: 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)' });
+  });
+
+  it.each(['"', "'"])('honors %s quoted TOML transport keys and refuses their duplicate equivalents', async (quote) => {
+    const name = (key: string) => `${quote}${key}${quote}`;
+    const declaration = `[mcp_servers.lexicon]\n${name('command')} = "lexicon-mcp"\n${name('args')} = []\n`;
+    expect(registersLexicon('codex', declaration)).toBe(true);
+    expect(registersLexicon('codex', `${declaration}command = "other"\n`)).toBe(false);
+    expect(registersLexicon('codex', `${declaration}${name('args')} = []\n`)).toBe(false);
+    await fs.mkdir(path.join(doctorHome, '.codex'));
+    await fs.writeFile(path.join(doctorHome, 'claude'), '');
+    for (const disabled of [`${name('enabled')} = false`, `${name('disabled')} = true`]) {
+      const text = `${declaration}${disabled}\n`;
+      expect(registersLexicon('codex', text)).toBe(false);
+      await fs.writeFile(path.join(doctorHome, '.codex', 'config.toml'), text);
+      const report = await runDoctorReport({}, { home: doctorHome, env: { PATH: doctorHome }, exec: () => 'no servers' });
+      expect(report.ready).toBe(false);
+      expect(report.checks).toContainEqual({ level: 'fail', message: 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)' });
+    }
+  });
+
+  it('normalizes escaped basic TOML keys before disabled and duplicate checks', () => {
+    const declaration = '[mcp_servers.lexicon]\ncommand = "lexicon-mcp"\n';
+    expect(registersLexicon('codex', `${declaration}"\\u0064isabled" = true\n`)).toBe(false);
+    expect(registersLexicon('codex', `${declaration}"\\u0065nabled" = false\n`)).toBe(false);
+    expect(registersLexicon('codex', `${declaration}"\\u0063ommand" = "other"\n`)).toBe(false);
+    // Unsupported basic-key escape syntax cannot bypass a disable declaration.
+    expect(registersLexicon('codex', `${declaration}"\\U00000064isabled" = true\n`)).toBe(false);
+  });
+
+  it('injected home isolates every client read from a synthetic ambient home', async () => {
+    const ambient = path.join(doctorHome, 'ambient');
+    await fs.mkdir(path.join(ambient, '.claude', 'plugins'), { recursive: true });
+    await fs.writeFile(path.join(ambient, '.claude', 'settings.json'), '{"enabledPlugins":{"lexicon@ambient":true}}');
+    await fs.writeFile(path.join(ambient, '.claude', 'plugins', 'installed_plugins.json'), '{"plugins":{"lexicon@ambient":[]}}');
+    await fs.mkdir(path.join(ambient, '.cursor'));
+    await fs.writeFile(path.join(ambient, '.cursor', 'mcp.json'), '{"mcpServers":{"lexicon":{"command":"ambient"}}}');
+    for (const [key, value] of Object.entries({ HOME: ambient, USERPROFILE: ambient, CLAUDE_CONFIG_DIR: path.join(ambient, '.claude'), CODEX_HOME: path.join(ambient, '.codex') })) vi.stubEnv(key, value);
+    const reads = vi.spyOn(fs, 'readFile');
+    try {
+      // Bypass the fixture wrapper to exercise production defaults from injection.
+      const report = await runDoctorReportRaw({ cwd: doctorHome }, { platform: 'linux', home: doctorHome, env: { PATH: '' }, exec: () => '' });
+      expect(report.ready).toBe(false);
+      expect(report.paths.settings).toBe(path.join(doctorHome, '.claude', 'settings.json'));
+      expect(report.paths.installedPlugins).toBe(path.join(doctorHome, '.claude', 'plugins', 'installed_plugins.json'));
+      expect(reads.mock.calls.length).toBeGreaterThan(6);
+      expect(reads.mock.calls.every(([file]) => String(file).startsWith(doctorHome) && !String(file).startsWith(ambient))).toBe(true);
+      expect(core.resolvePaths).toHaveBeenCalledWith({ cwd: doctorHome, home: doctorHome, env: { PATH: '' } });
+      expect(report.checks.some((check) => check.message.includes('lexicon@ambient'))).toBe(false);
+    } finally {
+      reads.mockRestore();
+    }
   });
 });
 
@@ -599,7 +737,7 @@ describe('runDoctorReport', () => {
       await fs.writeFile(path.join(dir, 'claude'), '');
       const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
       expect(report.ready).toBe(true);
-      expect(report.summary).toMatch(/set up and working/i);
+      expect(report.summary).toMatch(/configured.*integration declared/i);
       expect(report.nextStep).toMatch(/Nothing to fix/);
       expect(report.nextStep).not.toBe('');
     });

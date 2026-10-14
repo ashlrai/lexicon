@@ -12,7 +12,7 @@ import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
 import { WHISPER_BIN_NAMES, installHint } from '../voice/process.js';
 import { findOnPathSync, locateToolSync } from '../util/which.js';
-import { readJsonFile } from '../util/json.js';
+import { isRecord, readJsonFile } from '../util/json.js';
 import { errorMessage } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
@@ -50,13 +50,100 @@ const COMMON_WORDS: ReadonlySet<string> = new Set([
 /** Clients whose MCP registration lives in a config file `lexicon install` writes. */
 const FILE_CLIENTS = ['codex', 'cursor', 'windsurf', 'gemini', 'claude-desktop', 'vscode'] as const;
 
-/** True when a client config file declares a server named `lexicon`. */
+function declaresTransport(entry: unknown): boolean {
+  if (!isRecord(entry) || entry.enabled === false || entry.disabled === true) return false;
+  if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') return false;
+  if (entry.disabled !== undefined && typeof entry.disabled !== 'boolean') return false;
+  if (entry.command !== undefined) {
+    return typeof entry.command === 'string' && entry.command.trim() !== '' && entry.url === undefined
+      && (entry.type === undefined || entry.type === 'stdio')
+      && (entry.args === undefined || (Array.isArray(entry.args) && entry.args.every((arg) => typeof arg === 'string')));
+  }
+  return typeof entry.url === 'string' && entry.url.trim() !== '' && entry.args === undefined
+    && (entry.type === undefined || entry.type === 'http' || entry.type === 'sse');
+}
+
+function withoutTomlComment(line: string): string {
+  let quote: string | undefined;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote !== undefined) {
+      if (quote === '"' && ch === '\\') i++;
+      else if (ch === quote) quote = undefined;
+    } else if (ch === '#') return line.slice(0, i).trimEnd();
+    else if (ch === '"' || ch === "'") quote = ch;
+  }
+  return line;
+}
+
+/** Scan real table/body lines, ignoring comments and quoted value continuations. */
+function codexDeclaration(text: string): Record<string, unknown> | undefined {
+  let quote: string | undefined;
+  let active = false;
+  let entry: Record<string, unknown> | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    if (quote === undefined) {
+      if (/^\s*\[/.test(line)) {
+        active = /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/.test(line);
+        if (active) {
+          if (entry) return undefined; // Duplicate declarations are ambiguous.
+          entry = {};
+        }
+      } else if (active) {
+        const field = /^\s*("(?:[^"\\]|\\.)*"|'[^'\r\n]*'|[A-Za-z0-9_-]+)\s*=\s*(.*?)\s*$/.exec(line);
+        if (field && entry) {
+          let key: string;
+          try {
+            key = field[1].startsWith('"') ? JSON.parse(field[1]) as string
+              : field[1].startsWith("'") ? field[1].slice(1, -1) : field[1];
+          } catch {
+            return undefined;
+          }
+          if (['command', 'url', 'args', 'type', 'enabled', 'disabled'].includes(key)) {
+            if (Object.hasOwn(entry, key)) return undefined;
+            const raw = withoutTomlComment(field[2]).trim();
+            // Install emits JSON-compatible basic strings/arrays. Literal strings
+            // are also conventional TOML. Unknown transport syntax is not proof
+            // of a usable declaration; other config fields remain opaque.
+            const literal = /^'([^'\r\n]*)'\s*(?:#.*)?$/.exec(raw);
+            try {
+              entry[key] = literal ? literal[1] : JSON.parse(raw) as unknown;
+            } catch {
+              return undefined;
+            }
+          }
+        }
+      }
+    }
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (quote !== undefined) {
+        if (quote.startsWith('"') && ch === '\\') { i++; continue; }
+        if (line.startsWith(quote, i)) {
+          const closing = quote[0];
+          i += quote.length - 1;
+          // TOML permits one/two quotes immediately before a triple delimiter.
+          if (quote.length === 3) while (line[i + 1] === closing) i++;
+          quote = undefined;
+        }
+      } else if (ch === '#') break;
+      else if (ch === '"' || ch === "'") {
+        quote = line.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch;
+        i += quote.length - 1;
+      }
+    }
+  }
+  return quote === undefined ? entry : undefined;
+}
+
+/** Configuration metadata only; does not prove a client is present or connected. */
 export function registersLexicon(client: (typeof FILE_CLIENTS)[number], text: string): boolean {
-  if (client === 'codex') return /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/m.test(text);
+  if (client === 'codex') return declaresTransport(codexDeclaration(text));
   try {
-    const cfg = JSON.parse(text) as Record<string, unknown>;
-    const servers = (client === 'vscode' ? cfg.servers : cfg.mcpServers) as Record<string, unknown> | undefined;
-    return typeof servers === 'object' && servers !== null && 'lexicon' in servers;
+    const cfg: unknown = JSON.parse(text);
+    if (!isRecord(cfg)) return false;
+    const servers = client === 'vscode' ? cfg.servers : cfg.mcpServers;
+    return isRecord(servers) && declaresTransport(servers.lexicon);
   } catch {
     return false;
   }
@@ -80,7 +167,7 @@ export interface DoctorDeps {
   settingsPath?: string;
   /** Claude's plugin registry. Default ~/.claude/plugins/installed_plugins.json. */
   installedPluginsPath?: string;
-  /** Home directory the login service files live under. Default os.homedir(). */
+  /** Default home for lexicon/client/service paths; explicit env/path overrides still apply. */
   home?: string;
   /** Numeric uid for `launchctl print gui/<uid>/<label>`. Default process.getuid(). */
   uid?: number;
@@ -99,9 +186,9 @@ export interface DoctorReport {
   /** True when no check is at level `fail`. */
   ok: boolean;
   /**
-   * True when dictation corrections will actually happen for this user: a
+   * True when configuration declares an integration for this user: a
    * lexicon that exists and has at least one term, wired into at least one
-   * agent. This is the answer to "is lexicon set up?" -- `ok` is not, because
+   * agent. It does not prove a live client connection. `ok` is not readiness, because
    * a lexicon with no terms and no integration has nothing to fail.
    */
   ready: boolean;
@@ -329,8 +416,8 @@ function summarize(
   }
   return {
     ready: true,
-    summary: `Lexicon is set up and working: ${counts}, wired into your agent${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? '' : 's'} not configured` : ''}.`,
-    nextStep: 'Nothing to fix. Dictate a sentence with one of your names in it and watch it come out spelled right.',
+    summary: `Lexicon is configured: ${counts}, with an agent integration declared${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? '' : 's'} not configured` : ''}.`,
+    nextStep: 'Nothing to fix in the configuration. Dictate a sentence with one of your names to verify the client applies it.',
   };
 }
 
@@ -379,6 +466,7 @@ export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = 
 export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}): Promise<DoctorReport> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
+  const home = deps.home ?? os.homedir();
   const exec = deps.exec ?? defaultExec;
   const cwd = resolveCwd(opts);
   const checks: DoctorCheck[] = [];
@@ -386,7 +474,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     checks.push({ level, message });
   };
   // Set as the checks run; `summarize` turns them into ready/summary/nextStep.
-  /** True once something on this machine is actually calling the lexicon: the plugin, a hook, or a registered MCP server. */
+  /** Declared plugin/hook/MCP configuration, not proof of a live connection. */
   let wired = false;
   /** True when this repo has a .lexicon.yaml the user has not approved, so its terms are not being applied. */
   let untrustedProject = false;
@@ -394,7 +482,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   const unreadable: UnreadableLexicon[] = [];
 
   // --- lexicon files -------------------------------------------------------
-  const paths = resolvePaths({ cwd });
+  const paths = resolvePaths({ cwd, env, home });
   const files: LexiconFile[] = [];
 
   try {
@@ -489,9 +577,9 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   }
 
   // --- Claude Code plugin / hooks -------------------------------------------------
-  const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
+  const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(env, home), 'settings.json');
   const installedPluginsPath =
-    deps.installedPluginsPath ?? path.join(claudeConfigDir(), 'plugins', 'installed_plugins.json');
+    deps.installedPluginsPath ?? path.join(claudeConfigDir(env, home), 'plugins', 'installed_plugins.json');
   const settings = await readJsonFile(settingsPath);
   const installed = await readJsonFile(installedPluginsPath);
   if (settings.error) push('warn', `could not parse ${settingsPath}: ${settings.error}`);
@@ -521,7 +609,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   for (const client of FILE_CLIENTS) {
     let file: string;
     try {
-      file = configPathFor(client, { home: deps.home ?? os.homedir(), cwd: process.cwd(), platform, env, project: false });
+      file = configPathFor(client, { home, cwd, platform, env, project: false });
     } catch {
       continue;
     }
@@ -538,7 +626,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     if (registersLexicon(client, text)) {
       otherClients.push(client);
       wired = true;
-      push('ok', `lexicon MCP server is registered with ${client}: ${file}`);
+      push('ok', `lexicon MCP server configuration found for ${client}: ${file}`);
     }
   }
 
@@ -562,7 +650,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   }
 
   // --- login service (lexicon serve --install) ------------------------------------
-  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os.homedir(), ...(deps.uid !== undefined ? { uid: deps.uid } : {}) }));
+  checks.push(await checkLoginService({ platform, env, exec, home, ...(deps.uid !== undefined ? { uid: deps.uid } : {}) }));
 
   // --- clipboard -----------------------------------------------------------------
   try {

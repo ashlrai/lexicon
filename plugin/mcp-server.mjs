@@ -56621,12 +56621,90 @@ var COMMON_WORDS = /* @__PURE__ */ new Set([
   "more"
 ]);
 var FILE_CLIENTS = ["codex", "cursor", "windsurf", "gemini", "claude-desktop", "vscode"];
+function declaresTransport(entry) {
+  if (!isRecord(entry) || entry.enabled === false || entry.disabled === true) return false;
+  if (entry.enabled !== void 0 && typeof entry.enabled !== "boolean") return false;
+  if (entry.disabled !== void 0 && typeof entry.disabled !== "boolean") return false;
+  if (entry.command !== void 0) {
+    return typeof entry.command === "string" && entry.command.trim() !== "" && entry.url === void 0 && (entry.type === void 0 || entry.type === "stdio") && (entry.args === void 0 || Array.isArray(entry.args) && entry.args.every((arg) => typeof arg === "string"));
+  }
+  return typeof entry.url === "string" && entry.url.trim() !== "" && entry.args === void 0 && (entry.type === void 0 || entry.type === "http" || entry.type === "sse");
+}
+function withoutTomlComment(line2) {
+  let quote;
+  for (let i = 0; i < line2.length; i++) {
+    const ch = line2[i];
+    if (quote !== void 0) {
+      if (quote === '"' && ch === "\\") i++;
+      else if (ch === quote) quote = void 0;
+    } else if (ch === "#") return line2.slice(0, i).trimEnd();
+    else if (ch === '"' || ch === "'") quote = ch;
+  }
+  return line2;
+}
+function codexDeclaration(text) {
+  let quote;
+  let active = false;
+  let entry;
+  for (const line2 of text.split(/\r?\n/)) {
+    if (quote === void 0) {
+      if (/^\s*\[/.test(line2)) {
+        active = /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/.test(line2);
+        if (active) {
+          if (entry) return void 0;
+          entry = {};
+        }
+      } else if (active) {
+        const field = /^\s*("(?:[^"\\]|\\.)*"|'[^'\r\n]*'|[A-Za-z0-9_-]+)\s*=\s*(.*?)\s*$/.exec(line2);
+        if (field && entry) {
+          let key;
+          try {
+            key = field[1].startsWith('"') ? JSON.parse(field[1]) : field[1].startsWith("'") ? field[1].slice(1, -1) : field[1];
+          } catch {
+            return void 0;
+          }
+          if (["command", "url", "args", "type", "enabled", "disabled"].includes(key)) {
+            if (Object.hasOwn(entry, key)) return void 0;
+            const raw = withoutTomlComment(field[2]).trim();
+            const literal2 = /^'([^'\r\n]*)'\s*(?:#.*)?$/.exec(raw);
+            try {
+              entry[key] = literal2 ? literal2[1] : JSON.parse(raw);
+            } catch {
+              return void 0;
+            }
+          }
+        }
+      }
+    }
+    for (let i = 0; i < line2.length; i++) {
+      const ch = line2[i];
+      if (quote !== void 0) {
+        if (quote.startsWith('"') && ch === "\\") {
+          i++;
+          continue;
+        }
+        if (line2.startsWith(quote, i)) {
+          const closing = quote[0];
+          i += quote.length - 1;
+          if (quote.length === 3) while (line2[i + 1] === closing) i++;
+          quote = void 0;
+        }
+      } else if (ch === "#") break;
+      else if (ch === '"' || ch === "'") {
+        quote = line2.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch;
+        i += quote.length - 1;
+      }
+    }
+  }
+  return quote === void 0 ? entry : void 0;
+}
 function registersLexicon(client, text) {
-  if (client === "codex") return /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/m.test(text);
+  if (client === "codex") return declaresTransport(codexDeclaration(text));
   try {
     const cfg = JSON.parse(text);
+    if (!isRecord(cfg)) return false;
     const servers = client === "vscode" ? cfg.servers : cfg.mcpServers;
-    return typeof servers === "object" && servers !== null && "lexicon" in servers;
+    return isRecord(servers) && declaresTransport(servers.lexicon);
   } catch {
     return false;
   }
@@ -56766,13 +56844,14 @@ function summarize(checks, state) {
   }
   return {
     ready: true,
-    summary: `Lexicon is set up and working: ${counts}, wired into your agent${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? "" : "s"} not configured` : ""}.`,
-    nextStep: "Nothing to fix. Dictate a sentence with one of your names in it and watch it come out spelled right."
+    summary: `Lexicon is configured: ${counts}, with an agent integration declared${warns.length > 0 ? `, with ${warns.length} optional item${warns.length === 1 ? "" : "s"} not configured` : ""}.`,
+    nextStep: "Nothing to fix in the configuration. Dictate a sentence with one of your names to verify the client applies it."
   };
 }
 async function runDoctorReport(opts, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
+  const home = deps.home ?? os8.homedir();
   const exec = deps.exec ?? defaultExec;
   const cwd = resolveCwd(opts);
   const checks = [];
@@ -56782,7 +56861,7 @@ async function runDoctorReport(opts, deps = {}) {
   let wired = false;
   let untrustedProject = false;
   const unreadable = [];
-  const paths = resolvePaths({ cwd });
+  const paths = resolvePaths({ cwd, env, home });
   const files = [];
   try {
     const g = await readLexiconFile(paths.global, "global");
@@ -56867,8 +56946,8 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(), "settings.json");
-  const installedPluginsPath = deps.installedPluginsPath ?? path19.join(claudeConfigDir(), "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(env, home), "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? path19.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
   const settings = await readJsonFile(settingsPath);
   const installed = await readJsonFile(installedPluginsPath);
   if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
@@ -56893,7 +56972,7 @@ async function runDoctorReport(opts, deps = {}) {
   for (const client of FILE_CLIENTS) {
     let file2;
     try {
-      file2 = configPathFor(client, { home: deps.home ?? os8.homedir(), cwd: process.cwd(), platform, env, project: false });
+      file2 = configPathFor(client, { home, cwd, platform, env, project: false });
     } catch {
       continue;
     }
@@ -56910,7 +56989,7 @@ async function runDoctorReport(opts, deps = {}) {
     if (registersLexicon(client, text)) {
       otherClients.push(client);
       wired = true;
-      push2("ok", `lexicon MCP server is registered with ${client}: ${file2}`);
+      push2("ok", `lexicon MCP server configuration found for ${client}: ${file2}`);
     }
   }
   const claudeBin = findOnPathSync("claude", { env });
@@ -56930,7 +57009,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
     }
   }
-  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os8.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
+  checks.push(await checkLoginService({ platform, env, exec, home, ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
   try {
     const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
     push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
