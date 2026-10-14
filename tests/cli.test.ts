@@ -525,6 +525,15 @@ describe('doctor: other MCP clients', () => {
     expect(report.checks.some((c) => c.level === 'warn' && c.message.startsWith('lexicon MCP server not registered with claude (using cursor;'))).toBe(true);
   });
 
+  it('warns about a client config that is not valid JSON instead of skipping it silently', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-badjson-'));
+    await fs.mkdir(path.join(home, '.cursor'));
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.writeFile(file, '{ // comment\n "mcpServers": {} }');
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '', home });
+    expect(report.checks).toContainEqual({ level: 'warn', message: `could not parse ${file} as JSON, so a lexicon entry there was not checked` });
+  });
+
   it('still fails when no client has lexicon registered', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-none-'));
     await fs.writeFile(path.join(home, 'claude'), '');
@@ -539,6 +548,9 @@ describe('doctor: other MCP clients', () => {
     expect(registersLexicon('codex', '[mcp_servers.lexicon]\ncommand = "lexicon-mcp"\n')).toBe(true);
     expect(registersLexicon('codex', '[mcp_servers.lexicon-extra]\n')).toBe(false);
     expect(registersLexicon('codex', '# [mcp_servers.lexicon]\n')).toBe(false);
+    expect(registersLexicon('codex', '[ mcp_servers.lexicon ] # added by lexicon\n')).toBe(true);
+    expect(registersLexicon('codex', "[mcp_servers.'lexicon']\n")).toBe(true);
+    expect(registersLexicon('codex', '[mcp_servers.lexicon.env]\nX = "1"\n')).toBe(false);
     expect(registersLexicon('vscode', JSON.stringify({ servers: { lexicon: {} } }))).toBe(true);
     expect(registersLexicon('vscode', JSON.stringify({ mcpServers: { lexicon: {} } }))).toBe(false);
     expect(registersLexicon('windsurf', JSON.stringify({ mcpServers: { lexicon: {} } }))).toBe(true);
@@ -619,6 +631,7 @@ describe('runDoctorReport', () => {
         exec: () => '',
         settingsPath: path.join(empty, 'settings.json'),
         installedPluginsPath: path.join(empty, 'installed_plugins.json'),
+        home: empty,
       });
       expect(report.ready).toBe(false);
       expect(report.summary).toMatch(/no agent is wired up/i);
@@ -715,7 +728,7 @@ describe('runDoctorReport', () => {
   it('runDoctor prints exactly the rendering of runDoctorReport', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
     await fs.writeFile(path.join(dir, 'claude'), '');
-    const deps = { platform: 'linux' as const, env: { PATH: dir }, exec: () => 'no servers', settingsPath: path.join(dir, 's.json'), installedPluginsPath: path.join(dir, 'p.json') };
+    const deps = { platform: 'linux' as const, env: { PATH: dir }, exec: () => 'no servers', settingsPath: path.join(dir, 's.json'), installedPluginsPath: path.join(dir, 'p.json'), home: dir };
     const report = await runDoctorReport({}, deps);
     const rendered = makeIO();
     const renderedCode = renderDoctorReport(report, rendered);

@@ -56622,11 +56622,19 @@ var COMMON_WORDS = /* @__PURE__ */ new Set([
 ]);
 var FILE_CLIENTS = ["codex", "cursor", "windsurf", "gemini", "claude-desktop", "vscode"];
 function registersLexicon(client, text) {
-  if (client === "codex") return /^\s*\[mcp_servers\.(?:lexicon|"lexicon")\]/m.test(text);
+  if (client === "codex") return /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/m.test(text);
   try {
     const cfg = JSON.parse(text);
     const servers = client === "vscode" ? cfg.servers : cfg.mcpServers;
     return typeof servers === "object" && servers !== null && "lexicon" in servers;
+  } catch {
+    return false;
+  }
+}
+function parsesAsJson(text) {
+  try {
+    JSON.parse(text);
+    return true;
   } catch {
     return false;
   }
@@ -56893,6 +56901,10 @@ async function runDoctorReport(opts, deps = {}) {
     try {
       text = await fs12.readFile(file2, "utf8");
     } catch {
+      continue;
+    }
+    if (client !== "codex" && !parsesAsJson(text)) {
+      push2("warn", `could not parse ${file2} as JSON, so a lexicon entry there was not checked`);
       continue;
     }
     if (registersLexicon(client, text)) {

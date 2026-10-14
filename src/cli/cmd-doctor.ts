@@ -52,11 +52,20 @@ const FILE_CLIENTS = ['codex', 'cursor', 'windsurf', 'gemini', 'claude-desktop',
 
 /** True when a client config file declares a server named `lexicon`. */
 export function registersLexicon(client: (typeof FILE_CLIENTS)[number], text: string): boolean {
-  if (client === 'codex') return /^\s*\[mcp_servers\.(?:lexicon|"lexicon")\]/m.test(text);
+  if (client === 'codex') return /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/m.test(text);
   try {
     const cfg = JSON.parse(text) as Record<string, unknown>;
     const servers = (client === 'vscode' ? cfg.servers : cfg.mcpServers) as Record<string, unknown> | undefined;
     return typeof servers === 'object' && servers !== null && 'lexicon' in servers;
+  } catch {
+    return false;
+  }
+}
+
+function parsesAsJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
   } catch {
     return false;
   }
@@ -520,6 +529,10 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     try {
       text = await fs.readFile(file, 'utf8');
     } catch {
+      continue;
+    }
+    if (client !== 'codex' && !parsesAsJson(text)) {
+      push('warn', `could not parse ${file} as JSON, so a lexicon entry there was not checked`);
       continue;
     }
     if (registersLexicon(client, text)) {
