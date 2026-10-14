@@ -111,9 +111,15 @@ version, downloads artifacts from this workflow run, verifies both producer
 checksum inventories and assembles exactly four assets plus a complete
 `SHA256SUMS`. Missing, extra, changed or symlinked assets fail before publication.
 Copied bytes must still match the producer checksums captured before assembly.
-It requires the existing `NPM_TOKEN` and workflow GitHub token, and proves that
-neither this tag's release nor this exact npm version already exists. An HTTP
-failure is not treated as absence.
+Asset inspection reads a stable regular file descriptor, capped at 256 MiB, and
+refuses file identity or size changes. Assembly writes the inspected bytes to
+exclusive destination descriptors and preserves their qualified permission bits.
+These finite reads do not promise a wall-clock bound for slow filesystems.
+It requires the workflow GitHub token plus either GitHub Actions OIDC request
+material or the existing `NPM_TOKEN`, and proves that neither this tag's release
+nor this exact npm version already exists. OIDC request material alone does not
+prove that the package's trusted publisher has been configured. An HTTP failure
+is not treated as absence.
 
 The job publishes the original qualified `ashlr-lexicon-X.Y.Z.tgz` with
 `--provenance`; it does not rebuild or repack in the privileged job. It checks the
@@ -152,17 +158,22 @@ The asset names are referenced by the README, the demo site (`site/index.html`) 
 
 `.github/workflows/macos-app.yml` is separate: it builds the same app on pushes that touch `apps/macos/**` and stores the zip as a workflow artifact for review, not as a release asset. `.github/workflows/windows-app.yml` does the same for `apps/windows/**`, and `LexiconBar.exe` is likewise an artifact rather than a release asset, because nothing in that app has been verified on a real Windows desktop yet.
 
-## 3. NPM_TOKEN
+## 3. npm publication authority
 
-The normal release job requires the repository's existing `NPM_TOKEN` to have
-publish rights for `@ashlr/lexicon`. The job's existing `id-token: write`
-permission supplies GitHub Actions provenance. Build jobs have neither secret
-nor OIDC publication authority. This workflow does not provision credentials.
+The normal release job supports npm trusted publishing through GitHub Actions
+OIDC. This requires an existing package trusted-publisher configuration for
+`ashlrai/lexicon` and `release.yml`; the job's `id-token: write` permission and
+its npm CLI version support the token exchange and provenance. The repository's
+existing `NPM_TOKEN` remains an alternative with publish rights for
+`@ashlr/lexicon`. Build jobs have neither secret nor OIDC publication authority.
+This workflow does not configure the trusted publisher or provision credentials.
 
-If the token is absent, the job fails before npm or GitHub writes. It does not
-report a successful npm skip or publish a GitHub-only release. The maintainer
-must resolve existing access through the normal owner process; a missing token
-is not authority to create one, broaden account access or use another publisher.
+The preflight checks for OIDC request material or an existing token; the npm
+publish step must still succeed and exact registry bytes must be accepted
+before any GitHub release is created. Missing or rejected authority is a
+failure, never a successful npm skip or a GitHub-only release. The maintainer
+must resolve existing access through the normal owner process; missing access
+is not authority to create a token, broaden access or use another publisher.
 
 Publishing the prebuilt archive deliberately skips `prepublishOnly`: the exact
 source was already qualified by the preceding jobs. The bytes published to npm

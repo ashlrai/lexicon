@@ -30,8 +30,8 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         'WHEN TO CALL: when corrections are not happening, when the user asks whether it is set up, or before you offer to set it up, ' +
         'so you know whether there is anything to offer. Safe and free to call unprompted: it only reads. ' +
         'WHAT IT CHANGES: nothing. It writes no files and installs nothing. ' +
-        'READ THESE THREE FIELDS FIRST: `ready` (boolean: true means corrections will actually happen for this user -- there are terms ' +
-        'and an agent is wired up to use them), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do ' +
+        'READ THESE THREE FIELDS FIRST: `ready` (boolean: true means terms are configured and an integration declaration was found; ' +
+        'this does not verify a live client connection or an actual correction), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do ' +
         'next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). ' +
         'If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ' +
         'ready being false does not always mean "not set up yet": a lexicon file that exists but does not parse also reports ready false, ' +
