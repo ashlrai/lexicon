@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- `lexicon doctor` no longer fails a Cursor, Codex, Windsurf, Gemini, VS Code or Claude Desktop setup because Claude Code is also installed. It now reads each client's user-level MCP config, reports the ones that register `lexicon`, counts them toward `ready`, and downgrades the missing Claude registration to a warning when another client has it. Before, `lexicon setup --clients cursor` followed by the verify step in `llms-install.md` exited 1 with "run: lexicon install claude --apply".
+
 ## 0.5.5 (2026-10-09)
 
 ### Added

@@ -55914,9 +55914,9 @@ function defaultExec(file2, args) {
 }
 
 // src/cli/cmd-doctor.ts
-import { existsSync as existsSync7, promises as fs11 } from "node:fs";
-import os7 from "node:os";
-import path18 from "node:path";
+import { existsSync as existsSync8, promises as fs12 } from "node:fs";
+import os8 from "node:os";
+import path19 from "node:path";
 
 // src/daemon/clipboard-backends.ts
 import { spawn } from "node:child_process";
@@ -56129,8 +56129,386 @@ function installHint(platform) {
   return INSTALL_HINTS.other;
 }
 
-// src/cli/serve-paths.ts
+// src/cli/cmd-install.ts
+import { existsSync as existsSync7, promises as fs11 } from "node:fs";
+import os7 from "node:os";
 import path17 from "node:path";
+var INSTALL_CLIENTS = [
+  "claude",
+  "codex",
+  "cursor",
+  "windsurf",
+  "gemini",
+  "claude-desktop",
+  "vscode",
+  "generic"
+];
+function isInstallClient(value) {
+  return INSTALL_CLIENTS.includes(value);
+}
+function resolveServerPath(cliDir) {
+  return resolveIntegrationPaths(cliDir).server;
+}
+function appData(ctx) {
+  return ctx.env.APPDATA ?? path17.join(ctx.home, "AppData", "Roaming");
+}
+function codexHome(ctx) {
+  const override = ctx.env.CODEX_HOME?.trim();
+  return override ? override : path17.join(ctx.home, ".codex");
+}
+function geminiHome(ctx) {
+  const override = ctx.env.GEMINI_CLI_HOME?.trim();
+  return path17.join(override ? override : ctx.home, ".gemini");
+}
+function configPathFor(client, ctx) {
+  const { home, cwd, platform, project } = ctx;
+  switch (client) {
+    case "codex":
+      return project ? path17.join(cwd, ".codex", "config.toml") : path17.join(codexHome(ctx), "config.toml");
+    case "cursor":
+      return project ? path17.join(cwd, ".cursor", "mcp.json") : path17.join(home, ".cursor", "mcp.json");
+    case "windsurf":
+      if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
+      return path17.join(home, ".codeium", "windsurf", "mcp_config.json");
+    case "gemini":
+      return project ? path17.join(cwd, ".gemini", "settings.json") : path17.join(geminiHome(ctx), "settings.json");
+    case "claude-desktop": {
+      if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
+      if (platform === "darwin") {
+        return path17.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+      }
+      if (platform === "win32") return path17.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return path17.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
+    }
+    case "vscode": {
+      if (project) return path17.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return path17.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return path17.join(appData(ctx), "Code", "User", "mcp.json");
+      return path17.join(home, ".config", "Code", "User", "mcp.json");
+    }
+  }
+}
+function rulesFileFor(client) {
+  switch (client) {
+    case "claude":
+      return "CLAUDE.md";
+    case "codex":
+      return "AGENTS.md";
+    case "cursor":
+      return ".cursor/rules/lexicon.mdc";
+    case "windsurf":
+      return ".windsurfrules";
+    case "gemini":
+      return "GEMINI.md";
+    case "claude-desktop":
+      return "the project instructions (or Settings > Profile > preferences)";
+    case "vscode":
+      return ".github/copilot-instructions.md";
+    default:
+      return "the agent\u2019s rules or memory file";
+  }
+}
+function clientCaveat(client, project) {
+  if (client === "codex" && project) {
+    return "Codex only reads a repo-local .codex/config.toml once you have marked this project as trusted; until then the file is loaded but disabled.";
+  }
+  if (client === "vscode" && !project) {
+    return 'VS Code keeps this file per profile. The path above is the default profile of VS Code stable; if you use a custom profile or Insiders, run "MCP: Open User Configuration" in VS Code and paste the entry there instead.';
+  }
+  if (client === "gemini") {
+    return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
+  }
+  if (client === "claude-desktop") {
+    return "Claude Desktop reads this only at launch: quit it completely and reopen.";
+  }
+  return void 0;
+}
+function labelFor(client) {
+  switch (client) {
+    case "codex":
+      return "OpenAI Codex CLI";
+    case "cursor":
+      return "Cursor";
+    case "windsurf":
+      return "Windsurf";
+    case "gemini":
+      return "Gemini CLI";
+    case "claude-desktop":
+      return "Claude Desktop";
+    case "vscode":
+      return "VS Code";
+    case "claude":
+      return "Claude Code";
+    default:
+      return "any MCP client";
+  }
+}
+function targetFor(client, serverPath, ctx) {
+  const launch = launchFor(serverPath, "mcp");
+  const base = { command: launch.command, args: launch.args };
+  const file2 = configPathFor(client, ctx);
+  const common = { client, label: labelFor(client), file: file2, rulesFile: rulesFileFor(client) };
+  switch (client) {
+    case "codex":
+      return { ...common, format: "toml", key: "mcpServers", entry: base };
+    case "vscode":
+      return { ...common, format: "json", key: "servers", entry: { type: "stdio", ...base } };
+    default:
+      return { ...common, format: "json", key: "mcpServers", entry: base };
+  }
+}
+function deepEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+function mergeServerIntoJson(current, key, entry) {
+  if (!isRecord(current)) {
+    throw new Error("client config is not an object; refusing to overwrite it");
+  }
+  const base = structuredClone(current);
+  const existingMap = base[key];
+  if (existingMap !== void 0 && !isRecord(existingMap)) {
+    throw new Error(`"${key}" is not an object; refusing to overwrite it`);
+  }
+  const servers = isRecord(existingMap) ? existingMap : {};
+  const existingEntry = servers.lexicon;
+  if (existingEntry !== void 0 && !isRecord(existingEntry)) {
+    throw new Error('"lexicon" is not an object; refusing to overwrite it');
+  }
+  if (isRecord(existingEntry) && (["url", "httpUrl", "serverUrl", "sseUrl"].some((key2) => key2 in existingEntry) || existingEntry.type !== void 0 && existingEntry.type !== "stdio")) {
+    throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
+  }
+  const mergedEntry = { ...isRecord(existingEntry) ? existingEntry : {}, ...structuredClone(entry) };
+  if (deepEqual(existingEntry, mergedEntry)) {
+    return { next: base, changed: false };
+  }
+  servers.lexicon = mergedEntry;
+  base[key] = servers;
+  return { next: base, changed: true };
+}
+function tomlString(s) {
+  return JSON.stringify(s);
+}
+var CODEX_TABLE = "mcp_servers.lexicon";
+function codexBlock(entry) {
+  return [
+    `[${CODEX_TABLE}]`,
+    `command = ${tomlString(entry.command)}`,
+    `args = [${entry.args.map(tomlString).join(", ")}]`
+  ].join("\n");
+}
+function isBlankOrComment(line2) {
+  const trimmed = line2.trim();
+  return trimmed === "" || trimmed.startsWith("#");
+}
+function upsertTomlTable(text, header, block) {
+  const lines = text.split("\n");
+  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const headerRe = new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const start = lines.findIndex((l) => headerRe.test(l));
+  const blockLines = block.split("\n");
+  if (start === -1) {
+    const trimmed = text.replace(/\s+$/, "");
+    const next2 = trimmed === "" ? `${block}
+` : `${trimmed}
+
+${block}
+`;
+    return { next: next2, changed: true };
+  }
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end] ?? "")) end += 1;
+  let bodyEnd = end;
+  while (bodyEnd > start + 1 && isBlankOrComment(lines[bodyEnd - 1] ?? "")) bodyEnd -= 1;
+  const oldBlock = lines.slice(start, bodyEnd).join("\n");
+  if (oldBlock === block) return { next: text, changed: false };
+  const nextLines = [...lines.slice(0, start), ...blockLines, ...lines.slice(bodyEnd)];
+  let next = nextLines.join("\n");
+  if (!next.endsWith("\n")) next += "\n";
+  return { next, changed: true };
+}
+async function readText2(file2) {
+  try {
+    return { text: await fs11.readFile(file2, "utf8"), existed: true };
+  } catch (err) {
+    if (isEnoent(err)) return { text: "", existed: false };
+    throw new Error(`could not read ${file2}: ${errorMessage(err)}`);
+  }
+}
+async function writeText(file2, text) {
+  await fs11.mkdir(path17.dirname(file2), { recursive: true });
+  await fs11.writeFile(file2, text, "utf8");
+}
+async function applyJson(target) {
+  const read = await readJsonFile(target.file);
+  if (read.error !== void 0) {
+    throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
+  }
+  const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
+  if (!changed) return "unchanged";
+  await writeJsonFile(target.file, next);
+  return read.exists ? "updated" : "created";
+}
+async function applyToml(target) {
+  const { text, existed } = await readText2(target.file);
+  const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
+  if (!changed) return "unchanged";
+  await writeText(target.file, next);
+  return existed ? "updated" : "created";
+}
+function jsonSnippet(key, entry) {
+  return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
+}
+function printExportHint(io, step, client) {
+  line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
+  line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
+  line(io, dim("   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)"));
+}
+function printGeneric(io, serverPath) {
+  const launch = launchFor(serverPath, "mcp");
+  line(io, bold("Generic MCP client configuration"));
+  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args }), "   "));
+  line(io);
+  line(io, bold("Supported clients"));
+  for (const c of INSTALL_CLIENTS) {
+    if (c === "generic") continue;
+    line(io, `   lexicon install ${c}`);
+  }
+  line(io);
+  line(io, dim("add --apply to write the config, --project for the repo-level file where the client supports one"));
+  line(io);
+  printExportHint(io, 1, "generic");
+}
+async function runInstall(client, opts, io, deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const home = opts.home ? path17.resolve(opts.home) : os7.homedir();
+  const cwd = path17.resolve(opts.cwd ?? process.cwd());
+  const serverPath = resolveServerPath(deps.cliDir);
+  const scope = opts.scope ?? (opts.project ? "project" : "user");
+  if (scope !== "user" && scope !== "project") {
+    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
+  }
+  const project = scope === "project" || opts.project === true;
+  const name = (client ?? "generic").toLowerCase();
+  if (!isInstallClient(name)) {
+    throw new Error(
+      `unknown client "${client}" (expected one of: ${INSTALL_CLIENTS.join(", ")})`
+    );
+  }
+  if (name === "generic") {
+    printGeneric(io, serverPath);
+    return 0;
+  }
+  if (name === "claude") {
+    const claudeOpts = { ...opts, scope: project ? "project" : "user" };
+    const claudeDeps = {
+      ...deps.cliDir ? { cliDir: deps.cliDir } : {},
+      ...opts.home ? { settingsPath: path17.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      ...deps.onWritten ? { onWritten: deps.onWritten } : {},
+      ...deps.exec ? { exec: deps.exec } : {}
+    };
+    return runInstallClaude(claudeOpts, io, claudeDeps);
+  }
+  const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
+  const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
+  line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
+  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
+  line(io, indent(body, "   "));
+  if (opts.apply) {
+    const outcome = target.format === "toml" ? await applyToml(target) : await applyJson(target);
+    deps.onWritten?.(target.file, outcome);
+    if (outcome === "unchanged") {
+      line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
+    } else {
+      line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
+    }
+  }
+  const caveat = clientCaveat(name, project);
+  if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
+  line(io);
+  printExportHint(io, 2, name);
+  if (!opts.apply) {
+    line(io);
+    line(io, dim("run again with --apply to write step 1"));
+  }
+  return 0;
+}
+var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
+async function runInstallClaude(opts, io, deps = {}) {
+  const scope = opts.scope ?? "user";
+  if (scope !== "user" && scope !== "project") {
+    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
+  const settingsPath = deps.settingsPath ?? path17.join(claudeConfigDir(), "settings.json");
+  const exec = deps.exec ?? defaultExec;
+  let failed = false;
+  const serverLaunch = launchFor(serverPath, "mcp");
+  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
+  line(io, bold("1. Register the MCP server"));
+  line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
+  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
+  else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
+  if (opts.apply) {
+    if (!serverLaunch.viaNpx && !existsSync7(serverPath)) {
+      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
+    }
+    try {
+      const out = exec("claude", mcpArgs).trim();
+      line(io, green(`   ${out || "registered"}`));
+    } catch (err) {
+      const message = errorMessage(err);
+      if (/already exists/i.test(message)) {
+        line(io, dim("   already registered with claude, nothing changed"));
+      } else {
+        failed = true;
+        line(io, red(`   failed: ${safeLines(message)}`));
+      }
+    }
+  }
+  line(io);
+  const hookLaunch = launchFor(hookPath, "hook");
+  const hookCommand = launchCommandLine(hookLaunch);
+  const hookTimeout = hookTimeoutFor(hookLaunch);
+  line(io, bold(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
+  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), "   "));
+  if (hookLaunch.viaNpx) {
+    line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
+    line(io, dim("    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)"));
+  }
+  if (opts.apply) {
+    const read = await readJsonFile(settingsPath);
+    if (read.error !== void 0) {
+      throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
+    }
+    const existed = read.exists;
+    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
+    if (changed) {
+      await writeJsonFile(settingsPath, settings);
+      line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
+      deps.onWritten?.(settingsPath, existed ? "updated" : "created");
+    } else {
+      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+      deps.onWritten?.(settingsPath, "unchanged");
+    }
+  }
+  line(io);
+  line(io, bold("3. Add to your CLAUDE.md"));
+  line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (!opts.apply) {
+    line(io);
+    line(io, dim("run again with --apply to perform steps 1 and 2"));
+  }
+  return failed ? 1 : 0;
+}
+function quoteArg(s, platform = process.platform) {
+  if (platform === "win32") return /[\s"]/.test(s) || path17.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
+  return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
+}
+
+// src/cli/serve-paths.ts
+import path18 from "node:path";
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
 var SCHEDULED_TASK_NAME = "Lexicon";
@@ -56144,13 +56522,13 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return path17.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return path18.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return path17.join(home, "Library", "Logs", "lexicon", "serve.log");
+  return path18.join(home, "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  return path17.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+  return path18.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -56242,6 +56620,17 @@ var COMMON_WORDS = /* @__PURE__ */ new Set([
   "were",
   "more"
 ]);
+var FILE_CLIENTS = ["codex", "cursor", "windsurf", "gemini", "claude-desktop", "vscode"];
+function registersLexicon(client, text) {
+  if (client === "codex") return /^\s*\[mcp_servers\.(?:lexicon|"lexicon")\]/m.test(text);
+  try {
+    const cfg = JSON.parse(text);
+    const servers = client === "vscode" ? cfg.servers : cfg.mcpServers;
+    return typeof servers === "object" && servers !== null && "lexicon" in servers;
+  } catch {
+    return false;
+  }
+}
 var SERVE_REINSTALL_HINT = "run: lexicon serve --uninstall && lexicon serve --install";
 async function checkLoginService(probe) {
   const { platform, env, exec, home } = probe;
@@ -56281,7 +56670,7 @@ async function checkLoginService(probe) {
     if (!loaded) {
       return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
     }
-    if (program2 !== void 0 && !existsSync7(program2)) {
+    if (program2 !== void 0 && !existsSync8(program2)) {
       return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
     }
     return { level: "ok", message: `${name} is registered and runs at logon` };
@@ -56290,7 +56679,7 @@ async function checkLoginService(probe) {
   }
   let fileExists = false;
   try {
-    const text = await fs11.readFile(file2, "utf8");
+    const text = await fs12.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch {
@@ -56299,7 +56688,7 @@ async function checkLoginService(probe) {
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
   }
-  if (program2 !== void 0 && !existsSync7(program2)) {
+  if (program2 !== void 0 && !existsSync8(program2)) {
     return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
   }
   if (!loaded) {
@@ -56470,8 +56859,8 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? path18.join(claudeConfigDir(), "settings.json");
-  const installedPluginsPath = deps.installedPluginsPath ?? path18.join(claudeConfigDir(), "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(), "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? path19.join(claudeConfigDir(), "plugins", "installed_plugins.json");
   const settings = await readJsonFile(settingsPath);
   const installed = await readJsonFile(installedPluginsPath);
   if (settings.error) push2("warn", `could not parse ${settingsPath}: ${settings.error}`);
@@ -56492,6 +56881,26 @@ async function runDoctorReport(opts, deps = {}) {
       }
     }
   }
+  const otherClients = [];
+  for (const client of FILE_CLIENTS) {
+    let file2;
+    try {
+      file2 = configPathFor(client, { home: deps.home ?? os8.homedir(), cwd: process.cwd(), platform, env, project: false });
+    } catch {
+      continue;
+    }
+    let text;
+    try {
+      text = await fs12.readFile(file2, "utf8");
+    } catch {
+      continue;
+    }
+    if (registersLexicon(client, text)) {
+      otherClients.push(client);
+      wired = true;
+      push2("ok", `lexicon MCP server is registered with ${client}: ${file2}`);
+    }
+  }
   const claudeBin = findOnPathSync("claude", { env });
   if (!claudeBin) {
     push2("warn", "claude CLI not found on PATH (MCP + hook integration unavailable)");
@@ -56503,12 +56912,13 @@ async function runDoctorReport(opts, deps = {}) {
         wired = true;
         push2("ok", "lexicon MCP server is registered with claude");
       } else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
+      else if (otherClients.length > 0) push2("warn", `lexicon MCP server not registered with claude (using ${otherClients.join(", ")}; to add claude too, run: lexicon install claude --apply)`);
       else push2("fail", "lexicon MCP server not registered with claude (run: lexicon install claude --apply)");
     } catch (err) {
       push2("warn", `could not run "claude mcp list": ${errorMessage(err)}`);
     }
   }
-  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os7.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
+  checks.push(await checkLoginService({ platform, env, exec, home: deps.home ?? os8.homedir(), ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
   try {
     const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
     push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
@@ -56516,11 +56926,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `no clipboard backend found (${errorMessage(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? existsSync7(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  const whisperCli = whisperOverride ? existsSync8(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
   else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? existsSync7(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  const ffmpegBin = ffmpegOverride ? existsSync8(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
@@ -56544,384 +56954,6 @@ async function runDoctorReport(opts, deps = {}) {
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }
   };
-}
-
-// src/cli/cmd-install.ts
-import { existsSync as existsSync8, promises as fs12 } from "node:fs";
-import os8 from "node:os";
-import path19 from "node:path";
-var INSTALL_CLIENTS = [
-  "claude",
-  "codex",
-  "cursor",
-  "windsurf",
-  "gemini",
-  "claude-desktop",
-  "vscode",
-  "generic"
-];
-function isInstallClient(value) {
-  return INSTALL_CLIENTS.includes(value);
-}
-function resolveServerPath(cliDir) {
-  return resolveIntegrationPaths(cliDir).server;
-}
-function appData(ctx) {
-  return ctx.env.APPDATA ?? path19.join(ctx.home, "AppData", "Roaming");
-}
-function codexHome(ctx) {
-  const override = ctx.env.CODEX_HOME?.trim();
-  return override ? override : path19.join(ctx.home, ".codex");
-}
-function geminiHome(ctx) {
-  const override = ctx.env.GEMINI_CLI_HOME?.trim();
-  return path19.join(override ? override : ctx.home, ".gemini");
-}
-function configPathFor(client, ctx) {
-  const { home, cwd, platform, project } = ctx;
-  switch (client) {
-    case "codex":
-      return project ? path19.join(cwd, ".codex", "config.toml") : path19.join(codexHome(ctx), "config.toml");
-    case "cursor":
-      return project ? path19.join(cwd, ".cursor", "mcp.json") : path19.join(home, ".cursor", "mcp.json");
-    case "windsurf":
-      if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
-      return path19.join(home, ".codeium", "windsurf", "mcp_config.json");
-    case "gemini":
-      return project ? path19.join(cwd, ".gemini", "settings.json") : path19.join(geminiHome(ctx), "settings.json");
-    case "claude-desktop": {
-      if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
-      if (platform === "darwin") {
-        return path19.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
-      }
-      if (platform === "win32") return path19.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return path19.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
-    }
-    case "vscode": {
-      if (project) return path19.join(cwd, ".vscode", "mcp.json");
-      if (platform === "darwin") return path19.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return path19.join(appData(ctx), "Code", "User", "mcp.json");
-      return path19.join(home, ".config", "Code", "User", "mcp.json");
-    }
-  }
-}
-function rulesFileFor(client) {
-  switch (client) {
-    case "claude":
-      return "CLAUDE.md";
-    case "codex":
-      return "AGENTS.md";
-    case "cursor":
-      return ".cursor/rules/lexicon.mdc";
-    case "windsurf":
-      return ".windsurfrules";
-    case "gemini":
-      return "GEMINI.md";
-    case "claude-desktop":
-      return "the project instructions (or Settings > Profile > preferences)";
-    case "vscode":
-      return ".github/copilot-instructions.md";
-    default:
-      return "the agent\u2019s rules or memory file";
-  }
-}
-function clientCaveat(client, project) {
-  if (client === "codex" && project) {
-    return "Codex only reads a repo-local .codex/config.toml once you have marked this project as trusted; until then the file is loaded but disabled.";
-  }
-  if (client === "vscode" && !project) {
-    return 'VS Code keeps this file per profile. The path above is the default profile of VS Code stable; if you use a custom profile or Insiders, run "MCP: Open User Configuration" in VS Code and paste the entry there instead.';
-  }
-  if (client === "gemini") {
-    return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
-  }
-  if (client === "claude-desktop") {
-    return "Claude Desktop reads this only at launch: quit it completely and reopen.";
-  }
-  return void 0;
-}
-function labelFor(client) {
-  switch (client) {
-    case "codex":
-      return "OpenAI Codex CLI";
-    case "cursor":
-      return "Cursor";
-    case "windsurf":
-      return "Windsurf";
-    case "gemini":
-      return "Gemini CLI";
-    case "claude-desktop":
-      return "Claude Desktop";
-    case "vscode":
-      return "VS Code";
-    case "claude":
-      return "Claude Code";
-    default:
-      return "any MCP client";
-  }
-}
-function targetFor(client, serverPath, ctx) {
-  const launch = launchFor(serverPath, "mcp");
-  const base = { command: launch.command, args: launch.args };
-  const file2 = configPathFor(client, ctx);
-  const common = { client, label: labelFor(client), file: file2, rulesFile: rulesFileFor(client) };
-  switch (client) {
-    case "codex":
-      return { ...common, format: "toml", key: "mcpServers", entry: base };
-    case "vscode":
-      return { ...common, format: "json", key: "servers", entry: { type: "stdio", ...base } };
-    default:
-      return { ...common, format: "json", key: "mcpServers", entry: base };
-  }
-}
-function deepEqual(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-function mergeServerIntoJson(current, key, entry) {
-  if (!isRecord(current)) {
-    throw new Error("client config is not an object; refusing to overwrite it");
-  }
-  const base = structuredClone(current);
-  const existingMap = base[key];
-  if (existingMap !== void 0 && !isRecord(existingMap)) {
-    throw new Error(`"${key}" is not an object; refusing to overwrite it`);
-  }
-  const servers = isRecord(existingMap) ? existingMap : {};
-  const existingEntry = servers.lexicon;
-  if (existingEntry !== void 0 && !isRecord(existingEntry)) {
-    throw new Error('"lexicon" is not an object; refusing to overwrite it');
-  }
-  if (isRecord(existingEntry) && (["url", "httpUrl", "serverUrl", "sseUrl"].some((key2) => key2 in existingEntry) || existingEntry.type !== void 0 && existingEntry.type !== "stdio")) {
-    throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
-  }
-  const mergedEntry = { ...isRecord(existingEntry) ? existingEntry : {}, ...structuredClone(entry) };
-  if (deepEqual(existingEntry, mergedEntry)) {
-    return { next: base, changed: false };
-  }
-  servers.lexicon = mergedEntry;
-  base[key] = servers;
-  return { next: base, changed: true };
-}
-function tomlString(s) {
-  return JSON.stringify(s);
-}
-var CODEX_TABLE = "mcp_servers.lexicon";
-function codexBlock(entry) {
-  return [
-    `[${CODEX_TABLE}]`,
-    `command = ${tomlString(entry.command)}`,
-    `args = [${entry.args.map(tomlString).join(", ")}]`
-  ].join("\n");
-}
-function isBlankOrComment(line2) {
-  const trimmed = line2.trim();
-  return trimmed === "" || trimmed.startsWith("#");
-}
-function upsertTomlTable(text, header, block) {
-  const lines = text.split("\n");
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const headerRe = new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
-  const start = lines.findIndex((l) => headerRe.test(l));
-  const blockLines = block.split("\n");
-  if (start === -1) {
-    const trimmed = text.replace(/\s+$/, "");
-    const next2 = trimmed === "" ? `${block}
-` : `${trimmed}
-
-${block}
-`;
-    return { next: next2, changed: true };
-  }
-  let end = start + 1;
-  while (end < lines.length && !/^\s*\[/.test(lines[end] ?? "")) end += 1;
-  let bodyEnd = end;
-  while (bodyEnd > start + 1 && isBlankOrComment(lines[bodyEnd - 1] ?? "")) bodyEnd -= 1;
-  const oldBlock = lines.slice(start, bodyEnd).join("\n");
-  if (oldBlock === block) return { next: text, changed: false };
-  const nextLines = [...lines.slice(0, start), ...blockLines, ...lines.slice(bodyEnd)];
-  let next = nextLines.join("\n");
-  if (!next.endsWith("\n")) next += "\n";
-  return { next, changed: true };
-}
-async function readText2(file2) {
-  try {
-    return { text: await fs12.readFile(file2, "utf8"), existed: true };
-  } catch (err) {
-    if (isEnoent(err)) return { text: "", existed: false };
-    throw new Error(`could not read ${file2}: ${errorMessage(err)}`);
-  }
-}
-async function writeText(file2, text) {
-  await fs12.mkdir(path19.dirname(file2), { recursive: true });
-  await fs12.writeFile(file2, text, "utf8");
-}
-async function applyJson(target) {
-  const read = await readJsonFile(target.file);
-  if (read.error !== void 0) {
-    throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
-  }
-  const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
-  if (!changed) return "unchanged";
-  await writeJsonFile(target.file, next);
-  return read.exists ? "updated" : "created";
-}
-async function applyToml(target) {
-  const { text, existed } = await readText2(target.file);
-  const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
-  if (!changed) return "unchanged";
-  await writeText(target.file, next);
-  return existed ? "updated" : "created";
-}
-function jsonSnippet(key, entry) {
-  return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
-}
-function printExportHint(io, step, client) {
-  line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
-  line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
-  line(io, dim("   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)"));
-}
-function printGeneric(io, serverPath) {
-  const launch = launchFor(serverPath, "mcp");
-  line(io, bold("Generic MCP client configuration"));
-  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args }), "   "));
-  line(io);
-  line(io, bold("Supported clients"));
-  for (const c of INSTALL_CLIENTS) {
-    if (c === "generic") continue;
-    line(io, `   lexicon install ${c}`);
-  }
-  line(io);
-  line(io, dim("add --apply to write the config, --project for the repo-level file where the client supports one"));
-  line(io);
-  printExportHint(io, 1, "generic");
-}
-async function runInstall(client, opts, io, deps = {}) {
-  const platform = deps.platform ?? process.platform;
-  const env = deps.env ?? process.env;
-  const home = opts.home ? path19.resolve(opts.home) : os8.homedir();
-  const cwd = path19.resolve(opts.cwd ?? process.cwd());
-  const serverPath = resolveServerPath(deps.cliDir);
-  const scope = opts.scope ?? (opts.project ? "project" : "user");
-  if (scope !== "user" && scope !== "project") {
-    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
-  }
-  const project = scope === "project" || opts.project === true;
-  const name = (client ?? "generic").toLowerCase();
-  if (!isInstallClient(name)) {
-    throw new Error(
-      `unknown client "${client}" (expected one of: ${INSTALL_CLIENTS.join(", ")})`
-    );
-  }
-  if (name === "generic") {
-    printGeneric(io, serverPath);
-    return 0;
-  }
-  if (name === "claude") {
-    const claudeOpts = { ...opts, scope: project ? "project" : "user" };
-    const claudeDeps = {
-      ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: path19.join(claudeConfigDir(process.env, home), "settings.json") } : {},
-      ...deps.onWritten ? { onWritten: deps.onWritten } : {},
-      ...deps.exec ? { exec: deps.exec } : {}
-    };
-    return runInstallClaude(claudeOpts, io, claudeDeps);
-  }
-  const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
-  const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
-  line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
-  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
-  line(io, indent(body, "   "));
-  if (opts.apply) {
-    const outcome = target.format === "toml" ? await applyToml(target) : await applyJson(target);
-    deps.onWritten?.(target.file, outcome);
-    if (outcome === "unchanged") {
-      line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
-    } else {
-      line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
-    }
-  }
-  const caveat = clientCaveat(name, project);
-  if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
-  line(io);
-  printExportHint(io, 2, name);
-  if (!opts.apply) {
-    line(io);
-    line(io, dim("run again with --apply to write step 1"));
-  }
-  return 0;
-}
-var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
-async function runInstallClaude(opts, io, deps = {}) {
-  const scope = opts.scope ?? "user";
-  if (scope !== "user" && scope !== "project") {
-    throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
-  }
-  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const settingsPath = deps.settingsPath ?? path19.join(claudeConfigDir(), "settings.json");
-  const exec = deps.exec ?? defaultExec;
-  let failed = false;
-  const serverLaunch = launchFor(serverPath, "mcp");
-  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
-  line(io, bold("1. Register the MCP server"));
-  line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
-  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
-  else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
-  if (opts.apply) {
-    if (!serverLaunch.viaNpx && !existsSync8(serverPath)) {
-      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
-    }
-    try {
-      const out = exec("claude", mcpArgs).trim();
-      line(io, green(`   ${out || "registered"}`));
-    } catch (err) {
-      const message = errorMessage(err);
-      if (/already exists/i.test(message)) {
-        line(io, dim("   already registered with claude, nothing changed"));
-      } else {
-        failed = true;
-        line(io, red(`   failed: ${safeLines(message)}`));
-      }
-    }
-  }
-  line(io);
-  const hookLaunch = launchFor(hookPath, "hook");
-  const hookCommand = launchCommandLine(hookLaunch);
-  const hookTimeout = hookTimeoutFor(hookLaunch);
-  line(io, bold(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
-  line(io, `   merge into ${safe(settingsPath)}:`);
-  line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), "   "));
-  if (hookLaunch.viaNpx) {
-    line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
-    line(io, dim("    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)"));
-  }
-  if (opts.apply) {
-    const read = await readJsonFile(settingsPath);
-    if (read.error !== void 0) {
-      throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
-    }
-    const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
-    if (changed) {
-      await writeJsonFile(settingsPath, settings);
-      line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
-      deps.onWritten?.(settingsPath, existed ? "updated" : "created");
-    } else {
-      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
-      deps.onWritten?.(settingsPath, "unchanged");
-    }
-  }
-  line(io);
-  line(io, bold("3. Add to your CLAUDE.md"));
-  line(io, `   ${CLAUDE_MD_SNIPPET}`);
-  if (!opts.apply) {
-    line(io);
-    line(io, dim("run again with --apply to perform steps 1 and 2"));
-  }
-  return failed ? 1 : 0;
-}
-function quoteArg(s, platform = process.platform) {
-  if (platform === "win32") return /[\s"]/.test(s) || path19.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
-  return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 
 // src/cli/prompt.ts

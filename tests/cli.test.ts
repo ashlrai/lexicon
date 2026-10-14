@@ -112,6 +112,7 @@ import {
   runPath,
   runRemove,
 } from '../src/cli/commands.js';
+import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import { makeIO } from './helpers.js';
 
 
@@ -498,12 +499,50 @@ describe('doctor', () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
     await fs.writeFile(path.join(dir, 'claude'), '');
     const io = makeIO();
-    const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: dir }, exec: () => 'no servers' });
+    const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: dir }, exec: () => 'no servers', home: dir });
     expect(code).toBe(1);
     expect(io.out).toContain('✗ lexicon MCP server not registered');
     expect(io.out).toMatch(/✗ alias "Ashler" of "Ashlr\.AI" equals the canonical of "Ashler"/);
     expect(io.out).toMatch(/! alias "the" of "Ashlr\.AI" is a common English word/);
     expect(io.out).toMatch(/! no clipboard backend found \(.*wl-clipboard/);
+  });
+});
+
+describe('doctor: other MCP clients', () => {
+  beforeEach(() => {
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: FIXED_LEXICON, exists: true });
+  });
+
+  it('passes for a Cursor-only setup and does not demand Claude registration', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cursor-'));
+    await fs.writeFile(path.join(home, 'claude'), '');
+    await fs.mkdir(path.join(home, '.cursor'));
+    await fs.writeFile(path.join(home, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'lexicon-mcp' } } }));
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: home }, exec: () => 'no servers', home });
+    expect(report.ok).toBe(true);
+    expect(report.ready).toBe(true);
+    expect(report.checks).toContainEqual({ level: 'ok', message: `lexicon MCP server is registered with cursor: ${path.join(home, '.cursor', 'mcp.json')}` });
+    expect(report.checks.some((c) => c.level === 'warn' && c.message.startsWith('lexicon MCP server not registered with claude (using cursor;'))).toBe(true);
+  });
+
+  it('still fails when no client has lexicon registered', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-none-'));
+    await fs.writeFile(path.join(home, 'claude'), '');
+    await fs.mkdir(path.join(home, '.cursor'));
+    await fs.writeFile(path.join(home, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { other: {} } }));
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: home }, exec: () => 'no servers', home });
+    expect(report.ok).toBe(false);
+    expect(report.checks).toContainEqual({ level: 'fail', message: 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)' });
+  });
+
+  it('registersLexicon reads each client format', () => {
+    expect(registersLexicon('codex', '[mcp_servers.lexicon]\ncommand = "lexicon-mcp"\n')).toBe(true);
+    expect(registersLexicon('codex', '[mcp_servers.lexicon-extra]\n')).toBe(false);
+    expect(registersLexicon('codex', '# [mcp_servers.lexicon]\n')).toBe(false);
+    expect(registersLexicon('vscode', JSON.stringify({ servers: { lexicon: {} } }))).toBe(true);
+    expect(registersLexicon('vscode', JSON.stringify({ mcpServers: { lexicon: {} } }))).toBe(false);
+    expect(registersLexicon('windsurf', JSON.stringify({ mcpServers: { lexicon: {} } }))).toBe(true);
+    expect(registersLexicon('cursor', '{ not json')).toBe(false);
   });
 });
 
