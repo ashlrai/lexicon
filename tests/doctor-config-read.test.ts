@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DOCTOR_CONFIG_MAX_BYTES, readDoctorConfigJson, readDoctorConfigText } from '../src/cli/doctor-config-read.js';
@@ -101,6 +102,25 @@ describe('bounded Doctor configuration inspection', () => {
       expect(allocation).toBe(3); expect(closed).toBe(1); expect(reads).toBeLessThanOrEqual(2);
     });
   }
+  it('uses file URLs for child imports, preserving drive paths and special characters', async () => {
+    const windowsPath = String.raw`C:\inert fixture\reader.mjs`;
+    const windowsUrl = pathToFileURL(windowsPath, { windows: true });
+    expect(windowsUrl.protocol).toBe('file:');
+    expect(fileURLToPath(windowsUrl, { windows: true })).toBe(windowsPath);
+    const env = { HOME: dir, USERPROFILE: dir, PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' };
+    // A drive-letter path is an unsupported URL scheme to the ESM loader,
+    // independently of whether that synthetic file exists on this host.
+    const raw = spawnSync(process.execPath, ['--input-type=module', '--eval', `await import(${JSON.stringify(windowsPath)})`], { timeout: 1500, encoding: 'utf8', env });
+    expect(raw.error).toBeUndefined(); expect(raw.status).toBe(1);
+    expect(raw.stderr).toContain('ERR_UNSUPPORTED_ESM_URL_SCHEME');
+    const module = path.join(dir, 'reader # % with space.mjs');
+    await fs.writeFile(module, 'export const marker = "portable fixture";');
+    const url = pathToFileURL(module);
+    expect(fileURLToPath(url)).toBe(module);
+    const imported = spawnSync(process.execPath, ['--input-type=module', '--eval', `import {marker} from ${JSON.stringify(url.href)};console.log(marker)`], { timeout: 1500, encoding: 'utf8', env });
+    expect(imported.error).toBeUndefined(); expect(imported.status).toBe(0);
+    expect(imported.stdout).toBe('portable fixture\n');
+  });
   for (const race of [false, true]) {
     it(`refuses actual ${race ? 'post-stat' : 'existing'} FIFO/nonregular replacement within the unchanged child bound`, async () => {
       const bundle = path.join(dir, 'reader.mjs');
@@ -117,7 +137,7 @@ const fs={...actualFs,async open(...args){if(globalThis.fixtureRace){syncFs.unli
       else if (process.platform === 'win32') await fs.mkdir(file);
       else expect(spawnSync('/usr/bin/mkfifo', [file]).status).toBe(0);
       const child = path.join(dir, 'child.mjs');
-      await fs.writeFile(child, `import {readDoctorConfigText} from ${JSON.stringify(bundle)};globalThis.fixtureRace=${race};process.stdout.write(JSON.stringify(await readDoctorConfigText(${JSON.stringify(file)})));`);
+      await fs.writeFile(child, `import {readDoctorConfigText} from ${JSON.stringify(pathToFileURL(bundle).href)};globalThis.fixtureRace=${race};process.stdout.write(JSON.stringify(await readDoctorConfigText(${JSON.stringify(file)})));`);
       const result = spawnSync(process.execPath, [child], { timeout: 1500, encoding: 'utf8', env: { HOME: dir, USERPROFILE: dir, PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
       expect(result.error).toBeUndefined(); expect(result.status).toBe(0);
       expect(JSON.parse(result.stdout).status).toBe('unconfirmed'); expect(result.stderr).not.toContain('TARGET_READ');
