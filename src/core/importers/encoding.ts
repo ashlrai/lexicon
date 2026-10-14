@@ -159,10 +159,12 @@ export function decodeImportBytes(bytes: Uint8Array, source: ImportSource = {}):
       return { text: buf.toString('utf8'), encoding };
     case 'utf-16le':
     case 'utf-16be': {
-      // A trailing half code unit cannot be decoded either way; dropping it
-      // loses nothing a parser could have used.
-      const even = buf.subarray(0, buf.length & ~1);
-      const le = encoding === 'utf-16le' ? even : Buffer.from(even).swap16();
+      // Dropping a partial code unit can turn a truncated name into a different valid spelling.
+      if (buf.length % 2 !== 0) {
+        throw new Error(`${sourceName(source)} is incomplete UTF-16 text: its final code unit is missing a byte. ` +
+          'Save or export a complete UTF-8 or UTF-16 copy before importing.');
+      }
+      const le = encoding === 'utf-16le' ? buf : Buffer.from(buf).swap16();
       return { text: le.toString('utf16le').replace(/^﻿/, ''), encoding };
     }
     default:

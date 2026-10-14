@@ -436,7 +436,56 @@ function utf16be(text: string, bom = true): Buffer {
   return bom ? Buffer.concat([Buffer.from([0xfe, 0xff]), body]) : body;
 }
 
+const UTF16_CASES = [
+  { encoding: 'utf-16le', encode: utf16le, bom: true },
+  { encoding: 'utf-16le', encode: utf16le, bom: false },
+  { encoding: 'utf-16be', encode: utf16be, bom: true },
+  { encoding: 'utf-16be', encode: utf16be, bom: false },
+];
+
 describe('import encoding', () => {
+  it.each(UTF16_CASES)('refuses a partial final $encoding code unit, BOM=$bom, before importing a shorter spelling', ({ encoding, encode, bom }) => {
+    for (const [text, format] of [['Ashlr.AI', 'text'], ['canonical,alias\nAshlr.AI,ashler', 'csv']] as const) {
+      const complete = encode(text, bom);
+      const truncated = complete.subarray(0, complete.length - 1);
+      expect(detectImportEncoding(truncated)).toBe(encoding);
+      expect(() => importLexicon(decodeImportBytes(truncated, { path: 'synthetic-dictionary.txt' }).text, format))
+        .toThrow('synthetic-dictionary.txt is incomplete UTF-16 text');
+      expect(() => decodeImportBytes(truncated, { label: 'standard input' })).toThrow(/standard input is incomplete UTF-16/);
+    }
+  });
+
+  it.each(UTF16_CASES)('keeps complete $encoding accents, surrogate pairs and offset views exact, BOM=$bom', ({ encoding, encode, bom }) => {
+    const text = 'Ashlr.AI: ashler\r\nCafé: cafe\r\nOrbit 🚀: orbit\r\n';
+    const bytes = encode(text, bom);
+    const padded = Buffer.concat([Buffer.from([0xff, 0x00, 0xff]), bytes, Buffer.from([0x00])]);
+    const view = new Uint8Array(padded.buffer, padded.byteOffset + 3, bytes.length);
+    const decoded = decodeImportBytes(view);
+    expect(decoded).toEqual({ text, encoding });
+    expect(importLexicon(decoded.text, 'text').terms.map((term) => term.canonical)).toEqual(['Ashlr.AI', 'Café', 'Orbit 🚀']);
+    const csv = 'canonical,alias\nAshlr.AI,ashler';
+    expect(importLexicon(decodeImportBytes(encode(csv, bom)).text, 'csv').terms)
+      .toEqual([{ canonical: 'Ashlr.AI', aliases: ['ashler'], source: 'import' }]);
+    const oddView = new Uint8Array(padded.buffer, padded.byteOffset + 3, bytes.length - 1);
+    expect(() => decodeImportBytes(oddView)).toThrow(/the input is incomplete UTF-16/);
+  });
+
+  it.each([
+    { name: 'UTF-8 ASCII', bytes: Buffer.from('Cat', 'utf8'), text: 'Cat' },
+    { name: 'UTF-8 accent', bytes: Buffer.from('éA', 'utf8'), text: 'éA' },
+    { name: 'Latin-1 ASCII', bytes: Buffer.from('Cat', 'latin1'), text: 'Cat' },
+  ])('keeps valid odd-length $name input outside the UTF-16 guard', ({ bytes, text }) => {
+    expect(bytes.length % 2).toBe(1);
+    expect(decodeImportBytes(bytes)).toEqual({ text, encoding: 'utf-8' });
+  });
+
+  it('keeps odd-length high-byte Latin-1 under the existing unsupported-encoding policy', () => {
+    const bytes = Buffer.from('AéB', 'latin1');
+    expect(bytes.length % 2).toBe(1); expect(detectImportEncoding(bytes)).toBe('not-utf-8');
+    expect(() => decodeImportBytes(bytes)).toThrow(/not UTF-8 text/);
+    expect(() => decodeImportBytes(bytes)).not.toThrow(/incomplete UTF-16/);
+  });
+
   it('decodes a UTF-16LE file with a BOM, the shape PowerShell Out-File writes', () => {
     // Regression: these bytes used to be read as UTF-8, so every second byte
     // became a NUL and the import died on `terms[0].canonical: must not
@@ -556,6 +605,7 @@ vi.mock('../src/core/store.js', async (importOriginal) => {
 });
 
 import { MAX_IMPORT_BYTES, runImport } from '../src/cli/cmd-import.js';
+import { readLexiconFile, resolvePaths } from '../src/core/store.js';
 import { makeIO } from './helpers.js';
 
 
@@ -681,6 +731,21 @@ describe('runImport', () => {
       await fsp.writeFile(p, bytes);
       return p;
     };
+
+    it.each(UTF16_CASES)('default reader refuses truncated $encoding before any destination read/write, BOM=$bom', async ({ encode, bom }) => {
+      const complete = encode('canonical,alias\nAshlr.AI,ashler', bom);
+      const file = await write('truncated.csv', complete.subarray(0, complete.length - 1));
+      try {
+        for (const dryRun of [false, true]) {
+          const io = makeIO();
+          await expect(runImport(file, { format: 'csv', json: true, dryRun }, io))
+            .rejects.toThrow(`${file} is incomplete UTF-16 text`);
+          expect(io.out).toBe(''); expect(io.err).toBe('');
+          expect(resolvePaths).not.toHaveBeenCalled(); expect(readLexiconFile).not.toHaveBeenCalled();
+          expect(store.addTerm).not.toHaveBeenCalled();
+        }
+      } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+    });
 
     it('imports a UTF-16LE file with its accents intact', async () => {
       // Regression: `terms[0].canonical: must not contain control characters
