@@ -16,6 +16,7 @@ import { readJsonFile } from '../util/json.js';
 import { errorMessage } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
+import { configPathFor } from './cmd-install.js';
 import type { LexiconFile, Term, TermScope } from '../core/index.js';
 import {
   HOOK_EVENTS,
@@ -45,6 +46,30 @@ const COMMON_WORDS: ReadonlySet<string> = new Set([
   'they', 'have', 'been', 'will', 'what', 'when', 'your', 'there', 'their', 'about', 'which', 'time',
   'like', 'just', 'over', 'also', 'into', 'some', 'than', 'then', 'them', 'well', 'were', 'more',
 ]);
+
+/** Clients whose MCP registration lives in a config file `lexicon install` writes. */
+const FILE_CLIENTS = ['codex', 'cursor', 'windsurf', 'gemini', 'claude-desktop', 'vscode'] as const;
+
+/** True when a client config file declares a server named `lexicon`. */
+export function registersLexicon(client: (typeof FILE_CLIENTS)[number], text: string): boolean {
+  if (client === 'codex') return /^\s*\[\s*mcp_servers\s*\.\s*(?:lexicon|"lexicon"|'lexicon')\s*\]\s*(#.*)?$/m.test(text);
+  try {
+    const cfg = JSON.parse(text) as Record<string, unknown>;
+    const servers = (client === 'vscode' ? cfg.servers : cfg.mcpServers) as Record<string, unknown> | undefined;
+    return typeof servers === 'object' && servers !== null && 'lexicon' in servers;
+  } catch {
+    return false;
+  }
+}
+
+function parsesAsJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface DoctorDeps {
   platform?: NodeJS.Platform;
@@ -488,6 +513,35 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     }
   }
 
+  // --- other MCP clients ----------------------------------------------------------
+  // `lexicon setup --clients cursor` and `lexicon install <client>` write these
+  // files; without this a Cursor- or Codex-only user would be told to register
+  // Claude. User-level files only, the ones `install` writes by default.
+  const otherClients: string[] = [];
+  for (const client of FILE_CLIENTS) {
+    let file: string;
+    try {
+      file = configPathFor(client, { home: deps.home ?? os.homedir(), cwd: process.cwd(), platform, env, project: false });
+    } catch {
+      continue;
+    }
+    let text: string;
+    try {
+      text = await fs.readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    if (client !== 'codex' && !parsesAsJson(text)) {
+      push('warn', `could not parse ${file} as JSON, so a lexicon entry there was not checked`);
+      continue;
+    }
+    if (registersLexicon(client, text)) {
+      otherClients.push(client);
+      wired = true;
+      push('ok', `lexicon MCP server is registered with ${client}: ${file}`);
+    }
+  }
+
   // --- claude CLI ---------------------------------------------------------------
   const claudeBin = findOnPathSync('claude', { env });
   if (!claudeBin) {
@@ -500,6 +554,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
         wired = true;
         push('ok', 'lexicon MCP server is registered with claude');
       } else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
+      else if (otherClients.length > 0) push('warn', `lexicon MCP server not registered with claude (using ${otherClients.join(', ')}; to add claude too, run: lexicon install claude --apply)`);
       else push('fail', 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)');
     } catch (err) {
       push('warn', `could not run "claude mcp list": ${errorMessage(err)}`);
