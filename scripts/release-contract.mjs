@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -41,12 +41,29 @@ export function assetNames(version, part = 'all') {
   assert.equal(part, 'all');
   return [...ubuntu, 'LexiconBar.app.zip'];
 }
-function bytes(root, name) {
+function qualifiedBytes(root, name) {
   const file = join(root, name);
-  const stat = lstatSync(file);
+  const stat = lstatSync(file, { bigint: true });
   assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= 256 * 1024 * 1024, 'release asset must be a bounded regular file');
-  return readFileSync(file);
+  const same = (a, b) => ['dev', 'ino', 'mode', 'uid', 'gid', 'nlink', 'size', 'birthtimeNs', 'mtimeNs', 'ctimeNs'].every((key) => a[key] === b[key]);
+  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+  try {
+    const opened = fstatSync(fd, { bigint: true });
+    assert.ok(opened.isFile() && same(stat, opened), 'release asset changed before opening');
+    // One extra byte detects growth without allocating the replacement size.
+    const size = Number(opened.size);
+    const buffer = Buffer.alloc(size + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const count = readSync(fd, buffer, offset, buffer.length - offset, offset);
+      if (count === 0) break;
+      offset += count;
+    }
+    assert.ok(offset === size && same(opened, fstatSync(fd, { bigint: true })) && same(opened, lstatSync(file, { bigint: true })), 'release asset changed while reading');
+    return { data: buffer.subarray(0, size), mode: Number(opened.mode & 0o7777n) };
+  } finally { closeSync(fd); }
 }
+function bytes(root, name) { return qualifiedBytes(root, name).data; }
 function inventory(root, names, manifest) {
   assert.deepEqual(readdirSync(root).sort(), [...names, ...(manifest ? ['SHA256SUMS'] : [])].sort(), 'release asset inventory differs');
   return names.map((name) => `${createHash('sha256').update(bytes(root, name)).digest('hex')}  ${name}\n`).join('');
@@ -65,7 +82,14 @@ export function assemble(staged, output, version) {
   assert.ok(!existsSync(output), 'release output already exists');
   mkdirSync(output);
   for (const part of ['ubuntu', 'macos']) {
-    for (const name of assetNames(version, part)) copyFileSync(join(staged, part, name), join(output, name));
+    for (const name of assetNames(version, part)) {
+      const asset = qualifiedBytes(join(staged, part), name);
+      const fd = openSync(join(output, name), 'wx', asset.mode);
+      try {
+        writeFileSync(fd, asset.data);
+        fchmodSync(fd, asset.mode); // Preserve qualified modes despite the writer's umask.
+      } finally { closeSync(fd); }
+    }
   }
   checksum(output, version, 'all');
   assert.equal(validateAssets(output, version), qualifiedSums, 'copied release bytes differ from qualified producer checksums');

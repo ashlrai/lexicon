@@ -416,8 +416,16 @@ describe('edit', () => {
       "import { appendFileSync } from 'node:fs';\nappendFileSync(process.argv[2], '  - canonical: Added\\n    aliases: [add id]\\n');\n",
       'utf8',
     );
+    let editor = `${process.execPath} ${script}`;
+    if (process.platform !== 'win32') {
+      // editorCommand deliberately splits whitespace. A physical editor shim
+      // preserves the real subprocess when this exact Node path has spaces.
+      const quote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
+      editor = path.join(tmp, 'fixture-editor');
+      await fs.writeFile(editor, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} "$@"\n`, { mode: 0o700 });
+    }
     const io = makeIO();
-    const code = await runEdit({ globalPath }, io, undefined, { EDITOR: `${process.execPath} ${script}` });
+    const code = await runEdit({ globalPath }, io, undefined, { EDITOR: editor });
     expect(code).toBe(0);
     expect(io.out).toContain(`ok: 2 terms in ${globalPath}`);
     const written = await readYaml(globalPath);
