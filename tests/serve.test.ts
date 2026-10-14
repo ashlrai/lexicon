@@ -1112,7 +1112,11 @@ describe('packs and aliases routes', () => {
  * reads serve.json, then talks raw HTTP/1.0 over loopback: a dry-run
  * POST /normalize whose replacements it applies itself by UTF-16 offset,
  * GET /lexicon for an offline cache of global terms, and
- * GET /export/whisper-prompt. These tests pin exactly the fields it reads.
+ * GET /export/whisper-prompt. These tests pin the fields it reads. Its serde
+ * types are strict: one term without a string canonical or string aliases, or
+ * a non-string `paths` value, fails the whole response. A few checks here
+ * (no chunking, text/plain, the 32-hex token) pin the server more tightly
+ * than the client strictly needs, on purpose.
  */
 function phantomRequest(method: string, route: string, body = ''): Promise<{ head: string; body: string }> {
   return new Promise((resolve, reject) => {
@@ -1173,12 +1177,13 @@ describe('consumer contract: Phantom desktop voice client', () => {
     expect(body.paths.global).toBe(env.globalPath);
     expect(body.paths.project).toBeUndefined();
     expect(body.projectTrust).toBeUndefined();
-    const term = body.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI');
-    expect(term).toBeDefined();
-    expect(term?.scope).toBe('global');
-    expect(Array.isArray(term?.aliases) && term.aliases.every((a) => typeof a === 'string')).toBe(true);
+    expect(Object.values(body.paths).every((v) => typeof v === 'string')).toBe(true);
+    expect(body.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI')?.scope).toBe('global');
     for (const t of body.lexicon.terms) {
+      expect(typeof t.canonical).toBe('string');
+      expect(Array.isArray(t.aliases) && t.aliases.every((a) => typeof a === 'string')).toBe(true);
       if ('caseSensitive' in t) expect(typeof t.caseSensitive).toBe('boolean');
+      if ('scope' in t && t.scope !== null) expect(typeof t.scope).toBe('string');
     }
   });
 
