@@ -12,7 +12,8 @@ import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
 import { WHISPER_BIN_NAMES, installHint } from '../voice/process.js';
 import { findOnPathSync, locateToolSync } from '../util/which.js';
-import { isRecord, readJsonFile } from '../util/json.js';
+import { isRecord } from '../util/json.js';
+import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read.js';
 import { errorMessage } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
@@ -580,9 +581,10 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(env, home), 'settings.json');
   const installedPluginsPath =
     deps.installedPluginsPath ?? path.join(claudeConfigDir(env, home), 'plugins', 'installed_plugins.json');
-  const settings = await readJsonFile(settingsPath);
-  const installed = await readJsonFile(installedPluginsPath);
-  if (settings.error) push('warn', `could not parse ${settingsPath}: ${settings.error}`);
+  const settings = await readDoctorConfigJson(settingsPath);
+  const installed = await readDoctorConfigJson(installedPluginsPath);
+  if (settings.error) push('warn', `Claude settings configuration is unconfirmed (${settings.error})`);
+  if (installed.error) push('warn', `Claude installed-plugin configuration is unconfirmed (${installed.error})`);
   const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
   if (pluginId) {
     wired = true;
@@ -613,14 +615,15 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     } catch {
       continue;
     }
-    let text: string;
-    try {
-      text = await fs.readFile(file, 'utf8');
-    } catch {
+    const read = await readDoctorConfigText(file);
+    if (read.status === 'missing') continue;
+    if (read.status === 'unconfirmed') {
+      push('warn', `${client} client configuration is unconfirmed (${read.reason})`);
       continue;
     }
+    const text = read.text;
     if (client !== 'codex' && !parsesAsJson(text)) {
-      push('warn', `could not parse ${file} as JSON, so a lexicon entry there was not checked`);
+      push('warn', `could not parse ${client} client configuration as JSON, so a lexicon entry there was not checked`);
       continue;
     }
     if (registersLexicon(client, text)) {

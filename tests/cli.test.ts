@@ -546,6 +546,20 @@ describe('doctor: other MCP clients', () => {
     vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: FIXED_LEXICON, exists: true });
   });
 
+  it.each(['oversize', 'invalid-utf8', 'directory'] as const)('reports %s client data as unconfirmed without granting declared readiness', async (kind) => {
+    await fs.mkdir(path.join(doctorHome, '.cursor'));
+    const file = path.join(doctorHome, '.cursor', 'mcp.json');
+    if (kind === 'oversize') await fs.writeFile(file, '{"mcpServers":{"lexicon":{"command":"PRIVATE_COMMAND"}}}' + ' '.repeat(1024 * 1024));
+    if (kind === 'invalid-utf8') await fs.writeFile(file, Buffer.from([0xc3, 0x28]));
+    if (kind === 'directory') await fs.mkdir(file);
+    const report = await runDoctorReport({}, { home: doctorHome, platform: 'linux', env: { PATH: '' }, exec: () => '' });
+    const reason = kind === 'oversize' ? 'too-large' : kind === 'directory' ? 'nonregular' : kind;
+    expect(report.ready).toBe(false);
+    expect(report.checks).toContainEqual({ level: 'warn', message: `cursor client configuration is unconfirmed (${reason})` });
+    expect(JSON.stringify(report.checks)).not.toContain('PRIVATE_COMMAND');
+    expect(report.checks.some((c) => c.level === 'ok' && c.message.includes('configuration found for cursor'))).toBe(false);
+  });
+
   it('passes for a Cursor-only setup and does not demand Claude registration', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cursor-'));
     await fs.writeFile(path.join(home, 'claude'), '');
@@ -564,7 +578,7 @@ describe('doctor: other MCP clients', () => {
     const file = path.join(home, '.cursor', 'mcp.json');
     await fs.writeFile(file, '{ // comment\n "mcpServers": {} }');
     const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '', home });
-    expect(report.checks).toContainEqual({ level: 'warn', message: `could not parse ${file} as JSON, so a lexicon entry there was not checked` });
+    expect(report.checks).toContainEqual({ level: 'warn', message: 'could not parse cursor client configuration as JSON, so a lexicon entry there was not checked' });
   });
 
   it('still fails when no client has lexicon registered', async () => {
@@ -679,7 +693,7 @@ describe('doctor: other MCP clients', () => {
     await fs.mkdir(path.join(ambient, '.cursor'));
     await fs.writeFile(path.join(ambient, '.cursor', 'mcp.json'), '{"mcpServers":{"lexicon":{"command":"ambient"}}}');
     for (const [key, value] of Object.entries({ HOME: ambient, USERPROFILE: ambient, CLAUDE_CONFIG_DIR: path.join(ambient, '.claude'), CODEX_HOME: path.join(ambient, '.codex') })) vi.stubEnv(key, value);
-    const reads = vi.spyOn(fs, 'readFile');
+    const reads = vi.spyOn(fs, 'lstat');
     try {
       // Bypass the fixture wrapper to exercise production defaults from injection.
       const report = await runDoctorReportRaw({ cwd: doctorHome }, { platform: 'linux', home: doctorHome, env: { PATH: '' }, exec: () => '' });
@@ -952,7 +966,7 @@ describe('doctor: Claude Code hooks and plugin', () => {
     const io = makeIO();
     const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
     expect(code).toBe(0);
-    expect(io.out).toContain(`! could not parse ${s.settingsPath}`);
+    expect(io.out).toContain('! Claude settings configuration is unconfirmed (invalid-json)');
   });
 
   it('findInstalledLexiconPlugin reads the registry or enabledPlugins', () => {

@@ -581,6 +581,9 @@ describe('lexicon MCP server', () => {
       try {
         const tool = (await client.listTools()).tools.find((t) => t.name === 'lexicon_doctor');
         expect(tool?.description).toMatch(/corrections are not happening/);
+        expect(tool?.description).toContain('an integration declaration was found');
+        expect(tool?.description).toContain('does not verify a live client connection or an actual correction');
+        expect(tool?.description).not.toContain('true means corrections will actually happen');
         const result = await client.callTool({ name: 'lexicon_doctor', arguments: {} });
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual(doctorReport);
