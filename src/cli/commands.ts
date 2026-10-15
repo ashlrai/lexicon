@@ -87,6 +87,7 @@ import {
   ensureNewline,
   green,
   line,
+  plural,
   renderTable,
   resolveCwd,
   safe,
@@ -670,7 +671,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, ensureNewline(text), 'utf8');
-    line(io, `wrote ${format} export (${merged.terms.length} terms) to ${safe(outPath)}`);
+    line(io, `wrote ${format} export (${plural(merged.terms.length, 'term')}) to ${safe(outPath)}`);
   } else {
     io.stdout(ensureNewline(text));
   }

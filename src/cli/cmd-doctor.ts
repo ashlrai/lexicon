@@ -36,7 +36,7 @@ import {
   serveLabel,
   systemdUnitPath,
 } from './serve-paths.js';
-import { dim, green, line, red, resolveCwd, safeLines, yellow } from './io.js';
+import { dim, green, line, plural, red, resolveCwd, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** Obvious English words that make terrible aliases (they'd fire constantly). */
@@ -489,7 +489,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   try {
     const g = await readLexiconFile(paths.global, 'global');
     if (g.exists) {
-      push('ok', `global lexicon parses: ${paths.global} (${g.lexicon.terms.length} terms)`);
+      push('ok', `global lexicon parses: ${paths.global} (${plural(g.lexicon.terms.length, 'term')})`);
       files.push(g);
     } else {
       push('fail', `global lexicon missing: ${paths.global} (run: lexicon init)`);
@@ -505,7 +505,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, 'project');
-      push('ok', `project lexicon parses: ${paths.project} (${p.lexicon.terms.length} terms)`);
+      push('ok', `project lexicon parses: ${paths.project} (${plural(p.lexicon.terms.length, 'term')})`);
       const trust = await isTrusted(p, { cwd });
       if (trust === 'trusted') {
         push('ok', 'project lexicon is trusted and merged');

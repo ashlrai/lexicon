@@ -32502,8 +32502,8 @@ var error43 = () => {
       case "not_multiple_of":
         return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
       case "unrecognized_keys": {
-        const plural2 = issue2.keys.length > 1 ? "s" : "";
-        return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
+        const plural3 = issue2.keys.length > 1 ? "s" : "";
+        return `Chave${plural3} inv\xE1lida${plural3}: ${joinValues(issue2.keys, ", ")}`;
       }
       case "invalid_key":
         return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -32647,8 +32647,8 @@ var error44 = () => {
       case "not_multiple_of":
         return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
       case "unrecognized_keys": {
-        const plural2 = issue2.keys.length > 1 ? "s" : "";
-        return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
+        const plural3 = issue2.keys.length > 1 ? "s" : "";
+        return `Chave${plural3} inv\xE1lida${plural3}: ${joinValues(issue2.keys, ", ")}`;
       }
       case "invalid_key":
         return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -59317,6 +59317,9 @@ var safe = sanitizeForDisplay;
 function safeLines(s) {
   return s.split("\n").map(safe).join("\n");
 }
+function plural2(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
 function indent(s, prefix) {
   return s.split("\n").map((l) => prefix + l).join("\n");
 }
@@ -60619,7 +60622,7 @@ async function runDoctorReport(opts, deps = {}) {
   try {
     const g = await readLexiconFile(paths.global, "global");
     if (g.exists) {
-      push2("ok", `global lexicon parses: ${paths.global} (${g.lexicon.terms.length} terms)`);
+      push2("ok", `global lexicon parses: ${paths.global} (${plural2(g.lexicon.terms.length, "term")})`);
       files.push(g);
     } else {
       push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
@@ -60632,7 +60635,7 @@ async function runDoctorReport(opts, deps = {}) {
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, "project");
-      push2("ok", `project lexicon parses: ${paths.project} (${p.lexicon.terms.length} terms)`);
+      push2("ok", `project lexicon parses: ${paths.project} (${plural2(p.lexicon.terms.length, "term")})`);
       const trust = await isTrusted(p, { cwd });
       if (trust === "trusted") {
         push2("ok", "project lexicon is trusted and merged");
@@ -61931,7 +61934,7 @@ async function stepExport(ctx) {
   await import_node_fs23.promises.mkdir(dir, { recursive: true });
   await import_node_fs23.promises.writeFile(file2, text, "utf8");
   ctx.summary.exports.push({ format, path: file2 });
-  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${loaded.merged.terms.length} terms)`);
+  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${plural2(loaded.merged.terms.length, "term")})`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 async function stepDemo(ctx) {
