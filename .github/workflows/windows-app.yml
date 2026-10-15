@@ -85,7 +85,7 @@ jobs:
           $extra = Get-ChildItem artifacts/win-x64 -Exclude LexiconBar.exe
           if ($extra) { $extra; throw "unexpected files alongside LexiconBar.exe" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: LexiconBar-win-x64
           path: apps/windows/artifacts/win-x64/LexiconBar.exe
