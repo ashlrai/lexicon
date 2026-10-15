@@ -385,6 +385,10 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(yaml.headers.get('content-type')).toBe('application/yaml; charset=utf-8');
     const txt = await api('GET', '/export/text');
     expect(txt.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    // Format names resolve like the CLI's: any case, aliases included.
+    const upper = await api('GET', '/export/Wispr-Flow');
+    expect(upper.status).toBe(200);
+    expect(upper.headers.get('content-type')).toBe('text/csv; charset=utf-8');
     const unknown = await api('GET', '/export/nope');
     expect(unknown.status).toBe(404);
   });
