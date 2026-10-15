@@ -16,6 +16,7 @@ import type {
   InstallPackResult,
   PackInfo,
   StoreOptions,
+  Term,
   TermScope,
 } from '../../core/index.js';
 
@@ -268,6 +269,8 @@ export interface Ctx {
   seeded: string[];
   /** Canonicals the packs of a dry run would add; the planned harvest leaves them out. */
   packCanonicals: string[];
+  /** The terms a dry run's step 1 would seed, so its demonstration uses them as the real run would. */
+  plannedSeed: Term[];
   summary: SetupSummary;
   /** Present under `dryRun`: every step records what it would do here instead of doing it. */
   plan?: SetupPlan;

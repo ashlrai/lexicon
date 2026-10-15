@@ -241,6 +241,7 @@ export async function runSetup(
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
+    plannedSeed: [],
     summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] },
   };
   if (prompter) ctx.prompter = prompter;
