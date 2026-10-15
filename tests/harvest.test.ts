@@ -253,6 +253,22 @@ describe('harvestRepo', () => {
     }
   });
 
+  it('skips everyday English words capitalised in a README, keeps names that double as words', async () => {
+    const docs = path.join(tmp, 'readme-common');
+    await fs.mkdir(docs, { recursive: true });
+    await fs.writeFile(path.join(docs, 'README.md'), [
+      'The app has a Leader view, a Resources tab and a Growth chart.',
+      'Open the Leader view, then the Resources tab, then the Growth chart.',
+      'We run Hetzner boxes and ship through Railway; Hetzner and Railway are cheap.',
+      'It plans with ReAct loops, and ReAct keeps them short.',
+    ].join('\n'));
+    const candidates = await harvestRepo(docs, { minCount: 1 });
+    for (const word of ['Leader', 'Resources', 'Growth']) expect(byName(candidates, word), word).toBeUndefined();
+    expect(byName(candidates, 'Hetzner')?.count).toBe(2);
+    expect(byName(candidates, 'Railway')?.count).toBe(2);
+    expect(byName(candidates, 'ReAct')?.count).toBe(2);
+  });
+
   it('throws for a missing directory', async () => {
     await expect(harvestRepo(path.join(tmp, 'missing'))).rejects.toThrow(/not a directory/);
   });
