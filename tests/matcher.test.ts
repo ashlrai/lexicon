@@ -93,6 +93,21 @@ describe('exact alias pass', () => {
     expect(find('open claw is great', [{ canonical: 'OpenClaw', aliases: [] }])[0]).toMatchObject({ original: 'open claw', replacement: 'OpenClaw' });
   });
 
+  it('absorbs a spoken domain suffix after a one-word alias', () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'] };
+    expect(apply('ashlar ai shipped it', find('ashlar ai shipped it', [term]))).toBe('Ashlr.AI shipped it');
+    expect(find('Ashler A.I rocks', [term])[0]).toMatchObject({ original: 'Ashler A.I', replacement: 'Ashlr.AI', reason: 'alias' });
+    expect(find('ashler AI', [term], { phonetic: false, fuzzy: false })[0]).toMatchObject({ original: 'ashler AI' });
+    // Punctuation still breaks the window, and a bare alias still matches alone.
+    expect(find('Ashler, AI', [term], { phonetic: false, fuzzy: false }).map((r) => r.original)).toEqual(['Ashler']);
+    expect(apply('ashler is here', find('ashler is here', [term]))).toBe('Ashlr.AI is here');
+  });
+
+  it('does not absorb a domain suffix that is an everyday word', () => {
+    const term: Term = { canonical: 'Mind.so', aliases: ['mined'] };
+    expect(find('I mined so much', [term], { phonetic: false, fuzzy: false }).map((r) => r.original)).toEqual(['mined']);
+  });
+
   it('does not match a multi-word alias across punctuation', () => {
     const reps = find('Ashler, AI', [{ canonical: 'Ashlr.AI', aliases: ['Ashler AI'] }], { phonetic: false, fuzzy: false });
     expect(reps).toHaveLength(0);

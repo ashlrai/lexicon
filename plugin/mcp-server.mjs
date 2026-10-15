@@ -52941,6 +52941,20 @@ function implicitAliases(canonical) {
   if (m) out.push(m[1]);
   return out;
 }
+var SPOKEN_DOMAIN_SUFFIXES = /* @__PURE__ */ new Set(["ai", "io", "dev", "com", "net", "org", "xyz", "gg"]);
+function suffixedAliases(canonical, aliases) {
+  const m = DOMAIN_SUFFIX.exec(canonical);
+  if (!m) return [];
+  const suffix = m[2].toLowerCase();
+  if (!SPOKEN_DOMAIN_SUFFIXES.has(suffix)) return [];
+  const out = [];
+  for (const alias of aliases) {
+    const a = squash(alias);
+    if (!a || /\s/.test(a) || foldLower(a).endsWith(suffix)) continue;
+    out.push(`${a} ${suffix}`);
+  }
+  return out;
+}
 function buildIndex(lexicon) {
   const settings = lexicon.settings ?? {};
   const exact = /* @__PURE__ */ new Map();
@@ -52967,7 +52981,8 @@ function buildIndex(lexicon) {
     const termKeys = /* @__PURE__ */ new Set();
     const candidates = [
       ...implicitAliases(term.canonical).map((alias) => ({ alias, explicit: false })),
-      ...term.aliases.map((alias) => ({ alias, explicit: true }))
+      ...term.aliases.map((alias) => ({ alias, explicit: true })),
+      ...suffixedAliases(term.canonical, term.aliases).map((alias) => ({ alias, explicit: false }))
     ];
     for (const { alias, explicit } of candidates) {
       const norm = squash(alias);
