@@ -834,6 +834,29 @@ describe('lexicon voice (foreground)', () => {
     expect(h.kills).toEqual([]);
   });
 
+  it("a recorder that fails to open the device prints ffmpeg's last lines one per line", async () => {
+    const h = await harness({ platform: 'linux' });
+    h.opts.quiet = false;
+    const spawn = h.deps.spawn;
+    h.deps.spawn = (cmd, args, opts) => {
+      const child = spawn!(cmd, args, opts);
+      writeFileSync(args[args.length - 1], '');
+      setTimeout(() => h.children[0].resolve(1), 5);
+      return {
+        ...child,
+        stderr: () =>
+          'ffmpeg version 6\n[in#0 @ 0x1] Error opening input: No such process\nError opening input file default.\nError opening input files: No such process\n',
+      };
+    };
+    expect(await runVoice({ ...h.opts, seconds: 1 }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain(
+      'lexicon voice: recording failed (the recording is empty)\n' +
+        '  ffmpeg said: [in#0 @ 0x1] Error opening input: No such process\n' +
+        '  Error opening input file default.\n' +
+        '  Error opening input files: No such process\n',
+    );
+  });
+
   it('builds the whisper prompt from the lexicon canonicals and passes it as --prompt', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';

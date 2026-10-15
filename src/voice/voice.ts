@@ -413,17 +413,25 @@ function micPermissionHint(r: Resolved, launcher: string): string {
     : '';
 }
 
+/**
+ * The last few lines of ffmpeg's stderr, each sanitized for a terminal and
+ * indented under `ffmpeg said:`. Sanitizing line by line keeps the line
+ * breaks, which sanitizing the joined text would strip.
+ */
+function stderrTail(text: string, lines = 3): string {
+  return text
+    .trim()
+    .split(/\r?\n/)
+    .slice(-lines)
+    .map((line) => sanitizeForDisplay(line).trim())
+    .filter((line) => line.length > 0)
+    .join('\n  ');
+}
+
 /** The last few lines of a detached recorder's stderr log, sanitized for a terminal. */
 async function recorderLogTail(r: Resolved, lines = 3): Promise<string> {
   try {
-    const text = await fs.readFile(recorderLogPath(r.globalPath), 'utf8');
-    return text
-      .trim()
-      .split('\n')
-      .slice(-lines)
-      .map((line) => sanitizeForDisplay(line))
-      .filter((line) => line.length > 0)
-      .join('\n  ');
+    return stderrTail(await fs.readFile(recorderLogPath(r.globalPath), 'utf8'), lines);
   } catch {
     return '';
   }
@@ -558,10 +566,11 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 
   const capture = await inspectWav(wav);
   if (!capture.ok) {
-    const err = sanitizeForDisplay(child.stderr().trim().split('\n').slice(-3).join('\n'));
+    const tail = stderrTail(child.stderr());
     io.stderr(
-      `lexicon voice: recording failed (${capture.reason})${err ? `: ${err}` : ''}\n` +
+      `lexicon voice: recording failed (${capture.reason})\n` +
         micPermissionHint(r, 'this terminal') +
+        (tail ? `  ffmpeg said: ${tail}\n` : '') +
         (await discardOrKeep(capture, wav)),
     );
     return EXIT_ERROR;
