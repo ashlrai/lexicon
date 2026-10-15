@@ -539,6 +539,8 @@ describe('claude registration is idempotent', () => {
 });
 
 describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
+  // The installer resolves LEXICON_CWD, so the expected value is platform-specific.
+  const WORK = path.resolve('/work/repo');
   const lexEnv = (): InstallDeps => ({ ...baseDeps(), env: { PATH: '', LEXICON_PATH: 'lex/my.yaml', LEXICON_CWD: '/work/repo' } });
 
   it('lexiconServerEnv keeps only set variables, as absolute paths', () => {
@@ -554,12 +556,12 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     const r = await run('cursor', { apply: true }, lexEnv());
     expect(r.code).toBe(0);
     const entry = ((await readJson(file)).mcpServers as Record<string, { env: Record<string, string> }>).lexicon;
-    expect(entry.env).toEqual({ MINE: '1', LEXICON_PATH: '/stale.yaml', LEXICON_CWD: '/work/repo' });
+    expect(entry.env).toEqual({ MINE: '1', LEXICON_PATH: '/stale.yaml', LEXICON_CWD: WORK });
     // A fresh entry gets both.
     await fs.writeFile(file, '{}');
     await run('cursor', { apply: true }, lexEnv());
     const fresh = ((await readJson(file)).mcpServers as Record<string, { env: Record<string, string> }>).lexicon;
-    expect(fresh.env).toEqual({ LEXICON_PATH: path.resolve(cwd, 'lex/my.yaml'), LEXICON_CWD: '/work/repo' });
+    expect(fresh.env).toEqual({ LEXICON_PATH: path.resolve(cwd, 'lex/my.yaml'), LEXICON_CWD: WORK });
     expect(r.io.out).toContain('"LEXICON_PATH"');
     // Unset in the shell: the entry is written without env, as before.
     const plain = await run('windsurf', { apply: true });
@@ -572,7 +574,7 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     const file = path.join(home, '.codex/config.toml');
     await run('codex', { apply: true }, lexEnv());
     const text = await fs.readFile(file, 'utf8');
-    expect(text).toContain(`env = { LEXICON_PATH = ${JSON.stringify(path.resolve(cwd, 'lex/my.yaml'))}, LEXICON_CWD = "/work/repo" }`);
+    expect(text).toContain(`env = { LEXICON_PATH = ${JSON.stringify(path.resolve(cwd, 'lex/my.yaml'))}, LEXICON_CWD = ${JSON.stringify(WORK)} }`);
 
     await fs.writeFile(file, ['[mcp_servers.lexicon]', 'command = "node"', 'args = ["/old.js"]', '', '[mcp_servers.lexicon.env]', 'FOO = "bar"', 'LEXICON_PATH = "/stale.yaml"', ''].join('\n'));
     await run('codex', { apply: true }, lexEnv());
@@ -581,7 +583,7 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(merged).toContain('FOO = "bar"');
     expect(merged).toContain('LEXICON_PATH = "/stale.yaml"');
     expect(merged).not.toContain(JSON.stringify(path.resolve(cwd, 'lex/my.yaml')));
-    expect(merged).toContain('LEXICON_CWD = "/work/repo"');
+    expect(merged).toContain(`LEXICON_CWD = ${JSON.stringify(WORK)}`);
     const again = await run('codex', { apply: true }, lexEnv());
     expect(again.io.out).toContain('nothing changed');
   });
@@ -599,7 +601,7 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(code).toBe(0);
     const args = calls[0] ?? [];
     expect(args.slice(0, 7)).toEqual([
-      'mcp', 'add', '-e', `LEXICON_PATH=${path.resolve(cwd, 'lex/my.yaml')}`, '-e', 'LEXICON_CWD=/work/repo', '--scope',
+      'mcp', 'add', '-e', `LEXICON_PATH=${path.resolve(cwd, 'lex/my.yaml')}`, '-e', `LEXICON_CWD=${WORK}`, '--scope',
     ]);
     expect(args.indexOf('lexicon')).toBeGreaterThan(args.indexOf('--scope'));
   });
