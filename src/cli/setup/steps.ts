@@ -168,6 +168,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
       }
       ctx.plan.wouldSeed.push(canonical);
       const aliases = suggestAliases(canonical);
+      ctx.plannedSeed.push({ canonical, aliases, category, source: 'user' });
       ctx.say(`   would add ${bold(safe(canonical))} (${category}): ${aliases.length > 0 ? safe(aliases.join(', ')) : dim('(no aliases)')}`);
     }
     if (ctx.plan.wouldSeed.length === 0) {
@@ -648,9 +649,15 @@ export async function stepDemo(ctx: Ctx): Promise<void> {
   } catch {
     merged = { version: 1 as const, terms: [] };
   }
+  // A dry run wrote nothing in step 1, so add what it would have seeded: the
+  // plan must show the correction the real run shows ("Ashler" -> the company
+  // it seeds), not the built-in example with a different spelling.
+  if (ctx.plan && ctx.plannedSeed.length > 0) {
+    merged = { ...merged, terms: [...ctx.plannedSeed, ...merged.terms] };
+  }
   // The person and company from step 1 first: a stranger should see their own
   // name corrected, not a term that arrived with a starter pack.
-  const demo = demonstrate(merged, ctx.seeded);
+  const demo = demonstrate(merged, ctx.plan ? ctx.plan.wouldSeed : ctx.seeded);
   const summary = demo.result.replacements
     .map((r) => `"${safe(r.original)}" -> "${safe(r.replacement)}"`)
     .join(', ');

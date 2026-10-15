@@ -61652,6 +61652,7 @@ async function stepLexicon(ctx) {
       }
       ctx.plan.wouldSeed.push(canonical);
       const aliases2 = suggestAliases(canonical);
+      ctx.plannedSeed.push({ canonical, aliases: aliases2, category, source: "user" });
       ctx.say(`   would add ${bold(safe(canonical))} (${category}): ${aliases2.length > 0 ? safe(aliases2.join(", ")) : dim("(no aliases)")}`);
     }
     if (ctx.plan.wouldSeed.length === 0) {
@@ -62053,7 +62054,10 @@ async function stepDemo(ctx) {
   } catch {
     merged = { version: 1, terms: [] };
   }
-  const demo = demonstrate(merged, ctx.seeded);
+  if (ctx.plan && ctx.plannedSeed.length > 0) {
+    merged = { ...merged, terms: [...ctx.plannedSeed, ...merged.terms] };
+  }
+  const demo = demonstrate(merged, ctx.plan ? ctx.plan.wouldSeed : ctx.seeded);
   const summary = demo.result.replacements.map((r) => `"${safe(r.original)}" -> "${safe(r.replacement)}"`).join(", ");
   ctx.say(`   you dictate:  ${safe(demo.heard)}`);
   ctx.say(`   ${bold("your agent sees")}: ${bold(safe(demo.corrected))}`);
@@ -62163,6 +62167,7 @@ async function runSetup(opts, io, deps = {}) {
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
+    plannedSeed: [],
     summary: { lexiconPath: "", termsAdded: [], packs: [], clients: [], serve: "skipped", exports: [] }
   };
   if (prompter) ctx.prompter = prompter;

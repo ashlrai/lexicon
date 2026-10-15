@@ -448,13 +448,13 @@ describe('runSetup --dry-run', () => {
       wouldInstallClients: ['claude', 'codex', 'cursor'],
       wouldInstallServe: true,
       wouldExport: [{ format: 'wispr', path: path.join(exportDir, 'lexicon-wispr.csv') }],
-      // A dry run writes nothing, so there is no lexicon to demonstrate from:
-      // the example terms stand in, and the plan carries what a real run would show.
+      // A dry run writes nothing, so it demonstrates on the terms step 1 would
+      // seed: the plan carries the same correction a real run would show.
       demo: {
-        heard: 'can you check whether the Ashler migration landed yet',
-        corrected: 'can you check whether the Ashlr.AI migration landed yet',
-        terms: ['Ashlr.AI'],
-        usedExample: true,
+        heard: 'can you ask Mason Wiatt where the Ashler migration landed',
+        corrected: 'can you ask Mason Wyatt where the Ashlr.AI migration landed',
+        terms: ['Mason Wyatt', 'Ashlr.AI'],
+        usedExample: false,
       },
     });
     // Nothing on disk, nothing installed, the summary untouched.
@@ -792,6 +792,15 @@ describe('runSetup starter packs', () => {
     const f = fakes();
     await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, business, developer, voice-tools, none\)/);
     expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('a dry run demonstrates the correction the real run shows, on the terms it would seed', async () => {
+    const opts = { yes: true, clients: 'none', company: 'Ashlr', harvest: false } as const;
+    const planned = await run({ ...opts, dryRun: true }, fakes());
+    expect(planned.plan?.demo?.usedExample).toBe(false);
+    expect(planned.io.out).not.toContain('built-in example terms');
+    const real = await run(opts, fakes());
+    expect(real.summary.demo).toEqual(planned.plan?.demo);
   });
 
   it('a dry run lists the defaults (or the --packs list) in wouldInstallPacks, installs nothing and keeps pack names out of wouldHarvest', async () => {
