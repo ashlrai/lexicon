@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon export wispr-flow` (and `wisprflow`, any case; also on `GET /export/<format>`) is accepted as the `wispr` format.
 - `setup` and `setup_lexicon` no longer offer starter packs the global lexicon already has; the plan lists them in `alreadyInstalledPacks`.
 - `setup --yes` finds your name in repo-level or system git config, or `GIT_AUTHOR_NAME`, when `git config --global user.name` is unset, instead of seeding nothing; when it still finds nothing it names `--person` and `--company`.
+- `lexicon harvest` no longer proposes module paths such as `./Button.js` or `../ui/Toast.js` as brands. On a React repo they had been about half of the top 60 candidates; `Next.js`, `Node.js` and `Ashlr.AI` in prose still count.
 
 ## 0.5.5 (2026-10-14)
 
