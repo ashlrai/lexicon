@@ -45,8 +45,10 @@ Decide what to do from the arguments:
    Call `setup_lexicon { company, person }` without `apply` and show the plan it
    returns (what it would seed, the clients it detected, whether it would
    install the login service). Only after a clear yes call it again with
-   `apply: true`, `clients` set to the ones the user agreed to and `serve: true`
-   only if they want the login service. Report the lexicon path, which clients
+   `apply: true`, `clients` set to the ones the user agreed to, `packs` set to
+   any starter packs they picked (`list_packs` describes each), `harvest: true`
+   only if they want the repo's names added, and `serve: true` only if they want
+   the login service. Report the lexicon path, which clients
    were installed, skipped or failed, and the exports it wrote. For every other name the user gave, call `add_term` (aliases omitted)
    and show each term with its aliases on one line. End with one sentence the
    user can dictate in a new session to test it.
