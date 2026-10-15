@@ -925,10 +925,15 @@ describe('lexicon serve (CLI)', () => {
   describe('--install carries LEXICON_PATH and XDG_CONFIG_HOME into the service', () => {
     // Relative values resolve against --cwd, like `lexicon install`; `&`, `<`,
     // `%`, a quote and a space exercise each format's escaping.
-    const shellEnv = { LEXICON_PATH: "lex & <co>/100%/o'brien.yaml", XDG_CONFIG_HOME: '/x/my cfg', PATH: '/bin' };
+    // XDG_CONFIG_HOME is absolute and writable: the Linux install writes its
+    // unit under it, so it must not point at a root-only path.
+    const xdg = path.join(os.tmpdir(), `lexicon-xdg-${process.pid} my cfg`);
+    const shellEnv = { LEXICON_PATH: "lex & <co>/100%/o'brien.yaml", XDG_CONFIG_HOME: xdg, PATH: '/bin' };
     const cwd = path.resolve('/work dir');
     const lexPath = path.resolve(cwd, "lex & <co>/100%/o'brien.yaml");
-    const xdg = path.resolve(cwd, '/x/my cfg');
+    afterAll(async () => {
+      await fs.rm(xdg, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    });
 
     it('macOS: an EnvironmentVariables dict in the plist', async () => {
       const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
