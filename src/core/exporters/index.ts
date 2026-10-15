@@ -66,7 +66,8 @@ export function isExportFormat(value: string): value is ExportFormat {
 /**
  * Other names people type for a format: the product is "Wispr Flow", so
  * `export wispr-flow` is the first thing tried. Accepted wherever a format is
- * parsed from text (CLI, HTTP API); `EXPORT_FORMATS` stays the canonical list.
+ * parsed from text (CLI, HTTP API, the MCP export_lexicon tool);
+ * `EXPORT_FORMATS` stays the canonical list.
  */
 export const EXPORT_FORMAT_ALIASES: Readonly<Record<string, ExportFormat>> = {
   'wispr-flow': 'wispr',

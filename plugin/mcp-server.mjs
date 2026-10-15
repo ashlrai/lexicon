@@ -56686,6 +56686,19 @@ var EXPORT_FORMAT_INFO = {
   "text": { description: 'Plain text, one "Canonical: alias1, alias2" per line (round-trips with `lexicon import`)', ext: "txt" },
   "markdown": { description: "Markdown bullet list for READMEs and wikis", ext: "md" }
 };
+function isExportFormat(value) {
+  return EXPORT_FORMATS.includes(value);
+}
+var EXPORT_FORMAT_ALIASES = {
+  "wispr-flow": "wispr",
+  "wisprflow": "wispr",
+  "wispr-flow-csv": "wispr"
+};
+function resolveExportFormat(value) {
+  const lower = value.trim().toLowerCase();
+  if (isExportFormat(lower)) return lower;
+  return Object.hasOwn(EXPORT_FORMAT_ALIASES, lower) ? EXPORT_FORMAT_ALIASES[lower] : void 0;
+}
 var EXPORTERS = {
   "wispr": exportWispr,
   "superwhisper": exportSuperwhisper,
@@ -58860,6 +58873,8 @@ function filePathsInUse(loaded) {
 }
 
 // src/mcp/tools/terms.ts
+var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)];
+var EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES).map(([alias, format]) => `'${alias}' means '${format}'`).join(", ");
 var registerTermTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -58979,16 +58994,18 @@ var registerTermTools = (server, ctx) => {
     "export_lexicon",
     {
       title: "Export the lexicon",
-      description: "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'.",
+      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}.`,
       inputSchema: {
-        format: external_exports.enum(EXPORT_FORMATS),
+        format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include these categories."),
         limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported.")
       }
     },
     async ({ format, categories, limit }) => guarded(async () => {
+      const resolved2 = resolveExportFormat(format);
+      if (!resolved2) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
       const loaded = await load();
-      const exported = exportLexicon(loaded.merged, format, {
+      const exported = exportLexicon(loaded.merged, resolved2, {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
       });
