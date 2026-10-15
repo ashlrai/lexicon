@@ -162,6 +162,23 @@ describe('harvestRepo', () => {
     expect(byName(candidates, 'IgnoredVendorThing2')).toBeUndefined();
   });
 
+  it('does not read module paths in imports as dot-TLD brands', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-harvest-imports-'));
+    try {
+      await fs.writeFile(
+        path.join(dir, 'App.tsx'),
+        "import { Button } from './ui/Button.js';\nimport { Toast } from '../Toast.js';\n// Built on Next.js and Vercel.io.\n",
+      );
+      const names = (await harvestRepo(dir, { minCount: 1, git: false })).map((c) => c.canonical);
+      expect(names).not.toContain('Button.js');
+      expect(names).not.toContain('Toast.js');
+      expect(names).toContain('Next.js');
+      expect(names).toContain('Vercel.io');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('respects minCount=1 to surface single occurrences', async () => {
     const candidates = await harvestRepo(repo, { minCount: 1 });
     expect(byName(candidates, 'fastest-levenshtein')?.category).toBe('identifier');
