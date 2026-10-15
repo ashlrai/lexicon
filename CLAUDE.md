@@ -41,7 +41,7 @@ npm run test:e2e       # only tests/e2e.test.ts
 npm run typecheck      # tsc --noEmit
 npm run bench          # accuracy benchmark, see bench/README.md
 npm run docs:cli       # regenerate docs/CLI.md
-npm run bench:audio    # real-audio benchmark through whisper.cpp
+npm run bench:audio    # TTS-audio benchmark through whisper.cpp
 npm run build:extension  # extension/dist + dist-firefox + zips
 npm run build:site     # site/dist (demo page + install.sh)
 node dist/mcp/server.js   # manual stdio check

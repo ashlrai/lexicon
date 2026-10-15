@@ -194,7 +194,7 @@ APIs.
 
 Everything on the page traces to `docs/BENCHMARK.md`. Two rules:
 
-**Always attach the audio caveat.** The real-audio rows come from macOS
+**Always attach the audio caveat.** The TTS-audio rows come from macOS
 text-to-speech, three voices, 110 sentences each, read into whisper.cpp. That is
 much cleaner than a phone microphone. The page says so directly under the stat
 band.

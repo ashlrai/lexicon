@@ -18,7 +18,7 @@ section next to it, and the first one needs nothing but a clone and `npm ci`.
 | `npm run bench` | ["Headline"](#headline), ["By category"](#by-category), ["By reason"](#by-reason), and `bench/results.json` | Node 20+. Nothing else. |
 | `npm run bench -- --sweep` | ["Sweep: minConfidence vs accuracy and false positives"](#sweep-minconfidence-vs-accuracy-and-false-positives) | Node 20+. |
 | `npm run bench -- --verbose` | the list of failing cases behind ["What still fails"](#what-still-fails) | Node 20+. |
-| `npm run bench:audio` | ["Real audio"](#real-audio-macos-tts---whispercpp) and `bench/audio/results.md` | macOS (`say`), whisper.cpp (`brew install whisper-cpp`). Downloads 636 MB of models on first run; about six minutes cold, seconds warm. |
+| `npm run bench:audio` | ["TTS audio"](#tts-audio-macos-tts---whispercpp) and `bench/audio/results.md` | macOS (`say`), whisper.cpp (`brew install whisper-cpp`). Downloads 636 MB of models on first run; about six minutes cold, seconds warm. |
 | `npm run bench:compare` | ["Against the alternatives"](#against-the-alternatives) | One `npm run bench:audio` first, to fill the transcript cache. |
 | `npm test` | the test count quoted in the docs | Node 20+. |
 
@@ -110,7 +110,7 @@ Levenshtein.
 G and H share a row because they landed together and the benchmark was run once across both.
 I moves nothing, which is the point of it: it only declines rewrites in sentences that are
 quoting a misspelling rather than committing one, and this corpus contains none. Its effect on
-the real-audio corpus is nil too, verified by running that benchmark with the guard bypassed
+the TTS-audio corpus is nil too, verified by running that benchmark with the guard bypassed
 and diffing the report.
 
 ## Configurations
@@ -307,7 +307,7 @@ For lexicon owners:
   term has none.
 
 
-## Real audio (macOS TTS -> whisper.cpp)
+## TTS audio (macOS TTS -> whisper.cpp)
 
 Everything above feeds the matcher hand-written STT errors. This section measures the same
 matcher on transcripts from an actual recognizer, so the "before" number is what Whisper really
@@ -617,7 +617,7 @@ The conditions:
   not about where it can be installed.
 - It is given the lexicon's aliases, which were written by someone who had already seen these
   errors. A person starting from scratch would have fewer, so this row flatters the baseline.
-- Every caveat from the real-audio section applies: TTS is cleaner than a microphone, three
+- Every caveat from the TTS-audio section applies: TTS is cleaner than a microphone, three
   voices, one run, small per-term counts.
 
 ## See also
