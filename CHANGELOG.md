@@ -4,7 +4,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
-## 0.5.5 (2026-10-09)
+## 0.5.5 (2026-10-14)
 
 ### Added
 
@@ -14,6 +14,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `INTEGRATION.md`: how Phantom consumes the lexicon (single-YAML source of truth, two-way vocabulary flow, surfaces, opt-in/out, hard boundaries).
 
 ### Fixed
+
+- Imports reject incomplete code units in detected UTF-16 input before reading or writing a destination dictionary. Complete UTF-16 input and the existing UTF-8 path are unchanged.
+- Release asset inspection and assembly use bounded stable file descriptors, refuse changed or nonregular inputs and destination collisions, and preserve the original qualified archive bytes, modes and checksum closure. Publication documentation now distinguishes OIDC request material from an actually configured npm trusted publisher.
+- `lexicon doctor` leaves symlink, nonregular, oversized, changed or unreadable client configuration files unconfirmed. Its eight configuration inspections use bounded regular-file reads capped at 1 MiB, preserve JSON BOM refusal, and report fixed warnings without private paths or contents. Doctor readiness describes configured terms and an integration declaration; it does not prove a live client connection or an actual correction.
+- The real editor subprocess fixture supports a space-containing pinned Node path on POSIX without changing production editor parsing or its Windows fixture.
+- `lexicon doctor` no longer fails a Cursor, Codex, Windsurf, Gemini, VS Code or Claude Desktop setup because Claude Code is also installed. It now reads each client's user-level MCP config, reports the ones that register `lexicon`, counts them toward `ready`, and downgrades the missing Claude registration to a warning when another client has it. Before, `lexicon setup --clients cursor` followed by the verify step in `llms-install.md` exited 1 with "run: lexicon install claude --apply". Project-level files written by `install --project` (`.cursor/mcp.json`, `.vscode/mcp.json`) are not read yet, and a client file that is not valid JSON is reported as a warning.
 
 - Release publication now waits for both platform builds, verifies the qualified archives and all checksums, and confirms exact npm and hosted bytes before making the GitHub release public. Missing npm credentials fail before publication.
 - File symlinks share their real dictionary's writer lock, and nested calls through directory aliases reuse the held lock. Missing targets keep a stable lock identity when created; unrelated projects retain independent locks.
