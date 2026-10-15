@@ -24,6 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { STOPLIST } from './stoplist.js';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
 import { isRecord } from '../util/json.js';
@@ -691,6 +692,12 @@ function readmeProperNouns(text: string): Map<string, number> {
       if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
+      // An everyday English word ("Leader", "Resources", "Growth") capitalised
+      // as a heading or label. STT already spells it, and the matcher never
+      // case-fixes a stoplist word through its implicit alias, so the term
+      // would do nothing but take a slot in the candidate list. Inner capitals
+      // ("ReAct") make it a name, whatever its lowercase form is.
+      if (/^[A-Z][a-z]+$/.test(word) && STOPLIST.has(word.toLowerCase())) continue;
       // **Quit**, _Settings_: emphasised UI labels are capitalised like a sentence start.
       const emphasised = /^[*_]/.test(raw);
       const bucket = atStart || emphasised ? initial : out;

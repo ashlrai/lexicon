@@ -55924,6 +55924,7 @@ function readmeProperNouns(text) {
       if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
+      if (/^[A-Z][a-z]+$/.test(word) && STOPLIST.has(word.toLowerCase())) continue;
       const emphasised = /^[*_]/.test(raw);
       const bucket = atStart || emphasised ? initial : out;
       bucket.set(word, (bucket.get(word) ?? 0) + 1);
