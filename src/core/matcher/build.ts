@@ -152,7 +152,9 @@ const SPOKEN_DOMAIN_SUFFIXES: ReadonlySet<string> = new Set(['ai', 'io', 'dev', 
  * the suffix spoken after it: `Ashlr.AI` with alias `Ashlar` gets `Ashlar ai`.
  * Without it the alias claimed only "ashlar" and "ashlar ai" came out as
  * "Ashlr.AI ai". The suffix is matched separator-insensitively like any alias,
- * so "ashlar a.i." is covered too.
+ * so "ashlar a.i." is covered too. STT also writes the spoken dot as a word
+ * ("ashlar dot ai") and spells a two-letter suffix out ("ashlar a i"), so both
+ * of those forms come along as well.
  */
 export function suffixedAliases(canonical: string, aliases: readonly string[]): string[] {
   const m = DOMAIN_SUFFIX.exec(canonical);
@@ -163,7 +165,8 @@ export function suffixedAliases(canonical: string, aliases: readonly string[]): 
   for (const alias of aliases) {
     const a = squash(alias);
     if (!a || /\s/.test(a) || foldLower(a).endsWith(suffix)) continue;
-    out.push(`${a} ${suffix}`);
+    out.push(`${a} ${suffix}`, `${a} dot ${suffix}`);
+    if (suffix.length === 2) out.push(`${a} ${suffix[0]} ${suffix[1]}`);
   }
   return out;
 }

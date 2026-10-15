@@ -103,6 +103,36 @@ describe('exact alias pass', () => {
     expect(apply('ashler is here', find('ashler is here', [term]))).toBe('Ashlr.AI is here');
   });
 
+  it('matches the spoken dot and a spelled-out suffix after a one-word alias', () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['Ashler'] };
+    const run = (t: string) => apply(t, find(t, [term], { phonetic: false, fuzzy: false }));
+    expect(run('go to Ashler dot AI now')).toBe('go to Ashlr.AI now');
+    expect(run('at Ashler A I now')).toBe('at Ashlr.AI now');
+    // "dot" alone or a spelled pair alone is not the term.
+    expect(run('a dot ai file and A I chips')).toBe('a dot ai file and A I chips');
+  });
+
+  it("takes a dotted initialism's own period with it unless it ends the sentence", () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['Ashler'] };
+    const run = (t: string) => apply(t, find(t, [term], { phonetic: false, fuzzy: false }));
+    expect(run('I work at Ashler A.I. today')).toBe('I work at Ashlr.AI today');
+    expect(run('Ashler A.I., then home')).toBe('Ashlr.AI, then home');
+    expect(run('(Ashler A.I.)')).toBe('(Ashlr.AI)');
+    expect(find('at Ashler A.I. today', [term])[0]).toMatchObject({ original: 'Ashler A.I.', end: 14 });
+    // A full stop stays a full stop.
+    expect(run('I work at Ashler A.I.')).toBe('I work at Ashlr.AI.');
+    expect(run('Ashler A.I. Then we left')).toBe('Ashlr.AI. Then we left');
+    expect(run('Ashler A.I.\nNext')).toBe('Ashlr.AI.\nNext');
+    // No initialism, no change: the period after a plain word is punctuation.
+    expect(run('Ashler. then')).toBe('Ashlr.AI. then');
+  });
+
+  it('does not double a period when the canonical ends in one', () => {
+    const term: Term = { canonical: 'Acme Inc.', aliases: ['Akme I.N.C'] };
+    const t = 'Akme I.N.C. Then';
+    expect(apply(t, find(t, [term], { phonetic: false, fuzzy: false }))).toBe('Acme Inc. Then');
+  });
+
   it('does not absorb a domain suffix that is an everyday word', () => {
     const term: Term = { canonical: 'Mind.so', aliases: ['mined'] };
     expect(find('I mined so much', [term], { phonetic: false, fuzzy: false }).map((r) => r.original)).toEqual(['mined']);

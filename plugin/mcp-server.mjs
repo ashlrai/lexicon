@@ -52951,7 +52951,8 @@ function suffixedAliases(canonical, aliases) {
   for (const alias of aliases) {
     const a = squash(alias);
     if (!a || /\s/.test(a) || foldLower(a).endsWith(suffix)) continue;
-    out.push(`${a} ${suffix}`);
+    out.push(`${a} ${suffix}`, `${a} dot ${suffix}`);
+    if (suffix.length === 2) out.push(`${a} ${suffix[0]} ${suffix[1]}`);
   }
   return out;
 }
@@ -53810,7 +53811,15 @@ function findReplacements(text, index, opts = {}) {
     text,
     accepted.filter((c) => !c.noop)
   );
-  return surviving.map(({ termIndex: _termIndex, noop: _noop, ...rest }) => rest);
+  return surviving.map(({ termIndex: _termIndex, noop: _noop, ...rest }) => absorbInitialismPeriod(text, rest));
+}
+var ENDS_IN_INITIALISM = new RegExp("(?:^|[^\\p{L}\\p{N}])(?:\\p{L}\\.)+\\p{L}$", "u");
+var SENTENCE_FOLLOWS = /^(?:\s*$|\s*\n|\s+[\p{Lu}\p{N}"“'‘(\[]|["”'’])/u;
+function absorbInitialismPeriod(text, r) {
+  if (text.charAt(r.end) !== "." || text.charAt(r.end + 1) === ".") return r;
+  if (!ENDS_IN_INITIALISM.test(r.original)) return r;
+  if (!r.replacement.endsWith(".") && SENTENCE_FOLLOWS.test(text.slice(r.end + 1))) return r;
+  return { ...r, end: r.end + 1, original: r.original + "." };
 }
 function clamp01(n) {
   if (Number.isNaN(n)) return DEFAULT_MIN_CONFIDENCE;
