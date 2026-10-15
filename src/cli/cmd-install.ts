@@ -90,7 +90,8 @@ export const PASSTHROUGH_ENV = ['LEXICON_PATH', 'LEXICON_CWD'] as const;
 
 /**
  * The lexicon variables set in `env`, as absolute paths (resolved against
- * `cwd`), or undefined when none is set.
+ * `cwd`), or undefined when none is set. `names` defaults to PASSTHROUGH_ENV;
+ * `lexicon serve --install` passes its own list (SERVE_PASSTHROUGH_ENV).
  *
  * A GUI client (Claude Desktop, Cursor, VS Code) does not start from the
  * user's shell, so a server it launches never sees an exported LEXICON_PATH:
@@ -99,9 +100,13 @@ export const PASSTHROUGH_ENV = ['LEXICON_PATH', 'LEXICON_CWD'] as const;
  * read the same lexicon `lexicon install` was run against. Relative values
  * are resolved here because the client's working directory is not ours.
  */
-export function lexiconServerEnv(env: NodeJS.ProcessEnv, cwd: string): Record<string, string> | undefined {
+export function lexiconServerEnv(
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  names: readonly string[] = PASSTHROUGH_ENV,
+): Record<string, string> | undefined {
   const out: Record<string, string> = {};
-  for (const name of PASSTHROUGH_ENV) {
+  for (const name of names) {
     const value = env[name]?.trim();
     if (value) out[name] = path.resolve(cwd, value);
   }

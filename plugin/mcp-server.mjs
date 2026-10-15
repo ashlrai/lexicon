@@ -59853,9 +59853,9 @@ var INSTALL_CLIENTS = [
   "generic"
 ];
 var PASSTHROUGH_ENV = ["LEXICON_PATH", "LEXICON_CWD"];
-function lexiconServerEnv(env, cwd) {
+function lexiconServerEnv(env, cwd, names = PASSTHROUGH_ENV) {
   const out = {};
-  for (const name of PASSTHROUGH_ENV) {
+  for (const name of names) {
     const value = env[name]?.trim();
     if (value) out[name] = import_node_path20.default.resolve(cwd, value);
   }
@@ -60295,13 +60295,13 @@ function programPathFromPlist(plist) {
 function programPathFromTaskXml(xml) {
   const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml);
   if (!args) return void 0;
-  const quoted = /"([^"]*)"/.exec(xmlUnescape2(args[1]));
+  const quoted = /"([^"]*)"/.exec(xmlUnescape2(args[1]).replace(/^\s*--env-file="[^"]*"\s*/, ""));
   return quoted ? quoted[1] : void 0;
 }
 function programPathFromUnit(unit) {
   const line2 = unit.split("\n").find((l) => l.startsWith("ExecStart="));
   if (!line2) return void 0;
-  const words = [...line2.slice("ExecStart=".length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1"));
+  const words = [...line2.slice("ExecStart=".length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1").replace(/%%/g, "%"));
   return words[1];
 }
 function xmlUnescape2(s) {
@@ -61252,8 +61252,39 @@ var defaultServeExec = (cmd, args) => new Promise((resolve4) => {
 function xmlEscape2(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL) {
+var SERVE_PASSTHROUGH_ENV = ["LEXICON_PATH", "XDG_CONFIG_HOME"];
+var SERVE_ENV_FILE_NAME = "serve.env";
+function nodeSupportsEnvFile(version2) {
+  const m = /^v?(\d+)\.(\d+)/.exec(version2.trim());
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  return major > 20 || major === 20 && minor >= 6;
+}
+function serveEnvFile(env) {
+  const lines = Object.entries(env).map(([name, value]) => {
+    if (/[\r\n]/.test(value)) throw new Error(`${name} contains a line break`);
+    if (!value.includes("'")) return `${name}='${value}'`;
+    if (!value.includes("`")) return `${name}=\`${value}\``;
+    throw new Error(`${name} contains both ' and \` and cannot be written to an env file`);
+  });
+  return `# Written by lexicon serve --install; read by the Scheduled Task (node --env-file).
+${lines.join("\n")}
+`;
+}
+function envReport(env) {
+  if (!env) return "";
+  return Object.entries(env).map(([name, value]) => `  Environment: ${safe(name)}=${safe(value)}
+`).join("");
+}
+function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL, env) {
   const args = [nodePath, cliPath, "serve"].map((a) => `    <string>${xmlEscape2(a)}</string>`).join("\n");
+  const envBlock = env && Object.keys(env).length > 0 ? [
+    "  <key>EnvironmentVariables</key>",
+    "  <dict>",
+    ...Object.entries(env).flatMap(([name, value]) => [`    <key>${xmlEscape2(name)}</key>`, `    <string>${xmlEscape2(value)}</string>`]),
+    "  </dict>"
+  ] : [];
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -61265,6 +61296,7 @@ function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL
     "  <array>",
     args,
     "  </array>",
+    ...envBlock,
     "  <key>RunAtLoad</key>",
     "  <true/>",
     "  <key>KeepAlive</key>",
@@ -61278,7 +61310,8 @@ function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL
     ""
   ].join("\n");
 }
-function scheduledTaskXml(nodePath, cliPath, userId) {
+function scheduledTaskXml(nodePath, cliPath, userId, envFile) {
+  const args = `${envFile ? `--env-file="${envFile}" ` : ""}"${cliPath}" serve`;
   const principal = [
     "  <Principals>",
     '    <Principal id="Author">',
@@ -61326,7 +61359,7 @@ function scheduledTaskXml(nodePath, cliPath, userId) {
     '  <Actions Context="Author">',
     "    <Exec>",
     `      <Command>${xmlEscape2(nodePath)}</Command>`,
-    `      <Arguments>${xmlEscape2(`"${cliPath}" serve`)}</Arguments>`,
+    `      <Arguments>${xmlEscape2(args)}</Arguments>`,
     "    </Exec>",
     "  </Actions>",
     "</Task>",
@@ -61340,9 +61373,10 @@ function taskUserId(env) {
   return domain2 ? `${domain2}\\${user}` : user;
 }
 function unitQuote(s) {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
 }
-function systemdUnit(nodePath, cliPath) {
+function systemdUnit(nodePath, cliPath, env) {
+  const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
   return [
     "[Unit]",
     "Description=lexicon serve (local HTTP API for @ashlr/lexicon)",
@@ -61350,6 +61384,7 @@ function systemdUnit(nodePath, cliPath) {
     "",
     "[Service]",
     "Type=simple",
+    ...envLines,
     `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
     "Restart=on-failure",
     "RestartSec=2",
@@ -61400,15 +61435,17 @@ async function runServeInstall(opts, io, deps = {}) {
     }
   }
   await ensureServeConfig(storeOpts(opts));
+  const serviceEnv = lexiconServerEnv(env, import_node_path26.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
   if (platform === "darwin") {
     const label = serveLabel(env);
     const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
     await import_node_fs22.promises.mkdir(import_node_path26.default.dirname(plistPath), { recursive: true });
     await import_node_fs22.promises.mkdir(import_node_path26.default.dirname(logPath), { recursive: true });
-    await import_node_fs22.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), "utf8");
+    await import_node_fs22.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), "utf8");
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    io.stdout(envReport(serviceEnv));
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     await exec("launchctl", ["bootout", `gui/${uid}/${label}`]);
@@ -61426,9 +61463,10 @@ async function runServeInstall(opts, io, deps = {}) {
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
     await import_node_fs22.promises.mkdir(import_node_path26.default.dirname(unitPath), { recursive: true });
-    await import_node_fs22.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath), "utf8");
+    await import_node_fs22.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), "utf8");
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
     const enable = await runAndReport(exec, io, "systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT_NAME]);
     if (enable.code !== 0) {
@@ -61440,7 +61478,26 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "win32") {
     const taskName = scheduledTaskName(env);
-    const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env));
+    let envFile;
+    if (serviceEnv) {
+      const nodeVersion = deps.nodeVersion ?? process.version;
+      if (!nodeSupportsEnvFile(nodeVersion)) {
+        io.stderr(
+          `lexicon: warning: node ${safe(nodeVersion)} cannot load an env file (needs 20.6+), so the task will not see ${Object.keys(serviceEnv).join(" or ")}; set them as user environment variables (setx) or upgrade node
+`
+        );
+      } else {
+        let text;
+        try {
+          text = serveEnvFile(serviceEnv);
+        } catch (err) {
+          return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
+        }
+        envFile = import_node_path26.default.join(import_node_path26.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+        await import_node_fs22.promises.writeFile(envFile, text, "utf8");
+      }
+    }
+    const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
     const xmlPath = import_node_path26.default.join(await import_node_fs22.promises.mkdtemp(import_node_path26.default.join(import_node_os10.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
     await import_node_fs22.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
@@ -61455,7 +61512,8 @@ async function runServeInstall(opts, io, deps = {}) {
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
-    line(io, `  Arguments: "${safe(cliPath)}" serve`);
+    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
+    io.stdout(envFile ? envReport(serviceEnv) : "");
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
