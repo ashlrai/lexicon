@@ -59713,6 +59713,15 @@ var INSTALL_CLIENTS = [
   "vscode",
   "generic"
 ];
+var PASSTHROUGH_ENV = ["LEXICON_PATH", "LEXICON_CWD"];
+function lexiconServerEnv(env, cwd) {
+  const out = {};
+  for (const name of PASSTHROUGH_ENV) {
+    const value = env[name]?.trim();
+    if (value) out[name] = path17.resolve(cwd, value);
+  }
+  return Object.keys(out).length > 0 ? out : void 0;
+}
 function isInstallClient(value) {
   return INSTALL_CLIENTS.includes(value);
 }
@@ -59815,7 +59824,8 @@ function labelFor(client) {
 }
 function targetFor(client, serverPath, ctx) {
   const launch = launchFor(serverPath, "mcp");
-  const base = { command: launch.command, args: launch.args };
+  const env = lexiconServerEnv(ctx.env, ctx.cwd);
+  const base = { command: launch.command, args: launch.args, ...env ? { env } : {} };
   const file2 = configPathFor(client, ctx);
   const common = { client, label: labelFor(client), file: file2, rulesFile: rulesFileFor(client) };
   switch (client) {
@@ -59848,6 +59858,9 @@ function mergeServerIntoJson(current, key, entry) {
     throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
   }
   const mergedEntry = { ...isRecord(existingEntry) ? existingEntry : {}, ...structuredClone(entry) };
+  if (entry.env && isRecord(existingEntry) && isRecord(existingEntry.env)) {
+    mergedEntry.env = { ...existingEntry.env, ...entry.env };
+  }
   if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
   }
@@ -59860,11 +59873,39 @@ function tomlString(s) {
 }
 var CODEX_TABLE = "mcp_servers.lexicon";
 function codexBlock(entry) {
-  return [
+  const lines = [
     `[${CODEX_TABLE}]`,
     `command = ${tomlString(entry.command)}`,
     `args = [${entry.args.map(tomlString).join(", ")}]`
-  ].join("\n");
+  ];
+  if (entry.env) {
+    const pairs = Object.entries(entry.env).map(([k, v]) => `${k} = ${tomlString(v)}`);
+    lines.push(`env = { ${pairs.join(", ")} }`);
+  }
+  return lines.join("\n");
+}
+function upsertTomlKeys(text, header, values) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => tomlHeaderRe(header).test(l));
+  if (start === -1) throw new Error(`[${header}] not found`);
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end] ?? "")) end += 1;
+  while (end > start + 1 && isBlankOrComment(lines[end - 1] ?? "")) end -= 1;
+  const append = [];
+  for (const [key, value] of Object.entries(values)) {
+    const wanted = `${key} = ${tomlString(value)}`;
+    const keyRe = new RegExp(`^\\s*"?${key}"?\\s*=`);
+    const at = lines.findIndex((l, i) => i > start && i < end && keyRe.test(l));
+    if (at === -1) append.push(wanted);
+    else lines[at] = wanted;
+  }
+  lines.splice(end, 0, ...append);
+  const next = lines.join("\n");
+  return { next, changed: next !== text };
+}
+function tomlHeaderRe(header) {
+  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
 }
 function isBlankOrComment(line2) {
   const trimmed = line2.trim();
@@ -59872,8 +59913,7 @@ function isBlankOrComment(line2) {
 }
 function upsertTomlTable(text, header, block) {
   const lines = text.split("\n");
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const headerRe = new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const headerRe = tomlHeaderRe(header);
   const start = lines.findIndex((l) => headerRe.test(l));
   const blockLines = block.split("\n");
   if (start === -1) {
@@ -59918,9 +59958,16 @@ async function applyJson(target) {
   await writeJsonFile(target.file, next);
   return read.exists ? "updated" : "created";
 }
+function mergeChanged(first, second) {
+  return { next: second.next, changed: first.changed || second.changed };
+}
 async function applyToml(target) {
   const { text, existed } = await readText2(target.file);
-  const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
+  const { env, ...launch } = target.entry;
+  const envTable = `${CODEX_TABLE}.env`;
+  const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));
+  const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
+  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
   if (!changed) return "unchanged";
   await writeText(target.file, next);
   return existed ? "updated" : "created";
@@ -59933,10 +59980,10 @@ function printExportHint(io, step, client) {
   line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
   line(io, dim("   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)"));
 }
-function printGeneric(io, serverPath) {
+function printGeneric(io, serverPath, env) {
   const launch = launchFor(serverPath, "mcp");
   line(io, bold("Generic MCP client configuration"));
-  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args }), "   "));
+  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args, ...env ? { env } : {} }), "   "));
   line(io);
   line(io, bold("Supported clients"));
   for (const c of INSTALL_CLIENTS) {
@@ -59966,7 +60013,7 @@ async function runInstall(client, opts, io, deps = {}) {
     );
   }
   if (name === "generic") {
-    printGeneric(io, serverPath);
+    printGeneric(io, serverPath, lexiconServerEnv(env, cwd));
     return 0;
   }
   if (name === "claude") {
@@ -59975,9 +60022,10 @@ async function runInstall(client, opts, io, deps = {}) {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
       ...opts.home ? { settingsPath: path17.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
-      ...deps.exec ? { exec: deps.exec } : {}
+      ...deps.exec ? { exec: deps.exec } : {},
+      env
     };
-    return runInstallClaude(claudeOpts, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
   }
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
   const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
@@ -60014,7 +60062,9 @@ async function runInstallClaude(opts, io, deps = {}) {
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
-  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
+  const serverEnv = lexiconServerEnv(deps.env ?? process.env, path17.resolve(opts.cwd ?? process.cwd()));
+  const envArgs = Object.entries(serverEnv ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  const mcpArgs = ["mcp", "add", ...envArgs, "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
   line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));

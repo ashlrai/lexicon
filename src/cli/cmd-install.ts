@@ -81,6 +81,31 @@ export interface InstallDeps {
 export interface StdioServerEntry {
   command: string;
   args: string[];
+  /** Variables the server needs to find the same lexicon as this shell (see lexiconServerEnv). */
+  env?: Record<string, string>;
+}
+
+/** Variables `lexicon install` carries into a client's MCP entry when they are set. */
+export const PASSTHROUGH_ENV = ['LEXICON_PATH', 'LEXICON_CWD'] as const;
+
+/**
+ * The lexicon variables set in `env`, as absolute paths (resolved against
+ * `cwd`), or undefined when none is set.
+ *
+ * A GUI client (Claude Desktop, Cursor, VS Code) does not start from the
+ * user's shell, so a server it launches never sees an exported LEXICON_PATH:
+ * it silently reads ~/.config/lexicon/lexicon.yaml instead of the file the
+ * user installed from. Writing them into the entry makes the installed server
+ * read the same lexicon `lexicon install` was run against. Relative values
+ * are resolved here because the client's working directory is not ours.
+ */
+export function lexiconServerEnv(env: NodeJS.ProcessEnv, cwd: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const name of PASSTHROUGH_ENV) {
+    const value = env[name]?.trim();
+    if (value) out[name] = path.resolve(cwd, value);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** VS Code's `servers` map requires an explicit transport type. */
@@ -268,7 +293,8 @@ export function targetFor(
   // `node <abs path>` normally; `npx -y @ashlr/lexicon@<v> mcp` when this copy
   // is running out of an npx cache, which npm is free to delete (see launchFor).
   const launch = launchFor(serverPath, 'mcp');
-  const base: StdioServerEntry = { command: launch.command, args: launch.args };
+  const env = lexiconServerEnv(ctx.env, ctx.cwd);
+  const base: StdioServerEntry = { command: launch.command, args: launch.args, ...(env ? { env } : {}) };
   const file = configPathFor(client, ctx);
   const common = { client, label: labelFor(client), file, rulesFile: rulesFileFor(client) };
   switch (client) {
@@ -321,7 +347,11 @@ export function mergeServerIntoJson(
   )) {
     throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
   }
-  const mergedEntry = { ...(isRecord(existingEntry) ? existingEntry : {}), ...structuredClone(entry) };
+  const mergedEntry: Record<string, unknown> = { ...(isRecord(existingEntry) ? existingEntry : {}), ...structuredClone(entry) };
+  // Our variables are set; any other variable the user put in env is kept.
+  if (entry.env && isRecord(existingEntry) && isRecord(existingEntry.env)) {
+    mergedEntry.env = { ...existingEntry.env, ...entry.env };
+  }
   if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
   }
@@ -339,11 +369,46 @@ export const CODEX_TABLE = 'mcp_servers.lexicon';
 
 /** The `[mcp_servers.lexicon]` block for Codex's config.toml (no trailing newline). */
 export function codexBlock(entry: StdioServerEntry): string {
-  return [
+  const lines = [
     `[${CODEX_TABLE}]`,
     `command = ${tomlString(entry.command)}`,
     `args = [${entry.args.map(tomlString).join(', ')}]`,
-  ].join('\n');
+  ];
+  if (entry.env) {
+    const pairs = Object.entries(entry.env).map(([k, v]) => `${k} = ${tomlString(v)}`);
+    lines.push(`env = { ${pairs.join(', ')} }`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Set `values` inside an existing `[header]` table, replacing a line for the
+ * same key and appending the others after the table's last key line. Every
+ * other key, comment and table is left as it is. `text` must contain the header.
+ */
+export function upsertTomlKeys(text: string, header: string, values: Record<string, string>): MergeResult<string> {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => tomlHeaderRe(header).test(l));
+  if (start === -1) throw new Error(`[${header}] not found`);
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end] ?? '')) end += 1;
+  while (end > start + 1 && isBlankOrComment(lines[end - 1] ?? '')) end -= 1;
+  const append: string[] = [];
+  for (const [key, value] of Object.entries(values)) {
+    const wanted = `${key} = ${tomlString(value)}`;
+    const keyRe = new RegExp(`^\\s*"?${key}"?\\s*=`);
+    const at = lines.findIndex((l, i) => i > start && i < end && keyRe.test(l));
+    if (at === -1) append.push(wanted);
+    else lines[at] = wanted;
+  }
+  lines.splice(end, 0, ...append);
+  const next = lines.join('\n');
+  return { next, changed: next !== text };
+}
+
+function tomlHeaderRe(header: string): RegExp {
+  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
 }
 
 /**
@@ -359,8 +424,7 @@ function isBlankOrComment(line: string): boolean {
 
 export function upsertTomlTable(text: string, header: string, block: string): MergeResult<string> {
   const lines = text.split('\n');
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const headerRe = new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const headerRe = tomlHeaderRe(header);
   const start = lines.findIndex((l) => headerRe.test(l));
   const blockLines = block.split('\n');
 
@@ -416,9 +480,20 @@ async function applyJson(target: InstallTarget): Promise<InstallOutcome> {
   return read.exists ? 'updated' : 'created';
 }
 
+function mergeChanged(first: MergeResult<string>, second: MergeResult<string>): MergeResult<string> {
+  return { next: second.next, changed: first.changed || second.changed };
+}
+
 async function applyToml(target: InstallTarget): Promise<InstallOutcome> {
   const { text, existed } = await readText(target.file);
-  const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
+  const { env, ...launch } = target.entry;
+  const envTable = `${CODEX_TABLE}.env`;
+  // A user who keeps the server's variables in a `[mcp_servers.lexicon.env]`
+  // sub-table gets ours added there: an inline `env = {...}` beside it would
+  // define the key twice, which TOML rejects.
+  const subTable = env !== undefined && text.split('\n').some((l) => tomlHeaderRe(envTable).test(l));
+  const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
+  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
   if (!changed) return 'unchanged';
   await writeText(target.file, next);
   return existed ? 'updated' : 'created';
@@ -438,10 +513,10 @@ function printExportHint(io: IO, step: number, client: InstallClient): void {
   line(io, dim('   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)'));
 }
 
-function printGeneric(io: IO, serverPath: string): void {
+function printGeneric(io: IO, serverPath: string, env: Record<string, string> | undefined): void {
   const launch = launchFor(serverPath, 'mcp');
   line(io, bold('Generic MCP client configuration'));
-  line(io, indent(jsonSnippet('mcpServers', { command: launch.command, args: launch.args }), '   '));
+  line(io, indent(jsonSnippet('mcpServers', { command: launch.command, args: launch.args, ...(env ? { env } : {}) }), '   '));
   line(io);
   line(io, bold('Supported clients'));
   for (const c of INSTALL_CLIENTS) {
@@ -484,7 +559,7 @@ export async function runInstall(
   }
 
   if (name === 'generic') {
-    printGeneric(io, serverPath);
+    printGeneric(io, serverPath, lexiconServerEnv(env, cwd));
     return 0;
   }
 
@@ -495,8 +570,9 @@ export async function runInstall(
       ...(opts.home ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
+      env,
     };
-    return runInstallClaude(claudeOpts, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
   }
 
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
@@ -563,6 +639,8 @@ export interface InstallClaudeDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Called once per config file touched under `--apply` (setup uses it for its summary). */
   onWritten?: (file: string, outcome: InstallOutcome) => void;
+  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`. Default process.env. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
@@ -583,7 +661,11 @@ export async function runInstallClaude(
 
   // 1. MCP server registration ------------------------------------------------
   const serverLaunch = launchFor(serverPath, 'mcp');
-  const mcpArgs = ['mcp', 'add', '--scope', scope, 'lexicon', '--', serverLaunch.command, ...serverLaunch.args];
+  // `-e` goes before `--scope`: it takes several values, so placed right
+  // before the server name it would swallow the name as one more.
+  const serverEnv = lexiconServerEnv(deps.env ?? process.env, path.resolve(opts.cwd ?? process.cwd()));
+  const envArgs = Object.entries(serverEnv ?? {}).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
+  const mcpArgs = ['mcp', 'add', ...envArgs, '--scope', scope, 'lexicon', '--', serverLaunch.command, ...serverLaunch.args];
   line(io, bold('1. Register the MCP server'));
   // Arrow, not a bare reference: Array.map passes the index as the second
   // argument, which would land in `platform`.

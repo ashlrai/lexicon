@@ -11,6 +11,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Fixed
 
 - The prompt hook is about a third faster with the starter packs installed, which had pushed it past its 200 ms budget (median 304 ms to 201 ms on a matching prompt, 204 ms to 140 ms on one with nothing to correct, all four packs, 177 terms). Hit counts for global terms now go to the `hits.json` sidecar beside the lexicon instead of rewriting (and backing up) the whole YAML on every matching prompt, and the hook hands `recordHits` the lexicon it already loaded. `loadLexicon` keeps a parsed copy of a large global lexicon in `parse-cache.json`, keyed by the sha256 of the YAML, and the hook bundle no longer carries all of zod (1156 KB to 599 KB). Counts already in a lexicon file stay as a floor; `lexicon stats`, `suggest` and `review --never-hit` see the same totals.
+- `lexicon install` writes `LEXICON_PATH` and `LEXICON_CWD` into the client's MCP entry when they are set (as absolute paths; `env` for JSON clients and Codex, `-e` for `claude mcp add`). A GUI client does not inherit the shell, so the installed server used to read the default lexicon instead of the one the user installed from.
 
 ## 0.5.5 (2026-10-14)
 
