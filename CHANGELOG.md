@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- MCP `serve_status` probes the port `lexicon serve` recorded in `serve.json` (falling back to 41733) instead of always 41733, so agents no longer start a second server when one runs on `--port`.
+
 ## 0.5.5 (2026-10-14)
 
 ### Added
