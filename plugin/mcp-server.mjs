@@ -55772,7 +55772,7 @@ function tomlSections(text) {
   return out;
 }
 var PASCAL_RE = /\b[A-Z][a-z0-9]+(?:[A-Z][a-zA-Z0-9]*)+\b/g;
-var DOT_TLD_RE = /(?<![/\\])\b[A-Z][A-Za-z0-9]{1,}\.(?:AI|ai|io|IO|com|dev|app|sh|co|js|ts|net|org|xyz|so|gg|fm|tv|me)\b(?![\w/]|\.\w)/g;
+var DOT_TLD_RE = /\b[A-Z][A-Za-z0-9]{1,}\.(?:AI|ai|io|IO|com|dev|app|sh|co|js|ts|net|org|xyz|so|gg|fm|tv|me)\b(?![\w/]|\.\w)/g;
 function pascalCaseIdentifiers(text) {
   const out = /* @__PURE__ */ new Map();
   for (const m of text.matchAll(PASCAL_RE)) {
