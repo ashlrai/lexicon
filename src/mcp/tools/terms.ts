@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import {
   EXPORT_FORMATS,
+  EXPORT_FORMAT_ALIASES,
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
@@ -16,6 +17,7 @@ import {
   normalize,
   recordHits,
   removeTerm,
+  resolveExportFormat,
   suggestAliases,
   suggestCanonicalFor,
 } from '../../core/index.js';
@@ -24,7 +26,20 @@ import { filePathsInUse, guarded, log, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 
-export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
+/**
+ * Every name `export_lexicon` accepts: the formats plus the aliases the CLI
+ * and the HTTP API already take (`wispr-flow` -> `wispr`). An enum, not a free
+ * string, so a client that validates against the schema still sees the list.
+ */
+const EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)] as [string, ...string[]];
+
+const EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES)
+  .map(([alias, format]) => `'${alias}' means '${format}'`)
+  .join(', ');
+
+export const registerTermTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   server.registerTool(
     'normalize_transcript',
     {
@@ -65,7 +80,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
           const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
           // Best effort: recordHits is contractually non-throwing, but guard anyway so
           // a store hiccup can never turn a successful normalize into an error.
-          await recordHits(canonicals, { cwd }).catch((err: unknown) =>
+          await recordHits(canonicals, { cwd: ctx.cwd }).catch((err: unknown) =>
             log('recordHits failed:', errorMessage(err)),
           );
         }
@@ -125,7 +140,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
           ...(never && never.length > 0 ? { never } : {}),
           ...(scope !== undefined ? { scope } : {}),
         };
-        const saved = await addTerm(term, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const saved = await addTerm(term, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
       }),
   );
@@ -152,7 +167,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ canonical, scope }) =>
       guarded(async () => {
-        const removed = await removeTerm(canonical, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const removed = await removeTerm(canonical, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({ canonical, removed });
       }),
   );
@@ -212,17 +227,20 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     {
       title: 'Export the lexicon',
       description:
-        "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'.",
+        "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. " +
+        `Aliases: ${EXPORT_ALIAS_NOTE}.`,
       inputSchema: {
-        format: z.enum(EXPORT_FORMATS),
+        format: z.enum(EXPORT_FORMAT_NAMES),
         categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include these categories.'),
         limit: z.number().int().positive().optional().describe('Cap the number of terms exported.'),
       },
     },
     async ({ format, categories, limit }) =>
       guarded(async () => {
+        const resolved = resolveExportFormat(format);
+        if (!resolved) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(', ')})`);
         const loaded = await load();
-        const exported = exportLexicon(loaded.merged, format, {
+        const exported = exportLexicon(loaded.merged, resolved, {
           ...(categories !== undefined ? { categories } : {}),
           ...(limit !== undefined ? { limit } : {}),
         });
@@ -253,7 +271,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ heard, meant, scope }) =>
       guarded(async () => {
-        const learned = await learnCorrection({ heard, meant }, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({
           term: learned.term,
           path: learned.file.path,
@@ -261,7 +279,9 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
           aliasAdded: learned.aliasAdded,
           summary: learned.aliasAdded
             ? `"${heard}" -> "${learned.term.canonical}" saved`
-            : `"${heard}" was already an alias of "${learned.term.canonical}"`,
+            : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
+              ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
+              : `"${heard}" was already an alias of "${learned.term.canonical}"`,
         });
       }),
   );

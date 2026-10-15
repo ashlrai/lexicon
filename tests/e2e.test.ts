@@ -572,6 +572,10 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: harvest', () => {
     const missing = await runCli(['harvest', path.join(shared.home, 'nope')], { env: shared.env });
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain('does not exist');
+    // suggest names the option like every other --limit.
+    const suggest = await runCli(['suggest', '--limit', 'abc'], { env: shared.env });
+    expect(suggest.code).toBe(1);
+    expect(suggest.stderr).toContain("option '--limit <n>' argument 'abc' is invalid");
   });
 });
 
@@ -792,9 +796,10 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: UserPromptSubmit hook', () =
   }
 
   it('emits additionalContext with the corrections and the corrected prompt, and records the hits', async () => {
-    // Own clone: the hook bumps `hits` in the global file, which must not leak into the shared fixture.
+    // Own clone: the hook bumps `hits` in the sidecar, which must not leak into the shared fixture.
     const h = await cloneOf(shared, 'hook-hits');
-    expect(await fs.readFile(h.globalPath, 'utf8')).not.toMatch(/hits: [1-9]/);
+    const before = await fs.readFile(h.globalPath, 'utf8');
+    expect(before).not.toMatch(/hits: [1-9]/);
     const r = await runNode(HOOK, [], { env: h.env, stdin: payload('ask Ashler about mason wyeth', h.repo) });
     expect(r.code).toBe(0);
     expect(r.stderr).toBe('');
@@ -806,9 +811,13 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: UserPromptSubmit hook', () =
     expect(ctx).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
     expect(ctx).toContain('"mason wyeth" -> "Mason Wyatt" (alias, 1.00)');
     expect(ctx).toContain('Corrected prompt:\nask Ashlr.AI about Mason Wyatt');
-    // The process only exits once the background recordHits write has landed.
-    const yaml = await fs.readFile(h.globalPath, 'utf8');
-    expect(yaml.match(/hits: 1/g)).toHaveLength(2);
+    // The process only exits once the background recordHits write has landed,
+    // and it lands in hits.json: the user's lexicon is not rewritten per prompt.
+    expect(await fs.readFile(h.globalPath, 'utf8')).toBe(before);
+    const sidecar = JSON.parse(await fs.readFile(path.join(path.dirname(h.globalPath), 'hits.json'), 'utf8')) as {
+      global?: Record<string, number>;
+    };
+    expect(sidecar.global).toEqual({ 'ashlr.ai': 1, 'mason wyatt': 1 });
   });
 
   it('prints nothing for a prompt that needs no correction, and exits 0 on garbage input', async () => {
@@ -1002,9 +1011,12 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: MCP server over stdio', () =
     }
     expect(rpc.stderr).toContain('[lexicon] server started (stdio)');
 
-    // normalize_transcript recorded hits in the (cloned) global file.
-    const yaml = await fs.readFile(h.globalPath, 'utf8');
-    expect(yaml).toMatch(/hits: 1/);
+    // normalize_transcript recorded hits in the (cloned) hits.json sidecar, not the lexicon.
+    const sidecar = JSON.parse(await fs.readFile(path.join(path.dirname(h.globalPath), 'hits.json'), 'utf8')) as {
+      global?: Record<string, number>;
+    };
+    expect(Object.values(sidecar.global ?? {})).toContain(1);
+    expect(await fs.readFile(h.globalPath, 'utf8')).not.toMatch(/hits:/);
   });
 });
 

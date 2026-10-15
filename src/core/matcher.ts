@@ -444,7 +444,27 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
     accepted.filter((c) => !c.noop),
   );
 
-  return surviving.map(({ termIndex: _termIndex, noop: _noop, ...rest }) => rest);
+  return surviving.map(({ termIndex: _termIndex, noop: _noop, ...rest }) => absorbInitialismPeriod(text, rest));
+}
+
+/** A span ending in a dotted initialism: "A.I", "Ashler A.I", "U.S". */
+const ENDS_IN_INITIALISM = /(?:^|[^\p{L}\p{N}])(?:\p{L}\.)+\p{L}$/u;
+/** What follows a period that ends a sentence: nothing, a line break, a capital, or a closing quote. */
+const SENTENCE_FOLLOWS = /^(?:\s*$|\s*\n|\s+[\p{Lu}\p{N}"“'‘(\[]|["”'’])/u;
+
+/**
+ * The tokenizer trims a trailing period, so "Ashler A.I. today" matched
+ * "Ashler A.I" and left the abbreviation's own period behind: "Ashlr.AI. today".
+ * When the span ends in a dotted initialism and a period follows it, that period
+ * belongs to the initialism and goes with it, unless it also ends the sentence
+ * ("... at Ashler A.I. Then"), where it stays as the full stop. A canonical that
+ * itself ends in a period always takes it, so nothing is doubled.
+ */
+function absorbInitialismPeriod(text: string, r: Replacement): Replacement {
+  if (text.charAt(r.end) !== '.' || text.charAt(r.end + 1) === '.') return r;
+  if (!ENDS_IN_INITIALISM.test(r.original)) return r;
+  if (!r.replacement.endsWith('.') && SENTENCE_FOLLOWS.test(text.slice(r.end + 1))) return r;
+  return { ...r, end: r.end + 1, original: r.original + '.' };
 }
 
 function clamp01(n: number): number {

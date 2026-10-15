@@ -376,7 +376,19 @@ describe('runSetup --yes', () => {
     const csv = await fs.readFile(path.join(exportDir, 'lexicon-wispr.csv'), 'utf8');
     expect(csv).toContain('Ashlr.AI');
     expect(io.out).toContain('Wispr Flow > Dictionary > Import');
+    expect(io.out).toContain('lexicon-wispr.csv (2 terms)');
     await expect(run({ yes: true, clients: 'none', app: 'dragon' }, f)).rejects.toThrow(/unknown app "dragon"/);
+  });
+
+  it('says "1 term", not "1 terms", for a one-term export', async () => {
+    const exportDir = path.join(home, 'Desktop');
+    const noGit = fakes({
+      exec: () => {
+        throw new Error('no git');
+      },
+    });
+    const { io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', app: 'wispr', exportDir }, noGit);
+    expect(io.out).toContain('lexicon-wispr.csv (1 term)');
   });
 
   it('rejects bad --clients / --app before touching anything', async () => {
@@ -436,13 +448,13 @@ describe('runSetup --dry-run', () => {
       wouldInstallClients: ['claude', 'codex', 'cursor'],
       wouldInstallServe: true,
       wouldExport: [{ format: 'wispr', path: path.join(exportDir, 'lexicon-wispr.csv') }],
-      // A dry run writes nothing, so there is no lexicon to demonstrate from:
-      // the example terms stand in, and the plan carries what a real run would show.
+      // A dry run writes nothing, so it demonstrates on the terms step 1 would
+      // seed: the plan carries the same correction a real run would show.
       demo: {
-        heard: 'can you check whether the Ashler migration landed yet',
-        corrected: 'can you check whether the Ashlr.AI migration landed yet',
-        terms: ['Ashlr.AI'],
-        usedExample: true,
+        heard: 'can you ask Mason Wiatt where the Ashler migration landed',
+        corrected: 'can you ask Mason Wyatt where the Ashlr.AI migration landed',
+        terms: ['Mason Wyatt', 'Ashlr.AI'],
+        usedExample: false,
       },
     });
     // Nothing on disk, nothing installed, the summary untouched.
@@ -758,8 +770,7 @@ describe('runSetup starter packs', () => {
     // A second run with the same list re-adds nothing and says why.
     const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,ai,business' }, f);
     expect(again.summary.packs.map((p) => p.name)).toEqual(['business']);
-    expect(again.io.out).toContain('already installed: developer');
-    expect(again.io.out).toContain('already installed: ai');
+    expect(again.io.out).toContain('already installed: developer, ai');
     expect((await readLexiconFile(globalPath, 'global')).lexicon.settings?.packs).toEqual(['developer', 'ai', 'business']);
   });
 
@@ -781,6 +792,15 @@ describe('runSetup starter packs', () => {
     const f = fakes();
     await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, business, developer, voice-tools, none\)/);
     expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('a dry run demonstrates the correction the real run shows, on the terms it would seed', async () => {
+    const opts = { yes: true, clients: 'none', company: 'Ashlr', harvest: false } as const;
+    const planned = await run({ ...opts, dryRun: true }, fakes());
+    expect(planned.plan?.demo?.usedExample).toBe(false);
+    expect(planned.io.out).not.toContain('built-in example terms');
+    const real = await run(opts, fakes());
+    expect(real.summary.demo).toEqual(planned.plan?.demo);
   });
 
   it('a dry run lists the defaults (or the --packs list) in wouldInstallPacks, installs nothing and keeps pack names out of wouldHarvest', async () => {
@@ -808,6 +828,43 @@ describe('runSetup starter packs', () => {
     expect(off.plan?.wouldInstallPacks).toEqual([]);
     expect(off.io.out).toContain('skipped (--no-packs)');
     expect(off.io.out).toContain('starter packs: none');
+  });
+
+  it('a rerun leaves installed packs out of the plan and reports them instead', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nsettings:\n  packs: [developer, ai]\nterms: []\n');
+    const f = fakes();
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(planned.plan?.wouldInstallPacks).toEqual(['voice-tools']);
+    expect(planned.plan?.alreadyInstalledPacks).toEqual(['developer', 'ai']);
+    expect(planned.io.out).toContain('already installed: developer, ai');
+    const explicit = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'ai,business' }, f);
+    expect(explicit.plan?.wouldInstallPacks).toEqual(['business']);
+    // A fresh lexicon has nothing installed and says nothing about it.
+    await fs.rm(globalPath);
+    const fresh = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(fresh.plan?.alreadyInstalledPacks).toBeUndefined();
+    expect(fresh.io.out).not.toContain('already installed');
+  });
+
+  it('seeds the person from repo-level git config or GIT_AUTHOR_NAME when no global user.name is set', async () => {
+    const noGlobal = (local: string | undefined, env: NodeJS.ProcessEnv = { PATH: '/fake/bin' }): Fakes =>
+      fakes({
+        env,
+        exec: (file, args) => {
+          if (file === 'git' && args.join(' ') === 'config --global user.name') throw new Error('exit 1');
+          if (file === 'git' && args.join(' ') === `-C ${cwd} config user.name` && local) return local;
+          if (file === 'git') throw new Error('exit 1');
+          throw new Error(`unexpected exec: ${file} ${args.join(' ')}`);
+        },
+      });
+    const viaRepo = await run({ yes: true, clients: 'none', packs: false, harvest: false }, noGlobal('Zoë Local'));
+    expect(viaRepo.summary.termsAdded).toEqual(['Zoë Local']);
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', packs: false, reseed: true }, noGlobal(undefined, { PATH: '', GIT_AUTHOR_NAME: 'Ada Author' }));
+    expect(planned.plan?.wouldSeed).toEqual(['Ada Author']);
+    const nothing = await run({ yes: true, dryRun: true, clients: 'none', packs: false, reseed: true }, noGlobal(undefined));
+    expect(nothing.plan?.wouldSeed).toEqual([]);
+    expect(nothing.io.out).toContain('pass --person "Your Name" and --company "Your Co"');
   });
 
   it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {

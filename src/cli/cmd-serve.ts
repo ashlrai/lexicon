@@ -12,6 +12,7 @@ import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
 import { resolveCliEntry } from './cli-entry.js';
+import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage } from '../util/errors.js';
 import { fail, line, safe, safeLines, tildify } from './io.js';
@@ -76,6 +77,8 @@ export interface ServeDeps {
   cliPath?: string;
   /** Node binary used by the service. Default process.execPath. */
   nodePath?: string;
+  /** Version of `nodePath` (`v20.18.0`), for the Windows `--env-file` gate. Default process.version. */
+  nodeVersion?: string;
   /** Numeric uid for `launchctl bootstrap gui/<uid>`. Default process.getuid(). */
   uid?: number;
   /** HTTP client for `--status`. Default global fetch. */
@@ -254,9 +257,70 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** The launchd LaunchAgent: RunAtLoad + KeepAlive, stdout/stderr to `logPath`. */
-export function launchAgentPlist(nodePath: string, cliPath: string, logPath: string, label: string = LAUNCH_AGENT_LABEL): string {
+/**
+ * Variables `lexicon serve --install` writes into the login service when they
+ * are set at install time, as absolute paths. A login service does not start
+ * from the user's shell, so without them it reads (and mints a token into) the
+ * default ~/.config/lexicon instead of the lexicon and serve.json that
+ * `lexicon serve --show` reads in that shell. LEXICON_CWD is not here: it
+ * steers the MCP server's project lookup, and serve takes `cwd` per request.
+ */
+export const SERVE_PASSTHROUGH_ENV = ['LEXICON_PATH', 'XDG_CONFIG_HOME'] as const;
+
+/** File next to serve.json holding the Scheduled Task's variables (`node --env-file`). */
+export const SERVE_ENV_FILE_NAME = 'serve.env';
+
+/** `node --env-file` arrived in 20.6.0. */
+export function nodeSupportsEnvFile(version: string): boolean {
+  const m = /^v?(\d+)\.(\d+)/.exec(version.trim());
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  return major > 20 || (major === 20 && minor >= 6);
+}
+
+/**
+ * The `--env-file` document for `env`. Node's parser expands `\n` inside
+ * double quotes (fatal for `C:\new\...`) and ends an unquoted value at `#`,
+ * so each value is single-quoted, or backtick-quoted when it holds a `'`;
+ * both are literal. Throws for a value holding both, or a line break.
+ */
+export function serveEnvFile(env: Readonly<Record<string, string>>): string {
+  const lines = Object.entries(env).map(([name, value]) => {
+    if (/[\r\n]/.test(value)) throw new Error(`${name} contains a line break`);
+    if (!value.includes("'")) return `${name}='${value}'`;
+    if (!value.includes('`')) return `${name}=\`${value}\``;
+    throw new Error(`${name} contains both ' and \` and cannot be written to an env file`);
+  });
+  return `# Written by lexicon serve --install; read by the Scheduled Task (node --env-file).\n${lines.join('\n')}\n`;
+}
+
+/** `NAME=value` per line, indented, for the install report. */
+function envReport(env: Readonly<Record<string, string>> | undefined): string {
+  if (!env) return '';
+  return Object.entries(env)
+    .map(([name, value]) => `  Environment: ${safe(name)}=${safe(value)}\n`)
+    .join('');
+}
+
+/** The launchd LaunchAgent: RunAtLoad + KeepAlive, stdout/stderr to `logPath`, plus `env` when given. */
+export function launchAgentPlist(
+  nodePath: string,
+  cliPath: string,
+  logPath: string,
+  label: string = LAUNCH_AGENT_LABEL,
+  env?: Readonly<Record<string, string>>,
+): string {
   const args = [nodePath, cliPath, 'serve'].map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
+  const envBlock =
+    env && Object.keys(env).length > 0
+      ? [
+          '  <key>EnvironmentVariables</key>',
+          '  <dict>',
+          ...Object.entries(env).flatMap(([name, value]) => [`    <key>${xmlEscape(name)}</key>`, `    <string>${xmlEscape(value)}</string>`]),
+          '  </dict>',
+        ]
+      : [];
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -268,6 +332,7 @@ export function launchAgentPlist(nodePath: string, cliPath: string, logPath: str
     '  <array>',
     args,
     '  </array>',
+    ...envBlock,
     '  <key>RunAtLoad</key>',
     '  <true/>',
     '  <key>KeepAlive</key>',
@@ -300,7 +365,9 @@ export function launchAgentPlist(nodePath: string, cliPath: string, logPath: str
  * disables the default 72-hour kill, and `RestartOnFailure` is the nearest
  * equivalent to launchd `KeepAlive` / systemd `Restart=on-failure`.
  */
-export function scheduledTaskXml(nodePath: string, cliPath: string, userId?: string): string {
+export function scheduledTaskXml(nodePath: string, cliPath: string, userId?: string, envFile?: string): string {
+  // The task has no environment of its own; node loads the variables itself.
+  const args = `${envFile ? `--env-file="${envFile}" ` : ''}"${cliPath}" serve`;
   const principal = [
     '  <Principals>',
     '    <Principal id="Author">',
@@ -348,7 +415,7 @@ export function scheduledTaskXml(nodePath: string, cliPath: string, userId?: str
     '  <Actions Context="Author">',
     '    <Exec>',
     `      <Command>${xmlEscape(nodePath)}</Command>`,
-    `      <Arguments>${xmlEscape(`"${cliPath}" serve`)}</Arguments>`,
+    `      <Arguments>${xmlEscape(args)}</Arguments>`,
     '    </Exec>',
     '  </Actions>',
     '</Task>',
@@ -364,12 +431,14 @@ export function taskUserId(env: NodeJS.ProcessEnv): string | undefined {
   return domain ? `${domain}\\${user}` : user;
 }
 
+/** systemd's quoting: C-style backslash escapes inside "...", and `%` doubled (specifier expansion). */
 function unitQuote(s: string): string {
-  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
 }
 
-/** The systemd user unit. */
-export function systemdUnit(nodePath: string, cliPath: string): string {
+/** The systemd user unit, with one `Environment=` line per entry of `env`. */
+export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Record<string, string>>): string {
+  const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
   return [
     '[Unit]',
     'Description=lexicon serve (local HTTP API for @ashlr/lexicon)',
@@ -377,6 +446,7 @@ export function systemdUnit(nodePath: string, cliPath: string): string {
     '',
     '[Service]',
     'Type=simple',
+    ...envLines,
     `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
     'Restart=on-failure',
     'RestartSec=2',
@@ -437,6 +507,8 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   }
   // Make sure the token exists before the service starts, so `--show` right after works.
   await ensureServeConfig(storeOpts(opts));
+  // The service must read the lexicon and serve.json this shell does (see SERVE_PASSTHROUGH_ENV).
+  const serviceEnv = lexiconServerEnv(env, path.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
 
   if (platform === 'darwin') {
     const label = serveLabel(env);
@@ -444,9 +516,10 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     const logPath = launchAgentLogPath(home);
     await fs.mkdir(path.dirname(plistPath), { recursive: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
-    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label), 'utf8');
+    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), 'utf8');
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    io.stdout(envReport(serviceEnv));
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     // A previous install must be booted out before bootstrap accepts the new plist.
@@ -466,9 +539,10 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   if (platform === 'linux') {
     const unitPath = systemdUnitPath(home, env);
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
-    await fs.writeFile(unitPath, systemdUnit(nodePath, cliPath), 'utf8');
+    await fs.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), 'utf8');
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
     const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT_NAME]);
     if (enable.code !== 0) {
@@ -481,7 +555,26 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
 
   if (platform === 'win32') {
     const taskName = scheduledTaskName(env);
-    const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env));
+    let envFile: string | undefined;
+    if (serviceEnv) {
+      const nodeVersion = deps.nodeVersion ?? process.version;
+      if (!nodeSupportsEnvFile(nodeVersion)) {
+        io.stderr(
+          `lexicon: warning: node ${safe(nodeVersion)} cannot load an env file (needs 20.6+), so the task will not see ` +
+            `${Object.keys(serviceEnv).join(' or ')}; set them as user environment variables (setx) or upgrade node\n`,
+        );
+      } else {
+        let text: string;
+        try {
+          text = serveEnvFile(serviceEnv);
+        } catch (err) {
+          return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
+        }
+        envFile = path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+        await fs.writeFile(envFile, text, 'utf8');
+      }
+    }
+    const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
     // schtasks /Create /XML rejects a UTF-8 document ("The task XML is
     // malformed"); it wants UTF-16. The BOM is what makes it unambiguous.
     const xmlPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-task-')), 'lexicon-serve.xml');
@@ -499,7 +592,8 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
-    line(io, `  Arguments: "${safe(cliPath)}" serve`);
+    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" serve`);
+    io.stdout(envFile ? envReport(serviceEnv) : '');
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }

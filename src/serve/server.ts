@@ -30,7 +30,7 @@ import {
   exportLexicon,
   installPack,
   installedPacks,
-  isExportFormat,
+  resolveExportFormat,
   learnCorrection,
   listPacks,
   loadLexicon,
@@ -233,6 +233,8 @@ const PackBody = z.object({
 
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
+/** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
+const EXPORT_ROUTE_RE = /^\/export\/([a-z-]+)$/i;
 
 class HttpError extends Error {
   constructor(
@@ -660,11 +662,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
       return json(200, handleAliases(url));
     }
-    const exportMatch = /^\/export\/([a-z-]+)$/.exec(pathname);
+    const exportMatch = EXPORT_ROUTE_RE.exec(pathname);
     if (exportMatch) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      const format = exportMatch[1];
-      if (!isExportFormat(format)) throw new HttpError(404, `unknown export format "${format}"`);
+      const format = resolveExportFormat(exportMatch[1]);
+      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
       const loaded = await load(resolveCwd(url.searchParams.get('cwd')));
       return { status: 200, text: exportLexicon(loaded.merged, format), contentType: exportContentType(format) };
     }

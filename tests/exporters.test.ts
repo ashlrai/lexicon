@@ -251,3 +251,15 @@ describe('exportLexicon', () => {
     expect(exportLexicon(empty, 'markdown')).toBe('');
   });
 });
+
+describe('resolveExportFormat', () => {
+  it('takes every format, its other names, and any case; nothing else', async () => {
+    const { EXPORT_FORMATS, resolveExportFormat } = await import('../src/core/index.js');
+    for (const f of EXPORT_FORMATS) expect(resolveExportFormat(f)).toBe(f);
+    expect(resolveExportFormat('wispr-flow')).toBe('wispr');
+    expect(resolveExportFormat(' WisprFlow ')).toBe('wispr');
+    expect(resolveExportFormat('Claude-MD')).toBe('claude-md');
+    expect(resolveExportFormat('bogus')).toBeUndefined();
+    expect(resolveExportFormat('constructor')).toBeUndefined();
+  });
+});

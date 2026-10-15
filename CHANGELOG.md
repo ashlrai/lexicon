@@ -4,7 +4,35 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
-## 0.5.5 (2026-10-09)
+### Security
+
+- MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
+
+### Fixed
+
+- A one-word alias of a domain-like term now takes the spoken suffix with it: with `Akme` as an alias of `Acme.io`, "akme io" and "akme I.O" become `Acme.io` instead of keeping a stray "io" after it. Only suffixes that are not everyday words (ai, io, dev, com, net, org, xyz, gg) are absorbed, so "mined so much" keeps its "so" for a `Mind.so` term.
+- `lexicon setup --dry-run` (and the `setup_lexicon` plan) now demonstrates on the person and company it would seed, so the plan shows the same correction the real run does. Before, a dry run always fell back to the built-in example terms, whose spelling could differ from the company it said it would add.
+- `lexicon harvest` no longer proposes everyday English words that a README capitalises as headings or labels ("Leader", "Resources", "Growth"). STT already spells them, and the matcher never case-fixes such a word through its implicit alias, so the term did nothing. On the Phantom repo this drops 9 of the top 50 candidates. Names that are not common words (Hetzner, Railway) and names with inner capitals (ReAct) are kept.
+- A dotted initialism no longer leaves its own period behind: with `Akme` as an alias of `Acme.io`, "akme I.O. today" becomes `Acme.io today` instead of `Acme.io. today`. The period stays when it also ends the sentence (end of text, a line break, or a capital after it). "akme dot io" and "akme I O" match too.
+- The prompt hook is about a third faster with the starter packs installed, which had pushed it past its 200 ms budget (median 304 ms to 201 ms on a matching prompt, 204 ms to 140 ms on one with nothing to correct, all four packs, 177 terms). Hit counts for global terms now go to the `hits.json` sidecar beside the lexicon instead of rewriting (and backing up) the whole YAML on every matching prompt, and the hook hands `recordHits` the lexicon it already loaded. `loadLexicon` keeps a parsed copy of a large global lexicon in `parse-cache.json`, keyed by the YAML text itself (cache format 2; a format 1 cache is reparsed and replaced), and the hook bundle no longer carries all of zod (1156 KB to 599 KB). Counts already in a lexicon file stay as a floor; `lexicon stats`, `suggest` and `review --never-hit` see the same totals.
+- `lexicon install` writes `LEXICON_PATH` and `LEXICON_CWD` into the client's MCP entry when they are set (as absolute paths; `env` for JSON clients and Codex, `-e` for `claude mcp add`), without replacing a value the entry already sets. A GUI client does not inherit the shell, so the installed server used to read the default lexicon instead of the one the user installed from.
+- The MCP server finds the project `.lexicon.yaml` from the client's MCP roots (the first `file://` root that exists, refreshed on `roots/list_changed`) when neither `LEXICON_CWD` nor a `cwd` option is set. Clients such as Claude Desktop and Cursor start the server in their own directory, so it used to look for the project file in the wrong place. A client without roots, or one that fails or times out (2 s), keeps the old behaviour.
+- `learn_correction` / `lexicon learn` accept a case-only correction ("ashlr" should be "Ashlr"): they create the term, or recase an existing canonical in its own file, instead of failing with "same spelling". When the word is another term's alias they say so.
+- `lexicon export wispr-flow` (and `wisprflow`, any case; also on `GET /export/<format>`) is accepted as the `wispr` format.
+- `setup` and `setup_lexicon` no longer offer starter packs the global lexicon already has; the plan lists them in `alreadyInstalledPacks`.
+- `setup --yes` finds your name in repo-level or system git config, or `GIT_AUTHOR_NAME`, when `git config --global user.name` is unset, instead of seeding nothing; when it still finds nothing it names `--person` and `--company`.
+- `lexicon harvest` proposes fewer names nobody says. Module paths (`./Button.js`, `../ui/Toast.js`) and build artifacts (`index-D2P1AJiD.js`) are no longer brands; on a React repo they had been about half of the top 60 candidates, while `Next.js` and `Node.js` in prose still count. README words that only appear as labels (table cells, list items, bold or quoted UI text, key chords such as `⌃⌥Space`) are held back like sentence-initial words.
+- The prompt hook is faster again on a loaded lexicon (178 terms, a 10-correction prompt: median about 148 ms to 113 ms, p90 about 180 ms to 147 ms), with byte-identical output: synchronous stdin/stdout, lazy `node:` builtins and crypto, and a required-literal check before each correction regex.
+- `lexicon trust <dir>` and `lexicon untrust <dir>` accept a project directory and act on the `.lexicon.yaml` inside it. Before, a directory failed with EISDIR.
+- `lexicon serve --install` carries `LEXICON_PATH` and `XDG_CONFIG_HOME` into the login service when they are set, as absolute paths: plist `EnvironmentVariables` on macOS, `Environment=` lines on Linux, and a `serve.env` file loaded with `node --env-file` on Windows (Node before 20.6 gets a warning). The service then serves the same lexicon and token that `serve --show` prints. With neither set, the service files are unchanged.
+- MCP `export_lexicon` accepts the same format aliases as the CLI (`wispr-flow`, `wisprflow`, `wispr-flow-csv`), and `GET /export/<format>` is case-insensitive.
+- Browser extension: a refused API call shows the server's reason, a 403 is no longer reported as a bad token, **Test connection** checks the token against `/stats`, and the popup says when it is using the embedded fallback and why.
+- Clipboard daemon: `--backend xclip` without xclip installed is refused with an install hint, a failing clipboard is reported once instead of four times a second, and `--which` no longer shows the macOS-only `--paste` note on Linux.
+- `lexicon voice`: the install hint names only the missing tool (whisper.cpp, ffmpeg or both), a bad `LEXICON_FFMPEG_BIN` is named in the error, and ffmpeg's error lines keep their line breaks.
+- `suggest --limit abc` names the option in its error, and counts read "1 term" instead of "1 terms".
+- `commander` is pinned to `^14`, so the CLI runs on Node 20 as `engines` promises (commander 15 needs Node 22.12).
+
+## 0.5.5 (2026-10-14)
 
 ### Added
 
@@ -14,6 +42,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `INTEGRATION.md`: how Phantom consumes the lexicon (single-YAML source of truth, two-way vocabulary flow, surfaces, opt-in/out, hard boundaries).
 
 ### Fixed
+
+- Imports reject incomplete code units in detected UTF-16 input before reading or writing a destination dictionary. Complete UTF-16 input and the existing UTF-8 path are unchanged.
+- Release asset inspection and assembly use bounded stable file descriptors, refuse changed or nonregular inputs and destination collisions, and preserve the original qualified archive bytes, modes and checksum closure. Publication documentation now distinguishes OIDC request material from an actually configured npm trusted publisher.
+- `lexicon doctor` leaves symlink, nonregular, oversized, changed or unreadable client configuration files unconfirmed. Its eight configuration inspections use bounded regular-file reads capped at 1 MiB, preserve JSON BOM refusal, and report fixed warnings without private paths or contents. Doctor readiness describes configured terms and an integration declaration; it does not prove a live client connection or an actual correction.
+- The real editor subprocess fixture supports a space-containing pinned Node path on POSIX without changing production editor parsing or its Windows fixture.
+- `lexicon doctor` no longer fails a Cursor, Codex, Windsurf, Gemini, VS Code or Claude Desktop setup because Claude Code is also installed. It now reads each client's user-level MCP config, reports the ones that register `lexicon`, counts them toward `ready`, and downgrades the missing Claude registration to a warning when another client has it. Before, `lexicon setup --clients cursor` followed by the verify step in `llms-install.md` exited 1 with "run: lexicon install claude --apply". Project-level files written by `install --project` (`.cursor/mcp.json`, `.vscode/mcp.json`) are not read yet, and a client file that is not valid JSON is reported as a warning.
 
 - Release publication now waits for both platform builds, verifies the qualified archives and all checksums, and confirms exact npm and hosted bytes before making the GitHub release public. Missing npm credentials fail before publication.
 - File symlinks share their real dictionary's writer lock, and nested calls through directory aliases reuse the held lock. Missing targets keep a stable lock identity when created; unrelated projects retain independent locks.

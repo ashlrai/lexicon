@@ -19,8 +19,12 @@ import { findPackageRoot, packageVersion } from '../util/package.js';
  * hand show up without a restart.
  */
 export interface ToolContext {
-  /** Directory used to locate the project `.lexicon.yaml`. */
-  cwd: string;
+  /**
+   * Directory used to locate the project `.lexicon.yaml`. Read it inside a
+   * handler, never once at registration: it can change after the client
+   * answers `roots/list`.
+   */
+  readonly cwd: string;
   load(): Promise<LoadedLexicon>;
 }
 

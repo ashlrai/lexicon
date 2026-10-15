@@ -329,8 +329,8 @@ Usage: lexicon trust [options] [path]
 approve a project .lexicon.yaml so its terms are merged (shows a preview first)
 
 Arguments:
-  path        lexicon file (default: the project .lexicon.yaml for the current
-              directory)
+  path        lexicon file or project directory (default: the project
+              .lexicon.yaml for the current directory)
 
 Options:
   --list      list trusted project lexicons and whether they still match
@@ -345,8 +345,8 @@ Usage: lexicon untrust [options] [path]
 revoke approval for a project .lexicon.yaml
 
 Arguments:
-  path        lexicon file (default: the project .lexicon.yaml for the current
-              directory)
+  path        lexicon file or project directory (default: the project
+              .lexicon.yaml for the current directory)
 
 Options:
   -h, --help  display help for command
@@ -454,7 +454,8 @@ Options:
                       detect; one of claude, codex, cursor, windsurf, gemini,
                       claude-desktop, vscode)
   --company <name>    company or product name to seed (as you want it spelled)
-  --person <name>     your name to seed (default: git config --global user.name)
+  --person <name>     your name to seed (default: git user.name, global then
+                      this repo, or $GIT_AUTHOR_NAME)
   --phonetic <hint>   pronunciation hint for the company term, e.g. ASH-ler
   --app <app>         dictation app to export for: wispr|superwhisper|macos|none
   --export-dir <dir>  where to write the dictation export (default: ~/Desktop)

@@ -14,6 +14,7 @@
 import { diffSummary, loadLexicon, normalize, recordHits } from '../core/index.js';
 import type { Lexicon, NormalizeResult } from '../core/index.js';
 import {
+  checkClipboardBackend,
   createClipboardBackend,
   defaultClipboardExec,
   detectClipboardBackend,
@@ -107,9 +108,15 @@ export async function resolveClipboard(opts: ClipboardCommonOptions): Promise<Re
     return { name: 'injected', description: 'injected read/write', read: opts.read, write: opts.write };
   }
   const exec = opts.exec ?? defaultClipboardExec;
+  const platform = opts.platform ?? process.platform;
+  const env = opts.env ?? process.env;
+  if (opts.backend && !opts.exec) {
+    // Real processes only: an injected exec stands in for the tools.
+    await checkClipboardBackend(opts.backend, async (bin) => (await findOnPath(bin, { env, platform })) !== undefined);
+  }
   const backend: ClipboardBackend = opts.backend
     ? createClipboardBackend(opts.backend, exec)
-    : await detectClipboardBackend(opts.platform ?? process.platform, opts.env ?? process.env, undefined, exec);
+    : await detectClipboardBackend(platform, env, undefined, exec);
   return {
     name: backend.name,
     description: backend.description ?? backend.name,
@@ -207,6 +214,9 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     let stopped = false;
     let timer: NodeJS.Timeout | undefined;
     let inFlight = false;
+    // A broken clipboard (no display, tool removed) fails the same way on
+    // every poll; report it once, then again only when it changes or clears.
+    let lastError: string | undefined;
 
     const stop = (): void => {
       if (stopped) return;
@@ -223,8 +233,16 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       inFlight = true;
       try {
         await poll();
+        if (lastError !== undefined) {
+          lastError = undefined;
+          err(`[${timestamp()}] clipboard daemon: working again\n`);
+        }
       } catch (e) {
-        err(`[${timestamp()}] clipboard daemon: ${message(e)}\n`);
+        const msg = message(e);
+        if (msg !== lastError) {
+          lastError = msg;
+          err(`[${timestamp()}] clipboard daemon: ${msg} (retrying every ${intervalMs}ms; reported again only if it changes)\n`);
+        }
       } finally {
         inFlight = false;
       }
@@ -362,7 +380,7 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
     try {
       const clipboard = await resolveClipboard(opts);
       out(`clipboard backend: ${clipboard.name} (${clipboard.description})\n`);
-      if (opts.paste !== undefined || platform === 'darwin') {
+      if (opts.paste === true || platform === 'darwin') {
         const osascript = await findOnPath('osascript', { env, platform });
         out(`--paste: ${platform === 'darwin' ? (osascript ? `available (${osascript})` : 'osascript not found on PATH') : 'macOS only'}\n`);
       }

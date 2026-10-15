@@ -7,11 +7,12 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, readLexiconFile, suggestAliases } from '../src/core/index.js';
+import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -35,13 +36,18 @@ import {
   runServe,
   scheduledTaskName,
   scheduledTaskXml,
+  serveEnvFile,
+  nodeSupportsEnvFile,
+  systemdUnit,
   systemdUnitPath,
   taskUserId,
   LAUNCH_AGENT_LABEL,
   SCHEDULED_TASK_NAME,
   SERVE_LABEL_ENV_VAR,
   SYSTEMD_UNIT_NAME,
+  SERVE_ENV_FILE_NAME,
 } from '../src/cli/cmd-serve.js';
+import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
 
@@ -295,8 +301,9 @@ describe('POST /normalize', () => {
 
   it('dryRun does not bump hits; a real run does', async () => {
     const hitsOf = async (): Promise<number> => {
-      const file = await readLexiconFile(env.globalPath, 'global');
-      return file.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI')?.hits ?? 0;
+      // Counts live in the hits.json sidecar; the merged view adds them up.
+      const loaded = await loadLexicon({ globalPath: env.globalPath });
+      return loaded.merged.terms.find((t) => t.canonical === 'Ashlr.AI')?.hits ?? 0;
     };
     const before = await hitsOf();
     const dry = await api('POST', '/normalize', { text: 'ping ashlar', dryRun: true });
@@ -383,6 +390,10 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(yaml.headers.get('content-type')).toBe('application/yaml; charset=utf-8');
     const txt = await api('GET', '/export/text');
     expect(txt.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    // Format names resolve like the CLI's: any case, aliases included.
+    const upper = await api('GET', '/export/Wispr-Flow');
+    expect(upper.status).toBe(200);
+    expect(upper.headers.get('content-type')).toBe('text/csv; charset=utf-8');
     const unknown = await api('GET', '/export/nope');
     expect(unknown.status).toBe(404);
   });
@@ -723,6 +734,8 @@ describe('lexicon serve (CLI)', () => {
       expect(plist).toContain(`<string>${LAUNCH_AGENT_LABEL}</string>`);
       expect(plist).toContain(`<string>/usr/local/bin/node</string>\n    <string>${cli}</string>\n    <string>serve</string>`);
       expect(plist).toContain('<key>RunAtLoad</key>\n  <true/>');
+      // Nothing set at install time: the plist carries no environment.
+      expect(plist).not.toContain('EnvironmentVariables');
       expect(plist).toContain('<key>KeepAlive</key>\n  <true/>');
       expect(plist).toContain(`<string>${launchAgentLogPath(home)}</string>`);
       expect((await fs.stat(path.dirname(launchAgentLogPath(home)))).isDirectory()).toBe(true);
@@ -779,6 +792,7 @@ describe('lexicon serve (CLI)', () => {
       // the unit being right, not the test being wrong.
       expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli.replace(/\\/g, '\\\\')}" serve`);
       expect(unit).toContain('WantedBy=default.target');
+      expect(unit).not.toContain('Environment=');
       expect(calls).toEqual([
         ['systemctl', '--user', 'daemon-reload'],
         ['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT_NAME],
@@ -906,6 +920,176 @@ describe('lexicon serve (CLI)', () => {
     } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
+  });
+
+  describe('--install carries LEXICON_PATH and XDG_CONFIG_HOME into the service', () => {
+    // Relative values resolve against --cwd, like `lexicon install`; `&`, `<`,
+    // `%`, a quote and a space exercise each format's escaping.
+    // XDG_CONFIG_HOME is absolute and writable: the Linux install writes its
+    // unit under it, so it must not point at a root-only path.
+    const xdg = path.join(os.tmpdir(), `lexicon-xdg-${process.pid} my cfg`);
+    const shellEnv = { LEXICON_PATH: "lex & <co>/100%/o'brien.yaml", XDG_CONFIG_HOME: xdg, PATH: '/bin' };
+    const cwd = path.resolve('/work dir');
+    const lexPath = path.resolve(cwd, "lex & <co>/100%/o'brien.yaml");
+    afterAll(async () => {
+      await fs.rm(xdg, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    });
+
+    it('macOS: an EnvironmentVariables dict in the plist', async () => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+      try {
+        const cli = await fakeCli(home);
+        const io = memIO();
+        expect(
+          await runServe({ install: true, globalPath: env.globalPath, cwd }, io, {
+            platform: 'darwin',
+            home,
+            env: shellEnv,
+            exec: fakeExec([]),
+            cliPath: cli,
+            nodePath: '/usr/local/bin/node',
+            uid: 501,
+          }),
+        ).toBe(0);
+        const plist = await fs.readFile(launchAgentPath(home, shellEnv), 'utf8');
+        const esc = (v: string): string => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        expect(plist).toContain(
+          '  <key>EnvironmentVariables</key>\n  <dict>\n' +
+            `    <key>LEXICON_PATH</key>\n    <string>${esc(lexPath)}</string>\n` +
+            `    <key>XDG_CONFIG_HOME</key>\n    <string>${esc(xdg)}</string>\n` +
+            '  </dict>\n  <key>RunAtLoad</key>',
+        );
+        // PATH is not carried, and the program path still parses.
+        expect(plist).not.toContain('<key>PATH</key>');
+        expect(programPathFromPlist(plist)).toBe(cli);
+        expect(io.out.join('')).toContain(`  Environment: LEXICON_PATH=${lexPath}\n`);
+      } finally {
+        await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      }
+    });
+
+    it('Linux: one quoted Environment= line per variable, % doubled', async () => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+      try {
+        const cli = await fakeCli(home);
+        const io = memIO();
+        expect(
+          await runServe({ install: true, globalPath: env.globalPath, cwd }, io, {
+            platform: 'linux',
+            home,
+            env: shellEnv,
+            exec: fakeExec([]),
+            cliPath: cli,
+            nodePath: '/usr/bin/node',
+          }),
+        ).toBe(0);
+        const unit = await fs.readFile(systemdUnitPath(home, shellEnv), 'utf8');
+        const q = (v: string): string => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%');
+        expect(unit).toContain(
+          `Type=simple\nEnvironment="LEXICON_PATH=${q(lexPath)}"\nEnvironment="XDG_CONFIG_HOME=${q(xdg)}"\nExecStart=`,
+        );
+        expect(io.out.join('')).toContain(`  Environment: XDG_CONFIG_HOME=${xdg}\n`);
+      } finally {
+        await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      }
+    });
+
+    it('systemd: a % in the CLI path is doubled and still round-trips', () => {
+      const unit = systemdUnit('/usr/bin/node', '/opt/100%/index.js');
+      expect(unit).toContain('ExecStart="/usr/bin/node" "/opt/100%%/index.js" serve');
+      expect(programPathFromUnit(unit)).toBe('/opt/100%/index.js');
+    });
+
+    it('Windows: a serve.env next to serve.json, loaded with node --env-file', async () => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+      const envFile = path.join(path.dirname(env.globalPath), SERVE_ENV_FILE_NAME);
+      try {
+        const cli = await fakeCli(home);
+        const io = memIO();
+        let xml = '';
+        const exec: ServeExec = async (_cmd, args) => {
+          xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
+          return { code: 0, stdout: '', stderr: '' };
+        };
+        expect(
+          await runServe({ install: true, globalPath: env.globalPath, cwd }, io, {
+            platform: 'win32',
+            home,
+            env: { ...shellEnv, USERNAME: 'me' },
+            exec,
+            cliPath: cli,
+            nodePath: 'C:\\node\\node.exe',
+            nodeVersion: 'v22.11.0',
+          }),
+        ).toBe(0);
+        expect(xml).toContain(`<Arguments>--env-file=&quot;${envFile.replace(/&/g, '&amp;')}&quot; &quot;`);
+        expect(programPathFromTaskXml(xml)).toBe(cli);
+        expect(await fs.readFile(envFile, 'utf8')).toBe(serveEnvFile({ LEXICON_PATH: lexPath, XDG_CONFIG_HOME: xdg }));
+        expect(io.out.join('')).toContain(`Arguments: --env-file="${envFile}" "${cli}" serve`);
+
+        // A node too old for --env-file: warned, installed without it.
+        const old = memIO();
+        await fs.rm(envFile, { force: true });
+        expect(
+          await runServe({ install: true, globalPath: env.globalPath, cwd }, old, {
+            platform: 'win32',
+            home,
+            env: shellEnv,
+            exec,
+            cliPath: cli,
+            nodePath: 'C:\\node\\node.exe',
+            nodeVersion: 'v20.5.1',
+          }),
+        ).toBe(0);
+        expect(old.err.join('')).toContain('node v20.5.1 cannot load an env file (needs 20.6+)');
+        expect(xml).not.toContain('--env-file');
+        await expect(fs.access(envFile)).rejects.toThrow();
+
+        // Nothing set: the task is exactly what it was before.
+        expect(
+          await runServe({ install: true, globalPath: env.globalPath }, memIO(), {
+            platform: 'win32',
+            home,
+            env: { USERNAME: 'me' },
+            exec,
+            cliPath: cli,
+            nodePath: 'C:\\node\\node.exe',
+          }),
+        ).toBe(0);
+        expect(xml).toContain(`<Arguments>&quot;${cli}&quot; serve</Arguments>`);
+        await expect(fs.access(envFile)).rejects.toThrow();
+      } finally {
+        await fs.rm(envFile, { force: true });
+        await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      }
+    });
+
+    it.skipIf(!nodeSupportsEnvFile(process.version))('serveEnvFile is read back verbatim by node --env-file', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-envfile-'));
+      try {
+        const values = { LEXICON_PATH: "C:\\new\\lex #1 & co\\o'brien.yaml", XDG_CONFIG_HOME: 'C:\\Users\\me\\tab\\cfg' };
+        const file = path.join(dir, 'serve.env');
+        await fs.writeFile(file, serveEnvFile(values));
+        const out = await new Promise<string>((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            [`--env-file=${file}`, '-e', 'process.stdout.write(JSON.stringify([process.env.LEXICON_PATH, process.env.XDG_CONFIG_HOME]))'],
+            // node keeps a variable that is already set over the file's, so start clean.
+            { stdio: ['ignore', 'pipe', 'inherit'], env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '' } },
+          );
+          let text = '';
+          child.stdout.on('data', (d: Buffer) => (text += d.toString()));
+          child.on('error', reject);
+          child.on('close', () => resolve(text));
+        });
+        expect(JSON.parse(out)).toEqual([values.LEXICON_PATH, values.XDG_CONFIG_HOME]);
+        expect(() => serveEnvFile({ LEXICON_PATH: "a'b`c" })).toThrow(/both/);
+        expect(nodeSupportsEnvFile('v20.6.0')).toBe(true);
+        expect(nodeSupportsEnvFile('v20.5.9')).toBe(false);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 
   it('--install on Windows refuses a CLI path that does not exist, and runs nothing', async () => {
@@ -1099,5 +1283,109 @@ describe('packs and aliases routes', () => {
     const res = await fetch(`${info2.url}/packs/developer`, { method: 'OPTIONS', headers: { Origin: 'chrome-extension://abc' } });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-methods')).toBe('GET, POST, DELETE');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Consumer contract: Phantom desktop voice
+// ---------------------------------------------------------------------------
+
+/**
+ * Phantom's desktop app (ashlrai/phantom desktop/src-tauri/src/voice/lexicon.rs)
+ * reads serve.json, then talks raw HTTP/1.0 over loopback: a dry-run
+ * POST /normalize whose replacements it applies itself by UTF-16 offset,
+ * GET /lexicon for an offline cache of global terms, and
+ * GET /export/whisper-prompt. These tests pin the fields it reads. Its serde
+ * types are strict: one term without a string canonical or string aliases, or
+ * a non-string `paths` value, fails the whole response. A few checks here
+ * (no chunking, text/plain, the 32-hex token) pin the server more tightly
+ * than the client strictly needs, on purpose.
+ */
+function phantomRequest(method: string, route: string, body = ''): Promise<{ head: string; body: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(info.port, '127.0.0.1');
+    const chunks: Buffer[] = [];
+    socket.on('data', (d: Buffer) => chunks.push(d));
+    socket.on('error', reject);
+    socket.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      const split = raw.indexOf('\r\n\r\n');
+      resolve({ head: raw.slice(0, split), body: raw.slice(split + 4) });
+    });
+    socket.write(
+      `${method} ${route} HTTP/1.0\r\nHost: 127.0.0.1:${info.port}\r\nAuthorization: Bearer ${info.token}\r\n` +
+        `Content-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
+    );
+  });
+}
+
+describe('consumer contract: Phantom desktop voice client', () => {
+  it('serve.json sits beside LEXICON_PATH with a numeric port and a header-safe token', async () => {
+    expect(getServePath()).toBe(path.join(path.dirname(env.globalPath), 'serve.json'));
+    const raw = JSON.parse(await fs.readFile(getServePath(), 'utf8')) as { port: unknown; token: unknown };
+    expect(typeof raw.port).toBe('number');
+    expect(raw.token).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('a dry-run /normalize over HTTP/1.0 returns UTF-16 spans that rebuild the real output', async () => {
+    const text = 'deploy 🚀 to ashler, then ping Ashlar ✅';
+    const dry = await phantomRequest('POST', '/normalize', JSON.stringify({ text, dryRun: true, cwd: env.cwd }));
+    expect(dry.head).toMatch(/^HTTP\/1\.[01] 200 /);
+    expect(dry.head.toLowerCase()).not.toContain('transfer-encoding: chunked');
+    const out = JSON.parse(dry.body) as { input: string; replacements: Array<{ start: number; end: number; original: string; replacement: string }> };
+    expect(out.input).toBe(text);
+    expect(out.replacements.length).toBe(2);
+    let rebuilt = text;
+    let floor = Number.POSITIVE_INFINITY;
+    for (const r of [...out.replacements].sort((a, b) => b.start - a.start)) {
+      expect(text.slice(r.start, r.end)).toBe(r.original);
+      expect(r.end).toBeLessThanOrEqual(floor);
+      rebuilt = rebuilt.slice(0, r.start) + r.replacement + rebuilt.slice(r.end);
+      floor = r.start;
+    }
+    const real = (await (await api('POST', '/normalize', { text, dryRun: true, cwd: env.cwd })).json()) as { output: string };
+    const applied = (await (await api('POST', '/normalize', { text, cwd: env.cwd })).json()) as { output: string };
+    expect(real.output).toBe(text);
+    expect(rebuilt).toBe(applied.output);
+    expect(rebuilt).toBe('deploy 🚀 to Ashlr.AI, then ping Ashlr.AI ✅');
+  });
+
+  it('GET /lexicon gives global terms with provenance Phantom can cache', async () => {
+    const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.cwd)}`);
+    const body = JSON.parse(res.body) as {
+      lexicon: { terms: Array<{ canonical: unknown; aliases: unknown; caseSensitive?: unknown; scope?: unknown }> };
+      paths: { global?: string; project?: string };
+      projectTrust?: string;
+    };
+    expect(body.paths.global).toBe(env.globalPath);
+    expect(body.paths.project).toBeUndefined();
+    expect(body.projectTrust).toBeUndefined();
+    expect(Object.values(body.paths).every((v) => typeof v === 'string')).toBe(true);
+    expect(body.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI')?.scope).toBe('global');
+    for (const t of body.lexicon.terms) {
+      expect(typeof t.canonical).toBe('string');
+      expect(Array.isArray(t.aliases) && t.aliases.every((a) => typeof a === 'string')).toBe(true);
+      if ('caseSensitive' in t) expect(typeof t.caseSensitive).toBe('boolean');
+      if ('scope' in t && t.scope !== null) expect(typeof t.scope).toBe('string');
+    }
+  });
+
+  it('GET /lexicon reports project context, which Phantom keeps out of its cache', async () => {
+    const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`);
+    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string };
+    expect(body.paths.project).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    expect(body.projectTrust).toBe('untrusted');
+  });
+
+  it('GET /export/whisper-prompt is plain comma-separated canonicals', async () => {
+    const res = await phantomRequest('GET', `/export/whisper-prompt?cwd=${encodeURIComponent(env.cwd)}`);
+    expect(res.head).toMatch(/^HTTP\/1\.[01] 200 /);
+    expect(res.head.toLowerCase()).toContain('content-type: text/plain');
+    expect(res.body.trim().split(', ')).toContain('Ashlr.AI');
+  });
+
+  it('answers 401 without the bearer token, which makes Phantom drop its cache', async () => {
+    const res = await rawGet('/lexicon', {});
+    expect(res.status).toBe(401);
   });
 });

@@ -18,12 +18,13 @@
  *   dropCorrectionSpans) or the rows of a pasted dictionary / CSV (see
  *   dropDataBlockSpans). The prompt is never blocked or rewritten. Usage
  *   counters (`hits`) are bumped best-effort in the background so
- *   `lexicon stats` also counts hook-only sessions.
+ *   `lexicon stats` also counts hook-only sessions; they go to the small
+ *   `hits.json` sidecar, never into the user's lexicon YAML.
  *
  * The hook must never fail the user's prompt: every error path prints nothing
  * and exits 0.
  */
-import { promises as fs, realpathSync } from 'node:fs';
+import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
@@ -350,10 +351,11 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
  * recordHits is best-effort by contract; the catch only covers a mocked or
  * future implementation that rejects.
  */
-function recordHitsInBackground(result: NormalizeResult, cwd: string): void {
+function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: LoadedLexicon): void {
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
-  void recordHits(canonicals, { cwd }).catch((err: unknown) => {
+  // `loaded` spares recordHits re-reading both lexicon files.
+  void recordHits(canonicals, { cwd, loaded }).catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] recordHits: ${message}\n`);
   });
@@ -420,7 +422,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
   if (result) result = dropDataBlockSpans(result);
   const changed = result?.changed === true;
-  if (result && changed) recordHitsInBackground(result, cwd);
+  if (result && changed) recordHitsInBackground(result, cwd, loaded);
 
   if (!changed && !skippedNote && !correctionNote) return '';
 
@@ -474,19 +476,54 @@ export async function runHook(input: string, opts: HookOptions = {}): Promise<st
   return userPromptSubmit(payload, opts);
 }
 
+/**
+ * The whole of stdin. Read synchronously first: `process.stdin` on a pipe is a
+ * `net.Socket`, and loading `node:net` for it was about 10 ms of the hook's
+ * startup. If the descriptor turns out to be non-blocking (EAGAIN) or cannot
+ * be read that way at all, whatever was already read is kept and the rest
+ * comes from the stream as before.
+ */
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
+  try {
+    const buf = Buffer.allocUnsafe(64 * 1024);
+    for (;;) {
+      const n = readSync(0, buf, 0, buf.length, null);
+      if (n === 0) return Buffer.concat(chunks).toString('utf8');
+      chunks.push(Buffer.from(buf.subarray(0, n)));
+    }
+  } catch {
+    // EAGAIN / EOF quirks / no fd 0: finish from the stream below
+  }
   for await (const chunk of process.stdin) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/**
+ * Write `text` to stdout. Synchronously first, for the same reason stdin is
+ * read that way: touching `process.stdout` on a pipe loads `node:net`. A
+ * non-blocking descriptor that refuses part of it (EAGAIN) gets the rest
+ * through the stream.
+ */
+function writeStdout(text: string): void {
+  const bytes = Buffer.from(text, 'utf8');
+  let off = 0;
+  try {
+    while (off < bytes.length) off += writeSync(1, bytes, off, bytes.length - off);
+    return;
+  } catch {
+    // finish through the stream below
+  }
+  process.stdout.write(bytes.subarray(off));
+}
+
 export async function main(): Promise<void> {
   try {
     const raw = await readStdin();
     const out = await runHook(raw);
-    if (out) process.stdout.write(out);
+    if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.
     const message = err instanceof Error ? err.message : String(err);

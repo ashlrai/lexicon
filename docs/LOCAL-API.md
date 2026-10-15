@@ -25,7 +25,13 @@ so it is the same file whether the installer runs from `dist/` or from the
 `plugin/` bundle behind `setup_lexicon`), else a `lexicon` binary on PATH. It
 refuses to write, and never boots out an existing service, when that file
 does not exist. `LEXICON_SERVE_LABEL` renames the launchd label (tests and
-scratch installs on a machine where the real label is in use). `lexicon
+scratch installs on a machine where the real label is in use). When
+`LEXICON_PATH` or `XDG_CONFIG_HOME` is set at install time, its absolute path
+goes into the service (launchd `EnvironmentVariables`, systemd `Environment=`,
+or a `serve.env` next to `serve.json` that the Scheduled Task loads with
+`node --env-file`, which needs Node 20.6 or later), so the service serves the
+same lexicon, `serve.json` and token that `lexicon serve --show` prints in that
+shell. When neither is set the service file is unchanged. `lexicon
 doctor` reports whether the service is loaded and whether its program path
 still exists; `lexicon serve --uninstall && lexicon serve --install` repairs a
 stale one.

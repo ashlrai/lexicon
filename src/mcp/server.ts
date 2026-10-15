@@ -14,11 +14,12 @@
  *  - Tool handlers never throw; failures come back as `{ isError: true }` results so
  *    the calling agent sees a readable message instead of a protocol error.
  */
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { exportLexicon, loadLexicon } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion } from './shared.js';
@@ -26,8 +27,39 @@ import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
 
 export interface ServerOptions {
-  /** Directory used to locate the project `.lexicon.yaml`. Defaults to $LEXICON_CWD or process.cwd(). */
+  /**
+   * Directory used to locate the project `.lexicon.yaml`. Defaults to
+   * $LEXICON_CWD, else the client's first `file://` MCP root (when the client
+   * supports roots), else process.cwd().
+   */
   cwd?: string;
+  /** How long to wait for the client's `roots/list` answer. Default ROOTS_TIMEOUT_MS. */
+  rootsTimeoutMs?: number;
+}
+
+/** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
+export const ROOTS_TIMEOUT_MS = 2000;
+
+/**
+ * The directory of the first `file://` root that exists, or undefined.
+ *
+ * A client launches the server wherever it likes (Claude Desktop and Cursor
+ * use the app's own directory, not the project), so process.cwd() rarely
+ * names the repository whose `.lexicon.yaml` should apply. MCP roots are the
+ * client saying which workspace is open. Only a `file:` URI naming an existing
+ * directory is taken; anything else is ignored. Exported for tests.
+ */
+export function cwdFromRoots(roots: ReadonlyArray<{ uri: string }>): string | undefined {
+  for (const root of roots) {
+    if (typeof root?.uri !== 'string' || !root.uri.startsWith('file:')) continue;
+    try {
+      const dir = fileURLToPath(root.uri);
+      if (statSync(dir).isDirectory()) return dir;
+    } catch {
+      // not a usable local path; try the next root
+    }
+  }
+  return undefined;
 }
 
 const VOICE_CONTEXT_INSTRUCTION =
@@ -83,17 +115,69 @@ const SERVER_INSTRUCTIONS = [
 ].join('\n');
 
 export function createServer(opts: ServerOptions = {}): McpServer {
-  const cwd = opts.cwd ?? process.env.LEXICON_CWD ?? process.cwd();
-  const load = (): Promise<LoadedLexicon> => loadLexicon({ cwd });
+  // An explicit directory (option or LEXICON_CWD, which `lexicon install`
+  // writes) always wins; otherwise the client's roots may replace the default.
+  const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || undefined);
+  let cwd = explicit ?? process.cwd();
+  let rootsPending: Promise<void> | undefined;
+  const load = async (): Promise<LoadedLexicon> => {
+    // A call that races the first roots/list answer waits for it (bounded by the timeout).
+    if (rootsPending) await rootsPending;
+    return loadLexicon({ cwd });
+  };
 
   const server = new McpServer(
     { name: SERVER_NAME, version: readPackageVersion() },
     { instructions: SERVER_INSTRUCTIONS },
   );
 
+  if (explicit === undefined) {
+    const refreshRoots = (): Promise<void> => {
+      const pending = server.server
+        .listRoots(undefined, { timeout: opts.rootsTimeoutMs ?? ROOTS_TIMEOUT_MS })
+        .then(({ roots }) => {
+          const dir = cwdFromRoots(roots);
+          if (dir !== undefined && dir !== cwd) {
+            cwd = dir;
+            log('project directory from MCP roots:', dir);
+          }
+        })
+        .catch((err: unknown) => log('roots/list failed; keeping', cwd, '-', errorMessage(err)))
+        .finally(() => {
+          if (rootsPending === pending) rootsPending = undefined;
+        });
+      rootsPending = pending;
+      return pending;
+    };
+    server.server.oninitialized = () => {
+      if (server.server.getClientCapabilities()?.roots) void refreshRoots();
+    };
+    server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => {
+      void refreshRoots();
+    });
+  }
+
   // ---------------------------------------------------------------- tools
 
-  for (const register of TOOL_REGISTRARS) register(server, { cwd, load });
+  // Every tool waits for an in-flight roots/list too, not only the ones that
+  // call load(): a handler that resolved the project path before the answer
+  // and named it after would describe two different directories.
+  const registerTool = server.registerTool.bind(server);
+  const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
+    registerTool(name, config as never, (async (...args: unknown[]) => {
+      if (rootsPending) await rootsPending;
+      return cb(...args);
+    }) as never);
+  server.registerTool = gatedRegisterTool as typeof server.registerTool;
+
+  // `cwd` is a getter so every handler reads the directory as it is now.
+  const ctx = {
+    get cwd(): string {
+      return cwd;
+    },
+    load,
+  };
+  for (const register of TOOL_REGISTRARS) register(server, ctx);
 
   server.registerResource(
     'Personal voice lexicon',

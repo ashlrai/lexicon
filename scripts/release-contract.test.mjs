@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { assetNames, assemble, checkSource, checksum, preflight, releaseVersion, validateAssets, verifyHosted, verifyRegistry } from './release-contract.mjs';
 
@@ -24,6 +25,78 @@ function fixtures(t) {
 }
 function complete(t) { const f = fixtures(t); assemble(f.staged, f.release, version); return f; }
 const env = { NODE_AUTH_TOKEN: 'synthetic-npm-token', GH_TOKEN: 'synthetic-github-token', GITHUB_REPOSITORY: 'ashlrai/lexicon' };
+
+test('asset inspection refuses empty and oversized files before opening a descriptor', (t) => {
+  for (const size of [0, 256 * 1024 * 1024 + 1]) {
+    const dir = owned(t);
+    for (const name of assetNames(version, 'ubuntu')) writeFileSync(join(dir, name), 'synthetic');
+    fs.truncateSync(join(dir, assetNames(version, 'ubuntu')[0]), size);
+    const original = fs.openSync; let opened = 0;
+    try {
+      fs.openSync = (...args) => { opened++; return original(...args); }; syncBuiltinESMExports();
+      assert.throws(() => checksum(dir, version, 'ubuntu'), /bounded regular/);
+      assert.equal(opened, 0);
+    } finally { fs.openSync = original; syncBuiltinESMExports(); }
+  }
+});
+test('asset inspection refuses same-size replacement between stat and open and closes the new FD', (t) => {
+  const { staged } = fixtures(t); const dir = join(staged, 'ubuntu');
+  rmSync(join(dir, 'SHA256SUMS'));
+  const target = join(dir, assetNames(version, 'ubuntu')[0]);
+  const originalOpen = fs.openSync; const originalClose = fs.closeSync; let tracked; let closed = 0; let changed = false;
+  try {
+    fs.openSync = (file, ...args) => {
+      if (file === target && !changed) { changed = true; fs.renameSync(file, `${file}.old`); fs.copyFileSync(`${file}.old`, file); }
+      const fd = originalOpen(file, ...args); if (file === target) tracked = fd; return fd;
+    };
+    fs.closeSync = (fd) => { if (fd === tracked) closed++; return originalClose(fd); }; syncBuiltinESMExports();
+    assert.throws(() => checksum(dir, version, 'ubuntu'), /changed before opening/);
+    assert.equal(changed, true); assert.equal(closed, 1);
+  } finally { fs.openSync = originalOpen; fs.closeSync = originalClose; syncBuiltinESMExports(); }
+});
+for (const mutation of ['growth', 'shrink', 'mode', 'named-replacement', 'read-error']) {
+  test(`asset FD refuses ${mutation} at the actual read and closes exactly once`, (t) => {
+    const { staged } = fixtures(t); const dir = join(staged, 'ubuntu');
+    rmSync(join(dir, 'SHA256SUMS'));
+    const target = join(dir, assetNames(version, 'ubuntu')[0]); const originalSize = lstatSync(target).size;
+    const originals = Object.fromEntries(['openSync', 'closeSync', 'readSync', 'readFileSync'].map((key) => [key, fs[key]]));
+    let tracked; let closed = 0; let changed = false; let allocation = 0;
+    const mutate = () => {
+      if (changed) return; changed = true;
+      if (mutation === 'growth') fs.appendFileSync(target, 'synthetic growth');
+      if (mutation === 'shrink') fs.truncateSync(target, 0);
+      if (mutation === 'mode') {
+        if (process.platform === 'win32') fs.utimesSync(target, new Date(0), new Date(0));
+        else fs.chmodSync(target, (lstatSync(target).mode & 0o777) === 0o600 ? 0o644 : 0o600);
+      }
+      if (mutation === 'named-replacement') { fs.renameSync(target, `${target}.old`); writeFileSync(target, originals.readFileSync(`${target}.old`)); }
+      if (mutation === 'read-error') throw new Error('synthetic read refusal');
+    };
+    try {
+      fs.openSync = (file, ...args) => { const fd = originals.openSync(file, ...args); if (file === target) tracked = fd; return fd; };
+      fs.closeSync = (fd) => { if (fd === tracked) closed++; return originals.closeSync(fd); };
+      fs.readSync = (fd, buffer, ...args) => { if (fd === tracked) { allocation = buffer.length; mutate(); } return originals.readSync(fd, buffer, ...args); };
+      // The original path reader reaches the same actual mutation in red runs.
+      fs.readFileSync = (file, ...args) => { if (file === target) mutate(); return originals.readFileSync(file, ...args); };
+      syncBuiltinESMExports();
+      assert.throws(() => checksum(dir, version, 'ubuntu'), mutation === 'read-error' ? /read refusal/ : /changed while reading/);
+      assert.equal(changed, true); assert.equal(allocation, originalSize + 1); assert.equal(closed, 1);
+    } finally { for (const [key, value] of Object.entries(originals)) fs[key] = value; syncBuiltinESMExports(); }
+  });
+}
+test('actual regular-to-FIFO replacement is refused before reads at the unchanged child bound', (t) => {
+  const dir = owned(t); const child = join(dir, 'fifo-reader.mjs');
+  writeFileSync(child, `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';import {execFileSync} from 'node:child_process';import {join} from 'node:path';import {assetNames,checksum} from ${JSON.stringify(new URL('./release-contract.mjs', import.meta.url).href)};
+const dir=${JSON.stringify(dir)},version=${JSON.stringify(version)},target=join(dir,assetNames(version,'ubuntu')[0]);for(const n of assetNames(version,'ubuntu'))fs.writeFileSync(join(dir,n),'synthetic');fs.unlinkSync(${JSON.stringify(child)});
+const originalStat=fs.lstatSync,originalOpen=fs.openSync,originalClose=fs.closeSync,originalRead=fs.readSync;let replaced=false,fd,closed=0,reads=0;
+fs.lstatSync=(file,...args)=>{const s=originalStat(file,...args);if(file===target&&!replaced){replaced=true;fs.unlinkSync(file);if(process.platform==='win32')fs.mkdirSync(file);else execFileSync('/usr/bin/mkfifo',[file]);process.stderr.write('NONREGULAR_INSTALLED\\n');}return s};fs.openSync=(file,...args)=>{const opened=originalOpen(file,...args);if(file===target)fd=opened;return opened};fs.closeSync=(n)=>{if(n===fd)closed++;return originalClose(n)};fs.readSync=(n,...args)=>{if(n===fd)reads++;return originalRead(n,...args)};syncBuiltinESMExports();try{checksum(dir,version,'ubuntu');process.stdout.write(JSON.stringify({refused:false,closed,reads}))}catch{process.stdout.write(JSON.stringify({refused:true,closed,reads}))}`);
+  const result = spawnSync(process.execPath, [child], { timeout: 1500, encoding: 'utf8', env: { HOME: dir, USERPROFILE: dir, PATH: process.env.PATH, LANG: 'C', LC_ALL: 'C' } });
+  assert.equal(result.error, undefined); assert.equal(result.status, 0); assert.match(result.stderr, /NONREGULAR_INSTALLED/);
+  const observation = JSON.parse(result.stdout); assert.equal(observation.refused, true); assert.equal(observation.reads, 0);
+  // Windows may refuse a directory during open; POSIX opens its nonblocking FIFO
+  // and must close it after fstat rejects the nonregular descriptor.
+  if (process.platform !== 'win32') assert.equal(observation.closed, 1);
+});
 
 test('stable version rejects tag injection and prerelease ambiguity', () => {
   for (const value of ['1.2.3;echo x', '../1.2.3', 'v1.2.3', '01.2.3', '1.2.3-beta', '1.2', '1.2.3\n']) assert.throws(() => releaseVersion(value));
@@ -68,18 +141,61 @@ test('assembly preserves both original producer bytes and complete checksum clos
   for (const part of ['ubuntu', 'macos']) for (const name of assetNames(version, part)) assert.deepEqual(readFileSync(join(release, name)), readFileSync(join(staged, part, name)));
   assert.throws(() => assemble(staged, release, version), /already exists/);
 });
+test('assembly preserves qualified source modes despite a restrictive writer umask', (t) => {
+  const { staged, release } = fixtures(t);
+  for (const part of ['ubuntu', 'macos']) for (const name of assetNames(version, part)) fs.chmodSync(join(staged, part, name), 0o740);
+  const priorUmask = process.umask(0o077);
+  try { assemble(staged, release, version); } finally { process.umask(priorUmask); }
+  for (const part of ['ubuntu', 'macos']) for (const name of assetNames(version, part)) {
+    assert.equal(lstatSync(join(release, name)).mode & 0o7777, lstatSync(join(staged, part, name)).mode & 0o7777);
+    assert.deepEqual(readFileSync(join(release, name)), readFileSync(join(staged, part, name)));
+  }
+  validateAssets(release, version);
+});
+test('assembly refuses a destination collision without overwriting it', (t) => {
+  const { staged, release } = fixtures(t); const name = assetNames(version, 'ubuntu')[0];
+  const originalMkdir = fs.mkdirSync;
+  try {
+    fs.mkdirSync = (target, ...args) => { const result = originalMkdir(target, ...args); if (target === release) writeFileSync(join(release, name), 'synthetic collision'); return result; };
+    syncBuiltinESMExports();
+    assert.throws(() => assemble(staged, release, version), /EEXIST/);
+    assert.equal(readFileSync(join(release, name), 'utf8'), 'synthetic collision');
+  } finally { fs.mkdirSync = originalMkdir; syncBuiltinESMExports(); }
+});
+test('assembly closes an exclusively created destination when writing fails', (t) => {
+  const { staged, release } = fixtures(t); const target = join(release, assetNames(version, 'ubuntu')[0]);
+  const originals = Object.fromEntries(['openSync', 'closeSync', 'writeFileSync'].map((key) => [key, fs[key]]));
+  let tracked; let closed = 0;
+  try {
+    fs.openSync = (file, ...args) => { const fd = originals.openSync(file, ...args); if (file === target) tracked = fd; return fd; };
+    fs.closeSync = (fd) => { if (fd === tracked) closed++; return originals.closeSync(fd); };
+    fs.writeFileSync = (file, ...args) => { if (typeof file === 'number' && file === tracked) throw new Error('synthetic write refusal'); return originals.writeFileSync(file, ...args); };
+    syncBuiltinESMExports();
+    assert.throws(() => assemble(staged, release, version), /write refusal/); assert.equal(closed, 1);
+  } finally { for (const [key, value] of Object.entries(originals)) fs[key] = value; syncBuiltinESMExports(); }
+});
+test('assembly refuses a qualified source changed to FIFO before copying within the unchanged child bound', (t) => {
+  const dir = owned(t); const child = join(dir, 'fifo-copy.mjs');
+  writeFileSync(child, `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';import {execFileSync} from 'node:child_process';import {join} from 'node:path';import {assetNames,checksum,assemble} from ${JSON.stringify(new URL('./release-contract.mjs', import.meta.url).href)};
+const dir=${JSON.stringify(dir)},version=${JSON.stringify(version)},staged=join(dir,'staged'),release=join(dir,'release');for(const p of ['ubuntu','macos']){fs.mkdirSync(join(staged,p),{recursive:true});for(const n of assetNames(version,p))fs.writeFileSync(join(staged,p,n),'synthetic');checksum(join(staged,p),version,p)}const originalMkdir=fs.mkdirSync;fs.mkdirSync=(file,...args)=>{const result=originalMkdir(file,...args);if(file===release){const source=join(staged,'ubuntu',assetNames(version,'ubuntu')[0]);fs.unlinkSync(source);if(process.platform==='win32')fs.mkdirSync(source);else execFileSync('/usr/bin/mkfifo',[source]);process.stderr.write('NONREGULAR_INSTALLED_AFTER_QUALIFICATION\\n')}return result};syncBuiltinESMExports();try{assemble(staged,release,version);process.stdout.write(JSON.stringify({refused:false}))}catch{process.stdout.write(JSON.stringify({refused:true}))}`);
+  const result = spawnSync(process.execPath, [child], { timeout: 1500, encoding: 'utf8', env: { HOME: dir, USERPROFILE: dir, PATH: process.env.PATH, LANG: 'C', LC_ALL: 'C' } });
+  assert.equal(result.error, undefined); assert.equal(result.status, 0); assert.match(result.stderr, /NONREGULAR_INSTALLED_AFTER_QUALIFICATION/);
+  assert.equal(JSON.parse(result.stdout).refused, true);
+});
 test('assembly refuses a producer file changed between validation and copying', (t) => {
   const { staged, release } = fixtures(t);
-  const originalCopy = fs.copyFileSync;
+  const originalMkdir = fs.mkdirSync;
   let changed = false;
   try {
-    fs.copyFileSync = (source, target, ...args) => {
-      if (!changed) { changed = true; writeFileSync(source, 'synthetic after-validation mutation'); }
-      return originalCopy(source, target, ...args);
+    // Output creation is after producer validation and before either copy path.
+    fs.mkdirSync = (target, ...args) => {
+      const result = originalMkdir(target, ...args);
+      if (target === release && !changed) { changed = true; writeFileSync(join(staged, 'ubuntu', assetNames(version, 'ubuntu')[0]), 'synthetic after-validation mutation'); }
+      return result;
     };
     syncBuiltinESMExports();
     assert.throws(() => assemble(staged, release, version), /qualified producer checksums/);
-  } finally { fs.copyFileSync = originalCopy; syncBuiltinESMExports(); }
+  } finally { fs.mkdirSync = originalMkdir; syncBuiltinESMExports(); }
   assert.equal(changed, true);
 });
 for (const mutation of ['missing-mac', 'tampered-mac', 'tampered-npm', 'extra-asset', 'wrong-checksum-name', 'duplicate-checksum', 'symlink']) {

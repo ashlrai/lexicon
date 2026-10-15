@@ -21,7 +21,9 @@ import { errorMessage } from '../../util/errors.js';
 import { SUGGESTION_KINDS, guarded, log, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 
-export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
+export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   server.registerTool(
     'harvest_repo',
     {
@@ -44,7 +46,7 @@ export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ path, limit, minCount, add }) =>
       guarded(async () => {
-        const root = path ? resolve(cwd, path) : cwd;
+        const root = path ? resolve(ctx.cwd, path) : ctx.cwd;
         const candidates = await harvestRepo(root, {
           ...(limit !== undefined ? { limit } : {}),
           ...(minCount !== undefined ? { minCount } : {}),
@@ -98,7 +100,7 @@ export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ cwd: cwdArg, limit }) =>
       guarded(async () => {
-        const root = cwdArg ? resolve(cwd, cwdArg) : cwd;
+        const root = cwdArg ? resolve(ctx.cwd, cwdArg) : ctx.cwd;
         const loaded = await loadLexicon({ cwd: root });
         const history: VoiceHistoryEntry[] = await loadVoiceHistory(loaded.global.path).catch((err: unknown) => {
           log('loadVoiceHistory failed:', errorMessage(err));
@@ -135,7 +137,7 @@ export const registerHarvestTools: ToolRegistrar = (server, { cwd, load }) => {
       guarded(async () => {
         const { kind, canonical } = suggestion;
         const alias = suggestion.alias?.trim();
-        const storeOpts = { cwd, ...(scope !== undefined ? { scope } : {}) };
+        const storeOpts = { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) };
         if (kind === 'stale') {
           const removed = await removeTerm(canonical, storeOpts);
           return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
