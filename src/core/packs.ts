@@ -18,9 +18,9 @@ import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { z } from 'zod';
+import * as z from 'zod';
 import { parseLexicon } from './schema.js';
-import { ProjectTrustError, addTerm, effectiveHits, readLexiconFile, readProjectHits, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
+import { ProjectTrustError, addTerm, effectiveHits, readHitsFor, readLexiconFile, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
 import { isTrusted, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
@@ -392,9 +392,9 @@ export async function uninstallLoadedPack(
       if (!file.exists) return;
       const listed = (file.lexicon.settings?.packs ?? []).includes(recordAs);
       // `file` is about to be written back, so its terms have to stay exactly as
-      // they are on disk; a project term's usage count is not on disk any more,
-      // it is in this user's sidecar. Read it alongside rather than into the term.
-      const hits = file.scope === 'project' ? await readProjectHits(file.path, storeOpts) : {};
+      // they are on disk; a term's usage count is not on disk any more, it is in
+      // this user's sidecar. Read it alongside rather than into the term.
+      const hits = await readHitsFor(file, storeOpts);
       const remaining = file.lexicon.terms.filter((term) => {
         const packTerm = packTerms.get(lower(term.canonical));
         if (!packTerm || term.source !== 'pack') return true;

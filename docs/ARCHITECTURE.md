@@ -20,7 +20,7 @@ src/
     schema.ts               zod schemas, parseLexicon(), LIMITS, invisible-character stripping
     store.ts                path resolution, YAML read/write, global+project merge,
                             addTerm / removeTerm / recordHits, the project-write trust gate,
-                            per-user hit counts for project terms (hits.json)
+                            per-user hit counts (hits.json), the parsed-YAML cache (parse-cache.json)
     trust.ts                trust registry (trust.json): isTrusted, trustProject, refreshTrust, listTrusted
     matcher.ts              the public face: buildIndex(), findReplacements(), phoneticKey(), similarity()
     matcher/                its four parts: build (the index), text (folding, metaphone, edit distance),
@@ -230,8 +230,8 @@ LexiconBar is a thin native shell: every action is a CLI invocation, and the app
                                                       then the summary card (or --json SetupSummary)
 
   lexicon voice / hooks / MCP / API / daemon  -->  hits + voice/history.jsonl  -->  lexicon suggest  -->  alias | term | never | stale
-                                                   (global term: the global lexicon;
-                                                    project term: hits.json beside it)
+                                                   (hits.json beside the global lexicon;
+                                                    no lexicon file is written)
                                                                                     (or suggest_terms + apply_suggestion from the agent)
 ```
 
@@ -289,6 +289,8 @@ The file is meant to be read and edited by hand and committed to a repo. YAML al
 So a project term's counter goes to `hits.json`, beside the global lexicon, keyed by project file path and canonical. `loadLexicon` adds it back on the merged view, so `lexicon stats`, the export ordering and the stale-term suggester still see one number per term and nothing above `store.ts` has to know. The project file is read and never written.
 
 There is no setting. A counter belongs to the person who earned it in every case, including the common one where a project lexicon has exactly one user, and a setting most people would have to find and change would be a worse answer than picking correctly by default.
+
+The global lexicon followed later, for a different reason: the prompt hook counts on every corrected prompt, and rewriting (and backing up) a lexicon with the starter packs installed cost more than everything else the hook does, which put it over its 200 ms budget. Global counts now go to `hits.json` too, under `global`, and the hook passes the `LoadedLexicon` it already has so `recordHits` reads neither file again. The clamp below covers both scopes.
 
 Counts already committed are left in the file and treated as a floor that this user's own counts are added to. Dropping them would delete somebody's data, and rewriting a file the user has in git to migrate them is the exact behaviour being removed. They no longer grow; removing them is a one-line hand edit and the user's call. `writeLexiconFile` enforces the rule at the one place every write passes through rather than at nine call sites, so `addTerm` with a caller-supplied `hits`, the dormant `merge: false` path, and any future caller that writes back a term it loaded are all refused.
 

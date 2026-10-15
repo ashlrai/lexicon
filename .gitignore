@@ -24,3 +24,5 @@ extension/*.zip
 *.bak
 *.lock
 .vitest
+# loadLexicon's parsed-YAML cache beside a large global lexicon
+parse-cache.json

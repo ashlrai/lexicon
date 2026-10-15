@@ -30,7 +30,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { z } from 'zod';
+import * as z from 'zod';
 import { HARVEST_STOPLIST } from './harvest.js';
 import { PACK_NAME_RE, installLoadedPack, parsePackText, uninstallLoadedPack } from './packs.js';
 import type { InstallPackResult, Pack, UninstallPackResult } from './packs.js';

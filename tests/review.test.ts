@@ -6,13 +6,13 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest } from '../src/cli/commands.js';
 import { askKey, splitList } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
-import { addTerm, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
+import { addTerm, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
 import { makeIO, scripted } from './helpers.js';
 
@@ -65,8 +65,10 @@ function candidate(canonical: string, extra: Partial<HarvestCandidate> = {}): Ha
   };
 }
 
+/** Written as raw YAML: writeLexiconFile pins `hits` to what is on disk, and the seed's counts are the point. */
 async function seedGlobal(terms: Term[]): Promise<void> {
-  await writeLexiconFile({ path: globalPath, scope: 'global', lexicon: { version: 1, terms }, exists: false });
+  await fs.mkdir(path.dirname(globalPath), { recursive: true });
+  await fs.writeFile(globalPath, stringifyYaml({ version: 1, terms }), 'utf8');
 }
 
 // ---------------------------------------------------------------------------
@@ -300,16 +302,20 @@ describe('review', () => {
 
     const written = await readYaml(globalPath);
     expect(written.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt', 'Keeper', 'Newcomer']);
-    // Untouched term: on-disk hits carried over (4 + 2).
-    expect(written.terms[0].hits).toBe(6);
-    // Edited term: the session's aliases win, the on-disk hit count is kept.
-    expect(written.terms[1]).toMatchObject({ aliases: ['Mason Wyeth', 'Mace on Wyatt'], hits: 1 });
+    // Hits counted meanwhile went to hits.json; the file keeps its own floor (4).
+    expect(written.terms[0].hits).toBe(4);
+    const merged = (await loadLexicon({ cwd: tmp, globalPath })).merged.terms;
+    expect(merged.find((t) => t.canonical === 'Ashlr.AI')?.hits).toBe(6);
+    // Edited term: the session's aliases win, and the count still shows through.
+    expect(written.terms[1]).toMatchObject({ aliases: ['Mason Wyeth', 'Mace on Wyatt'] });
+    expect(merged.find((t) => t.canonical === 'Mason Wyatt')?.hits).toBe(1);
     // Kept term whose aliases were merged elsewhere: the on-disk version wins.
     expect(written.terms[2].aliases).toEqual(['keep her']);
     // Deleted stays deleted even though its hits were bumped meanwhile.
     expect(written.terms.some((t) => t.canonical === 'Stale')).toBe(false);
     expect(written.terms[3]).toMatchObject({ canonical: 'Newcomer', aliases: ['new comer'] });
-    expect(io.out).toContain('merged 4 changes made elsewhere during review');
+    // Keeper's alias and Newcomer; the hit counts never touched the file.
+    expect(io.out).toContain('merged 2 changes made elsewhere during review');
     expect(io.out).toContain(`kept 3, deleted 1, edited 1. Wrote ${globalPath}`);
   });
 

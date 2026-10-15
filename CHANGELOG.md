@@ -8,6 +8,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
 
+### Fixed
+
+- The prompt hook is about a third faster with the starter packs installed, which had pushed it past its 200 ms budget (median 304 ms to 201 ms on a matching prompt, 204 ms to 140 ms on one with nothing to correct, all four packs, 177 terms). Hit counts for global terms now go to the `hits.json` sidecar beside the lexicon instead of rewriting (and backing up) the whole YAML on every matching prompt, and the hook hands `recordHits` the lexicon it already loaded. `loadLexicon` keeps a parsed copy of a large global lexicon in `parse-cache.json`, keyed by the sha256 of the YAML, and the hook bundle no longer carries all of zod (1156 KB to 599 KB). Counts already in a lexicon file stay as a floor; `lexicon stats`, `suggest` and `review --never-hit` see the same totals.
+
 ## 0.5.5 (2026-10-14)
 
 ### Added

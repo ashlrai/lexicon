@@ -18,7 +18,8 @@
  *   dropCorrectionSpans) or the rows of a pasted dictionary / CSV (see
  *   dropDataBlockSpans). The prompt is never blocked or rewritten. Usage
  *   counters (`hits`) are bumped best-effort in the background so
- *   `lexicon stats` also counts hook-only sessions.
+ *   `lexicon stats` also counts hook-only sessions; they go to the small
+ *   `hits.json` sidecar, never into the user's lexicon YAML.
  *
  * The hook must never fail the user's prompt: every error path prints nothing
  * and exits 0.
@@ -350,10 +351,11 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
  * recordHits is best-effort by contract; the catch only covers a mocked or
  * future implementation that rejects.
  */
-function recordHitsInBackground(result: NormalizeResult, cwd: string): void {
+function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: LoadedLexicon): void {
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
-  void recordHits(canonicals, { cwd }).catch((err: unknown) => {
+  // `loaded` spares recordHits re-reading both lexicon files.
+  void recordHits(canonicals, { cwd, loaded }).catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] recordHits: ${message}\n`);
   });
@@ -420,7 +422,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
   if (result) result = dropDataBlockSpans(result);
   const changed = result?.changed === true;
-  if (result && changed) recordHitsInBackground(result, cwd);
+  if (result && changed) recordHitsInBackground(result, cwd, loaded);
 
   if (!changed && !skippedNote && !correctionNote) return '';
 

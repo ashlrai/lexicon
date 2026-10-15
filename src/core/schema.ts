@@ -14,7 +14,7 @@
  * used to hide instructions (zero-width, bidi overrides, BOM) are stripped
  * rather than rejected. See SECURITY.md.
  */
-import { z } from 'zod';
+import * as z from 'zod';
 import { TERM_CATEGORIES, TERM_SCOPES, TERM_SOURCES } from './types.js';
 import type { Lexicon } from './types.js';
 
