@@ -7,6 +7,7 @@
  * as `deps` so tests run it against a mocked store.
  */
 import path from 'node:path';
+import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import {
   AUTO_APPLY_CONFIDENCE,
@@ -267,7 +268,8 @@ export function registerSuggestCommands(program: Command, io: IO): void {
   };
   const positiveInt = (value: string): number => {
     const n = Number.parseInt(value, 10);
-    if (!Number.isFinite(n) || n <= 0) throw new Error('expected a positive integer');
+    // InvalidArgumentError, so commander names the option: "option '--limit <n>' argument 'abc' is invalid".
+    if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError('expected a positive integer');
     return n;
   };
 
