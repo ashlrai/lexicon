@@ -1,4 +1,6 @@
+import os from 'node:os';
 import path from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -1161,21 +1163,35 @@ describe('lexicon MCP server', () => {
     });
 
     it('serve_status reports down when nothing listens and relays /health when up', async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-status-'));
+      // serve.json lives beside the global lexicon.
+      mocks.resolvePaths.mockReturnValue({ global: path.join(dir, 'lexicon.yaml') });
       const fetchSpy = vi.spyOn(globalThis, 'fetch');
       fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
       const { client, close } = await connect();
       try {
+        // No serve.json yet: the default port, and nothing is created.
         const down = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(down.isError).toBe(false);
         expect(JSON.parse(textOf(down))).toMatchObject({ up: false, error: 'ECONNREFUSED' });
         expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:41733/health', expect.objectContaining({ signal: expect.anything() }));
+        await expect(readFile(path.join(dir, 'serve.json'), 'utf8')).rejects.toThrow();
 
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, version: '0.3.0', terms: 36, port: 41733 }), { status: 200 }));
         const up = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(JSON.parse(textOf(up))).toEqual({ up: true, url: 'http://127.0.0.1:41733/health', ok: true, version: '0.3.0', terms: 36, port: 41733 });
+
+        // `lexicon serve --port 41799` records its port in serve.json; status
+        // must probe that port, as `serve --status` and desktop clients do.
+        await writeFile(path.join(dir, 'serve.json'), JSON.stringify({ port: 41799, token: 'a'.repeat(32), createdAt: 'x' }));
+        fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, version: '0.5.5', terms: 2, port: 41799 }), { status: 200 }));
+        const custom = await client.callTool({ name: 'serve_status', arguments: {} });
+        expect(JSON.parse(textOf(custom))).toMatchObject({ up: true, url: 'http://127.0.0.1:41799/health', port: 41799 });
+        expect(fetchSpy).toHaveBeenLastCalledWith('http://127.0.0.1:41799/health', expect.objectContaining({ signal: expect.anything() }));
       } finally {
         fetchSpy.mockRestore();
         await close();
+        await rm(dir, { recursive: true, force: true });
       }
     });
 

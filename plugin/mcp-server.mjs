@@ -55211,7 +55211,6 @@ var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", 
 var INSTALL_SCOPES = ["user", "project"];
 var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "markdown", "text", "csv", "json"];
 var SUGGESTION_KINDS = ["alias", "term", "never", "stale"];
-var SERVE_HEALTH_URL = "http://127.0.0.1:41733/health";
 var TRUST_PREVIEW_ROWS = 25;
 function log(...args) {
   console.error(`[${SERVER_NAME}]`, ...args);
@@ -60821,6 +60820,7 @@ import path23 from "node:path";
 var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
+var DEFAULT_HOST = "127.0.0.1";
 var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
 function getServePath(opts = {}) {
   return path23.join(path23.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
@@ -60872,6 +60872,10 @@ async function ensureServeConfig(opts = {}) {
     await writeServeConfig(config2, opts);
     return config2;
   }, opts);
+}
+function serveUrl(port, host = DEFAULT_HOST) {
+  const h = host.includes(":") ? `[${host}]` : host;
+  return `http://${h}:${port}`;
 }
 
 // src/serve/server.ts
@@ -61782,6 +61786,11 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
+async function serveHealthUrl() {
+  const config2 = await readServeConfig();
+  const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
+  return `${serveUrl(port)}/health`;
+}
 var registerSetupTools = (server, { cwd, load }) => {
   server.registerTool(
     "lexicon_doctor",
@@ -61878,19 +61887,20 @@ var registerSetupTools = (server, { cwd, load }) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1:41733. Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
+      const url2 = await serveHealthUrl();
       try {
-        const res = await fetch(SERVE_HEALTH_URL, { signal: AbortSignal.timeout(1500) });
-        if (!res.ok) return textResult({ up: false, url: SERVE_HEALTH_URL, status: res.status });
+        const res = await fetch(url2, { signal: AbortSignal.timeout(1500) });
+        if (!res.ok) return textResult({ up: false, url: url2, status: res.status });
         const body = await res.json();
-        return textResult({ up: true, url: SERVE_HEALTH_URL, ...isRecord(body) ? body : { body } });
+        return textResult({ up: true, url: url2, ...isRecord(body) ? body : { body } });
       } catch (err) {
         return textResult({
           up: false,
-          url: SERVE_HEALTH_URL,
+          url: url2,
           error: errorMessage(err),
           hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
         });
