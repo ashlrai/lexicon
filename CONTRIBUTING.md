@@ -56,7 +56,7 @@ npm run typecheck       # tsc --noEmit
 npm test                # unit + integration + e2e (vitest)
 npm run test:e2e        # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
 npm run bench           # synthetic accuracy benchmark (see bench/README.md)
-npm run bench:audio     # real-audio benchmark through whisper.cpp
+npm run bench:audio     # TTS-audio benchmark through whisper.cpp
 npm run docs:cli        # regenerate docs/CLI.md from every command's --help
 npm run build:extension # extension/dist, extension/dist-firefox and the two zips
 npm run build:site      # the demo site (site/dist), including install.sh

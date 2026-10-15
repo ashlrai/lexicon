@@ -105,7 +105,7 @@ hooks/hooks.json            plugin hook entries, SessionStart + UserPromptSubmit
 skills/lexicon/SKILL.md     when the agent should normalize, learn, suggest, harvest, set up, diagnose
 commands/lexicon.md         the /lexicon slash command
 tests/                      vitest, one file per module, e2e.test.ts for subprocess journeys, fixtures/fake-repo for harvest
-bench/                      accuracy benchmarks: synthetic corpus and real audio through whisper.cpp
+bench/                      accuracy benchmarks: synthetic corpus and synthesized speech through whisper.cpp
 ```
 
 Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Siblings import each other only through `../core/index.js`; `src/util/` is the one documented exception, imported directly by path from every layer because it sits below all of them and imports nothing back. `src/core` never imports from `cli`, `mcp`, `hooks`, `daemon`, `serve` or `voice`. The MCP server imports CLI handlers (`runDoctorReport`, `runInstall`, `runImport`, `runSetup`) statically so the agent-native tools and the terminal share one code path; nothing in the static graph may also be dynamic-imported, or esbuild lazy-wraps the shared subgraph and the plugin bundle fails to load.

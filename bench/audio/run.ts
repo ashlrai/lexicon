@@ -1,5 +1,5 @@
 /**
- * Real-audio benchmark: macOS `say` -> whisper.cpp -> normalize().
+ * TTS-audio benchmark: macOS `say` -> whisper.cpp -> normalize().
  *
  * The main benchmark (bench/run.ts) feeds the matcher hand-written STT errors.
  * This one produces the errors with an actual recognizer: every sentence in
@@ -867,7 +867,7 @@ interface RunMeta {
 function renderMarkdown(meta: RunMeta, variants: VariantReport[], lexicon: Lexicon): string {
   const primary = variants[0];
   const out: string[] = [];
-  out.push('# Real-audio benchmark results');
+  out.push('# TTS-audio benchmark results');
   out.push('');
   out.push(`Generated ${meta.generatedAt} by \`npm run bench:audio\`. Pipeline: macOS \`say\` (voices ${meta.voices.join(', ')}) -> 16 kHz mono WAV -> whisper.cpp (\`${meta.whisperCli}\`, models ${meta.models.join(', ')}) -> \`normalize()\` with \`${meta.lexicon}\`.`);
   out.push('');
