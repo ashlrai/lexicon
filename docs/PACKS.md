@@ -31,7 +31,7 @@ Project-scope installs go through the [trust gate](TRUST.md) like every other wr
 
 ## How the aliases were chosen
 
-Aliases are what speech-to-text engines actually write for these names, not guesses at what they might. Where the real-audio benchmark recorded a spelling it is in the pack ("cuban eats" for Kubernetes, "and Tropic" for Anthropic, "Olima" for Ollama, "whisper flow" for Wispr Flow); the rest are the plausible splits and phoneme swaps from the synthetic corpus ("dock her", "engine x", "post gress").
+Aliases are what speech-to-text engines actually write for these names, not guesses at what they might. Where the TTS-audio benchmark recorded a spelling it is in the pack ("cuban eats" for Kubernetes, "and Tropic" for Anthropic, "Olima" for Ollama, "whisper flow" for Wispr Flow); the rest are the plausible splits and phoneme swaps from the synthetic corpus ("dock her", "engine x", "post gress").
 
 One rule decides the hard cases: **an ordinary English word is never an alias on its own.** Vercel is left without "vessel", Deel without "deal", Brex without "bricks", and Claude without "cloud", because "the cloud" and "close the deal" are sentences people say. `SaaS -> sass` is the single exception, and it carries `never: [sauce]` so the term cannot eat the other one. Twenty-two terms across the four packs carry a `never` list for the same reason.
 

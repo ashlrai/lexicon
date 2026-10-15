@@ -80,13 +80,13 @@ After a matcher change: `npm run bench -- --sweep`, commit the new `results.json
 numbers in `docs/BENCHMARK.md`, and move the thresholds in `bench.test.ts` if they changed
 deliberately.
 
-## Real audio (`bench/audio/`)
+## TTS audio (`bench/audio/`)
 
 The corpus above is synthetic: the `heard` strings are hand-written STT errors. `bench/audio/`
 produces them with an actual recognizer so the README claim is measured, not assumed. Each
 sentence is synthesized with macOS `say` (three voices), transcribed with whisper.cpp, and the
 transcript is what `normalize()` sees. Numbers and the "what Whisper wrote" table:
-[`bench/audio/results.md`](audio/results.md); methodology and caveats: the "Real audio" section
+[`bench/audio/results.md`](audio/results.md); methodology and caveats: the "TTS audio (macOS TTS -> whisper.cpp)" section
 of [`docs/BENCHMARK.md`](../docs/BENCHMARK.md).
 
 ```bash

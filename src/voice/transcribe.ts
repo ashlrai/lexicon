@@ -1,7 +1,7 @@
 /**
  * whisper.cpp transcription of a 16 kHz mono WAV, followed by the lexicon.
  * `transcribeFile` is the stage `lexicon voice` runs after the recorder and
- * the one the tests and the real-audio check exercise directly.
+ * the one the tests and the TTS-audio check exercise directly.
  */
 import { promises as fs } from 'node:fs';
 import os from 'node:os';

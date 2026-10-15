@@ -24,7 +24,7 @@ an AI agent, the agent searches your codebase for a name that does not exist
 and guesses. Lexicon is one small file of those words, applied to every
 transcript before an agent or a text field sees it.
 
-Measured on 330 real audio clips: proper nouns recovered went from 41.9% to
+Measured on 330 synthesized-speech clips: proper nouns recovered went from 41.9% to
 82.8%. On a synthetic corpus of speech-to-text errors, 5.1% to 96.5%. Zero of
 95 ordinary prose sentences were changed incorrectly. Method, corpora and the
 cases that still fail are in [BENCHMARK.md](BENCHMARK.md), and the benchmark is

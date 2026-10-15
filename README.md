@@ -32,7 +32,7 @@ That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's 
 
 Method, full tables and every failing case are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench` (no setup beyond a clone), or `npm run bench:audio && npm run bench:compare` (needs macOS and whisper.cpp).
 
-**Against the alternatives.** 330 clips of real audio through whisper.cpp `small.en`, three voices. Same audio, same recognizer, same 70-term lexicon in every row; the only thing that changes is how the proper nouns get fixed.
+**Against the alternatives.** 330 clips of synthesized (text-to-speech) audio through whisper.cpp `small.en`, three voices. Same audio, same recognizer, same 70-term lexicon in every row; the only thing that changes is how the proper nouns get fixed.
 
 | how the words get fixed | proper nouns recovered | clean prose wrongly changed |
 | --- | --- | --- |
@@ -52,13 +52,13 @@ Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose b
 
 | corpus | proper nouns recovered, raw STT | after lexicon | clean prose wrongly changed |
 | --- | --- | --- | --- |
-| real audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
-| real audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
+| TTS audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
+| TTS audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
 | synthetic STT errors (402 sentences, 70 terms) | 5.1% | 96.5% | 0 of 95 |
 
-Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
+Latency is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
 
-The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the real-audio one, 41.9%.
+The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the TTS-audio one, 41.9%.
 
 The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 15.3% (19 of 124) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
