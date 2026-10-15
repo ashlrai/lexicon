@@ -231,6 +231,45 @@ describe('harvestRepo', () => {
     expect(byName(candidates, 'FooBarBaz')?.count).toBe(2);
   });
 
+  it('does not read module paths like ./Button.js as brands', async () => {
+    const web = path.join(tmp, 'web-paths');
+    await fs.mkdir(path.join(web, 'src'), { recursive: true });
+    const imports = [
+      "import { Button } from './components/Button.js';",
+      "import { Toast } from '../ui/Toast.js';",
+      "import { Dialog } from 'C:\\\\app\\\\Dialog.js';",
+      '// Built on Next.js and Node.js, shipped by Ashlr.AI.',
+    ].join('\n');
+    for (const name of ['a.tsx', 'b.tsx']) await fs.writeFile(path.join(web, 'src', name), imports + '\n');
+    const candidates = await harvestRepo(web, { minCount: 1 });
+    expect(byName(candidates, 'Button.js')).toBeUndefined();
+    expect(byName(candidates, 'Toast.js')).toBeUndefined();
+    expect(byName(candidates, 'Dialog.js')).toBeUndefined();
+    expect(byName(candidates, 'Next.js')?.category).toBe('brand');
+    expect(byName(candidates, 'Node.js')?.count).toBe(2);
+    expect(byName(candidates, 'Ashlr.AI')?.count).toBe(2);
+  });
+
+  it('holds back README labels: table cells, list items, bold and quoted spans, key chords', async () => {
+    const docs = path.join(tmp, 'readme-labels');
+    await fs.mkdir(docs, { recursive: true });
+    await fs.writeFile(path.join(docs, 'README.md'), [
+      'We deploy on Hetzner because the bill stays low and Hetzner is quick.',
+      '| Action | Result |',
+      '| --- | --- |',
+      '| Choose | Opens the picker |',
+      '- Closing the window hides it.',
+      'Click **Open Anyway** on first launch, then wait for the "Finished" banner.',
+      'Press ⌃⌥Space to focus the app.',
+      'The bundle is assets/index-D2P1AJiD.js and it ships fast.',
+    ].join('\n'));
+    const candidates = await harvestRepo(docs, { minCount: 1 });
+    expect(byName(candidates, 'Hetzner')?.count).toBe(2);
+    for (const label of ['Choose', 'Closing', 'Anyway', 'Finished', 'Space', 'D2P1AJiD.js']) {
+      expect(byName(candidates, label), label).toBeUndefined();
+    }
+  });
+
   it('throws for a missing directory', async () => {
     await expect(harvestRepo(path.join(tmp, 'missing'))).rejects.toThrow(/not a directory/);
   });
