@@ -165,7 +165,9 @@ ui.test.addEventListener('click', () => {
       ui.testResult.textContent = status.error;
       return;
     }
-    if (status.server) {
+    if (status.server && status.tokenError) {
+      ui.testResult.textContent = `Reachable (lexicon ${status.server.version}), but ${status.tokenError}`;
+    } else if (status.server) {
       ui.testResult.textContent = `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set; /normalize will fall back to embedded)'}.`;
     } else {
       ui.testResult.textContent = `Unreachable: ${status.serverError ?? 'unknown error'}. Start it with \`lexicon serve\`.`;

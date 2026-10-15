@@ -64,6 +64,14 @@ interface ApiNormalize {
   summary?: string;
 }
 
+/** A 401 from the API: the server is up but the stored token is not its token. */
+class TokenRejectedError extends Error {
+  constructor() {
+    super('API rejected the token (401). Re-copy it from `lexicon serve --show`, or run `lexicon serve --pair`.');
+    this.name = 'TokenRejectedError';
+  }
+}
+
 /** The `error` string of a failed API reply (`{ error }`, see src/serve/server.ts), or undefined. */
 async function apiErrorDetail(res: Response): Promise<string | undefined> {
   try {
@@ -120,7 +128,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       // Only 401 means the token. The server also answers 403 for an untrusted
       // project lexicon and 400 for bad input, each with an `{ error }` body
       // that says what to fix, so pass that through instead of a bare status.
-      if (res.status === 401) throw new Error('API rejected the token (401). Re-copy it from `lexicon serve --show`.');
+      if (res.status === 401) throw new TokenRejectedError();
       if (!res.ok) {
         const detail = await apiErrorDetail(res);
         throw new Error(detail ? `API ${path}: ${detail}` : `API ${path} returned HTTP ${res.status}`);
@@ -201,7 +209,18 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function statusReq(): Promise<StatusReply> {
     const settings = await getSettings();
     const h = settings.mode === 'api' ? await health(settings, true) : await health(settings);
-    const activeMode: Mode = settings.mode === 'api' && h.health ? 'api' : 'embedded';
+    // /health needs no token, so a reachable server says nothing about the
+    // stored one. Prove it on a bearer route, or "Test connection" reports
+    // Connected while every /normalize falls back with a 401.
+    let tokenError: string | undefined;
+    if (settings.mode === 'api' && h.health && settings.token) {
+      try {
+        await fetchJson(settings, '/stats');
+      } catch (err) {
+        if (err instanceof TokenRejectedError) tokenError = err.message;
+      }
+    }
+    const activeMode: Mode = settings.mode === 'api' && h.health && !tokenError ? 'api' : 'embedded';
     const embeddedError = embedded.load(settings.yaml);
     return {
       ok: true,
@@ -210,6 +229,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       server: h.health,
       serverError: h.error,
       tokenSet: settings.token.length > 0,
+      ...(tokenError !== undefined ? { tokenError } : {}),
       embeddedTerms: embedded.termCount(),
       embeddedError: embeddedError ?? undefined,
       recent: await getRecent(),

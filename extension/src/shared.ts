@@ -103,6 +103,8 @@ export interface StatusReply {
   server: ServerHealth | null;
   serverError?: string;
   tokenSet: boolean;
+  /** Set when the server is up but answered 401 to the stored token. */
+  tokenError?: string;
   embeddedTerms: number;
   embeddedError?: string;
   recent: Correction[];
