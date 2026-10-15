@@ -329,8 +329,8 @@ Usage: lexicon trust [options] [path]
 approve a project .lexicon.yaml so its terms are merged (shows a preview first)
 
 Arguments:
-  path        lexicon file (default: the project .lexicon.yaml for the current
-              directory)
+  path        lexicon file or project directory (default: the project
+              .lexicon.yaml for the current directory)
 
 Options:
   --list      list trusted project lexicons and whether they still match
@@ -345,8 +345,8 @@ Usage: lexicon untrust [options] [path]
 revoke approval for a project .lexicon.yaml
 
 Arguments:
-  path        lexicon file (default: the project .lexicon.yaml for the current
-              directory)
+  path        lexicon file or project directory (default: the project
+              .lexicon.yaml for the current directory)
 
 Options:
   -h, --help  display help for command
