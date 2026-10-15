@@ -187,6 +187,50 @@ export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, sh
 export const LINUX_INSTALL_HINT =
   'install one: sudo apt install wl-clipboard (Wayland) or sudo apt install xclip (X11; xsel also works)';
 
+/** The executables a backend runs, for checking a forced `--backend` before it is used. */
+export const CLIPBOARD_BACKEND_BINARIES: Readonly<Record<ClipboardBackendName, readonly string[]>> = {
+  pbcopy: ['pbpaste', 'pbcopy'],
+  wl: ['wl-paste', 'wl-copy'],
+  xclip: ['xclip'],
+  xsel: ['xsel'],
+  powershell: ['powershell'],
+};
+
+/** The install hint for a backend's tools, or '' when none applies. */
+function backendInstallHint(name: ClipboardBackendName): string {
+  switch (name) {
+    case 'wl':
+      return 'install it: sudo apt install wl-clipboard';
+    case 'xclip':
+      return 'install it: sudo apt install xclip';
+    case 'xsel':
+      return 'install it: sudo apt install xsel';
+    case 'pbcopy':
+      return 'it ships with macOS; check your PATH';
+    case 'powershell':
+      return 'it ships with Windows; check your PATH';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Reject a forced `--backend` whose tools are not on PATH, with the install
+ * hint, instead of letting every clipboard read fail with `spawn xclip ENOENT`.
+ */
+export async function checkClipboardBackend(
+  name: ClipboardBackendName,
+  which: (bin: string) => Promise<boolean>,
+): Promise<void> {
+  const missing: string[] = [];
+  for (const bin of CLIPBOARD_BACKEND_BINARIES[name]) {
+    if (!(await which(bin))) missing.push(bin);
+  }
+  if (missing.length === 0) return;
+  const hint = backendInstallHint(name);
+  throw new Error(`--backend ${name}: ${missing.join(' and ')} not found on PATH${hint ? ` (${hint})` : ''}`);
+}
+
 /** Build a backend by name, for `--backend`. */
 export function createClipboardBackend(name: ClipboardBackendName, exec: ClipboardExec = defaultClipboardExec): ClipboardBackend {
   switch (name) {

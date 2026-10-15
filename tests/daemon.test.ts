@@ -329,8 +329,22 @@ describe('runDaemonCommand', () => {
     const out: string[] = [];
     const err: string[] = [];
     const push = (s: string) => out.push(s);
-    expect(await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', out: push, err: (s) => err.push(s) })).toBe(0);
+    // An injected exec stands in for the tool, so no PATH check applies.
+    expect(
+      await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', exec: async () => '', paste: false, out: push, err: (s) => err.push(s) }),
+    ).toBe(0);
+    // `paste: false` is what the CLI passes without --paste: no --paste line off macOS.
     expect(out.join('')).toBe('clipboard backend: xclip (xclip -selection clipboard -o / -i (X11))\n');
+
+    // A forced backend whose tool is missing is refused with the install hint, not reported as usable.
+    out.length = 0;
+    expect(await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', env: { PATH: '' }, out: push, err: (s) => err.push(s) })).toBe(1);
+    expect(err.join('')).toContain('--backend xclip: xclip not found on PATH (install it: sudo apt install xclip)');
+    expect(out).toEqual([]);
+    await expect(runClipboardOnce({ backend: 'wl', platform: 'linux', env: { PATH: '' }, out: push })).rejects.toThrow(
+      /wl-paste and wl-copy not found on PATH/,
+    );
+    err.length = 0;
 
     out.length = 0;
     expect(await runDaemonCommand({ which: true, platform: 'linux', env: { PATH: '' }, out: push, err: (s) => err.push(s) })).toBe(1);
