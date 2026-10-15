@@ -111,6 +111,27 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  it('a clipboard that keeps failing is reported once, then again when it recovers', async () => {
+    const h = start('');
+    let failing = true;
+    h.read.mockImplementation(async () => {
+      if (failing) throw new Error("xclip exited with code 1: Error: Can't open display: (null)");
+      return h.clipboard;
+    });
+    await vi.advanceTimersByTimeAsync(250 * 20);
+    expect(h.read.mock.calls.length).toBeGreaterThanOrEqual(20);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toMatch(/Can't open display.*retrying every 250ms/);
+
+    failing = false;
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.err).toHaveLength(2);
+    expect(h.err[1]).toMatch(/working again/);
+
+    h.controller.abort();
+    await h.done;
+  });
+
   it('dryRun never records hits', async () => {
     const h = start('meet Ashler', { dryRun: true });
     await vi.advanceTimersByTimeAsync(0);
