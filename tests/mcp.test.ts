@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { ElicitRequestSchema, type ElicitResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, NormalizeResult, Term } from '../src/core/types.js';
 import type { DoctorReport, IO } from '../src/cli/commands.js';
 import type { SetupOptions, SetupPlan, SetupSummary } from '../src/cli/cmd-setup.js';
@@ -40,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   computeStats: vi.fn(),
   // trust_project
   getTrustPath: vi.fn(),
+  hashFile: vi.fn(),
   isTrusted: vi.fn(),
   listTrusted: vi.fn(),
   readLexiconFile: vi.fn(),
@@ -195,6 +197,7 @@ beforeEach(() => {
     format === 'json' ? JSON.stringify(fixtureLexicon) : '## Voice lexicon',
   );
   mocks.getTrustPath.mockReturnValue('/fake/global/trust.json');
+  mocks.hashFile.mockResolvedValue('abcdef0123456789');
   mocks.isTrusted.mockResolvedValue('untrusted');
   mocks.listTrusted.mockResolvedValue([]);
   mocks.readLexiconFile.mockResolvedValue(projectFile);
@@ -235,11 +238,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function connect(): Promise<{ client: Client; close: () => Promise<void> }> {
+// `elicit` makes the client advertise elicitation and answer every request with it,
+// standing in for the user answering the client's prompt.
+async function connect(
+  elicit?: (message: string) => ElicitResult | Promise<ElicitResult>,
+): Promise<{ client: Client; close: () => Promise<void> }> {
   const { createServer } = await import('../src/mcp/server.js');
   const server = createServer({ cwd: '/fake/repo' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  const client = new Client({ name: 'test-client', version: '0.0.0' }, elicit ? { capabilities: { elicitation: {} } } : undefined);
+  if (elicit) client.setRequestHandler(ElicitRequestSchema, async (req) => elicit(req.params.message));
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   return {
@@ -685,8 +693,12 @@ describe('lexicon MCP server', () => {
       }
     });
 
-    it('trust_project trust pins the file and returns the term count and preview', async () => {
-      const { client, close } = await connect();
+    it('trust_project trust asks the user, then pins the file and returns the term count and preview', async () => {
+      const asked: string[] = [];
+      const { client, close } = await connect((message) => {
+        asked.push(message);
+        return { action: 'accept', content: { trust: true } };
+      });
       try {
         const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust', path: 'sub/.lexicon.yaml' } });
         expect(result.isError).toBe(false);
@@ -702,6 +714,80 @@ describe('lexicon MCP server', () => {
         });
         expect((payload.preview as unknown[]).length).toBe(2);
         expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo' });
+        expect(asked).toHaveLength(1);
+        expect(asked[0]).toMatch(/Trust the project lexicon at .*sub.*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
+        expect(asked[0]).not.toContain('ignore me');
+      } finally {
+        await close();
+      }
+    });
+
+    it('trust_project trust never trusts on the agent\'s word when the client cannot ask the user', async () => {
+      const { client, close } = await connect();
+      try {
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toMatch(/needs the user's approval and this client cannot ask them/);
+        expect(textOf(result)).toMatch(/lexicon trust/);
+        expect(mocks.trustProject).not.toHaveBeenCalled();
+      } finally {
+        await close();
+      }
+    });
+
+    it('trust_project trust does nothing when the user declines or cancels', async () => {
+      for (const answer of [
+        { action: 'decline' },
+        { action: 'cancel' },
+        { action: 'accept', content: { trust: false } },
+      ] as ElicitResult[]) {
+        const { client, close } = await connect(() => answer);
+        try {
+          const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+          expect(result.isError).toBe(false);
+          expect(JSON.parse(textOf(result))).toMatchObject({ action: 'trust', status: 'untrusted', result: 'declined' });
+        } finally {
+          await close();
+        }
+      }
+      expect(mocks.trustProject).not.toHaveBeenCalled();
+    });
+
+    it('trust_project trust refuses when the file changes after the user saw it', async () => {
+      const { client, close } = await connect(() => {
+        mocks.hashFile.mockResolvedValue('feedface');
+        return { action: 'accept', content: { trust: true } };
+      });
+      try {
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toMatch(/changed while waiting for approval; nothing was trusted/);
+        expect(mocks.trustProject).not.toHaveBeenCalled();
+      } finally {
+        await close();
+      }
+    });
+
+    it('trust_project trust revokes a pin whose bytes differ from what the user approved', async () => {
+      mocks.trustProject.mockResolvedValueOnce({ sha256: 'feedface00000000', trustedAt: '2026-09-19T00:00:00.000Z' });
+      const { client, close } = await connect(() => ({ action: 'accept', content: { trust: true } }));
+      try {
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toMatch(/changed while it was being trusted; trust was revoked/);
+        expect(mocks.untrustProject).toHaveBeenCalledWith('/fake/repo/.lexicon.yaml', { cwd: '/fake/repo' });
+      } finally {
+        await close();
+      }
+    });
+
+    it('trust_project trust re-pins an already trusted file without asking', async () => {
+      mocks.isTrusted.mockResolvedValue('trusted');
+      const { client, close } = await connect();
+      try {
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+        expect(result.isError).toBe(false);
+        expect(JSON.parse(textOf(result))).toMatchObject({ result: 're-pinned' });
       } finally {
         await close();
       }
