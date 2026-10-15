@@ -65,7 +65,9 @@ Decide what to do from the arguments:
 11. **`trust [path]`** - call `trust_project { action: 'status', path? }` and
     show the user the file path, its status and the preview table (canonical,
     first alias, alias count). Ask whether to trust it. Only on a clear yes
-    call `trust_project { action: 'trust', path? }` and confirm in one line.
+    call `trust_project { action: 'trust', path? }`; the client asks the user to
+    confirm. Report the result in one line (if it says the client cannot ask,
+    tell them to run `lexicon trust` in a terminal).
     `trust off [path]` or `untrust` calls `action: 'untrust'`. Never trust a
     file whose preview the user has not just seen.
 

@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Security
+
+- MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
+
 ## 0.5.5 (2026-10-14)
 
 ### Added
