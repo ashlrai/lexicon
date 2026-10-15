@@ -547,14 +547,19 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(lexiconServerEnv({ LEXICON_PATH: 'a.yaml' }, '/c')).toEqual({ LEXICON_PATH: path.resolve('/c', 'a.yaml') });
   });
 
-  it('writes them into a JSON client entry and keeps the user\'s other variables', async () => {
+  it('writes them into a JSON client entry, never over a variable the user set there', async () => {
     const file = path.join(home, '.cursor/mcp.json');
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: ['/old.js'], env: { MINE: '1', LEXICON_PATH: '/stale.yaml' } } } }));
     const r = await run('cursor', { apply: true }, lexEnv());
     expect(r.code).toBe(0);
     const entry = ((await readJson(file)).mcpServers as Record<string, { env: Record<string, string> }>).lexicon;
-    expect(entry.env).toEqual({ MINE: '1', LEXICON_PATH: path.resolve(cwd, 'lex/my.yaml'), LEXICON_CWD: '/work/repo' });
+    expect(entry.env).toEqual({ MINE: '1', LEXICON_PATH: '/stale.yaml', LEXICON_CWD: '/work/repo' });
+    // A fresh entry gets both.
+    await fs.writeFile(file, '{}');
+    await run('cursor', { apply: true }, lexEnv());
+    const fresh = ((await readJson(file)).mcpServers as Record<string, { env: Record<string, string> }>).lexicon;
+    expect(fresh.env).toEqual({ LEXICON_PATH: path.resolve(cwd, 'lex/my.yaml'), LEXICON_CWD: '/work/repo' });
     expect(r.io.out).toContain('"LEXICON_PATH"');
     // Unset in the shell: the entry is written without env, as before.
     const plain = await run('windsurf', { apply: true });
@@ -563,7 +568,7 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(ws.lexicon.env).toBeUndefined();
   });
 
-  it('writes an inline env table for Codex, or keys in an existing [mcp_servers.lexicon.env]', async () => {
+  it('writes an inline env table for Codex, or adds missing keys to an existing [mcp_servers.lexicon.env]', async () => {
     const file = path.join(home, '.codex/config.toml');
     await run('codex', { apply: true }, lexEnv());
     const text = await fs.readFile(file, 'utf8');
@@ -574,9 +579,9 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     const merged = await fs.readFile(file, 'utf8');
     expect(merged).not.toContain('env = {');
     expect(merged).toContain('FOO = "bar"');
-    expect(merged).toContain(`LEXICON_PATH = ${JSON.stringify(path.resolve(cwd, 'lex/my.yaml'))}`);
+    expect(merged).toContain('LEXICON_PATH = "/stale.yaml"');
+    expect(merged).not.toContain(JSON.stringify(path.resolve(cwd, 'lex/my.yaml')));
     expect(merged).toContain('LEXICON_CWD = "/work/repo"');
-    expect(merged).not.toContain('/stale.yaml');
     const again = await run('codex', { apply: true }, lexEnv());
     expect(again.io.out).toContain('nothing changed');
   });

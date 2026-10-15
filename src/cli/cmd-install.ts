@@ -348,9 +348,10 @@ export function mergeServerIntoJson(
     throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
   }
   const mergedEntry: Record<string, unknown> = { ...(isRecord(existingEntry) ? existingEntry : {}), ...structuredClone(entry) };
-  // Our variables are set; any other variable the user put in env is kept.
+  // Ours fill in what the entry lacks; a variable the user already set there
+  // (their own LEXICON_PATH included) is theirs and is kept.
   if (entry.env && isRecord(existingEntry) && isRecord(existingEntry.env)) {
-    mergedEntry.env = { ...existingEntry.env, ...entry.env };
+    mergedEntry.env = { ...entry.env, ...existingEntry.env };
   }
   if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
@@ -382,9 +383,9 @@ export function codexBlock(entry: StdioServerEntry): string {
 }
 
 /**
- * Set `values` inside an existing `[header]` table, replacing a line for the
- * same key and appending the others after the table's last key line. Every
- * other key, comment and table is left as it is. `text` must contain the header.
+ * Add `values` to an existing `[header]` table, after its last key line. A key
+ * the table already sets is left as the user wrote it, like every other key,
+ * comment and table. `text` must contain the header.
  */
 export function upsertTomlKeys(text: string, header: string, values: Record<string, string>): MergeResult<string> {
   const lines = text.split('\n');
@@ -395,11 +396,8 @@ export function upsertTomlKeys(text: string, header: string, values: Record<stri
   while (end > start + 1 && isBlankOrComment(lines[end - 1] ?? '')) end -= 1;
   const append: string[] = [];
   for (const [key, value] of Object.entries(values)) {
-    const wanted = `${key} = ${tomlString(value)}`;
     const keyRe = new RegExp(`^\\s*"?${key}"?\\s*=`);
-    const at = lines.findIndex((l, i) => i > start && i < end && keyRe.test(l));
-    if (at === -1) append.push(wanted);
-    else lines[at] = wanted;
+    if (!lines.some((l, i) => i > start && i < end && keyRe.test(l))) append.push(`${key} = ${tomlString(value)}`);
   }
   lines.splice(end, 0, ...append);
   const next = lines.join('\n');
