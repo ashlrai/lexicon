@@ -75,7 +75,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "commander": "^14.0.3",
     "double-metaphone": "^2.0.1",
     "fastest-levenshtein": "^1.0.16",
