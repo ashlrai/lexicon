@@ -30,7 +30,7 @@ import {
   exportLexicon,
   installPack,
   installedPacks,
-  isExportFormat,
+  resolveExportFormat,
   learnCorrection,
   listPacks,
   loadLexicon,
@@ -663,8 +663,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const exportMatch = /^\/export\/([a-z-]+)$/.exec(pathname);
     if (exportMatch) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      const format = exportMatch[1];
-      if (!isExportFormat(format)) throw new HttpError(404, `unknown export format "${format}"`);
+      const format = resolveExportFormat(exportMatch[1]);
+      if (format === undefined) throw new HttpError(404, `unknown export format "${exportMatch[1]}"`);
       const loaded = await load(resolveCwd(url.searchParams.get('cwd')));
       return { status: 200, text: exportLexicon(loaded.merged, format), contentType: exportContentType(format) };
     }

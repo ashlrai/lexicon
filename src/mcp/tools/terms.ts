@@ -263,7 +263,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           aliasAdded: learned.aliasAdded,
           summary: learned.aliasAdded
             ? `"${heard}" -> "${learned.term.canonical}" saved`
-            : `"${heard}" was already an alias of "${learned.term.canonical}"`,
+            : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
+              ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
+              : `"${heard}" was already an alias of "${learned.term.canonical}"`,
         });
       }),
   );

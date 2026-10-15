@@ -598,6 +598,25 @@ describe('identifier glue', () => {
     expect(find('ashler ai_core', [ASHLR]).map((r) => r.original)).toEqual(['ashler']);
   });
 
+  it('a possessive alias beats a near-miss term that the whole word (apostrophe and all) fuzzes to', () => {
+    // Regression guard: the possessive-stripped view's alias hit must win over
+    // any inexact match the full view ("ashler's", "ashlers") finds for a
+    // different term.
+    const rivals: Term[] = [
+      { canonical: 'Ashlers', aliases: [] },
+      { canonical: 'Hashlers', aliases: [] },
+      { canonical: 'Ashlerz', aliases: [] },
+    ];
+    for (const rival of rivals) {
+      for (const text of ["ask Ashler's team", "ASHLER'S plan", 'the ashler\u2019s plan']) {
+        const reps = find(text, [ASHLR, rival]);
+        expect(reps, `${rival.canonical} / ${text}`).toHaveLength(1);
+        expect(reps[0]).toMatchObject({ canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 });
+        expect(reps[0].original.toLowerCase()).toBe('ashler');
+      }
+    }
+  });
+
   it('still matches a plain word, a possessive, sentence punctuation and a spaced hyphen', () => {
     expect(find('ping ashlr today', [ASHLR])[0]).toMatchObject({ original: 'ashlr', replacement: 'Ashlr.AI', reason: 'alias' });
     const possessive = "ashler's team";

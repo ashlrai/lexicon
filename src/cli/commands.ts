@@ -59,6 +59,7 @@ import {
   emptyLexicon,
   isEmptyLexicon,
   exportLexicon,
+  resolveExportFormat,
   harvestRepo,
   loadLexicon,
   normalize,
@@ -158,10 +159,6 @@ function parseCategory(value: string | undefined): TermCategory | undefined {
 function parseCategoryLoose(value: string): TermCategory | undefined {
   const lower = value.trim().toLowerCase();
   return (TERM_CATEGORIES as readonly string[]).includes(lower) ? (lower as TermCategory) : undefined;
-}
-
-function isExportFormat(value: string): value is ExportFormat {
-  return (EXPORT_FORMATS as readonly string[]).includes(value);
 }
 
 /**
@@ -645,14 +642,15 @@ function formatList(): string {
   return `available formats:\n${renderTable(rows)}`;
 }
 
-export async function runExport(format: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
-  if (format === undefined) {
+export async function runExport(requested: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
+  if (requested === undefined) {
     line(io, 'usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>]');
     io.stdout(formatList());
     return 0;
   }
-  if (!isExportFormat(format)) {
-    io.stderr(`lexicon: unknown export format "${safe(format)}"\n`);
+  const format = resolveExportFormat(requested);
+  if (format === undefined) {
+    io.stderr(`lexicon: unknown export format "${safe(requested)}"\n`);
     io.stderr(formatList());
     return 1;
   }

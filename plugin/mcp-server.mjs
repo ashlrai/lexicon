@@ -57414,11 +57414,12 @@ async function learnCorrection(c, opts = {}) {
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
     throw new Error(`learnCorrection: each side must be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
-  if (sameText(heard, meant)) {
+  if (heard === meant) {
     throw new Error(`learnCorrection: "${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
   const { scope, ...storeOpts2 } = opts;
   const loaded = await loadLexicon(storeOpts2);
+  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts2, scope);
   const existing = termFor(loaded.merged, meant);
   if (existing) {
     const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
@@ -57435,6 +57436,34 @@ async function learnCorrection(c, opts = {}) {
     { ...storeOpts2, scope: scope ?? "global" }
   );
   return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+}
+async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
+  const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
+  if (!byCanonical) {
+    const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
+    if (viaAlias) {
+      throw new Error(
+        `learnCorrection: "${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; remove the alias first (lexicon remove, or edit the term) if "${meant}" is its own name`
+      );
+    }
+    const saved2 = await addTerm(
+      { canonical: meant, aliases: suggestAliases(meant).filter((a) => !sameText(a, meant)), source: "learned" },
+      { ...storeOpts2, scope: scope ?? "global" }
+    );
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true };
+  }
+  const termScope = byCanonical.scope ?? "global";
+  const file2 = termScope === "project" ? loaded.project : loaded.global;
+  if (byCanonical.canonical === meant && file2) {
+    return { term: byCanonical, created: false, file: file2, aliasAdded: false };
+  }
+  const onDisk = file2?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));
+  const base = onDisk ?? byCanonical;
+  const saved = await addTerm(
+    { ...base, canonical: meant, aliases: base.aliases.filter((a) => !sameText(a, meant)) },
+    { ...storeOpts2, scope: termScope, merge: false }
+  );
+  return { term: saved.term, created: false, file: saved.file, aliasAdded: true };
 }
 function suggestCanonicalFor(heard, lexicon) {
   const needle = heard.trim().toLowerCase();
@@ -58901,7 +58930,7 @@ var registerTermTools = (server, ctx) => {
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
-        summary: learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : `"${heard}" was already an alias of "${learned.term.canonical}"`
+        summary: learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`
       });
     })
   );
@@ -59862,7 +59891,7 @@ function mergeServerIntoJson(current, key, entry) {
   }
   const mergedEntry = { ...isRecord(existingEntry) ? existingEntry : {}, ...structuredClone(entry) };
   if (entry.env && isRecord(existingEntry) && isRecord(existingEntry.env)) {
-    mergedEntry.env = { ...existingEntry.env, ...entry.env };
+    mergedEntry.env = { ...entry.env, ...existingEntry.env };
   }
   if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
@@ -59896,11 +59925,8 @@ function upsertTomlKeys(text, header, values) {
   while (end > start + 1 && isBlankOrComment(lines[end - 1] ?? "")) end -= 1;
   const append = [];
   for (const [key, value] of Object.entries(values)) {
-    const wanted = `${key} = ${tomlString(value)}`;
     const keyRe = new RegExp(`^\\s*"?${key}"?\\s*=`);
-    const at = lines.findIndex((l, i) => i > start && i < end && keyRe.test(l));
-    if (at === -1) append.push(wanted);
-    else lines[at] = wanted;
+    if (!lines.some((l, i) => i > start && i < end && keyRe.test(l))) append.push(`${key} = ${tomlString(value)}`);
   }
   lines.splice(end, 0, ...append);
   const next = lines.join("\n");
@@ -61411,6 +61437,9 @@ async function seedTerm(ctx, term) {
   ctx.seeded.push(result.term.canonical);
   if (result.created) ctx.summary.termsAdded.push(result.term.canonical);
 }
+function gitUserName(ctx) {
+  return tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]) ?? tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "config", "user.name"]) ?? (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || void 0);
+}
 async function stepLexicon(ctx) {
   stepHeading(ctx, 1, "Global lexicon");
   const global = resolvePaths({ cwd: ctx.cwd }).global;
@@ -61433,7 +61462,7 @@ async function stepLexicon(ctx) {
     return;
   }
   if (ctx.plan) {
-    const person2 = ctx.opts.person ?? tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]);
+    const person2 = ctx.opts.person ?? gitUserName(ctx);
     const company2 = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
@@ -61450,10 +61479,12 @@ async function stepLexicon(ctx) {
       const aliases2 = suggestAliases(canonical);
       ctx.say(`   would add ${bold(safe(canonical))} (${category}): ${aliases2.length > 0 ? safe(aliases2.join(", ")) : dim("(no aliases)")}`);
     }
-    if (ctx.plan.wouldSeed.length === 0) ctx.say(dim("   nothing to seed (no git user.name, no company guess)"));
+    if (ctx.plan.wouldSeed.length === 0) {
+      ctx.say(dim('   nothing to seed (no git user.name, no company guess); pass --person "Your Name" and --company "Your Co"'));
+    }
     return;
   }
-  const gitName = ctx.opts.person ?? tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]);
+  const gitName = ctx.opts.person ?? gitUserName(ctx);
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true) ? gitName : void 0;
@@ -61461,7 +61492,7 @@ async function stepLexicon(ctx) {
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: "person", source: "user" });
   } else {
-    ctx.say(dim('   no person term (git user.name is unset; add one later: lexicon add "Your Name" --category person)'));
+    ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
   const suggestion = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
   let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
@@ -61522,10 +61553,18 @@ async function stepPacks(ctx) {
     return p ? `${name} ${dim(`(${p.terms} terms)`)}` : name;
   };
   const explicit = typeof ctx.opts.packs === "string" ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : void 0;
-  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name));
+  let installed = [];
+  try {
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+  } catch {
+  }
+  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name) && !installed.includes(name));
+  const offered = (names) => names.filter((name) => !installed.includes(name));
+  if (installed.length > 0) ctx.say(dim(`   already installed: ${installed.join(", ")}`));
   if (ctx.plan) {
-    const chosen2 = explicit ?? [...defaults];
+    const chosen2 = explicit !== void 0 ? offered(explicit) : [...defaults];
     ctx.plan.wouldInstallPacks = chosen2;
+    if (installed.length > 0) ctx.plan.alreadyInstalledPacks = [...installed];
     const asks = explicit === void 0 && ctx.plan.interactive;
     if (asks) ctx.plan.wouldAsk.push("packs");
     if (chosen2.length === 0) {
@@ -61555,13 +61594,13 @@ async function stepPacks(ctx) {
       return;
     }
   } else if (ctx.prompter) {
-    chosen = await ctx.prompter.choose(
+    chosen = defaults.length === 0 ? [] : await ctx.prompter.choose(
       "   add starter packs to the global lexicon (Enter keeps the checked ones):",
       defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ""}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
       { multi: true }
     );
     for (const p of available) {
-      if (defaults.includes(p.name)) continue;
+      if (defaults.includes(p.name) || installed.includes(p.name)) continue;
       if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
     }
     if (chosen.length === 0) {
@@ -61572,13 +61611,9 @@ async function stepPacks(ctx) {
     ctx.say(dim(`   skipped (not requested); add --packs ${defaults.join(",")} to install the defaults, or later: lexicon pack add <name>`));
     return;
   }
-  const installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
   const install = ctx.deps.installPack ?? installPack;
   for (const name of chosen) {
-    if (installed.includes(name)) {
-      ctx.say(dim(`   already installed: ${name}`));
-      continue;
-    }
+    if (installed.includes(name)) continue;
     const result = await install(name, { cwd: ctx.cwd, scope: "global" });
     ctx.summary.packs.push({ name, added: result.added, merged: result.merged });
     ctx.say(`   installed ${bold(name)}: ${result.added} added, ${result.merged} merged`);
@@ -62048,7 +62083,7 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),

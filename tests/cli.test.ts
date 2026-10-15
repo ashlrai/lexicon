@@ -375,6 +375,15 @@ describe('export', () => {
     expect(await fs.readFile(path.join(dir, 'sub', 'lex.json'), 'utf8')).toBe('export:json\n');
     expect(io2.out).toContain('wrote json export');
   });
+
+  it('accepts the product name for a format (wispr-flow, any case)', async () => {
+    for (const name of ['wispr-flow', 'Wispr-Flow', 'wisprflow']) {
+      const io = makeIO();
+      expect(await runExport(name, {}, io)).toBe(0);
+      expect(io.out).toBe('export:wispr\n');
+    }
+    expect(core.exportLexicon).toHaveBeenLastCalledWith(expect.anything(), 'wispr', {});
+  });
 });
 
 describe('renderTable', () => {
