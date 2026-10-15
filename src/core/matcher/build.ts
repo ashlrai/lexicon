@@ -140,6 +140,34 @@ export function implicitAliases(canonical: string): string[] {
   return out;
 }
 
+/**
+ * Suffixes STT writes as their own word after a garbled stem ("ashlar ai",
+ * "ashler a.i."). Ones that are also everyday words (co, me, so, sh, app) are
+ * left out: "mined so much" must not become "Mind.so much".
+ */
+const SPOKEN_DOMAIN_SUFFIXES: ReadonlySet<string> = new Set(['ai', 'io', 'dev', 'com', 'net', 'org', 'xyz', 'gg']);
+
+/**
+ * For a domain-like canonical, each explicit one-word alias also matches with
+ * the suffix spoken after it: `Ashlr.AI` with alias `Ashlar` gets `Ashlar ai`.
+ * Without it the alias claimed only "ashlar" and "ashlar ai" came out as
+ * "Ashlr.AI ai". The suffix is matched separator-insensitively like any alias,
+ * so "ashlar a.i." is covered too.
+ */
+export function suffixedAliases(canonical: string, aliases: readonly string[]): string[] {
+  const m = DOMAIN_SUFFIX.exec(canonical);
+  if (!m) return [];
+  const suffix = m[2].toLowerCase();
+  if (!SPOKEN_DOMAIN_SUFFIXES.has(suffix)) return [];
+  const out: string[] = [];
+  for (const alias of aliases) {
+    const a = squash(alias);
+    if (!a || /\s/.test(a) || foldLower(a).endsWith(suffix)) continue;
+    out.push(`${a} ${suffix}`);
+  }
+  return out;
+}
+
 export function buildIndex(lexicon: Lexicon): MatcherIndex {
   const settings = lexicon.settings ?? {};
   const exact = new Map<string, AliasEntry[]>();
@@ -169,6 +197,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
     const candidates: Array<{ alias: string; explicit: boolean }> = [
       ...implicitAliases(term.canonical).map((alias) => ({ alias, explicit: false })),
       ...term.aliases.map((alias) => ({ alias, explicit: true })),
+      ...suffixedAliases(term.canonical, term.aliases).map((alias) => ({ alias, explicit: false })),
     ];
 
     for (const { alias, explicit } of candidates) {
