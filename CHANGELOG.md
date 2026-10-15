@@ -2,7 +2,7 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
-## Unreleased
+## 0.5.6 (2026-10-15)
 
 ### Security
 
