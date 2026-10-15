@@ -55353,7 +55353,7 @@ async function harvestRepo(root, opts = {}) {
     const text = readText(file2);
     if (text === void 0) continue;
     if (ext === ".md" || SOURCE_EXTENSIONS.has(ext)) {
-      for (const [brand, n] of countMatches(text, DOT_TLD_RE)) {
+      for (const [brand, n] of countDotTldBrands(text)) {
         bump3(brand, "brand", "harvest:repo", rel, n, true);
       }
     }
@@ -55799,17 +55799,26 @@ function isGenericIdentifier(ident) {
 function readmeProperNouns(text) {
   const out = /* @__PURE__ */ new Map();
   const initial = /* @__PURE__ */ new Map();
-  const stripped = stripMarkdownNoise(text);
-  const sentences = stripped.split(/(?<=[.!?:])\s+|\n+/);
+  const stripped = stripMarkdownNoise(text).replace(
+    /(\*\*|__)([^*_\n]+)\1|"([^"\n]{1,80})"/g,
+    (_m, _d, bold2, quoted) => ` ${(bold2 ?? quoted ?? "").split(/\s+/).filter(Boolean).map((w) => `*${w}`).join(" ")} `
+  );
+  const sentences = stripped.split(/(?<=[.!?:])\s+|\n+|\s*\|\s*/);
   for (const sentence of sentences) {
     const tokens = sentence.split(/\s+/).filter(Boolean);
-    for (let i = 0; i < tokens.length; i++) {
-      const word = tokens[i].replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, "");
+    let first = true;
+    for (const raw of tokens) {
+      const word = raw.replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, "");
+      if (!word) continue;
+      const atStart = first;
+      first = false;
+      if (/^[^A-Za-z"'(\[*_]/.test(raw)) continue;
       if (word.length < 4) continue;
       if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
-      const bucket = i === 0 ? initial : out;
+      const emphasised = /^[*_]/.test(raw);
+      const bucket = atStart || emphasised ? initial : out;
       bucket.set(word, (bucket.get(word) ?? 0) + 1);
     }
   }
@@ -55822,9 +55831,11 @@ function readmeProperNouns(text) {
 function stripMarkdownNoise(md) {
   return md.replace(/```[\s\S]*?```/g, " ").replace(/`[^`\n]*`/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\]\([^)]*\)/g, "] ").replace(/https?:\/\/\S+/g, " ").replace(/^#+\s*/gm, "");
 }
-function countMatches(text, re) {
+function countDotTldBrands(text) {
   const out = /* @__PURE__ */ new Map();
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(DOT_TLD_RE)) {
+    const before = m.index > 0 ? text[m.index - 1] : "";
+    if (before === "/" || before === "\\" || before === "-" || before === "_") continue;
     out.set(m[0], (out.get(m[0]) ?? 0) + 1);
   }
   return out;
