@@ -64,6 +64,17 @@ interface ApiNormalize {
   summary?: string;
 }
 
+/** The `error` string of a failed API reply (`{ error }`, see src/serve/server.ts), or undefined. */
+async function apiErrorDetail(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { error?: unknown } | null;
+    const error = body?.error;
+    return typeof error === 'string' && error.trim() ? error.trim().slice(0, 300) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createBackground(deps: BackgroundDeps): Background {
   const now = deps.now ?? (() => Date.now());
   const embedded = createEmbedded(deps.defaultYaml);
@@ -106,8 +117,14 @@ export function createBackground(deps: BackgroundDeps): Background {
         headers.Authorization = `Bearer ${settings.token}`;
       }
       const res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
-      if (res.status === 401 || res.status === 403) throw new Error('API rejected the token (401). Re-copy it from `lexicon serve --show`.');
-      if (!res.ok) throw new Error(`API ${path} returned HTTP ${res.status}`);
+      // Only 401 means the token. The server also answers 403 for an untrusted
+      // project lexicon and 400 for bad input, each with an `{ error }` body
+      // that says what to fix, so pass that through instead of a bare status.
+      if (res.status === 401) throw new Error('API rejected the token (401). Re-copy it from `lexicon serve --show`.');
+      if (!res.ok) {
+        const detail = await apiErrorDetail(res);
+        throw new Error(detail ? `API ${path}: ${detail}` : `API ${path} returned HTTP ${res.status}`);
+      }
       return (await res.json()) as unknown;
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') throw new Error(`API ${path} timed out`);
