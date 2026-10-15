@@ -349,7 +349,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
 
     // 5b. dot-TLD brands anywhere in md / source
     if (ext === '.md' || SOURCE_EXTENSIONS.has(ext)) {
-      for (const [brand, n] of countMatches(text, DOT_TLD_RE)) {
+      for (const [brand, n] of countDotTldBrands(text)) {
         bump(brand, 'brand', 'harvest:repo', rel, n, true);
       }
     }
@@ -700,9 +700,17 @@ function stripMarkdownNoise(md: string): string {
     .replace(/^#+\s*/gm, '');
 }
 
-function countMatches(text: string, re: RegExp): Map<string, number> {
+/**
+ * DOT_TLD_RE matches, minus file paths. `from './Button.js'` and
+ * `src/Toast.js` are module paths, not names anyone says, and in a React
+ * repo they otherwise outrank every real brand. A match is a path when the
+ * character before it is a path separator.
+ */
+function countDotTldBrands(text: string): Map<string, number> {
   const out = new Map<string, number>();
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(DOT_TLD_RE)) {
+    const before = m.index > 0 ? text[m.index - 1] : '';
+    if (before === '/' || before === '\\') continue;
     out.set(m[0], (out.get(m[0]) ?? 0) + 1);
   }
   return out;

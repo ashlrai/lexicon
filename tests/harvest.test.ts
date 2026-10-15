@@ -214,6 +214,25 @@ describe('harvestRepo', () => {
     expect(byName(candidates, 'FooBarBaz')?.count).toBe(2);
   });
 
+  it('does not read module paths like ./Button.js as brands', async () => {
+    const web = path.join(tmp, 'web-paths');
+    await fs.mkdir(path.join(web, 'src'), { recursive: true });
+    const imports = [
+      "import { Button } from './components/Button.js';",
+      "import { Toast } from '../ui/Toast.js';",
+      "import { Dialog } from 'C:\\\\app\\\\Dialog.js';",
+      '// Built on Next.js and Node.js, shipped by Ashlr.AI.',
+    ].join('\n');
+    for (const name of ['a.tsx', 'b.tsx']) await fs.writeFile(path.join(web, 'src', name), imports + '\n');
+    const candidates = await harvestRepo(web, { minCount: 1 });
+    expect(byName(candidates, 'Button.js')).toBeUndefined();
+    expect(byName(candidates, 'Toast.js')).toBeUndefined();
+    expect(byName(candidates, 'Dialog.js')).toBeUndefined();
+    expect(byName(candidates, 'Next.js')?.category).toBe('brand');
+    expect(byName(candidates, 'Node.js')?.count).toBe(2);
+    expect(byName(candidates, 'Ashlr.AI')?.count).toBe(2);
+  });
+
   it('throws for a missing directory', async () => {
     await expect(harvestRepo(path.join(tmp, 'missing'))).rejects.toThrow(/not a directory/);
   });

@@ -55353,7 +55353,7 @@ async function harvestRepo(root, opts = {}) {
     const text = readText(file2);
     if (text === void 0) continue;
     if (ext === ".md" || SOURCE_EXTENSIONS.has(ext)) {
-      for (const [brand, n] of countMatches(text, DOT_TLD_RE)) {
+      for (const [brand, n] of countDotTldBrands(text)) {
         bump3(brand, "brand", "harvest:repo", rel, n, true);
       }
     }
@@ -55822,9 +55822,11 @@ function readmeProperNouns(text) {
 function stripMarkdownNoise(md) {
   return md.replace(/```[\s\S]*?```/g, " ").replace(/`[^`\n]*`/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\]\([^)]*\)/g, "] ").replace(/https?:\/\/\S+/g, " ").replace(/^#+\s*/gm, "");
 }
-function countMatches(text, re) {
+function countDotTldBrands(text) {
   const out = /* @__PURE__ */ new Map();
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(DOT_TLD_RE)) {
+    const before = m.index > 0 ? text[m.index - 1] : "";
+    if (before === "/" || before === "\\") continue;
     out.set(m[0], (out.get(m[0]) ?? 0) + 1);
   }
   return out;
