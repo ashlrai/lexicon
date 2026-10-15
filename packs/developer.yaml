@@ -1,6 +1,6 @@
 # Starter pack: developer tooling. Installed with `lexicon pack add developer`.
 # Aliases are what speech-to-text engines actually write for these names. Where
-# the real-audio benchmark (bench/audio/results.md, docs/BENCHMARK.md) recorded
+# the TTS-audio benchmark (bench/audio/results.md, docs/BENCHMARK.md) recorded
 # a spelling, it is here; the rest are the plausible splits and phoneme swaps
 # from bench/lexicon.yaml. Ordinary English words are never aliases (a term
 # that STT turns into a real word, such as Vercel -> "vessel", leaves that
