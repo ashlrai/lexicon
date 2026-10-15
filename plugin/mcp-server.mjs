@@ -55799,17 +55799,26 @@ function isGenericIdentifier(ident) {
 function readmeProperNouns(text) {
   const out = /* @__PURE__ */ new Map();
   const initial = /* @__PURE__ */ new Map();
-  const stripped = stripMarkdownNoise(text);
-  const sentences = stripped.split(/(?<=[.!?:])\s+|\n+/);
+  const stripped = stripMarkdownNoise(text).replace(
+    /(\*\*|__)([^*_\n]+)\1|"([^"\n]{1,80})"/g,
+    (_m, _d, bold2, quoted) => ` ${(bold2 ?? quoted ?? "").split(/\s+/).filter(Boolean).map((w) => `*${w}`).join(" ")} `
+  );
+  const sentences = stripped.split(/(?<=[.!?:])\s+|\n+|\s*\|\s*/);
   for (const sentence of sentences) {
     const tokens = sentence.split(/\s+/).filter(Boolean);
-    for (let i = 0; i < tokens.length; i++) {
-      const word = tokens[i].replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, "");
+    let first = true;
+    for (const raw of tokens) {
+      const word = raw.replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, "");
+      if (!word) continue;
+      const atStart = first;
+      first = false;
+      if (/^[^A-Za-z"'(\[*_]/.test(raw)) continue;
       if (word.length < 4) continue;
       if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
-      const bucket = i === 0 ? initial : out;
+      const emphasised = /^[*_]/.test(raw);
+      const bucket = atStart || emphasised ? initial : out;
       bucket.set(word, (bucket.get(word) ?? 0) + 1);
     }
   }
@@ -55826,7 +55835,7 @@ function countDotTldBrands(text) {
   const out = /* @__PURE__ */ new Map();
   for (const m of text.matchAll(DOT_TLD_RE)) {
     const before = m.index > 0 ? text[m.index - 1] : "";
-    if (before === "/" || before === "\\") continue;
+    if (before === "/" || before === "\\" || before === "-" || before === "_") continue;
     out.set(m[0], (out.get(m[0]) ?? 0) + 1);
   }
   return out;

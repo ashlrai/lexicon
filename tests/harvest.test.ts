@@ -233,6 +233,26 @@ describe('harvestRepo', () => {
     expect(byName(candidates, 'Ashlr.AI')?.count).toBe(2);
   });
 
+  it('holds back README labels: table cells, list items, bold and quoted spans, key chords', async () => {
+    const docs = path.join(tmp, 'readme-labels');
+    await fs.mkdir(docs, { recursive: true });
+    await fs.writeFile(path.join(docs, 'README.md'), [
+      'We deploy on Hetzner because the bill stays low and Hetzner is quick.',
+      '| Action | Result |',
+      '| --- | --- |',
+      '| Choose | Opens the picker |',
+      '- Closing the window hides it.',
+      'Click **Open Anyway** on first launch, then wait for the "Finished" banner.',
+      'Press ⌃⌥Space to focus the app.',
+      'The bundle is assets/index-D2P1AJiD.js and it ships fast.',
+    ].join('\n'));
+    const candidates = await harvestRepo(docs, { minCount: 1 });
+    expect(byName(candidates, 'Hetzner')?.count).toBe(2);
+    for (const label of ['Choose', 'Closing', 'Anyway', 'Finished', 'Space', 'D2P1AJiD.js']) {
+      expect(byName(candidates, label), label).toBeUndefined();
+    }
+  });
+
   it('throws for a missing directory', async () => {
     await expect(harvestRepo(path.join(tmp, 'missing'))).rejects.toThrow(/not a directory/);
   });
