@@ -62,6 +62,17 @@ The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns ri
 
 The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 15.3% (19 of 124) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
+**Held-out check (separate internal run, unseen voice).** The tables above use a lexicon written for the test terms. To test the harder case, aliases were learned only from other sentences and voices, then scored on a voice and sentences never used for learning (63 clips). Synthetic speech from three open text-to-speech voices read into whisper.cpp, clips counted correct when every target term was recovered.
+
+| recognizer | raw | Lexicon, canonical terms only | Lexicon, plus aliases learned from other clips |
+| --- | --- | --- | --- |
+| whisper.cpp base.en | 16 of 63 | 38 of 63 | 44 of 63 |
+| whisper.cpp small.en | 25 of 63 | 39 of 63 | 42 of 63 |
+
+Clean prose changed by Lexicon: 0 of 60 in that run.
+
+**Whisper-prompt caveat.** On the same 378 clips, whisper's `--prompt` hint list alone lifted base.en from 97 to 228 and small.en from 141 to 320 clips correct, so a prompt is a strong baseline and Lexicon adds less on top of it (base.en 271, small.en 339 with Lexicon). The prompt also made base.en produce 55 degenerate transcripts (empty or looping text) against 5 without it, so a prompt is not free on small models. All audio here is synthetic, not microphone speech, and the harness is not yet published, so treat these as internal numbers until it is.
+
 ## Install
 
 The package is [`@ashlr/lexicon`](https://www.npmjs.com/package/@ashlr/lexicon); the command is `lexicon`.
