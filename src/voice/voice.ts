@@ -213,7 +213,11 @@ async function requireTools(r: Resolved, io: VoiceIO, deps: VoiceDeps, need: { f
   if (!ffmpeg) missing.push(r.env.LEXICON_FFMPEG_BIN ? `ffmpeg (LEXICON_FFMPEG_BIN=${r.env.LEXICON_FFMPEG_BIN} does not exist)` : 'ffmpeg');
   if (!whisperCli) missing.push(r.env.LEXICON_WHISPER_BIN ? `whisper-cli (LEXICON_WHISPER_BIN=${r.env.LEXICON_WHISPER_BIN} does not exist)` : 'whisper-cli');
   if (missing.length > 0 || !ffmpeg || !whisperCli) {
-    io.stderr(`lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform)}\n  (or set LEXICON_WHISPER_BIN / LEXICON_FFMPEG_BIN to the binary)\n`);
+    const which = { ffmpeg: !ffmpeg, whisper: !whisperCli };
+    const vars = [...(which.whisper ? ['LEXICON_WHISPER_BIN'] : []), ...(which.ffmpeg ? ['LEXICON_FFMPEG_BIN'] : [])].join(' / ');
+    io.stderr(
+      `lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform, which)}\n  (or set ${vars} to the binary)\n`,
+    );
     return undefined;
   }
   return { ffmpeg, whisperCli };

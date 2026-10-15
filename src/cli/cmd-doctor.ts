@@ -668,11 +668,11 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   const whisperOverride = env.LEXICON_WHISPER_BIN;
   const whisperCli = whisperOverride ? (existsSync(whisperOverride) ? whisperOverride : undefined) : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push('ok', `whisper-cli found: ${whisperCli}`);
-  else push('warn', `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
+  else push('warn', `whisper-cli not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: false, whisper: true })})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
   const ffmpegBin = ffmpegOverride ? (existsSync(ffmpegOverride) ? ffmpegOverride : undefined) : locateToolSync(['ffmpeg'], env, platform);
   if (ffmpegBin) push('ok', `ffmpeg found: ${ffmpegBin}`);
-  else push('warn', `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
+  else push('warn', `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
   push('info', model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
   if (platform === 'darwin') {

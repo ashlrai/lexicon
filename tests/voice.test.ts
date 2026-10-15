@@ -964,7 +964,9 @@ describe('lexicon voice (foreground)', () => {
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_MISSING_TOOL);
     expect(h.err.join('')).toContain('whisper-cli not found');
-    expect(h.err.join('')).toContain('brew install ffmpeg whisper-cpp');
+    // ffmpeg is there, so the hint names only whisper.cpp.
+    expect(h.err.join('')).toContain('install: brew install whisper-cpp\n');
+    expect(h.err.join('')).toContain('(or set LEXICON_WHISPER_BIN to the binary)');
     expect(h.spawnCalls).toHaveLength(0);
   });
 
@@ -973,7 +975,14 @@ describe('lexicon voice (foreground)', () => {
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_MISSING_TOOL);
     expect(h.err.join('')).toContain('ffmpeg and whisper-cli not found');
-    expect(h.err.join('')).toContain('apt install ffmpeg');
+    expect(h.err.join('')).toContain('install: sudo apt install ffmpeg, then build whisper.cpp');
+    expect(h.err.join('')).toContain('(or set LEXICON_WHISPER_BIN / LEXICON_FFMPEG_BIN to the binary)');
+
+    const onlyFfmpeg = await harness({ missing: ['ffmpeg'], platform: 'linux' });
+    expect(await runVoice(onlyFfmpeg.opts, onlyFfmpeg.io, onlyFfmpeg.deps)).toBe(EXIT_MISSING_TOOL);
+    const err = onlyFfmpeg.err.join('');
+    expect(err).toContain('ffmpeg not found on PATH.\n  install: sudo apt install ffmpeg\n  (or set LEXICON_FFMPEG_BIN to the binary)\n');
+    expect(err).not.toContain('whisper');
   });
 
   it('names LEXICON_FFMPEG_BIN when it points at a file that does not exist', async () => {
@@ -1183,6 +1192,9 @@ describe('models and tools', () => {
     expect(await locateWhisperCli({ env: { PATH: '/bin', LEXICON_WHISPER_BIN: '/nope' }, platform: 'darwin', exists, extraDirs: [] })).toBeUndefined();
     expect(await locateWhisperCli({ env: { PATH: '/bin' }, platform: 'darwin', exists, extraDirs: [] })).toBe('/bin/whisper-cpp');
     expect(installHint('win32')).toContain('winget');
+    expect(installHint('win32', { ffmpeg: false, whisper: true })).not.toContain('winget');
+    expect(installHint('freebsd', { ffmpeg: true, whisper: false })).toBe('install ffmpeg');
+    expect(installHint('darwin', { ffmpeg: true, whisper: true })).toBe('brew install ffmpeg whisper-cpp');
   });
 });
 
