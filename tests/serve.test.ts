@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, readLexiconFile, suggestAliases } from '../src/core/index.js';
+import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -296,8 +296,9 @@ describe('POST /normalize', () => {
 
   it('dryRun does not bump hits; a real run does', async () => {
     const hitsOf = async (): Promise<number> => {
-      const file = await readLexiconFile(env.globalPath, 'global');
-      return file.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI')?.hits ?? 0;
+      // Counts live in the hits.json sidecar; the merged view adds them up.
+      const loaded = await loadLexicon({ globalPath: env.globalPath });
+      return loaded.merged.terms.find((t) => t.canonical === 'Ashlr.AI')?.hits ?? 0;
     };
     const before = await hitsOf();
     const dry = await api('POST', '/normalize', { text: 'ping ashlar', dryRun: true });

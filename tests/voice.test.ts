@@ -894,8 +894,12 @@ describe('lexicon voice (foreground)', () => {
       model: 'base.en',
     });
     expect(Object.keys(history[0].ms).sort()).toEqual(['normalize', 'record', 'transcribe']);
-    const yaml = await fs.readFile(h.globalPath, 'utf8');
-    expect(yaml).toMatch(/hits: 1/);
+    // Counted in the hits.json sidecar; the lexicon YAML itself is not rewritten.
+    const hits = JSON.parse(await fs.readFile(path.join(path.dirname(h.globalPath), 'hits.json'), 'utf8')) as {
+      global: Record<string, number>;
+    };
+    expect(hits.global).toEqual({ 'ashlr.ai': 1, kubernetes: 1 });
+    expect(await fs.readFile(h.globalPath, 'utf8')).not.toMatch(/hits:/);
   });
 
   it('--no-history leaves history.jsonl alone', async () => {

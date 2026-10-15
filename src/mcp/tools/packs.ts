@@ -38,11 +38,13 @@ import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 const REGISTRY_SOURCE_DESC =
   'Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.';
 
-export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
+export const registerPackTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   // Short-lived process memory only: neither previewed personal names nor
   // tokens are persisted. Applying uses this exact snapshot, never a re-harvest.
   const imports = new Map<string, { at: number; sources: string[]; destination: string; candidates: HarvestCandidate[] }>();
-  const destination = (scope: string | undefined) => JSON.stringify({ cwd, scope: scope ?? 'global', ...resolvePaths({ cwd }) });
+  const destination = (scope: string | undefined) => JSON.stringify({ cwd: ctx.cwd, scope: scope ?? 'global', ...resolvePaths({ cwd: ctx.cwd }) });
   const pruneImports = () => {
     for (const [token, preview] of imports) if (Date.now() - preview.at > 300_000) imports.delete(token);
   };
@@ -135,7 +137,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
           }
           if (previewDigest !== digest) throw new Error('community pack contents or destination changed, or preview digest is missing; preview again before installing');
           const result = await installRegistryPack(entry, base, registry, {
-            cwd,
+            cwd: ctx.cwd,
             approvedBytes: bytes,
             ...(scope !== undefined ? { scope } : {}),
             ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
@@ -151,7 +153,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
           });
         }
         if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
-        const result = await installPack(name, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const result = await installPack(name, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({
           name: result.pack.name,
           title: result.pack.title,
@@ -198,7 +200,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
           }
           const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
           imports.delete(previewToken);
-          const result = await applyImportCandidates(accepted, { cwd, ...(scope !== undefined ? { scope } : {}) });
+          const result = await applyImportCandidates(accepted, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
           return textResult({
             applied: true, candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
             added: result.added, merged: result.merged, path: result.path,
@@ -249,7 +251,7 @@ export const registerPackTools: ToolRegistrar = (server, { cwd, load }) => {
         const io = bufferIO();
         const code = await runImport(
           path ?? '-',
-          { cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true },
+          { cwd: ctx.cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true },
           io,
           content !== undefined ? async () => content : undefined,
         );

@@ -295,7 +295,7 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('-y, --yes', 'take every default without prompting')
     .option('--clients <list>', `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(', ')})`)
     .option('--company <name>', 'company or product name to seed (as you want it spelled)')
-    .option('--person <name>', 'your name to seed (default: git config --global user.name)')
+    .option('--person <name>', 'your name to seed (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)')
     .option('--phonetic <hint>', 'pronunciation hint for the company term, e.g. ASH-ler')
     .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
     .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')

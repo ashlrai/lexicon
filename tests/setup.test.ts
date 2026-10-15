@@ -758,8 +758,7 @@ describe('runSetup starter packs', () => {
     // A second run with the same list re-adds nothing and says why.
     const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,ai,business' }, f);
     expect(again.summary.packs.map((p) => p.name)).toEqual(['business']);
-    expect(again.io.out).toContain('already installed: developer');
-    expect(again.io.out).toContain('already installed: ai');
+    expect(again.io.out).toContain('already installed: developer, ai');
     expect((await readLexiconFile(globalPath, 'global')).lexicon.settings?.packs).toEqual(['developer', 'ai', 'business']);
   });
 
@@ -808,6 +807,43 @@ describe('runSetup starter packs', () => {
     expect(off.plan?.wouldInstallPacks).toEqual([]);
     expect(off.io.out).toContain('skipped (--no-packs)');
     expect(off.io.out).toContain('starter packs: none');
+  });
+
+  it('a rerun leaves installed packs out of the plan and reports them instead', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nsettings:\n  packs: [developer, ai]\nterms: []\n');
+    const f = fakes();
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(planned.plan?.wouldInstallPacks).toEqual(['voice-tools']);
+    expect(planned.plan?.alreadyInstalledPacks).toEqual(['developer', 'ai']);
+    expect(planned.io.out).toContain('already installed: developer, ai');
+    const explicit = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'ai,business' }, f);
+    expect(explicit.plan?.wouldInstallPacks).toEqual(['business']);
+    // A fresh lexicon has nothing installed and says nothing about it.
+    await fs.rm(globalPath);
+    const fresh = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(fresh.plan?.alreadyInstalledPacks).toBeUndefined();
+    expect(fresh.io.out).not.toContain('already installed');
+  });
+
+  it('seeds the person from repo-level git config or GIT_AUTHOR_NAME when no global user.name is set', async () => {
+    const noGlobal = (local: string | undefined, env: NodeJS.ProcessEnv = { PATH: '/fake/bin' }): Fakes =>
+      fakes({
+        env,
+        exec: (file, args) => {
+          if (file === 'git' && args.join(' ') === 'config --global user.name') throw new Error('exit 1');
+          if (file === 'git' && args.join(' ') === `-C ${cwd} config user.name` && local) return local;
+          if (file === 'git') throw new Error('exit 1');
+          throw new Error(`unexpected exec: ${file} ${args.join(' ')}`);
+        },
+      });
+    const viaRepo = await run({ yes: true, clients: 'none', packs: false, harvest: false }, noGlobal('Zoë Local'));
+    expect(viaRepo.summary.termsAdded).toEqual(['Zoë Local']);
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', packs: false, reseed: true }, noGlobal(undefined, { PATH: '', GIT_AUTHOR_NAME: 'Ada Author' }));
+    expect(planned.plan?.wouldSeed).toEqual(['Ada Author']);
+    const nothing = await run({ yes: true, dryRun: true, clients: 'none', packs: false, reseed: true }, noGlobal(undefined));
+    expect(nothing.plan?.wouldSeed).toEqual([]);
+    expect(nothing.io.out).toContain('pass --person "Your Name" and --company "Your Co"');
   });
 
   it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {

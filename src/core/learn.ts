@@ -279,12 +279,13 @@ export async function learnCorrection(
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
     throw new Error(`learnCorrection: each side must be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
-  if (sameText(heard, meant)) {
+  if (heard === meant) {
     throw new Error(`learnCorrection: "${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
 
   const { scope, ...storeOpts } = opts;
   const loaded = await loadLexicon(storeOpts);
+  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts, scope);
   const existing = termFor(loaded.merged, meant);
 
   if (existing) {
@@ -304,6 +305,58 @@ export async function learnCorrection(
     { ...storeOpts, scope: scope ?? 'global' },
   );
   return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+}
+
+/**
+ * "ashlr" should be "Ashlr": the spelling is right and only the case is not.
+ * An alias that differs from the canonical only by case is meaningless (alias
+ * matching ignores case, and the canonical itself already matches), so the
+ * thing to learn is the canonical's casing:
+ * - no term yet: create `meant` (with suggested misspellings), which rewrites
+ *   every casing of it from now on;
+ * - a term whose canonical is the same word in another case: recase it, keeping
+ *   its aliases, notes and history;
+ * - a term already spelled `meant`: nothing to write, reported as known;
+ * - `meant` is an alias of a different term: refuse, because "ashlr" is being
+ *   rewritten to that term and only the user can say which one is right.
+ */
+async function learnCaseOnly(
+  heard: string,
+  meant: string,
+  loaded: Awaited<ReturnType<typeof loadLexicon>>,
+  storeOpts: StoreOptions,
+  scope: TermScope | undefined,
+): Promise<LearnResult> {
+  const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
+  if (!byCanonical) {
+    const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
+    if (viaAlias) {
+      throw new Error(
+        `learnCorrection: "${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; ` +
+          `remove the alias first (lexicon remove, or edit the term) if "${meant}" is its own name`,
+      );
+    }
+    const saved = await addTerm(
+      { canonical: meant, aliases: suggestAliases(meant).filter((a) => !sameText(a, meant)), source: 'learned' },
+      { ...storeOpts, scope: scope ?? 'global' },
+    );
+    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+  }
+
+  const termScope: TermScope = byCanonical.scope ?? 'global';
+  const file = termScope === 'project' ? loaded.project : loaded.global;
+  if (byCanonical.canonical === meant && file) {
+    return { term: byCanonical, created: false, file, aliasAdded: false };
+  }
+  // Recase from the term as it is on disk, not the merged view: that one
+  // carries the other file's aliases and this user's hit count.
+  const onDisk = file?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));
+  const base: Term = onDisk ?? byCanonical;
+  const saved = await addTerm(
+    { ...base, canonical: meant, aliases: base.aliases.filter((a) => !sameText(a, meant)) },
+    { ...storeOpts, scope: termScope, merge: false },
+  );
+  return { term: saved.term, created: false, file: saved.file, aliasAdded: true };
 }
 
 // ---------------------------------------------------------------------------

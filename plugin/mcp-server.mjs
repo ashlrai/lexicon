@@ -18112,7 +18112,7 @@ var require_commander = __commonJS({
 });
 
 // src/mcp/server.ts
-import { realpathSync as realpathSync3 } from "node:fs";
+import { realpathSync as realpathSync3, statSync as statSync2 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 
@@ -47465,29 +47465,29 @@ function sanitizeForDisplay(s) {
   return `${chars.slice(0, DISPLAY_MAX_CHARS - 1).join("")}\u2026`;
 }
 function SafeString(max) {
-  return external_exports.string().transform((s) => stripInvisible(s).trim()).pipe(
-    external_exports.string().max(max, `must be at most ${max} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
+  return string2().transform((s) => stripInvisible(s).trim()).pipe(
+    string2().max(max, `must be at most ${max} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
   );
 }
-var NonEmptyWord = external_exports.string().transform((s) => stripInvisible(s).trim()).pipe(
-  external_exports.string().min(1, "must not be empty").max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
+var NonEmptyWord = string2().transform((s) => stripInvisible(s).trim()).pipe(
+  string2().min(1, "must not be empty").max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
 );
 function WordList(maxItems, what) {
-  return external_exports.array(external_exports.string()).default([]).transform((list) => list.map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
-    external_exports.array(
-      external_exports.string().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
+  return array(string2()).default([]).transform((list) => list.map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
+    array(
+      string2().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
     ).max(maxItems, `at most ${maxItems} ${what}`)
   );
 }
-var TermCategorySchema = external_exports.enum(TERM_CATEGORIES);
-var TermScopeSchema = external_exports.enum(TERM_SCOPES);
-var TermSourceSchema = external_exports.enum(TERM_SOURCES);
-var TermSchema = external_exports.object({
+var TermCategorySchema = _enum2(TERM_CATEGORIES);
+var TermScopeSchema = _enum2(TERM_SCOPES);
+var TermSourceSchema = _enum2(TERM_SOURCES);
+var TermSchema = object2({
   canonical: NonEmptyWord,
   aliases: WordList(LIMITS.aliases, "aliases per term"),
   phonetic: SafeString(LIMITS.text).optional(),
   category: TermCategorySchema.optional(),
-  caseSensitive: external_exports.boolean().optional(),
+  caseSensitive: boolean2().optional(),
   scope: TermScopeSchema.optional(),
   source: TermSourceSchema.optional(),
   notes: SafeString(LIMITS.text).optional(),
@@ -47498,20 +47498,20 @@ var TermSchema = external_exports.object({
   // rewriting somebody's tracked file to drop a field is not this parser's
   // call. Only `writeLexiconFile` decides what a project file may gain: see
   // `pinProjectHits` in store.ts.
-  hits: external_exports.number().int().nonnegative().optional(),
+  hits: number2().int().nonnegative().optional(),
   never: WordList(LIMITS.aliases, "never words per term").optional()
 });
-var LexiconSettingsSchema = external_exports.object({
-  minConfidence: external_exports.number().min(0).max(1).optional(),
-  phonetic: external_exports.boolean().optional(),
-  fuzzy: external_exports.boolean().optional(),
+var LexiconSettingsSchema = object2({
+  minConfidence: number2().min(0).max(1).optional(),
+  phonetic: boolean2().optional(),
+  fuzzy: boolean2().optional(),
   protectedWords: WordList(LIMITS.protectedWords, "protected words").optional(),
-  skipCode: external_exports.boolean().optional(),
+  skipCode: boolean2().optional(),
   packs: WordList(LIMITS.aliases, "packs").optional()
 });
-var LexiconSchema = external_exports.object({
-  version: external_exports.literal(1).default(1),
-  terms: external_exports.array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
+var LexiconSchema = object2({
+  version: literal(1).default(1),
+  terms: array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
   settings: LexiconSettingsSchema.optional()
 });
 function formatPath(path27) {
@@ -47547,6 +47547,7 @@ function emptyLexicon() {
 
 // src/core/store.ts
 var import_yaml = __toESM(require_dist2(), 1);
+import { createHash as createHash2 } from "node:crypto";
 import { promises as fs4, existsSync } from "node:fs";
 import os3 from "node:os";
 import path5 from "node:path";
@@ -48058,7 +48059,11 @@ function defaultProjectPath(cwd = process.cwd()) {
   return path5.join(findGitRoot(cwd) ?? path5.resolve(cwd), PROJECT_FILE_NAME);
 }
 async function readLexiconFile(filePath, scope) {
-  let text;
+  const read = await readLexiconText(filePath);
+  if (read === void 0) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
+  return parseLexiconText(read.text, filePath, scope);
+}
+async function readLexiconText(filePath) {
   try {
     const stat = await fs4.stat(filePath);
     if (stat.size > MAX_LEXICON_BYTES) {
@@ -48066,13 +48071,13 @@ async function readLexiconFile(filePath, scope) {
         `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
       );
     }
-    text = await fs4.readFile(filePath, "utf8");
+    return { text: await fs4.readFile(filePath, "utf8"), mode: stat.mode & 511 };
   } catch (err) {
-    if (isEnoent(err)) {
-      return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
-    }
+    if (isEnoent(err)) return void 0;
     throw err;
   }
+}
+function parseLexiconText(text, filePath, scope) {
   let raw;
   try {
     raw = (0, import_yaml.parse)(text, { prettyErrors: false });
@@ -48090,10 +48095,35 @@ async function readLexiconFile(filePath, scope) {
   }
   return { path: filePath, scope, lexicon, exists: true };
 }
+var PARSE_CACHE_FILE_NAME = "parse-cache.json";
+var PARSE_CACHE_MIN_BYTES = 8 * 1024;
+async function readGlobalLexiconCached(filePath) {
+  const read = await readLexiconText(filePath);
+  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
+  const sha256 = createHash2("sha256").update(read.text).digest("hex");
+  const cachePath = path5.join(path5.dirname(filePath), PARSE_CACHE_FILE_NAME);
+  const key = path5.resolve(filePath);
+  try {
+    const cached2 = JSON.parse(await fs4.readFile(cachePath, "utf8"));
+    if (isPlainObject3(cached2) && cached2.version === 1 && cached2.path === key && cached2.sha256 === sha256) {
+      return { path: filePath, scope: "global", lexicon: parseLexicon(cached2.lexicon), exists: true };
+    }
+  } catch {
+  }
+  const file2 = parseLexiconText(read.text, filePath, "global");
+  try {
+    await writeFileAtomic(cachePath, JSON.stringify({ version: 1, path: key, sha256, lexicon: file2.lexicon }), {
+      mode: read.mode
+    });
+  } catch {
+  }
+  return file2;
+}
 async function writeLexiconFile(file2) {
   const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
   await withLexiconLock(file2.path, async () => {
-    if (file2.scope === "project") await pinProjectHits(file2);
+    await pinCommittedHits(file2);
     const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
     const text = `${header}
 
@@ -48103,10 +48133,10 @@ ${body}`;
   });
   file2.exists = true;
 }
-async function pinProjectHits(file2) {
+async function pinCommittedHits(file2) {
   const onDisk = /* @__PURE__ */ new Map();
   try {
-    const current = await readLexiconFile(file2.path, "project");
+    const current = await readLexiconFile(file2.path, file2.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -48201,37 +48231,26 @@ async function readHitsRegistry(opts) {
   } catch {
     return emptyHitsRegistry();
   }
-  const projects = raw?.projects;
-  if (typeof projects !== "object" || projects === null || Array.isArray(projects)) return emptyHitsRegistry();
   const out = emptyHitsRegistry();
-  for (const [file2, counts] of Object.entries(projects)) {
-    if (typeof counts !== "object" || counts === null || Array.isArray(counts)) continue;
-    const entry = {};
-    for (const [canonical, n] of Object.entries(counts)) {
-      if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+  const projects = isPlainObject3(raw) ? raw.projects : void 0;
+  if (isPlainObject3(projects)) {
+    for (const [file2, counts] of Object.entries(projects)) {
+      if (isPlainObject3(counts)) out.projects[file2] = validCounts(counts);
     }
-    out.projects[file2] = entry;
   }
+  const global = isPlainObject3(raw) ? raw.global : void 0;
+  if (isPlainObject3(global)) out.global = validCounts(global);
   return out;
 }
-async function readProjectHits(projectPath, opts = {}) {
-  try {
-    const registry2 = await readHitsRegistry(opts);
-    return registry2.projects[await canonicalPath2(projectPath)] ?? {};
-  } catch {
-    return {};
-  }
+function isPlainObject3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-async function addProjectHits(projectPath, counts, opts) {
-  const hitsPath = getHitsPath(opts);
-  const key = await canonicalPath2(projectPath);
-  await withFileLock(hitsPath, async () => {
-    const registry2 = await readHitsRegistry(opts);
-    const entry = { ...registry2.projects[key] ?? {} };
-    for (const [canonical, n] of counts) entry[canonical] = (entry[canonical] ?? 0) + n;
-    registry2.projects[key] = entry;
-    await writeFileAtomic(hitsPath, formatJson(registry2));
-  });
+function validCounts(counts) {
+  const entry = {};
+  for (const [canonical, n] of Object.entries(counts)) {
+    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+  }
+  return entry;
 }
 async function dropProjectHits(projectPath, canonical, opts) {
   try {
@@ -48247,21 +48266,39 @@ async function dropProjectHits(projectPath, canonical, opts) {
   } catch {
   }
 }
-async function hydrateProjectHits(merged, project, opts) {
-  const counts = await readProjectHits(project.path, opts);
-  if (Object.keys(counts).length === 0) return;
-  const owned = new Set(project.lexicon.terms.map((t) => hitKey(t.canonical)));
+async function dropGlobalHits(canonical, opts) {
+  try {
+    const hitsPath = getHitsPath(opts);
+    await withFileLock(hitsPath, async () => {
+      const registry2 = await readHitsRegistry(opts);
+      if (!registry2.global || !(hitKey(canonical) in registry2.global)) return;
+      delete registry2.global[hitKey(canonical)];
+      await writeFileAtomic(hitsPath, formatJson(registry2));
+    });
+  } catch {
+  }
+}
+async function hydrateHits(merged, project, opts) {
+  let registry2;
+  try {
+    registry2 = await readHitsRegistry(opts);
+  } catch {
+    return;
+  }
+  const projectCounts = project ? registry2.projects[await canonicalPath2(project.path)] ?? {} : {};
+  const globalCounts = registry2.global ?? {};
+  if (Object.keys(projectCounts).length === 0 && Object.keys(globalCounts).length === 0) return;
+  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
   for (const term of merged.terms) {
     const key = hitKey(term.canonical);
-    if (!owned.has(key)) continue;
-    const n = counts[key];
+    const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
     if (n) term.hits = (term.hits ?? 0) + n;
   }
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const global = await readLexiconFile(paths.global, "global");
-  if (!paths.project) return { merged: mergeLexicons(global.lexicon), global };
+  const global = await readGlobalLexiconCached(paths.global);
+  if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
   let project;
   try {
     project = await readLexiconFile(paths.project, "project");
@@ -48269,15 +48306,19 @@ async function loadLexicon(opts = {}) {
     const placeholder = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
     const trust = await isTrusted(placeholder, opts);
     if (trust === "trusted" || opts.includeUntrusted) throw err;
-    return { merged: mergeLexicons(global.lexicon), global, projectTrust: trust, skippedProject: placeholder };
+    return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
   const projectTrust = await isTrusted(project, opts);
   if (projectTrust === "trusted" || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
-    await hydrateProjectHits(merged, project, opts);
+    await hydrateHits(merged, project, opts);
     return { merged, global, project, projectTrust };
   }
-  return { merged: mergeLexicons(global.lexicon), global, projectTrust, skippedProject: project };
+  return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: project };
+  async function hydrated(merged) {
+    await hydrateHits(merged, void 0, opts);
+    return merged;
+  }
 }
 function mergeLexicons(global, project) {
   const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
@@ -48398,6 +48439,8 @@ async function removeTerm(canonical, opts = {}) {
       if (file2.scope === "project") {
         await refreshTrust(file2.path, opts);
         await dropProjectHits(file2.path, canonical, opts);
+      } else {
+        await dropGlobalHits(canonical, opts);
       }
       return true;
     });
@@ -48411,36 +48454,51 @@ async function recordHits(canonicals, opts = {}) {
     const counts = /* @__PURE__ */ new Map();
     for (const c of canonicals) {
       const key = hitKey(c);
+      if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    const paths = resolvePaths(opts);
-    if (paths.project) {
-      const file2 = await readLexiconFile(paths.project, "project");
-      if (file2.exists && await isTrusted(file2, opts) === "trusted") {
-        const mine = /* @__PURE__ */ new Map();
-        for (const term of file2.lexicon.terms) {
-          const key = hitKey(term.canonical);
-          const n = counts.get(key);
-          if (n === void 0) continue;
-          mine.set(key, n);
-          counts.delete(key);
-        }
-        if (mine.size > 0) await addProjectHits(paths.project, mine, opts);
-      }
-    }
     if (counts.size === 0) return;
-    await withLexiconLock(paths.global, async () => {
-      const file2 = await readLexiconFile(paths.global, "global");
-      if (!file2.exists) return;
-      let touched = false;
-      for (const term of file2.lexicon.terms) {
-        const n = counts.get(hitKey(term.canonical));
-        if (n) {
-          term.hits = (term.hits ?? 0) + n;
-          touched = true;
-        }
+    const paths = resolvePaths(opts);
+    let projectFile;
+    if (opts.loaded) {
+      if (opts.loaded.project && opts.loaded.projectTrust === "trusted") projectFile = opts.loaded.project;
+    } else if (paths.project) {
+      const file2 = await readLexiconFile(paths.project, "project");
+      if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
+    }
+    let project;
+    if (projectFile) {
+      const mine = /* @__PURE__ */ new Map();
+      for (const term of projectFile.lexicon.terms) {
+        const key = hitKey(term.canonical);
+        const n = counts.get(key);
+        if (n === void 0) continue;
+        mine.set(key, n);
+        counts.delete(key);
       }
-      if (touched) await writeLexiconFile(file2);
+      if (mine.size > 0) project = { key: await canonicalPath2(projectFile.path), counts: mine };
+    }
+    if (counts.size > 0) {
+      const globalFile = opts.loaded?.global ?? await readLexiconFile(paths.global, "global");
+      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
+      for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
+    }
+    if (!project && counts.size === 0) return;
+    const hitsPath = getHitsPath(opts);
+    await withFileLock(hitsPath, async () => {
+      const registry2 = await readHitsRegistry(opts);
+      if (project) {
+        const entry = { ...registry2.projects[project.key] ?? {} };
+        for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;
+        registry2.projects[project.key] = entry;
+      }
+      if (counts.size > 0) {
+        const global = { ...registry2.global ?? {} };
+        for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
+        registry2.global = global;
+      }
+      await fs4.mkdir(path5.dirname(hitsPath), { recursive: true });
+      await writeFileAtomic(hitsPath, formatJson(registry2));
     });
   } catch {
   }
@@ -56293,7 +56351,7 @@ async function applyImportCandidates(candidates, opts = {}) {
 }
 
 // src/core/import-preview.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 function importCandidatePreview(candidate) {
   return {
     canonical: candidate.canonical,
@@ -56305,10 +56363,10 @@ function importCandidatePreview(candidate) {
   };
 }
 function importCandidateId(candidate) {
-  return createHash2("sha256").update(JSON.stringify(importCandidatePreview(candidate))).digest("hex");
+  return createHash3("sha256").update(JSON.stringify(importCandidatePreview(candidate))).digest("hex");
 }
 function importPreviewDigest(sources, candidates, destination) {
-  return createHash2("sha256").update(JSON.stringify({
+  return createHash3("sha256").update(JSON.stringify({
     sources: [...new Set(sources)].sort(),
     destination,
     candidates: candidates.map(importCandidatePreview)
@@ -57356,11 +57414,12 @@ async function learnCorrection(c, opts = {}) {
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
     throw new Error(`learnCorrection: each side must be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
-  if (sameText(heard, meant)) {
+  if (heard === meant) {
     throw new Error(`learnCorrection: "${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
   const { scope, ...storeOpts2 } = opts;
   const loaded = await loadLexicon(storeOpts2);
+  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts2, scope);
   const existing = termFor(loaded.merged, meant);
   if (existing) {
     const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
@@ -57377,6 +57436,34 @@ async function learnCorrection(c, opts = {}) {
     { ...storeOpts2, scope: scope ?? "global" }
   );
   return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+}
+async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
+  const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
+  if (!byCanonical) {
+    const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
+    if (viaAlias) {
+      throw new Error(
+        `learnCorrection: "${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; remove the alias first (lexicon remove, or edit the term) if "${meant}" is its own name`
+      );
+    }
+    const saved2 = await addTerm(
+      { canonical: meant, aliases: suggestAliases(meant).filter((a) => !sameText(a, meant)), source: "learned" },
+      { ...storeOpts2, scope: scope ?? "global" }
+    );
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true };
+  }
+  const termScope = byCanonical.scope ?? "global";
+  const file2 = termScope === "project" ? loaded.project : loaded.global;
+  if (byCanonical.canonical === meant && file2) {
+    return { term: byCanonical, created: false, file: file2, aliasAdded: false };
+  }
+  const onDisk = file2?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));
+  const base = onDisk ?? byCanonical;
+  const saved = await addTerm(
+    { ...base, canonical: meant, aliases: base.aliases.filter((a) => !sameText(a, meant)) },
+    { ...storeOpts2, scope: termScope, merge: false }
+  );
+  return { term: saved.term, created: false, file: saved.file, aliasAdded: true };
 }
 function suggestCanonicalFor(heard, lexicon) {
   const needle = heard.trim().toLowerCase();
@@ -58028,15 +58115,15 @@ var PackNotFoundError = class extends Error {
   }
 };
 var PACKAGE_NAME = "@ashlr/lexicon";
-var PackFileSchema = external_exports.object({
-  name: external_exports.string().regex(PACK_NAME_RE, "pack name must be lowercase letters, digits and dashes"),
-  title: external_exports.string().trim().min(1).max(80),
-  description: external_exports.string().trim().max(300).default(""),
-  version: external_exports.literal(1).default(1),
+var PackFileSchema = object2({
+  name: string2().regex(PACK_NAME_RE, "pack name must be lowercase letters, digits and dashes"),
+  title: string2().trim().min(1).max(80),
+  description: string2().trim().max(300).default(""),
+  version: literal(1).default(1),
   /** Community packs name their author; the vendored four leave it empty. */
-  author: external_exports.string().trim().max(40).default(""),
-  homepage: external_exports.string().trim().max(200).default(""),
-  terms: external_exports.array(external_exports.unknown()).min(1, "a pack needs at least one term")
+  author: string2().trim().max(40).default(""),
+  homepage: string2().trim().max(200).default(""),
+  terms: array(unknown()).min(1, "a pack needs at least one term")
 });
 function findPackageRoot(from = import.meta.url) {
   let dir = from.startsWith("file:") ? path9.dirname(fileURLToPath(from)) : path9.resolve(from);
@@ -58195,7 +58282,7 @@ async function installPack(name, opts = {}) {
 
 // src/core/registry.ts
 var import_yaml6 = __toESM(require_dist2(), 1);
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { promises as fs8, realpathSync } from "node:fs";
 import path10 from "node:path";
 var REGISTRY_REF_RE = /^([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9][a-z0-9-]{0,63})(?:@([A-Za-z0-9][A-Za-z0-9._-]{0,31}))?$/;
@@ -58216,24 +58303,24 @@ function parseRegistryRef(s) {
 function isRegistryRef(s) {
   return s.includes("/");
 }
-var RegistryIndexEntrySchema = external_exports.object({
-  author: external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,38}$/),
-  name: external_exports.string().regex(PACK_NAME_RE),
-  title: external_exports.string().trim().min(1).max(80),
-  description: external_exports.string().trim().max(300).default(""),
-  homepage: external_exports.string().trim().max(200).default(""),
+var RegistryIndexEntrySchema = object2({
+  author: string2().regex(/^[a-z0-9][a-z0-9-]{0,38}$/),
+  name: string2().regex(PACK_NAME_RE),
+  title: string2().trim().min(1).max(80),
+  description: string2().trim().max(300).default(""),
+  homepage: string2().trim().max(200).default(""),
   /** Free-form display version ("2", "2026.10.08"); updates key on checksum, not this. */
-  version: external_exports.string().trim().max(32).default(""),
-  terms: external_exports.number().int().min(1),
-  aliases: external_exports.number().int().min(0),
+  version: string2().trim().max(32).default(""),
+  terms: number2().int().min(1),
+  aliases: number2().int().min(0),
   /** sha256 hex of the pack file bytes. */
-  checksum: external_exports.string().regex(/^[0-9a-f]{64}$/i, "checksum must be a sha256 hex digest"),
+  checksum: string2().regex(/^[0-9a-f]{64}$/i, "checksum must be a sha256 hex digest"),
   /** Where the pack file lives: https:// URL, file:// URL, or a path relative to the index. */
-  url: external_exports.string().trim().min(1)
+  url: string2().trim().min(1)
 });
-var RegistryIndexSchema = external_exports.object({
-  version: external_exports.literal(1).default(1),
-  packs: external_exports.array(RegistryIndexEntrySchema).default([])
+var RegistryIndexSchema = object2({
+  version: literal(1).default(1),
+  packs: array(RegistryIndexEntrySchema).default([])
 });
 async function defaultFetchText(url2) {
   const res = await fetch(url2);
@@ -58300,7 +58387,7 @@ function resolvePackUrl(entry, base) {
   return path10.resolve(base, entry.url);
 }
 function sha256Hex(data) {
-  return createHash3("sha256").update(data).digest("hex");
+  return createHash4("sha256").update(data).digest("hex");
 }
 function verifyPackChecksum(data, expected, ref) {
   const actual = sha256Hex(data);
@@ -58318,12 +58405,12 @@ function findRegistryEntry(index, ref) {
   }
   return entry;
 }
-var RegistryPackStateSchema = external_exports.object({
-  checksum: external_exports.string().regex(/^[0-9a-f]{64}$/i),
-  version: external_exports.string().max(32),
-  pinnedVersion: external_exports.string().max(32).optional(),
-  indexSource: external_exports.string().min(1),
-  installedAt: external_exports.string().datetime()
+var RegistryPackStateSchema = object2({
+  checksum: string2().regex(/^[0-9a-f]{64}$/i),
+  version: string2().max(32),
+  pinnedVersion: string2().max(32).optional(),
+  indexSource: string2().min(1),
+  installedAt: string2().datetime()
 }).strict();
 function installedStateDigest(state) {
   const parsed = RegistryPackStateSchema.safeParse(state);
@@ -58690,7 +58777,8 @@ function filePathsInUse(loaded) {
 }
 
 // src/mcp/tools/terms.ts
-var registerTermTools = (server, { cwd, load }) => {
+var registerTermTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "normalize_transcript",
     {
@@ -58710,7 +58798,7 @@ var registerTermTools = (server, { cwd, load }) => {
       });
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
-        await recordHits(canonicals, { cwd }).catch(
+        await recordHits(canonicals, { cwd: ctx.cwd }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
@@ -58749,7 +58837,7 @@ var registerTermTools = (server, { cwd, load }) => {
         ...never2 && never2.length > 0 ? { never: never2 } : {},
         ...scope !== void 0 ? { scope } : {}
       };
-      const saved = await addTerm(term, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const saved = await addTerm(term, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
     })
   );
@@ -58764,7 +58852,7 @@ var registerTermTools = (server, { cwd, load }) => {
       }
     },
     async ({ canonical, scope }) => guarded(async () => {
-      const removed = await removeTerm(canonical, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const removed = await removeTerm(canonical, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({ canonical, removed });
     })
   );
@@ -58836,13 +58924,13 @@ var registerTermTools = (server, { cwd, load }) => {
       }
     },
     async ({ heard, meant, scope }) => guarded(async () => {
-      const learned = await learnCorrection({ heard, meant }, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({
         term: learned.term,
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
-        summary: learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : `"${heard}" was already an alias of "${learned.term.canonical}"`
+        summary: learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`
       });
     })
   );
@@ -58882,7 +58970,8 @@ var registerTermTools = (server, { cwd, load }) => {
 
 // src/mcp/tools/harvest.ts
 import { resolve } from "node:path";
-var registerHarvestTools = (server, { cwd, load }) => {
+var registerHarvestTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "harvest_repo",
     {
@@ -58896,7 +58985,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
-      const root = path27 ? resolve(cwd, path27) : cwd;
+      const root = path27 ? resolve(ctx.cwd, path27) : ctx.cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -58942,7 +59031,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
-      const root = cwdArg ? resolve(cwd, cwdArg) : cwd;
+      const root = cwdArg ? resolve(ctx.cwd, cwdArg) : ctx.cwd;
       const loaded = await loadLexicon({ cwd: root });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
@@ -58975,7 +59064,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
     async ({ suggestion, scope }) => guarded(async () => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
-      const storeOpts2 = { cwd, ...scope !== void 0 ? { scope } : {} };
+      const storeOpts2 = { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} };
       if (kind === "stale") {
         const removed = await removeTerm(canonical, storeOpts2);
         return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
@@ -59014,7 +59103,8 @@ async function askUserToTrust(server, safePath, file2) {
   });
   return answer.action === "accept" && answer.content?.trust === true ? "accept" : "decline";
 }
-var registerTrustTools = (server, { cwd, load }) => {
+var registerTrustTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "trust_project",
     {
@@ -59026,8 +59116,8 @@ var registerTrustTools = (server, { cwd, load }) => {
       }
     },
     async ({ action, path: path27 }) => guarded(async () => {
-      const filePath = path27 ? resolve2(cwd, path27) : resolvePaths({ cwd }).project;
-      const registry2 = getTrustPath({ cwd });
+      const filePath = path27 ? resolve2(ctx.cwd, path27) : resolvePaths({ cwd: ctx.cwd }).project;
+      const registry2 = getTrustPath({ cwd: ctx.cwd });
       const shown = sanitizeForDisplay;
       const safePath = filePath === void 0 ? void 0 : shown(filePath);
       if (action === "status") {
@@ -59035,9 +59125,9 @@ var registerTrustTools = (server, { cwd, load }) => {
           action,
           registry: shown(registry2),
           trustAll: trustAllEnabled(),
-          trusted: (await listTrusted({ cwd })).map((e) => ({ ...e, path: shown(e.path) }))
+          trusted: (await listTrusted({ cwd: ctx.cwd })).map((e) => ({ ...e, path: shown(e.path) }))
         };
-        if (!filePath) return textResult({ ...base, status: "none", note: `no project .lexicon.yaml found from ${shown(cwd)}` });
+        if (!filePath) return textResult({ ...base, status: "none", note: `no project .lexicon.yaml found from ${shown(ctx.cwd)}` });
         let file3;
         try {
           file3 = await readLexiconFile(filePath, "project");
@@ -59045,12 +59135,12 @@ var registerTrustTools = (server, { cwd, load }) => {
           return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)) });
         }
         if (!file3.exists) return textResult({ ...base, path: safePath, status: "missing" });
-        const status = await isTrusted(file3, { cwd });
+        const status = await isTrusted(file3, { cwd: ctx.cwd });
         return textResult({ ...base, path: safePath, status, ...trustPreview(file3) });
       }
-      if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(cwd)}; pass a path`);
+      if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(ctx.cwd)}; pass a path`);
       if (action === "untrust") {
-        const removed = await untrustProject(filePath, { cwd });
+        const removed = await untrustProject(filePath, { cwd: ctx.cwd });
         return textResult({
           action,
           path: safePath,
@@ -59067,7 +59157,7 @@ var registerTrustTools = (server, { cwd, load }) => {
         throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}`);
       }
       if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
-      const before = await isTrusted(file2, { cwd });
+      const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {
         const answer = await askUserToTrust(server, safePath ?? "", file2);
         if (answer === "unsupported") {
@@ -59082,9 +59172,9 @@ var registerTrustTools = (server, { cwd, load }) => {
           throw new Error(`${safePath} changed while waiting for approval; nothing was trusted`);
         }
       }
-      const entry = await trustProject(filePath, { cwd });
+      const entry = await trustProject(filePath, { cwd: ctx.cwd });
       if (before !== "trusted" && entry.sha256 !== shownSha) {
-        await untrustProject(filePath, { cwd });
+        await untrustProject(filePath, { cwd: ctx.cwd });
         throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
       }
       const verb = before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
@@ -59655,6 +59745,15 @@ var INSTALL_CLIENTS = [
   "vscode",
   "generic"
 ];
+var PASSTHROUGH_ENV = ["LEXICON_PATH", "LEXICON_CWD"];
+function lexiconServerEnv(env, cwd) {
+  const out = {};
+  for (const name of PASSTHROUGH_ENV) {
+    const value = env[name]?.trim();
+    if (value) out[name] = path17.resolve(cwd, value);
+  }
+  return Object.keys(out).length > 0 ? out : void 0;
+}
 function isInstallClient(value) {
   return INSTALL_CLIENTS.includes(value);
 }
@@ -59757,7 +59856,8 @@ function labelFor(client) {
 }
 function targetFor(client, serverPath, ctx) {
   const launch = launchFor(serverPath, "mcp");
-  const base = { command: launch.command, args: launch.args };
+  const env = lexiconServerEnv(ctx.env, ctx.cwd);
+  const base = { command: launch.command, args: launch.args, ...env ? { env } : {} };
   const file2 = configPathFor(client, ctx);
   const common = { client, label: labelFor(client), file: file2, rulesFile: rulesFileFor(client) };
   switch (client) {
@@ -59790,6 +59890,9 @@ function mergeServerIntoJson(current, key, entry) {
     throw new Error('"lexicon" uses a different transport; resolve its remote fields before installing stdio');
   }
   const mergedEntry = { ...isRecord(existingEntry) ? existingEntry : {}, ...structuredClone(entry) };
+  if (entry.env && isRecord(existingEntry) && isRecord(existingEntry.env)) {
+    mergedEntry.env = { ...entry.env, ...existingEntry.env };
+  }
   if (deepEqual(existingEntry, mergedEntry)) {
     return { next: base, changed: false };
   }
@@ -59802,11 +59905,36 @@ function tomlString(s) {
 }
 var CODEX_TABLE = "mcp_servers.lexicon";
 function codexBlock(entry) {
-  return [
+  const lines = [
     `[${CODEX_TABLE}]`,
     `command = ${tomlString(entry.command)}`,
     `args = [${entry.args.map(tomlString).join(", ")}]`
-  ].join("\n");
+  ];
+  if (entry.env) {
+    const pairs = Object.entries(entry.env).map(([k, v]) => `${k} = ${tomlString(v)}`);
+    lines.push(`env = { ${pairs.join(", ")} }`);
+  }
+  return lines.join("\n");
+}
+function upsertTomlKeys(text, header, values) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => tomlHeaderRe(header).test(l));
+  if (start === -1) throw new Error(`[${header}] not found`);
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end] ?? "")) end += 1;
+  while (end > start + 1 && isBlankOrComment(lines[end - 1] ?? "")) end -= 1;
+  const append = [];
+  for (const [key, value] of Object.entries(values)) {
+    const keyRe = new RegExp(`^\\s*"?${key}"?\\s*=`);
+    if (!lines.some((l, i) => i > start && i < end && keyRe.test(l))) append.push(`${key} = ${tomlString(value)}`);
+  }
+  lines.splice(end, 0, ...append);
+  const next = lines.join("\n");
+  return { next, changed: next !== text };
+}
+function tomlHeaderRe(header) {
+  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
 }
 function isBlankOrComment(line2) {
   const trimmed = line2.trim();
@@ -59814,8 +59942,7 @@ function isBlankOrComment(line2) {
 }
 function upsertTomlTable(text, header, block) {
   const lines = text.split("\n");
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const headerRe = new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const headerRe = tomlHeaderRe(header);
   const start = lines.findIndex((l) => headerRe.test(l));
   const blockLines = block.split("\n");
   if (start === -1) {
@@ -59860,9 +59987,16 @@ async function applyJson(target) {
   await writeJsonFile(target.file, next);
   return read.exists ? "updated" : "created";
 }
+function mergeChanged(first, second) {
+  return { next: second.next, changed: first.changed || second.changed };
+}
 async function applyToml(target) {
   const { text, existed } = await readText2(target.file);
-  const { next, changed } = upsertTomlTable(text, CODEX_TABLE, codexBlock(target.entry));
+  const { env, ...launch } = target.entry;
+  const envTable = `${CODEX_TABLE}.env`;
+  const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));
+  const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
+  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
   if (!changed) return "unchanged";
   await writeText(target.file, next);
   return existed ? "updated" : "created";
@@ -59875,10 +60009,10 @@ function printExportHint(io, step, client) {
   line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
   line(io, dim("   (paste the markdown into that file so the model prefers the canonical spellings even without the MCP tool)"));
 }
-function printGeneric(io, serverPath) {
+function printGeneric(io, serverPath, env) {
   const launch = launchFor(serverPath, "mcp");
   line(io, bold("Generic MCP client configuration"));
-  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args }), "   "));
+  line(io, indent(jsonSnippet("mcpServers", { command: launch.command, args: launch.args, ...env ? { env } : {} }), "   "));
   line(io);
   line(io, bold("Supported clients"));
   for (const c of INSTALL_CLIENTS) {
@@ -59908,7 +60042,7 @@ async function runInstall(client, opts, io, deps = {}) {
     );
   }
   if (name === "generic") {
-    printGeneric(io, serverPath);
+    printGeneric(io, serverPath, lexiconServerEnv(env, cwd));
     return 0;
   }
   if (name === "claude") {
@@ -59917,9 +60051,10 @@ async function runInstall(client, opts, io, deps = {}) {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
       ...opts.home ? { settingsPath: path17.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
-      ...deps.exec ? { exec: deps.exec } : {}
+      ...deps.exec ? { exec: deps.exec } : {},
+      env
     };
-    return runInstallClaude(claudeOpts, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
   }
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
   const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
@@ -59956,7 +60091,9 @@ async function runInstallClaude(opts, io, deps = {}) {
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
-  const mcpArgs = ["mcp", "add", "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
+  const serverEnv = lexiconServerEnv(deps.env ?? process.env, path17.resolve(opts.cwd ?? process.cwd()));
+  const envArgs = Object.entries(serverEnv ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  const mcpArgs = ["mcp", "add", ...envArgs, "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
   line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
@@ -61300,6 +61437,9 @@ async function seedTerm(ctx, term) {
   ctx.seeded.push(result.term.canonical);
   if (result.created) ctx.summary.termsAdded.push(result.term.canonical);
 }
+function gitUserName(ctx) {
+  return tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]) ?? tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "config", "user.name"]) ?? (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || void 0);
+}
 async function stepLexicon(ctx) {
   stepHeading(ctx, 1, "Global lexicon");
   const global = resolvePaths({ cwd: ctx.cwd }).global;
@@ -61322,7 +61462,7 @@ async function stepLexicon(ctx) {
     return;
   }
   if (ctx.plan) {
-    const person2 = ctx.opts.person ?? tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]);
+    const person2 = ctx.opts.person ?? gitUserName(ctx);
     const company2 = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
@@ -61339,10 +61479,12 @@ async function stepLexicon(ctx) {
       const aliases2 = suggestAliases(canonical);
       ctx.say(`   would add ${bold(safe(canonical))} (${category}): ${aliases2.length > 0 ? safe(aliases2.join(", ")) : dim("(no aliases)")}`);
     }
-    if (ctx.plan.wouldSeed.length === 0) ctx.say(dim("   nothing to seed (no git user.name, no company guess)"));
+    if (ctx.plan.wouldSeed.length === 0) {
+      ctx.say(dim('   nothing to seed (no git user.name, no company guess); pass --person "Your Name" and --company "Your Co"'));
+    }
     return;
   }
-  const gitName = ctx.opts.person ?? tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]);
+  const gitName = ctx.opts.person ?? gitUserName(ctx);
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true) ? gitName : void 0;
@@ -61350,7 +61492,7 @@ async function stepLexicon(ctx) {
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: "person", source: "user" });
   } else {
-    ctx.say(dim('   no person term (git user.name is unset; add one later: lexicon add "Your Name" --category person)'));
+    ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
   const suggestion = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
   let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
@@ -61411,10 +61553,18 @@ async function stepPacks(ctx) {
     return p ? `${name} ${dim(`(${p.terms} terms)`)}` : name;
   };
   const explicit = typeof ctx.opts.packs === "string" ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : void 0;
-  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name));
+  let installed = [];
+  try {
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+  } catch {
+  }
+  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name) && !installed.includes(name));
+  const offered = (names) => names.filter((name) => !installed.includes(name));
+  if (installed.length > 0) ctx.say(dim(`   already installed: ${installed.join(", ")}`));
   if (ctx.plan) {
-    const chosen2 = explicit ?? [...defaults];
+    const chosen2 = explicit !== void 0 ? offered(explicit) : [...defaults];
     ctx.plan.wouldInstallPacks = chosen2;
+    if (installed.length > 0) ctx.plan.alreadyInstalledPacks = [...installed];
     const asks = explicit === void 0 && ctx.plan.interactive;
     if (asks) ctx.plan.wouldAsk.push("packs");
     if (chosen2.length === 0) {
@@ -61444,13 +61594,13 @@ async function stepPacks(ctx) {
       return;
     }
   } else if (ctx.prompter) {
-    chosen = await ctx.prompter.choose(
+    chosen = defaults.length === 0 ? [] : await ctx.prompter.choose(
       "   add starter packs to the global lexicon (Enter keeps the checked ones):",
       defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ""}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
       { multi: true }
     );
     for (const p of available) {
-      if (defaults.includes(p.name)) continue;
+      if (defaults.includes(p.name) || installed.includes(p.name)) continue;
       if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
     }
     if (chosen.length === 0) {
@@ -61461,13 +61611,9 @@ async function stepPacks(ctx) {
     ctx.say(dim(`   skipped (not requested); add --packs ${defaults.join(",")} to install the defaults, or later: lexicon pack add <name>`));
     return;
   }
-  const installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
   const install = ctx.deps.installPack ?? installPack;
   for (const name of chosen) {
-    if (installed.includes(name)) {
-      ctx.say(dim(`   already installed: ${name}`));
-      continue;
-    }
+    if (installed.includes(name)) continue;
     const result = await install(name, { cwd: ctx.cwd, scope: "global" });
     ctx.summary.packs.push({ name, added: result.added, merged: result.merged });
     ctx.say(`   installed ${bold(name)}: ${result.added} added, ${result.merged} merged`);
@@ -61890,7 +62036,8 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
-var registerSetupTools = (server, { cwd, load }) => {
+var registerSetupTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "lexicon_doctor",
     {
@@ -61898,7 +62045,7 @@ var registerSetupTools = (server, { cwd, load }) => {
       description: "Answers \"is lexicon set up for this user, and what is the one command that fixes it\" in a single call. WHEN TO CALL: when corrections are not happening, when the user asks whether it is set up, or before you offer to set it up, so you know whether there is anything to offer. Safe and free to call unprompted: it only reads. WHAT IT CHANGES: nothing. It writes no files and installs nothing. READ THESE THREE FIELDS FIRST: `ready` (boolean: true means terms are configured and an integration declaration was found; this does not verify a live client connection or an actual correction), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ready being false does not always mean \"not set up yet\": a lexicon file that exists but does not parse also reports ready false, and `lexicon setup` will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable lexicon it names the file and points at `lexicon edit`. Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), `checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.",
       inputSchema: {}
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd })))
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd })))
   );
   server.registerTool(
     "install_client",
@@ -61916,7 +62063,7 @@ var registerSetupTools = (server, { cwd, load }) => {
       const cliDir = cliDirForInstall();
       const code = await runInstall(
         client,
-        { cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
+        { cwd: ctx.cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
         io,
         cliDir !== void 0 ? { cliDir } : {}
       );
@@ -61936,7 +62083,7 @@ var registerSetupTools = (server, { cwd, load }) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
@@ -61952,7 +62099,7 @@ var registerSetupTools = (server, { cwd, load }) => {
       const cliDir = cliDirForInstall();
       const applied = apply === true;
       const options = {
-        cwd,
+        cwd: ctx.cwd,
         yes: true,
         json: true,
         ...company !== void 0 ? { company } : {},
@@ -62008,7 +62155,7 @@ var registerSetupTools = (server, { cwd, load }) => {
 };
 
 // src/mcp/tools/packs.ts
-import { createHash as createHash4, randomUUID } from "node:crypto";
+import { createHash as createHash5, randomUUID } from "node:crypto";
 
 // src/cli/cmd-import.ts
 import { promises as fs19 } from "node:fs";
@@ -62161,9 +62308,10 @@ function printReport(report, io) {
 
 // src/mcp/tools/packs.ts
 var REGISTRY_SOURCE_DESC = "Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.";
-var registerPackTools = (server, { cwd, load }) => {
+var registerPackTools = (server, ctx) => {
+  const { load } = ctx;
   const imports = /* @__PURE__ */ new Map();
-  const destination = (scope) => JSON.stringify({ cwd, scope: scope ?? "global", ...resolvePaths({ cwd }) });
+  const destination = (scope) => JSON.stringify({ cwd: ctx.cwd, scope: scope ?? "global", ...resolvePaths({ cwd: ctx.cwd }) });
   const pruneImports = () => {
     for (const [token, preview] of imports) if (Date.now() - preview.at > 3e5) imports.delete(token);
   };
@@ -62232,13 +62380,13 @@ var registerPackTools = (server, { cwd, load }) => {
           checksum: entry.checksum,
           terms: pack.lexicon.terms.map((t) => ({ ...t }))
         };
-        const digest = createHash4("sha256").update(JSON.stringify({
+        const digest = createHash5("sha256").update(JSON.stringify({
           name,
           registry: registry2,
           destination: destination(scope),
           entry,
           preview,
-          bytes: createHash4("sha256").update(bytes).digest("hex")
+          bytes: createHash5("sha256").update(bytes).digest("hex")
         })).digest("hex");
         if (confirm !== true) {
           return textResult({
@@ -62250,7 +62398,7 @@ var registerPackTools = (server, { cwd, load }) => {
         }
         if (previewDigest !== digest) throw new Error("community pack contents or destination changed, or preview digest is missing; preview again before installing");
         const result2 = await installRegistryPack(entry, base, registry2, {
-          cwd,
+          cwd: ctx.cwd,
           approvedBytes: bytes,
           ...scope !== void 0 ? { scope } : {},
           ...parsed.version !== void 0 ? { pinnedVersion: parsed.version } : {}
@@ -62266,7 +62414,7 @@ var registerPackTools = (server, { cwd, load }) => {
         });
       }
       if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
-      const result = await installPack(name, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const result = await installPack(name, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({
         name: result.pack.name,
         title: result.pack.title,
@@ -62303,7 +62451,7 @@ var registerPackTools = (server, { cwd, load }) => {
         }
         const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
         imports.delete(previewToken);
-        const result = await applyImportCandidates(accepted, { cwd, ...scope !== void 0 ? { scope } : {} });
+        const result = await applyImportCandidates(accepted, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
         return textResult({
           applied: true,
           candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
@@ -62360,7 +62508,7 @@ var registerPackTools = (server, { cwd, load }) => {
       const io = bufferIO();
       const code = await runImport(
         path27 ?? "-",
-        { cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
+        { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
         io,
         content !== void 0 ? async () => content : void 0
       );
@@ -62388,6 +62536,18 @@ var TOOL_REGISTRARS = [
 ];
 
 // src/mcp/server.ts
+var ROOTS_TIMEOUT_MS = 2e3;
+function cwdFromRoots(roots) {
+  for (const root of roots) {
+    if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
+    try {
+      const dir = fileURLToPath5(root.uri);
+      if (statSync2(dir).isDirectory()) return dir;
+    } catch {
+    }
+  }
+  return void 0;
+}
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
 var ONBOARD_PROMPT = [
   "Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:",
@@ -62423,13 +62583,51 @@ var SERVER_INSTRUCTIONS = [
   "Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
 ].join("\n");
 function createServer2(opts = {}) {
-  const cwd = opts.cwd ?? process.env.LEXICON_CWD ?? process.cwd();
-  const load = () => loadLexicon({ cwd });
+  const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || void 0);
+  let cwd = explicit ?? process.cwd();
+  let rootsPending;
+  const load = async () => {
+    if (rootsPending) await rootsPending;
+    return loadLexicon({ cwd });
+  };
   const server = new McpServer(
     { name: SERVER_NAME, version: readPackageVersion() },
     { instructions: SERVER_INSTRUCTIONS }
   );
-  for (const register of TOOL_REGISTRARS) register(server, { cwd, load });
+  if (explicit === void 0) {
+    const refreshRoots = () => {
+      const pending = server.server.listRoots(void 0, { timeout: opts.rootsTimeoutMs ?? ROOTS_TIMEOUT_MS }).then(({ roots }) => {
+        const dir = cwdFromRoots(roots);
+        if (dir !== void 0 && dir !== cwd) {
+          cwd = dir;
+          log("project directory from MCP roots:", dir);
+        }
+      }).catch((err) => log("roots/list failed; keeping", cwd, "-", errorMessage(err))).finally(() => {
+        if (rootsPending === pending) rootsPending = void 0;
+      });
+      rootsPending = pending;
+      return pending;
+    };
+    server.server.oninitialized = () => {
+      if (server.server.getClientCapabilities()?.roots) void refreshRoots();
+    };
+    server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => {
+      void refreshRoots();
+    });
+  }
+  const registerTool = server.registerTool.bind(server);
+  const gatedRegisterTool = (name, config2, cb) => registerTool(name, config2, (async (...args) => {
+    if (rootsPending) await rootsPending;
+    return cb(...args);
+  }));
+  server.registerTool = gatedRegisterTool;
+  const ctx = {
+    get cwd() {
+      return cwd;
+    },
+    load
+  };
+  for (const register of TOOL_REGISTRARS) register(server, ctx);
   server.registerResource(
     "Personal voice lexicon",
     "lexicon://me",
@@ -62528,6 +62726,8 @@ if (isMainModule()) {
   });
 }
 export {
+  ROOTS_TIMEOUT_MS,
   createServer2 as createServer,
+  cwdFromRoots,
   main
 };

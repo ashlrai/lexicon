@@ -54,7 +54,9 @@ async function askUserToTrust(
   return answer.action === 'accept' && answer.content?.trust === true ? 'accept' : 'decline';
 }
 
-export const registerTrustTools: ToolRegistrar = (server, { cwd, load }) => {
+export const registerTrustTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   server.registerTool(
     'trust_project',
     {
@@ -72,8 +74,8 @@ export const registerTrustTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ action, path }) =>
       guarded(async () => {
-        const filePath = path ? resolve(cwd, path) : resolvePaths({ cwd }).project;
-        const registry = getTrustPath({ cwd });
+        const filePath = path ? resolve(ctx.cwd, path) : resolvePaths({ cwd: ctx.cwd }).project;
+        const registry = getTrustPath({ cwd: ctx.cwd });
         // Everything this tool echoes is attacker-influenced: the file is
         // untrusted by definition, and the directory it sits in is named by
         // whoever published the repo. `shown` is applied at every point a
@@ -88,9 +90,9 @@ export const registerTrustTools: ToolRegistrar = (server, { cwd, load }) => {
             action,
             registry: shown(registry),
             trustAll: trustAllEnabled(),
-            trusted: (await listTrusted({ cwd })).map((e) => ({ ...e, path: shown(e.path) })),
+            trusted: (await listTrusted({ cwd: ctx.cwd })).map((e) => ({ ...e, path: shown(e.path) })),
           };
-          if (!filePath) return textResult({ ...base, status: 'none', note: `no project .lexicon.yaml found from ${shown(cwd)}` });
+          if (!filePath) return textResult({ ...base, status: 'none', note: `no project .lexicon.yaml found from ${shown(ctx.cwd)}` });
           let file: LexiconFile;
           try {
             file = await readLexiconFile(filePath, 'project');
@@ -98,14 +100,14 @@ export const registerTrustTools: ToolRegistrar = (server, { cwd, load }) => {
             return textResult({ ...base, path: safePath, status: 'invalid', error: shown(errorMessage(err)) });
           }
           if (!file.exists) return textResult({ ...base, path: safePath, status: 'missing' });
-          const status = await isTrusted(file, { cwd });
+          const status = await isTrusted(file, { cwd: ctx.cwd });
           return textResult({ ...base, path: safePath, status, ...trustPreview(file) });
         }
 
-        if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(cwd)}; pass a path`);
+        if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(ctx.cwd)}; pass a path`);
 
         if (action === 'untrust') {
-          const removed = await untrustProject(filePath, { cwd });
+          const removed = await untrustProject(filePath, { cwd: ctx.cwd });
           return textResult({
             action,
             path: safePath,
@@ -126,7 +128,7 @@ export const registerTrustTools: ToolRegistrar = (server, { cwd, load }) => {
           throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}`);
         }
         if (!file.exists) throw new Error(`file does not exist: ${safePath}`);
-        const before = await isTrusted(file, { cwd });
+        const before = await isTrusted(file, { cwd: ctx.cwd });
 
         // Re-pinning unchanged content grants nothing new; anything else needs the human.
         if (before !== 'trusted') {
@@ -145,9 +147,9 @@ export const registerTrustTools: ToolRegistrar = (server, { cwd, load }) => {
             throw new Error(`${safePath} changed while waiting for approval; nothing was trusted`);
           }
         }
-        const entry = await trustProject(filePath, { cwd });
+        const entry = await trustProject(filePath, { cwd: ctx.cwd });
         if (before !== 'trusted' && entry.sha256 !== shownSha) {
-          await untrustProject(filePath, { cwd });
+          await untrustProject(filePath, { cwd: ctx.cwd });
           throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
         }
         const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';

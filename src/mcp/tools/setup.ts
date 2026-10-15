@@ -20,7 +20,9 @@ import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
 
-export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
+export const registerSetupTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   server.registerTool(
     'lexicon_doctor',
     {
@@ -42,7 +44,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd }))),
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd }))),
   );
 
   server.registerTool(
@@ -68,7 +70,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         const cliDir = cliDirForInstall();
         const code = await runInstall(
           client,
-          { cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
+          { cwd: ctx.cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
           io,
           cliDir !== undefined ? { cliDir } : {},
         );
@@ -93,7 +95,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. " +
         'Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. ' +
         'Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. ' +
-        'The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. ' +
+        'The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. ' +
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
@@ -126,7 +128,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         const cliDir = cliDirForInstall();
         const applied = apply === true;
         const options: SetupOptions = {
-          cwd,
+          cwd: ctx.cwd,
           yes: true,
           json: true,
           ...(company !== undefined ? { company } : {}),

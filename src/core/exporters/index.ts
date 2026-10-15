@@ -63,6 +63,24 @@ export function isExportFormat(value: string): value is ExportFormat {
   return (EXPORT_FORMATS as readonly string[]).includes(value);
 }
 
+/**
+ * Other names people type for a format: the product is "Wispr Flow", so
+ * `export wispr-flow` is the first thing tried. Accepted wherever a format is
+ * parsed from text (CLI, HTTP API); `EXPORT_FORMATS` stays the canonical list.
+ */
+export const EXPORT_FORMAT_ALIASES: Readonly<Record<string, ExportFormat>> = {
+  'wispr-flow': 'wispr',
+  'wisprflow': 'wispr',
+  'wispr-flow-csv': 'wispr',
+};
+
+/** The format `value` names (case-insensitive, aliases included), or undefined. */
+export function resolveExportFormat(value: string): ExportFormat | undefined {
+  const lower = value.trim().toLowerCase();
+  if (isExportFormat(lower)) return lower;
+  return Object.hasOwn(EXPORT_FORMAT_ALIASES, lower) ? EXPORT_FORMAT_ALIASES[lower] : undefined;
+}
+
 const EXPORTERS: Record<ExportFormat, (lexicon: Lexicon, opts: ExportOptions) => string> = {
   'wispr': exportWispr,
   'superwhisper': exportSuperwhisper,

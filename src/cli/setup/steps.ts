@@ -111,6 +111,21 @@ async function seedTerm(ctx: Ctx, term: Term): Promise<void> {
   if (result.created) ctx.summary.termsAdded.push(result.term.canonical);
 }
 
+/**
+ * The name the user commits under. `--global` first, then the effective value
+ * for this directory (repo-local config, the system file, an `includeIf`),
+ * then the author/committer variables git itself honours. Only reading
+ * `--global` left `setup --yes` seeding nothing for anyone whose name lives in
+ * one of the others, which is common on a machine set up per repository.
+ */
+function gitUserName(ctx: Ctx): string | undefined {
+  return (
+    tryExec(ctx.exec, 'git', ['config', '--global', 'user.name']) ??
+    tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'config', 'user.name']) ??
+    (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || undefined)
+  );
+}
+
 /** Step a: the global lexicon and the person/company seed. */
 export async function stepLexicon(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 1, 'Global lexicon');
@@ -136,7 +151,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
   if (ctx.plan) {
     // Same defaults as the non-interactive path below, without the writes.
-    const person = ctx.opts.person ?? tryExec(ctx.exec, 'git', ['config', '--global', 'user.name']);
+    const person = ctx.opts.person ?? gitUserName(ctx);
     const company =
       ctx.opts.company ??
       suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
@@ -155,12 +170,14 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
       const aliases = suggestAliases(canonical);
       ctx.say(`   would add ${bold(safe(canonical))} (${category}): ${aliases.length > 0 ? safe(aliases.join(', ')) : dim('(no aliases)')}`);
     }
-    if (ctx.plan.wouldSeed.length === 0) ctx.say(dim('   nothing to seed (no git user.name, no company guess)'));
+    if (ctx.plan.wouldSeed.length === 0) {
+      ctx.say(dim('   nothing to seed (no git user.name, no company guess); pass --person "Your Name" and --company "Your Co"'));
+    }
     return;
   }
 
   // Person: the git user, confirmed on a terminal.
-  const gitName = ctx.opts.person ?? tryExec(ctx.exec, 'git', ['config', '--global', 'user.name']);
+  const gitName = ctx.opts.person ?? gitUserName(ctx);
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = (await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true))
@@ -170,7 +187,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: 'person', source: 'user' });
   } else {
-    ctx.say(dim('   no person term (git user.name is unset; add one later: lexicon add "Your Name" --category person)'));
+    ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
 
   // Company: suggested from the package scope or the git remote.
@@ -248,11 +265,23 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
     return p ? `${name} ${dim(`(${p.terms} terms)`)}` : name;
   };
   const explicit = typeof ctx.opts.packs === 'string' ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : undefined;
-  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name));
+  // A rerun (or setup_lexicon after `pack add`) must not offer what is already
+  // there: the agent relays the plan, and "install developer?" for a pack the
+  // user has is noise at best and a confusing second install at worst.
+  let installed: string[] = [];
+  try {
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+  } catch {
+    // an unreadable lexicon is reported by the steps that write it
+  }
+  const defaults = DEFAULT_PACKS.filter((name) => byName.has(name) && !installed.includes(name));
+  const offered = (names: readonly string[]): string[] => names.filter((name) => !installed.includes(name));
+  if (installed.length > 0) ctx.say(dim(`   already installed: ${installed.join(', ')}`));
 
   if (ctx.plan) {
-    const chosen = explicit ?? [...defaults];
+    const chosen = explicit !== undefined ? offered(explicit) : [...defaults];
     ctx.plan.wouldInstallPacks = chosen;
+    if (installed.length > 0) ctx.plan.alreadyInstalledPacks = [...installed];
     const asks = explicit === undefined && ctx.plan.interactive;
     if (asks) ctx.plan.wouldAsk.push('packs');
     if (chosen.length === 0) {
@@ -284,13 +313,13 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
       return;
     }
   } else if (ctx.prompter) {
-    chosen = await ctx.prompter.choose(
+    chosen = defaults.length === 0 ? [] : await ctx.prompter.choose(
       '   add starter packs to the global lexicon (Enter keeps the checked ones):',
       defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ''}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
       { multi: true },
     );
     for (const p of available) {
-      if (defaults.includes(p.name)) continue;
+      if (defaults.includes(p.name) || installed.includes(p.name)) continue;
       if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
     }
     if (chosen.length === 0) {
@@ -302,13 +331,10 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
     return;
   }
 
-  const installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
   const install = ctx.deps.installPack ?? installPack;
   for (const name of chosen) {
-    if (installed.includes(name)) {
-      ctx.say(dim(`   already installed: ${name}`));
-      continue;
-    }
+    // Named in the "already installed" line above.
+    if (installed.includes(name)) continue;
     const result = await install(name, { cwd: ctx.cwd, scope: 'global' });
     ctx.summary.packs.push({ name, added: result.added, merged: result.merged });
     ctx.say(`   installed ${bold(name)}: ${result.added} added, ${result.merged} merged`);

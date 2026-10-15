@@ -173,6 +173,12 @@ export interface SetupPlan {
    */
   wouldInstallPacks: string[];
   /**
+   * Starter packs the global lexicon already has. They are left out of
+   * `wouldInstallPacks` and the checklist, so a rerun does not offer them
+   * again. Absent when there are none.
+   */
+  alreadyInstalledPacks?: string[];
+  /**
    * Repo names on offer (names the packs cover are left out). Written to the
    * project lexicon only under `--harvest` or a yes at the prompt, whose
    * default is no, so read it with `wouldAsk`.

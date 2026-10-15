@@ -24,6 +24,8 @@ import {
   packsDir,
   parseLexicon,
   parsePackText,
+  findTerm,
+  readGlobalHits,
   readLexiconFile,
   recordHits,
   uninstallPack,
@@ -374,7 +376,10 @@ describe('installPack / uninstallPack', () => {
     const file = await readLexiconFile(globalPath, 'global');
     expect(file.lexicon.terms.map((t) => t.canonical).sort()).toEqual(['Kubernetes', 'Neon', 'Supabase', 'Vercel']);
     expect(file.lexicon.terms.find((t) => t.canonical === 'Kubernetes')?.source).toBe('user');
-    expect(file.lexicon.terms.find((t) => t.canonical === 'Vercel')?.hits).toBe(1);
+    // The hit lives in the sidecar, not the file; uninstall still saw it.
+    expect(file.lexicon.terms.find((t) => t.canonical === 'Vercel')?.hits).toBeUndefined();
+    expect(await readGlobalHits({ globalPath })).toEqual({ vercel: 1 });
+    expect(findTerm((await loadLexicon({ cwd, globalPath })).merged, 'Vercel')?.hits).toBe(1);
     expect(file.lexicon.settings).toBeUndefined();
     expect(installedPacks(await loadLexicon({ cwd, globalPath }))).toEqual([]);
 
