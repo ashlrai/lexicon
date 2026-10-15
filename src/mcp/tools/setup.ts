@@ -20,7 +20,9 @@ import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
 
-export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
+export const registerSetupTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   server.registerTool(
     'lexicon_doctor',
     {
@@ -42,7 +44,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd }))),
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd }))),
   );
 
   server.registerTool(
@@ -68,7 +70,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         const cliDir = cliDirForInstall();
         const code = await runInstall(
           client,
-          { cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
+          { cwd: ctx.cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
           io,
           cliDir !== undefined ? { cliDir } : {},
         );
@@ -126,7 +128,7 @@ export const registerSetupTools: ToolRegistrar = (server, { cwd, load }) => {
         const cliDir = cliDirForInstall();
         const applied = apply === true;
         const options: SetupOptions = {
-          cwd,
+          cwd: ctx.cwd,
           yes: true,
           json: true,
           ...(company !== undefined ? { company } : {}),

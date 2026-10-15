@@ -18112,7 +18112,7 @@ var require_commander = __commonJS({
 });
 
 // src/mcp/server.ts
-import { realpathSync as realpathSync3 } from "node:fs";
+import { realpathSync as realpathSync3, statSync as statSync2 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 
@@ -58748,7 +58748,8 @@ function filePathsInUse(loaded) {
 }
 
 // src/mcp/tools/terms.ts
-var registerTermTools = (server, { cwd, load }) => {
+var registerTermTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "normalize_transcript",
     {
@@ -58768,7 +58769,7 @@ var registerTermTools = (server, { cwd, load }) => {
       });
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
-        await recordHits(canonicals, { cwd }).catch(
+        await recordHits(canonicals, { cwd: ctx.cwd }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
@@ -58807,7 +58808,7 @@ var registerTermTools = (server, { cwd, load }) => {
         ...never2 && never2.length > 0 ? { never: never2 } : {},
         ...scope !== void 0 ? { scope } : {}
       };
-      const saved = await addTerm(term, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const saved = await addTerm(term, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
     })
   );
@@ -58822,7 +58823,7 @@ var registerTermTools = (server, { cwd, load }) => {
       }
     },
     async ({ canonical, scope }) => guarded(async () => {
-      const removed = await removeTerm(canonical, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const removed = await removeTerm(canonical, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({ canonical, removed });
     })
   );
@@ -58894,7 +58895,7 @@ var registerTermTools = (server, { cwd, load }) => {
       }
     },
     async ({ heard, meant, scope }) => guarded(async () => {
-      const learned = await learnCorrection({ heard, meant }, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({
         term: learned.term,
         path: learned.file.path,
@@ -58940,7 +58941,8 @@ var registerTermTools = (server, { cwd, load }) => {
 
 // src/mcp/tools/harvest.ts
 import { resolve } from "node:path";
-var registerHarvestTools = (server, { cwd, load }) => {
+var registerHarvestTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "harvest_repo",
     {
@@ -58954,7 +58956,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
-      const root = path27 ? resolve(cwd, path27) : cwd;
+      const root = path27 ? resolve(ctx.cwd, path27) : ctx.cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -59000,7 +59002,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
-      const root = cwdArg ? resolve(cwd, cwdArg) : cwd;
+      const root = cwdArg ? resolve(ctx.cwd, cwdArg) : ctx.cwd;
       const loaded = await loadLexicon({ cwd: root });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
@@ -59033,7 +59035,7 @@ var registerHarvestTools = (server, { cwd, load }) => {
     async ({ suggestion, scope }) => guarded(async () => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
-      const storeOpts2 = { cwd, ...scope !== void 0 ? { scope } : {} };
+      const storeOpts2 = { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} };
       if (kind === "stale") {
         const removed = await removeTerm(canonical, storeOpts2);
         return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
@@ -59072,7 +59074,8 @@ async function askUserToTrust(server, safePath, file2) {
   });
   return answer.action === "accept" && answer.content?.trust === true ? "accept" : "decline";
 }
-var registerTrustTools = (server, { cwd, load }) => {
+var registerTrustTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "trust_project",
     {
@@ -59084,8 +59087,8 @@ var registerTrustTools = (server, { cwd, load }) => {
       }
     },
     async ({ action, path: path27 }) => guarded(async () => {
-      const filePath = path27 ? resolve2(cwd, path27) : resolvePaths({ cwd }).project;
-      const registry2 = getTrustPath({ cwd });
+      const filePath = path27 ? resolve2(ctx.cwd, path27) : resolvePaths({ cwd: ctx.cwd }).project;
+      const registry2 = getTrustPath({ cwd: ctx.cwd });
       const shown = sanitizeForDisplay;
       const safePath = filePath === void 0 ? void 0 : shown(filePath);
       if (action === "status") {
@@ -59093,9 +59096,9 @@ var registerTrustTools = (server, { cwd, load }) => {
           action,
           registry: shown(registry2),
           trustAll: trustAllEnabled(),
-          trusted: (await listTrusted({ cwd })).map((e) => ({ ...e, path: shown(e.path) }))
+          trusted: (await listTrusted({ cwd: ctx.cwd })).map((e) => ({ ...e, path: shown(e.path) }))
         };
-        if (!filePath) return textResult({ ...base, status: "none", note: `no project .lexicon.yaml found from ${shown(cwd)}` });
+        if (!filePath) return textResult({ ...base, status: "none", note: `no project .lexicon.yaml found from ${shown(ctx.cwd)}` });
         let file3;
         try {
           file3 = await readLexiconFile(filePath, "project");
@@ -59103,12 +59106,12 @@ var registerTrustTools = (server, { cwd, load }) => {
           return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)) });
         }
         if (!file3.exists) return textResult({ ...base, path: safePath, status: "missing" });
-        const status = await isTrusted(file3, { cwd });
+        const status = await isTrusted(file3, { cwd: ctx.cwd });
         return textResult({ ...base, path: safePath, status, ...trustPreview(file3) });
       }
-      if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(cwd)}; pass a path`);
+      if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(ctx.cwd)}; pass a path`);
       if (action === "untrust") {
-        const removed = await untrustProject(filePath, { cwd });
+        const removed = await untrustProject(filePath, { cwd: ctx.cwd });
         return textResult({
           action,
           path: safePath,
@@ -59125,7 +59128,7 @@ var registerTrustTools = (server, { cwd, load }) => {
         throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}`);
       }
       if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
-      const before = await isTrusted(file2, { cwd });
+      const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {
         const answer = await askUserToTrust(server, safePath ?? "", file2);
         if (answer === "unsupported") {
@@ -59140,9 +59143,9 @@ var registerTrustTools = (server, { cwd, load }) => {
           throw new Error(`${safePath} changed while waiting for approval; nothing was trusted`);
         }
       }
-      const entry = await trustProject(filePath, { cwd });
+      const entry = await trustProject(filePath, { cwd: ctx.cwd });
       if (before !== "trusted" && entry.sha256 !== shownSha) {
-        await untrustProject(filePath, { cwd });
+        await untrustProject(filePath, { cwd: ctx.cwd });
         throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
       }
       const verb = before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
@@ -61998,7 +62001,8 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
-var registerSetupTools = (server, { cwd, load }) => {
+var registerSetupTools = (server, ctx) => {
+  const { load } = ctx;
   server.registerTool(
     "lexicon_doctor",
     {
@@ -62006,7 +62010,7 @@ var registerSetupTools = (server, { cwd, load }) => {
       description: "Answers \"is lexicon set up for this user, and what is the one command that fixes it\" in a single call. WHEN TO CALL: when corrections are not happening, when the user asks whether it is set up, or before you offer to set it up, so you know whether there is anything to offer. Safe and free to call unprompted: it only reads. WHAT IT CHANGES: nothing. It writes no files and installs nothing. READ THESE THREE FIELDS FIRST: `ready` (boolean: true means terms are configured and an integration declaration was found; this does not verify a live client connection or an actual correction), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ready being false does not always mean \"not set up yet\": a lexicon file that exists but does not parse also reports ready false, and `lexicon setup` will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable lexicon it names the file and points at `lexicon edit`. Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), `checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.",
       inputSchema: {}
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd })))
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd })))
   );
   server.registerTool(
     "install_client",
@@ -62024,7 +62028,7 @@ var registerSetupTools = (server, { cwd, load }) => {
       const cliDir = cliDirForInstall();
       const code = await runInstall(
         client,
-        { cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
+        { cwd: ctx.cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
         io,
         cliDir !== void 0 ? { cliDir } : {}
       );
@@ -62060,7 +62064,7 @@ var registerSetupTools = (server, { cwd, load }) => {
       const cliDir = cliDirForInstall();
       const applied = apply === true;
       const options = {
-        cwd,
+        cwd: ctx.cwd,
         yes: true,
         json: true,
         ...company !== void 0 ? { company } : {},
@@ -62269,9 +62273,10 @@ function printReport(report, io) {
 
 // src/mcp/tools/packs.ts
 var REGISTRY_SOURCE_DESC = "Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.";
-var registerPackTools = (server, { cwd, load }) => {
+var registerPackTools = (server, ctx) => {
+  const { load } = ctx;
   const imports = /* @__PURE__ */ new Map();
-  const destination = (scope) => JSON.stringify({ cwd, scope: scope ?? "global", ...resolvePaths({ cwd }) });
+  const destination = (scope) => JSON.stringify({ cwd: ctx.cwd, scope: scope ?? "global", ...resolvePaths({ cwd: ctx.cwd }) });
   const pruneImports = () => {
     for (const [token, preview] of imports) if (Date.now() - preview.at > 3e5) imports.delete(token);
   };
@@ -62358,7 +62363,7 @@ var registerPackTools = (server, { cwd, load }) => {
         }
         if (previewDigest !== digest) throw new Error("community pack contents or destination changed, or preview digest is missing; preview again before installing");
         const result2 = await installRegistryPack(entry, base, registry2, {
-          cwd,
+          cwd: ctx.cwd,
           approvedBytes: bytes,
           ...scope !== void 0 ? { scope } : {},
           ...parsed.version !== void 0 ? { pinnedVersion: parsed.version } : {}
@@ -62374,7 +62379,7 @@ var registerPackTools = (server, { cwd, load }) => {
         });
       }
       if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
-      const result = await installPack(name, { cwd, ...scope !== void 0 ? { scope } : {} });
+      const result = await installPack(name, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
       return textResult({
         name: result.pack.name,
         title: result.pack.title,
@@ -62411,7 +62416,7 @@ var registerPackTools = (server, { cwd, load }) => {
         }
         const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
         imports.delete(previewToken);
-        const result = await applyImportCandidates(accepted, { cwd, ...scope !== void 0 ? { scope } : {} });
+        const result = await applyImportCandidates(accepted, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
         return textResult({
           applied: true,
           candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
@@ -62468,7 +62473,7 @@ var registerPackTools = (server, { cwd, load }) => {
       const io = bufferIO();
       const code = await runImport(
         path27 ?? "-",
-        { cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
+        { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
         io,
         content !== void 0 ? async () => content : void 0
       );
@@ -62496,6 +62501,18 @@ var TOOL_REGISTRARS = [
 ];
 
 // src/mcp/server.ts
+var ROOTS_TIMEOUT_MS = 2e3;
+function cwdFromRoots(roots) {
+  for (const root of roots) {
+    if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
+    try {
+      const dir = fileURLToPath5(root.uri);
+      if (statSync2(dir).isDirectory()) return dir;
+    } catch {
+    }
+  }
+  return void 0;
+}
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
 var ONBOARD_PROMPT = [
   "Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:",
@@ -62531,13 +62548,51 @@ var SERVER_INSTRUCTIONS = [
   "Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
 ].join("\n");
 function createServer2(opts = {}) {
-  const cwd = opts.cwd ?? process.env.LEXICON_CWD ?? process.cwd();
-  const load = () => loadLexicon({ cwd });
+  const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || void 0);
+  let cwd = explicit ?? process.cwd();
+  let rootsPending;
+  const load = async () => {
+    if (rootsPending) await rootsPending;
+    return loadLexicon({ cwd });
+  };
   const server = new McpServer(
     { name: SERVER_NAME, version: readPackageVersion() },
     { instructions: SERVER_INSTRUCTIONS }
   );
-  for (const register of TOOL_REGISTRARS) register(server, { cwd, load });
+  if (explicit === void 0) {
+    const refreshRoots = () => {
+      const pending = server.server.listRoots(void 0, { timeout: opts.rootsTimeoutMs ?? ROOTS_TIMEOUT_MS }).then(({ roots }) => {
+        const dir = cwdFromRoots(roots);
+        if (dir !== void 0 && dir !== cwd) {
+          cwd = dir;
+          log("project directory from MCP roots:", dir);
+        }
+      }).catch((err) => log("roots/list failed; keeping", cwd, "-", errorMessage(err))).finally(() => {
+        if (rootsPending === pending) rootsPending = void 0;
+      });
+      rootsPending = pending;
+      return pending;
+    };
+    server.server.oninitialized = () => {
+      if (server.server.getClientCapabilities()?.roots) void refreshRoots();
+    };
+    server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => {
+      void refreshRoots();
+    });
+  }
+  const registerTool = server.registerTool.bind(server);
+  const gatedRegisterTool = (name, config2, cb) => registerTool(name, config2, (async (...args) => {
+    if (rootsPending) await rootsPending;
+    return cb(...args);
+  }));
+  server.registerTool = gatedRegisterTool;
+  const ctx = {
+    get cwd() {
+      return cwd;
+    },
+    load
+  };
+  for (const register of TOOL_REGISTRARS) register(server, ctx);
   server.registerResource(
     "Personal voice lexicon",
     "lexicon://me",
@@ -62636,6 +62691,8 @@ if (isMainModule()) {
   });
 }
 export {
+  ROOTS_TIMEOUT_MS,
   createServer2 as createServer,
+  cwdFromRoots,
   main
 };

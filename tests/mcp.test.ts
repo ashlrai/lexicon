@@ -1289,3 +1289,176 @@ describe('lexicon MCP server', () => {
     });
   });
 });
+
+describe('MCP roots pick the project directory', () => {
+  let rootA: string;
+  let rootB: string;
+
+  beforeEach(async () => {
+    const { mkdtemp } = await import('node:fs/promises');
+    const os = await import('node:os');
+    rootA = await mkdtemp(path.join(os.tmpdir(), 'lexicon-roots-a-'));
+    rootB = await mkdtemp(path.join(os.tmpdir(), 'lexicon-roots-b-'));
+  });
+
+  afterEach(async () => {
+    const { rm } = await import('node:fs/promises');
+    await rm(rootA, { recursive: true, force: true });
+    await rm(rootB, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+  });
+
+  /** A client that advertises roots and answers roots/list from `roots()` (or throws). */
+  async function connectWithRoots(
+    roots: () => { uri: string; name?: string }[],
+    serverOpts: { cwd?: string } = {},
+  ): Promise<{ client: Client; close: () => Promise<void>; asked: () => number }> {
+    const { ListRootsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
+    const { createServer } = await import('../src/mcp/server.js');
+    const server = createServer({ ...serverOpts, rootsTimeoutMs: 500 });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'roots-client', version: '0.0.0' }, { capabilities: { roots: { listChanged: true } } });
+    let asked = 0;
+    client.setRequestHandler(ListRootsRequestSchema, async () => {
+      asked += 1;
+      return { roots: roots() };
+    });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    return {
+      client,
+      asked: () => asked,
+      close: async () => {
+        await client.close();
+        await server.close();
+      },
+    };
+  }
+
+  it('uses the first existing file:// root for loads and for tools that write', async () => {
+    vi.stubEnv('LEXICON_CWD', '');
+    const { pathToFileURL } = await import('node:url');
+    // (The SDK itself rejects a roots/list answer holding a non-file URI; cwdFromRoots also skips one.)
+    const { client, close, asked } = await connectWithRoots(() => [
+      { uri: pathToFileURL(path.join(rootA, 'missing')).href },
+      { uri: pathToFileURL(rootA).href, name: 'A' },
+      { uri: pathToFileURL(rootB).href },
+    ]);
+    try {
+      await client.readResource({ uri: 'lexicon://me' });
+      expect(asked()).toBe(1);
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA });
+      await client.callTool({ name: 'add_term', arguments: { canonical: 'Zed', aliases: ['zedd'] } });
+      expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'Zed' }), { cwd: rootA });
+    } finally {
+      await close();
+    }
+  });
+
+  it('holds a tool call that races a slow roots/list answer until it lands', async () => {
+    vi.stubEnv('LEXICON_CWD', '');
+    const { ListRootsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
+    const { pathToFileURL } = await import('node:url');
+    const { createServer } = await import('../src/mcp/server.js');
+    const server = createServer({ rootsTimeoutMs: 2000 });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'slow-roots', version: '0.0.0' }, { capabilities: { roots: {} } });
+    client.setRequestHandler(ListRootsRequestSchema, async () => {
+      await new Promise((r) => setTimeout(r, 150));
+      return { roots: [{ uri: pathToFileURL(rootA).href }] };
+    });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      // add_term never calls load(); it still must not run against process.cwd().
+      await client.callTool({ name: 'add_term', arguments: { canonical: 'Zed', aliases: ['zedd'] } });
+      expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'Zed' }), { cwd: rootA });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('follows roots/list_changed', async () => {
+    vi.stubEnv('LEXICON_CWD', '');
+    const { pathToFileURL } = await import('node:url');
+    let current = rootA;
+    const { client, close, asked } = await connectWithRoots(() => [{ uri: pathToFileURL(current).href }]);
+    try {
+      await client.readResource({ uri: 'lexicon://me' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA });
+      current = rootB;
+      await client.sendRootsListChanged();
+      await vi.waitFor(() => expect(asked()).toBe(2));
+      await client.readResource({ uri: 'lexicon://me' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB });
+    } finally {
+      await close();
+    }
+  });
+
+  it('keeps an explicit directory (option or LEXICON_CWD) and never asks for roots', async () => {
+    const { pathToFileURL } = await import('node:url');
+    const viaOption = await connectWithRoots(() => [{ uri: pathToFileURL(rootA).href }], { cwd: '/fake/repo' });
+    try {
+      await viaOption.client.readResource({ uri: 'lexicon://me' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo' });
+      expect(viaOption.asked()).toBe(0);
+    } finally {
+      await viaOption.close();
+    }
+    vi.stubEnv('LEXICON_CWD', rootB);
+    const viaEnv = await connectWithRoots(() => [{ uri: pathToFileURL(rootA).href }]);
+    try {
+      await viaEnv.client.readResource({ uri: 'lexicon://me' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB });
+      expect(viaEnv.asked()).toBe(0);
+    } finally {
+      await viaEnv.close();
+    }
+  });
+
+  it('falls back to process.cwd() when the client has no usable root or roots/list fails', async () => {
+    vi.stubEnv('LEXICON_CWD', '');
+    const { pathToFileURL } = await import('node:url');
+    const none = await connectWithRoots(() => [{ uri: pathToFileURL(path.join(rootA, 'gone')).href }]);
+    try {
+      await none.client.readResource({ uri: 'lexicon://me' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+    } finally {
+      await none.close();
+    }
+    const failing = await connectWithRoots(() => {
+      throw new Error('no roots for you');
+    });
+    try {
+      const result = await failing.client.callTool({ name: 'list_terms', arguments: {} });
+      expect(result.isError).toBe(false);
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+    } finally {
+      await failing.close();
+    }
+  });
+
+  it('does not ask a client that does not advertise roots', async () => {
+    vi.stubEnv('LEXICON_CWD', '');
+    const { client, close } = await connect();
+    try {
+      await client.readResource({ uri: 'lexicon://me' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('cwdFromRoots takes only an existing local directory', async () => {
+    const { cwdFromRoots } = await import('../src/mcp/server.js');
+    const { pathToFileURL } = await import('node:url');
+    const { writeFile } = await import('node:fs/promises');
+    const file = path.join(rootA, 'file.txt');
+    await writeFile(file, 'x');
+    expect(cwdFromRoots([])).toBeUndefined();
+    expect(cwdFromRoots([{ uri: 'file:///definitely/not/here' }, { uri: pathToFileURL(file).href }])).toBeUndefined();
+    expect(cwdFromRoots([{ uri: 'not a uri' }, { uri: 'https://example.com/repo' }, { uri: pathToFileURL(rootB).href }])).toBe(rootB);
+  });
+});

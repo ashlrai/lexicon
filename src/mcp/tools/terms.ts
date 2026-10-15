@@ -24,7 +24,9 @@ import { filePathsInUse, guarded, log, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 
-export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
+export const registerTermTools: ToolRegistrar = (server, ctx) => {
+  // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
+  const { load } = ctx;
   server.registerTool(
     'normalize_transcript',
     {
@@ -65,7 +67,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
           const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
           // Best effort: recordHits is contractually non-throwing, but guard anyway so
           // a store hiccup can never turn a successful normalize into an error.
-          await recordHits(canonicals, { cwd }).catch((err: unknown) =>
+          await recordHits(canonicals, { cwd: ctx.cwd }).catch((err: unknown) =>
             log('recordHits failed:', errorMessage(err)),
           );
         }
@@ -125,7 +127,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
           ...(never && never.length > 0 ? { never } : {}),
           ...(scope !== undefined ? { scope } : {}),
         };
-        const saved = await addTerm(term, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const saved = await addTerm(term, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
       }),
   );
@@ -152,7 +154,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ canonical, scope }) =>
       guarded(async () => {
-        const removed = await removeTerm(canonical, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const removed = await removeTerm(canonical, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({ canonical, removed });
       }),
   );
@@ -253,7 +255,7 @@ export const registerTermTools: ToolRegistrar = (server, { cwd, load }) => {
     },
     async ({ heard, meant, scope }) =>
       guarded(async () => {
-        const learned = await learnCorrection({ heard, meant }, { cwd, ...(scope !== undefined ? { scope } : {}) });
+        const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
         return textResult({
           term: learned.term,
           path: learned.file.path,
