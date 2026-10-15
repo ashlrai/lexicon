@@ -953,6 +953,14 @@ describe('lexicon voice (foreground)', () => {
     expect(h.err.join('')).toContain('apt install ffmpeg');
   });
 
+  it('names LEXICON_FFMPEG_BIN when it points at a file that does not exist', async () => {
+    const h = await harness({ missing: ['ffmpeg'], platform: 'linux' });
+    h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/nope/ffmpeg' };
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(h.err.join('')).toContain('ffmpeg (LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist)');
+    expect(h.spawnCalls).toHaveLength(0);
+  });
+
   it('LEXICON_WHISPER_BIN points at a checkout binary named main', async () => {
     const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
     h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_BIN: '/fake/bin/main' };
