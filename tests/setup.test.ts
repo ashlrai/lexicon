@@ -376,7 +376,19 @@ describe('runSetup --yes', () => {
     const csv = await fs.readFile(path.join(exportDir, 'lexicon-wispr.csv'), 'utf8');
     expect(csv).toContain('Ashlr.AI');
     expect(io.out).toContain('Wispr Flow > Dictionary > Import');
+    expect(io.out).toContain('lexicon-wispr.csv (2 terms)');
     await expect(run({ yes: true, clients: 'none', app: 'dragon' }, f)).rejects.toThrow(/unknown app "dragon"/);
+  });
+
+  it('says "1 term", not "1 terms", for a one-term export', async () => {
+    const exportDir = path.join(home, 'Desktop');
+    const noGit = fakes({
+      exec: () => {
+        throw new Error('no git');
+      },
+    });
+    const { io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', app: 'wispr', exportDir }, noGit);
+    expect(io.out).toContain('lexicon-wispr.csv (1 term)');
   });
 
   it('rejects bad --clients / --app before touching anything', async () => {

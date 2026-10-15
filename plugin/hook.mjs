@@ -41,6 +41,34 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// builtin-cjs:node:fs
+var require_node_fs = __commonJS({
+  "builtin-cjs:node:fs"(exports, module) {
+    module.exports = __require("node:fs");
+  }
+});
+
+// builtin-cjs:node:path
+var require_node_path = __commonJS({
+  "builtin-cjs:node:path"(exports, module) {
+    module.exports = __require("node:path");
+  }
+});
+
+// builtin-cjs:node:url
+var require_node_url = __commonJS({
+  "builtin-cjs:node:url"(exports, module) {
+    module.exports = __require("node:url");
+  }
+});
+
+// builtin-cjs:node:os
+var require_node_os = __commonJS({
+  "builtin-cjs:node:os"(exports, module) {
+    module.exports = __require("node:os");
+  }
+});
+
 // node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
   "node_modules/yaml/dist/nodes/identity.js"(exports) {
@@ -54,10 +82,10 @@ var require_identity = __commonJS({
     var NODE_TYPE = /* @__PURE__ */ Symbol.for("yaml.node.type");
     var isAlias = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === ALIAS;
     var isDocument = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === DOC;
-    var isMap2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === MAP;
+    var isMap = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === MAP;
     var isPair = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === PAIR;
     var isScalar = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SCALAR;
-    var isSeq2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SEQ;
+    var isSeq = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SEQ;
     function isCollection(node2) {
       if (node2 && typeof node2 === "object")
         switch (node2[NODE_TYPE]) {
@@ -90,11 +118,11 @@ var require_identity = __commonJS({
     exports.isAlias = isAlias;
     exports.isCollection = isCollection;
     exports.isDocument = isDocument;
-    exports.isMap = isMap2;
+    exports.isMap = isMap;
     exports.isNode = isNode;
     exports.isPair = isPair;
     exports.isScalar = isScalar;
-    exports.isSeq = isSeq2;
+    exports.isSeq = isSeq;
   }
 });
 
@@ -4202,9 +4230,9 @@ var require_resolve_flow_collection = __commonJS({
     var blockMsg = "Block collections are not allowed within flow collections";
     var isBlock = (token) => token && (token.type === "block-map" || token.type === "block-seq");
     function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag) {
-      const isMap2 = fc.start.source === "{";
-      const fcName = isMap2 ? "flow map" : "flow sequence";
-      const NodeClass = tag?.nodeClass ?? (isMap2 ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
+      const isMap = fc.start.source === "{";
+      const fcName = isMap ? "flow map" : "flow sequence";
+      const NodeClass = tag?.nodeClass ?? (isMap ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
       const coll = new NodeClass(ctx.schema);
       coll.flow = true;
       const atRoot = ctx.atRoot;
@@ -4240,7 +4268,7 @@ var require_resolve_flow_collection = __commonJS({
             offset = props.end;
             continue;
           }
-          if (!isMap2 && ctx.options.strict && utilContainsNewline.containsNewline(key))
+          if (!isMap && ctx.options.strict && utilContainsNewline.containsNewline(key))
             onError(
               key,
               // checked by containsNewline()
@@ -4280,7 +4308,7 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap2 && !sep && !props.found) {
+        if (!isMap && !sep && !props.found) {
           const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
@@ -4303,7 +4331,7 @@ var require_resolve_flow_collection = __commonJS({
             startOnNewline: false
           });
           if (valueProps.found) {
-            if (!isMap2 && !props.found && ctx.options.strict) {
+            if (!isMap && !props.found && ctx.options.strict) {
               if (sep)
                 for (const st of sep) {
                   if (st === valueProps.found)
@@ -4335,7 +4363,7 @@ var require_resolve_flow_collection = __commonJS({
           const pair = new Pair.Pair(keyNode, valueNode);
           if (ctx.options.keepSourceTokens)
             pair.srcToken = collItem;
-          if (isMap2) {
+          if (isMap) {
             const map = coll;
             if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
               onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
@@ -4351,7 +4379,7 @@ var require_resolve_flow_collection = __commonJS({
           offset = valueNode ? valueNode.range[2] : valueProps.end;
         }
       }
-      const expectedEnd = isMap2 ? "}" : "]";
+      const expectedEnd = isMap ? "}" : "]";
       const [ce, ...ee] = fc.end;
       let cePos = offset;
       if (ce?.source === expectedEnd)
@@ -6321,7 +6349,7 @@ var require_lexer = __commonJS({
 var require_line_counter = __commonJS({
   "node_modules/yaml/dist/parse/line-counter.js"(exports) {
     "use strict";
-    var LineCounter2 = class {
+    var LineCounter = class {
       constructor() {
         this.lineStarts = [];
         this.addNewLine = (offset) => this.lineStarts.push(offset);
@@ -6344,7 +6372,7 @@ var require_line_counter = __commonJS({
         };
       }
     };
-    exports.LineCounter = LineCounter2;
+    exports.LineCounter = LineCounter;
   }
 });
 
@@ -6922,14 +6950,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs5 = this.flowScalar(this.type);
+              const fs6 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map.items.push({ start, key: fs5, sep: [] });
+                map.items.push({ start, key: fs6, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs5);
+                this.stack.push(fs6);
               } else {
-                Object.assign(it, { key: fs5, sep: [] });
+                Object.assign(it, { key: fs6, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -7057,13 +7085,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs5 = this.flowScalar(this.type);
+              const fs6 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs5, sep: [] });
+                fc.items.push({ start: [], key: fs6, sep: [] });
               else if (it.sep)
-                this.stack.push(fs5);
+                this.stack.push(fs6);
               else
-                Object.assign(it, { key: fs5, sep: [] });
+                Object.assign(it, { key: fs6, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -7252,7 +7280,7 @@ var require_public_api = __commonJS({
         return docs;
       return Object.assign([], { empty: true }, composer$1.streamInfo());
     }
-    function parseDocument2(source, options = {}) {
+    function parseDocument(source, options = {}) {
       const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options);
       const parser$1 = new parser.Parser(lineCounter2?.addNewLine);
       const composer$1 = new composer.Composer(options);
@@ -7278,7 +7306,7 @@ var require_public_api = __commonJS({
       } else if (options === void 0 && reviver && typeof reviver === "object") {
         options = reviver;
       }
-      const doc = parseDocument2(src, options);
+      const doc = parseDocument(src, options);
       if (!doc)
         return null;
       doc.warnings.forEach((warning) => log.warn(doc.options.logLevel, warning));
@@ -7314,7 +7342,7 @@ var require_public_api = __commonJS({
     }
     exports.parse = parse2;
     exports.parseAllDocuments = parseAllDocuments;
-    exports.parseDocument = parseDocument2;
+    exports.parseDocument = parseDocument;
     exports.stringify = stringify;
   }
 });
@@ -7368,6 +7396,20 @@ var require_dist = __commonJS({
     exports.stringify = publicApi.stringify;
     exports.visit = visit.visit;
     exports.visitAsync = visit.visitAsync;
+  }
+});
+
+// builtin-cjs:node:async_hooks
+var require_node_async_hooks = __commonJS({
+  "builtin-cjs:node:async_hooks"(exports, module) {
+    module.exports = __require("node:async_hooks");
+  }
+});
+
+// builtin-cjs:node:crypto
+var require_node_crypto = __commonJS({
+  "builtin-cjs:node:crypto"(exports, module) {
+    module.exports = __require("node:crypto");
   }
 });
 
@@ -7488,7 +7530,7 @@ var require_mod = __commonJS({
       }
       return score;
     };
-    var distance4 = function(a, b) {
+    var distance3 = function(a, b) {
       if (a.length < b.length) {
         var tmp = b;
         b = a;
@@ -7502,12 +7544,12 @@ var require_mod = __commonJS({
       }
       return myers_x(a, b);
     };
-    exports.distance = distance4;
+    exports.distance = distance3;
     var closest = function(str, arr) {
       var min_distance = Infinity;
       var min_index = 0;
       for (var i = 0; i < arr.length; i++) {
-        var dist = distance4(str, arr[i]);
+        var dist = distance3(str, arr[i]);
         if (dist < min_distance) {
           min_distance = dist;
           min_index = i;
@@ -7520,9 +7562,9 @@ var require_mod = __commonJS({
 });
 
 // src/hooks/user-prompt-submit.ts
-import { promises as fs4, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+var import_node_fs5 = __toESM(require_node_fs(), 1);
+var import_node_path6 = __toESM(require_node_path(), 1);
+var import_node_url = __toESM(require_node_url(), 1);
 
 // src/core/types.ts
 var TERM_CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -13544,22 +13586,20 @@ function emptyLexicon() {
 }
 
 // src/core/store.ts
-var import_yaml = __toESM(require_dist(), 1);
-import { createHash as createHash2 } from "node:crypto";
-import { promises as fs3, existsSync } from "node:fs";
-import os3 from "node:os";
-import path4 from "node:path";
+var import_node_fs4 = __toESM(require_node_fs());
+var import_node_os3 = __toESM(require_node_os());
+var import_node_path5 = __toESM(require_node_path());
+var import_yaml = __toESM(require_dist());
 
 // src/core/trust.ts
-import { createHash } from "node:crypto";
-import { promises as fs2 } from "node:fs";
-import path2 from "node:path";
+var import_node_fs3 = __toESM(require_node_fs());
+var import_node_path3 = __toESM(require_node_path());
 
 // src/util/atomic.ts
-import { promises as fs, unlinkSync } from "node:fs";
-import { AsyncLocalStorage } from "node:async_hooks";
-import os from "node:os";
-import path from "node:path";
+var import_node_fs = __toESM(require_node_fs());
+var import_node_async_hooks = __toESM(require_node_async_hooks());
+var import_node_os = __toESM(require_node_os());
+var import_node_path = __toESM(require_node_path());
 
 // src/util/errors.ts
 function errorMessage(err) {
@@ -13578,24 +13618,24 @@ var DEFAULT_LOCK_TIMEOUT_MS = 1e4;
 var DEFAULT_LOCK_STALE_MS = 3e4;
 var DEFAULT_LOCK_QUEUE_TIMEOUT_MS = 3e5;
 async function resolveWriteTarget(target) {
-  const abs = path.resolve(target);
+  const abs = import_node_path.default.resolve(target);
   try {
-    return await fs.realpath(abs);
+    return await import_node_fs.promises.realpath(abs);
   } catch {
     return abs;
   }
 }
 async function resolveLockTarget(target) {
-  const abs = path.resolve(target);
+  const abs = import_node_path.default.resolve(target);
   let candidate = abs;
   const suffix = [];
   for (; ; ) {
     try {
-      return path.join(await fs.realpath(candidate), ...suffix);
+      return import_node_path.default.join(await import_node_fs.promises.realpath(candidate), ...suffix);
     } catch {
-      const parent = path.dirname(candidate);
+      const parent = import_node_path.default.dirname(candidate);
       if (parent === candidate) return abs;
-      suffix.unshift(path.basename(candidate));
+      suffix.unshift(import_node_path.default.basename(candidate));
       candidate = parent;
     }
   }
@@ -13603,27 +13643,27 @@ async function resolveLockTarget(target) {
 async function resolveMode(target, opts) {
   if (opts.mode !== void 0) return opts.mode;
   try {
-    return (await fs.stat(target)).mode & 4095;
+    return (await import_node_fs.promises.stat(target)).mode & 4095;
   } catch {
     return void 0;
   }
 }
 async function writeFileAtomic(target, data, opts = {}) {
-  await fs.mkdir(path.dirname(path.resolve(target)), { recursive: true });
+  await import_node_fs.promises.mkdir(import_node_path.default.dirname(import_node_path.default.resolve(target)), { recursive: true });
   const real = await resolveWriteTarget(target);
   const tmp = `${real}.${process.pid}.tmp`;
   const mode = await resolveMode(real, opts);
   if (mode === void 0) {
-    await fs.writeFile(tmp, data, "utf8");
+    await import_node_fs.promises.writeFile(tmp, data, "utf8");
   } else {
-    await fs.writeFile(tmp, data, { encoding: "utf8", mode });
-    await fs.chmod(tmp, mode);
+    await import_node_fs.promises.writeFile(tmp, data, { encoding: "utf8", mode });
+    await import_node_fs.promises.chmod(tmp, mode);
   }
   try {
     if (opts.backup) await backupExisting(real);
-    await fs.rename(tmp, real);
+    await import_node_fs.promises.rename(tmp, real);
   } catch (err) {
-    await fs.rm(tmp, { force: true }).catch(() => void 0);
+    await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
 }
@@ -13637,22 +13677,22 @@ async function backupExisting(target) {
 async function copyThroughTemp(from, to) {
   const tmp = `${to}.${process.pid}.tmp`;
   try {
-    await fs.copyFile(from, tmp);
+    await import_node_fs.promises.copyFile(from, tmp);
   } catch (err) {
     if (isEnoent(err)) return false;
     throw err;
   }
   try {
-    await fs.rename(tmp, to);
+    await import_node_fs.promises.rename(tmp, to);
   } catch (err) {
-    await fs.rm(tmp, { force: true }).catch(() => void 0);
+    await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
   return true;
 }
 async function isYoungerThan(file, ms) {
   try {
-    return Date.now() - (await fs.stat(file)).mtimeMs < ms;
+    return Date.now() - (await import_node_fs.promises.stat(file)).mtimeMs < ms;
   } catch {
     return false;
   }
@@ -13669,7 +13709,7 @@ var FileLockError = class extends Error {
 };
 var ownedLocks = /* @__PURE__ */ new Set();
 var exitHookInstalled = false;
-var heldLocks = new AsyncLocalStorage();
+var heldLocks = new import_node_async_hooks.AsyncLocalStorage();
 var queues = /* @__PURE__ */ new Map();
 async function withFileLock(target, fn, opts = {}) {
   const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
@@ -13736,9 +13776,9 @@ function startHeartbeat(lockPath, token, staleMs) {
   const timer = setInterval(() => {
     void (async () => {
       try {
-        if (parseOwner(await fs.readFile(lockPath, "utf8"))?.token !== token) return;
+        if (parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"))?.token !== token) return;
         const now = /* @__PURE__ */ new Date();
-        await fs.utimes(lockPath, now, now);
+        await import_node_fs.promises.utimes(lockPath, now, now);
       } catch {
       }
     })();
@@ -13748,13 +13788,13 @@ function startHeartbeat(lockPath, token, staleMs) {
 }
 async function acquire(lockPath, target, timeoutMs, staleMs) {
   const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  const payload = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
+  const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
   for (; ; ) {
     try {
-      await fs.mkdir(path.dirname(lockPath), { recursive: true });
-      await fs.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
+      await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
+      await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
     } catch (err) {
@@ -13772,20 +13812,20 @@ async function breakIfStale(lockPath, staleMs) {
   let before;
   let mtimeMs;
   try {
-    before = await fs.readFile(lockPath, "utf8");
-    mtimeMs = (await fs.stat(lockPath)).mtimeMs;
+    before = await import_node_fs.promises.readFile(lockPath, "utf8");
+    mtimeMs = (await import_node_fs.promises.stat(lockPath)).mtimeMs;
   } catch (err) {
     return isEnoent(err);
   }
   const owner = parseOwner(before);
-  if (owner && owner.host === os.hostname()) {
+  if (owner && owner.host === import_node_os.default.hostname()) {
     if (pidAlive(owner.pid)) return false;
   } else if (Date.now() - mtimeMs < staleMs) {
     return false;
   }
   try {
-    if (await fs.readFile(lockPath, "utf8") !== before) return false;
-    await fs.unlink(lockPath);
+    if (await import_node_fs.promises.readFile(lockPath, "utf8") !== before) return false;
+    await import_node_fs.promises.unlink(lockPath);
   } catch {
     return false;
   }
@@ -13794,8 +13834,8 @@ async function breakIfStale(lockPath, staleMs) {
 async function release(lockPath, token) {
   ownedLocks.delete(lockPath);
   try {
-    if (parseOwner(await fs.readFile(lockPath, "utf8"))?.token !== token) return;
-    await fs.unlink(lockPath);
+    if (parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"))?.token !== token) return;
+    await import_node_fs.promises.unlink(lockPath);
   } catch {
   }
 }
@@ -13806,7 +13846,7 @@ function rememberForCleanup(lockPath) {
   process.on("exit", () => {
     for (const held of ownedLocks) {
       try {
-        unlinkSync(held);
+        (0, import_node_fs.unlinkSync)(held);
       } catch {
       }
     }
@@ -13814,7 +13854,7 @@ function rememberForCleanup(lockPath) {
 }
 async function describeHolder(lockPath) {
   try {
-    const owner = parseOwner(await fs.readFile(lockPath, "utf8"));
+    const owner = parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"));
     if (owner) return `pid ${owner.pid} on ${owner.host} since ${owner.at}`;
   } catch {
   }
@@ -13849,6 +13889,8 @@ function sleep(ms) {
 }
 
 // src/util/json.ts
+var import_node_fs2 = __toESM(require_node_fs());
+var import_node_path2 = __toESM(require_node_path());
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
@@ -13858,19 +13900,20 @@ function formatJson(value) {
 var TRUST_FILE_NAME = "trust.json";
 var TRUST_ALL_ENV = "LEXICON_TRUST_ALL";
 function getTrustPath(opts = {}) {
-  return path2.join(path2.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
+  return import_node_path3.default.join(import_node_path3.default.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
 }
 async function canonicalPath(filePath) {
-  const resolved2 = path2.resolve(filePath);
+  const resolved = import_node_path3.default.resolve(filePath);
   try {
-    return await fs2.realpath(resolved2);
+    return await import_node_fs3.promises.realpath(resolved);
   } catch {
-    return resolved2;
+    return resolved;
   }
 }
 async function hashFile(filePath) {
   try {
-    const bytes = await fs2.readFile(filePath);
+    const bytes = await import_node_fs3.promises.readFile(filePath);
+    const { createHash } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
     return createHash("sha256").update(bytes).digest("hex");
   } catch {
     return void 0;
@@ -13889,7 +13932,7 @@ function isTrustEntry(value) {
 async function readTrustRegistry(opts = {}) {
   let text;
   try {
-    text = await fs2.readFile(getTrustPath(opts), "utf8");
+    text = await import_node_fs3.promises.readFile(getTrustPath(opts), "utf8");
   } catch {
     return emptyRegistry();
   }
@@ -13912,7 +13955,7 @@ async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
   const target = await canonicalPath(filePath);
   if (target === globalPath) return true;
-  return path2.dirname(target) === path2.dirname(globalPath);
+  return import_node_path3.default.dirname(target) === import_node_path3.default.dirname(globalPath);
 }
 async function isTrusted(projectFile, opts = {}) {
   if (trustAllEnabled()) return "trusted";
@@ -13928,15 +13971,15 @@ async function isTrusted(projectFile, opts = {}) {
 }
 
 // src/util/xdg.ts
-import path3 from "node:path";
-import os2 from "node:os";
+var import_node_path4 = __toESM(require_node_path());
+var import_node_os2 = __toESM(require_node_os());
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
-  return path3.isAbsolute(trimmed) ? trimmed : fallback;
+  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback;
 }
-function xdgConfigHome(env = process.env, home = os2.homedir()) {
-  return absoluteOr(env.XDG_CONFIG_HOME, path3.join(home, ".config"));
+function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
+  return absoluteOr(env.XDG_CONFIG_HOME, import_node_path4.default.join(home, ".config"));
 }
 
 // src/core/store.ts
@@ -13952,12 +13995,12 @@ var HEADER_COMMENT = [
   "settings: minConfidence, phonetic, fuzzy, protectedWords, skipCode."
 ].join("\n");
 function findProjectFile(start) {
-  let dir = path4.resolve(start);
+  let dir = import_node_path5.default.resolve(start);
   for (; ; ) {
-    const candidate = path4.join(dir, PROJECT_FILE_NAME);
-    if (existsSync(candidate)) return candidate;
-    if (existsSync(path4.join(dir, ".git"))) return void 0;
-    const parent = path4.dirname(dir);
+    const candidate = import_node_path5.default.join(dir, PROJECT_FILE_NAME);
+    if ((0, import_node_fs4.existsSync)(candidate)) return candidate;
+    if ((0, import_node_fs4.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
+    const parent = import_node_path5.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -13965,8 +14008,8 @@ function findProjectFile(start) {
 function resolvePaths(opts = {}) {
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
-  const configHome = xdgConfigHome(env, opts.home ?? os3.homedir());
-  const global = opts.globalPath || env.LEXICON_PATH || path4.join(configHome, "lexicon", "lexicon.yaml");
+  const configHome = xdgConfigHome(env, opts.home ?? import_node_os3.default.homedir());
+  const global = opts.globalPath || env.LEXICON_PATH || import_node_path5.default.join(configHome, "lexicon", "lexicon.yaml");
   const project = findProjectFile(cwd);
   return project ? { global, project } : { global };
 }
@@ -13977,13 +14020,13 @@ async function readLexiconFile(filePath, scope) {
 }
 async function readLexiconText(filePath) {
   try {
-    const stat = await fs3.stat(filePath);
+    const stat = await import_node_fs4.promises.stat(filePath);
     if (stat.size > MAX_LEXICON_BYTES) {
       throw new Error(
         `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
       );
     }
-    return { text: await fs3.readFile(filePath, "utf8"), mode: stat.mode & 511 };
+    return { text: await import_node_fs4.promises.readFile(filePath, "utf8"), mode: stat.mode & 511 };
   } catch (err) {
     if (isEnoent(err)) return void 0;
     throw err;
@@ -14009,23 +14052,23 @@ function parseLexiconText(text, filePath, scope) {
 }
 var PARSE_CACHE_FILE_NAME = "parse-cache.json";
 var PARSE_CACHE_MIN_BYTES = 8 * 1024;
+var PARSE_CACHE_VERSION = 2;
 async function readGlobalLexiconCached(filePath) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
-  const sha256 = createHash2("sha256").update(read.text).digest("hex");
-  const cachePath = path4.join(path4.dirname(filePath), PARSE_CACHE_FILE_NAME);
-  const key = path4.resolve(filePath);
+  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
+  const key = import_node_path5.default.resolve(filePath);
   try {
-    const cached2 = JSON.parse(await fs3.readFile(cachePath, "utf8"));
-    if (isPlainObject2(cached2) && cached2.version === 1 && cached2.path === key && cached2.sha256 === sha256) {
+    const cached2 = JSON.parse(await import_node_fs4.promises.readFile(cachePath, "utf8"));
+    if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text) {
       return { path: filePath, scope: "global", lexicon: parseLexicon(cached2.lexicon), exists: true };
     }
   } catch {
   }
   const file = parseLexiconText(read.text, filePath, "global");
   try {
-    await writeFileAtomic(cachePath, JSON.stringify({ version: 1, path: key, sha256, lexicon: file.lexicon }), {
+    await writeFileAtomic(cachePath, JSON.stringify({ version: PARSE_CACHE_VERSION, path: key, text: read.text, lexicon: file.lexicon }), {
       mode: read.mode
     });
   } catch {
@@ -14034,17 +14077,17 @@ async function readGlobalLexiconCached(filePath) {
 }
 var HITS_FILE_NAME = "hits.json";
 function getHitsPath(opts = {}) {
-  return path4.join(path4.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
+  return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 function hitKey(canonical) {
   return canonical.trim().toLowerCase();
 }
 async function canonicalPath2(filePath) {
-  const resolved2 = path4.resolve(filePath);
+  const resolved = import_node_path5.default.resolve(filePath);
   try {
-    return await fs3.realpath(resolved2);
+    return await import_node_fs4.promises.realpath(resolved);
   } catch {
-    return resolved2;
+    return resolved;
   }
 }
 function emptyHitsRegistry() {
@@ -14053,7 +14096,7 @@ function emptyHitsRegistry() {
 async function readHitsRegistry(opts) {
   let raw;
   try {
-    raw = JSON.parse(await fs3.readFile(getHitsPath(opts), "utf8"));
+    raw = JSON.parse(await import_node_fs4.promises.readFile(getHitsPath(opts), "utf8"));
   } catch {
     return emptyHitsRegistry();
   }
@@ -14199,7 +14242,7 @@ async function recordHits(canonicals, opts = {}) {
         for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
         registry2.global = global;
       }
-      await fs3.mkdir(path4.dirname(hitsPath), { recursive: true });
+      await import_node_fs4.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
     });
   } catch {
@@ -14833,7 +14876,7 @@ function doubleMetaphone(value) {
 }
 
 // src/core/matcher.ts
-var import_fastest_levenshtein2 = __toESM(require_mod(), 1);
+var import_fastest_levenshtein2 = __toESM(require_mod());
 
 // src/core/stoplist.ts
 var WORDS = `
@@ -18287,7 +18330,7 @@ not no yes there here now when where why how
 );
 
 // src/core/matcher/text.ts
-var import_fastest_levenshtein = __toESM(require_mod(), 1);
+var import_fastest_levenshtein = __toESM(require_mod());
 var ASCII_FOLD = {
   \u00F8: "o",
   \u00D8: "O",
@@ -19336,13 +19379,13 @@ function findBest(view, index, opts) {
 }
 function findReplacements(text, index, opts = {}) {
   if (text.length === 0 || index.lexicon.terms.length === 0) return [];
-  const resolved2 = {
+  const resolved = {
     minConfidence: clamp01(opts.minConfidence ?? index.minConfidence),
     phonetic: opts.phonetic ?? index.phonetic,
     fuzzy: opts.fuzzy ?? index.fuzzy,
     skipCode: opts.skipCode ?? index.skipCode
   };
-  const tokens = tokenize(text, resolved2.skipCode);
+  const tokens = tokenize(text, resolved.skipCode);
   const candidates = [];
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].skipped) continue;
@@ -19354,10 +19397,10 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved2);
+      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved2);
+        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (best) candidates.push(best);
@@ -19415,1399 +19458,6 @@ function diffSummary(result) {
   if (result.replacements.length === 0) return "No changes.";
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
-
-// src/core/suggest.ts
-var DOMAIN_SUFFIX2 = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
-var VOWELS = /* @__PURE__ */ new Set(["a", "e", "i", "o", "u", "y"]);
-var DIGRAPHS = /* @__PURE__ */ new Set(["sh", "ch", "th", "ph", "wh", "ck", "ng"]);
-function suggestAliases(canonical) {
-  const base = canonical.trim();
-  const out = [];
-  const seen = /* @__PURE__ */ new Set([base.toLowerCase()]);
-  const add = (s) => {
-    const v = s.replace(/\s+/g, " ").trim();
-    if (!v) return;
-    const key = v.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(v);
-  };
-  if (!base) return out;
-  const acronym = isAcronym(base);
-  const words = acronym ? [base] : splitWords(base);
-  const spaced = words.join(" ");
-  if (!acronym) add(spaced);
-  const stemMatch = DOMAIN_SUFFIX2.exec(base);
-  const stem = stemMatch ? stemMatch[1] : void 0;
-  if (stem) add(stem);
-  const vowelTargets = stem ? [stem, spaced] : [spaced];
-  for (const target of vowelTargets) {
-    for (const variant of insertVowels(target)) add(variant);
-  }
-  if (acronym) {
-    add(pronounceAcronym(base));
-    add(base.replace(/[^\p{L}\p{N}]/gu, "").split("").join(" "));
-  }
-  for (const target of stem ? [stem, spaced] : [spaced, base]) {
-    for (const variant of confusions(target)) add(variant);
-  }
-  return out.slice(0, 8);
-}
-function splitWords(s) {
-  return s.replace(new RegExp("([\\p{Ll}\\p{N}])(\\p{Lu})", "gu"), "$1 $2").replace(new RegExp("(\\p{Lu}+)(\\p{Lu}\\p{Ll})", "gu"), "$1 $2").split(/[\s._\-/]+/u).filter((w) => w.length > 0);
-}
-function isVowel(ch) {
-  return VOWELS.has(ch.toLowerCase());
-}
-function consonantUnits(tail) {
-  const units = [];
-  let i = 0;
-  while (i < tail.length) {
-    const pair = tail.slice(i, i + 2).toLowerCase();
-    if (pair.length === 2 && DIGRAPHS.has(pair)) {
-      units.push(tail.slice(i, i + 2));
-      i += 2;
-    } else {
-      units.push(tail[i]);
-      i += 1;
-    }
-  }
-  return units;
-}
-function insertVowels(phrase) {
-  const results = [];
-  const words = phrase.split(" ");
-  words.forEach((word, wi) => {
-    const letters = word.replace(/[^\p{L}]/gu, "");
-    if (letters.length < 4) return;
-    let k = letters.length;
-    while (k > 0 && !isVowel(letters[k - 1])) k--;
-    const tail = letters.slice(k);
-    const units = consonantUnits(tail);
-    if (units.length < 3) return;
-    const head = letters.slice(0, k) + units.slice(0, -1).join("");
-    const last = units[units.length - 1];
-    for (const vowel of ["e", "a"]) {
-      const next = [...words];
-      next[wi] = head + vowel + last;
-      results.push(next.join(" "));
-    }
-  });
-  return results;
-}
-function isAcronym(s) {
-  const letters = s.replace(/[^\p{L}]/gu, "");
-  if (letters.length < 2 || letters.length > 6) return false;
-  const upper = (letters.match(new RegExp("\\p{Lu}", "gu")) ?? []).length;
-  return upper >= 2 && upper >= letters.length / 2;
-}
-function pronounceAcronym(s) {
-  let w = s.replace(/[^\p{L}]/gu, "").toLowerCase();
-  w = w.replace(/([aeiou])\1+/g, "$1");
-  if (w.length >= 3) {
-    const last = w[w.length - 1];
-    const prev = w[w.length - 2];
-    if (!isVowel(last) && isVowel(prev) && last !== "w" && last !== "y") w += last;
-  }
-  return w;
-}
-function confusions(s) {
-  const results = [];
-  const tryAdd = (v) => {
-    if (v !== s) results.push(v);
-  };
-  tryAdd(s.replace(/ph/gi, (m) => m[0] === "P" ? "F" : "f"));
-  tryAdd(s.replace(/c(?=[aou]|[^\p{L}eihy]|$)/giu, (m) => m === "C" ? "K" : "k"));
-  tryAdd(s.replace(/k(?!e|i|y)/gi, (m) => m === "K" ? "C" : "c"));
-  tryAdd(s.replace(new RegExp("(?<=\\p{L})y", "giu"), (m) => m === "Y" ? "I" : "i"));
-  tryAdd(s.replace(new RegExp("(\\p{L})\\1", "giu"), "$1"));
-  return results;
-}
-
-// src/core/harvest.ts
-var MAX_FILE_BYTES = 512 * 1024;
-var HARVEST_STOPLIST = /* @__PURE__ */ new Set([
-  // articles, pronouns, determiners, conjunctions
-  "The",
-  "This",
-  "That",
-  "These",
-  "Those",
-  "There",
-  "Here",
-  "They",
-  "Them",
-  "Their",
-  "Then",
-  "Than",
-  "Thus",
-  "What",
-  "When",
-  "Where",
-  "Which",
-  "While",
-  "Whom",
-  "Whose",
-  "With",
-  "Without",
-  "Within",
-  "Your",
-  "Yours",
-  "Ours",
-  "Some",
-  "Such",
-  "Same",
-  "Each",
-  "Every",
-  "Either",
-  "Neither",
-  "Both",
-  "Also",
-  "Only",
-  "Just",
-  "Even",
-  "Ever",
-  "Never",
-  "Always",
-  "Often",
-  "Once",
-  "Again",
-  "Still",
-  "Already",
-  "Almost",
-  "Although",
-  "Because",
-  "Before",
-  "After",
-  "Since",
-  "Until",
-  "Unless",
-  "Whether",
-  "Though",
-  "However",
-  "Therefore",
-  "Otherwise",
-  "Instead",
-  "Please",
-  "Thanks",
-  "Thank",
-  "Welcome",
-  "Hello",
-  "About",
-  "Above",
-  "Below",
-  "Under",
-  "Over",
-  "Into",
-  "Onto",
-  "From",
-  "Through",
-  "Between",
-  "Among",
-  "Around",
-  "Across",
-  "Along",
-  "Against",
-  "Toward",
-  "Towards",
-  "Upon",
-  "Down",
-  "Back",
-  "Away",
-  "Very",
-  "Much",
-  "More",
-  "Most",
-  "Many",
-  "Less",
-  "Least",
-  "Other",
-  "Another",
-  "Others",
-  "Else",
-  "Next",
-  "Last",
-  "First",
-  "Second",
-  "Third",
-  "Final",
-  "Finally",
-  "Then",
-  "Now",
-  "Today",
-  "Soon",
-  "Later",
-  "Earlier",
-  "Recently",
-  "Currently",
-  "Yes",
-  "None",
-  "Nothing",
-  "Something",
-  "Anything",
-  "Everything",
-  "Someone",
-  "Anyone",
-  "Everyone",
-  "Nobody",
-  "Does",
-  "Do",
-  "Did",
-  "Done",
-  "Doing",
-  "Have",
-  "Has",
-  "Had",
-  "Having",
-  "Will",
-  "Would",
-  "Should",
-  "Could",
-  "Must",
-  "Might",
-  "May",
-  "Can",
-  "Cannot",
-  "Shall",
-  "Make",
-  "Makes",
-  "Made",
-  "Making",
-  "Take",
-  "Takes",
-  "Took",
-  "Taking",
-  "Give",
-  "Gives",
-  "Gave",
-  "Given",
-  "Need",
-  "Needs",
-  "Needed",
-  "Want",
-  "Wants",
-  "Wanted",
-  "Know",
-  "Known",
-  "Knows",
-  "See",
-  "Sees",
-  "Seen",
-  "Look",
-  "Looks",
-  "Looking",
-  "Find",
-  "Finds",
-  "Found",
-  "Keep",
-  "Keeps",
-  "Kept",
-  "Let",
-  "Lets",
-  "Like",
-  "Likes",
-  "Think",
-  "Thinks",
-  "Thought",
-  "Feel",
-  "Feels",
-  "Felt",
-  "Come",
-  "Comes",
-  "Came",
-  "Coming",
-  "Goes",
-  "Going",
-  "Gone",
-  "Went",
-  "Say",
-  "Says",
-  "Said",
-  "Tell",
-  "Tells",
-  "Told",
-  "Ask",
-  "Asks",
-  "Asked",
-  "Try",
-  "Tries",
-  "Tried",
-  "Call",
-  "Calls",
-  "Called",
-  "Work",
-  "Works",
-  "Worked",
-  "Working",
-  "Turn",
-  "Turns",
-  "Show",
-  "Shows",
-  "Shown",
-  "Read",
-  "Reads",
-  "Write",
-  "Writes",
-  "Written",
-  "Open",
-  "Opens",
-  "Close",
-  "Closes",
-  "Closed",
-  "Start",
-  "Starts",
-  "Started",
-  "Starting",
-  "Stop",
-  "Stops",
-  "Stopped",
-  "Getting",
-  "Get",
-  "Gets",
-  "Got",
-  "Put",
-  "Puts",
-  "Set",
-  "Sets",
-  "Setting",
-  "Settings",
-  "Add",
-  "Adds",
-  "Added",
-  "Adding",
-  "Remove",
-  "Removes",
-  "Removed",
-  "Removing",
-  "Delete",
-  "Deletes",
-  "Deleted",
-  "Update",
-  "Updates",
-  "Updated",
-  "Updating",
-  "Create",
-  "Creates",
-  "Created",
-  "Creating",
-  "Build",
-  "Builds",
-  "Building",
-  "Built",
-  "Run",
-  "Runs",
-  "Running",
-  "Ran",
-  "Test",
-  "Tests",
-  "Testing",
-  "Tested",
-  "Check",
-  "Checks",
-  "Checked",
-  "Checking",
-  "Change",
-  "Changes",
-  "Changed",
-  "Changelog",
-  "Configure",
-  "Configuration",
-  "Config",
-  "Configs",
-  "Setup",
-  "Install",
-  "Installation",
-  "Installing",
-  "Installed",
-  "Uninstall",
-  "Usage",
-  "Use",
-  "Uses",
-  "Used",
-  "Using",
-  "User",
-  "Users",
-  "Example",
-  "Examples",
-  "Note",
-  "Notes",
-  "Todo",
-  "Todos",
-  "Readme",
-  "License",
-  "Licence",
-  "Licensed",
-  "Copyright",
-  "Contributing",
-  "Contributors",
-  "Contribute",
-  "Contribution",
-  "Contributions",
-  "Author",
-  "Authors",
-  "Maintainer",
-  "Maintainers",
-  "Credits",
-  "Acknowledgements",
-  "Acknowledgments",
-  "Thanks",
-  "Overview",
-  "Introduction",
-  "Intro",
-  "Background",
-  "Motivation",
-  "Features",
-  "Feature",
-  "Requirements",
-  "Requirement",
-  "Prerequisites",
-  "Prerequisite",
-  "Dependencies",
-  "Dependency",
-  "Quick",
-  "Quickstart",
-  "Guide",
-  "Guides",
-  "Tutorial",
-  "Tutorials",
-  "Documentation",
-  "Docs",
-  "Doc",
-  "Reference",
-  "References",
-  "Roadmap",
-  "Status",
-  "Support",
-  "Supported",
-  "Supports",
-  "Options",
-  "Option",
-  "Arguments",
-  "Argument",
-  "Parameters",
-  "Parameter",
-  "Returns",
-  "Return",
-  "Result",
-  "Results",
-  "Output",
-  "Outputs",
-  "Input",
-  "Inputs",
-  "Command",
-  "Commands",
-  "Flag",
-  "Flags",
-  "Default",
-  "Defaults",
-  "Advanced",
-  "Basic",
-  "Basics",
-  "Simple",
-  "Custom",
-  "Manual",
-  "Automatic",
-  "Optional",
-  "Required",
-  "Recommended",
-  "Deprecated",
-  "Experimental",
-  "Stable",
-  "Beta",
-  "Alpha",
-  "Preview",
-  "Release",
-  "Releases",
-  "Version",
-  "Versions",
-  "Versioning",
-  "Latest",
-  "Current",
-  "Previous",
-  "Upgrade",
-  "Upgrading",
-  "Migration",
-  "Migrating",
-  "Migrate",
-  "Breaking",
-  "Fixed",
-  "Fixes",
-  "Fix",
-  "Bug",
-  "Bugs",
-  "Issue",
-  "Issues",
-  "Pull",
-  "Request",
-  "Requests",
-  "Merge",
-  "Commit",
-  "Commits",
-  "Branch",
-  "Branches",
-  "Fork",
-  "Clone",
-  "Push",
-  "Repository",
-  "Repo",
-  "Project",
-  "Projects",
-  "Package",
-  "Packages",
-  "Module",
-  "Modules",
-  "Library",
-  "Libraries",
-  "Framework",
-  "Frameworks",
-  "Tool",
-  "Tools",
-  "Toolkit",
-  "Plugin",
-  "Plugins",
-  "Extension",
-  "Extensions",
-  "Script",
-  "Scripts",
-  "File",
-  "Files",
-  "Folder",
-  "Folders",
-  "Directory",
-  "Directories",
-  "Path",
-  "Paths",
-  "Source",
-  "Sources",
-  "Code",
-  "Server",
-  "Servers",
-  "Client",
-  "Clients",
-  "Service",
-  "Services",
-  "Development",
-  "Develop",
-  "Developer",
-  "Developers",
-  "Production",
-  "Environment",
-  "Environments",
-  "Local",
-  "Remote",
-  "Global",
-  "Public",
-  "Private",
-  "Security",
-  "Secure",
-  "Performance",
-  "Fast",
-  "Faster",
-  "Simple",
-  "Simply",
-  "Easy",
-  "Easily",
-  "Powerful",
-  "Lightweight",
-  "Modern",
-  "Minimal",
-  "Free",
-  "Open",
-  "Community",
-  "Team",
-  "Company",
-  "Home",
-  "Page",
-  "Pages",
-  "Website",
-  "Site",
-  "Link",
-  "Links",
-  "Image",
-  "Images",
-  "Screenshot",
-  "Screenshots",
-  "Demo",
-  "Demos",
-  "Live",
-  "Table",
-  "Contents",
-  "Content",
-  "Section",
-  "Sections",
-  "Chapter",
-  "Part",
-  "Step",
-  "Steps",
-  "Warning",
-  "Caution",
-  "Important",
-  "Tip",
-  "Tips",
-  "Trick",
-  "Tricks",
-  "Hint",
-  "Hints",
-  "Info",
-  "Information",
-  "Details",
-  "Detail",
-  "Summary",
-  "Description",
-  "Purpose",
-  "Goal",
-  "Goals",
-  "Why",
-  "How",
-  "Who",
-  "Yes",
-  "No",
-  "Not",
-  "And",
-  "But",
-  "For",
-  "Nor",
-  "Yet",
-  "So",
-  "If",
-  "Or",
-  "As",
-  "At",
-  "By",
-  "In",
-  "Of",
-  "On",
-  "To",
-  "Up",
-  "Is",
-  "It",
-  "Its",
-  "Be",
-  "Been",
-  "Being",
-  "Are",
-  "Was",
-  "Were",
-  "Am",
-  "An",
-  "A",
-  "I",
-  "We",
-  "You",
-  "He",
-  "She",
-  "Me",
-  "Him",
-  "Her",
-  "Us",
-  "My",
-  "Our",
-  "His",
-  "Hers",
-  "Mine",
-  "All",
-  "Any",
-  "Few",
-  "Several",
-  "One",
-  "Two",
-  "Three",
-  "Four",
-  "Five",
-  "Six",
-  "Seven",
-  "Eight",
-  "Nine",
-  "Ten",
-  "Zero",
-  "Hundred",
-  "Thousand",
-  "Million",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-  "January",
-  "February",
-  "March",
-  "April",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-  "English",
-  "True",
-  "False",
-  "Null",
-  "Undefined",
-  "Nil",
-  "Error",
-  "Errors",
-  "Exception",
-  "Exceptions",
-  "Debug",
-  "Debugging",
-  "Logging",
-  "Logs",
-  "Log",
-  "Verbose",
-  "Silent",
-  "Quiet",
-  "Help",
-  "Helper",
-  "Helpers",
-  "Utility",
-  "Utilities",
-  "Data",
-  "Database",
-  "Databases",
-  "Model",
-  "Models",
-  "Schema",
-  "Schemas",
-  "Type",
-  "Types",
-  "Interface",
-  "Interfaces",
-  "Class",
-  "Classes",
-  "Function",
-  "Functions",
-  "Method",
-  "Methods",
-  "Property",
-  "Properties",
-  "Object",
-  "Objects",
-  "Array",
-  "Arrays",
-  "String",
-  "Strings",
-  "Number",
-  "Numbers",
-  "Boolean",
-  "Booleans",
-  "Value",
-  "Values",
-  "Key",
-  "Keys",
-  "Name",
-  "Names",
-  "Id",
-  "Ids",
-  "Index",
-  "Indices",
-  "List",
-  "Lists",
-  "Map",
-  "Maps",
-  "Item",
-  "Items",
-  "Element",
-  "Elements",
-  "Node",
-  "Nodes",
-  "Tree",
-  "Graph",
-  "Event",
-  "Events",
-  "Handler",
-  "Handlers",
-  "Hook",
-  "Hooks",
-  "Context",
-  "Store",
-  "Action",
-  "Actions",
-  "Reducer",
-  "State",
-  "Component",
-  "Components",
-  "Render",
-  "Rendering",
-  "Style",
-  "Styles",
-  "Theme",
-  "Themes",
-  "Layout",
-  "Design",
-  "Icon",
-  "Icons",
-  "Font",
-  "Fonts",
-  "Color",
-  "Colors",
-  "Dark",
-  "Light",
-  "Mode",
-  "Modes",
-  "Window",
-  "Windows",
-  "Mac",
-  "Linux",
-  "Unix",
-  "Browser",
-  "Browsers",
-  "Mobile",
-  "Desktop",
-  "Web",
-  "Native",
-  "Cloud",
-  "Edge",
-  "Network",
-  "Networks",
-  "Internet",
-  "Online",
-  "Offline",
-  "Sync",
-  "Async",
-  "Await",
-  "Promise",
-  "Promises",
-  "Stream",
-  "Streams",
-  "Buffer",
-  "Buffers",
-  "Memory",
-  "Disk",
-  "Cache",
-  "Caching",
-  "Speed",
-  "Size",
-  "Limit",
-  "Limits",
-  "Rate",
-  "Rates",
-  "Count",
-  "Counts",
-  "Total",
-  "Totals",
-  "Average",
-  "Maximum",
-  "Minimum",
-  "Max",
-  "Min",
-  "Range",
-  "Ranges",
-  "Level",
-  "Levels",
-  "Priority",
-  "Order",
-  "Sort",
-  "Sorted",
-  "Filter",
-  "Filtered",
-  "Search",
-  "Searching",
-  "Match",
-  "Matches",
-  "Matching",
-  "Replace",
-  "Replaces",
-  "Replacement",
-  "Replacements",
-  "Pattern",
-  "Patterns",
-  "Regex",
-  "Format",
-  "Formats",
-  "Formatting",
-  "Parse",
-  "Parser",
-  "Parsing",
-  "Export",
-  "Exports",
-  "Import",
-  "Imports",
-  "Load",
-  "Loads",
-  "Loading",
-  "Save",
-  "Saves",
-  "Saving",
-  "Print",
-  "Prints",
-  "Display",
-  "Displays",
-  "Enable",
-  "Enabled",
-  "Disable",
-  "Disabled",
-  "Allow",
-  "Allowed",
-  "Deny",
-  "Denied",
-  "Accept",
-  "Accepted",
-  "Reject",
-  "Rejected",
-  "Confirm",
-  "Cancel",
-  "Continue",
-  "Skip",
-  "Retry",
-  "Refresh",
-  "Reload",
-  "Reset",
-  "Restore",
-  "Clear",
-  "Clean",
-  "Cleanup",
-  "Voice",
-  "Speech",
-  "Text",
-  "Audio",
-  "Video",
-  "Word",
-  "Words",
-  "Sentence",
-  "Sentences",
-  "Line",
-  "Lines",
-  "Paragraph",
-  "Language",
-  "Languages"
-]);
-function safeSuggest(canonical) {
-  try {
-    const result = suggestAliases(canonical);
-    return Array.isArray(result) ? result : [];
-  } catch {
-    return [];
-  }
-}
-function harvestAliases(canonical, category) {
-  if (category === "identifier") return [];
-  const aliases = safeSuggest(canonical);
-  if (/[\s._\-/]/.test(canonical)) return aliases;
-  return aliases.filter((alias) => !/\s/.test(alias));
-}
-
-// src/core/import-sources.ts
-import { execFileSync } from "node:child_process";
-import { existsSync as existsSync2, readdirSync, readFileSync, statSync } from "node:fs";
-import os4 from "node:os";
-import path5 from "node:path";
-var defaultDeps = () => ({
-  platform: process.platform,
-  home: os4.homedir(),
-  exists: existsSync2,
-  readText: (p) => readFileSync(p, "utf8"),
-  readDir: (p) => readdirSync(p),
-  isDirectory: (p) => {
-    try {
-      return statSync(p).isDirectory();
-    } catch {
-      return false;
-    }
-  },
-  fileSize: (p) => {
-    try {
-      return statSync(p).size;
-    } catch {
-      return void 0;
-    }
-  },
-  exec: ((file, args) => execFileSync(file, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "ignore"] }))
-});
-function resolveImportSourceDeps(deps = {}) {
-  const d = defaultDeps();
-  return {
-    platform: deps.platform ?? d.platform,
-    home: deps.home ?? d.home,
-    exists: deps.exists ?? d.exists,
-    readText: deps.readText ?? d.readText,
-    readDir: deps.readDir ?? d.readDir,
-    isDirectory: deps.isDirectory ?? d.isDirectory,
-    fileSize: deps.fileSize ?? d.fileSize,
-    exec: deps.exec ?? d.exec
-  };
-}
-function resolved(deps = {}) {
-  return resolveImportSourceDeps(deps);
-}
-function tryExec(deps, file, args) {
-  try {
-    return deps.exec(file, args);
-  } catch {
-    return void 0;
-  }
-}
-function importAliases(canonical, category) {
-  if (category === "identifier") {
-    return harvestAliases(canonical, "person").filter((a) => !/\s/.test(a));
-  }
-  return harvestAliases(canonical, category);
-}
-function personCandidate(name, source, evidence, count = 1) {
-  const canonical = name.trim().replace(/\s+/g, " ");
-  if (canonical.length < 2 || canonical.length > 80) return void 0;
-  if (/@/.test(canonical) || /\[bot\]$/i.test(canonical) || /\bbot\b/i.test(canonical)) return void 0;
-  return {
-    canonical,
-    category: "person",
-    source,
-    evidence: [evidence],
-    count,
-    suggestedAliases: importAliases(canonical, "person")
-  };
-}
-function mergeCandidates(candidates) {
-  const byKey = /* @__PURE__ */ new Map();
-  for (const c of candidates) {
-    const key = c.canonical.toLowerCase();
-    const prev = byKey.get(key);
-    if (!prev) {
-      byKey.set(key, { ...c, evidence: [...c.evidence], suggestedAliases: [...c.suggestedAliases] });
-      continue;
-    }
-    if (c.count > prev.count) {
-      const demoted = prev.canonical;
-      prev.canonical = c.canonical;
-      prev.category = c.category;
-      prev.source = c.source;
-      if (!prev.suggestedAliases.some((a) => a.toLowerCase() === demoted.toLowerCase())) {
-        prev.suggestedAliases.push(demoted);
-      }
-    }
-    prev.count += c.count;
-    for (const e of c.evidence) if (!prev.evidence.includes(e)) prev.evidence.push(e);
-    for (const a of c.suggestedAliases) {
-      if (a.toLowerCase() !== prev.canonical.toLowerCase() && !prev.suggestedAliases.some((x) => x.toLowerCase() === a.toLowerCase())) {
-        prev.suggestedAliases.push(a);
-      }
-    }
-  }
-  const out = [...byKey.values()];
-  out.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
-  return out;
-}
-function addressBookDirs(deps) {
-  const base = path5.join(deps.home, "Library", "Application Support", "AddressBook");
-  const dirs = [base];
-  try {
-    for (const entry of deps.readDir(path5.join(base, "Sources"))) {
-      const full = path5.join(base, "Sources", entry);
-      if (deps.isDirectory(full)) dirs.push(full);
-    }
-  } catch {
-  }
-  return dirs;
-}
-function addressBookDb(deps) {
-  for (const dir of addressBookDirs(deps)) {
-    for (const name of ["AddressBook-v22.abcddb", "AddressBook.abcddb"]) {
-      const p = path5.join(dir, name);
-      if (deps.exists(p)) return p;
-    }
-  }
-  return void 0;
-}
-var CONTACTS_QUERY = "SELECT ZFIRSTNAME, ZLASTNAME, ZORGANIZATION FROM ZABCDCONTACT WHERE ZFIRSTNAME IS NOT NULL OR ZLASTNAME IS NOT NULL OR ZORGANIZATION IS NOT NULL;";
-var contactsSource = {
-  id: "contacts",
-  label: "macOS Contacts",
-  privacy: "Reads first/last names and organizations from your local macOS Contacts database. Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.",
-  implemented: true,
-  async checkAvailable(deps = {}) {
-    const d = resolved(deps);
-    if (d.platform !== "darwin") return { available: false, reason: "macOS Contacts only exists on macOS" };
-    if (!addressBookDb(d)) return { available: false, reason: "no AddressBook database found under ~/Library/Application Support/AddressBook" };
-    if (tryExec(d, "sqlite3", ["--version"]) === void 0) {
-      return { available: false, reason: "the sqlite3 command-line tool is not on PATH" };
-    }
-    return { available: true };
-  },
-  async harvest(deps = {}) {
-    const d = resolved(deps);
-    const db = addressBookDb(d);
-    if (!db) return [];
-    const out = tryExec(d, "sqlite3", ["-init", "/dev/null", "-readonly", "-separator", "	", db, CONTACTS_QUERY]);
-    if (out === void 0) return [];
-    const candidates = [];
-    for (const line of out.split("\n")) {
-      const [first = "", last = "", org = ""] = line.split("	");
-      const name = `${first} ${last}`.trim();
-      const person = personCandidate(name, "import:contacts", "macOS Contacts");
-      if (person) candidates.push(person);
-      const organization = org.trim();
-      if (organization.length >= 3 && organization.length <= 80 && !/@/.test(organization)) {
-        candidates.push({
-          canonical: organization,
-          category: "brand",
-          source: "import:contacts",
-          evidence: ["macOS Contacts organization"],
-          count: 1,
-          suggestedAliases: importAliases(organization, "brand")
-        });
-      }
-    }
-    return mergeCandidates(candidates);
-  }
-};
-var MAX_ICS_FILES = 2e3;
-var MAX_ICS_BYTES = 512 * 1024;
-function unfoldIcs(text) {
-  const out = [];
-  for (const raw of text.split(/\r?\n/)) {
-    if (/^[ \t]/.test(raw) && out.length > 0) out[out.length - 1] += raw.slice(1);
-    else out.push(raw);
-  }
-  return out;
-}
-function icsParamCN(line) {
-  const m = /;CN=([^;:]+)/i.exec(line);
-  return m ? m[1].trim() : void 0;
-}
-function parseIcsEvents(text) {
-  const events = [];
-  let current;
-  for (const line of unfoldIcs(text)) {
-    if (/^BEGIN:VEVENT/i.test(line)) current = { attendees: [] };
-    else if (/^END:VEVENT/i.test(line)) {
-      if (current) events.push(current);
-      current = void 0;
-    } else if (current) {
-      if (/^SUMMARY[:;]/i.test(line)) current.summary = line.replace(/^SUMMARY[^:]*:/i, "").trim();
-      else if (/^ATTENDEE/i.test(line)) {
-        const cn = icsParamCN(line);
-        if (cn) current.attendees.push(cn);
-      } else if (/^ORGANIZER/i.test(line)) {
-        const cn = icsParamCN(line);
-        if (cn) current.organizer = cn;
-      }
-    }
-  }
-  return events;
-}
-function titleProperNouns(summary) {
-  const out = [];
-  const words = summary.split(/\s+/).map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ""));
-  let phrase = [];
-  const flush = () => {
-    if (phrase.length >= 2) out.push(phrase.join(" "));
-    else if (phrase.length === 1) {
-      const [w] = phrase;
-      if (w.length >= 4 && !HARVEST_STOPLIST.has(w)) out.push(w);
-    }
-    phrase = [];
-  };
-  for (const w of words) {
-    if (/^[A-Z][a-z]+$/.test(w) && !HARVEST_STOPLIST.has(w)) phrase.push(w);
-    else flush();
-  }
-  flush();
-  return out;
-}
-function calendarDir(deps) {
-  const dir = path5.join(deps.home, "Library", "Calendars");
-  return deps.exists(dir) ? dir : void 0;
-}
-function icsFiles(deps, dir) {
-  const out = [];
-  const walk = (d) => {
-    if (out.length >= MAX_ICS_FILES) return;
-    let entries;
-    try {
-      entries = deps.readDir(d);
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (out.length >= MAX_ICS_FILES) return;
-      const full = path5.join(d, entry);
-      if (entry.endsWith(".ics")) {
-        const size = deps.fileSize(full);
-        if (size !== void 0 && size <= MAX_ICS_BYTES) out.push(full);
-      } else if (!entry.startsWith(".")) {
-        if (deps.isDirectory(full)) walk(full);
-      }
-    }
-  };
-  walk(dir);
-  return out;
-}
-var calendarSource = {
-  id: "calendar",
-  label: "macOS Calendar",
-  privacy: "Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.",
-  implemented: true,
-  async checkAvailable(deps = {}) {
-    const d = resolved(deps);
-    if (d.platform !== "darwin") return { available: false, reason: "macOS Calendar only exists on macOS" };
-    if (!calendarDir(d)) return { available: false, reason: "no ~/Library/Calendars directory found" };
-    return { available: true };
-  },
-  async harvest(deps = {}) {
-    const d = resolved(deps);
-    const dir = calendarDir(d);
-    if (!dir) return [];
-    const candidates = [];
-    for (const file of icsFiles(d, dir)) {
-      let text;
-      try {
-        text = d.readText(file);
-      } catch {
-        continue;
-      }
-      for (const event of parseIcsEvents(text)) {
-        for (const name of event.attendees) {
-          const c = personCandidate(name, "import:calendar", event.summary ? `calendar: ${event.summary}` : "calendar attendee");
-          if (c) candidates.push(c);
-        }
-        if (event.organizer) {
-          const c = personCandidate(event.organizer, "import:calendar", event.summary ? `calendar: ${event.summary}` : "calendar organizer");
-          if (c) candidates.push(c);
-        }
-        if (event.summary) {
-          for (const noun of titleProperNouns(event.summary)) {
-            candidates.push({
-              canonical: noun,
-              category: "other",
-              source: "import:calendar",
-              evidence: [`calendar event title: ${event.summary.slice(0, 60)}`],
-              count: 1,
-              suggestedAliases: importAliases(noun, "other")
-            });
-          }
-        }
-      }
-    }
-    const merged = mergeCandidates(candidates);
-    return merged.filter((c) => c.category !== "other" || /\s/.test(c.canonical) || c.count >= 2);
-  }
-};
-function ghJson(d, args) {
-  const paginated = args.includes("--paginate");
-  const out = tryExec(d, "gh", [...args, ...paginated ? ["--slurp"] : [], "--jq", "."]);
-  if (out === void 0) return void 0;
-  try {
-    const parsed = JSON.parse(out);
-    return paginated && Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
-  } catch {
-    return void 0;
-  }
-}
-function isRecord2(v) {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-function loginCandidate(login, evidence) {
-  const canonical = login.trim();
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,38}$/.test(canonical)) return void 0;
-  return {
-    canonical,
-    category: "identifier",
-    source: "import:github",
-    evidence: [evidence],
-    count: 1,
-    suggestedAliases: importAliases(canonical, "identifier")
-  };
-}
-var githubSource = {
-  id: "github",
-  label: "GitHub (gh CLI)",
-  privacy: "Calls api.github.com with your existing gh login: your username, org memberships, member logins and repo names. No new OAuth scopes.",
-  implemented: true,
-  async checkAvailable(deps = {}) {
-    const d = resolved(deps);
-    const status = tryExec(d, "gh", ["auth", "status"]);
-    if (status === void 0) return { available: false, reason: "gh is not installed or not logged in (run gh auth login)" };
-    return { available: true };
-  },
-  async harvest(deps = {}) {
-    const d = resolved(deps);
-    const candidates = [];
-    const user = ghJson(d, ["api", "user"]);
-    if (isRecord2(user)) {
-      if (typeof user.name === "string" && user.name.trim()) {
-        const c = personCandidate(user.name, "import:github", "GitHub profile name");
-        if (c) candidates.push(c);
-      }
-      if (typeof user.login === "string") {
-        const c = loginCandidate(user.login, "GitHub username");
-        if (c) candidates.push(c);
-      }
-    }
-    const orgs = ghJson(d, ["api", "user/orgs"]);
-    const orgLogins = Array.isArray(orgs) ? orgs.filter(isRecord2).map((o) => o.login).filter((l) => typeof l === "string") : [];
-    for (const org of orgLogins.slice(0, 20)) {
-      const members2 = ghJson(d, ["api", `orgs/${org}/members`, "--paginate"]);
-      if (Array.isArray(members2)) {
-        for (const m of members2.filter(isRecord2)) {
-          if (typeof m.login === "string") {
-            const c = loginCandidate(m.login, `GitHub org ${org} member`);
-            if (c) candidates.push(c);
-          }
-        }
-      }
-      const orgRepos = ghJson(d, ["api", `orgs/${org}/repos`, "--paginate"]);
-      if (Array.isArray(orgRepos)) {
-        for (const r of orgRepos.filter(isRecord2)) {
-          if (typeof r.name === "string" && r.name.trim()) {
-            candidates.push({
-              canonical: r.name,
-              category: "product",
-              source: "import:github",
-              evidence: [`GitHub repo ${org}/${r.name}`],
-              count: 1,
-              suggestedAliases: importAliases(r.name, "product")
-            });
-          }
-        }
-      }
-    }
-    const repos = ghJson(d, ["api", "user/repos", "--paginate"]);
-    if (Array.isArray(repos)) {
-      for (const r of repos.filter(isRecord2).slice(0, 200)) {
-        if (typeof r.name === "string" && r.name.trim()) {
-          const owner = isRecord2(r.owner) && typeof r.owner.login === "string" ? r.owner.login : void 0;
-          candidates.push({
-            canonical: r.name,
-            category: "product",
-            source: "import:github",
-            evidence: [`GitHub repo ${owner ? `${owner}/` : ""}${r.name}`],
-            count: 1,
-            suggestedAliases: importAliases(r.name, "product")
-          });
-        }
-      }
-    }
-    return mergeCandidates(candidates);
-  }
-};
-function unimplemented(id, label, privacy, reason) {
-  return {
-    id,
-    label,
-    privacy,
-    implemented: false,
-    checkAvailable: async () => ({ available: false, reason }),
-    harvest: async () => []
-  };
-}
-var SOURCES = {
-  contacts: contactsSource,
-  calendar: calendarSource,
-  github: githubSource,
-  email: unimplemented(
-    "email",
-    "Email correspondents",
-    "Would read sender and recipient names from recent threads. Not implemented: that needs new OAuth scopes, which is a conversation, not a default.",
-    "not yet supported: reading mail needs new OAuth scopes; local-only sources ship first"
-  ),
-  slack: unimplemented(
-    "slack",
-    "Slack / Discord workspace",
-    "Would read workspace member and channel names. Not implemented: that needs a workspace token, which is a conversation, not a default.",
-    "not yet supported: needs a workspace token; local-only sources ship first"
-  )
-};
 
 // src/core/exporters/shared.ts
 var CATEGORY_ORDER = {
@@ -20916,7 +19566,7 @@ function exportDeepgram(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/espanso.ts
-var import_yaml2 = __toESM(require_dist(), 1);
+var import_yaml2 = __toESM(require_dist());
 function exportEspanso(lexicon, _opts = {}) {
   const matches = aliasPairs(lexicon).map(({ alias, canonical }) => ({
     trigger: alias,
@@ -21053,12 +19703,6 @@ function applyOptions(lexicon, opts) {
   return { ...lexicon, terms };
 }
 
-// src/core/importers/espanso.ts
-var import_yaml3 = __toESM(require_dist(), 1);
-
-// src/core/importers/json.ts
-var import_yaml4 = __toESM(require_dist(), 1);
-
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
 var MAX_BARE_WORDS = 4;
@@ -21071,31 +19715,31 @@ var TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 var LEAD = `(?:^|[\\s,;:\u2014-])`;
 var PATTERNS = [
   // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"
-  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler" },
+  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
   // "I said X not Y"
-  { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I said Ashlr.AI not Ashler" },
+  { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I said Ashlr.AI not Ashler", needle: /not /iu },
   // "I meant X not Y"
-  { template: `${LEAD}i meant {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I meant Ashlr.AI not Ashler" },
+  { template: `${LEAD}i meant {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I meant Ashlr.AI not Ashler", needle: /not /iu },
   // "X not Y" with no verb - only when both sides are quoted, otherwise far too loose
-  { template: `^\\s*{X},? not {Y}${TAIL}`, order: ["meant", "heard"], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"' },
+  { template: `^\\s*{X},? not {Y}${TAIL}`, order: ["meant", "heard"], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"', needle: /not /iu },
   // "not Y, X" / "not Y, it's X"
-  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI" },
+  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
   // "replace Y with X"
-  { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "replace Ashler with Ashlr.AI" },
+  { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "replace Ashler with Ashlr.AI", needle: /replace /iu },
   // "Y -> X" / "Y => X" / "Y → X"
-  { template: `^\\s*{Y}\\s*(?:->|=>|\u2192)\\s*{X}${TAIL}`, order: ["heard", "meant"], example: "Ashler -> Ashlr.AI" },
+  { template: `^\\s*{Y}\\s*(?:->|=>|\u2192)\\s*{X}${TAIL}`, order: ["heard", "meant"], example: "Ashler -> Ashlr.AI", needle: /->|=>|→/u },
   // "that should be X" (heard unknown; caller fills it from context). Must precede "Y should be X".
-  { template: `${LEAD}(?:that|this|it) should (?:be|read|say) {X}${TAIL}`, order: ["meant"], example: "that should be Ashlr.AI" },
+  { template: `${LEAD}(?:that|this|it) should (?:be|read|say) {X}${TAIL}`, order: ["meant"], example: "that should be Ashlr.AI", needle: /should /iu },
   // "Y should be X"
-  { template: `^\\s*{Y} should (?:be|read|say) {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "Ashler should be Ashlr.AI" },
+  { template: `^\\s*{Y} should (?:be|read|say) {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "Ashler should be Ashlr.AI", needle: /should /iu },
   // "spelled X" / "it's spelled X" / "spell it X" (heard unknown; caller fills it from context)
-  { template: `\\b(?:spell(?:ed|t)?(?: it| as)?|spelling(?: is|:)?) {X}${TAIL}`, order: ["meant"], example: "spelled Ashlr.AI" }
+  { template: `\\b(?:spell(?:ed|t)?(?: it| as)?|spelling(?: is|:)?) {X}${TAIL}`, order: ["meant"], example: "spelled Ashlr.AI", needle: /spel/iu }
 ];
 var CORRECTION_EXAMPLES = PATTERNS.map((p) => p.example);
 var COMPILED = PATTERNS.map((p) => {
   const side = p.quotedOnly ? QUOTED_SIDE : SIDE;
   const source = p.template.replace(/\{[XY]\}/g, side);
-  return { re: new RegExp(source, "iu"), order: p.order, bareNeedsName: p.bareNeedsName === true };
+  return { needle: p.needle, re: new RegExp(source, "iu"), order: p.order, bareNeedsName: p.bareNeedsName === true };
 });
 function sideValue(groups, index) {
   const start = index * GROUPS_PER_SIDE;
@@ -21124,7 +19768,8 @@ function allStoplisted(phrase) {
 function parseCorrection(text) {
   const input = text.replace(/\s+/g, " ").trim();
   if (!input) return void 0;
-  for (const { re, order, bareNeedsName } of COMPILED) {
+  for (const { needle, re, order, bareNeedsName } of COMPILED) {
+    if (!needle.test(input)) continue;
     const m = re.exec(input);
     if (!m) continue;
     const groups = m.slice(1);
@@ -21155,76 +19800,18 @@ function parseCorrection(text) {
   return void 0;
 }
 
-// src/core/suggestTerms.ts
-var import_fastest_levenshtein3 = __toESM(require_mod(), 1);
-var DAY_MS = 24 * 60 * 60 * 1e3;
-var FUNCTION_WORDS2 = new Set(
-  `a an the and or but nor so yet if then than because although while whether unless
-at by for from in into of off on onto to with without about over under up down out through across between among
-after before during until since around near above below behind beside upon toward towards via per
-i me my mine you your yours he him his she hers it its we us our ours they them their theirs
-this that these those who whom whose which what
-am is are was were be been being do does did done have has had having
-can could may might must shall should will would
-not no yes there here now when where why how`.split(/\s+/).filter((w) => w.length > 0)
-);
-var DIGITS_RE = new RegExp("^\\p{N}+$", "u");
-
-// src/core/packs.ts
-var import_yaml5 = __toESM(require_dist(), 1);
-var PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-var PackFileSchema = object({
-  name: string2().regex(PACK_NAME_RE, "pack name must be lowercase letters, digits and dashes"),
-  title: string2().trim().min(1).max(80),
-  description: string2().trim().max(300).default(""),
-  version: literal(1).default(1),
-  /** Community packs name their author; the vendored four leave it empty. */
-  author: string2().trim().max(40).default(""),
-  homepage: string2().trim().max(200).default(""),
-  terms: array(unknown()).min(1, "a pack needs at least one term")
-});
-
-// src/core/registry.ts
-var import_yaml6 = __toESM(require_dist(), 1);
-var RegistryIndexEntrySchema = object({
-  author: string2().regex(/^[a-z0-9][a-z0-9-]{0,38}$/),
-  name: string2().regex(PACK_NAME_RE),
-  title: string2().trim().min(1).max(80),
-  description: string2().trim().max(300).default(""),
-  homepage: string2().trim().max(200).default(""),
-  /** Free-form display version ("2", "2026.10.08"); updates key on checksum, not this. */
-  version: string2().trim().max(32).default(""),
-  terms: number2().int().min(1),
-  aliases: number2().int().min(0),
-  /** sha256 hex of the pack file bytes. */
-  checksum: string2().regex(/^[0-9a-f]{64}$/i, "checksum must be a sha256 hex digest"),
-  /** Where the pack file lives: https:// URL, file:// URL, or a path relative to the index. */
-  url: string2().trim().min(1)
-});
-var RegistryIndexSchema = object({
-  version: literal(1).default(1),
-  packs: array(RegistryIndexEntrySchema).default([])
-});
-var RegistryPackStateSchema = object({
-  checksum: string2().regex(/^[0-9a-f]{64}$/i),
-  version: string2().max(32),
-  pinnedVersion: string2().max(32).optional(),
-  indexSource: string2().min(1),
-  installedAt: string2().datetime()
-}).strict();
-
 // src/hooks/user-prompt-submit.ts
 var SESSION_CONTEXT_MAX_CHARS = 4e3;
 var ONBOARD_NOTE_FILE = "onboard-note.json";
 var ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1e3;
 var ONBOARD_NOTE = "The user's voice lexicon is empty, so dictated names are not being corrected. Do not act on this now and do not mention it on its own. Wait until a message looks dictated (run-on prose, spoken filler, or a proper noun that looks like speech-to-text mangled it). When that happens: answer what the user asked first, then add one short sentence offering to fix it, naming the word that looked wrong. Offer once. If they decline or ignore it, do not raise it again this session. If they accept, ask for (1) their company/product names, spelled exactly, and how they pronounce them; (2) their own name as they write it; (3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool with company, person and clients (or use the onboard prompt). setup_lexicon previews by default: show the user its plan and call it again with apply: true only after they say yes. Install nothing they did not name.";
 function onboardNotePath(globalPath) {
-  return join(dirname(globalPath), ONBOARD_NOTE_FILE);
+  return (0, import_node_path6.join)((0, import_node_path6.dirname)(globalPath), ONBOARD_NOTE_FILE);
 }
 async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   const file = onboardNotePath(globalPath);
   try {
-    const raw = await fs4.readFile(file, "utf8");
+    const raw = await import_node_fs5.promises.readFile(file, "utf8");
     const parsed = JSON.parse(raw);
     const last = typeof parsed === "object" && parsed !== null ? parsed.lastNotedAt : void 0;
     const lastMs = typeof last === "string" ? Date.parse(last) : Number.NaN;
@@ -21233,8 +19820,8 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   const state = { lastNotedAt: new Date(now).toISOString() };
   try {
-    await fs4.mkdir(dirname(file), { recursive: true });
-    await fs4.writeFile(file, `${JSON.stringify(state)}
+    await import_node_fs5.promises.mkdir((0, import_node_path6.dirname)(file), { recursive: true });
+    await import_node_fs5.promises.writeFile(file, `${JSON.stringify(state)}
 `, "utf8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -21454,16 +20041,35 @@ async function runHook(input, opts = {}) {
 }
 async function readStdin() {
   const chunks = [];
+  try {
+    const buf = Buffer.allocUnsafe(64 * 1024);
+    for (; ; ) {
+      const n = (0, import_node_fs5.readSync)(0, buf, 0, buf.length, null);
+      if (n === 0) return Buffer.concat(chunks).toString("utf8");
+      chunks.push(Buffer.from(buf.subarray(0, n)));
+    }
+  } catch {
+  }
   for await (const chunk of process.stdin) {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
+function writeStdout(text) {
+  const bytes = Buffer.from(text, "utf8");
+  let off = 0;
+  try {
+    while (off < bytes.length) off += (0, import_node_fs5.writeSync)(1, bytes, off, bytes.length - off);
+    return;
+  } catch {
+  }
+  process.stdout.write(bytes.subarray(off));
+}
 async function main() {
   try {
     const raw = await readStdin();
     const out = await runHook(raw);
-    if (out) process.stdout.write(out);
+    if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] ${message}
@@ -21476,7 +20082,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return realpathSync(resolve(entry)) === realpathSync(fileURLToPath(import.meta.url));
+    return (0, import_node_fs5.realpathSync)((0, import_node_path6.resolve)(entry)) === (0, import_node_fs5.realpathSync)((0, import_node_url.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

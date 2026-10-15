@@ -31,7 +31,7 @@ import type {
   TermCategory,
 } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
-import { bold, dim, renderTable, safe, safeLines, tildify } from '../io.js';
+import { bold, dim, plural, renderTable, safe, safeLines, tildify } from '../io.js';
 import type { IO } from '../io.js';
 import { runInstall } from '../cmd-install.js';
 import type { InstallOptions } from '../cmd-install.js';
@@ -622,7 +622,7 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(file, text, 'utf8');
   ctx.summary.exports.push({ format, path: file });
-  ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${loaded.merged.terms.length} terms)`);
+  ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${plural(loaded.merged.terms.length, 'term')})`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 

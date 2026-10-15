@@ -834,6 +834,29 @@ describe('lexicon voice (foreground)', () => {
     expect(h.kills).toEqual([]);
   });
 
+  it("a recorder that fails to open the device prints ffmpeg's last lines one per line", async () => {
+    const h = await harness({ platform: 'linux' });
+    h.opts.quiet = false;
+    const spawn = h.deps.spawn;
+    h.deps.spawn = (cmd, args, opts) => {
+      const child = spawn!(cmd, args, opts);
+      writeFileSync(args[args.length - 1], '');
+      setTimeout(() => h.children[0].resolve(1), 5);
+      return {
+        ...child,
+        stderr: () =>
+          'ffmpeg version 6\n[in#0 @ 0x1] Error opening input: No such process\nError opening input file default.\nError opening input files: No such process\n',
+      };
+    };
+    expect(await runVoice({ ...h.opts, seconds: 1 }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain(
+      'lexicon voice: recording failed (the recording is empty)\n' +
+        '  ffmpeg said: [in#0 @ 0x1] Error opening input: No such process\n' +
+        '  Error opening input file default.\n' +
+        '  Error opening input files: No such process\n',
+    );
+  });
+
   it('builds the whisper prompt from the lexicon canonicals and passes it as --prompt', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
@@ -941,7 +964,9 @@ describe('lexicon voice (foreground)', () => {
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_MISSING_TOOL);
     expect(h.err.join('')).toContain('whisper-cli not found');
-    expect(h.err.join('')).toContain('brew install ffmpeg whisper-cpp');
+    // ffmpeg is there, so the hint names only whisper.cpp.
+    expect(h.err.join('')).toContain('install: brew install whisper-cpp\n');
+    expect(h.err.join('')).toContain('(or set LEXICON_WHISPER_BIN to the binary)');
     expect(h.spawnCalls).toHaveLength(0);
   });
 
@@ -950,7 +975,22 @@ describe('lexicon voice (foreground)', () => {
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_MISSING_TOOL);
     expect(h.err.join('')).toContain('ffmpeg and whisper-cli not found');
-    expect(h.err.join('')).toContain('apt install ffmpeg');
+    expect(h.err.join('')).toContain('install: sudo apt install ffmpeg, then build whisper.cpp');
+    expect(h.err.join('')).toContain('(or set LEXICON_WHISPER_BIN / LEXICON_FFMPEG_BIN to the binary)');
+
+    const onlyFfmpeg = await harness({ missing: ['ffmpeg'], platform: 'linux' });
+    expect(await runVoice(onlyFfmpeg.opts, onlyFfmpeg.io, onlyFfmpeg.deps)).toBe(EXIT_MISSING_TOOL);
+    const err = onlyFfmpeg.err.join('');
+    expect(err).toContain('ffmpeg not found on PATH.\n  install: sudo apt install ffmpeg\n  (or set LEXICON_FFMPEG_BIN to the binary)\n');
+    expect(err).not.toContain('whisper');
+  });
+
+  it('names LEXICON_FFMPEG_BIN when it points at a file that does not exist', async () => {
+    const h = await harness({ missing: ['ffmpeg'], platform: 'linux' });
+    h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/nope/ffmpeg' };
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(h.err.join('')).toContain('ffmpeg (LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist)');
+    expect(h.spawnCalls).toHaveLength(0);
   });
 
   it('LEXICON_WHISPER_BIN points at a checkout binary named main', async () => {
@@ -1152,6 +1192,9 @@ describe('models and tools', () => {
     expect(await locateWhisperCli({ env: { PATH: '/bin', LEXICON_WHISPER_BIN: '/nope' }, platform: 'darwin', exists, extraDirs: [] })).toBeUndefined();
     expect(await locateWhisperCli({ env: { PATH: '/bin' }, platform: 'darwin', exists, extraDirs: [] })).toBe('/bin/whisper-cpp');
     expect(installHint('win32')).toContain('winget');
+    expect(installHint('win32', { ffmpeg: false, whisper: true })).not.toContain('winget');
+    expect(installHint('freebsd', { ffmpeg: true, whisper: false })).toBe('install ffmpeg');
+    expect(installHint('darwin', { ffmpeg: true, whisper: true })).toBe('brew install ffmpeg whisper-cpp');
   });
 });
 

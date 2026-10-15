@@ -572,6 +572,10 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: harvest', () => {
     const missing = await runCli(['harvest', path.join(shared.home, 'nope')], { env: shared.env });
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain('does not exist');
+    // suggest names the option like every other --limit.
+    const suggest = await runCli(['suggest', '--limit', 'abc'], { env: shared.env });
+    expect(suggest.code).toBe(1);
+    expect(suggest.stderr).toContain("option '--limit <n>' argument 'abc' is invalid");
   });
 });
 

@@ -15,7 +15,6 @@
  * Escape hatch: `LEXICON_TRUST_ALL=1` treats every project file as trusted
  * (for CI or throwaway containers where the repo is already vetted).
  */
-import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from './store.js';
@@ -73,6 +72,9 @@ async function canonicalPath(filePath: string): Promise<string> {
 export async function hashFile(filePath: string): Promise<string | undefined> {
   try {
     const bytes = await fs.readFile(filePath);
+    // Loaded on first use: node:crypto costs the prompt hook several ms to
+    // load, and the hook only hashes when a project lexicon exists.
+    const { createHash } = await import('node:crypto');
     return createHash('sha256').update(bytes).digest('hex');
   } catch {
     return undefined;

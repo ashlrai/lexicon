@@ -36,7 +36,7 @@ import {
   serveLabel,
   systemdUnitPath,
 } from './serve-paths.js';
-import { dim, green, line, red, resolveCwd, safeLines, yellow } from './io.js';
+import { dim, green, line, plural, red, resolveCwd, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** Obvious English words that make terrible aliases (they'd fire constantly). */
@@ -489,7 +489,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   try {
     const g = await readLexiconFile(paths.global, 'global');
     if (g.exists) {
-      push('ok', `global lexicon parses: ${paths.global} (${g.lexicon.terms.length} terms)`);
+      push('ok', `global lexicon parses: ${paths.global} (${plural(g.lexicon.terms.length, 'term')})`);
       files.push(g);
     } else {
       push('fail', `global lexicon missing: ${paths.global} (run: lexicon init)`);
@@ -505,7 +505,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, 'project');
-      push('ok', `project lexicon parses: ${paths.project} (${p.lexicon.terms.length} terms)`);
+      push('ok', `project lexicon parses: ${paths.project} (${plural(p.lexicon.terms.length, 'term')})`);
       const trust = await isTrusted(p, { cwd });
       if (trust === 'trusted') {
         push('ok', 'project lexicon is trusted and merged');
@@ -668,11 +668,11 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   const whisperOverride = env.LEXICON_WHISPER_BIN;
   const whisperCli = whisperOverride ? (existsSync(whisperOverride) ? whisperOverride : undefined) : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push('ok', `whisper-cli found: ${whisperCli}`);
-  else push('warn', `whisper-cli not found (needed by lexicon voice; ${installHint(platform)})`);
+  else push('warn', `whisper-cli not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: false, whisper: true })})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
   const ffmpegBin = ffmpegOverride ? (existsSync(ffmpegOverride) ? ffmpegOverride : undefined) : locateToolSync(['ffmpeg'], env, platform);
   if (ffmpegBin) push('ok', `ffmpeg found: ${ffmpegBin}`);
-  else push('warn', `ffmpeg not found (needed by lexicon voice; ${installHint(platform)})`);
+  else push('warn', `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
   push('info', model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
   if (platform === 'darwin') {

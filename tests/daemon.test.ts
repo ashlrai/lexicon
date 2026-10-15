@@ -111,6 +111,27 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  it('a clipboard that keeps failing is reported once, then again when it recovers', async () => {
+    const h = start('');
+    let failing = true;
+    h.read.mockImplementation(async () => {
+      if (failing) throw new Error("xclip exited with code 1: Error: Can't open display: (null)");
+      return h.clipboard;
+    });
+    await vi.advanceTimersByTimeAsync(250 * 20);
+    expect(h.read.mock.calls.length).toBeGreaterThanOrEqual(20);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toMatch(/Can't open display.*retrying every 250ms/);
+
+    failing = false;
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.err).toHaveLength(2);
+    expect(h.err[1]).toMatch(/working again/);
+
+    h.controller.abort();
+    await h.done;
+  });
+
   it('dryRun never records hits', async () => {
     const h = start('meet Ashler', { dryRun: true });
     await vi.advanceTimersByTimeAsync(0);
@@ -329,8 +350,22 @@ describe('runDaemonCommand', () => {
     const out: string[] = [];
     const err: string[] = [];
     const push = (s: string) => out.push(s);
-    expect(await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', out: push, err: (s) => err.push(s) })).toBe(0);
+    // An injected exec stands in for the tool, so no PATH check applies.
+    expect(
+      await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', exec: async () => '', paste: false, out: push, err: (s) => err.push(s) }),
+    ).toBe(0);
+    // `paste: false` is what the CLI passes without --paste: no --paste line off macOS.
     expect(out.join('')).toBe('clipboard backend: xclip (xclip -selection clipboard -o / -i (X11))\n');
+
+    // A forced backend whose tool is missing is refused with the install hint, not reported as usable.
+    out.length = 0;
+    expect(await runDaemonCommand({ which: true, backend: 'xclip', platform: 'linux', env: { PATH: '' }, out: push, err: (s) => err.push(s) })).toBe(1);
+    expect(err.join('')).toContain('--backend xclip: xclip not found on PATH (install it: sudo apt install xclip)');
+    expect(out).toEqual([]);
+    await expect(runClipboardOnce({ backend: 'wl', platform: 'linux', env: { PATH: '' }, out: push })).rejects.toThrow(
+      /wl-paste and wl-copy not found on PATH/,
+    );
+    err.length = 0;
 
     out.length = 0;
     expect(await runDaemonCommand({ which: true, platform: 'linux', env: { PATH: '' }, out: push, err: (s) => err.push(s) })).toBe(1);

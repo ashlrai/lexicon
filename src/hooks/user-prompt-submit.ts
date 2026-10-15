@@ -24,7 +24,7 @@
  * The hook must never fail the user's prompt: every error path prints nothing
  * and exits 0.
  */
-import { promises as fs, realpathSync } from 'node:fs';
+import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
@@ -476,19 +476,54 @@ export async function runHook(input: string, opts: HookOptions = {}): Promise<st
   return userPromptSubmit(payload, opts);
 }
 
+/**
+ * The whole of stdin. Read synchronously first: `process.stdin` on a pipe is a
+ * `net.Socket`, and loading `node:net` for it was about 10 ms of the hook's
+ * startup. If the descriptor turns out to be non-blocking (EAGAIN) or cannot
+ * be read that way at all, whatever was already read is kept and the rest
+ * comes from the stream as before.
+ */
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
+  try {
+    const buf = Buffer.allocUnsafe(64 * 1024);
+    for (;;) {
+      const n = readSync(0, buf, 0, buf.length, null);
+      if (n === 0) return Buffer.concat(chunks).toString('utf8');
+      chunks.push(Buffer.from(buf.subarray(0, n)));
+    }
+  } catch {
+    // EAGAIN / EOF quirks / no fd 0: finish from the stream below
+  }
   for await (const chunk of process.stdin) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/**
+ * Write `text` to stdout. Synchronously first, for the same reason stdin is
+ * read that way: touching `process.stdout` on a pipe loads `node:net`. A
+ * non-blocking descriptor that refuses part of it (EAGAIN) gets the rest
+ * through the stream.
+ */
+function writeStdout(text: string): void {
+  const bytes = Buffer.from(text, 'utf8');
+  let off = 0;
+  try {
+    while (off < bytes.length) off += writeSync(1, bytes, off, bytes.length - off);
+    return;
+  } catch {
+    // finish through the stream below
+  }
+  process.stdout.write(bytes.subarray(off));
+}
+
 export async function main(): Promise<void> {
   try {
     const raw = await readStdin();
     const out = await runHook(raw);
-    if (out) process.stdout.write(out);
+    if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.
     const message = err instanceof Error ? err.message : String(err);

@@ -97,36 +97,45 @@ interface CorrectionPattern {
   bareNeedsName?: boolean;
   /** Shown to users when nothing matched. */
   example: string;
+  /**
+   * A literal every match must contain, tested first (with the same `iu`
+   * flags) so a prompt without it never reaches the full pattern. The full
+   * patterns backtrack and run in V8's regexp interpreter on a cold process,
+   * which cost the prompt hook about 10 ms on an ordinary prompt that is not
+   * a correction at all.
+   */
+  needle: RegExp;
 }
 
 /** Order matters: first match wins. Every regex is case-insensitive. */
 const PATTERNS: readonly CorrectionPattern[] = [
   // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"
-  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: "it's Ashlr.AI, not Ashler" },
+  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
   // "I said X not Y"
-  { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: 'I said Ashlr.AI not Ashler' },
+  { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: 'I said Ashlr.AI not Ashler', needle: /not /iu },
   // "I meant X not Y"
-  { template: `${LEAD}i meant {X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: 'I meant Ashlr.AI not Ashler' },
+  { template: `${LEAD}i meant {X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: 'I meant Ashlr.AI not Ashler', needle: /not /iu },
   // "X not Y" with no verb - only when both sides are quoted, otherwise far too loose
-  { template: `^\\s*{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"' },
+  { template: `^\\s*{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"', needle: /not /iu },
   // "not Y, X" / "not Y, it's X"
-  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ['heard', 'meant'], example: "not Ashler, Ashlr.AI" },
+  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ['heard', 'meant'], example: "not Ashler, Ashlr.AI", needle: /not /iu },
   // "replace Y with X"
-  { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ['heard', 'meant'], bareNeedsName: true, example: 'replace Ashler with Ashlr.AI' },
+  { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ['heard', 'meant'], bareNeedsName: true, example: 'replace Ashler with Ashlr.AI', needle: /replace /iu },
   // "Y -> X" / "Y => X" / "Y → X"
-  { template: `^\\s*{Y}\\s*(?:->|=>|→)\\s*{X}${TAIL}`, order: ['heard', 'meant'], example: 'Ashler -> Ashlr.AI' },
+  { template: `^\\s*{Y}\\s*(?:->|=>|→)\\s*{X}${TAIL}`, order: ['heard', 'meant'], example: 'Ashler -> Ashlr.AI', needle: /->|=>|→/u },
   // "that should be X" (heard unknown; caller fills it from context). Must precede "Y should be X".
-  { template: `${LEAD}(?:that|this|it) should (?:be|read|say) {X}${TAIL}`, order: ['meant'], example: 'that should be Ashlr.AI' },
+  { template: `${LEAD}(?:that|this|it) should (?:be|read|say) {X}${TAIL}`, order: ['meant'], example: 'that should be Ashlr.AI', needle: /should /iu },
   // "Y should be X"
-  { template: `^\\s*{Y} should (?:be|read|say) {X}${TAIL}`, order: ['heard', 'meant'], bareNeedsName: true, example: 'Ashler should be Ashlr.AI' },
+  { template: `^\\s*{Y} should (?:be|read|say) {X}${TAIL}`, order: ['heard', 'meant'], bareNeedsName: true, example: 'Ashler should be Ashlr.AI', needle: /should /iu },
   // "spelled X" / "it's spelled X" / "spell it X" (heard unknown; caller fills it from context)
-  { template: `\\b(?:spell(?:ed|t)?(?: it| as)?|spelling(?: is|:)?) {X}${TAIL}`, order: ['meant'], example: 'spelled Ashlr.AI' },
+  { template: `\\b(?:spell(?:ed|t)?(?: it| as)?|spelling(?: is|:)?) {X}${TAIL}`, order: ['meant'], example: 'spelled Ashlr.AI', needle: /spel/iu },
 ];
 
 /** One human-readable example per supported phrasing, for error messages and docs. */
 export const CORRECTION_EXAMPLES: readonly string[] = PATTERNS.map((p) => p.example);
 
 interface CompiledPattern {
+  needle: RegExp;
   re: RegExp;
   order: readonly Side[];
   bareNeedsName: boolean;
@@ -135,7 +144,7 @@ interface CompiledPattern {
 const COMPILED: readonly CompiledPattern[] = PATTERNS.map((p) => {
   const side = p.quotedOnly ? QUOTED_SIDE : SIDE;
   const source = p.template.replace(/\{[XY]\}/g, side);
-  return { re: new RegExp(source, 'iu'), order: p.order, bareNeedsName: p.bareNeedsName === true };
+  return { needle: p.needle, re: new RegExp(source, 'iu'), order: p.order, bareNeedsName: p.bareNeedsName === true };
 });
 
 interface SideMatch {
@@ -192,7 +201,8 @@ export function parseCorrection(text: string): Correction | undefined {
   const input = text.replace(/\s+/g, ' ').trim();
   if (!input) return undefined;
 
-  for (const { re, order, bareNeedsName } of COMPILED) {
+  for (const { needle, re, order, bareNeedsName } of COMPILED) {
+    if (!needle.test(input)) continue;
     const m = re.exec(input);
     if (!m) continue;
     const groups = m.slice(1);
