@@ -29,6 +29,54 @@ const banner = [
   'const require = __lexiconCreateRequire(import.meta.url);',
 ].join('\n');
 
+/**
+ * Every module under src/ is free of import-time side effects (no module is
+ * imported for its effects; entry points are never imported by another
+ * module), so tell esbuild it may drop any module whose exports go unused.
+ * Without this it keeps whole modules for a top-level `new Set(...)` or a
+ * regex, which pulled harvest, import-sources and their `node:child_process`
+ * import into the prompt hook, where every millisecond of startup counts.
+ * Scoped to our own files: dependencies keep their own package.json answer.
+ */
+const srcDir = resolve(root, 'src');
+const sideEffectFreeSrc = {
+  name: 'side-effect-free-src',
+  setup(b) {
+    b.onResolve({ filter: /^\.\.?\// }, async (args) => {
+      if (args.pluginData?.sideEffectFreeSrc || !args.importer.startsWith(srcDir)) return undefined;
+      const resolved = await b.resolve(args.path, {
+        kind: args.kind,
+        importer: args.importer,
+        resolveDir: args.resolveDir,
+        pluginData: { sideEffectFreeSrc: true },
+      });
+      if (resolved.errors.length > 0 || !resolved.path.startsWith(srcDir)) return resolved;
+      return { ...resolved, sideEffects: false };
+    });
+  },
+};
+
+/**
+ * Load `node:` builtins with the banner's `require` instead of an ESM import.
+ * An ESM import of a builtin builds a facade that reads every export once,
+ * and for `node:fs` that read alone pulls in the whole streams stack (the
+ * lazy `ReadStream` getter): about 10 ms of the prompt hook's startup, for
+ * APIs it never touches. `require` hands back the same module object without
+ * the facade. Dynamic imports stay lazy (esbuild keeps them behind a promise).
+ */
+const builtinsViaRequire = {
+  name: 'builtins-via-require',
+  setup(b) {
+    b.onResolve({ filter: /^node:/ }, (args) =>
+      args.namespace === 'builtin-cjs' ? { path: args.path, external: true } : { path: args.path, namespace: 'builtin-cjs' },
+    );
+    b.onLoad({ filter: /.*/, namespace: 'builtin-cjs' }, (args) => ({
+      contents: `module.exports = require(${JSON.stringify(args.path)});`,
+      loader: 'js',
+    }));
+  },
+};
+
 const entryPoints = {
   'mcp-server': resolve(root, 'src/mcp/server.ts'),
   hook: resolve(root, 'src/hooks/user-prompt-submit.ts'),
@@ -49,6 +97,7 @@ await build({
   minify: false,
   sourcemap: false,
   logLevel: 'warning',
+  plugins: [sideEffectFreeSrc, builtinsViaRequire],
 });
 
 for (const name of Object.keys(entryPoints)) {

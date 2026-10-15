@@ -17,7 +17,6 @@
  * matching prompt, and rewriting (and backing up) the user's whole YAML file
  * for a counter cost more than the rest of the hook put together.
  */
-import { createHash } from 'node:crypto';
 import { promises as fs, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -170,15 +169,17 @@ function parseLexiconText(text: string, filePath: string, scope: TermScope): Lex
 }
 
 /**
- * The parsed global lexicon, kept beside it (`parse-cache.json`) and keyed by
- * the sha256 of the YAML text it came from.
+ * The parsed global lexicon, kept beside it (`parse-cache.json`) together
+ * with the exact YAML text it came from.
  *
  * The prompt hook loads the lexicon on every prompt, and parsing the YAML of a
  * lexicon with the starter packs installed was the largest single cost left in
- * it (tens of milliseconds against a 200 ms budget). Reading the text and
- * hashing it is cheap; a cache entry for those exact bytes is reused, and
- * anything else (a hand edit, another writer, a corrupt or foreign cache)
- * falls through to the real parse, which then refreshes the entry. The cached
+ * it (tens of milliseconds against a 200 ms budget). An entry whose `text` is
+ * the file's current text, character for character, is reused; anything else
+ * (a hand edit, another writer, a corrupt or foreign cache) falls through to
+ * the real parse, which then refreshes the entry. Comparing the text instead
+ * of a hash of it is exact and keeps `node:crypto`, whose load alone cost the
+ * hook about as much as the comparison saves, off the prompt path. The cached
  * value still goes through `parseLexicon`, so it can never hold something the
  * reader would have rejected. It is written with the lexicon's own permission
  * bits, since it holds the same names.
@@ -194,16 +195,18 @@ export const PARSE_CACHE_FILE_NAME = 'parse-cache.json';
 /** Smallest global lexicon (bytes of YAML) worth caching; one starter pack is past it. */
 export const PARSE_CACHE_MIN_BYTES = 8 * 1024;
 
+/** Entry format; 1 was keyed by a sha256 of the text and is simply reparsed and replaced. */
+const PARSE_CACHE_VERSION = 2;
+
 async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
   const read = await readLexiconText(filePath);
   if (read === undefined) return { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, 'global');
-  const sha256 = createHash('sha256').update(read.text).digest('hex');
   const cachePath = path.join(path.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = path.resolve(filePath);
   try {
     const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
-    if (isPlainObject(cached) && cached.version === 1 && cached.path === key && cached.sha256 === sha256) {
+    if (isPlainObject(cached) && cached.version === PARSE_CACHE_VERSION && cached.path === key && cached.text === read.text) {
       return { path: filePath, scope: 'global', lexicon: parseLexicon(cached.lexicon), exists: true };
     }
   } catch {
@@ -211,7 +214,7 @@ async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
   }
   const file = parseLexiconText(read.text, filePath, 'global');
   try {
-    await writeFileAtomic(cachePath, JSON.stringify({ version: 1, path: key, sha256, lexicon: file.lexicon }), {
+    await writeFileAtomic(cachePath, JSON.stringify({ version: PARSE_CACHE_VERSION, path: key, text: read.text, lexicon: file.lexicon }), {
       mode: read.mode,
     });
   } catch {
