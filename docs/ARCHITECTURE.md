@@ -98,9 +98,9 @@ scripts/
   check-facts.mjs           every number the docs state is re-derived from the code (npm run check:facts)
   check-server-json.mjs     server.json agrees with package.json (npm run check:server-json)
 
-.claude-plugin/plugin.json  Claude Code plugin manifest
+.claude-plugin/plugin.json  Claude Code plugin manifest; declares the plugin MCP server inline (node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs)
 .claude-plugin/marketplace.json  marketplace manifest (claude plugin marketplace add ashlrai/lexicon)
-.mcp.json                   plugin MCP server entry (node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs)
+.mcp.json                   project MCP server entry for working in this repo (node plugin/mcp-server.mjs, relative to the repo root)
 hooks/hooks.json            plugin hook entries, SessionStart + UserPromptSubmit (node ${CLAUDE_PLUGIN_ROOT}/plugin/hook.mjs)
 skills/lexicon/SKILL.md     when the agent should normalize, learn, suggest, harvest, set up, diagnose
 commands/lexicon.md         the /lexicon slash command

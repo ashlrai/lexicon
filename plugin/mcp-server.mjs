@@ -63012,14 +63012,28 @@ function isMainModule() {
     return false;
   }
 }
+function cliFlagOutput(argv) {
+  if (argv.includes("--version") || argv.includes("-v")) return readPackageVersion();
+  if (argv.includes("--help") || argv.includes("-h")) {
+    return "Usage: lexicon-mcp [--version] [--help]  (stdio MCP server for the personal lexicon; run it from an MCP client)";
+  }
+  return void 0;
+}
 if (isMainModule()) {
-  main().catch((err) => {
-    log("fatal:", errorMessage(err));
-    process.exit(1);
-  });
+  const flagOutput = cliFlagOutput(process.argv.slice(2));
+  if (flagOutput !== void 0) {
+    process.stdout.write(`${flagOutput}
+`);
+  } else {
+    main().catch((err) => {
+      log("fatal:", errorMessage(err));
+      process.exit(1);
+    });
+  }
 }
 export {
   ROOTS_TIMEOUT_MS,
+  cliFlagOutput,
   createServer2 as createServer,
   cwdFromRoots,
   main

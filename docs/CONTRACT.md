@@ -452,7 +452,7 @@ Claude Code hook entry for two events, dispatched on the payload's `hook_event_n
 
 ## src/mcp (server.ts, shared.ts, tools/)  (bin: lexicon-mcp; bundled as plugin/mcp-server.mjs)
 
-`server.ts` exports only `ServerOptions`, `ROOTS_TIMEOUT_MS`, `cwdFromRoots`, `createServer` and `main`; it owns the server object, the two resources, the two prompts and the stdio wiring. The twenty tools live in `tools/*.ts`, one registrar per module, collected in registration order by `TOOL_REGISTRARS` in `tools/index.ts`:
+`server.ts` exports only `ServerOptions`, `ROOTS_TIMEOUT_MS`, `cwdFromRoots`, `createServer`, `main` and `cliFlagOutput(argv): string | undefined` (the `--version`/`-v` package version or the `--help`/`-h` one-line usage, printed to stdout with exit 0 instead of starting the stdio server; undefined means run the server); it owns the server object, the two resources, the two prompts and the stdio wiring. The twenty tools live in `tools/*.ts`, one registrar per module, collected in registration order by `TOOL_REGISTRARS` in `tools/index.ts`:
 
 | module | registrar | tools |
 | --- | --- | --- |
