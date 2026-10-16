@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- Add matcher regression coverage for explicit aliases containing straight and curly apostrophes, full replacement offsets, real possessives, code/URL spans, and never entries. These cases already work without phonetic or fuzzy matching.
+
 ### Fixed
 
 - MCP `serve_status` probes the port `lexicon serve` recorded in `serve.json` (falling back to 41733) instead of always 41733, so agents no longer start a second server when one runs on `--port`.

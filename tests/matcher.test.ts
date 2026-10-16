@@ -188,6 +188,60 @@ describe('exact alias pass', () => {
   });
 });
 
+describe('aliases containing apostrophes', () => {
+  const exactOnly = { phonetic: false, fuzzy: false };
+
+  it.each(["Cooper Nettie's", 'Cooper Nettie’s'])(
+    'matches the full explicit alias %s without leaving a possessive suffix', (alias) => {
+      const text = `Deploy to (${alias}) tonight.`;
+      const reps = find(text, [{ canonical: 'Kubernetes', aliases: [alias] }], exactOnly);
+      expect(reps).toHaveLength(1);
+      expect(reps[0]).toMatchObject({
+        start: 11, end: 11 + alias.length, original: alias,
+        replacement: 'Kubernetes', reason: 'alias', confidence: 1,
+      });
+      expect(apply(text, reps)).toBe('Deploy to (Kubernetes) tonight.');
+    },
+  );
+
+  it.each([
+    ["Cooper Nettie's", 'Cooper Nettie’s'],
+    ['Cooper Nettie’s', "Cooper Nettie's"],
+    ["O'Riley", 'O’Riley'],
+    ['O’Riley', "O'Riley"],
+  ])('matches alias %s when dictation writes %s', (alias, spoken) => {
+    const text = `Ask ${spoken} today`;
+    const reps = find(text, [{ canonical: 'TargetName', aliases: [alias] }], exactOnly);
+    expect(reps).toHaveLength(1);
+    expect(reps[0]).toMatchObject({ original: spoken, reason: 'alias', confidence: 1 });
+    expect(text.slice(reps[0].start, reps[0].end)).toBe(spoken);
+    expect(apply(text, reps)).toBe('Ask TargetName today');
+  });
+
+  it.each(["'s", '’s'])('preserves a real possessive %s after an internal apostrophe', (suffix) => {
+    const term: Term = { canonical: "O'Reilly", aliases: ["O'Riley"] };
+    const text = `Read O'Riley${suffix} book.`;
+    const reps = find(text, [term], exactOnly);
+    expect(reps).toHaveLength(1);
+    expect(reps[0]).toMatchObject({ original: "O'Riley", reason: 'alias' });
+    expect(apply(text, reps)).toBe(`Read O'Reilly${suffix} book.`);
+  });
+
+  it('keeps apostrophe aliases inside code and URLs unchanged', () => {
+    const term: Term = { canonical: 'Kubernetes', aliases: ["Cooper Nettie's"] };
+    const text = "`Cooper Nettie's` https://example.com/Cooper-Nettie's Cooper Nettie's";
+    const reps = find(text, [term], exactOnly);
+    expect(reps).toHaveLength(1);
+    expect(reps[0].start).toBe(text.lastIndexOf("Cooper Nettie's"));
+    expect(apply(text, reps)).toBe("`Cooper Nettie's` https://example.com/Cooper-Nettie's Kubernetes");
+  });
+
+  it('honors a never entry for an alias containing an apostrophe', () => {
+    const term: Term = { canonical: 'Kubernetes', aliases: ["Cooper Nettie's"], never: ["Cooper Nettie's"] };
+    expect(find("Deploy to Cooper Nettie's", [term], exactOnly)).toHaveLength(0);
+  });
+});
+
 describe('phonetic pass', () => {
   it("rewrites Cooper Nettie's -> Kubernetes with no aliases listed", () => {
     const reps = find("Deploy it to Cooper Nettie's tonight", [K8S]);
