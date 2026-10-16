@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- Add matcher regression coverage for explicit aliases containing straight and curly apostrophes, full replacement offsets, real possessives, code/URL spans, and never entries. These cases already work without phonetic or fuzzy matching.
+
 ### Fixed
 
 - `lexicon export markdown` and `export claude-md` quote an alias that holds a comma (or starts with a double quote), CSV style, and the markdown importer reads a quoted alias whole. Before, an alias like `Ashlar, Inc` came back from an export and import as two aliases, `Ashlar` and `Inc`. Aliases without a comma are written exactly as before.
