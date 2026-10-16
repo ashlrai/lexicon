@@ -146,6 +146,9 @@ function isBetter(a: Candidate, b: Candidate | undefined): boolean {
  */
 const PLAIN_WORD_RE = /^\p{Ll}+(?:-\p{Ll}+)*$/u;
 
+/** A word of four or more letters ending in a single "s" (not "ss"): a plain English plural. */
+const PLURAL_RE = /^\p{L}{3,}(?<![sS])s$/u;
+
 function makeView(
   text: string,
   tokens: readonly Token[],
@@ -402,6 +405,19 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
         const bestAlt = gluedAfter(text, alt.end) ? undefined : findBest(alt, index, resolved);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
+      }
+      // A plural ("jots", "ollamas", "key pee eyes"): when the window minus its
+      // final "s" reads as a term, replace the base and leave the "s" in the
+      // text, so "ollamas" becomes "Ollamas" and not "Ollama". Taken when the
+      // stripped window is an exact alias hit nothing else claimed, or the same
+      // term at higher confidence. See PLURAL_RE.
+      if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === 'alias')) {
+        const stripped = last.text.slice(0, -1);
+        const swapped = tokens.slice(0, j);
+        swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
+        const view = makeView(text, swapped, i, j, false, index.protectedWords);
+        const bestPl = gluedAfter(text, view.end) ? undefined : findBest(view, index, resolved);
+        if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === 'alias')) best = bestPl;
       }
       if (best) candidates.push(best);
     }

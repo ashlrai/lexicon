@@ -48,7 +48,7 @@ describe('bench accuracy (default config)', () => {
   // 12.5% incl. Thresholds are those numbers minus a small margin so a matcher
   // regression trips them.
   it('recovers misheard terms (target >= 0.88 / 0.94)', () => {
-    expect(report.sentence.positives.rate).toBeGreaterThanOrEqual(0.92);
+    expect(report.sentence.positives.rate).toBeGreaterThanOrEqual(0.94);
     expect(report.terms.recall.rate).toBeGreaterThanOrEqual(0.95);
   });
 

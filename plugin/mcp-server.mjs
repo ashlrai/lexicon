@@ -53668,6 +53668,7 @@ function isBetter(a, b) {
   return a.termIndex < b.termIndex;
 }
 var PLAIN_WORD_RE = new RegExp("^\\p{Ll}+(?:-\\p{Ll}+)*$", "u");
+var PLURAL_RE = new RegExp("^\\p{L}{3,}(?<![sS])s$", "u");
 function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
   const first = tokens[from];
   const last = tokens[to];
@@ -53843,6 +53844,14 @@ function findReplacements(text, index, opts = {}) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
         const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved2);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
+      }
+      if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === "alias")) {
+        const stripped = last.text.slice(0, -1);
+        const swapped = tokens.slice(0, j);
+        swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
+        const view = makeView(text, swapped, i, j, false, index.protectedWords);
+        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved2);
+        if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === "alias")) best = bestPl;
       }
       if (best) candidates.push(best);
     }
