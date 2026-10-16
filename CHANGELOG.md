@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- Isolate end-to-end installation tests from inherited `CODEX_HOME` and `GEMINI_CLI_HOME`, with disposable ambient-config regressions. Running the tests can no longer write registrations into those overridden directories.
+
 ### Fixed
 
 - MCP `serve_status` probes the port `lexicon serve` recorded in `serve.json` (falling back to 41733) instead of always 41733, so agents no longer start a second server when one runs on `--port`.
