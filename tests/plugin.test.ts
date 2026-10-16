@@ -30,7 +30,7 @@ describe('Claude Code plugin manifest', () => {
     for (const arg of args) expect(arg).not.toMatch(/\$\{[^}]*:-/);
     expect(args).toEqual(['${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs']);
     const resolved = args[0].replace('${CLAUDE_PLUGIN_ROOT}', REPO_ROOT);
-    expect(resolved).toBe(BUNDLE);
+    expect(path.resolve(resolved)).toBe(BUNDLE);
   });
 
   it('keeps the project .mcp.json free of unsupported variable defaults', () => {
