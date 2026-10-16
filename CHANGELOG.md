@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- Isolate end-to-end installation tests from inherited `CODEX_HOME` and `GEMINI_CLI_HOME`, with disposable ambient-config regressions. Running the tests can no longer write registrations into those overridden directories.
+
 ### Fixed
 
 - `lexicon export markdown` and `export claude-md` quote an alias that holds a comma (or starts with a double quote), CSV style, and the markdown importer reads a quoted alias whole. Before, an alias like `Ashlar, Inc` came back from an export and import as two aliases, `Ashlar` and `Inc`. Aliases without a comma are written exactly as before.
