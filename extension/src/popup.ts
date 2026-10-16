@@ -45,7 +45,8 @@ function renderStatus(s: StatusReply): void {
     ui.mode.textContent = s.configuredMode === 'embedded' ? 'Embedded' : 'Embedded (fallback)';
     ui.mode.className = s.configuredMode === 'embedded' ? 'pill' : 'pill warn';
     const parts: string[] = [`${s.embeddedTerms} embedded terms`];
-    if (s.configuredMode === 'api') parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
+    if (s.configuredMode === 'api' && s.tokenError) parts.push(s.tokenError);
+    else if (s.configuredMode === 'api') parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
     if (!s.tokenSet && s.configuredMode === 'api') parts.push('no token set');
     if (s.embeddedError) parts.push('embedded YAML has errors');
     ui.server.textContent = parts.join(' · ');

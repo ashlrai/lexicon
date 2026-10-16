@@ -112,10 +112,12 @@ everything:
 - `add_term { canonical, aliases?, phonetic?, category?, notes? }` - add a
   spelling. Omit `aliases` and the server proposes the mis-transcriptions
   speech-to-text is likely to produce; show them and let the user veto.
-- `setup_lexicon { company?, person?, clients?, apply? }` - first run. Without
-  `apply` it returns a plan and writes nothing. Show the plan, then call again
-  with `apply: true`.
+- `setup_lexicon { company?, person?, clients?, packs?, harvest?, serve?, apply? }` -
+  first run. Without `apply` it returns a plan and writes nothing. Show the plan,
+  then call again with `apply: true`; omitted `clients`, `packs`, `harvest` and
+  `serve` install nothing.
 - `lexicon_doctor {}` - structured checks, for when something stopped working.
+  Read `ready`, `summary` and `nextStep` first.
 
 Read `lexicon://me` at the start of a session to know the user's vocabulary. The
 server also sends one-screen `instructions` at connect time.
@@ -124,7 +126,10 @@ server also sends one-screen `instructions` at connect time.
 
 These preview by default and change nothing until you say so:
 `setup_lexicon` (needs `apply: true`), `install_client` (needs `apply: true`) and
-`trust_project` (needs `action: 'trust'`). That is deliberate: use the preview to
+`trust_project` (needs `action: 'trust'`, and the client then asks the user).
+`harvest_repo` (needs `add: true`), `import_vocabulary` (needs `apply: true` with
+the returned `previewToken`) and a community `add_pack` (needs `confirm: true`
+with the returned `previewDigest`) preview the same way. That is deliberate: use the preview to
 tell your user what will change, and wait for a yes.
 
 Project-scope writes are gated. A repository's `.lexicon.yaml` is untrusted until
@@ -144,7 +149,8 @@ lexicon doctor                                # files, hooks, MCP registration, 
 lexicon stats                                 # hits per term, and terms never hit
 ```
 
-Over MCP: call `lexicon_doctor` and read `ok`; call `normalize_transcript` with a
+Over MCP: call `lexicon_doctor` and read `ready` (`ok` only means no check
+failed, which an empty lexicon also passes); call `normalize_transcript` with a
 sentence containing one of the user's aliases and read `changed`. In Claude Code
 the hooks only load in a *new* session, so tell the user to start one before
 they judge whether it worked.
@@ -187,10 +193,11 @@ Previews can contain personal or organization names, and sending them to an
 agent client can make those names model input. Email and chat importers are
 not implemented. Full threat model: [SECURITY.md](../SECURITY.md).
 
-This guided importer is implemented in repository source and the pending
-[0.5.5 release candidate](https://github.com/ashlrai/lexicon/pull/25). Public npm
-`latest` was `0.5.4` when requeried on 2026-10-09; source documentation does not
-prove publication, installation or authenticated-import acceptance.
+This guided importer is implemented in repository source and in the `v0.5.5`
+tag (release prep merged in [#25](https://github.com/ashlrai/lexicon/pull/25)).
+Public npm `latest` was still `0.5.4` when requeried on 2026-10-15, and there is
+no GitHub release for `v0.5.5` yet; source documentation does not prove
+publication, installation or authenticated-import acceptance.
 
 ## Where the machine-readable files are in this repository
 

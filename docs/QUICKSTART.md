@@ -54,9 +54,9 @@ lexicon setup
 
 2. Starter packs
    add starter packs to the global lexicon (Enter keeps the checked ones):
-     [x] 1) developer (70 terms)  [x] 2) ai (36)  [ ] 3) business (35)  [x] 4) voice-tools (14)
-   installed developer: 70 added, 0 merged
-   installed ai: 36 added, 0 merged
+     [x] 1) developer (82 terms)  [x] 2) ai (45)  [ ] 3) business (35)  [x] 4) voice-tools (14)
+   installed developer: 82 added, 0 merged
+   installed ai: 45 added, 0 merged
    installed voice-tools: 14 added, 0 merged
 
 3. Repo harvest
@@ -75,7 +75,7 @@ lexicon setup
 
 6. Dictation app
    which dictation app do you use?  1) Wispr Flow  2) Superwhisper  3) macOS Text Replacement  4) none
-   wrote ~/Desktop/lexicon-wispr.csv (126 terms)
+   wrote ~/Desktop/lexicon-wispr.csv (147 terms)
    import it in Wispr Flow > Dictionary > Import
 
 7. Does it work?

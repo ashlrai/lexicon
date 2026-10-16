@@ -209,10 +209,15 @@ async function requireTools(r: Resolved, io: VoiceIO, deps: VoiceDeps, need: { f
   const ffmpeg = need.ffmpeg ? await locateFfmpeg(locate) : 'ffmpeg';
   const whisperCli = need.whisper ? await locateWhisperCli(locate) : 'whisper-cli';
   const missing: string[] = [];
-  if (!ffmpeg) missing.push('ffmpeg');
+  // A set override that points nowhere is a typo to fix, not a missing install.
+  if (!ffmpeg) missing.push(r.env.LEXICON_FFMPEG_BIN ? `ffmpeg (LEXICON_FFMPEG_BIN=${r.env.LEXICON_FFMPEG_BIN} does not exist)` : 'ffmpeg');
   if (!whisperCli) missing.push(r.env.LEXICON_WHISPER_BIN ? `whisper-cli (LEXICON_WHISPER_BIN=${r.env.LEXICON_WHISPER_BIN} does not exist)` : 'whisper-cli');
   if (missing.length > 0 || !ffmpeg || !whisperCli) {
-    io.stderr(`lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform)}\n  (or set LEXICON_WHISPER_BIN / LEXICON_FFMPEG_BIN to the binary)\n`);
+    const which = { ffmpeg: !ffmpeg, whisper: !whisperCli };
+    const vars = [...(which.whisper ? ['LEXICON_WHISPER_BIN'] : []), ...(which.ffmpeg ? ['LEXICON_FFMPEG_BIN'] : [])].join(' / ');
+    io.stderr(
+      `lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform, which)}\n  (or set ${vars} to the binary)\n`,
+    );
     return undefined;
   }
   return { ffmpeg, whisperCli };
@@ -412,17 +417,25 @@ function micPermissionHint(r: Resolved, launcher: string): string {
     : '';
 }
 
+/**
+ * The last few lines of ffmpeg's stderr, each sanitized for a terminal and
+ * indented under `ffmpeg said:`. Sanitizing line by line keeps the line
+ * breaks, which sanitizing the joined text would strip.
+ */
+function stderrTail(text: string, lines = 3): string {
+  return text
+    .trim()
+    .split(/\r?\n/)
+    .slice(-lines)
+    .map((line) => sanitizeForDisplay(line).trim())
+    .filter((line) => line.length > 0)
+    .join('\n  ');
+}
+
 /** The last few lines of a detached recorder's stderr log, sanitized for a terminal. */
 async function recorderLogTail(r: Resolved, lines = 3): Promise<string> {
   try {
-    const text = await fs.readFile(recorderLogPath(r.globalPath), 'utf8');
-    return text
-      .trim()
-      .split('\n')
-      .slice(-lines)
-      .map((line) => sanitizeForDisplay(line))
-      .filter((line) => line.length > 0)
-      .join('\n  ');
+    return stderrTail(await fs.readFile(recorderLogPath(r.globalPath), 'utf8'), lines);
   } catch {
     return '';
   }
@@ -557,10 +570,11 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 
   const capture = await inspectWav(wav);
   if (!capture.ok) {
-    const err = sanitizeForDisplay(child.stderr().trim().split('\n').slice(-3).join('\n'));
+    const tail = stderrTail(child.stderr());
     io.stderr(
-      `lexicon voice: recording failed (${capture.reason})${err ? `: ${err}` : ''}\n` +
+      `lexicon voice: recording failed (${capture.reason})\n` +
         micPermissionHint(r, 'this terminal') +
+        (tail ? `  ffmpeg said: ${tail}\n` : '') +
         (await discardOrKeep(capture, wav)),
     );
     return EXIT_ERROR;

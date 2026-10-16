@@ -3,7 +3,7 @@
  * garbled spellings map to which canonical term.
  */
 import type { ExportOptions, Lexicon, Term } from '../types.js';
-import { mdCell, sortByCategory } from './shared.js';
+import { joinAliasList, mdCell, sortByCategory } from './shared.js';
 
 export const CLAUDE_MD_HEADING = '## Voice lexicon';
 
@@ -18,7 +18,7 @@ export function exportClaudeMd(lexicon: Lexicon, _opts: ExportOptions = {}): str
   ];
   for (const term of sortByCategory(lexicon.terms)) {
     lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(term.aliases.join(', '))} | ${mdCell(noteFor(term))} |`,
+      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`,
     );
   }
   lines.push('', 'If a word looks like a garbled proper noun and is not listed, ask rather than guess.');

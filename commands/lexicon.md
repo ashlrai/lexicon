@@ -45,8 +45,10 @@ Decide what to do from the arguments:
    Call `setup_lexicon { company, person }` without `apply` and show the plan it
    returns (what it would seed, the clients it detected, whether it would
    install the login service). Only after a clear yes call it again with
-   `apply: true`, `clients` set to the ones the user agreed to and `serve: true`
-   only if they want the login service. Report the lexicon path, which clients
+   `apply: true`, `clients` set to the ones the user agreed to, `packs` set to
+   any starter packs they picked (`list_packs` describes each), `harvest: true`
+   only if they want the repo's names added, and `serve: true` only if they want
+   the login service. Report the lexicon path, which clients
    were installed, skipped or failed, and the exports it wrote. For every other name the user gave, call `add_term` (aliases omitted)
    and show each term with its aliases on one line. End with one sentence the
    user can dictate in a new session to test it.
@@ -65,7 +67,9 @@ Decide what to do from the arguments:
 11. **`trust [path]`** - call `trust_project { action: 'status', path? }` and
     show the user the file path, its status and the preview table (canonical,
     first alias, alias count). Ask whether to trust it. Only on a clear yes
-    call `trust_project { action: 'trust', path? }` and confirm in one line.
+    call `trust_project { action: 'trust', path? }`; the client asks the user to
+    confirm. Report the result in one line (if it says the client cannot ask,
+    tell them to run `lexicon trust` in a terminal).
     `trust off [path]` or `untrust` calls `action: 'untrust'`. Never trust a
     file whose preview the user has not just seen.
 

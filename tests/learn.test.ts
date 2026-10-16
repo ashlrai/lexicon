@@ -207,11 +207,44 @@ describe('learnCorrection', () => {
     expect(opts).toEqual({ cwd: '/fake/repo', scope: 'global' });
   });
 
+  describe('a case-only correction', () => {
+    it('creates the term when none exists, so every casing is rewritten to it', async () => {
+      const result = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' }, { cwd: '/fake/repo' });
+      expect(result).toMatchObject({ created: true, aliasAdded: true });
+      const [term, opts] = store.addTerm.mock.calls[0] as [Term, { scope: string }];
+      expect(term.canonical).toBe('Ashlr');
+      expect(term.source).toBe('learned');
+      expect(term.aliases.map((a) => a.toLowerCase())).not.toContain('ashlr');
+      expect(opts).toEqual({ cwd: '/fake/repo', scope: 'global' });
+    });
+
+    it('recases an existing canonical in its own file, keeping its aliases and history', async () => {
+      const zoe: Term = { canonical: 'zoë', aliases: ['zoey'], category: 'person', scope: 'global', createdAt: '2026-01-01T00:00:00.000Z' };
+      const lex: Lexicon = { version: 1, terms: [zoe] };
+      store.loadLexicon.mockResolvedValueOnce({ merged: { version: 1, terms: [{ ...zoe, hits: 9 }] }, global: { path: '/fake/global.yaml', scope: 'global', lexicon: lex, exists: true } });
+      const result = await learnCorrection({ heard: 'zoë', meant: 'Zoë' }, { scope: 'project' });
+      expect(store.addTerm).toHaveBeenCalledWith(
+        { canonical: 'Zoë', aliases: ['zoey'], category: 'person', scope: 'global', createdAt: '2026-01-01T00:00:00.000Z' },
+        { scope: 'global', merge: false },
+      );
+      expect(result).toMatchObject({ created: false, aliasAdded: true });
+    });
+
+    it('writes nothing when the canonical is already spelled that way', async () => {
+      const result = await learnCorrection({ heard: 'zoë', meant: 'Zoë' });
+      expect(store.addTerm).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/global.yaml' } });
+      expect(result.term.canonical).toBe('Zoë');
+    });
+  });
+
   it.each([
     [{ heard: '', meant: 'Ashlr.AI' }, /nothing to learn/],
     [{ heard: '   ', meant: 'Ashlr.AI' }, /nothing to learn/],
     [{ heard: 'Ashler', meant: '' }, /must not be empty/],
-    [{ heard: 'Ashler', meant: 'ashler' }, /same spelling/],
+    [{ heard: 'Ashler', meant: 'Ashler' }, /same spelling/],
+    // Case-only, but "ashler" already belongs to another term: the user has to pick.
+    [{ heard: 'Ashler', meant: 'ashler' }, /"ashler" is an alias of "Ashlr\.AI"/],
     [{ heard: 'x'.repeat(61), meant: 'Ashlr.AI' }, /60 characters/],
   ])('refuses %j', async (correction, message) => {
     await expect(learnCorrection(correction)).rejects.toThrow(message);

@@ -7,6 +7,7 @@ import {
   CODEX_TABLE,
   codexBlock,
   configPathFor,
+  lexiconServerEnv,
   mergeServerIntoJson,
   registerInstallCommands,
   runInstall,
@@ -534,5 +535,75 @@ describe('claude registration is idempotent', () => {
     } as InstallDeps);
     expect(code).toBe(1);
     expect(io.out).toContain('failed: Command failed: claude: not found');
+  });
+});
+
+describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
+  // The installer resolves LEXICON_CWD against the install cwd, so on Windows
+  // the expected value takes that cwd's drive.
+  const work = (): string => path.resolve(cwd, '/work/repo');
+  const lexEnv = (): InstallDeps => ({ ...baseDeps(), env: { PATH: '', LEXICON_PATH: 'lex/my.yaml', LEXICON_CWD: '/work/repo' } });
+
+  it('lexiconServerEnv keeps only set variables, as absolute paths', () => {
+    expect(lexiconServerEnv({ PATH: '/bin' }, '/c')).toBeUndefined();
+    expect(lexiconServerEnv({ LEXICON_PATH: '  ' }, '/c')).toBeUndefined();
+    expect(lexiconServerEnv({ LEXICON_PATH: 'a.yaml' }, '/c')).toEqual({ LEXICON_PATH: path.resolve('/c', 'a.yaml') });
+  });
+
+  it('writes them into a JSON client entry, never over a variable the user set there', async () => {
+    const file = path.join(home, '.cursor/mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: ['/old.js'], env: { MINE: '1', LEXICON_PATH: '/stale.yaml' } } } }));
+    const r = await run('cursor', { apply: true }, lexEnv());
+    expect(r.code).toBe(0);
+    const entry = ((await readJson(file)).mcpServers as Record<string, { env: Record<string, string> }>).lexicon;
+    expect(entry.env).toEqual({ MINE: '1', LEXICON_PATH: '/stale.yaml', LEXICON_CWD: work() });
+    // A fresh entry gets both.
+    await fs.writeFile(file, '{}');
+    await run('cursor', { apply: true }, lexEnv());
+    const fresh = ((await readJson(file)).mcpServers as Record<string, { env: Record<string, string> }>).lexicon;
+    expect(fresh.env).toEqual({ LEXICON_PATH: path.resolve(cwd, 'lex/my.yaml'), LEXICON_CWD: work() });
+    expect(r.io.out).toContain('"LEXICON_PATH"');
+    // Unset in the shell: the entry is written without env, as before.
+    const plain = await run('windsurf', { apply: true });
+    expect(plain.code).toBe(0);
+    const ws = (await readJson(path.join(home, '.codeium/windsurf/mcp_config.json'))).mcpServers as Record<string, Record<string, unknown>>;
+    expect(ws.lexicon.env).toBeUndefined();
+  });
+
+  it('writes an inline env table for Codex, or adds missing keys to an existing [mcp_servers.lexicon.env]', async () => {
+    const file = path.join(home, '.codex/config.toml');
+    await run('codex', { apply: true }, lexEnv());
+    const text = await fs.readFile(file, 'utf8');
+    expect(text).toContain(`env = { LEXICON_PATH = ${JSON.stringify(path.resolve(cwd, 'lex/my.yaml'))}, LEXICON_CWD = ${JSON.stringify(work())} }`);
+
+    await fs.writeFile(file, ['[mcp_servers.lexicon]', 'command = "node"', 'args = ["/old.js"]', '', '[mcp_servers.lexicon.env]', 'FOO = "bar"', 'LEXICON_PATH = "/stale.yaml"', ''].join('\n'));
+    await run('codex', { apply: true }, lexEnv());
+    const merged = await fs.readFile(file, 'utf8');
+    expect(merged).not.toContain('env = {');
+    expect(merged).toContain('FOO = "bar"');
+    expect(merged).toContain('LEXICON_PATH = "/stale.yaml"');
+    expect(merged).not.toContain(JSON.stringify(path.resolve(cwd, 'lex/my.yaml')));
+    expect(merged).toContain(`LEXICON_CWD = ${JSON.stringify(work())}`);
+    const again = await run('codex', { apply: true }, lexEnv());
+    expect(again.io.out).toContain('nothing changed');
+  });
+
+  it('passes them to `claude mcp add -e` ahead of --scope', async () => {
+    const calls: string[][] = [];
+    const io = makeIO();
+    const code = await runInstall('claude', { apply: true, home, cwd }, io, {
+      ...lexEnv(),
+      exec: (_file: string, args: readonly string[]) => {
+        calls.push([...args]);
+        return 'added';
+      },
+    });
+    expect(code).toBe(0);
+    const args = calls[0] ?? [];
+    expect(args.slice(0, 7)).toEqual([
+      'mcp', 'add', '-e', `LEXICON_PATH=${path.resolve(cwd, 'lex/my.yaml')}`, '-e', `LEXICON_CWD=${work()}`, '--scope',
+    ]);
+    expect(args.indexOf('lexicon')).toBeGreaterThan(args.indexOf('--scope'));
   });
 });

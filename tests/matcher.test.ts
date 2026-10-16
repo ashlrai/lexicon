@@ -93,6 +93,51 @@ describe('exact alias pass', () => {
     expect(find('open claw is great', [{ canonical: 'OpenClaw', aliases: [] }])[0]).toMatchObject({ original: 'open claw', replacement: 'OpenClaw' });
   });
 
+  it('absorbs a spoken domain suffix after a one-word alias', () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'] };
+    expect(apply('ashlar ai shipped it', find('ashlar ai shipped it', [term]))).toBe('Ashlr.AI shipped it');
+    expect(find('Ashler A.I rocks', [term])[0]).toMatchObject({ original: 'Ashler A.I', replacement: 'Ashlr.AI', reason: 'alias' });
+    expect(find('ashler AI', [term], { phonetic: false, fuzzy: false })[0]).toMatchObject({ original: 'ashler AI' });
+    // Punctuation still breaks the window, and a bare alias still matches alone.
+    expect(find('Ashler, AI', [term], { phonetic: false, fuzzy: false }).map((r) => r.original)).toEqual(['Ashler']);
+    expect(apply('ashler is here', find('ashler is here', [term]))).toBe('Ashlr.AI is here');
+  });
+
+  it('matches the spoken dot and a spelled-out suffix after a one-word alias', () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['Ashler'] };
+    const run = (t: string) => apply(t, find(t, [term], { phonetic: false, fuzzy: false }));
+    expect(run('go to Ashler dot AI now')).toBe('go to Ashlr.AI now');
+    expect(run('at Ashler A I now')).toBe('at Ashlr.AI now');
+    // "dot" alone or a spelled pair alone is not the term.
+    expect(run('a dot ai file and A I chips')).toBe('a dot ai file and A I chips');
+  });
+
+  it("takes a dotted initialism's own period with it unless it ends the sentence", () => {
+    const term: Term = { canonical: 'Ashlr.AI', aliases: ['Ashler'] };
+    const run = (t: string) => apply(t, find(t, [term], { phonetic: false, fuzzy: false }));
+    expect(run('I work at Ashler A.I. today')).toBe('I work at Ashlr.AI today');
+    expect(run('Ashler A.I., then home')).toBe('Ashlr.AI, then home');
+    expect(run('(Ashler A.I.)')).toBe('(Ashlr.AI)');
+    expect(find('at Ashler A.I. today', [term])[0]).toMatchObject({ original: 'Ashler A.I.', end: 14 });
+    // A full stop stays a full stop.
+    expect(run('I work at Ashler A.I.')).toBe('I work at Ashlr.AI.');
+    expect(run('Ashler A.I. Then we left')).toBe('Ashlr.AI. Then we left');
+    expect(run('Ashler A.I.\nNext')).toBe('Ashlr.AI.\nNext');
+    // No initialism, no change: the period after a plain word is punctuation.
+    expect(run('Ashler. then')).toBe('Ashlr.AI. then');
+  });
+
+  it('does not double a period when the canonical ends in one', () => {
+    const term: Term = { canonical: 'Acme Inc.', aliases: ['Akme I.N.C'] };
+    const t = 'Akme I.N.C. Then';
+    expect(apply(t, find(t, [term], { phonetic: false, fuzzy: false }))).toBe('Acme Inc. Then');
+  });
+
+  it('does not absorb a domain suffix that is an everyday word', () => {
+    const term: Term = { canonical: 'Mind.so', aliases: ['mined'] };
+    expect(find('I mined so much', [term], { phonetic: false, fuzzy: false }).map((r) => r.original)).toEqual(['mined']);
+  });
+
   it('does not match a multi-word alias across punctuation', () => {
     const reps = find('Ashler, AI', [{ canonical: 'Ashlr.AI', aliases: ['Ashler AI'] }], { phonetic: false, fuzzy: false });
     expect(reps).toHaveLength(0);
@@ -596,6 +641,25 @@ describe('identifier glue', () => {
     expect(find('coopernetties_cfg', [K8S])).toHaveLength(0);
     // only the window that touches the glue is skipped: "ashler ai" ends on "_", the lone "ashler" does not
     expect(find('ashler ai_core', [ASHLR]).map((r) => r.original)).toEqual(['ashler']);
+  });
+
+  it('a possessive alias beats a near-miss term that the whole word (apostrophe and all) fuzzes to', () => {
+    // Regression guard: the possessive-stripped view's alias hit must win over
+    // any inexact match the full view ("ashler's", "ashlers") finds for a
+    // different term.
+    const rivals: Term[] = [
+      { canonical: 'Ashlers', aliases: [] },
+      { canonical: 'Hashlers', aliases: [] },
+      { canonical: 'Ashlerz', aliases: [] },
+    ];
+    for (const rival of rivals) {
+      for (const text of ["ask Ashler's team", "ASHLER'S plan", 'the ashler\u2019s plan']) {
+        const reps = find(text, [ASHLR, rival]);
+        expect(reps, `${rival.canonical} / ${text}`).toHaveLength(1);
+        expect(reps[0]).toMatchObject({ canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 });
+        expect(reps[0].original.toLowerCase()).toBe('ashler');
+      }
+    }
   });
 
   it('still matches a plain word, a possessive, sentence punctuation and a spaced hyphen', () => {

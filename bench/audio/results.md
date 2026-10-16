@@ -1,4 +1,4 @@
-# Real-audio benchmark results
+# TTS-audio benchmark results
 
 Generated 2026-09-21T04:56:15.370Z by `npm run bench:audio`. Pipeline: macOS `say` (voices Samantha, Daniel, Karen) -> 16 kHz mono WAV -> whisper.cpp (`/opt/homebrew/bin/whisper-cli`, models base.en, small.en) -> `normalize()` with `bench/lexicon.yaml`.
 

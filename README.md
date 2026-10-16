@@ -4,7 +4,9 @@
 
 # Lexicon
 
-**A personal lexicon for voice-to-agents.**
+**Dictate to your agent. Keep your spelling.**
+
+A personal lexicon for voice-to-agents.
 
 One YAML file of the words speech-to-text gets wrong, applied everywhere your voice
 lands: MCP, Claude Code, the browser, macOS.
@@ -32,7 +34,7 @@ That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's 
 
 Method, full tables and every failing case are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench` (no setup beyond a clone), or `npm run bench:audio && npm run bench:compare` (needs macOS and whisper.cpp).
 
-**Against the alternatives.** 330 clips of real audio through whisper.cpp `small.en`, three voices. Same audio, same recognizer, same 70-term lexicon in every row; the only thing that changes is how the proper nouns get fixed.
+**Against the alternatives.** 330 clips of synthesized (text-to-speech) audio through whisper.cpp `small.en`, three voices. Same audio, same recognizer, same 70-term lexicon in every row; the only thing that changes is how the proper nouns get fixed.
 
 | how the words get fixed | proper nouns recovered | clean prose wrongly changed |
 | --- | --- | --- |
@@ -52,15 +54,26 @@ Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose b
 
 | corpus | proper nouns recovered, raw STT | after lexicon | clean prose wrongly changed |
 | --- | --- | --- | --- |
-| real audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
-| real audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
+| TTS audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
+| TTS audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
 | synthetic STT errors (402 sentences, 70 terms) | 5.1% | 96.5% | 0 of 95 |
 
-Latency is about 0.3 ms per sentence. The real-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
+Latency is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
 
-The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the real-audio one, 41.9%.
+The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the TTS-audio one, 41.9%.
 
 The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 15.3% (19 of 124) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
+
+**Held-out check (separate internal run, unseen voice).** The tables above use a lexicon written for the test terms. To test the harder case, aliases were learned only from other sentences and voices, then scored on a voice and sentences never used for learning (63 clips). Synthetic speech from three open text-to-speech voices read into whisper.cpp, clips counted correct when every target term was recovered.
+
+| recognizer | raw | Lexicon, canonical terms only | Lexicon, plus aliases learned from other clips |
+| --- | --- | --- | --- |
+| whisper.cpp base.en | 16 of 63 | 38 of 63 | 44 of 63 |
+| whisper.cpp small.en | 25 of 63 | 39 of 63 | 42 of 63 |
+
+Clean prose changed by Lexicon: 0 of 60 in that run.
+
+**Whisper-prompt caveat.** On the same 378 clips, whisper's `--prompt` hint list alone lifted base.en from 97 to 228 and small.en from 141 to 320 clips correct, so a prompt is a strong baseline and Lexicon adds less on top of it (base.en 271, small.en 339 with Lexicon). The prompt also made base.en produce 55 degenerate transcripts (empty or looping text) against 5 without it, so a prompt is not free on small models. All audio here is synthetic, not microphone speech, and the harness is not yet published, so treat these as internal numbers until it is.
 
 ## Install
 
@@ -152,7 +165,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 ## What you get
 
-- **Twenty MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` shows the file's terms before pinning it, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
+- **Twenty MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `trust_project` asks you directly (an MCP elicitation prompt the agent cannot answer) before pinning a file, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
 - **A CLI with 25 commands**, from `lexicon add` to `lexicon voice`.
 - **176 starter terms** in four packs (developer, AI, business, voice tools), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
@@ -209,7 +222,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.5 is published, `npm i -g github:ashlrai/lexicon#v0.5.5` installs that tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.6 is published, `npm i -g github:ashlrai/lexicon#v0.5.6` installs that tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 
