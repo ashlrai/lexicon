@@ -1276,3 +1276,23 @@ describe('the stoplist guards a word pair only when it holds every word of it', 
     expect(find('the lexicon file lives here', [{ canonical: 'LexiconFile', aliases: [], category: 'identifier' }], opts)).toHaveLength(0);
   });
 });
+
+describe('plurals keep their s', () => {
+  const OLLAMA: Term = { canonical: 'Ollama', aliases: [] };
+  const JWT: Term = { canonical: 'JWT', aliases: ['jot'] };
+  const KPI: Term = { canonical: 'KPI', aliases: ['key pee eye'] };
+
+  it('an exact alias plural replaces the base only', () => {
+    expect(apply('rotate the jots every hour', find('rotate the jots every hour', [JWT]))).toBe('rotate the JWTs every hour');
+    expect(apply('export the key pee eyes', find('export the key pee eyes', [KPI]))).toBe('export the KPIs');
+  });
+
+  it('a fuzzy plural prefers the closer base and keeps the s', () => {
+    expect(apply('we run three ollamas', find('we run three ollamas', [OLLAMA]))).toBe('we run three Ollamas');
+  });
+
+  it('the singular and unrelated words are unchanged', () => {
+    expect(apply('rotate the jot', find('rotate the jot', [JWT]))).toBe('rotate the JWT');
+    expect(apply('the glass is full', find('the glass is full', [JWT, KPI, OLLAMA]))).toBe('the glass is full');
+  });
+});

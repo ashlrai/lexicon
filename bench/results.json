@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T05:02:37.393Z",
+  "generatedAt": "2026-10-16T21:00:57.321Z",
   "lexicon": "bench/lexicon.yaml",
   "corpus": "bench/corpus.jsonl",
   "config": {
@@ -16,14 +16,14 @@
   },
   "sentence": {
     "all": {
-      "hit": 367,
+      "hit": 370,
       "total": 402,
-      "rate": 0.9129353233830846
+      "rate": 0.9203980099502488
     },
     "positives": {
-      "hit": 262,
+      "hit": 265,
       "total": 278,
-      "rate": 0.9424460431654677
+      "rate": 0.9532374100719424
     },
     "negatives": {
       "hit": 105,
@@ -47,14 +47,14 @@
         "rate": 0.9791666666666666
       },
       "product": {
-        "hit": 114,
+        "hit": 116,
         "total": 122,
-        "rate": 0.9344262295081968
+        "rate": 0.9508196721311475
       },
       "acronym": {
-        "hit": 54,
+        "hit": 55,
         "total": 58,
-        "rate": 0.9310344827586207
+        "rate": 0.9482758620689655
       },
       "person": {
         "hit": 32,
@@ -80,19 +80,19 @@
       "rate": 0.051118210862619806
     },
     "recall": {
-      "hit": 302,
+      "hit": 303,
       "total": 313,
-      "rate": 0.9648562300319489
+      "rate": 0.9680511182108626
     },
     "precision": {
-      "hit": 302,
-      "total": 322,
-      "rate": 0.937888198757764
+      "hit": 303,
+      "total": 323,
+      "rate": 0.9380804953560371
     },
-    "f1": 0.9511811023622048,
-    "tp": 302,
+    "f1": 0.9528301886792453,
+    "tp": 303,
     "fp": 20,
-    "fn": 11,
+    "fn": 10,
     "byCategory": {
       "brand": {
         "recall": {
@@ -108,9 +108,9 @@
       },
       "product": {
         "recall": {
-          "hit": 133,
+          "hit": 134,
           "total": 138,
-          "rate": 0.9637681159420289
+          "rate": 0.9710144927536232
         },
         "rawRecall": {
           "hit": 7,
@@ -168,10 +168,10 @@
   },
   "byReason": {
     "alias": {
-      "replacements": 246,
-      "correct": 228,
+      "replacements": 248,
+      "correct": 230,
       "wrong": 18,
-      "meanConfidence": 0.9945121951219505
+      "meanConfidence": 0.9945564516129025
     },
     "phonetic": {
       "replacements": 52,
@@ -180,15 +180,15 @@
       "meanConfidence": 0.878141113693998
     },
     "fuzzy": {
-      "replacements": 9,
-      "correct": 8,
+      "replacements": 8,
+      "correct": 7,
       "wrong": 1,
-      "meanConfidence": 0.8944805194805195
+      "meanConfidence": 0.9086174242424243
     }
   },
   "latency": {
-    "normalizeUs": 495.13508059701496,
-    "findReplacementsUs": 78.30645323383001,
+    "normalizeUs": 1091.213952736321,
+    "findReplacementsUs": 177.46497462686327,
     "rounds": 5
   },
   "failures": [
@@ -915,44 +915,6 @@
       ]
     },
     {
-      "id": "hard-005",
-      "category": "product",
-      "heard": "we run three ollamas on the box",
-      "expected": "we run three Ollamas on the box",
-      "output": "we run three Ollama on the box",
-      "pass": false,
-      "negative": false,
-      "hard": true,
-      "replacements": [
-        {
-          "start": 13,
-          "end": 20,
-          "original": "ollamas",
-          "replacement": "Ollama",
-          "canonical": "Ollama",
-          "reason": "fuzzy",
-          "confidence": 0.8571428571428572
-        }
-      ],
-      "missed": [],
-      "spurious": []
-    },
-    {
-      "id": "hard-006",
-      "category": "product",
-      "heard": "rotate the jots every hour",
-      "expected": "rotate the JWTs every hour",
-      "output": "rotate the jots every hour",
-      "pass": false,
-      "negative": false,
-      "hard": true,
-      "replacements": [],
-      "missed": [
-        "JWT"
-      ],
-      "spurious": []
-    },
-    {
       "id": "hard-007",
       "category": "product",
       "heard": "language chain agents are slow to start",
@@ -1076,29 +1038,6 @@
           "canonical": "Docker",
           "reason": "alias",
           "confidence": 1
-        }
-      ],
-      "missed": [],
-      "spurious": []
-    },
-    {
-      "id": "hard-016",
-      "category": "acronym",
-      "heard": "export the key pee eyes to a sheet",
-      "expected": "export the KPIs to a sheet",
-      "output": "export the KPI to a sheet",
-      "pass": false,
-      "negative": false,
-      "hard": true,
-      "replacements": [
-        {
-          "start": 11,
-          "end": 23,
-          "original": "key pee eyes",
-          "replacement": "KPI",
-          "canonical": "KPI",
-          "reason": "fuzzy",
-          "confidence": 0.8333333333333334
         }
       ],
       "missed": [],

@@ -43,21 +43,21 @@ the row says otherwise.
 | metric | default config (minConfidence 0.82, phonetic + fuzzy on) |
 |---|---|
 | term recall, raw STT (before) | **5.1%** (16/313) |
-| term recall, after lexicon | **96.5%** (302/313) |
-| term precision | 93.8% (302/322) |
-| term F1 | **95.1%** |
-| sentence accuracy, positives | **94.2%** (262/278) |
+| term recall, after lexicon | **96.8%** (303/313) |
+| term precision | 93.8% (303/323) |
+| term F1 | **95.3%** |
+| sentence accuracy, positives | **95.3%** (265/278) |
 | sentence accuracy, positives excl. expected-hard | 99.6% (255/256) |
 | prose false-positive rate | **15.3%** (19/124) |
 | prose false-positive rate excl. expected-hard | **0.0%** (0/95) |
-| sentence accuracy, all cases | 91.3% (367/402) |
+| sentence accuracy, all cases | 92.0% (370/402) |
 | mean latency per case, `normalize()` incl. `buildIndex()` (warm) | about 290 us |
 | mean latency per case, `findReplacements()` with prebuilt index (warm) | about 55 us |
 
 The README-ready sentence, stated honestly:
 
 > On 313 dictated proper nouns the recognizer got 5% right; after the lexicon 96% are recovered
-> (term F1 96%). 94% of dictated sentences come out exactly right, 99.6% once the cases we
+> (term F1 95%). 95% of dictated sentences come out exactly right, 99.6% once the cases we
 > label as corpus ambiguities are excluded. Clean prose that merely sounds like a lexicon term
 > is left alone (0 of 95 sentences changed). The remaining damage is confined to the 25
 > adversarial negatives where the canonical itself is an English word (`drizzle`, `neon`,

@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- A plural keeps its "s". When a window minus its final "s" is an exact alias hit, or a closer match to the same term, only the base is replaced: "rotate the jots" becomes "rotate the JWTs", "three ollamas" becomes "three Ollamas" (it was "Ollama"), "the key pee eyes" becomes "the KPIs" (it was "KPI"). On the synthetic bench corpus (402 sentences of generated text, not audio): sentence accuracy 91.3% (367/402) to 92.0% (370/402), term recall 96.5% (302/313) to 96.8% (303/313), prose false positives excluding expected-hard unchanged at 0 of 95. Normalizing 29,659 lines of this workspace's own markdown gave identical output before and after.
+
 ### Fixed
 
 - The Claude Code plugin's MCP server now connects after `claude plugin install`. The plugin entry used `${CLAUDE_PLUGIN_ROOT:-.}`, which Claude Code does not expand, so it ran `./plugin/mcp-server.mjs` from the user's directory and failed. `.claude-plugin/plugin.json` now declares the server with the bare `${CLAUDE_PLUGIN_ROOT}`; the repo's own `.mcp.json` uses a relative path.
