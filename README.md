@@ -136,10 +136,24 @@ selected before inspection, and candidates are reviewed before writes. The
 install script, npm and Homebrew fetch the package itself. See
 [SECURITY.md](SECURITY.md).
 
-The guided GitHub importer is implemented in repository source and is part
-of the pending [0.5.5 release candidate](https://github.com/ashlrai/lexicon/pull/25).
-Public npm `latest` remained `0.5.4` when requeried on 2026-10-09. These source notes do not establish publication,
-installation or a successful authenticated import on your machine.
+The guided GitHub importer ships in 0.5.5 ([PR #25](https://github.com/ashlrai/lexicon/pull/25)); npm `latest` is currently `0.5.4`.
+
+## MCP setup
+
+`lexicon install <client> --apply` does this for you. To wire it by hand:
+
+```bash
+# Claude Code
+claude mcp add lexicon -- npx -y -p @ashlr/lexicon lexicon-mcp
+# Codex
+codex mcp add lexicon -- npx -y -p @ashlr/lexicon lexicon-mcp
+```
+
+Cursor (`~/.cursor/mcp.json`):
+
+```json
+{ "mcpServers": { "lexicon": { "command": "npx", "args": ["-y", "-p", "@ashlr/lexicon", "lexicon-mcp"] } } }
+```
 
 ## Why
 
@@ -219,6 +233,10 @@ Non-goals: this is not a dictation app, and there are no hosted accounts and no 
 - Linux tray app with the same push-to-talk and fix-clipboard actions. The Windows one is built: see [docs/WINDOWS-APP.md](docs/WINDOWS-APP.md).
 - Non-English phonetics. Double metaphone is tuned for English; names in other languages fall back to fuzzy matching.
 - Real-microphone benchmark. The audio corpus is macOS text-to-speech read into whisper.cpp, not recorded speech.
+
+## Part of the Ashlr ecosystem
+
+Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forward-deployed engineering company: [Phantom Secrets](https://github.com/ashlrai/phantom-secrets), [Locus](https://github.com/ashlrai/locus), [Ashlr Stack](https://github.com/ashlrai/ashlr-stack), [Ashlr Markdown](https://github.com/ashlrai/ashlr-md) and the [Ashlr plugin](https://github.com/ashlrai/ashlr-plugin).
 
 ## Contributing
 
