@@ -4,14 +4,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
-### Fixed
-
-- MCP `serve_status` probes the port `lexicon serve` recorded in `serve.json` (falling back to 41733) instead of always 41733, so agents no longer start a second server when one runs on `--port`.
-- `lexicon export markdown` and `export claude-md` quote an alias that holds a comma (or starts with a double quote), CSV style, and the markdown importer reads a quoted alias whole. Before, an alias like `Ashlar, Inc` came back from an export and import as two aliases, `Ashlar` and `Inc`. Aliases without a comma are written exactly as before.
-- `lexicon serve`: a wrong method on `/health` (for example `POST /health`) now answers 405 like every other route, before the token check. It used to answer 401 because only `GET /health` skipped auth.
-- docs/LOCAL-API.md lists the `wispr` export as `text/csv`, which the server already returns.
-
-## 0.5.6 (2026-10-15)
+## 0.5.6 (2026-10-16)
 
 ### Security
 
@@ -19,6 +12,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `serve_status` probes the port `lexicon serve` recorded in `serve.json` (falling back to 41733) instead of always 41733, so agents no longer start a second server when one runs on `--port`.
+- `lexicon export markdown` and `export claude-md` quote an alias that holds a comma (or starts with a double quote), CSV style, and the markdown importer reads a quoted alias whole. Before, an alias like `Ashlar, Inc` came back from an export and import as two aliases, `Ashlar` and `Inc`. Aliases without a comma are written exactly as before.
+- `lexicon serve`: a wrong method on `/health` (for example `POST /health`) now answers 405 like every other route, before the token check. It used to answer 401 because only `GET /health` skipped auth.
+- docs/LOCAL-API.md lists the `wispr` export as `text/csv`, which the server already returns.
 - A one-word alias of a domain-like term now takes the spoken suffix with it: with `Akme` as an alias of `Acme.io`, "akme io" and "akme I.O" become `Acme.io` instead of keeping a stray "io" after it. Only suffixes that are not everyday words (ai, io, dev, com, net, org, xyz, gg) are absorbed, so "mined so much" keeps its "so" for a `Mind.so` term.
 - `lexicon setup --dry-run` (and the `setup_lexicon` plan) now demonstrates on the person and company it would seed, so the plan shows the same correction the real run does. Before, a dry run always fell back to the built-in example terms, whose spelling could differ from the company it said it would add.
 - `lexicon harvest` no longer proposes everyday English words that a README capitalises as headings or labels ("Leader", "Resources", "Growth"). STT already spells them, and the matcher never case-fixes such a word through its implicit alias, so the term did nothing. On the Phantom repo this drops 9 of the top 50 candidates. Names that are not common words (Hetzner, Railway) and names with inner capitals (ReAct) are kept.
