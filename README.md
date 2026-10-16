@@ -4,7 +4,9 @@
 
 # Lexicon
 
-**A personal lexicon for voice-to-agents.**
+**Dictate to your agent. Keep your spelling.**
+
+A personal lexicon for voice-to-agents.
 
 One YAML file of the words speech-to-text gets wrong, applied everywhere your voice
 lands: MCP, Claude Code, the browser, macOS.
