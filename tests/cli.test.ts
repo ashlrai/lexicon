@@ -375,6 +375,15 @@ describe('export', () => {
     expect(await fs.readFile(path.join(dir, 'sub', 'lex.json'), 'utf8')).toBe('export:json\n');
     expect(io2.out).toContain('wrote json export');
   });
+
+  it('accepts the product name for a format (wispr-flow, any case)', async () => {
+    for (const name of ['wispr-flow', 'Wispr-Flow', 'wisprflow']) {
+      const io = makeIO();
+      expect(await runExport(name, {}, io)).toBe(0);
+      expect(io.out).toBe('export:wispr\n');
+    }
+    expect(core.exportLexicon).toHaveBeenLastCalledWith(expect.anything(), 'wispr', {});
+  });
 });
 
 describe('renderTable', () => {
@@ -1308,6 +1317,31 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(added.status).toBe(0);
       expect(added.stdout).toContain('created Foo (project)');
       expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical: Foo');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  it('trust and untrust accept a project directory and act on the .lexicon.yaml inside it', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-dir-')));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
+
+      const trusted = lexicon(['trust', repo, '--cwd', tmp], globalPath);
+      expect(trusted.stderr).not.toContain('EISDIR');
+      expect(trusted.status).toBe(0);
+      expect(trusted.stdout).toContain(`trusted ${projectPath}`);
+
+      const listed = lexicon(['trust', '--list', '--cwd', repo], globalPath);
+      expect(listed.stdout).toContain(projectPath);
+
+      const untrusted = lexicon(['untrust', repo, '--cwd', tmp], globalPath);
+      expect(untrusted.status).toBe(0);
+      expect(untrusted.stdout).toContain(`untrusted ${projectPath}`);
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

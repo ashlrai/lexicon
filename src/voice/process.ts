@@ -182,9 +182,29 @@ export const INSTALL_HINTS: Readonly<Record<'darwin' | 'linux' | 'win32' | 'othe
   other: 'install ffmpeg and whisper.cpp, then set LEXICON_WHISPER_BIN=/path/to/whisper-cli',
 };
 
-export function installHint(platform: NodeJS.Platform): string {
-  if (platform === 'darwin' || platform === 'linux' || platform === 'win32') return INSTALL_HINTS[platform];
-  return INSTALL_HINTS.other;
+/** The hint for one tool alone, so a message never tells the user to install what they already have. */
+export const INSTALL_HINTS_BY_TOOL: Readonly<Record<'darwin' | 'linux' | 'win32' | 'other', { ffmpeg: string; whisper: string }>> = {
+  darwin: { ffmpeg: 'brew install ffmpeg', whisper: 'brew install whisper-cpp' },
+  linux: {
+    ffmpeg: 'sudo apt install ffmpeg',
+    whisper: 'build whisper.cpp (https://github.com/ggml-org/whisper.cpp) and set LEXICON_WHISPER_BIN=/path/to/whisper-cli',
+  },
+  win32: {
+    ffmpeg: 'winget install Gyan.FFmpeg',
+    whisper: 'download whisper.cpp binaries and set LEXICON_WHISPER_BIN=C:\\path\\to\\whisper-cli.exe',
+  },
+  other: { ffmpeg: 'install ffmpeg', whisper: 'install whisper.cpp, then set LEXICON_WHISPER_BIN=/path/to/whisper-cli' },
+};
+
+/**
+ * How to install what is missing on `platform`: both tools (the default,
+ * INSTALL_HINTS) or only `ffmpeg` / only `whisper` when the other is present.
+ */
+export function installHint(platform: NodeJS.Platform, missing: { ffmpeg: boolean; whisper: boolean } = { ffmpeg: true, whisper: true }): string {
+  const key = platform === 'darwin' || platform === 'linux' || platform === 'win32' ? platform : 'other';
+  if (missing.ffmpeg && !missing.whisper) return INSTALL_HINTS_BY_TOOL[key].ffmpeg;
+  if (missing.whisper && !missing.ffmpeg) return INSTALL_HINTS_BY_TOOL[key].whisper;
+  return INSTALL_HINTS[key];
 }
 
 /** Resolve whisper-cli: `LEXICON_WHISPER_BIN` (any name, e.g. `main` from a checkout), else PATH lookup. */

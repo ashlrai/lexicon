@@ -17,7 +17,7 @@ import {
   emptyLexicon,
   isTrusted,
   readLexiconFile,
-  readProjectHits,
+  readHitsFor,
   withLexiconLock,
   refreshTrust,
   resolvePaths,
@@ -332,10 +332,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   const snapshot = new Map(file.lexicon.terms.map((t) => [termKey(t), termFingerprint(t)]));
 
   // Review reads and writes the file itself, so its terms stay exactly as they
-  // are on disk and a project term's usage count is not among them any more:
-  // it is in this user's sidecar. `--never-hit` would otherwise offer every
-  // project term for deletion, including the ones that fire every day.
-  const hits = file.scope === 'project' ? await readProjectHits(file.path, store) : {};
+  // are on disk and a term's usage count is not among them any more: it is in
+  // this user's sidecar. `--never-hit` would otherwise offer every term for
+  // deletion, including the ones that fire every day.
+  const hits = await readHitsFor(file, store);
   const subject = file.lexicon.terms.filter(
     (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || t.category === category),
   );

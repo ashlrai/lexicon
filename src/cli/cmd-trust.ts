@@ -5,10 +5,11 @@
  * run `lexicon trust` (see SECURITY.md). Trust pins the file's sha256, so a
  * changed file drops back to 'changed' until trusted again.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
+  PROJECT_FILE_NAME,
   getTrustPath,
   isTrusted,
   listTrusted,
@@ -29,10 +30,16 @@ export interface TrustOptions extends CommonOptions {
 /** Max terms shown in the preview before "... and N more". */
 const PREVIEW_ROWS = 25;
 
-/** Explicit path (relative to cwd) or the project file resolved for cwd. */
+/** Explicit path (relative to cwd) or the project file resolved for cwd. A directory means the `.lexicon.yaml` inside it. */
 function resolveTarget(target: string | undefined, cwd: string): string | undefined {
-  if (target) return path.resolve(cwd, target);
-  return resolvePaths({ cwd }).project;
+  if (!target) return resolvePaths({ cwd }).project;
+  const resolved = path.resolve(cwd, target);
+  try {
+    if (statSync(resolved).isDirectory()) return path.join(resolved, PROJECT_FILE_NAME);
+  } catch {
+    // Missing path: fall through so the caller reports it.
+  }
+  return resolved;
 }
 
 /** First alias plus a count, e.g. `Ashler (+3)`; renderTable sanitizes the cell so the table stays one row per term. */
@@ -125,7 +132,7 @@ export function registerTrustCommands(program: Command, io: IO): void {
   program
     .command('trust')
     .description('approve a project .lexicon.yaml so its terms are merged (shows a preview first)')
-    .argument('[path]', 'lexicon file (default: the project .lexicon.yaml for the current directory)')
+    .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .option('--list', 'list trusted project lexicons and whether they still match')
     .action(async (target: string | undefined, opts: { list?: boolean }) =>
       done(await runTrust(target, { ...opts, ...globals() }, io)),
@@ -134,6 +141,6 @@ export function registerTrustCommands(program: Command, io: IO): void {
   program
     .command('untrust')
     .description('revoke approval for a project .lexicon.yaml')
-    .argument('[path]', 'lexicon file (default: the project .lexicon.yaml for the current directory)')
+    .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .action(async (target: string | undefined) => done(await runUntrust(target, globals(), io)));
 }

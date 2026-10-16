@@ -24,6 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { STOPLIST } from './stoplist.js';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
 import { isRecord } from '../util/json.js';
@@ -349,7 +350,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
 
     // 5b. dot-TLD brands anywhere in md / source
     if (ext === '.md' || SOURCE_EXTENSIONS.has(ext)) {
-      for (const [brand, n] of countMatches(text, DOT_TLD_RE)) {
+      for (const [brand, n] of countDotTldBrands(text)) {
         bump(brand, 'brand', 'harvest:repo', rel, n, true);
       }
     }
@@ -668,17 +669,38 @@ function readmeProperNouns(text: string): Map<string, number> {
   // that, "Hetzner keeps the bill low." is worth nothing and a brand named
   // once in prose and once at the start of a sentence misses the threshold.
   const initial = new Map<string, number>();
-  const stripped = stripMarkdownNoise(text);
-  const sentences = stripped.split(/(?<=[.!?:])\s+|\n+/);
+  // Bold and quoted spans are UI labels ("**Open Anyway**", "Finished"): mark
+  // every word in them as emphasised so it is held back like a sentence start.
+  const stripped = stripMarkdownNoise(text).replace(
+    /(\*\*|__)([^*_\n]+)\1|"([^"\n]{1,80})"/g,
+    (_m, _d: string | undefined, bold: string | undefined, quoted: string | undefined) =>
+      ` ${(bold ?? quoted ?? '').split(/\s+/).filter(Boolean).map((w) => `*${w}`).join(' ')} `,
+  );
+  // Table cells start a new "sentence" too: `| Quit |` is a label, not prose.
+  const sentences = stripped.split(/(?<=[.!?:])\s+|\n+|\s*\|\s*/);
   for (const sentence of sentences) {
     const tokens = sentence.split(/\s+/).filter(Boolean);
-    for (let i = 0; i < tokens.length; i++) {
-      const word = tokens[i].replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, '');
+    let first = true;
+    for (const raw of tokens) {
+      const word = raw.replace(/^[^A-Za-z]+|[^A-Za-z0-9]+$/g, '');
+      if (!word) continue; // list bullets, numbers, arrows: the next word still opens the sentence
+      const atStart = first;
+      first = false;
+      // `⌃⌥Space`, `v2Beta`: glued to a symbol or digit, so a key or a token, not a name.
+      if (/^[^A-Za-z"'(\[*_]/.test(raw)) continue;
       if (word.length < 4) continue;
       if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
-      const bucket = i === 0 ? initial : out;
+      // An everyday English word ("Leader", "Resources", "Growth") capitalised
+      // as a heading or label. STT already spells it, and the matcher never
+      // case-fixes a stoplist word through its implicit alias, so the term
+      // would do nothing but take a slot in the candidate list. Inner capitals
+      // ("ReAct") make it a name, whatever its lowercase form is.
+      if (/^[A-Z][a-z]+$/.test(word) && STOPLIST.has(word.toLowerCase())) continue;
+      // **Quit**, _Settings_: emphasised UI labels are capitalised like a sentence start.
+      const emphasised = /^[*_]/.test(raw);
+      const bucket = atStart || emphasised ? initial : out;
       bucket.set(word, (bucket.get(word) ?? 0) + 1);
     }
   }
@@ -700,9 +722,18 @@ function stripMarkdownNoise(md: string): string {
     .replace(/^#+\s*/gm, '');
 }
 
-function countMatches(text: string, re: RegExp): Map<string, number> {
+/**
+ * DOT_TLD_RE matches, minus file paths. `from './Button.js'` and
+ * `src/Toast.js` are module paths, not names anyone says, and in a React
+ * repo they otherwise outrank every real brand. A match is a path when the
+ * character before it is a path separator, and a build artifact
+ * (`index-D2P1AJiD.js`) when it follows `-` or `_`.
+ */
+function countDotTldBrands(text: string): Map<string, number> {
   const out = new Map<string, number>();
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(DOT_TLD_RE)) {
+    const before = m.index > 0 ? text[m.index - 1] : '';
+    if (before === '/' || before === '\\' || before === '-' || before === '_') continue;
     out.set(m[0], (out.get(m[0]) ?? 0) + 1);
   }
   return out;

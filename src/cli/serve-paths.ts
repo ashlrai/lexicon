@@ -68,7 +68,8 @@ export function programPathFromPlist(plist: string): string | undefined {
 export function programPathFromTaskXml(xml: string): string | undefined {
   const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml);
   if (!args) return undefined;
-  const quoted = /"([^"]*)"/.exec(xmlUnescape(args[1]));
+  // Skip a leading `--env-file="..."` (written when LEXICON_PATH or XDG_CONFIG_HOME is carried).
+  const quoted = /"([^"]*)"/.exec(xmlUnescape(args[1]).replace(/^\s*--env-file="[^"]*"\s*/, ''));
   return quoted ? quoted[1] : undefined;
 }
 
@@ -76,7 +77,7 @@ export function programPathFromTaskXml(xml: string): string | undefined {
 export function programPathFromUnit(unit: string): string | undefined {
   const line = unit.split('\n').find((l) => l.startsWith('ExecStart='));
   if (!line) return undefined;
-  const words = [...line.slice('ExecStart='.length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, '$1'));
+  const words = [...line.slice('ExecStart='.length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, '$1').replace(/%%/g, '%'));
   return words[1];
 }
 

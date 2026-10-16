@@ -9,11 +9,13 @@
  * to share vocabulary. `hits` is a per-user usage counter. The two do not mix:
  * a counter written into the shared file dirties the working tree on every
  * session, conflicts for every contributor who happens to say the word, and
- * publishes which words one maintainer dictates most. So hits for a
- * project-scope term are counted in a per-user sidecar next to the global
- * lexicon (`hits.json`, see below), the project file is never written a
- * counter it did not already carry, and `loadLexicon` adds the two together
- * so everything downstream still sees one number.
+ * publishes which words one maintainer dictates most. So hits are counted in
+ * a per-user sidecar next to the global lexicon (`hits.json`, see below), no
+ * lexicon file is ever written a counter it did not already carry, and
+ * `loadLexicon` adds the two together so everything downstream still sees one
+ * number. That holds for the global file too: the prompt hook counts on every
+ * matching prompt, and rewriting (and backing up) the user's whole YAML file
+ * for a counter cost more than the rest of the hook put together.
  */
 import { promises as fs, existsSync } from 'node:fs';
 import os from 'node:os';
@@ -120,7 +122,13 @@ export function defaultProjectPath(cwd: string = process.cwd()): string {
 // ---------------------------------------------------------------------------
 
 export async function readLexiconFile(filePath: string, scope: TermScope): Promise<LexiconFile> {
-  let text: string;
+  const read = await readLexiconText(filePath);
+  if (read === undefined) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
+  return parseLexiconText(read.text, filePath, scope);
+}
+
+/** The file's text and permission bits, or undefined when it does not exist. Enforces MAX_LEXICON_BYTES. */
+async function readLexiconText(filePath: string): Promise<{ text: string; mode: number } | undefined> {
   try {
     const stat = await fs.stat(filePath);
     if (stat.size > MAX_LEXICON_BYTES) {
@@ -128,13 +136,14 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
         `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`,
       );
     }
-    text = await fs.readFile(filePath, 'utf8');
+    return { text: await fs.readFile(filePath, 'utf8'), mode: stat.mode & 0o777 };
   } catch (err) {
-    if (isEnoent(err)) {
-      return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
-    }
+    if (isEnoent(err)) return undefined;
     throw err;
   }
+}
+
+function parseLexiconText(text: string, filePath: string, scope: TermScope): LexiconFile {
   let raw: unknown;
   try {
     // prettyErrors embeds up to ~80 characters of the offending source line,
@@ -160,6 +169,61 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
 }
 
 /**
+ * The parsed global lexicon, kept beside it (`parse-cache.json`) together
+ * with the exact YAML text it came from.
+ *
+ * The prompt hook loads the lexicon on every prompt, and parsing the YAML of a
+ * lexicon with the starter packs installed was the largest single cost left in
+ * it (tens of milliseconds against a 200 ms budget). An entry whose `text` is
+ * the file's current text, character for character, is reused; anything else
+ * (a hand edit, another writer, a corrupt or foreign cache) falls through to
+ * the real parse, which then refreshes the entry. Comparing the text instead
+ * of a hash of it is exact and keeps `node:crypto`, whose load alone cost the
+ * hook about as much as the comparison saves, off the prompt path. The cached
+ * value still goes through `parseLexicon`, so it can never hold something the
+ * reader would have rejected. It is written with the lexicon's own permission
+ * bits, since it holds the same names.
+ *
+ * Only `loadLexicon`'s read of the global file uses it, and only once that
+ * file reaches PARSE_CACHE_MIN_BYTES: a project file is someone else's,
+ * usually small, and is hashed by the trust check anyway; a small global file
+ * parses in a few milliseconds, and skipping it keeps a cache file from
+ * appearing beside every hand-written lexicon a test or a script points at.
+ */
+export const PARSE_CACHE_FILE_NAME = 'parse-cache.json';
+
+/** Smallest global lexicon (bytes of YAML) worth caching; one starter pack is past it. */
+export const PARSE_CACHE_MIN_BYTES = 8 * 1024;
+
+/** Entry format; 1 was keyed by a sha256 of the text and is simply reparsed and replaced. */
+const PARSE_CACHE_VERSION = 2;
+
+async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
+  const read = await readLexiconText(filePath);
+  if (read === undefined) return { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, 'global');
+  const cachePath = path.join(path.dirname(filePath), PARSE_CACHE_FILE_NAME);
+  const key = path.resolve(filePath);
+  try {
+    const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    if (isPlainObject(cached) && cached.version === PARSE_CACHE_VERSION && cached.path === key && cached.text === read.text) {
+      return { path: filePath, scope: 'global', lexicon: parseLexicon(cached.lexicon), exists: true };
+    }
+  } catch {
+    // missing, unreadable or stale: parse for real below
+  }
+  const file = parseLexiconText(read.text, filePath, 'global');
+  try {
+    await writeFileAtomic(cachePath, JSON.stringify({ version: PARSE_CACHE_VERSION, path: key, text: read.text, lexicon: file.lexicon }), {
+      mode: read.mode,
+    });
+  } catch {
+    // a cache, not state: the next read parses again
+  }
+  return file;
+}
+
+/**
  * Serialize, check the result reads back, then replace the file.
  *
  * The check is the whole point of the ordering. An import of a mis-decoded
@@ -175,15 +239,15 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
  * hold the lock across all three: see `withLexiconLock` below, which this
  * re-enters rather than deadlocking on.
  *
- * For a project file `pinProjectHits` runs first, inside that lock, so no
- * writer can raise a per-user counter in a file the user has in git.
+ * `pinCommittedHits` runs first, inside that lock, so no writer can raise a
+ * counter in the file: counts live in `hits.json`.
  */
 export async function writeLexiconFile(file: LexiconFile): Promise<void> {
   const header = HEADER_COMMENT.split('\n')
     .map((line) => (line ? `# ${line}` : '#'))
     .join('\n');
   await withLexiconLock(file.path, async () => {
-    if (file.scope === 'project') await pinProjectHits(file);
+    await pinCommittedHits(file);
     const body = stringifyYaml(orderLexicon(file.lexicon), { lineWidth: 0 });
     const text = `${header}\n\n${body}`;
     assertReadsBack(text, file.path);
@@ -193,11 +257,12 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
 }
 
 /**
- * Force every term's `hits` back to the value the project file on disk already
- * holds, and drop it entirely for a term the file does not have yet.
+ * Force every term's `hits` back to the value the file on disk already holds,
+ * and drop it entirely for a term the file does not have yet.
  *
- * This is the single choke point that keeps per-user counters out of a shared,
- * committed file, and it is deliberately a clamp rather than a rule each
+ * This is the single choke point that keeps counters out of the lexicon files
+ * (a shared, committed project file and the user's own global one alike: both
+ * are counted in `hits.json`), and it is deliberately a clamp rather than a rule each
  * caller has to remember. `addTerm` will happily take a `hits` from whoever
  * called it; `merge: false` spreads a caller's term wholesale; and terms read
  * off `LoadedLexicon.merged` carry this user's own counts, because
@@ -213,10 +278,10 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
  * A file that cannot be read (new, or being repaired after a bad write) has no
  * counts to preserve, so every `hits` is dropped.
  */
-async function pinProjectHits(file: LexiconFile): Promise<void> {
+async function pinCommittedHits(file: LexiconFile): Promise<void> {
   const onDisk = new Map<string, number>();
   try {
-    const current = await readLexiconFile(file.path, 'project');
+    const current = await readLexiconFile(file.path, file.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== undefined) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -323,18 +388,22 @@ function stripUndefined<T extends object>(obj: T): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 /**
- * Counters for project-scope terms live here, next to the global lexicon, for
- * the same reason the trust registry does: it is this user's file, on this
- * user's machine, and nothing in a repository should be rewritten to hold it.
+ * Usage counters live here, next to the global lexicon, for the same reason
+ * the trust registry does: it is this user's file, on this user's machine, and
+ * nothing in a repository should be rewritten to hold it.
  *
- * Shape, keyed by absolute (symlink-resolved) project file path and then by
- * lowercased canonical:
+ * Shape: project terms keyed by absolute (symlink-resolved) project file path
+ * and then by lowercased canonical; global terms by lowercased canonical:
  *
- *   { "version": 1, "projects": { "/repo/.lexicon.yaml": { "ashlr.ai": 11 } } }
+ *   { "version": 1,
+ *     "projects": { "/repo/.lexicon.yaml": { "ashlr.ai": 11 } },
+ *     "global": { "vercel": 4 } }
  *
- * Global-scope terms keep their counter in the global lexicon itself. That
- * file is already per-user and is not in anybody's repository, so moving those
- * would buy nothing and would split one number across two files.
+ * Global terms used to be counted in the global lexicon itself. Rewriting that
+ * file on every matching prompt made the hook miss its budget and churned the
+ * user's backups, so they are counted here too. A `hits` value already in a
+ * lexicon file is kept as a floor (`pinCommittedHits`) and these counts are
+ * added on top.
  */
 export const HITS_FILE_NAME = 'hits.json';
 
@@ -342,6 +411,8 @@ export interface HitsRegistry {
   version: 1;
   /** Project file path -> lowercased canonical -> count. */
   projects: Record<string, Record<string, number>>;
+  /** Global-scope terms: lowercased canonical -> count. Absent until the first one is counted. */
+  global?: Record<string, number>;
 }
 
 /** `<dirname(global lexicon)>/hits.json`; follows LEXICON_PATH and XDG_CONFIG_HOME. */
@@ -379,18 +450,52 @@ async function readHitsRegistry(opts: StoreOptions): Promise<HitsRegistry> {
   } catch {
     return emptyHitsRegistry();
   }
-  const projects = (raw as { projects?: unknown })?.projects;
-  if (typeof projects !== 'object' || projects === null || Array.isArray(projects)) return emptyHitsRegistry();
   const out = emptyHitsRegistry();
-  for (const [file, counts] of Object.entries(projects as Record<string, unknown>)) {
-    if (typeof counts !== 'object' || counts === null || Array.isArray(counts)) continue;
-    const entry: Record<string, number> = {};
-    for (const [canonical, n] of Object.entries(counts as Record<string, unknown>)) {
-      if (typeof n === 'number' && Number.isInteger(n) && n > 0) entry[canonical] = n;
+  const projects = isPlainObject(raw) ? raw.projects : undefined;
+  if (isPlainObject(projects)) {
+    for (const [file, counts] of Object.entries(projects)) {
+      if (isPlainObject(counts)) out.projects[file] = validCounts(counts);
     }
-    out.projects[file] = entry;
   }
+  const global = isPlainObject(raw) ? raw.global : undefined;
+  if (isPlainObject(global)) out.global = validCounts(global);
   return out;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validCounts(counts: Record<string, unknown>): Record<string, number> {
+  const entry: Record<string, number> = {};
+  for (const [canonical, n] of Object.entries(counts)) {
+    if (typeof n === 'number' && Number.isInteger(n) && n > 0) entry[canonical] = n;
+  }
+  return entry;
+}
+
+/**
+ * This user's counts for global-scope terms, keyed by lowercased canonical.
+ * Never throws; an unreadable registry reads as no counts. Like
+ * `readProjectHits`, `loadLexicon` already folds these into `merged`.
+ */
+export async function readGlobalHits(opts: StoreOptions = {}): Promise<Record<string, number>> {
+  try {
+    return (await readHitsRegistry(opts)).global ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The sidecar counts for the terms of `file`: `readProjectHits` for a project
+ * file, `readGlobalHits` for the global one. Pair with `effectiveHits`.
+ */
+export async function readHitsFor(
+  file: Pick<LexiconFile, 'path' | 'scope'>,
+  opts: StoreOptions = {},
+): Promise<Record<string, number>> {
+  return file.scope === 'project' ? readProjectHits(file.path, opts) : readGlobalHits(opts);
 }
 
 /**
@@ -420,23 +525,6 @@ export function effectiveHits(term: Term, counts: Record<string, number>): numbe
   return (term.hits ?? 0) + (counts[hitKey(term.canonical)] ?? 0);
 }
 
-/** Add `counts` (lowercased canonical -> n) to this user's tally for `projectPath`. */
-async function addProjectHits(
-  projectPath: string,
-  counts: ReadonlyMap<string, number>,
-  opts: StoreOptions,
-): Promise<void> {
-  const hitsPath = getHitsPath(opts);
-  const key = await canonicalPath(projectPath);
-  await withFileLock(hitsPath, async () => {
-    const registry = await readHitsRegistry(opts);
-    const entry = { ...(registry.projects[key] ?? {}) };
-    for (const [canonical, n] of counts) entry[canonical] = (entry[canonical] ?? 0) + n;
-    registry.projects[key] = entry;
-    await writeFileAtomic(hitsPath, formatJson(registry));
-  });
-}
-
 /**
  * Forget this user's count for one canonical of `projectPath`. Called when the
  * term is removed, so re-adding it later starts from zero instead of
@@ -458,6 +546,21 @@ async function dropProjectHits(projectPath: string, canonical: string, opts: Sto
   }
 }
 
+/** Forget this user's count for one global canonical (the term was removed). Best effort. */
+async function dropGlobalHits(canonical: string, opts: StoreOptions): Promise<void> {
+  try {
+    const hitsPath = getHitsPath(opts);
+    await withFileLock(hitsPath, async () => {
+      const registry = await readHitsRegistry(opts);
+      if (!registry.global || !(hitKey(canonical) in registry.global)) return;
+      delete registry.global[hitKey(canonical)];
+      await writeFileAtomic(hitsPath, formatJson(registry));
+    });
+  } catch {
+    // bookkeeping
+  }
+}
+
 /**
  * Add this user's counts to the merged view, so `lexicon stats`, the
  * exporters' ordering and the stale-term suggester all still see one number
@@ -468,17 +571,23 @@ async function dropProjectHits(projectPath: string, canonical: string, opts: Sto
  * the codebase writes back, and `mergeLexicons` shallow-copies every term, so
  * the two cannot alias each other.
  */
-async function hydrateProjectHits(merged: Lexicon, project: LexiconFile, opts: StoreOptions): Promise<void> {
-  const counts = await readProjectHits(project.path, opts);
-  if (Object.keys(counts).length === 0) return;
-  // Only terms the project file actually owns: `recordHits` credits the
-  // project file first, so a global term of the same name was never counted
-  // here and must not pick the count up.
-  const owned = new Set(project.lexicon.terms.map((t) => hitKey(t.canonical)));
+async function hydrateHits(merged: Lexicon, project: LexiconFile | undefined, opts: StoreOptions): Promise<void> {
+  let registry: HitsRegistry;
+  try {
+    registry = await readHitsRegistry(opts);
+  } catch {
+    return;
+  }
+  const projectCounts = project ? (registry.projects[await canonicalPath(project.path)] ?? {}) : {};
+  const globalCounts = registry.global ?? {};
+  if (Object.keys(projectCounts).length === 0 && Object.keys(globalCounts).length === 0) return;
+  // A term the project file owns takes only the project count: `recordHits`
+  // credits the project file first, so a global term of the same name was
+  // never counted there and must not pick the count up, and the reverse.
+  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
   for (const term of merged.terms) {
     const key = hitKey(term.canonical);
-    if (!owned.has(key)) continue;
-    const n = counts[key];
+    const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
     if (n) term.hits = (term.hits ?? 0) + n;
   }
 }
@@ -500,8 +609,8 @@ async function hydrateProjectHits(merged: Lexicon, project: LexiconFile, opts: S
  */
 export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon> {
   const paths = resolvePaths(opts);
-  const global = await readLexiconFile(paths.global, 'global');
-  if (!paths.project) return { merged: mergeLexicons(global.lexicon), global };
+  const global = await readGlobalLexiconCached(paths.global);
+  if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
 
   let project: LexiconFile;
   try {
@@ -510,16 +619,21 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
     const placeholder: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
     const trust = await isTrusted(placeholder, opts);
     if (trust === 'trusted' || opts.includeUntrusted) throw err;
-    return { merged: mergeLexicons(global.lexicon), global, projectTrust: trust, skippedProject: placeholder };
+    return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
 
   const projectTrust = await isTrusted(project, opts);
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
-    await hydrateProjectHits(merged, project, opts);
+    await hydrateHits(merged, project, opts);
     return { merged, global, project, projectTrust };
   }
-  return { merged: mergeLexicons(global.lexicon), global, projectTrust, skippedProject: project };
+  return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: project };
+
+  async function hydrated(merged: Lexicon): Promise<Lexicon> {
+    await hydrateHits(merged, undefined, opts);
+    return merged;
+  }
 }
 
 /**
@@ -715,6 +829,8 @@ export async function removeTerm(
         // The term is gone; so is this user's tally for it, or re-adding the
         // word later would inherit a count it never earned.
         await dropProjectHits(file.path, canonical, opts);
+      } else {
+        await dropGlobalHits(canonical, opts);
       }
       return true;
     });
@@ -726,61 +842,85 @@ export async function removeTerm(
 /**
  * Count one use of each canonical. Never throws.
  *
- * A project-scope term is counted in the per-user sidecar; the project file
- * itself is read (to learn which canonicals it owns) and never written. That
- * is the whole point: the file a team commits stops changing under them, the
- * trust pin over its sha256 stops being invalidated by other people's
- * dictation, and nobody's usage pattern ends up in a public repository.
- * A global-scope term is counted in the global lexicon, which is already this
- * user's own file.
+ * Every count lands in the per-user sidecar (`hits.json`); no lexicon file is
+ * written. A project-scope term is counted under its project file, which is
+ * read (to learn which canonicals it owns, and that it is trusted) and never
+ * written: the file a team commits stops changing under them, the trust pin
+ * over its sha256 stops being invalidated by other people's dictation, and
+ * nobody's usage pattern ends up in a public repository. Everything else is
+ * counted under `global`, and only for a term the global file actually holds,
+ * so a stray canonical (one from an unreviewed project file, say) is never
+ * recorded as in use.
+ *
+ * Pass `loaded` (the `loadLexicon` result the canonicals came from) and
+ * neither file is read again: the prompt hook does, because it calls this on
+ * every matching prompt, and re-parsing (and, before this, rewriting and
+ * backing up) the user's whole YAML file for a counter was most of its time.
  */
-export async function recordHits(canonicals: string[], opts: StoreOptions = {}): Promise<void> {
+export async function recordHits(
+  canonicals: string[],
+  opts: StoreOptions & { loaded?: Pick<LoadedLexicon, 'global' | 'project' | 'projectTrust'> } = {},
+): Promise<void> {
   try {
     if (canonicals.length === 0) return;
     const counts = new Map<string, number>();
     for (const c of canonicals) {
       const key = hitKey(c);
+      if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
+    if (counts.size === 0) return;
 
     const paths = resolvePaths(opts);
-    if (paths.project) {
+    let projectFile: LexiconFile | undefined;
+    if (opts.loaded) {
+      // Only a trusted project file was merged, so only it can have produced a hit.
+      if (opts.loaded.project && opts.loaded.projectTrust === 'trusted') projectFile = opts.loaded.project;
+    } else if (paths.project) {
       const file = await readLexiconFile(paths.project, 'project');
       // Hits only come from merged terms, so an untrusted project file cannot
       // have produced any; skip it silently (this function never throws, so it
       // cannot use assertProjectWritable) and never auto-trust it here.
-      if (file.exists && (await isTrusted(file, opts)) === 'trusted') {
-        const mine = new Map<string, number>();
-        for (const term of file.lexicon.terms) {
-          const key = hitKey(term.canonical);
-          const n = counts.get(key);
-          if (n === undefined) continue;
-          mine.set(key, n);
-          // Project file is consulted first; do not double-count in global.
-          counts.delete(key);
-        }
-        if (mine.size > 0) await addProjectHits(paths.project, mine, opts);
-      }
+      if (file.exists && (await isTrusted(file, opts)) === 'trusted') projectFile = file;
     }
+    let project: { key: string; counts: Map<string, number> } | undefined;
+    if (projectFile) {
+      const mine = new Map<string, number>();
+      for (const term of projectFile.lexicon.terms) {
+        const key = hitKey(term.canonical);
+        const n = counts.get(key);
+        if (n === undefined) continue;
+        mine.set(key, n);
+        // Project file is consulted first; do not double-count in global.
+        counts.delete(key);
+      }
+      if (mine.size > 0) project = { key: await canonicalPath(projectFile.path), counts: mine };
+    }
+    if (counts.size > 0) {
+      const globalFile = opts.loaded?.global ?? (await readLexiconFile(paths.global, 'global'));
+      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
+      for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
+    }
+    if (!project && counts.size === 0) return;
 
-    if (counts.size === 0) return;
-    // Read, edit and write the global file inside one lock: the counters this
-    // writes must not be read from a copy another writer is already replacing.
     // A lock we cannot get lands in the catch below, which is the right trade
     // here and nowhere else (a lost hit count is bookkeeping; a lost term is
     // not).
-    await withLexiconLock(paths.global, async () => {
-      const file = await readLexiconFile(paths.global, 'global');
-      if (!file.exists) return;
-      let touched = false;
-      for (const term of file.lexicon.terms) {
-        const n = counts.get(hitKey(term.canonical));
-        if (n) {
-          term.hits = (term.hits ?? 0) + n;
-          touched = true;
-        }
+    const hitsPath = getHitsPath(opts);
+    await withFileLock(hitsPath, async () => {
+      const registry = await readHitsRegistry(opts);
+      if (project) {
+        const entry = { ...(registry.projects[project.key] ?? {}) };
+        for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;
+        registry.projects[project.key] = entry;
       }
-      if (touched) await writeLexiconFile(file);
+      if (counts.size > 0) {
+        const global = { ...(registry.global ?? {}) };
+        for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
+        registry.global = global;
+      }
+      await fs.mkdir(path.dirname(hitsPath), { recursive: true });
+      await writeFileAtomic(hitsPath, formatJson(registry));
     });
   } catch {
     // best effort by contract

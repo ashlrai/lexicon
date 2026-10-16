@@ -492,6 +492,61 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(reply.ok && reply.fallback).toMatch(/401/);
     expect(reply.ok && reply.output).toBe('ping Ashlr.AI');
   });
+
+  it('status proves the stored token: a 401 on /stats is reported, not "Connected"', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    let token = 'wrong-token';
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '9.9.9', terms: 3 });
+      const auth = (init.headers as Record<string, string>).Authorization;
+      return auth === `Bearer ${token}` && token === 'right-token' ? json({ termCount: 3 }) : json({ error: 'missing or invalid bearer token' }, 401);
+    });
+    const store = memoryStore({ settings: { token } });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+
+    const bad = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(bad.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(bad.activeMode).toBe('embedded');
+    expect(bad.tokenError).toMatch(/rejected the token \(401\)/);
+
+    token = 'right-token';
+    await bg.saveSettings({ token });
+    const good = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(good.activeMode).toBe('api');
+    expect(good.tokenError).toBeUndefined();
+  });
+
+  it("a refused learn shows the server's reason, and a 403 is not reported as a bad token", async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    let learnStatus = 400;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+      if (url.endsWith('/learn')) {
+        return learnStatus === 400
+          ? json({ error: 'learnCorrection: heard and meant are the same' }, 400)
+          : json({ error: 'project lexicon at /p/.lexicon.yaml is untrusted; run `lexicon trust`' }, 403);
+      }
+      return {
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new SyntaxError('not json');
+        },
+      } as unknown as Response;
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'secret-token' } }), defaultYaml: EXAMPLE_YAML });
+
+    expect(await bg.handle({ type: 'learn', heard: 'Ashlr.AI', meant: 'Ashlr.AI' })).toEqual({
+      ok: false,
+      error: 'API /learn: learnCorrection: heard and meant are the same',
+    });
+    learnStatus = 403;
+    const untrusted = await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' });
+    expect(untrusted).toMatchObject({ ok: false, error: expect.stringContaining('untrusted') });
+    expect((untrusted as Failure).error).not.toContain('rejected the token');
+    // A body that is not JSON still gives the status.
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon returned HTTP 500' });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -80,6 +80,18 @@ export function xmlEscape(value: string): string {
  * Schema validation already rejects line breaks; this also covers a Lexicon
  * built in memory, and treats U+2028/U+2029/NEL as the newlines they render as.
  */
+/**
+ * Join aliases into a `, `-separated list that the markdown importer can split
+ * back. An alias holding a comma (or starting with a double quote) is wrapped
+ * in double quotes with inner quotes doubled, CSV style; every other alias is
+ * written as is, so lists without such aliases are unchanged.
+ */
+export function joinAliasList(aliases: readonly string[]): string {
+  return aliases
+    .map((a) => (a.includes(',') || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a))
+    .join(', ');
+}
+
 export function mdCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, ' ');
 }

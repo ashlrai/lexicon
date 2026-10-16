@@ -15,7 +15,7 @@ important half of this document.
 
 > **Your recognizer gets 46% of your proper nouns right. Lexicon gets 91%.**
 >
-> Measured on 330 clips of real audio through whisper.cpp, not on hand-written examples. It
+> Measured on 330 clips of synthesized (text-to-speech) audio through whisper.cpp, not on hand-written examples. It
 > never touched one of the 72 ordinary prose sentences in the same corpus.
 
 Source: `npm run bench:audio`, `small.en`, 279 term slots across three voices. Raw 45.9%
@@ -23,9 +23,9 @@ Source: `npm run bench:audio`, `small.en`, 279 term slots across three voices. R
 
 Why this one and not the bigger number. The synthetic corpus shows 5.1% to 96.5%, which looks
 better and is worse evidence: every sentence in it was written to contain a mis-hearing, so the
-5.1% is an artifact of corpus construction, not a fact about speech-to-text. The real-audio
+5.1% is an artifact of corpus construction, not a fact about speech-to-text. The TTS-audio
 before-number is the one that survives a sceptic. If a shorter line is needed, "46% to 91% on
-real audio" is the floor of what can be said honestly, and "roughly doubles what your recognizer
+synthesized speech" is the floor of what can be said honestly, and "roughly doubles what your recognizer
 gets right" is a fair plain-English gloss.
 
 ## The section that should sit under it
@@ -70,12 +70,12 @@ first:
 
 | claim | figure | where it comes from |
 | --- | --- | --- |
-| proper nouns recovered, real audio, `small.en` | 45.9% to 91.0% | `npm run bench:audio` |
-| proper nouns recovered, real audio, `base.en` | 41.9% to 82.8% | `npm run bench:audio` |
+| proper nouns recovered, TTS audio, `small.en` | 45.9% to 91.0% | `npm run bench:audio` |
+| proper nouns recovered, TTS audio, `base.en` | 41.9% to 82.8% | `npm run bench:audio` |
 | best configuration, prompt + lexicon | 95.7% (267/279) | `npm run bench:audio` |
 | ordinary prose sentences changed | 0 of 72, in every configuration | `npm run bench:audio` |
 | ordinary prose, synthetic corpus | 0 of 95 | `npm run bench` |
-| term precision, real audio | 93.9% (`base.en`) to 95.7% (`small.en` + prompt) | `npm run bench:audio` |
+| term precision, TTS audio | 93.9% (`base.en`) to 95.7% (`small.en` + prompt) | `npm run bench:audio` |
 | latency | about 0.3 ms per sentence | `npm run bench` |
 | corpus size, audio | 110 sentences x 3 voices = 330 clips, 279 term slots | `bench/audio/sentences.jsonl` |
 | corpus size, synthetic | 398 cases, 313 term slots, 70 terms | `bench/corpus.jsonl` |

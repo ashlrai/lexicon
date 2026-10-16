@@ -113,7 +113,7 @@ describe('exportLexicon', () => {
     expect(out).toContain('The user dictates with speech-to-text.');
     expect(out).toContain('| Canonical | Sounds like / STT writes | Note |');
     expect(out).toContain('| --- | --- | --- |');
-    expect(out).toContain('| Ashlr.AI | Ashler, Ashley, our AI | brand my company (ASH-ler) |');
+    expect(out).toContain('| Ashlr.AI | Ashler, "Ashley, our AI" | brand my company (ASH-ler) |');
     expect(out).toContain('| NoAliases |  | other |');
     expect(out.trim().endsWith('If a word looks like a garbled proper noun and is not listed, ask rather than guess.')).toBe(true);
     // Sorted by category (brand, person, product, ...) then canonical.
@@ -236,8 +236,10 @@ describe('exportLexicon', () => {
     const lines = md.trimEnd().split('\n');
     expect(lines).toHaveLength(lexicon.terms.length);
     expect(lines[0]).toBe('- **A&B <Corp>** (brand): a and b\'s');
-    expect(lines).toContain('- **Ashlr.AI** (brand): Ashler, Ashley, our AI');
+    expect(lines).toContain('- **Ashlr.AI** (brand): Ashler, "Ashley, our AI"');
     expect(lines).toContain('- **NoAliases** (other)');
+    // Only an alias that would split is quoted; an inner quote is left alone.
+    expect(lines).toContain('- **OpenClaw** (product): open claw, Open "Claw"');
     expect(lines.every((l) => l.startsWith('- **'))).toBe(true);
   });
 
@@ -249,5 +251,17 @@ describe('exportLexicon', () => {
     expect(exportLexicon(empty, 'openai')).toBe('');
     expect(exportLexicon(empty, 'text')).toBe('');
     expect(exportLexicon(empty, 'markdown')).toBe('');
+  });
+});
+
+describe('resolveExportFormat', () => {
+  it('takes every format, its other names, and any case; nothing else', async () => {
+    const { EXPORT_FORMATS, resolveExportFormat } = await import('../src/core/index.js');
+    for (const f of EXPORT_FORMATS) expect(resolveExportFormat(f)).toBe(f);
+    expect(resolveExportFormat('wispr-flow')).toBe('wispr');
+    expect(resolveExportFormat(' WisprFlow ')).toBe('wispr');
+    expect(resolveExportFormat('Claude-MD')).toBe('claude-md');
+    expect(resolveExportFormat('bogus')).toBeUndefined();
+    expect(resolveExportFormat('constructor')).toBeUndefined();
   });
 });

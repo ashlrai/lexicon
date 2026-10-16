@@ -133,7 +133,7 @@ describe('runUserPromptSubmitHook', () => {
       const out = await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
       expect(out).not.toBe('');
       expect(mocks.recordHits).toHaveBeenCalledTimes(1);
-      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI', 'Mason Wyatt'], { cwd: '/fake/repo' });
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI', 'Mason Wyatt'], { cwd: '/fake/repo', loaded: expect.objectContaining({ merged: expect.any(Object) }) });
 
       mocks.recordHits.mockClear();
       expect(await runUserPromptSubmitHook(payload('plain prompt'))).toBe('');
@@ -319,7 +319,7 @@ describe('runUserPromptSubmitHook', () => {
       expect(ctx).toContain("Corrected prompt:\nit's Ashlr.AI not Ashlur. Also ping Mason Wyatt");
       expect(ctx).toContain('heard: "Ashlur", meant: "Ashlr.AI"');
       expect(mocks.recordHits).toHaveBeenCalledTimes(1);
-      expect(mocks.recordHits).toHaveBeenCalledWith(['Mason Wyatt'], { cwd: '/fake/repo' });
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Mason Wyatt'], { cwd: '/fake/repo', loaded: expect.objectContaining({ merged: expect.any(Object) }) });
     });
 
     it('dropCorrectionSpans matches the heard side case-insensitively and leaves other results alone', async () => {

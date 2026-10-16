@@ -51,11 +51,50 @@ export function splitTableRow(line: string): string[] | undefined {
   return cells;
 }
 
+/**
+ * Split a `, `-separated alias list. An item that starts with `"` is read whole
+ * up to its closing quote (`""` is a literal quote), so `"Ashlar, Inc"` stays
+ * one alias; an unterminated quote falls back to plain comma splitting.
+ */
 function splitAliases(cell: string | undefined): string[] {
-  return (cell ?? '')
-    .split(',')
-    .map((a) => a.trim())
-    .filter(Boolean);
+  const text = cell ?? '';
+  const out: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    while (i < text.length && /\s/.test(text[i])) i++;
+    if (text[i] === '"') {
+      let value = '';
+      let j = i + 1;
+      let closed = false;
+      while (j < text.length) {
+        if (text[j] === '"') {
+          if (text[j + 1] === '"') {
+            value += '"';
+            j += 2;
+            continue;
+          }
+          closed = true;
+          j++;
+          break;
+        }
+        value += text[j++];
+      }
+      if (closed) {
+        const comma = text.indexOf(',', j);
+        const end = comma === -1 ? text.length : comma;
+        value += text.slice(j, end);
+        if (value.trim()) out.push(value.trim());
+        i = end + 1;
+        continue;
+      }
+    }
+    const comma = text.indexOf(',', i);
+    const end = comma === -1 ? text.length : comma;
+    const value = text.slice(i, end).trim();
+    if (value) out.push(value);
+    i = end + 1;
+  }
+  return out;
 }
 
 /**

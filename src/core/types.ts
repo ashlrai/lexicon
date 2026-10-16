@@ -58,13 +58,11 @@ export interface Term {
   /**
    * Times normalize_transcript replaced something with this term.
    *
-   * Where the number lives depends on scope, because the number is personal
-   * and a project lexicon is not. For a global term it is this field, in the
-   * user's own `~/.config/lexicon/lexicon.yaml`. For a project term it is the
-   * per-user sidecar (`hits.json` beside that global file): the project file
-   * is committed and shared, so nothing writes a counter into it. `hits` on a
-   * term read out of a project file is therefore only what somebody committed
-   * before this rule existed, and it never grows.
+   * The number lives in the per-user sidecar (`hits.json` beside the global
+   * lexicon), never in a lexicon file: a project file is committed and shared,
+   * and rewriting the user's own global file on every matching prompt made
+   * the hook slow. `hits` on a term read straight out of a file is therefore
+   * only what was written there before this rule existed, and it never grows.
    *
    * `loadLexicon` adds the two together on `LoadedLexicon.merged`, so anything
    * reading a merged term sees one total and needs to know none of this. Code
