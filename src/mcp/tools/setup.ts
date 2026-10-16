@@ -6,7 +6,6 @@ import { z } from 'zod';
 import {
   INSTALL_CLIENT_VALUES,
   INSTALL_SCOPES,
-  SERVE_HEALTH_URL,
   bufferIO,
   cliDirForInstall,
   guarded,
@@ -19,6 +18,18 @@ import { isRecord } from '../../util/json.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
+import { DEFAULT_PORT, readServeConfig, serveUrl } from '../../serve/config.js';
+
+/**
+ * `/health` of the API this user's `lexicon serve` listens on: the port in
+ * serve.json (what `lexicon serve` and `serve --status` use, and what desktop
+ * clients read), else the default. Read-only: never creates serve.json.
+ */
+async function serveHealthUrl(): Promise<string> {
+  const config = await readServeConfig();
+  const port = config !== undefined && config.port > 0 ? config.port : DEFAULT_PORT;
+  return `${serveUrl(port)}/health`;
+}
 
 export const registerSetupTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
@@ -164,21 +175,22 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Local API status',
       description:
-        'Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1:41733. ' +
+        'Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
         'Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },
     async () =>
       guarded(async () => {
+        const url = await serveHealthUrl();
         try {
-          const res = await fetch(SERVE_HEALTH_URL, { signal: AbortSignal.timeout(1500) });
-          if (!res.ok) return textResult({ up: false, url: SERVE_HEALTH_URL, status: res.status });
+          const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+          if (!res.ok) return textResult({ up: false, url, status: res.status });
           const body: unknown = await res.json();
-          return textResult({ up: true, url: SERVE_HEALTH_URL, ...(isRecord(body) ? body : { body }) });
+          return textResult({ up: true, url, ...(isRecord(body) ? body : { body }) });
         } catch (err) {
           return textResult({
             up: false,
-            url: SERVE_HEALTH_URL,
+            url,
             error: errorMessage(err),
             hint: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same).',
           });

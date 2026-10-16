@@ -68,9 +68,6 @@ type _AllKindsCovered = Exclude<TermSuggestion['kind'], (typeof SUGGESTION_KINDS
 const _allKindsCovered: _AllKindsCovered = true;
 void _allKindsCovered;
 
-/** `lexicon serve` health endpoint (DEFAULT_PORT in src/serve/config.ts; kept literal so the bundle does not pull the server in). */
-export const SERVE_HEALTH_URL = 'http://127.0.0.1:41733/health';
-
 /** Terms listed in a trust preview before "... and N more". */
 const TRUST_PREVIEW_ROWS = 25;
 

@@ -46,7 +46,7 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
 | `apply_suggestion` | `suggestion`, `scope?` | Applies one suggestion from `suggest_terms`, passed back as received |
 | `setup_lexicon` | `company?`, `person?`, `clients?`, `packs?`, `harvest?`, `serve?`, `apply?` | Without `apply` returns a plan computed by a dry run (what it would seed and harvest, the clients it detected, whether it would install the login service) and writes nothing. With `apply: true` runs `lexicon setup` non-interactively for exactly the `clients` given (omitted = none). The three that write a lot are each opt-in and separately confirmed: `packs` names the starter packs to install (omitted = none), `harvest: true` writes the repo names in `wouldHarvest` into the project `.lexicon.yaml` and trusts it, and `serve: true` installs the local API as a login service. Returns the `SetupSummary` |
-| `serve_status` | none | Whether the local API on `127.0.0.1:41733` is up, with its version and term count |
+| `serve_status` | none | Whether the local API is up on `127.0.0.1` (the port in `serve.json`, default 41733), with its version and term count |
 
 ## Resources
 
