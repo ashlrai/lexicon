@@ -232,8 +232,10 @@ LaunchAgent with one that crash-loops.
 
 ### `serve_status {}`
 
-`GET http://127.0.0.1:41733/health` with a 1.5 s timeout: `{ up: true,
-version, terms, port, ... }` or `{ up: false, error, hint }`.
+`GET http://127.0.0.1:<port>/health` with a 1.5 s timeout, where `<port>` is
+the one recorded in `serve.json` (as `lexicon serve --status` uses), else
+41733. It only reads `serve.json`, never creates it: `{ up: true, url,
+version, terms, port, ... }` or `{ up: false, url, error, hint }`.
 
 ## Safety rules
 
