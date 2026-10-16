@@ -56606,6 +56606,9 @@ function csvField(value) {
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
+function joinAliasList(aliases) {
+  return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
+}
 function mdCell(value) {
   return value.replace(/\|/g, "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
@@ -56635,7 +56638,7 @@ function exportClaudeMd(lexicon, _opts = {}) {
   ];
   for (const term of sortByCategory(lexicon.terms)) {
     lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(term.aliases.join(", "))} | ${mdCell(noteFor(term))} |`
+      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`
     );
   }
   lines.push("", "If a word looks like a garbled proper noun and is not listed, ask rather than guess.");
@@ -56719,7 +56722,7 @@ function exportMarkdown(lexicon, _opts = {}) {
   const lines = sortByCategory(lexicon.terms).map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
     const head = `- **${t.canonical}**${t.category ? ` (${t.category})` : ""}`;
-    return aliases.length > 0 ? `${head}: ${aliases.join(", ")}` : head;
+    return aliases.length > 0 ? `${head}: ${joinAliasList(aliases)}` : head;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }
@@ -57246,7 +57249,44 @@ function splitTableRow(line2) {
   return cells;
 }
 function splitAliases(cell) {
-  return (cell ?? "").split(",").map((a) => a.trim()).filter(Boolean);
+  const text = cell ?? "";
+  const out = [];
+  let i = 0;
+  while (i < text.length) {
+    while (i < text.length && /\s/.test(text[i])) i++;
+    if (text[i] === '"') {
+      let value2 = "";
+      let j = i + 1;
+      let closed = false;
+      while (j < text.length) {
+        if (text[j] === '"') {
+          if (text[j + 1] === '"') {
+            value2 += '"';
+            j += 2;
+            continue;
+          }
+          closed = true;
+          j++;
+          break;
+        }
+        value2 += text[j++];
+      }
+      if (closed) {
+        const comma2 = text.indexOf(",", j);
+        const end2 = comma2 === -1 ? text.length : comma2;
+        value2 += text.slice(j, end2);
+        if (value2.trim()) out.push(value2.trim());
+        i = end2 + 1;
+        continue;
+      }
+    }
+    const comma = text.indexOf(",", i);
+    const end = comma === -1 ? text.length : comma;
+    const value = text.slice(i, end).trim();
+    if (value) out.push(value);
+    i = end + 1;
+  }
+  return out;
 }
 function parseNoteCell(cell) {
   let rest = (cell ?? "").trim();

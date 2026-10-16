@@ -618,7 +618,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const method = req.method ?? 'GET';
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
-    if (method === 'GET' && pathname === '/health') return json(200, await health(resolveCwd(url.searchParams.get('cwd'))));
+    if (pathname === '/health') {
+      // Unauthenticated, so a wrong method is answered before the token check.
+      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      return json(200, await health(resolveCwd(url.searchParams.get('cwd'))));
+    }
     if (pathname === PAIR_PATH) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
       return pairPage(req);

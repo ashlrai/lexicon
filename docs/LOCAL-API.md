@@ -93,7 +93,7 @@ no-referrer`. Nothing else consumes it.
 untrusted project file is never merged; `/health` and `/lexicon` report
 `projectTrust: "untrusted"` and `/lexicon` names the skipped file by path.
 
-Export content types: `csv` -> `text/csv`, `json` (also `superwhisper`,
+Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,
 `deepgram`, `assemblyai`, `azure`, `google`) -> `application/json`,
 `claude-md` and `markdown` -> `text/markdown`, `text`, `whisper-prompt`,
 `openai` -> `text/plain`, `macos` -> `application/xml`, `espanso` ->

@@ -256,6 +256,14 @@ describe('serve.json', () => {
 // ---------------------------------------------------------------------------
 
 describe('auth', () => {
+  it('a wrong method on /health is 405, not 401, without a token', async () => {
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const res = await fetch(`${info.url}/health`, { method });
+      expect(res.status).toBe(405);
+      expect(((await res.json()) as { error: string }).error).toBe('use GET');
+    }
+  });
+
   it('GET /health needs no token', async () => {
     const res = await fetch(`${info.url}/health`);
     expect(res.status).toBe(200);
