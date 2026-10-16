@@ -4,6 +4,11 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- The Claude Code plugin's MCP server now connects after `claude plugin install`. The plugin entry used `${CLAUDE_PLUGIN_ROOT:-.}`, which Claude Code does not expand, so it ran `./plugin/mcp-server.mjs` from the user's directory and failed. `.claude-plugin/plugin.json` now declares the server with the bare `${CLAUDE_PLUGIN_ROOT}`; the repo's own `.mcp.json` uses a relative path.
+- `lexicon-mcp --version` prints the package version and `lexicon-mcp --help` a one-line usage, both exiting 0, instead of starting the stdio server.
+
 ## 0.5.6 (2026-10-16)
 
 ### Security

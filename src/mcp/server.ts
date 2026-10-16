@@ -280,9 +280,26 @@ function isMainModule(): boolean {
   }
 }
 
+/**
+ * Answers `--version` / `-v` and `--help` / `-h` without starting the stdio
+ * server. Returns the text to print, or undefined when the server should run.
+ */
+export function cliFlagOutput(argv: readonly string[]): string | undefined {
+  if (argv.includes('--version') || argv.includes('-v')) return readPackageVersion();
+  if (argv.includes('--help') || argv.includes('-h')) {
+    return 'Usage: lexicon-mcp [--version] [--help]  (stdio MCP server for the personal lexicon; run it from an MCP client)';
+  }
+  return undefined;
+}
+
 if (isMainModule()) {
-  main().catch((err: unknown) => {
-    log('fatal:', errorMessage(err));
-    process.exit(1);
-  });
+  const flagOutput = cliFlagOutput(process.argv.slice(2));
+  if (flagOutput !== undefined) {
+    process.stdout.write(`${flagOutput}\n`);
+  } else {
+    main().catch((err: unknown) => {
+      log('fatal:', errorMessage(err));
+      process.exit(1);
+    });
+  }
 }

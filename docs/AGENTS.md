@@ -201,10 +201,12 @@ publication, installation or authenticated-import acceptance.
 
 ## Where the machine-readable files are in this repository
 
-- `.mcp.json` - the server block Claude Code reads when this repository is the
-  plugin root. It runs `plugin/mcp-server.mjs`, a committed single-file bundle
-  with every dependency inlined, so a plugin install needs no `npm install` and
-  no build step.
+- `.claude-plugin/plugin.json` - declares the server block Claude Code runs for
+  the installed plugin (`node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs`). It
+  runs `plugin/mcp-server.mjs`, a committed single-file bundle with every
+  dependency inlined, so a plugin install needs no `npm install` and no build
+  step. `.mcp.json` runs the same bundle by relative path when this repository
+  is opened as a project.
 - `.claude-plugin/marketplace.json` - the Claude Code marketplace manifest, which
   is what `claude plugin marketplace add ashlrai/lexicon` reads.
 - `.claude-plugin/plugin.json`, `hooks/hooks.json`, `skills/lexicon/SKILL.md`,
