@@ -867,6 +867,22 @@ describe('markdown importer', () => {
     if (format === 'claude-md') expect(result.terms.find((t) => t.canonical === 'Ashlr.AI')?.phonetic).toBe('ASH-ler');
   });
 
+  it.each(['claude-md', 'markdown'] as const)('keeps an alias with a comma whole through export %s', (format) => {
+    const lex: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlar Inc', aliases: ['Ashlar, Inc', 'Ashler', '"quoted", too'], category: 'brand' },
+        { canonical: 'OpenClaw', aliases: ['Open "Claw"'], category: 'product' },
+      ],
+    };
+    const exported = exportLexicon(lex, format);
+    // The comma alias stays quoted in the output (claude-md has no importer of its own).
+    expect(exported).toContain('"Ashlar, Inc", Ashler, """quoted"", too"');
+    const result = importLexicon(exported, 'markdown');
+    expect(result.terms.map((t) => t.aliases)).toEqual([['Ashlar, Inc', 'Ashler', '"quoted", too'], ['Open "Claw"']]);
+    expect(result.skipped).toEqual([]);
+  });
+
   it('is listed as an import format', () => {
     expect(isImportFormat('markdown')).toBe(true);
     expect(IMPORT_FORMATS).toContain('markdown');

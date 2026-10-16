@@ -2,6 +2,14 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+## Unreleased
+
+### Fixed
+
+- `lexicon export markdown` and `export claude-md` quote an alias that holds a comma (or starts with a double quote), CSV style, and the markdown importer reads a quoted alias whole. Before, an alias like `Ashlar, Inc` came back from an export and import as two aliases, `Ashlar` and `Inc`. Aliases without a comma are written exactly as before.
+- `lexicon serve`: a wrong method on `/health` (for example `POST /health`) now answers 405 like every other route, before the token check. It used to answer 401 because only `GET /health` skipped auth.
+- docs/LOCAL-API.md lists the `wispr` export as `text/csv`, which the server already returns.
+
 ## 0.5.6 (2026-10-15)
 
 ### Security

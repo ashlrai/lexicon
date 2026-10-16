@@ -19527,6 +19527,9 @@ function csvField(value) {
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
+function joinAliasList(aliases) {
+  return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
+}
 function mdCell(value) {
   return value.replace(/\|/g, "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
@@ -19556,7 +19559,7 @@ function exportClaudeMd(lexicon, _opts = {}) {
   ];
   for (const term of sortByCategory(lexicon.terms)) {
     lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(term.aliases.join(", "))} | ${mdCell(noteFor(term))} |`
+      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`
     );
   }
   lines.push("", "If a word looks like a garbled proper noun and is not listed, ask rather than guess.");
@@ -19640,7 +19643,7 @@ function exportMarkdown(lexicon, _opts = {}) {
   const lines = sortByCategory(lexicon.terms).map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
     const head = `- **${t.canonical}**${t.category ? ` (${t.category})` : ""}`;
-    return aliases.length > 0 ? `${head}: ${aliases.join(", ")}` : head;
+    return aliases.length > 0 ? `${head}: ${joinAliasList(aliases)}` : head;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }
