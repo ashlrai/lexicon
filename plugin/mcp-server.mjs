@@ -59271,26 +59271,70 @@ var RegistryIndexSchema = object({
   version: literal(1).default(1),
   packs: array(RegistryIndexEntrySchema).default([])
 });
-async function defaultFetchText(url2) {
-  const res = await fetch(url2);
+var MAX_REGISTRY_FILE_BYTES = 2 * 1024 * 1024;
+var REGISTRY_FETCH_TIMEOUT_MS = 3e4;
+function tooLargeError(what) {
+  return new Error(`registry: ${what} exceeds the ${MAX_REGISTRY_FILE_BYTES} byte limit (refusing to read it)`);
+}
+async function boundedFetch(url2) {
+  const res = await fetch(url2, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`registry: GET ${url2} failed (HTTP ${res.status})`);
-  return res.text();
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
+    await res.body?.cancel().catch(() => void 0);
+    throw tooLargeError(`GET ${url2}`);
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_REGISTRY_FILE_BYTES) {
+      await reader.cancel().catch(() => void 0);
+      throw tooLargeError(`GET ${url2}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+async function defaultFetchText(url2) {
+  return (await boundedFetch(url2)).toString("utf8");
 }
 async function defaultFetchBytes(url2) {
-  const res = await fetch(url2);
-  if (!res.ok) throw new Error(`registry: GET ${url2} failed (HTTP ${res.status})`);
-  return Buffer.from(await res.arrayBuffer());
+  return boundedFetch(url2);
+}
+async function readLocalRegistryFile(file2, what) {
+  try {
+    return (await readBoundedRegularFile(file2, MAX_REGISTRY_FILE_BYTES)).bytes;
+  } catch (err) {
+    if (isBoundedReadError(err)) {
+      if (err.reason === "not-regular") throw new Error(`registry: ${what} at ${file2} is not a regular file (refusing to read it)`);
+      throw tooLargeError(`${what} at ${file2}`);
+    }
+    throw err;
+  }
 }
 function resolvedDeps(deps) {
   return {
-    fetchText: deps.fetchText ?? defaultFetchText,
-    fetchBytes: deps.fetchBytes ?? defaultFetchBytes
+    fetchText: async (url2) => {
+      const text = await (deps.fetchText ?? defaultFetchText)(url2);
+      if (Buffer.byteLength(text, "utf8") > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url2}`);
+      return text;
+    },
+    fetchBytes: async (url2) => {
+      const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url2);
+      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url2}`);
+      return bytes;
+    }
   };
 }
 function parseIndexYaml(text, source) {
   let raw;
   try {
-    raw = (0, import_yaml7.parse)(text);
+    raw = (0, import_yaml7.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`invalid registry index at ${source}: ${errorMessage(err)}`);
   }
@@ -59323,7 +59367,7 @@ async function loadRegistryIndex(source, deps = {}) {
   const abs = import_node_path10.default.resolve(file2);
   let text;
   try {
-    text = await import_node_fs10.promises.readFile(abs, "utf8");
+    text = (await readLocalRegistryFile(abs, "index")).toString("utf8");
   } catch (err) {
     if (isEnoent(err)) throw new Error(`registry index not found: ${abs}`);
     throw err;
@@ -59466,7 +59510,7 @@ async function findRegistryRecordMismatch(loaded, opts = {}) {
 async function downloadPack(entry, base, deps = {}) {
   const d = resolvedDeps(deps);
   const url2 = resolvePackUrl(entry, base);
-  const bytes = /^https?:\/\//i.test(url2) ? await d.fetchBytes(url2) : await import_node_fs10.promises.readFile(url2);
+  const bytes = /^https?:\/\//i.test(url2) ? await d.fetchBytes(url2) : await readLocalRegistryFile(url2, "pack file");
   verifyPackChecksum(bytes, entry.checksum, entry.ref);
   return bytes;
 }

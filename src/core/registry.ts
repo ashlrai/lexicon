@@ -41,6 +41,7 @@ import type { StoreOptions } from './store.js';
 import type { LoadedLexicon, Term, TermScope } from './types.js';
 import { STOPLIST } from './stoplist.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
+import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 
 /** `author/name`, with an optional `@version` pin for installs. */
 export const REGISTRY_REF_RE = /^([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9][a-z0-9-]{0,63})(?:@([A-Za-z0-9][A-Za-z0-9._-]{0,31}))?$/;
@@ -122,29 +123,94 @@ export interface RegistryDeps {
   fetchBytes?: (url: string) => Promise<Buffer>;
 }
 
-async function defaultFetchText(url: string): Promise<string> {
-  const res = await fetch(url);
+/**
+ * Largest registry index or community pack file read, from the network or
+ * from disk. A pack over MAX_LEXICON_BYTES could never be installed anyway,
+ * and an index that size lists thousands of packs. Without it a hostile or
+ * broken registry streamed into memory until the process died.
+ */
+// A literal, not `= MAX_LEXICON_BYTES`: this module is evaluated inside an
+// import cycle with store.ts, where that binding is not initialized yet.
+// tests/registry.test.ts checks the two agree.
+export const MAX_REGISTRY_FILE_BYTES = 2 * 1024 * 1024;
+
+/** How long one registry request may take before it is abandoned. */
+export const REGISTRY_FETCH_TIMEOUT_MS = 30_000;
+
+function tooLargeError(what: string): Error {
+  return new Error(`registry: ${what} exceeds the ${MAX_REGISTRY_FILE_BYTES} byte limit (refusing to read it)`);
+}
+
+/** GET `url`, reading at most MAX_REGISTRY_FILE_BYTES of the body. */
+async function boundedFetch(url: string): Promise<Buffer> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`registry: GET ${url} failed (HTTP ${res.status})`);
-  return res.text();
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
+    await res.body?.cancel().catch(() => undefined);
+    throw tooLargeError(`GET ${url}`);
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_REGISTRY_FILE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLargeError(`GET ${url}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function defaultFetchText(url: string): Promise<string> {
+  return (await boundedFetch(url)).toString('utf8');
 }
 
 async function defaultFetchBytes(url: string): Promise<Buffer> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`registry: GET ${url} failed (HTTP ${res.status})`);
-  return Buffer.from(await res.arrayBuffer());
+  return boundedFetch(url);
+}
+
+/** A local index or pack file: a regular file of at most MAX_REGISTRY_FILE_BYTES (never a device or FIFO). */
+async function readLocalRegistryFile(file: string, what: string): Promise<Buffer> {
+  try {
+    return (await readBoundedRegularFile(file, MAX_REGISTRY_FILE_BYTES)).bytes;
+  } catch (err) {
+    if (isBoundedReadError(err)) {
+      if (err.reason === 'not-regular') throw new Error(`registry: ${what} at ${file} is not a regular file (refusing to read it)`);
+      throw tooLargeError(`${what} at ${file}`);
+    }
+    throw err;
+  }
 }
 
 function resolvedDeps(deps: RegistryDeps): Required<RegistryDeps> {
+  // An injected fetcher is held to the same cap after the fact.
   return {
-    fetchText: deps.fetchText ?? defaultFetchText,
-    fetchBytes: deps.fetchBytes ?? defaultFetchBytes,
+    fetchText: async (url) => {
+      const text = await (deps.fetchText ?? defaultFetchText)(url);
+      if (Buffer.byteLength(text, 'utf8') > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
+      return text;
+    },
+    fetchBytes: async (url) => {
+      const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url);
+      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
+      return bytes;
+    },
   };
 }
 
 function parseIndexYaml(text: string, source: string): RegistryIndex {
   let raw: unknown;
   try {
-    raw = parseYaml(text);
+    // No source excerpt in the message (see store.ts parseLexiconText): the
+    // index path can come from an MCP call, and a YAML error on an arbitrary
+    // local file must not quote that file back into the conversation.
+    raw = parseYaml(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`invalid registry index at ${source}: ${errorMessage(err)}`);
   }
@@ -187,7 +253,7 @@ export async function loadRegistryIndex(source: string, deps: RegistryDeps = {})
   const abs = path.resolve(file);
   let text: string;
   try {
-    text = await fs.readFile(abs, 'utf8');
+    text = (await readLocalRegistryFile(abs, 'index')).toString('utf8');
   } catch (err) {
     if (isEnoent(err)) throw new Error(`registry index not found: ${abs}`);
     throw err;
@@ -443,7 +509,7 @@ export async function downloadPack(
 ): Promise<Buffer> {
   const d = resolvedDeps(deps);
   const url = resolvePackUrl(entry, base);
-  const bytes = /^https?:\/\//i.test(url) ? await d.fetchBytes(url) : await fs.readFile(url);
+  const bytes = /^https?:\/\//i.test(url) ? await d.fetchBytes(url) : await readLocalRegistryFile(url, 'pack file');
   verifyPackChecksum(bytes, entry.checksum, entry.ref);
   return bytes;
 }

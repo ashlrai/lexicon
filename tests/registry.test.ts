@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  MAX_LEXICON_BYTES,
+  MAX_REGISTRY_FILE_BYTES,
   applyRegistryUpdate,
   cachedPackPath,
   downloadPack,
@@ -174,6 +176,66 @@ describe('loadRegistryIndex', () => {
     const entry = { ...entryFor(index), url: `file://${path.join(dir, 'cardiology.yaml')}` };
     expect(resolvePackUrl(entry, base)).toBe(path.join(dir, 'cardiology.yaml'));
     expect((await downloadPack(entry, base)).toString('utf8')).toBe(PACK_V1);
+  });
+
+  // Catches: registry reads had no size limit. The default fetch buffered a
+  // whole response (a hostile registry could stream until the process died),
+  // and a local index path (MCP list_packs takes one from the model) of
+  // /dev/zero read until Node gave up. Bounded by a race so a regression
+  // fails instead of stalling the suite; the server stops at 32 MB.
+  async function within<T>(p: Promise<T>, ms: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([p, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`still reading after ${ms}ms`)), ms); })]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  it('caps registry files at the lexicon size limit', () => {
+    expect(MAX_REGISTRY_FILE_BYTES).toBe(MAX_LEXICON_BYTES);
+  });
+
+  it('refuses a registry response over the size limit without buffering it', async () => {
+    const http = await import('node:http');
+    let sent = 0;
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/yaml' }); // no Content-Length: chunked
+      const chunk = Buffer.alloc(64 * 1024, 0x61);
+      const pump = (): void => {
+        while (sent < 32 * 1024 * 1024) {
+          sent += chunk.length;
+          if (!res.write(chunk)) { res.once('drain', pump); return; }
+        }
+        res.end();
+      };
+      res.on('close', () => { sent = Number.POSITIVE_INFINITY; });
+      pump();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      await expect(within(loadRegistryIndex(`http://127.0.0.1:${port}/index.yaml`), 10_000)).rejects.toThrow(/exceeds the \d+ byte limit/);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a local index or pack file that is a device', async () => {
+    await expect(within(loadRegistryIndex('/dev/zero'), 1_500)).rejects.toThrow(/not a regular file/);
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    await expect(within(downloadPack({ ...entryFor(index), url: '/dev/zero' }, base), 1_500)).rejects.toThrow(/not a regular file/);
+  });
+
+  it('does not quote the source of an index that fails to parse', async () => {
+    const file = path.join(dir, 'secret.yaml');
+    writeFileSync(file, 'api_key: sk-THIS-IS-SECRET-VALUE\n  bad: [indent\n');
+    const err = await loadRegistryIndex(file).catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/invalid registry index/);
+    expect((err as Error).message).not.toContain('sk-THIS-IS-SECRET-VALUE');
   });
 
   it('loads a file:// url', async () => {
