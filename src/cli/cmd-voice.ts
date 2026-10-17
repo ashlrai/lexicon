@@ -49,7 +49,7 @@ export function registerVoiceCommands(program: Command, io: IO): void {
     .option('--no-history', 'do not append to voice/history.jsonl')
     .option('--copy', 'also put the corrected text on the clipboard')
     .option('--paste', 'copy and paste into the frontmost app (macOS; needs Accessibility permission)')
-    .option('--json', 'print { raw, output, replacements, summary, model, seconds, ms } as JSON')
+    .option('--json', 'print { raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"})')
     .option('--quiet', 'no status lines on stderr')
     .action(async (opts: VoiceCliOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();

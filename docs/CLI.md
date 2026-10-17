@@ -130,10 +130,11 @@ Options:
                    1 when the term or alias is unknown)
   --project        only look in the project lexicon
   --global         only look in the global lexicon (not with --project)
-  --json           print { canonical, removed } as JSON (exit 1 when not found),
-                   plus stillIn when a copy is left in the other lexicon file
-                   and untrustedProject when the untrusted project lexicon has
-                   one; with --alias also alias, aliases and paths
+  --json           print { canonical, removed } as JSON (exit 1 when not found,
+                   with ok: false and error), plus stillIn when a copy is left
+                   in the other lexicon file and untrustedProject when the
+                   untrusted project lexicon has one; with --alias also alias,
+                   aliases and paths
   -h, --help       display help for command
 ```
 
@@ -200,7 +201,13 @@ Options:
   --yes              with --add: add every candidate without prompting
   --symbols          also propose names seen only as a code symbol (off: they
                      are what you type, not what you say)
-  --json             print candidates as JSON
+  --json             print candidates as JSON (a bare array; with --add it is
+                     printed after the writes, the add summary goes to stderr,
+                     and a failed write prints only { ok: false, error, added,
+                     created, merged, path })
+  --full             print { root, candidates, count } as JSON, the object MCP
+                     harvest_repo returns, plus added, created, merged and path
+                     with --add (implies --json)
   -h, --help         display help for command
 ```
 
@@ -464,7 +471,8 @@ Options:
   --paste                copy and paste into the frontmost app (macOS; needs
                          Accessibility permission)
   --json                 print { raw, output, replacements, summary, model,
-                         seconds, ms } as JSON
+                         seconds, ms } as JSON (with --toggle, a press that
+                         starts prints {"status":"recording"})
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```
@@ -503,8 +511,9 @@ Options:
   --reseed            also seed the guessed person/company (git user.name,
                       package scope) when the lexicon already has terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)
-  --json              print a machine-readable summary on stdout (progress goes
-                      to stderr)
+  --json              print a machine-readable summary on stdout, led by ok
+                      (progress goes to stderr; a refusal prints { ok: false,
+                      error })
   -h, --help          display help for command
 ```
 

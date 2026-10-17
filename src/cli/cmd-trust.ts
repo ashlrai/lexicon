@@ -88,6 +88,25 @@ function printJson(io: IO, payload: unknown): void {
 }
 
 /**
+ * A refusal: the stderr line(s) as always, and under --json one
+ * `{ action, path, error, nextStep? }` document on stdout too, so a script
+ * that parses stdout is not left with nothing. Always exit code 1.
+ */
+function fail(
+  io: IO,
+  json: boolean | undefined,
+  action: 'trust' | 'untrust',
+  filePath: string | undefined,
+  error: string,
+  nextStep?: string,
+): number {
+  if (json) printJson(io, { action, ...(filePath !== undefined ? { path: filePath } : {}), error, ...(nextStep ? { nextStep } : {}) });
+  io.stderr(`lexicon: ${safeLines(error)}\n`);
+  if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
+  return 1;
+}
+
+/**
  * Ask the person at the terminal whether to trust the file just previewed.
  * Default no; a closed input (EOF, ctrl-D) is a no. Under --json the question
  * goes to stderr so stdout stays one JSON document.
@@ -111,12 +130,10 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
 
   const filePath = resolveTarget(target, cwd);
   if (!filePath) {
-    io.stderr(`lexicon: no project .lexicon.yaml found from ${safe(cwd)} (pass a path, or run: lexicon init --project)\n`);
-    return 1;
+    return fail(io, opts.json, 'trust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass a path, or run: lexicon init --project');
   }
   if (!existsSync(filePath)) {
-    io.stderr(`lexicon: file does not exist: ${safe(filePath)}\n`);
-    return 1;
+    return fail(io, opts.json, 'trust', filePath, `file does not exist: ${filePath}`, 'pass the path of an existing .lexicon.yaml, or run: lexicon init --project');
   }
 
   // Hash before parsing so a confirmation below covers bytes no newer than the
@@ -128,12 +145,9 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     file = await readLexiconFile(filePath, 'project');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    io.stderr(`lexicon: refusing to trust an invalid lexicon: ${safeLines(message)}\n`);
     // The skipped-project warning on every other command says `run: lexicon
     // trust`, so this is where a user with a broken file lands: name the fix.
-    const hint = unreadableLexiconHint(message);
-    if (hint) io.stderr(`lexicon: ${hint}\n`);
-    return 1;
+    return fail(io, opts.json, 'trust', filePath, `refusing to trust an invalid lexicon: ${message}`, unreadableLexiconHint(message));
   }
 
   const before = await isTrusted(file, { cwd });
@@ -153,8 +167,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   }
   // The answer covers the file that was previewed, not whatever is on disk after the question.
   if (ask && (shownSha === undefined || (await hashFile(filePath)) !== shownSha)) {
-    io.stderr(`lexicon: ${safe(filePath)} changed while waiting for confirmation; nothing was trusted (run lexicon trust again)\n`);
-    return 1;
+    return fail(io, opts.json, 'trust', filePath, `${filePath} changed while waiting for confirmation; nothing was trusted`, 'review it and run: lexicon trust');
   }
   const entry = await trustProject(filePath, { cwd });
   // Asked or not (--yes, off a terminal), only the bytes that were parsed and
@@ -163,8 +176,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   // be trusted unseen.
   if (entry.sha256 !== shownSha) {
     await untrustProject(filePath, { cwd });
-    io.stderr(`lexicon: ${safe(filePath)} changed while it was being trusted; trust was revoked (run lexicon trust again)\n`);
-    return 1;
+    return fail(io, opts.json, 'trust', filePath, `${filePath} changed while it was being trusted; trust was revoked`, 'review it and run: lexicon trust');
   }
   const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
   if (opts.json) {
@@ -191,10 +203,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
 export async function runUntrust(target: string | undefined, opts: CommonOptions & { json?: boolean }, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
-  if (!filePath) {
-    io.stderr(`lexicon: no project .lexicon.yaml found from ${safe(cwd)} (pass a path)\n`);
-    return 1;
-  }
+  if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass a path');
   const removed = await untrustProject(filePath, { cwd });
   if (opts.json) {
     // The object MCP trust_project returns for action 'untrust'.

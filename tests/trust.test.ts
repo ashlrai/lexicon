@@ -425,3 +425,55 @@ describe('lexicon trust on an invalid file', () => {
     expect(await listTrusted({ cwd: path.dirname(projectPath) })).toEqual([]);
   });
 });
+
+// Catches: under --json a refusal went to stderr only, so a script parsing stdout got nothing.
+describe('lexicon trust / untrust --json refusals', () => {
+  beforeEach(() => {
+    process.env.LEXICON_PATH = globalPath;
+  });
+
+  it('prints { action, path, error, nextStep } for an invalid file, with exit 1', async () => {
+    await fs.writeFile(projectPath, 'terms: [oops\n');
+    const io = makeIO();
+    expect(await runTrust(projectPath, { cwd: path.dirname(projectPath), json: true }, io)).toBe(1);
+    const out = JSON.parse(io.out) as Record<string, unknown>;
+    expect(out).toMatchObject({ action: 'trust', path: projectPath });
+    expect(out.error).toMatch(/^refusing to trust an invalid lexicon: /);
+    expect(out.nextStep).toContain('run: lexicon edit --project');
+    expect(io.err).toContain('refusing to trust an invalid lexicon');
+  });
+
+  it('prints an error object for a missing file and for no project file at all', async () => {
+    const missing = path.join(tmp, 'repo', 'nope.yaml');
+    const io = makeIO();
+    expect(await runTrust(missing, { cwd: path.dirname(projectPath), json: true }, io)).toBe(1);
+    expect(JSON.parse(io.out)).toMatchObject({ action: 'trust', path: missing, error: `file does not exist: ${missing}` });
+    expect(io.err).toContain('file does not exist');
+
+    const empty = path.join(tmp, 'empty');
+    await fs.mkdir(path.join(empty, '.git'), { recursive: true });
+    const none = makeIO();
+    expect(await runTrust(undefined, { cwd: empty, json: true }, none)).toBe(1);
+    const t = JSON.parse(none.out) as Record<string, unknown>;
+    expect(t).toMatchObject({ action: 'trust', error: `no project .lexicon.yaml found from ${empty}` });
+    expect(t.nextStep).toContain('lexicon init --project');
+    expect(t).not.toHaveProperty('path');
+
+    const un = makeIO();
+    expect(await runUntrust(undefined, { cwd: empty, json: true }, un)).toBe(1);
+    expect(JSON.parse(un.out)).toMatchObject({ action: 'untrust', error: `no project .lexicon.yaml found from ${empty}`, nextStep: 'pass a path' });
+  });
+
+  it('prints an error object when the file changes during the question', async () => {
+    const p: Prompter = {
+      ...scripted([]),
+      confirm: async () => {
+        await fs.appendFile(projectPath, '  - canonical: Sneaky\n    aliases: [sneaky]\n');
+        return true;
+      },
+    };
+    const io = makeIO();
+    expect(await runTrust(undefined, { cwd: path.dirname(projectPath), json: true }, io, { isInteractive: () => true, createPrompter: () => p })).toBe(1);
+    expect(JSON.parse(io.out)).toMatchObject({ action: 'trust', path: projectPath, nextStep: 'review it and run: lexicon trust' });
+  });
+});

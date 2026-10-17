@@ -118,7 +118,9 @@ import {
   runNormalize,
   runPath,
   runRemove,
+  runHarvest,
 } from '../src/cli/commands.js';
+import { fail } from '../src/cli/io.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
 import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
@@ -406,6 +408,58 @@ describe('add / remove / path', () => {
     expect(missing.err).toContain('not found');
   });
 
+  // Catches: `remove --project --global --json` refused on stderr only, leaving stdout empty.
+  it('remove --project --global --json prints { ok: false, error }', async () => {
+    const io = makeIO();
+    expect(await runRemove('Ashlr.AI', { project: true, global: true, json: true }, io)).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('--project and --global cannot be combined') });
+    expect(io.err).toContain('lexicon: --project and --global cannot be combined');
+  });
+
+  // Catches: every `remove --json` failure document (not found, unknown alias,
+  // refused untrusted copy) lacked `ok: false`, the key every other --json
+  // refusal leads with, so a script had to special-case remove.
+  it('remove --json failure documents lead with ok: false and keep their keys', async () => {
+    const term = makeIO();
+    expect(await runRemove('Nope', { json: true, global: true }, term)).toBe(1);
+    expect(JSON.parse(term.out)).toEqual({ ok: false, error: 'term "Nope" not found in global lexicon', canonical: 'Nope', removed: false });
+    const alias = makeIO();
+    expect(await runRemove('Nope', { json: true, alias: 'x' }, alias)).toBe(1);
+    expect(JSON.parse(alias.out)).toEqual({ ok: false, error: 'no term "Nope" in the global or project lexicon', canonical: 'Nope', alias: 'x', removed: false });
+    vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
+    const trust = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true }, trust)).toBe(1);
+    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), canonical: 'Ashlr.AI', removed: false });
+    // Success is unchanged.
+    const ok = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
+    expect(JSON.parse(ok.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+  });
+
+  // Catches: `harvest --add --json` printed the candidate array before the
+  // writes, so a write that failed partway left two JSON documents on stdout
+  // (the array, then the `{ ok: false }` index.ts prints for the throw).
+  it('harvest --add --json prints exactly one JSON document, also when a write fails partway', async () => {
+    const candidate = (canonical: string) => ({ canonical, category: 'product' as const, count: 2, suggestedAliases: [`${canonical}x`], evidence: [], source: 'harvest:repo' as const });
+    const repo = os.tmpdir();
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([candidate('Quokka'), candidate('Wombat')]);
+    vi.mocked(core.addTerm).mockImplementationOnce(vi.mocked(core.addTerm).getMockImplementation()!).mockRejectedValueOnce(new Error('disk full'));
+    const io = makeIO();
+    // index.ts routes a thrown error through fail(io, err, json), so do the same here.
+    const code = await runHarvest(repo, { add: true, yes: true, json: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err, true));
+    expect(code).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: 'disk full', added: 1, created: 1, merged: 0, path: '/tmp/proj/.lexicon.yaml' });
+    expect(io.err).toContain('lexicon: disk full');
+    expect(io.err).toContain('added 1 new term, merged 0 before the failure');
+
+    // Success keeps the documented shape: the bare array on stdout, the summary on stderr.
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([candidate('Quokka')]);
+    const ok = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true }, ok, { isInteractive: () => false })).toBe(0);
+    expect(JSON.parse(ok.out)).toEqual([candidate('Quokka')]);
+    expect(ok.err).toContain('added 1 new term, merged 0');
+  });
+
   it('add --json and remove --json print parseable JSON on stdout', async () => {
     const added = makeIO();
     expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
@@ -415,7 +469,7 @@ describe('add / remove / path', () => {
     expect(JSON.parse(removed.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
     const missing = makeIO();
     expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
-    expect(JSON.parse(missing.out)).toEqual({ canonical: 'Nope', removed: false });
+    expect(JSON.parse(missing.out)).toEqual({ ok: false, canonical: 'Nope', removed: false, error: 'term "Nope" not found' });
   });
 
   // Catches: `lexicon remove` dropped the project copy, said "removed" and left the global copy correcting.
@@ -532,6 +586,7 @@ describe('add / remove / path', () => {
       expect(io.err).toContain('lexicon remove "Ashlr.AI" --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
+          ok: false,
           canonical: 'Ashlr.AI',
           removed: false,
           error: expect.stringContaining('lexicon trust'),
@@ -598,7 +653,7 @@ describe('add / remove / path', () => {
     vi.mocked(core.removeAlias).mockRejectedValueOnce(new Error('"Ashlar" is not an alias of "Ashlr.AI" in the global lexicon'));
     expect(await runRemove('Ashlr.AI', { alias: 'Ashlar', global: true, json: true }, missing2)).toBe(1);
     expect(missing2.err).toContain('Ashlar is also an alias of Ashlr.AI in the untrusted project lexicon (/tmp/proj/.lexicon.yaml)');
-    expect(JSON.parse(missing2.out)).toMatchObject({ removed: false, untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' } });
+    expect(JSON.parse(missing2.out)).toMatchObject({ ok: false, removed: false, untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' } });
   });
 
   // Catches: without a scope the refused untrusted project copy threw out of the handler, with no JSON and no way to reach the global copy.
@@ -619,6 +674,7 @@ describe('add / remove / path', () => {
       expect(io.err).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
+          ok: false,
           canonical: 'Ashlr.AI',
           alias: 'Ashler',
           removed: false,
@@ -635,7 +691,7 @@ describe('add / remove / path', () => {
     expect(term.err).toContain('no term "Nope"');
     const alias = makeIO();
     expect(await runRemove('Ashlr.AI', { alias: 'Ashlr', json: true }, alias)).toBe(1);
-    expect(JSON.parse(alias.out)).toMatchObject({ canonical: 'Ashlr.AI', alias: 'Ashlr', removed: false, error: expect.stringContaining('not an alias') });
+    expect(JSON.parse(alias.out)).toMatchObject({ ok: false, canonical: 'Ashlr.AI', alias: 'Ashlr', removed: false, error: expect.stringContaining('not an alias') });
     expect(alias.err).toContain('not an alias');
   });
 
@@ -1697,6 +1753,86 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(added.status).toBe(0);
       expect(added.stdout).toContain('created Foo (project)');
       expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical: Foo');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: commander usage errors (unknown option, invalid --port, missing
+  // argument) never printed JSON, so `lexicon add --json --bogus` left a
+  // script parsing an empty stdout.
+  it('a commander usage error under --json prints { ok: false, error, nextStep } with commander\'s exit code', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-usage-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const cases: [string[], string, string][] = [
+        [['add', 'Foo', '--bogus', '--json'], "unknown option '--bogus'", 'lexicon add --help'],
+        [['serve', '--port', 'nope', '--json'], "option '--port <n>' argument 'nope' is invalid", 'lexicon serve --help'],
+        [['add', '--json'], "missing required argument 'canonical'", 'lexicon add --help'],
+        [['pack', 'add', '--json'], "missing required argument 'name'", 'lexicon pack add --help'],
+        [['nope', '--json'], "unknown command 'nope'", 'lexicon --help'],
+      ];
+      for (const [args, error, help] of cases) {
+        const r = lexicon([...args, '--cwd', tmp], globalPath);
+        expect(r.status, args.join(' ')).toBe(1);
+        expect(JSON.parse(r.stdout)).toEqual({ ok: false, error: expect.stringContaining(error), nextStep: `see the usage: ${help}` });
+        expect(r.stderr).toContain(`error: ${error}`);
+      }
+      // Without --json (or with it only after `--`) nothing changes: stdout stays empty.
+      const plain = lexicon(['add', 'Foo', '--bogus', '--cwd', tmp], globalPath);
+      expect(plain.status).toBe(1);
+      expect(plain.stdout).toBe('');
+      expect(plain.stderr).toContain("error: unknown option '--bogus'");
+      const quoted = lexicon(['add', 'Foo', '--bogus', '--cwd', tmp, '--', '--json'], globalPath);
+      expect(quoted.status).toBe(1);
+      expect(quoted.stdout).toBe('');
+      // Help and version are not errors.
+      const help = lexicon(['add', '--help', '--json'], globalPath);
+      expect(help.status).toBe(0);
+      expect(help.stdout).toContain('Usage: lexicon add');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
+  it('a --json command that throws prints { ok: false, error, nextStep? } on stdout with exit 1', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      await fs.writeFile(projectPath, HOSTILE);
+
+      const refused = lexicon(['add', 'Foo', '--project', '--json', '--cwd', repo], globalPath);
+      expect(refused.status).toBe(1);
+      expect(JSON.parse(refused.stdout)).toEqual({ ok: false, error: expect.stringContaining(`project lexicon at ${projectPath} is untrusted`) });
+      expect(refused.stderr).toContain('lexicon: project lexicon at');
+
+      const category = lexicon(['list', '--json', '--category', 'nope', '--cwd', tmp], globalPath);
+      expect(category.status).toBe(1);
+      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"') });
+
+      const missing = lexicon(['import', path.join(tmp, 'nope.txt'), '--json', '--cwd', tmp], globalPath);
+      expect(missing.status).toBe(1);
+      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('file not found') });
+
+      // A lexicon file that does not parse: nextStep is the command that fixes it.
+      await fs.mkdir(path.dirname(globalPath), { recursive: true });
+      await fs.writeFile(globalPath, 'version: 1\nterms: [\n');
+      const broken = lexicon(['stats', '--json', '--cwd', tmp], globalPath);
+      expect(broken.status).toBe(1);
+      expect(JSON.parse(broken.stdout)).toEqual({
+        ok: false,
+        error: expect.stringContaining(globalPath),
+        nextStep: expect.stringContaining('lexicon edit'),
+      });
+
+      // Without --json nothing changes: stdout stays empty.
+      const plain = lexicon(['list', '--category', 'nope', '--cwd', tmp], globalPath);
+      expect(plain.status).toBe(1);
+      expect(plain.stdout).toBe('');
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

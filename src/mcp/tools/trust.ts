@@ -67,6 +67,18 @@ async function askUserToTrust(
   return answer.action === 'accept' && answer.content?.trust === true ? 'accept' : 'decline';
 }
 
+/**
+ * The next step for a project file that does not parse or validate, as `lexicon
+ * trust` names it on the CLI: the user fixes it (an agent must not open it),
+ * then checks it. `lexicon edit --project` opens the `.lexicon.yaml` resolved
+ * for the repo, so a file by another name is named instead.
+ */
+function invalidFileNextStep(safePath: string): string {
+  const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
+  const fix = isProjectFile ? 'run: lexicon edit --project, in that repo' : `open ${safePath} in an editor`;
+  return `Ask the user to fix the file (${fix}), check it with: lexicon doctor, then call trust_project again. Do not open it yourself.`;
+}
+
 export const registerTrustTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
   const { load } = ctx;
@@ -110,7 +122,7 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
           try {
             file = await readLexiconFile(filePath, 'project');
           } catch (err) {
-            return textResult({ ...base, path: safePath, status: 'invalid', error: shown(errorMessage(err)) });
+            return textResult({ ...base, path: safePath, status: 'invalid', error: shown(errorMessage(err)), nextStep: invalidFileNextStep(safePath ?? '') });
           }
           if (!file.exists) return textResult({ ...base, path: safePath, status: 'missing' });
           const status = await isTrusted(file, { cwd: ctx.cwd });
@@ -138,7 +150,7 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         try {
           file = await readLexiconFile(filePath, 'project');
         } catch (err) {
-          throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}`);
+          throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? '')}`);
         }
         if (!file.exists) throw new Error(`file does not exist: ${safePath}`);
         const before = await isTrusted(file, { cwd: ctx.cwd });

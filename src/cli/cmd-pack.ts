@@ -16,7 +16,6 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
-  ProjectTrustError,
   applyRegistryUpdate,
   downloadPack,
   findRegistryEntry,
@@ -39,9 +38,9 @@ import {
   validateCommunityPack,
   verifyPackChecksum,
 } from '../core/index.js';
-import { loadLexicon } from '../core/index.js';
-import type { InstallPackResult, RegistryDeps, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
+import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
+import { bold, dim, fail, line, plural, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -79,32 +78,19 @@ function scopeOf(opts: PackCliOptions): TermScope {
   return opts.project ? 'project' : 'global';
 }
 
-/**
- * Where a registry pack is recorded, when the two records disagree: the
- * lexicon file's `settings.packs` (what the matcher, `pack search` and MCP
- * `list_packs` read, and so the `installed` flag everywhere) and the registry
- * state file (what `pack update` and `pack remove` use). Only the file of the
- * listed scope is compared, since registry state is kept per scope; a skipped
- * project file is never read.
- */
-export interface RegistryRecordMismatch {
-  /** In the lexicon file, with no registry record: `pack update` will not check it. */
-  fileOnly: string[];
-  /** Recorded in the registry state but not in the lexicon file: listed as not installed. */
-  recordOnly: string[];
-}
+/** Kept as an export of this module for existing importers; defined in core. */
+export type { RegistryRecordMismatch } from '../core/index.js';
 
-function registryMismatch(
-  loaded: Awaited<ReturnType<typeof loadLexicon>>,
-  scope: TermScope,
-  recorded: readonly string[],
-): RegistryRecordMismatch | undefined {
-  const file = scope === 'project' ? loaded.project : loaded.global;
-  if (!file) return undefined;
-  const inFile = (file.lexicon.settings?.packs ?? []).filter((p) => isRegistryRef(p));
-  const fileOnly = inFile.filter((r) => !recorded.includes(r));
-  const recordOnly = recorded.filter((r) => !inFile.includes(r));
-  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : undefined;
+/** One `lexicon: warn:` line per ref the two records disagree on. `scope` names the file when the listing is scoped. */
+function warnRegistryMismatch(io: IO, mismatch: RegistryRecordMismatch, scope?: TermScope): void {
+  const where = scope ? `the ${scope} lexicon's settings.packs` : 'the lexicon files\' settings.packs';
+  const flag = scope === 'project' ? ' --project' : '';
+  for (const ref of mismatch.fileOnly) {
+    io.stderr(`lexicon: warn: ${safe(ref)} is in ${where} but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${safe(ref)} --registry <index>${flag})\n`);
+  }
+  for (const ref of mismatch.recordOnly) {
+    io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in ${where}, so it is listed as not installed (lexicon pack remove ${safe(ref)}${flag} clears the record)\n`);
+  }
 }
 
 /**
@@ -128,15 +114,8 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
     const rows = packs.map((p) => ({ ...p, installed: installed.includes(p.name) }));
     // Registry records of this scope: what `pack update` checks.
     const communityInstalled = await installedRegistryPacks(storeOpts);
-    const mismatch = registryMismatch(loaded, scope, communityInstalled);
-    if (mismatch) {
-      for (const ref of mismatch.fileOnly) {
-        io.stderr(`lexicon: warn: ${safe(ref)} is in the ${scope} lexicon's settings.packs but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${safe(ref)} --registry <index>${scope === 'project' ? ' --project' : ''})\n`);
-      }
-      for (const ref of mismatch.recordOnly) {
-        io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in the ${scope} lexicon's settings.packs, so it is listed as not installed (lexicon pack remove ${safe(ref)}${scope === 'project' ? ' --project' : ''} clears the record)\n`);
-      }
-    }
+    const mismatch = registryRecordMismatch(loaded, scope, communityInstalled);
+    if (mismatch) warnRegistryMismatch(io, mismatch, scope);
     const community = installed.filter((p) => isRegistryRef(p));
     if (opts.json) {
       let registryPacks: (RegistryIndexEntry & { installed: boolean })[] | undefined;
@@ -202,7 +181,7 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
     line(io, dim('community: lexicon pack search <query> --registry <index>'));
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -231,7 +210,7 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -269,7 +248,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
     printPackTerms(io, pack);
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -284,8 +263,7 @@ function printPackTerms(io: IO, pack: { name: string; title: string; description
 export async function runPackSearch(query: string, opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   try {
     if (!opts.registry) {
-      io.stderr('lexicon: pack search needs --registry <index> (a local path, file:// or https:// URL)\n');
-      return 1;
+      return refuse(io, opts.json, 'pack search needs --registry <index> (a local path, file:// or https:// URL)');
     }
     const { index } = await loadRegistryIndex(opts.registry, deps.registry);
     const hits = searchRegistryIndex(index, query);
@@ -293,9 +271,19 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
     const loaded = await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) });
     warnSkippedProject(loaded, io);
     const installed = installedPacks(loaded);
+    // The same report as `pack list`, over every file the flags come from.
+    const mismatch = await findRegistryRecordMismatch(loaded, opts.globalPath !== undefined ? { cwd, globalPath: opts.globalPath } : { cwd });
+    if (mismatch) warnRegistryMismatch(io, mismatch);
     if (opts.json) {
       const packs = hits.map((p) => ({ ...p, installed: installed.includes(p.ref) }));
-      line(io, JSON.stringify({ query, registry: opts.registry, packs, ...skippedProjectJson(loaded, PACKS_SKIPPED) }, null, 2));
+      line(
+        io,
+        JSON.stringify(
+          { query, registry: opts.registry, packs, ...(mismatch ? { registryMismatch: mismatch } : {}), ...skippedProjectJson(loaded, PACKS_SKIPPED) },
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     if (hits.length === 0) {
@@ -319,13 +307,13 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
     line(io, dim(`install with: lexicon pack add <ref> --registry ${opts.registry}   (shows the term list before writing)`));
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
 function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   if (!opts.registry) {
-    io.stderr('lexicon: community packs need --registry <index> (a local path, file:// or https:// URL)\n');
+    refuse(io, opts.json, 'community packs need --registry <index> (a local path, file:// or https:// URL)');
     return false;
   }
   return true;
@@ -446,9 +434,10 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         if (!opts.json) line(io, dim('declined; nothing written.'));
         return 0;
       }
+      // Packs already installed are the --json document (the array, as on
+      // success); with none, the failure is: `{ ok: false, error }`.
       if (opts.json && results.length > 0) line(io, JSON.stringify(results, null, 2));
-      if (err instanceof ProjectTrustError) return fail(io, err);
-      return fail(io, err);
+      return fail(io, err, opts.json === true && results.length === 0);
     }
   }
   if (opts.json) line(io, JSON.stringify(results, null, 2));
@@ -532,7 +521,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
     if (opts.json) line(io, JSON.stringify({ updates: reports }, null, 2));
     return reports.some(report => report.status === 'failed' || report.status === 'not-installed') ? 1 : 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -562,7 +551,7 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     }
     return errors.length > 0 ? 1 : 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 

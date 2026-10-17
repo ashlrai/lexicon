@@ -70,6 +70,17 @@ describe('pack search', () => {
     const io = makeIO();
     expect(await runPackSearch('cardio', { globalPath }, io)).toBe(1);
     expect(io.err).toContain('--registry');
+    expect(io.out).toBe('');
+  });
+
+  // Catches: under --json the refusal was on stderr only, so a script parsing stdout got nothing.
+  it('prints { ok: false, error } under --json when it refuses or fails', async () => {
+    const io = makeIO();
+    expect(await runPackSearch('cardio', { globalPath, json: true }, io)).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('needs --registry') });
+    const missing = makeIO();
+    expect(await runPackSearch('cardio', { globalPath, json: true, registry: path.join(dir, 'nope.json') }, missing)).toBe(1);
+    expect(JSON.parse(missing.out)).toMatchObject({ ok: false, error: expect.any(String) });
   });
 
   it('finds the pack and prints install help', async () => {
@@ -339,7 +350,7 @@ describe('installed flags: one source of truth across pack list, pack search and
     const { createServer } = await import('../src/mcp/server.js');
     const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
     const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
-    const listPacksMcp = async (): Promise<{ community: { ref: string; installed: boolean }[]; installed: string[] }> => {
+    const listPacksMcp = async (): Promise<{ community: { ref: string; installed: boolean }[]; installed: string[]; registryMismatch?: unknown }> => {
       const server = createServer({ cwd });
       const client = new Client({ name: 'test', version: '0' });
       const [a, b] = InMemoryTransport.createLinkedPair();
@@ -353,7 +364,15 @@ describe('installed flags: one source of truth across pack list, pack search and
         await server.close();
       }
     };
-    const flags = async (): Promise<{ list: boolean; search: boolean; mcp: boolean; listIO: ReturnType<typeof makeIO> }> => {
+    const flags = async (): Promise<{
+      list: boolean;
+      search: boolean;
+      mcp: boolean;
+      listIO: ReturnType<typeof makeIO>;
+      searchIO: ReturnType<typeof makeIO>;
+      searchMismatch: unknown;
+      mcpMismatch: unknown;
+    }> => {
       const listIO = makeIO();
       expect(await runPackList({ ...baseOpts(), cwd, json: true }, listIO), listIO.err).toBe(0);
       const search = makeIO();
@@ -364,13 +383,19 @@ describe('installed flags: one source of truth across pack list, pack search and
         search: (JSON.parse(search.out) as { packs: { installed: boolean }[] }).packs[0].installed,
         mcp: mcp.community[0].installed,
         listIO,
+        searchIO: search,
+        searchMismatch: (JSON.parse(search.out) as { registryMismatch?: unknown }).registryMismatch,
+        mcpMismatch: mcp.registryMismatch,
       };
     };
     try {
       expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), cwd, yes: true }, makeIO())).toBe(0);
       const installedFile = readFileSync(globalPath, 'utf8');
       expect(installedFile).toContain('example/cardiology');
-      expect(await flags()).toMatchObject({ list: true, search: true, mcp: true });
+      const agreed = await flags();
+      expect(agreed).toMatchObject({ list: true, search: true, mcp: true });
+      expect(agreed.searchMismatch).toBeUndefined();
+      expect(agreed.mcpMismatch).toBeUndefined();
 
       // 1. The registry state still records it; the lexicon file no longer lists it.
       const { parse, stringify } = await import('yaml');
@@ -385,6 +410,10 @@ describe('installed flags: one source of truth across pack list, pack search and
       expect(parsed.communityInstalled).toEqual(['example/cardiology']);
       expect(parsed.registryMismatch).toEqual({ fileOnly: [], recordOnly: ['example/cardiology'] });
       expect(recordOnly.listIO.err).toContain('has a registry record but is not in the global lexicon');
+      // Catches: only pack list reported the mismatch; search and list_packs said nothing.
+      expect(recordOnly.searchMismatch).toEqual({ fileOnly: [], recordOnly: ['example/cardiology'] });
+      expect(recordOnly.mcpMismatch).toEqual({ fileOnly: [], recordOnly: ['example/cardiology'] });
+      expect(recordOnly.searchIO.err).toContain('example/cardiology has a registry record but is not in');
 
       // 2. The other way round: the file lists it, the registry state has no record.
       writeFileSync(globalPath, installedFile);
@@ -396,6 +425,8 @@ describe('installed flags: one source of truth across pack list, pack search and
       expect(fileOnly).toMatchObject({ list: true, search: true, mcp: true });
       expect(JSON.parse(fileOnly.listIO.out)).toMatchObject({ communityInstalled: [], registryMismatch: { fileOnly: ['example/cardiology'], recordOnly: [] } });
       expect(fileOnly.listIO.err).toContain('has no registry record, so pack update will not check it');
+      expect(fileOnly.searchMismatch).toEqual({ fileOnly: ['example/cardiology'], recordOnly: [] });
+      expect(fileOnly.mcpMismatch).toEqual({ fileOnly: ['example/cardiology'], recordOnly: [] });
 
       // The table agrees too.
       const table = makeIO();

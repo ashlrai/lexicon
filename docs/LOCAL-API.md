@@ -8,9 +8,9 @@ only, protected by a bearer token, and applies the same merged lexicon and
 trust gate as every other surface.
 
 ```bash
-lexicon serve                 # foreground, logs one line per request to stderr
+lexicon serve                 # foreground, logs one line per request to stderr (an aborted one too)
 lexicon serve --show          # print the URL and token (manual fallback for the extension options page)
-lexicon serve --status        # is it up?
+lexicon serve --status        # is it up? (read-only: never creates serve.json)
 lexicon serve --pair          # open http://127.0.0.1:41733/pair in the browser; the extension pairs itself
 lexicon serve --install       # start at login: launchd (macOS), systemd --user (Linux), Scheduled Task (Windows)
 lexicon serve --uninstall
@@ -67,12 +67,12 @@ and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses ar
 |---|---|---|---|
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
-| POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start |
+| POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start, and the response then adds `incomplete` (`{ reasons: ['time'], checkedChars?, totalChars, note }`; the unchecked rest is unchanged) |
 | POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict?, untrustedProject? }` (`conflict`: another term that also holds `heard`; `untrustedProject`: the untrusted project lexicon also claims it, path only) |
-| POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
+| POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created, conflicts? }` (`conflicts`: `{ canonical, scope, as, spelling }` for each alias another term also holds, so it may still be corrected to that term, as MCP `add_term` reports it) |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
 | GET | `/stats` | | `LexiconStats` |
-| GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }` |
+| GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }`; `installed` includes community refs (`author/name`) the lexicon files record. Plus `registryMismatch { fileOnly, recordOnly }` when those files and the registry records disagree, and `projectTrust` and `skippedProject` (path only) when a project file was not loaded, as MCP `list_packs` reports them. A registry index is never read: list its community packs with `lexicon pack list --registry <index>` or MCP `list_packs` |
 | POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope }`; an unknown pack is 404 |
 | DELETE | `/packs/:name` | | `{ pack, removed, kept, files }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone |
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form |
@@ -105,7 +105,10 @@ no-referrer`. Nothing else consumes it.
 `cwd` picks which project `.lexicon.yaml` is considered (body field on POST,
 `?cwd=` on GET). It defaults to the directory the server was started in. An
 untrusted project file is never merged; `/health` (with the token) and `/lexicon` report
-`projectTrust: "untrusted"` and `/lexicon` names the skipped file by path.
+`projectTrust: "untrusted"` and `/lexicon` names the skipped file by path in
+`skippedProject`. `/lexicon` `paths` lists only the files merged into `lexicon` (as MCP
+`list_terms` does), so `paths.project` is present only for a trusted project file;
+`projectTrust` is set whenever a project file exists, trusted or not.
 
 Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,
 `deepgram`, `assemblyai`, `azure`, `google`) -> `application/json`,

@@ -755,7 +755,16 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: stats, path, doctor', () => 
       expect(r.code, args.join(' ')).toBe(1);
       expect(r.stderr).toContain(`Failed to parse lexicon YAML at ${h.globalPath}`);
       expect(r.stderr, args.join(' ')).toContain('(run: lexicon edit), then check it with: lexicon doctor');
-      expect(r.stdout).toBe('');
+      if (args.includes('--json')) {
+        // Under --json stdout is the error document, with the same fix as nextStep.
+        expect(JSON.parse(r.stdout)).toEqual({
+          ok: false,
+          error: expect.stringContaining(`Failed to parse lexicon YAML at ${h.globalPath}`),
+          nextStep: expect.stringContaining('(run: lexicon edit), then check it with: lexicon doctor'),
+        });
+      } else {
+        expect(r.stdout).toBe('');
+      }
     }
     // A broken project file is opened with `edit --project`.
     await fs.writeFile(h.globalPath, 'version: 1\nterms: []\n');

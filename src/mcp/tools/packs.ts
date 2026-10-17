@@ -26,6 +26,7 @@ import {
   loadRegistryIndex,
   findRegistryEntry,
   downloadPack,
+  findRegistryRecordMismatch,
   parsePackText,
   parseRegistryRef,
   verifyPackChecksum,
@@ -56,6 +57,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
         'Pass registry (a local path, file:// or https:// URL) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
         'The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. ' +
+        'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). ' +
         'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
       inputSchema: {
         registry: z.string().optional().describe(REGISTRY_SOURCE_DESC),
@@ -65,9 +67,12 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const [packs, loaded] = await Promise.all([listPacks(), load()]);
         const installed = installedPacks(loaded);
+        // `lexicon pack list` and `pack search` report the same disagreement.
+        const mismatch = await findRegistryRecordMismatch(loaded, { cwd: ctx.cwd });
         const result: Record<string, unknown> = {
           packs: packs.map((p) => ({ name: p.name, title: p.title, description: p.description, terms: p.terms, aliases: p.aliases, installed: installed.includes(p.name) })),
           installed,
+          ...(mismatch ? { registryMismatch: mismatch } : {}),
         };
         if (registry) {
           const { index } = await loadRegistryIndex(registry);

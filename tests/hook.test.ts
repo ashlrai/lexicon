@@ -445,6 +445,47 @@ describe('runHook', () => {
     expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:');
   });
 
+  // Catches: an unknown event or a non-object payload was handled without a word anywhere.
+  it('says one stderr line for an unknown event and none for a known or missing one', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 'PreToolUse\u001b[31m' }));
+      expect(stderr).toHaveBeenCalledTimes(1);
+      const line = String(stderr.mock.calls[0]?.[0]);
+      expect(line).toContain('[lexicon hook] unknown hook_event_name "PreToolUse"; handled as UserPromptSubmit');
+      expect(line).not.toContain('\u001b');
+      stderr.mockClear();
+      await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 42 }));
+      expect(String(stderr.mock.calls[0]?.[0])).toContain('unknown hook_event_name "42"');
+      stderr.mockClear();
+      await runHook(payload('plain prompt'));
+      await runHook(JSON.stringify({ prompt: 'plain prompt' }));
+      await runHook(sessionStartPayload());
+      expect(stderr).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('says one stderr line for valid JSON that is not an object, prints nothing and does not throw', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const [raw, kind] of [['[1,2]', 'an array'], ['"hi Ashler"', 'a string'], ['42', 'a number'], ['null', 'null'], ['true', 'a boolean']] as const) {
+        stderr.mockClear();
+        expect(await runHook(raw)).toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        expect(String(stderr.mock.calls[0]?.[0])).toBe(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do\n`);
+      }
+      stderr.mockClear();
+      expect(await runHook('')).toBe('');
+      expect(stderr).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   describe('SessionStart', () => {
     it('emits the claude-md export of the merged lexicon as additionalContext', async () => {
       const { runHook } = await import('../src/hooks/user-prompt-submit.js');

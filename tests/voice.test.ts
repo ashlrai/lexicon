@@ -575,6 +575,22 @@ describe('lexicon voice --toggle', () => {
   });
 });
 
+// Catches: `voice --toggle --json` printed a bare `recording` on the first press, so stdout was not JSON.
+describe('lexicon voice --toggle --json', () => {
+  it('prints {"status":"recording"} on the press that starts, and on a double-tap', async () => {
+    const h = await harness();
+    expect(await runVoiceToggle({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['{"status":"recording"}\n']);
+
+    const again = await harness();
+    const wav = path.join(voiceDir(again.globalPath), 'recording-in-flight.wav');
+    expect(await claimState(again.globalPath, { wav, startedAt: '2026-09-19T12:00:00.000Z' })).toBe(true);
+    expect(await runVoiceToggle({ ...again.opts, json: true }, again.io, again.deps)).toBe(EXIT_OK);
+    expect(again.out).toEqual(['{"status":"recording"}\n']);
+    expect(JSON.parse(again.out[0] ?? '')).toEqual({ status: 'recording' });
+  });
+});
+
 describe('lexicon voice --toggle start race', () => {
   it('a second press while a start is in flight prints "recording" and spawns nothing', async () => {
     const h = await harness();

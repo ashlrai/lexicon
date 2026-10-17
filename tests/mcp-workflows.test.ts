@@ -649,3 +649,194 @@ describe('lexicon list --full and MCP list_terms', () => {
     expect(JSON.parse(bare.out)).toEqual(mcp.terms);
   });
 });
+
+describe('voice-context and lexicon://me', () => {
+  async function read(): Promise<{ prompt: string; me: string }> {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const prompt = await client.getPrompt({ name: 'voice-context' });
+      const me = await client.readResource({ uri: 'lexicon://me' });
+      return {
+        prompt: prompt.messages.map((m) => (m.content.type === 'text' ? m.content.text : '')).join('\n'),
+        me: me.contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n'),
+      };
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  }
+
+  // Catches: an empty lexicon came back as an empty table under "Apply these canonical spellings".
+  it('say the lexicon is empty instead of asking to apply an empty table', async () => {
+    const { prompt, me } = await read();
+    expect(prompt).toContain('the lexicon has no terms yet');
+    expect(prompt).not.toContain('Apply these canonical spellings');
+    expect(me).toContain('the lexicon has no terms yet');
+
+    await fs.writeFile(path.join(home, 'lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
+    const filled = await read();
+    expect(filled.prompt).toContain('Apply these canonical spellings');
+    expect(filled.prompt).not.toContain('no terms yet');
+    expect(filled.me).not.toContain('no terms yet');
+  });
+
+  // Catches: the skipped file's path went into raw markdown unsanitized, so a
+  // bidi override in a cloned directory's name reached the conversation.
+  it('sanitize the skipped project path', async () => {
+    const nasty = path.join(repo, 'evil‮name');
+    await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
+    await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
+    const server = createServer({ cwd: nasty });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const prompt = await client.getPrompt({ name: 'voice-context' });
+      const text = prompt.messages.map((m) => (m.content.type === 'text' ? m.content.text : '')).join('\n');
+      const me = (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
+      for (const t of [text, me]) {
+        expect(t).toContain('evilname');
+        expect(t).not.toContain('‮');
+        expect(t).not.toContain('Fantom');
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+});
+
+describe('a lexicon file that does not parse', () => {
+  // Catches: lexicon://me, lexicon://json and voice-context failed with the bare
+  // parse error, so a model reading them had the file but not the fix.
+  it('resources, prompts and tools name the file and the fix', async () => {
+    const globalPath = process.env.LEXICON_PATH as string;
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const failures: string[] = [];
+      for (const uri of ['lexicon://me', 'lexicon://json']) {
+        failures.push(await client.readResource({ uri }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      }
+      failures.push(await client.getPrompt({ name: 'voice-context' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      expect(tool.isError).toBe(true);
+      failures.push((tool.content ?? []).map((c) => c.text ?? '').join('\n'));
+      for (const message of failures) {
+        expect(message).toContain(`Failed to parse lexicon YAML at ${globalPath}`);
+        expect(message).toContain('run: lexicon edit)');
+        expect(message).toContain('lexicon doctor');
+      }
+      // The onboard prompt reads no lexicon and still works.
+      expect((await client.getPrompt({ name: 'onboard' })).messages.length).toBe(1);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('names lexicon edit --project for a broken trusted project file', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms: [\n', 'utf8');
+    const prev = process.env.LEXICON_TRUST_ALL;
+    process.env.LEXICON_TRUST_ALL = '1';
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const message = await client.readResource({ uri: 'lexicon://me' }).then(() => 'resolved', (e: unknown) => (e as Error).message);
+      expect(message).toContain(projectPath);
+      expect(message).toContain('run: lexicon edit --project');
+    } finally {
+      if (prev === undefined) delete process.env.LEXICON_TRUST_ALL;
+      else process.env.LEXICON_TRUST_ALL = prev;
+      await client.close();
+      await server.close();
+    }
+  });
+});
+
+// Catches: a tool whose declared input schema disagrees with what the call
+// accepts (a required argument the handler treats as optional, or a property
+// typed one way and parsed another). Every tool in tools/list is probed with
+// its required arguments missing and with each property given the wrong type;
+// both must come back as an error that names the argument, never as a success.
+describe('every tool rejects a missing required argument and a mistyped property', () => {
+  interface PropSchema {
+    type?: string | string[];
+    enum?: unknown[];
+  }
+  /** A value of the wrong type for the property (or outside its enum). */
+  const mistyped = (s: PropSchema): unknown => {
+    if (s.enum) return '__not_a_member__';
+    const t = Array.isArray(s.type) ? s.type[0] : s.type;
+    return t === 'string' ? 12345 : t === 'boolean' || t === 'number' || t === 'integer' || t === 'array' || t === 'object' ? 'wrong type' : null;
+  };
+  /** A well-typed placeholder for a required property, so only the probed one is wrong. */
+  const valid = (s: PropSchema): unknown => {
+    if (s.enum) return s.enum[0];
+    const t = Array.isArray(s.type) ? s.type[0] : s.type;
+    return t === 'string' ? 'Zork' : t === 'object' ? { kind: 'alias', canonical: 'Zork', alias: 'zorc' } : t === 'array' ? [] : t === 'boolean' ? false : 1;
+  };
+
+  it('walks tools/list', async () => {
+    const savedHome = process.env.HOME;
+    const savedXdg = process.env.XDG_CONFIG_HOME;
+    // Nothing here should get past validation, but never let a probe touch the real home.
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = path.join(home, '.config');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? '').join('\n');
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.length).toBe(20);
+      let probes = 0;
+      for (const tool of tools) {
+        const props = (tool.inputSchema.properties ?? {}) as Record<string, PropSchema>;
+        const required = (tool.inputSchema.required ?? []) as string[];
+        const base = Object.fromEntries(required.map((k) => [k, valid(props[k] ?? {})]));
+        for (const name of required) {
+          const rest = Object.fromEntries(Object.entries(base).filter(([k]) => k !== name));
+          const r = (await client.callTool({ name: tool.name, arguments: rest })) as ToolResult;
+          expect([tool.name, name, r.isError]).toEqual([tool.name, name, true]);
+          expect(textOf(r), `${tool.name} without ${name}`).toContain(name);
+          probes += 1;
+        }
+        for (const [name, schema] of Object.entries(props)) {
+          const value = mistyped(schema);
+          expect([tool.name, name, value]).not.toEqual([tool.name, name, null]);
+          const r = (await client.callTool({ name: tool.name, arguments: { ...base, [name]: value } })) as ToolResult;
+          expect([tool.name, name, r.isError]).toEqual([tool.name, name, true]);
+          expect(textOf(r), `${tool.name} with ${name}=${JSON.stringify(value)}`).toMatch(new RegExp(`Input validation error[\\s\\S]*\\b${name}\\b`));
+          probes += 1;
+        }
+      }
+      expect(probes).toBeGreaterThan(40);
+      // Nothing was written anywhere.
+      await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+      await expect(fs.stat(path.join(repo, '.lexicon.yaml'))).rejects.toThrow();
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+      if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = savedXdg;
+      await client.close();
+      await server.close();
+    }
+  });
+});

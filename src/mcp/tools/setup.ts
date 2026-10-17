@@ -17,7 +17,7 @@ import { isRecord } from '../../util/json.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
-import { DEFAULT_PORT, probeHealth, readServeConfig, serveUrl } from '../../serve/config.js';
+import { DEFAULT_PORT, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, isLexiconHealth, probeHealth, readServeConfig, serveUrl } from '../../serve/config.js';
 
 /**
  * The API this user's `lexicon serve` listens on: the port in serve.json
@@ -176,7 +176,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       title: 'Local API status',
       description:
         'Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
-        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); or { up: false, error } when nothing answers. Call when a non-MCP surface is not correcting text.',
+        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },
     async () =>
@@ -184,7 +184,9 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         const { base, token } = await serveTarget();
         const url = `${base}/health`;
         const probe = await probeHealth(base, token !== undefined ? { token } : {});
-        if (probe.state === 'up') return textResult({ up: true, url, ...(isRecord(probe.body) ? probe.body : { body: probe.body }) });
+        if (probe.state === 'up' && isLexiconHealth(probe.body)) return textResult({ up: true, url, ...(isRecord(probe.body) ? probe.body : {}) });
+        // A 200 that is not lexicon serve's /health: another program holds the port.
+        if (probe.state === 'up') return textResult({ up: false, url, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign });
         if (probe.state === 'failing') {
           return textResult({
             up: false,
@@ -192,14 +194,14 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
             url,
             status: probe.status,
             error: probe.error,
-            hint: 'The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and call serve_status again. Starting another server will not help.',
+            hint: SERVE_STATUS_HINTS.failing,
           });
         }
         return textResult({
           up: false,
           url,
           error: probe.error,
-          hint: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same).',
+          hint: `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`,
         });
       }),
   );

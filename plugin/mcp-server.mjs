@@ -9779,7 +9779,7 @@ var require_schema2 = __commonJS({
         stringify: stringifyJSON
       }
     ];
-    var jsonError = {
+    var jsonError2 = {
       default: true,
       tag: "",
       test: /^/,
@@ -9788,7 +9788,7 @@ var require_schema2 = __commonJS({
         return str;
       }
     };
-    var schema = [map2.map, seq.seq].concat(jsonScalars, jsonError);
+    var schema = [map2.map, seq.seq].concat(jsonScalars, jsonError2);
     exports.schema = schema;
   }
 });
@@ -51731,12 +51731,12 @@ zones
 zoo
 `;
 function freeze(set2) {
-  const refuse = () => {
+  const refuse2 = () => {
     throw new TypeError("STOPLIST is read-only");
   };
-  set2.add = refuse;
-  set2.delete = refuse;
-  set2.clear = refuse;
+  set2.add = refuse2;
+  set2.delete = refuse2;
+  set2.clear = refuse2;
   return Object.freeze(set2);
 }
 var STOPLIST = freeze(new Set(WORDS.split("\n").filter((w) => w.length > 0)));
@@ -58068,13 +58068,13 @@ function detectImportFormat(content, filename) {
   const text = content.replace(/^﻿/, "");
   const trimmed = text.trimStart();
   if (looksLikePlist(trimmed)) return "macos";
-  let jsonError;
+  let jsonError2;
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     let parsed;
     try {
       parsed = JSON.parse(trimmed);
     } catch (err) {
-      jsonError = err instanceof Error ? err.message : String(err);
+      jsonError2 = err instanceof Error ? err.message : String(err);
       try {
         const yaml = (0, import_yaml5.parse)(trimmed, { prettyErrors: false });
         if (looksLikeLexiconJson(yaml)) return "json";
@@ -58102,9 +58102,9 @@ function detectImportFormat(content, filename) {
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "csv") return "wispr";
   if (ext === "yml" || ext === "yaml") return "espanso";
-  if (jsonError !== void 0 && ext !== "txt") {
+  if (jsonError2 !== void 0 && ext !== "txt") {
     throw new Error(
-      `could not detect the import format: the content starts like JSON but does not parse (${jsonError}); fix the file or pass the format explicitly`
+      `could not detect the import format: the content starts like JSON but does not parse (${jsonError2}); fix the file or pass the format explicitly`
     );
   }
   return "text";
@@ -59337,6 +59337,35 @@ async function writeRegistryState(state, opts = {}) {
   await writeFileAtomic(stateFile(opts), `${JSON.stringify({ ...state, scope: opts.scope ?? "global", target: registryIdentity(opts) }, null, 2)}
 `, { mode: 384 });
 }
+async function installedRegistryPacks(opts = {}) {
+  return Object.keys((await readRegistryState(opts)).packs).sort();
+}
+function registryRecordMismatch(loaded, scope, recorded) {
+  const file2 = scope === "project" ? loaded.project : loaded.global;
+  if (!file2) return void 0;
+  const inFile = (file2.lexicon.settings?.packs ?? []).filter((p) => isRegistryRef(p));
+  const fileOnly = inFile.filter((r) => !recorded.includes(r));
+  const recordOnly = recorded.filter((r) => !inFile.includes(r));
+  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : void 0;
+}
+async function findRegistryRecordMismatch(loaded, opts = {}) {
+  const fileOnly = [];
+  const recordOnly = [];
+  for (const scope of ["global", "project"]) {
+    if (scope === "project" && !loaded.project) continue;
+    let recorded;
+    try {
+      recorded = await installedRegistryPacks({ ...opts, scope });
+    } catch {
+      continue;
+    }
+    const m = registryRecordMismatch(loaded, scope, recorded);
+    if (!m) continue;
+    for (const r of m.fileOnly) if (!fileOnly.includes(r)) fileOnly.push(r);
+    for (const r of m.recordOnly) if (!recordOnly.includes(r)) recordOnly.push(r);
+  }
+  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : void 0;
+}
 async function downloadPack(entry, base, deps = {}) {
   const d = resolvedDeps(deps);
   const url2 = resolvePackUrl(entry, base);
@@ -59532,26 +59561,102 @@ function demonstrate(lexicon, prefer = []) {
 }
 
 // src/mcp/shared.ts
-var import_node_path12 = __toESM(require_node_path());
+var import_node_path13 = __toESM(require_node_path());
+
+// src/cli/io.ts
+var import_node_path11 = __toESM(require_node_path());
+function line(io, s = "") {
+  io.stdout(`${s}
+`);
+}
+function resolveCwd(opts) {
+  return import_node_path11.default.resolve(opts.cwd ?? process.cwd());
+}
+function styler(output2 = process.stdout, env = process.env) {
+  const on = () => Boolean(output2?.isTTY) && !env.NO_COLOR;
+  const paint = (code) => (s) => on() ? `\x1B[${code}m${s}\x1B[0m` : s;
+  return { bold: paint("1"), dim: paint("2"), red: paint("31"), green: paint("32"), yellow: paint("33") };
+}
+var { bold, dim, red, green, yellow } = styler(process.stdout);
+var safe = sanitizeForDisplay;
+function safeLines(s) {
+  return s.split("\n").map(safe).join("\n");
+}
+function plural2(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+function indent(s, prefix) {
+  return s.split("\n").map((l) => prefix + l).join("\n");
+}
+function tildify(p, home) {
+  const rel = import_node_path11.default.relative(home, p);
+  return rel && !rel.startsWith("..") && !import_node_path11.default.isAbsolute(rel) ? `~/${rel.split(import_node_path11.default.sep).join("/")}` : p;
+}
+function renderTable(rows, header) {
+  const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
+  if (all.length === 0) return "";
+  const cols = Math.max(...all.map((r) => r.length));
+  const widths = new Array(cols).fill(0);
+  for (const row of all) {
+    row.forEach((cell, i) => {
+      widths[i] = Math.max(widths[i], cell.length);
+    });
+  }
+  const fmt = (row) => widths.map((w, i) => (row[i] ?? "").padEnd(w)).join("  ").trimEnd();
+  const out = [];
+  if (header) {
+    out.push(fmt(all[0]));
+    out.push(fmt(widths.map((w) => "-".repeat(w))));
+  }
+  for (const row of header ? all.slice(1) : all) out.push(fmt(row));
+  return `${out.join("\n")}
+`;
+}
+function fail(io, err, json2) {
+  const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (json2) printJsonError(io, message, hint);
+  io.stderr(`lexicon: ${safeLines(message)}
+`);
+  if (hint) io.stderr(`lexicon: ${hint}
+`);
+  return 1;
+}
+function jsonError(error62, nextStep) {
+  return { ok: false, error: error62, ...nextStep ? { nextStep } : {} };
+}
+function printJsonError(io, error62, nextStep) {
+  io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
+`);
+}
+function unreadableLexiconHint(message) {
+  const edit = unreadableLexiconEdit(message);
+  return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : void 0;
+}
+function unreadableLexiconEdit(message) {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  if (!m) return void 0;
+  return import_node_path11.default.basename(m[1] ?? "") === ".lexicon.yaml" ? "lexicon edit --project" : "lexicon edit";
+}
 
 // src/util/package.ts
 var import_node_fs10 = __toESM(require_node_fs());
-var import_node_path11 = __toESM(require_node_path());
+var import_node_path12 = __toESM(require_node_path());
 var import_node_url2 = __toESM(require_node_url());
 var PACKAGE_NAME2 = "@ashlr/lexicon";
 var UNKNOWN_VERSION = "0.0.0";
 function findPackageRoot2(from) {
-  let dir = from.startsWith("file:") ? import_node_path11.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path11.default.resolve(from);
+  let dir = from.startsWith("file:") ? import_node_path12.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path12.default.resolve(from);
   for (; ; ) {
-    if (readPackageJson(import_node_path11.default.join(dir, "package.json"))) return dir;
-    const parent = import_node_path11.default.dirname(dir);
+    if (readPackageJson(import_node_path12.default.join(dir, "package.json"))) return dir;
+    const parent = import_node_path12.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packageVersion(moduleUrl) {
   const root = findPackageRoot2(moduleUrl);
-  const pkg = root ? readPackageJson(import_node_path11.default.join(root, "package.json")) : void 0;
+  const pkg = root ? readPackageJson(import_node_path12.default.join(root, "package.json")) : void 0;
   return pkg?.version ?? UNKNOWN_VERSION;
 }
 function readPackageJson(file2) {
@@ -59603,16 +59708,22 @@ function readPackageVersion() {
 }
 function cliDirForInstall() {
   const pkg = findPackage();
-  return pkg ? (0, import_node_path12.join)(pkg.root, "dist", "cli") : void 0;
+  return pkg ? (0, import_node_path13.join)(pkg.root, "dist", "cli") : void 0;
 }
 function textResult(payload) {
   const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   return { isError: false, content: [{ type: "text", text }] };
 }
 function errorResult(err) {
-  const message = errorMessage(err);
+  const message = withLexiconFix(errorMessage(err));
   log("tool error:", message);
   return { isError: true, content: [{ type: "text", text: message }] };
+}
+function withLexiconFix(message) {
+  const edit = unreadableLexiconEdit(message);
+  if (!edit) return message;
+  return `${message}
+Nothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
 }
 async function guarded(fn) {
   try {
@@ -59973,7 +60084,7 @@ var registerTermTools = (server, ctx) => {
 };
 
 // src/mcp/tools/harvest.ts
-var import_node_path13 = __toESM(require_node_path());
+var import_node_path14 = __toESM(require_node_path());
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -59989,7 +60100,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
-      const root = path27 ? (0, import_node_path13.resolve)(ctx.cwd, path27) : ctx.cwd;
+      const root = path27 ? (0, import_node_path14.resolve)(ctx.cwd, path27) : ctx.cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -60016,12 +60127,15 @@ var registerHarvestTools = (server, ctx) => {
           }
         }
       }
-      return textResult({
+      const payload = {
         root,
         candidates,
         count: candidates.length,
-        ...add ? { added, failures } : {}
-      });
+        ...add ? { added, failures } : {},
+        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
+      };
+      if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+      return textResult(payload);
     })
   );
   server.registerTool(
@@ -60035,7 +60149,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
-      const root = cwdArg ? (0, import_node_path13.resolve)(ctx.cwd, cwdArg) : ctx.cwd;
+      const root = cwdArg ? (0, import_node_path14.resolve)(ctx.cwd, cwdArg) : ctx.cwd;
       const loaded = await loadLexicon({ cwd: root });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
@@ -60071,9 +60185,15 @@ var registerHarvestTools = (server, ctx) => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
       let target = scope ?? suggestion.scope;
-      if (target === void 0 && (kind === "alias" || kind === "never")) {
+      if (kind === "alias" || kind === "never") {
         const key = canonical.trim().toLowerCase();
-        target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+        const existing = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+        if (!existing) {
+          throw new Error(
+            `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
+          );
+        }
+        target ??= existing.scope;
       }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
@@ -60106,11 +60226,11 @@ var registerHarvestTools = (server, ctx) => {
 
 // src/mcp/tools/trust.ts
 var import_node_fs11 = __toESM(require_node_fs());
-var import_node_path14 = __toESM(require_node_path());
+var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(cwd, path27) {
-  const resolved2 = (0, import_node_path14.resolve)(cwd, path27);
+  const resolved2 = (0, import_node_path15.resolve)(cwd, path27);
   try {
-    if ((0, import_node_fs11.statSync)(resolved2).isDirectory()) return (0, import_node_path14.join)(resolved2, PROJECT_FILE_NAME);
+    if ((0, import_node_fs11.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
   } catch {
   }
   return resolved2;
@@ -60128,6 +60248,11 @@ async function askUserToTrust(server, safePath, file2) {
     }
   });
   return answer.action === "accept" && answer.content?.trust === true ? "accept" : "decline";
+}
+function invalidFileNextStep(safePath) {
+  const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
+  const fix = isProjectFile ? "run: lexicon edit --project, in that repo" : `open ${safePath} in an editor`;
+  return `Ask the user to fix the file (${fix}), check it with: lexicon doctor, then call trust_project again. Do not open it yourself.`;
 }
 var registerTrustTools = (server, ctx) => {
   const { load } = ctx;
@@ -60158,7 +60283,7 @@ var registerTrustTools = (server, ctx) => {
         try {
           file3 = await readLexiconFile(filePath, "project");
         } catch (err) {
-          return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)) });
+          return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)), nextStep: invalidFileNextStep(safePath ?? "") });
         }
         if (!file3.exists) return textResult({ ...base, path: safePath, status: "missing" });
         const status = await isTrusted(file3, { cwd: ctx.cwd });
@@ -60180,7 +60305,7 @@ var registerTrustTools = (server, ctx) => {
       try {
         file2 = await readLexiconFile(filePath, "project");
       } catch (err) {
-        throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}`);
+        throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? "")}`);
       }
       if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
@@ -60223,71 +60348,6 @@ var registerTrustTools = (server, ctx) => {
 // src/cli/commands.ts
 var import_node_fs20 = __toESM(require_node_fs());
 var import_node_path23 = __toESM(require_node_path());
-
-// src/cli/io.ts
-var import_node_path15 = __toESM(require_node_path());
-function line(io, s = "") {
-  io.stdout(`${s}
-`);
-}
-function resolveCwd(opts) {
-  return import_node_path15.default.resolve(opts.cwd ?? process.cwd());
-}
-function styler(output2 = process.stdout, env = process.env) {
-  const on = () => Boolean(output2?.isTTY) && !env.NO_COLOR;
-  const paint = (code) => (s) => on() ? `\x1B[${code}m${s}\x1B[0m` : s;
-  return { bold: paint("1"), dim: paint("2"), red: paint("31"), green: paint("32"), yellow: paint("33") };
-}
-var { bold, dim, red, green, yellow } = styler(process.stdout);
-var safe = sanitizeForDisplay;
-function safeLines(s) {
-  return s.split("\n").map(safe).join("\n");
-}
-function plural2(n, word) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-function indent(s, prefix) {
-  return s.split("\n").map((l) => prefix + l).join("\n");
-}
-function tildify(p, home) {
-  const rel = import_node_path15.default.relative(home, p);
-  return rel && !rel.startsWith("..") && !import_node_path15.default.isAbsolute(rel) ? `~/${rel.split(import_node_path15.default.sep).join("/")}` : p;
-}
-function renderTable(rows, header) {
-  const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
-  if (all.length === 0) return "";
-  const cols = Math.max(...all.map((r) => r.length));
-  const widths = new Array(cols).fill(0);
-  for (const row of all) {
-    row.forEach((cell, i) => {
-      widths[i] = Math.max(widths[i], cell.length);
-    });
-  }
-  const fmt = (row) => widths.map((w, i) => (row[i] ?? "").padEnd(w)).join("  ").trimEnd();
-  const out = [];
-  if (header) {
-    out.push(fmt(all[0]));
-    out.push(fmt(widths.map((w) => "-".repeat(w))));
-  }
-  for (const row of header ? all.slice(1) : all) out.push(fmt(row));
-  return `${out.join("\n")}
-`;
-}
-function fail(io, err) {
-  const message = errorMessage(err);
-  io.stderr(`lexicon: ${safeLines(message)}
-`);
-  const hint = unreadableLexiconHint(message);
-  if (hint) io.stderr(`lexicon: ${hint}
-`);
-  return 1;
-}
-function unreadableLexiconHint(message) {
-  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
-  if (!m) return void 0;
-  const edit = import_node_path15.default.basename(m[1] ?? "") === ".lexicon.yaml" ? "lexicon edit --project" : "lexicon edit";
-  return `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor`;
-}
 
 // src/cli/claude-settings.ts
 var import_node_fs14 = __toESM(require_node_fs());
@@ -62185,6 +62245,15 @@ function serveUrl(port, host = DEFAULT_HOST) {
   const h = host.includes(":") ? `[${host}]` : host;
   return `http://${h}:${port}`;
 }
+function isLexiconHealth(body) {
+  return typeof body === "object" && body !== null && !Array.isArray(body) && body.ok === true;
+}
+var SERVE_STATUS_HINTS = {
+  failing: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.",
+  down: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.",
+  foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
+};
+var FOREIGN_HEALTH_ERROR = "unexpected /health response (not lexicon serve)";
 async function probeHealth(baseUrl, opts = {}) {
   const doFetch = opts.fetch ?? fetch;
   let res;
@@ -63143,9 +63212,9 @@ async function runSetup(opts, io, deps = {}) {
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  if (opts.json) io.stdout(`${JSON.stringify(ctx.plan ?? ctx.summary, null, 2)}
-`);
   const failed = ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...ctx.plan ?? ctx.summary }, null, 2)}
+`);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...ctx.plan ? { plan: ctx.plan } : {} };
 }
 
@@ -63252,14 +63321,15 @@ var registerSetupTools = (server, ctx) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); or { up: false, error } when nothing answers. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
       const { base, token } = await serveTarget();
       const url2 = `${base}/health`;
       const probe = await probeHealth(base, token !== void 0 ? { token } : {});
-      if (probe.state === "up") return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : { body: probe.body } });
+      if (probe.state === "up" && isLexiconHealth(probe.body)) return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : {} });
+      if (probe.state === "up") return textResult({ up: false, url: url2, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign });
       if (probe.state === "failing") {
         return textResult({
           up: false,
@@ -63267,14 +63337,14 @@ var registerSetupTools = (server, ctx) => {
           url: url2,
           status: probe.status,
           error: probe.error,
-          hint: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and call serve_status again. Starting another server will not help."
+          hint: SERVE_STATUS_HINTS.failing
         });
       }
       return textResult({
         up: false,
         url: url2,
         error: probe.error,
-        hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+        hint: `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
       });
     })
   );
@@ -63445,7 +63515,7 @@ var registerPackTools = (server, ctx) => {
     "list_packs",
     {
       title: "List the starter term packs",
-      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
       inputSchema: {
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
       }
@@ -63453,9 +63523,11 @@ var registerPackTools = (server, ctx) => {
     async ({ registry: registry2 }) => guarded(async () => {
       const [packs, loaded] = await Promise.all([listPacks(), load()]);
       const installed = installedPacks(loaded);
+      const mismatch = await findRegistryRecordMismatch(loaded, { cwd: ctx.cwd });
       const result = {
         packs: packs.map((p) => ({ name: p.name, title: p.title, description: p.description, terms: p.terms, aliases: p.aliases, installed: installed.includes(p.name) })),
-        installed
+        installed,
+        ...mismatch ? { registryMismatch: mismatch } : {}
       };
       if (registry2) {
         const { index } = await loadRegistryIndex(registry2);
@@ -63684,6 +63756,7 @@ function cwdFromRoots(roots) {
   return void 0;
 }
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
+var EMPTY_LEXICON_NOTE = "Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).";
 var ONBOARD_PROMPT = [
   "Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:",
   "1. Ask for my company or product names, spelled exactly as they should appear (capitalization and punctuation included), and how I pronounce each one.",
@@ -63765,6 +63838,17 @@ function createServer2(opts = {}) {
     normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
+  const loadForContext = async () => {
+    try {
+      return await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      const fixed = withLexiconFix(message);
+      if (fixed === message) throw err;
+      log("lexicon unreadable:", message);
+      throw new Error(fixed);
+    }
+  };
   server.registerResource(
     "Personal voice lexicon",
     "lexicon://me",
@@ -63774,8 +63858,8 @@ function createServer2(opts = {}) {
       mimeType: "text/markdown"
     },
     async (uri) => {
-      const loaded = await load();
-      const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded);
+      const loaded = await loadForContext();
+      const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text }]
       };
@@ -63790,7 +63874,7 @@ function createServer2(opts = {}) {
       mimeType: "application/json"
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       const skipped = skippedProjectFields(loaded);
       const text = Object.keys(skipped).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}
 ` : exportLexicon(loaded.merged, "json");
@@ -63806,15 +63890,16 @@ function createServer2(opts = {}) {
       description: "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session."
     },
     async () => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       const snippet2 = exportLexicon(loaded.merged, "claude-md").trimEnd() + skippedProjectSuffix(loaded);
+      const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
           {
             role: "user",
             content: { type: "text", text: `${snippet2}
 
-${VOICE_CONTEXT_INSTRUCTION}` }
+${instruction}` }
           }
         ]
       };
@@ -63834,9 +63919,15 @@ ${VOICE_CONTEXT_INSTRUCTION}` }
 }
 function skippedProjectSuffix(loaded) {
   if (!loaded.skippedProject) return "";
+  const where = sanitizeForDisplayMax(loaded.skippedProject.path, 4096);
   return `
 
-Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+}
+function emptyLexiconSuffix(loaded) {
+  return loaded.merged.terms.length === 0 ? `
+${EMPTY_LEXICON_NOTE}
+` : "";
 }
 async function main() {
   const server = createServer2();
