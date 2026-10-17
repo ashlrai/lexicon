@@ -604,7 +604,8 @@ vi.mock('../src/core/store.js', async (importOriginal) => {
   };
 });
 
-import { MAX_IMPORT_BYTES, runImport } from '../src/cli/cmd-import.js';
+import { MAX_IMPORT_BYTES, importOptionConflict, registerImportCommands, runImport } from '../src/cli/cmd-import.js';
+import { Command } from 'commander';
 import { readLexiconFile, resolvePaths } from '../src/core/store.js';
 import { makeIO } from './helpers.js';
 
@@ -690,6 +691,20 @@ describe('runImport', () => {
     expect(io.err).toContain('unknown import format "bogus"');
     expect(io.err).toContain('superwhisper');
     expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  // Catches: under --json an unknown format printed only the stderr lines,
+  // so a script parsing stdout got nothing.
+  it('unknown format under --json prints { ok: false, error, nextStep } on stdout', async () => {
+    const io = makeIO();
+    const code = await runImport('x', { format: 'bogus', json: true }, io, read(''));
+    expect(code).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({
+      ok: false,
+      error: 'unknown import format "bogus"',
+      nextStep: expect.stringContaining('superwhisper'),
+    });
+    expect(io.err).toContain('unknown import format "bogus"');
   });
 
   it('rejects an unknown --category or --source', async () => {
@@ -901,5 +916,58 @@ describe('auto-detection of malformed JSON', () => {
     expect(detectImportFormat('{version: 1, terms: [{canonical: Ashlr.AI, aliases: [Ashler]}]}')).toBe('json');
     expect(importLexicon('[draft] Ashlr.AI: Ashler', 'text').terms).toHaveLength(1);
     expect(detectImportFormat('[draft] Ashlr.AI: Ashler', 'notes.txt')).toBe('text');
+  });
+});
+
+// Catches: `lexicon import` has two modes on one command and each ignored the
+// other's options (a file import ran with --sources, --yes or --limit as if
+// they were not there; --guided ignored --category), and a positional format
+// silently beat a different --format.
+describe('lexicon import option conflicts', () => {
+  afterEach(() => {
+    process.exitCode = undefined;
+    vi.clearAllMocks();
+  });
+
+  it('importOptionConflict names the stray options for each mode', () => {
+    expect(importOptionConflict(undefined, {})).toBeUndefined();
+    expect(importOptionConflict('csv', { format: 'csv' })).toBeUndefined();
+    expect(importOptionConflict('text', { format: 'csv' })).toBe('the format is given twice ("text" and --format "csv"); pass one of them');
+    expect(importOptionConflict(undefined, { sources: 'github', yes: true })).toBe(
+      '--sources, --yes apply only with --guided; add --guided, or drop them to import a file',
+    );
+    expect(importOptionConflict(undefined, { limit: '5' })).toBe('--limit applies only with --guided; add --guided, or drop it to import a file');
+    expect(importOptionConflict(undefined, { guided: true, sources: 'github', limit: '5', yes: true, previewId: 'a', accept: 'b' })).toBeUndefined();
+    expect(importOptionConflict(undefined, { guided: true, category: 'brand' })).toBe('--category applies to a file import, not to --guided; drop it');
+    expect(importOptionConflict('csv', { guided: true, source: 'import' })).toBe('--source, the format argument apply to a file import, not to --guided; drop them');
+    // Shared options are fine in either mode.
+    expect(importOptionConflict(undefined, { guided: true, dryRun: true, project: true, json: true })).toBeUndefined();
+    expect(importOptionConflict(undefined, { dryRun: true, project: true, json: true, category: 'brand', source: 'import' })).toBeUndefined();
+  });
+
+  async function run(args: string[]): Promise<ReturnType<typeof makeIO>> {
+    const io = makeIO();
+    const program = new Command().exitOverride().option('--cwd <dir>');
+    registerImportCommands(program, io);
+    await program.parseAsync(args, { from: 'user' });
+    return io;
+  }
+
+  it('the command refuses them before reading anything, with JSON on stdout under --json', async () => {
+    const io = await run(['import', 'names.txt', 'text', '--format', 'csv', '--json']);
+    expect(process.exitCode).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({
+      ok: false,
+      error: 'the format is given twice ("text" and --format "csv"); pass one of them',
+      nextStep: 'see the usage: lexicon import --help',
+    });
+    expect(store.addTerm).not.toHaveBeenCalled();
+
+    process.exitCode = undefined;
+    const stray = await run(['import', 'names.txt', '--sources', 'github', '--yes']);
+    expect(process.exitCode).toBe(1);
+    expect(stray.out).toBe('');
+    expect(stray.err).toContain('lexicon: --sources, --yes apply only with --guided');
+    expect(store.addTerm).not.toHaveBeenCalled();
   });
 });

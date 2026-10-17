@@ -591,6 +591,58 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(unknown.status).toBe(404);
   });
 
+  // Catches: /export ignored ?category= and ?limit= (which `lexicon export`
+  // and MCP export_lexicon take) and returned every term with 200, and every
+  // GET route dropped an unknown query parameter, so a typo such as ?cdw=
+  // answered for the server's own directory as if nothing were wrong.
+  it('/export/<format> applies ?category= and ?limit=, and refuses bad values', async () => {
+    const lines = async (route: string): Promise<string[]> => {
+      const res = await api('GET', route);
+      expect(res.status).toBe(200);
+      return (await res.text()).split('\n').filter((l) => l !== '');
+    };
+    // The lexicon holds Ashlr.AI (brand) and Entire.io (product, added by the /add test above).
+    const canonicals = async (route: string): Promise<string[]> => (await lines(route)).map((l) => l.split(':')[0]);
+    expect(await canonicals('/export/text')).toEqual(['Ashlr.AI', 'Entire.io']);
+    expect(await canonicals('/export/text?category=brand')).toEqual(['Ashlr.AI']);
+    expect(await canonicals('/export/text?category=Product')).toEqual(['Entire.io']);
+    expect(await canonicals('/export/text?category=brand,product')).toEqual(['Ashlr.AI', 'Entire.io']);
+    expect(await canonicals('/export/text?category=brand&category=product')).toEqual(['Ashlr.AI', 'Entire.io']);
+    expect(await canonicals('/export/text?category=person')).toEqual([]);
+    expect(await lines('/export/text?limit=1')).toHaveLength(1);
+
+    const badCategory = await api('GET', '/export/text?category=nope');
+    expect(badCategory.status).toBe(400);
+    expect(((await badCategory.json()) as { error: string }).error).toBe(
+      'unknown category "nope" (one of: brand, person, product, acronym, identifier, place, other)',
+    );
+    for (const limit of ['0', '-1', 'abc', '1.5']) {
+      const res = await api('GET', `/export/text?limit=${limit}`);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe(`limit must be a positive integer, got "${limit}"`);
+    }
+  });
+
+  it('GET routes refuse an unknown or repeated query parameter', async () => {
+    const cases: [string, string][] = [
+      ['/export/csv?categories=brand', 'unknown query parameter "categories" (GET /export/:format takes cwd, category, limit)'],
+      ['/lexicon?cdw=/tmp', 'unknown query parameter "cdw" (GET /lexicon takes cwd)'],
+      ['/stats?verbose=1', 'unknown query parameter "verbose" (GET /stats takes cwd)'],
+      ['/packs?registry=x', 'unknown query parameter "registry" (GET /packs takes cwd)'],
+      ['/aliases?canonical=Vercel&limit=3', 'unknown query parameter "limit" (GET /aliases takes canonical)'],
+      [`/lexicon?cwd=${encodeURIComponent(env.cwd)}&cwd=${encodeURIComponent(env.cwd)}`, 'query parameter "cwd" given more than once'],
+      ['/export/text?limit=1&limit=2', 'query parameter "limit" given more than once'],
+    ];
+    for (const [route, error] of cases) {
+      const res = await api('GET', route);
+      expect(res.status, route).toBe(400);
+      expect(((await res.json()) as { error: string }).error, route).toBe(error);
+    }
+    // The parameters each route does take still work.
+    expect((await api('GET', `/stats?cwd=${encodeURIComponent(env.cwd)}`)).status).toBe(200);
+    expect((await api('GET', '/aliases?canonical=Vercel')).status).toBe(200);
+  });
+
   it('/stats returns LexiconStats', async () => {
     const res = await api('GET', '/stats');
     expect(res.status).toBe(200);

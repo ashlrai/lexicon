@@ -53421,6 +53421,9 @@ var InputError = class extends Error {
     this.name = "InputError";
   }
 };
+function isInputError(err) {
+  return err instanceof Error && err.name === "InputError";
+}
 
 // src/util/atomic.ts
 var BACKUP_SUFFIX = ".bak";
@@ -57671,6 +57674,9 @@ function exportLexicon(lexicon, format, opts = {}) {
   }
   return exporter(applyOptions(lexicon, opts), opts);
 }
+function selectExportTerms(lexicon, opts = {}) {
+  return applyOptions(lexicon, opts).terms;
+}
 function applyOptions(lexicon, opts) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
@@ -58686,12 +58692,12 @@ function computeStats(loaded) {
   const terms = loaded.merged.terms;
   const byCategory = {};
   const bySource = {};
-  let aliasCount = 0;
+  let aliasCount2 = 0;
   let totalHits = 0;
   const neverHit = [];
   let neverHitCount = 0;
   for (const term of terms) {
-    aliasCount += term.aliases.length;
+    aliasCount2 += term.aliases.length;
     const hits = term.hits ?? 0;
     totalHits += hits;
     if (hits <= 0) {
@@ -58708,7 +58714,7 @@ function computeStats(loaded) {
   if (loaded.project) {
     files.push({ path: loaded.project.path, scope: "project", terms: loaded.project.lexicon.terms.length });
   }
-  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
+  return { termCount: terms.length, aliasCount: aliasCount2, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
 }
 
 // src/core/suggestTerms.ts
@@ -60289,6 +60295,11 @@ function holds(terms, canonical) {
   const key = canonical.trim().toLowerCase();
   return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
 }
+function holdsAlias(terms, canonical, alias) {
+  const key = canonical.trim().toLowerCase();
+  const drop = alias.trim().toLowerCase();
+  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
+}
 var registerTermTools = (server, ctx) => {
   const { load } = ctx;
   async function whereElse(canonical, scope) {
@@ -60420,7 +60431,7 @@ var registerTermTools = (server, ctx) => {
     "remove_term",
     {
       title: "Remove a lexicon term or one of its aliases",
-      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error; when the other lexicon file's copy of the term has that alias, the error names that file and the scope to pass.",
       inputSchema: {
         canonical: nonBlank(),
         alias: nonBlank().optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
@@ -60436,9 +60447,20 @@ var registerTermTools = (server, ctx) => {
         try {
           result = await removeAlias(canonical, alias, opts);
         } catch (err) {
-          const global = termHolders(await load(), canonical).find((h) => h.scope === "global");
-          if (!isProjectTrustError(err) || !global) throw err;
-          throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+          const loaded = await load();
+          const global = termHolders(loaded, canonical).find((h) => h.scope === "global");
+          if (isProjectTrustError(err) && global) {
+            throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+          }
+          if (isInputError(err) && scope !== void 0) {
+            const other = scope === "global" ? loaded.project : loaded.global;
+            if (other && holdsAlias(other.lexicon.terms, canonical, alias)) {
+              throw new Error(
+                `${errorMessage(err)}. It is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); call remove_term again with scope "${other.scope}", or without scope to remove it from every file whose copy has it.`
+              );
+            }
+          }
+          throw err;
         }
         const untrustedProject2 = untrustedAliasHolder(await load(), canonical, alias);
         return textResult({
@@ -60522,7 +60544,7 @@ var registerTermTools = (server, ctx) => {
     "export_lexicon",
     {
       title: "Export the lexicon",
-      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}.`,
+      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include these categories."),
@@ -60533,11 +60555,22 @@ var registerTermTools = (server, ctx) => {
       const resolved2 = resolveExportFormat(format);
       if (!resolved2) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
       const loaded = await load();
-      const exported = exportLexicon(loaded.merged, resolved2, {
+      const opts = {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
-      });
-      return textResult(exported);
+      };
+      const exported = exportLexicon(loaded.merged, resolved2, opts);
+      const notes = [];
+      if (loaded.merged.terms.length === 0) {
+        notes.push("The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.");
+      } else if (selectExportTerms(loaded.merged, opts).length === 0) {
+        notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+      }
+      const skipped = skippedProjectFields(loaded, "Its terms are not in this export.").note;
+      if (skipped) notes.push(skipped);
+      const result = textResult(exported);
+      if (notes.length > 0) result.content.push({ type: "text", text: `Note (not part of the export): ${notes.join(" ")}` });
+      return result;
     })
   );
   server.registerTool(
@@ -60572,7 +60605,9 @@ var registerTermTools = (server, ctx) => {
         ...conflict ? { conflict } : {},
         ...untrustedProject ? { untrustedProject } : {},
         ...pending ?? {},
-        summary: saved + conflictNote + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
+        // `saved` has no full stop of its own (the conflict note continues
+        // its sentence), so one is added before any note that starts a new one.
+        summary: saved + (conflictNote || (untrustedNote || pending ? "." : "")) + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
       });
     })
   );
@@ -60619,6 +60654,9 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path14 = __toESM(require_node_path());
+function aliasCount(n) {
+  return `${n} alias${n === 1 ? "" : "es"}`;
+}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -60778,7 +60816,11 @@ var registerHarvestTools = (server, ctx) => {
       const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
       const shown = untrusted && !saved.created ? term : saved.term;
       const pending = untrusted ? untrustedWriteFields(saved.file.path, "It") : void 0;
-      const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : `added "${shown.canonical}" (${shown.aliases.length} alias${shown.aliases.length === 1 ? "" : "es"})`) + (pending ? `. ${pending.nextStep}` : "");
+      const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : saved.created ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})` : (
+        // A 'term' whose canonical the lexicon already had merges into it; an
+        // untrusted file's copy is not read back, so it has no count then.
+        `merged into the existing "${shown.canonical}"${untrusted ? "" : ` (${aliasCount(shown.aliases.length)} now)`}`
+      )) + (pending ? `. ${pending.nextStep}` : "");
       return textResult({ kind, canonical: shown.canonical, term: shown, path: saved.file.path, created: saved.created, ...pending ?? {}, summary });
     })
   );
@@ -64088,6 +64130,7 @@ async function defaultReadInput(file2, cwd) {
 async function runImport(file2, opts, io, readInput = defaultReadInput) {
   const format = opts.format ?? "auto";
   if (!isImportFormat(format)) {
+    if (opts.json) printJsonError(io, `unknown import format "${format}"`, `pass one of: ${IMPORT_FORMATS.join(", ")} (or leave it out to detect the format)`);
     io.stderr(`lexicon: unknown import format "${safe(format)}"
 `);
     io.stderr(formatList());

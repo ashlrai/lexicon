@@ -20638,7 +20638,21 @@ function foldWithOffsets(text) {
   const starts = [];
   const ends = [];
   let at = 0;
+  let inSpace = false;
   for (const ch of text) {
+    if (/\s/u.test(ch)) {
+      if (inSpace) {
+        ends[ends.length - 1] = at + ch.length;
+      } else {
+        starts.push(at);
+        ends.push(at + ch.length);
+        folded += " ";
+        inSpace = true;
+      }
+      at += ch.length;
+      continue;
+    }
+    inSpace = false;
     const lower = ch.toLowerCase();
     for (let k = 0; k < lower.length; k += 1) {
       starts.push(at);
@@ -20652,7 +20666,7 @@ function foldWithOffsets(text) {
 function foldPerCodePoint2(text) {
   let folded = "";
   for (const ch of text) folded += ch.toLowerCase();
-  return folded;
+  return squash2(folded);
 }
 function spansOf(haystack, needle) {
   const spans = [];

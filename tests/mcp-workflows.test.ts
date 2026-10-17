@@ -99,6 +99,37 @@ describe('remove_term', () => {
     expect(gone.note).toMatch(/list_terms/);
   });
 
+  // Catches: with `alias` and a scope whose file lacks the term (or the
+  // alias), the error was the bare "no term ... in the project lexicon"; the
+  // call without `alias` names the other file in `foundIn`, this one gave the
+  // agent no next step.
+  it('with `alias` and the wrong scope, the error names the file whose copy holds the alias and the scope to pass', async () => {
+    await trustedProjectFile();
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control', 'kube cuddle'] });
+
+    const wrong = await call('remove_term', { canonical: 'kubectl', alias: 'cube control', scope: 'project' });
+    expect(wrong.isError).toBe(true);
+    expect(wrong.text).toBe(
+      `no term "kubectl" in the project lexicon. It is an alias of "kubectl" in the global lexicon (${path.join(home, 'lexicon.yaml')}); ` +
+        'call remove_term again with scope "global", or without scope to remove it from every file whose copy has it.',
+    );
+
+    // The project copy exists but lacks the alias: the same hint.
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube cuddle'], scope: 'project' });
+    const lacking = await call('remove_term', { canonical: 'kubectl', alias: 'kube cuddle', scope: 'project' });
+    expect(lacking.isError).toBe(true);
+    expect(lacking.text).toMatch(/^"kube cuddle" is not an alias of "kubectl" in the project lexicon\. It is an alias of "kubectl" in the global lexicon/);
+    expect(lacking.text).toMatch(/scope "global"/);
+
+    // An alias no file has keeps the plain error.
+    const nowhere = await call('remove_term', { canonical: 'kubectl', alias: 'nope', scope: 'global' });
+    expect(nowhere.isError).toBe(true);
+    expect(nowhere.text).toBe('"nope" is not an alias of "kubectl" in the global lexicon');
+
+    const ok = JSON.parse((await call('remove_term', { canonical: 'kubectl', alias: 'cube control', scope: 'global' })).text) as Record<string, unknown>;
+    expect(ok).toMatchObject({ removed: true, aliases: ['kube cuddle'] });
+  });
+
   // Catches: without `scope` only the project copy went, and the result said nothing about the global copy.
   it('names the copy left in the other lexicon file when the term is in both', async () => {
     await trustedProjectFile();
@@ -1330,5 +1361,39 @@ describe('environment variables the MCP server reads', () => {
       expect(section, name).toContain(`| \`${name}\` |`);
     }
     expect(await fs.readFile(path.join(root, 'README.md'), 'utf8')).toContain('(docs/MCP.md#environment-variables)');
+  });
+});
+
+// Catches: summaries an agent relays as written read wrong. learn_correction
+// into an untrusted project file ran its sentences together ("... saved It
+// was written to ..."), and apply_suggestion with a 'term' the lexicon
+// already had said "added" though `created` was false and it only merged.
+describe('summaries', () => {
+  it('learn_correction ends its first sentence before the untrusted-file next step', async () => {
+    const result = JSON.parse((await call('learn_correction', { heard: 'Hetsner', meant: 'Hetzner', scope: 'project' })).text) as {
+      trusted?: boolean;
+      summary: string;
+    };
+    expect(result.trusted).toBe(false);
+    expect(result.summary).toMatch(/^"Hetsner" -> "Hetzner" saved\. It was written to /);
+    // Nothing follows: no full stop is added.
+    const plain = JSON.parse((await call('learn_correction', { heard: 'Versel', meant: 'Vercel' })).text) as { summary: string };
+    expect(plain.summary).toBe('"Versel" -> "Vercel" saved');
+  });
+
+  it('apply_suggestion says a term suggestion merged into an existing term', async () => {
+    await call('add_term', { canonical: 'Vercel', aliases: ['Versel'] });
+    const merged = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'term', canonical: 'Vercel', aliases: ['Vrcl'] } })).text) as {
+      created: boolean;
+      summary: string;
+    };
+    expect(merged.created).toBe(false);
+    expect(merged.summary).toBe('merged into the existing "Vercel" (2 aliases now)');
+    const added = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'term', canonical: 'Hetzner', aliases: ['Hetsner'] } })).text) as {
+      created: boolean;
+      summary: string;
+    };
+    expect(added.created).toBe(true);
+    expect(added.summary).toBe('added "Hetzner" (1 alias)');
   });
 });

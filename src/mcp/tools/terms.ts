@@ -21,6 +21,7 @@ import {
   removeAlias,
   removeTerm,
   resolveExportFormat,
+  selectExportTerms,
   spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
@@ -32,7 +33,7 @@ import {
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
-import { errorMessage } from '../../util/errors.js';
+import { errorMessage, isInputError } from '../../util/errors.js';
 import { cliCommand } from '../../util/cli-hint.js';
 
 /**
@@ -82,6 +83,13 @@ export function normalizeCut(text: string, max: number): number {
 function holds(terms: readonly Term[] | undefined, canonical: string): boolean {
   const key = canonical.trim().toLowerCase();
   return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
+}
+
+/** Whether `terms` has `canonical` with `alias` among its aliases (both case-insensitive). */
+function holdsAlias(terms: readonly Term[] | undefined, canonical: string, alias: string): boolean {
+  const key = canonical.trim().toLowerCase();
+  const drop = alias.trim().toLowerCase();
+  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
 }
 
 export const registerTermTools: ToolRegistrar = (server, ctx) => {
@@ -307,7 +315,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'name exactly -- use list_terms first if you are unsure which canonical the user means. ' +
         'A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other ' +
         'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an ' +
-        'unknown term or an alias the term does not have is an error.',
+        'unknown term or an alias the term does not have is an error; when the other lexicon file\'s copy of the term has that alias, the error names that file and the scope to pass.',
       inputSchema: {
         canonical: nonBlank(),
         alias: nonBlank()
@@ -331,9 +339,24 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           } catch (err) {
             // Without a scope the untrusted project copy comes first and is
             // refused; say that the global copy is still editable on its own.
-            const global = termHolders(await load(), canonical).find((h) => h.scope === 'global');
-            if (!isProjectTrustError(err) || !global) throw err;
-            throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+            const loaded = await load();
+            const global = termHolders(loaded, canonical).find((h) => h.scope === 'global');
+            if (isProjectTrustError(err) && global) {
+              throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+            }
+            // A scope whose file lacks the term or the alias, when the other
+            // (loaded) file's copy has it: name that file and the scope to pass,
+            // as the call without `alias` does in `foundIn` and `note`.
+            if (isInputError(err) && scope !== undefined) {
+              const other = scope === 'global' ? loaded.project : loaded.global;
+              if (other && holdsAlias(other.lexicon.terms, canonical, alias)) {
+                throw new Error(
+                  `${errorMessage(err)}. It is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); ` +
+                    `call remove_term again with scope "${other.scope}", or without scope to remove it from every file whose copy has it.`,
+                );
+              }
+            }
+            throw err;
           }
           // The skipped project file's copy of the term may hold the alias too:
           // it is never edited, and it corrects again once trusted. Path only.
@@ -446,7 +469,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       title: 'Export the lexicon',
       description:
         "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. " +
-        `Aliases: ${EXPORT_ALIAS_NOTE}.`,
+        `Aliases: ${EXPORT_ALIAS_NOTE}. ` +
+        'The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: ' +
+        'the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
         categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include these categories.'),
@@ -458,11 +483,26 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const resolved = resolveExportFormat(format);
         if (!resolved) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(', ')})`);
         const loaded = await load();
-        const exported = exportLexicon(loaded.merged, resolved, {
+        const opts = {
           ...(categories !== undefined ? { categories } : {}),
           ...(limit !== undefined ? { limit } : {}),
-        });
-        return textResult(exported);
+        };
+        const exported = exportLexicon(loaded.merged, resolved, opts);
+        // The export goes to a file or another tool verbatim, so what the
+        // caller needs to know rides in a separate block: an empty export
+        // and one missing the untrusted project's terms otherwise read as a
+        // complete one (`lexicon export` says the same on stderr).
+        const notes: string[] = [];
+        if (loaded.merged.terms.length === 0) {
+          notes.push('The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.');
+        } else if (selectExportTerms(loaded.merged, opts).length === 0) {
+          notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+        }
+        const skipped = skippedProjectFields(loaded, 'Its terms are not in this export.').note;
+        if (skipped) notes.push(skipped);
+        const result = textResult(exported);
+        if (notes.length > 0) result.content.push({ type: 'text', text: `Note (not part of the export): ${notes.join(' ')}` });
+        return result;
       }),
   );
 
@@ -536,7 +576,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(conflict ? { conflict } : {}),
           ...(untrustedProject ? { untrustedProject } : {}),
           ...(pending ?? {}),
-          summary: saved + conflictNote + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
+          // `saved` has no full stop of its own (the conflict note continues
+          // its sentence), so one is added before any note that starts a new one.
+          summary: saved + (conflictNote || (untrustedNote || pending ? '.' : '')) + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
         });
       }),
   );

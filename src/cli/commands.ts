@@ -62,6 +62,7 @@ import {
   emptyLexicon,
   isEmptyLexicon,
   exportLexicon,
+  selectExportTerms,
   resolveExportFormat,
   harvestRepo,
   loadLexicon,
@@ -143,7 +144,7 @@ export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './
 import { runHarvestInteractive } from './cmd-review.js';
 import { createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
-import { errorMessage } from '../util/errors.js';
+import { errorMessage, isInputError } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
 // IO + shared helpers
@@ -499,13 +500,23 @@ async function runRemoveAlias(
     result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
     const message = errorMessage(err);
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message), canonical, alias, removed: false, ...extra }, null, 2));
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
-    if (isProjectTrustError(err)) {
-      const holdsAlias = loaded?.global.lexicon.terms.some(
+    const holdsAlias = (file: LexiconFile | undefined): boolean =>
+      file?.lexicon.terms.some(
         (t) => t.canonical.trim().toLowerCase() === canonical.trim().toLowerCase() && t.aliases.some((a) => a.trim().toLowerCase() === alias.trim().toLowerCase()),
-      );
-      if (holdsAlias) {
+      ) === true;
+    // --project or --global named a file whose copy lacks the term or the
+    // alias while the other (loaded) file's copy has it: name that file and
+    // the flag, as `remove` without --alias does.
+    const other = scope === 'project' ? loaded?.global : scope === 'global' ? loaded?.project : undefined;
+    const elsewhere =
+      isInputError(err) && other && holdsAlias(other)
+        ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it`
+        : undefined;
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
+    io.stderr(`lexicon: ${safeLines(message)}\n`);
+    if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
+    if (isProjectTrustError(err)) {
+      if (holdsAlias(loaded?.global)) {
         io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --alias ${JSON.stringify(safe(alias))} --global\n`);
       }
     } else if (untrusted) {
@@ -917,11 +928,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, ensureNewline(text), 'utf8');
     // The terms actually written: the same category filter and cap exportLexicon applies.
-    const allowed = exportOpts.categories && exportOpts.categories.length > 0 ? new Set(exportOpts.categories) : undefined;
-    const matching = allowed
-      ? merged.terms.filter((t) => t.category !== undefined && allowed.has(t.category)).length
-      : merged.terms.length;
-    const written = exportOpts.limit !== undefined ? Math.min(matching, exportOpts.limit) : matching;
+    const written = selectExportTerms(merged, exportOpts).length;
     line(io, `wrote ${format} export (${plural(written, 'term')}) to ${safe(outPath)}`);
   } else {
     io.stdout(ensureNewline(text));

@@ -393,6 +393,48 @@ describe('runUserPromptSubmitHook', () => {
       expect(dropCorrectionSpans(r2, { heard: 'İSTANBUL', meant: 'Istanbul' }).replacements).toEqual([]);
     });
 
+    // Catches: heard and meant were squashed (whitespace runs to one space)
+    // but the prompt was not, so a correction typed with a double space or a
+    // line break between its words ("Ash  Lur") was never found and its own
+    // words were rewritten.
+    it('dropCorrectionSpans matches a correction whose words are separated by a whitespace run', async () => {
+      const { dropCorrectionSpans } = await import('../src/hooks/user-prompt-submit.js');
+      const input = 'it is Ashlr.AI not Ash  Lur\tnow, mason white';
+      const lur = input.indexOf('Lur');
+      const mason = input.indexOf('mason white');
+      const r: NormalizeResult = {
+        input,
+        output: input.replace('Lur', 'Ashlr.AI').replace('mason white', 'Mason Wyatt'),
+        changed: true,
+        replacements: [
+          { start: lur, end: lur + 3, original: 'Lur', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'phonetic', confidence: 0.8 },
+          { start: mason, end: mason + 11, original: 'mason white', replacement: 'Mason Wyatt', canonical: 'Mason Wyatt', reason: 'alias', confidence: 1 },
+        ],
+      };
+      const dropped = dropCorrectionSpans(r, { heard: 'ash lur', meant: 'Ashlr.AI' });
+      expect(dropped.replacements.map((x) => x.canonical)).toEqual(['Mason Wyatt']);
+      expect(dropped.output).toBe('it is Ashlr.AI not Ash  Lur\tnow, Mason Wyatt');
+      // A replacement just past the whitespace run that is not part of the span stays.
+      const now = input.indexOf('now');
+      const r2: NormalizeResult = {
+        input,
+        output: input.replace('now', 'Now'),
+        changed: true,
+        replacements: [{ start: now, end: now + 3, original: 'now', replacement: 'Now', canonical: 'Now', reason: 'fuzzy', confidence: 0.7 }],
+      };
+      expect(dropCorrectionSpans(r2, { heard: 'ash lur', meant: 'Ashlr.AI' })).toBe(r2);
+      // A line break between the words counts too.
+      const nl = 'not Ash\n\nLur';
+      const at = nl.indexOf('Lur');
+      const r3: NormalizeResult = {
+        input: nl,
+        output: nl.replace('Lur', 'Ashlr.AI'),
+        changed: true,
+        replacements: [{ start: at, end: at + 3, original: 'Lur', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'phonetic', confidence: 0.8 }],
+      };
+      expect(dropCorrectionSpans(r3, { heard: 'Ash Lur', meant: 'Ashlr.AI' }).replacements).toEqual([]);
+    });
+
     it('does not add a note for ordinary prompts or one-sided corrections', async () => {
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
       expect(await runUserPromptSubmitHook(payload('ship it tonight, not tomorrow please'))).toBe('');
