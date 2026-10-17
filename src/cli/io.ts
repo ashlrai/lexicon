@@ -213,6 +213,15 @@ export function jsonError(error: string, nextStep?: string): JsonError {
   return { ok: false, error, ...(nextStep ? { nextStep } : {}) };
 }
 
+/**
+ * The stdout document of a `--json` command that succeeded with an object:
+ * `{ ok: true, ...doc }`, `ok` first, so a script tells success from a
+ * `JsonError` by the same key. Array-shaped successes stay bare arrays.
+ */
+export function jsonOk<T extends object>(doc: T): { ok: true } & T {
+  return { ok: true, ...doc };
+}
+
 /** Print `jsonError(error, nextStep)` on stdout. */
 export function printJsonError(io: IO, error: string, nextStep?: string): void {
   io.stdout(`${JSON.stringify(jsonError(error, nextStep), null, 2)}\n`);

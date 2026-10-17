@@ -14,6 +14,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon remove --json` (and `remove --alias --json`) success documents lead with `ok: true`, matching the `ok: false` its failures lead with, so a script reads `ok` for either outcome. The other keys are unchanged.
 - The npm package no longer ships the 104 `dist/**/*.js.map` source maps (about 870 KB unpacked). They pointed at `../../src/*.ts`, which the package does not contain, so they mapped nothing. A new test checks the packed file list (computed with npm-packlist, as `npm pack` does) holds every `bin`, `main`, `types` and `exports` target, the plugin bundles and manifests, every vendored pack, skill and command, and no maps, sources, tests or fixtures.
 - MCP `apply_suggestion` refuses an `alias` or `never` suggestion whose term is no longer in the lexicon (removed since `suggest_terms` ran, or only in a skipped project file), and writes nothing. It created a new term holding only that word and answered `"sauce" will never be rewritten to "SaaS"`, a term the user never asked for.
 - MCP `harvest_repo` with `add: true` is an error (`isError: true`, with the same `added`, `failures` and a `note`) when no candidate could be written. It answered a success with `added: 0`, so an agent reported the candidates as added. A partial failure is still a success and now carries a `note` counting the candidates that were not added.

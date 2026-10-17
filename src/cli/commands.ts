@@ -100,6 +100,7 @@ import {
   ensureNewline,
   green,
   jsonError,
+  jsonOk,
   line,
   plural,
   refuse,
@@ -454,9 +455,10 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   };
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
-    // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it.
+    // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
+    // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`);
-    line(io, JSON.stringify({ ...failure, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -513,7 +515,7 @@ async function runRemoveAlias(
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }, null, 2));
+    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
     return 0;
   }
   line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
