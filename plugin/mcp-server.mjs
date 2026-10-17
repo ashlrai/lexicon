@@ -52072,8 +52072,34 @@ function codeSpanRanges(text) {
   }
   return out;
 }
+var HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
+var HTML_CODE_CLOSE_RE = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+function htmlCodeRanges(text) {
+  const out = [];
+  if (!text.includes("<")) return out;
+  const unclosed = /* @__PURE__ */ new Set();
+  HTML_CODE_OPEN_RE.lastIndex = 0;
+  let m;
+  while ((m = HTML_CODE_OPEN_RE.exec(text)) !== null) {
+    const name = m[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const close = HTML_CODE_CLOSE_RE[name];
+    close.lastIndex = m.index + m[0].length;
+    const c = close.exec(text);
+    if (!c) {
+      unclosed.add(name);
+      if (unclosed.size === 2) break;
+      continue;
+    }
+    const end = c.index + c[0].length;
+    out.push({ start: m.index, end });
+    HTML_CODE_OPEN_RE.lastIndex = end;
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
+  for (const r of htmlCodeRanges(text)) ranges.push(r);
   for (const r of emailRanges(text)) ranges.push(r);
   for (const r of codeSpanRanges(text)) ranges.push(r);
   for (const re of [FENCE_RE, TILDE_FENCE_RE, URL_RE, WWW_RE, PATH_RE]) {
@@ -57556,9 +57582,10 @@ function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    if (aliases.length === 0) return t.canonical.includes(":") ? `${t.canonical} =` : t.canonical;
-    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
-    return needsEquals ? `${t.canonical} = ${aliases.join(" | ")}` : `${t.canonical}: ${aliases.join(", ")}`;
+    const canonical = /^\\*#/.test(t.canonical) ? `\\${t.canonical}` : t.canonical;
+    if (aliases.length === 0) return canonical.includes(":") ? `${canonical} =` : canonical;
+    const needsEquals = canonical.includes(":") || aliases.some((a) => a.includes(","));
+    return needsEquals ? `${canonical} = ${aliases.join(" | ")}` : `${canonical}: ${aliases.join(", ")}`;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }
@@ -57893,15 +57920,27 @@ function parseEspansoImport(content) {
       return;
     }
     const triggers = [];
+    let nonString = false;
     if (typeof entry.trigger === "string") triggers.push(entry.trigger);
+    else if (entry.trigger !== void 0) nonString = true;
     if (Array.isArray(entry.triggers)) {
-      for (const t of entry.triggers) if (typeof t === "string") triggers.push(t);
+      for (const t of entry.triggers) {
+        if (typeof t === "string") triggers.push(t);
+        else nonString = true;
+      }
+    } else if (entry.triggers !== void 0) {
+      nonString = true;
     }
     if (triggers.length === 0) {
-      out.skipped.push({ line: line2, reason: "match has no trigger (regex matches are skipped)" });
+      const reason = nonString ? "trigger is not a string (quote it in the YAML)" : entry.regex !== void 0 ? "match has no trigger (regex matches are skipped)" : "match has no trigger";
+      out.skipped.push({ line: line2, reason });
       return;
     }
-    const aliases = triggers.map((t) => t.replace(/^[:;]+/, ""));
+    const aliases = triggers.map((t) => t.replace(/^[:;]+/, "")).filter((a) => a.trim());
+    if (aliases.length === 0) {
+      out.skipped.push({ line: line2, reason: 'trigger is empty once its ":" or ";" prefix is removed' });
+      return;
+    }
     const { row, skip } = rowFor(line2, entry.replace, aliases);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);
@@ -58210,9 +58249,16 @@ function parseSuperwhisperImport(content) {
       out.skipped.push({ line: line2, reason: "entry is not an object" });
       return;
     }
-    const original = typeof entry.original === "string" ? entry.original : "";
     const replacement = typeof entry.replacement === "string" ? entry.replacement : "";
-    const { row, skip } = rowFor(line2, replacement, original ? [original] : []);
+    if (!replacement.trim()) {
+      out.skipped.push({ line: line2, reason: "empty canonical" });
+      return;
+    }
+    if (typeof entry.original !== "string" || !entry.original.trim()) {
+      out.skipped.push({ line: line2, reason: typeof entry.original === "string" ? "empty `original`" : "entry has no string `original`" });
+      return;
+    }
+    const { row, skip } = rowFor(line2, replacement, [entry.original]);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);
   });
@@ -58222,9 +58268,13 @@ function parseSuperwhisperImport(content) {
 // src/core/importers/text.ts
 var EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
 var BARE_EQUALS_FORM = /^(.+?)\s+=$/;
+var ESCAPED_HASH = /^\\+#/;
+var SEPARATOR_COLON = /:(?!\/\/)/;
 function parseTextLine(raw) {
-  const text = raw.trim();
-  if (!text || text.startsWith("#")) return void 0;
+  let text = raw.trim();
+  if (!text) return void 0;
+  if (ESCAPED_HASH.test(text)) text = text.slice(1);
+  else if (text.startsWith("#")) return void 0;
   const eq = EQUALS_FORM.exec(text);
   if (eq) {
     return { canonical: eq[1].trim(), aliases: eq[2].split("|").map((a) => a.trim()).filter(Boolean) };
@@ -58232,7 +58282,7 @@ function parseTextLine(raw) {
   const bare = BARE_EQUALS_FORM.exec(text);
   if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === "=") return { canonical: "", aliases: [] };
-  const colon = text.indexOf(":");
+  const colon = text.search(SEPARATOR_COLON);
   if (colon >= 0) {
     return {
       canonical: text.slice(0, colon).trim(),

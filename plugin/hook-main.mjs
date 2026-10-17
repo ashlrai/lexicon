@@ -17955,8 +17955,34 @@ function codeSpanRanges(text) {
   }
   return out;
 }
+var HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
+var HTML_CODE_CLOSE_RE = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+function htmlCodeRanges(text) {
+  const out = [];
+  if (!text.includes("<")) return out;
+  const unclosed = /* @__PURE__ */ new Set();
+  HTML_CODE_OPEN_RE.lastIndex = 0;
+  let m;
+  while ((m = HTML_CODE_OPEN_RE.exec(text)) !== null) {
+    const name = m[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const close = HTML_CODE_CLOSE_RE[name];
+    close.lastIndex = m.index + m[0].length;
+    const c = close.exec(text);
+    if (!c) {
+      unclosed.add(name);
+      if (unclosed.size === 2) break;
+      continue;
+    }
+    const end = c.index + c[0].length;
+    out.push({ start: m.index, end });
+    HTML_CODE_OPEN_RE.lastIndex = end;
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
+  for (const r of htmlCodeRanges(text)) ranges.push(r);
   for (const r of emailRanges(text)) ranges.push(r);
   for (const r of codeSpanRanges(text)) ranges.push(r);
   for (const re of [FENCE_RE, TILDE_FENCE_RE, URL_RE, WWW_RE, PATH_RE]) {
@@ -20300,9 +20326,10 @@ function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    if (aliases.length === 0) return t.canonical.includes(":") ? `${t.canonical} =` : t.canonical;
-    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
-    return needsEquals ? `${t.canonical} = ${aliases.join(" | ")}` : `${t.canonical}: ${aliases.join(", ")}`;
+    const canonical = /^\\*#/.test(t.canonical) ? `\\${t.canonical}` : t.canonical;
+    if (aliases.length === 0) return canonical.includes(":") ? `${canonical} =` : canonical;
+    const needsEquals = canonical.includes(":") || aliases.some((a) => a.includes(","));
+    return needsEquals ? `${canonical} = ${aliases.join(" | ")}` : `${canonical}: ${aliases.join(", ")}`;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }

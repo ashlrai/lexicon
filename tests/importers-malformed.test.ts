@@ -72,3 +72,116 @@ describe('text export and import round trip', () => {
     expect(r.terms).toEqual([{ canonical: 'Re:Invent', aliases: [], source: 'import' }]);
   });
 });
+
+describe('espanso importer: triggers that are not words', () => {
+  it('says a non-string trigger is not a string, not that regex matches are skipped', () => {
+    const r = importLexicon('matches:\n  - trigger: 42\n    replace: Foo\n  - triggers: [7, true]\n    replace: Bar\n  - regex: "a(.*)"\n    replace: Baz\n  - replace: Qux\n', 'espanso');
+    expect(r.terms).toEqual([]);
+    expect(r.skipped).toEqual([
+      { line: 2, reason: 'trigger is not a string (quote it in the YAML)' },
+      { line: 4, reason: 'trigger is not a string (quote it in the YAML)' },
+      { line: 6, reason: 'match has no trigger (regex matches are skipped)' },
+      { line: 8, reason: 'match has no trigger' },
+    ]);
+  });
+
+  it('still imports the string triggers of a match that also lists a non-string one', () => {
+    const r = importLexicon('matches:\n  - triggers: [":ashler", 42]\n    replace: Ashlr.AI\n', 'espanso');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
+  });
+});
+
+describe('espanso importer: empty triggers', () => {
+  it('skips, with a note, a match whose trigger is only a prefix or empty', () => {
+    const r = importLexicon('matches:\n  - trigger: ":"\n    replace: Foo\n  - trigger: ""\n    replace: Bar\n  - triggers: [";;", ":"]\n    replace: Baz\n', 'espanso');
+    expect(r.terms).toEqual([]);
+    expect(r.skipped).toEqual([
+      { line: 2, reason: 'trigger is empty once its ":" or ";" prefix is removed' },
+      { line: 4, reason: 'trigger is empty once its ":" or ";" prefix is removed' },
+      { line: 6, reason: 'trigger is empty once its ":" or ";" prefix is removed' },
+    ]);
+  });
+
+  it('keeps the other triggers of a match when one of them is only a prefix', () => {
+    const r = importLexicon('matches:\n  - triggers: [":", ":ashler"]\n    replace: Ashlr.AI\n', 'espanso');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
+    expect(r.skipped).toEqual([]);
+  });
+});
+
+describe('superwhisper importer: entries with no usable original', () => {
+  it('skips, with a note, an entry whose original is not a string or is blank', () => {
+    const content = JSON.stringify([
+      { original: 5, replacement: 'Foo' },
+      { replacement: 'Bar' },
+      { original: '  ', replacement: 'Baz' },
+      { original: 'ashler', replacement: 'Ashlr.AI' },
+    ]);
+    const r = importLexicon(content, 'superwhisper');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
+    expect(r.skipped).toEqual([
+      { line: 1, reason: 'entry has no string `original`' },
+      { line: 2, reason: 'entry has no string `original`' },
+      { line: 3, reason: 'empty `original`' },
+    ]);
+  });
+});
+
+describe('text importer: URLs and scheme:// text', () => {
+  it('does not split a line at the colon of scheme://', () => {
+    const r = importLexicon('https://example.com\nfile:///tmp/x\nDocs: https://docs.example.com, the docs\nhttps://phm.dev: phantom site\n', 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['https://example.com', []],
+      ['file:///tmp/x', []],
+      ['Docs', ['https://docs.example.com', 'the docs']],
+      ['https://phm.dev', ['phantom site']],
+    ]);
+  });
+
+  it('round-trips a URL canonical through the text exporter, with and without aliases', () => {
+    const lexicon: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'https://example.com', aliases: [] },
+        { canonical: 'https://phm.dev', aliases: ['phantom site'] },
+        { canonical: 'Re:Invent', aliases: [] },
+      ],
+    };
+    const r = importLexicon(exportText(lexicon), 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['https://example.com', []],
+      ['https://phm.dev', ['phantom site']],
+      ['Re:Invent', []],
+    ]);
+  });
+});
+
+describe('text format: a canonical that starts with #', () => {
+  it('round-trips through the text exporter instead of becoming a comment', () => {
+    const lexicon: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: '#hashtag', aliases: [] },
+        { canonical: '#Ashlr', aliases: ['hash ashler'] },
+        { canonical: '#Re:Invent', aliases: [] },
+        { canonical: '\\#odd', aliases: ['odd one'] },
+        { canonical: '\\LaTeX', aliases: [] },
+      ],
+    };
+    const text = exportText(lexicon);
+    expect(text.split('\n').filter(Boolean).every((l) => !l.startsWith('#'))).toBe(true);
+    const r = importLexicon(text, 'text');
+    expect(r.skipped).toEqual([]);
+    expect(r.terms.map((t) => [t.canonical, t.aliases]).sort()).toEqual(
+      lexicon.terms.map((t) => [t.canonical, t.aliases]).sort(),
+    );
+  });
+
+  it('still reads an unescaped # line as a comment and leaves other backslashes alone', () => {
+    const r = importLexicon('# a comment\n\\#tag: hash tag\n\\LaTeX\n', 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['#tag', ['hash tag']],
+      ['\\LaTeX', []],
+    ]);
+  });
+});

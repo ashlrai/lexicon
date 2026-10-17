@@ -32,9 +32,18 @@ export function parseSuperwhisperImport(content: string): RawImport {
       out.skipped.push({ line, reason: 'entry is not an object' });
       return;
     }
-    const original = typeof entry.original === 'string' ? entry.original : '';
     const replacement = typeof entry.replacement === 'string' ? entry.replacement : '';
-    const { row, skip } = rowFor(line, replacement, original ? [original] : []);
+    if (!replacement.trim()) {
+      out.skipped.push({ line, reason: 'empty canonical' });
+      return;
+    }
+    // Without a usable `original` the entry maps nothing: importing the
+    // replacement alone would add a term the file never asked for.
+    if (typeof entry.original !== 'string' || !entry.original.trim()) {
+      out.skipped.push({ line, reason: typeof entry.original === 'string' ? 'empty `original`' : 'entry has no string `original`' });
+      return;
+    }
+    const { row, skip } = rowFor(line, replacement, [entry.original]);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);
   });

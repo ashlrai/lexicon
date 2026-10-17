@@ -51,7 +51,7 @@ lexicon import CLAUDE.md --dry-run                        # the ## Voice lexicon
 | `macos` | Text Replacement `.plist` (`shortcut` = alias, `phrase` = canonical) | Drag entries out of System Settings > Keyboard > Text Replacements |
 | `espanso` | `matches:` YAML (`trigger` = alias, `replace` = canonical; templates with `vars`, regex or multi-line replacements are skipped) | `~/.config/espanso/match/*.yml` |
 | `markdown` | The `\| Canonical \| ... \|` table under `## Voice lexicon` (only that section is read), or `- **Canonical** (category): alias1, alias2` bullets | `lexicon export claude-md` / `lexicon export markdown`, or a CLAUDE.md / AGENTS.md you kept by hand |
-| `text` | One term per line: `Canonical`, `Canonical: alias1, alias2` or `Canonical = alias1 \| alias2` (`Canonical =` alone for a canonical with a colon and no aliases); `#` comments | Anything you typed by hand, or `lexicon export text` |
+| `text` | One term per line: `Canonical`, `Canonical: alias1, alias2` or `Canonical = alias1 \| alias2` (`Canonical =` alone for a canonical with a colon and no aliases); `#` comments, `\#Canonical` for a canonical that starts with `#` | Anything you typed by hand, or `lexicon export text` |
 | `csv` | `canonical,alias,category,phonetic` (columns matched by header) | `lexicon export csv` |
 | `json` | A lexicon JSON or YAML file | `lexicon export json`, another machine's `lexicon.yaml` |
 
