@@ -1206,3 +1206,165 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: a closed stdout pipe', () =>
     expect(result.code).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The agent journey, end to end on the shipped artifacts
+// ---------------------------------------------------------------------------
+
+/** What the npm `lexicon` bin runs once built; the tsx source when dist/ is absent (CI builds first). */
+const BUILT_CLI = path.join(REPO_ROOT, 'dist', 'cli', 'index.js');
+const BUNDLED_MCP = path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs');
+const BUNDLED_HOOK = path.join(REPO_ROOT, 'plugin', 'hook.mjs');
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: agent journey (onboard, normalize, learn, stats, suggest)', () => {
+  interface Suggestion {
+    kind: string;
+    canonical: string;
+    alias?: string;
+    scope?: string;
+    path?: string;
+  }
+  interface Stats {
+    termCount: number;
+    topTerms: { canonical: string; hits: number }[];
+    bySource: Record<string, number>;
+    files: { path: string; scope: string; terms: number }[];
+  }
+
+  it('a correction flagged by the hook and learned over MCP fixes the next transcript and shows up in stats and suggest', async () => {
+    // No LEXICON_PATH: finding the lexicon under XDG_CONFIG_HOME is part of the journey.
+    const h = await freshHome('journey');
+    const env: NodeJS.ProcessEnv = { ...h.env };
+    delete env.LEXICON_PATH;
+    const globalPath = path.join(h.home, '.config', 'lexicon', 'lexicon.yaml');
+    const cliScript = (await fs.stat(BUILT_CLI).then(() => true, () => false)) ? BUILT_CLI : CLI;
+    const cli = (args: readonly string[]): Promise<RunResult> => runNode(cliScript, [...args, '--cwd', h.repo], { env });
+
+    const rpc = new StdioRpc(env, h.repo, BUNDLED_MCP);
+    const tool = async <T>(name: string, args: Record<string, unknown> = {}): Promise<T> => {
+      const r = await rpc.request('tools/call', { name, arguments: args });
+      expect(r.error, name).toBeUndefined();
+      const result = r.result as ToolCallResult;
+      expect(result.isError, `${name}: ${result.content[0]?.text}`).not.toBe(true);
+      return JSON.parse(result.content[0].text) as T;
+    };
+    const hookContext = async (prompt: string): Promise<string> => {
+      const r = await runNode(BUNDLED_HOOK, [], {
+        env,
+        stdin: JSON.stringify({ session_id: 'journey', cwd: h.repo, hook_event_name: 'UserPromptSubmit', prompt }),
+      });
+      expect(r.code, r.stderr).toBe(0);
+      expect(r.stderr).toBe('');
+      return (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    };
+    try {
+      const init = await rpc.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'journey', version: '0.0.0' } });
+      expect(init.error).toBeUndefined();
+      rpc.notify('notifications/initialized');
+
+      // 1. Onboard: the prompt points at setup_lexicon; the preview writes nothing, apply seeds.
+      const onboard = await rpc.request('prompts/get', { name: 'onboard' });
+      expect((onboard.result as { messages: { content: { text: string } }[] }).messages[0].content.text).toContain('setup_lexicon');
+      const plan = await tool<{ plan: boolean; lexiconPath: string; lexiconExists: boolean; wouldSeed: string[]; wouldInstallClients: string[] }>(
+        'setup_lexicon',
+        { company: 'Ashlr.AI', person: 'Mason Wyatt' },
+      );
+      expect(plan).toMatchObject({ plan: true, lexiconPath: globalPath, lexiconExists: false, wouldInstallClients: [] });
+      expect(plan.wouldSeed.sort()).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+      await expect(fs.stat(globalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      const applied = await tool<{ applied: boolean; summary: { lexiconPath: string; termsAdded: string[]; clients: string[] } }>('setup_lexicon', {
+        company: 'Ashlr.AI',
+        person: 'Mason Wyatt',
+        apply: true,
+      });
+      expect(applied.applied).toBe(true);
+      expect(applied.summary).toMatchObject({ lexiconPath: globalPath, clients: [] });
+      expect(applied.summary.termsAdded.sort()).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+
+      // 2. Add terms: one through the built CLI, one through MCP.
+      const add = await cli(['add', 'Hetzner', 'head sner', '--category', 'product']);
+      expect(add.code, add.stderr).toBe(0);
+      await tool('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'] });
+
+      // Earlier dictations (what `lexicon voice` records): "Vercel" typed out
+      // three times, and a garble of it that nothing corrects yet.
+      const historyPath = path.join(path.dirname(globalPath), 'voice', 'history.jsonl');
+      await fs.mkdir(path.dirname(historyPath), { recursive: true });
+      const said = ['the preview on Vercel is up', 'we moved the cron to Vercel', 'check the Vercel logs', 'is versal down again', 'ask versal support', 'pay the versal bill'];
+      await fs.writeFile(historyPath, said.map((t, i) => JSON.stringify({ at: `2026-10-0${i + 1}T10:00:00.000Z`, raw: t, output: t })).join('\n') + '\n');
+      const before = await tool<Suggestion[]>('suggest_terms');
+      expect(before).toContainEqual(expect.objectContaining({ kind: 'term', canonical: 'Vercel', scope: 'global', path: globalPath }));
+
+      // 3. Normalize a transcript: everything known is fixed, "versel" is not known yet.
+      const transcript = 'ask ashler to deploy cooper netties on head sner via versel';
+      const first = await tool<{ output: string }>('normalize_transcript', { text: transcript });
+      expect(first.output).toBe('ask Ashlr.AI to deploy Kubernetes on Hetzner via versel');
+      expect(await hookContext('ship it on versel and ashler')).toContain('Corrected prompt:\nship it on versel and Ashlr.AI');
+
+      // 4. The user corrects it. The hook flags the correction (and writes nothing);
+      // the agent passes the arguments the note names to learn_correction.
+      const lexiconBefore = await fs.readFile(globalPath, 'utf8');
+      const note = await hookContext("it's Vercel, not versel");
+      const flagged = /learn_correction tool with heard: ("(?:[^"\\]|\\.)*"), meant: ("(?:[^"\\]|\\.)*")/.exec(note);
+      expect(flagged, note).not.toBeNull();
+      const heard = JSON.parse(flagged![1]) as string;
+      const meant = JSON.parse(flagged![2]) as string;
+      expect({ heard, meant }).toEqual({ heard: 'versel', meant: 'Vercel' });
+      expect(await fs.readFile(globalPath, 'utf8')).toBe(lexiconBefore);
+
+      const learned = await tool<{ created: boolean; path: string; term: { canonical: string; aliases: string[]; source: string }; conflict?: unknown; untrustedProject?: unknown }>(
+        'learn_correction',
+        { heard, meant },
+      );
+      expect(learned).toMatchObject({ created: true, path: globalPath, term: { canonical: 'Vercel', source: 'learned' } });
+      expect(learned.term.aliases).toContain('versel');
+      expect(learned.conflict).toBeUndefined();
+      expect(learned.untrustedProject).toBeUndefined();
+
+      // 5. The next normalize applies it, and so does the hook's next prompt
+      // (its index cache was built before the correction was learned).
+      const second = await tool<{ output: string }>('normalize_transcript', { text: transcript });
+      expect(second.output).toBe('ask Ashlr.AI to deploy Kubernetes on Hetzner via Vercel');
+      expect(await hookContext('ship it on versel')).toContain('Corrected prompt:\nship it on Vercel');
+      const me = await rpc.request('resources/read', { uri: 'lexicon://me' });
+      const meText = (me.result as { contents: { text: string }[] }).contents[0].text;
+      expect(meText).toContain('Vercel');
+      expect(meText).toContain('versel');
+      const voiceContext = await rpc.request('prompts/get', { name: 'voice-context' });
+      expect((voiceContext.result as { messages: { content: { text: string } }[] }).messages[0].content.text).toContain('| Vercel | versel |');
+      const guess = await tool<{ suggestions: { canonical: string; confidence: number }[] }>('suggest_canonical', { heard: 'vercell' });
+      expect(guess.suggestions[0]).toMatchObject({ canonical: 'Vercel' });
+
+      // 6. Stats count the learned term and its hits, over MCP and from the built CLI alike.
+      const stats = await tool<Stats>('lexicon_stats');
+      expect(stats.termCount).toBe(5);
+      expect(stats.bySource).toMatchObject({ learned: 1 });
+      // One hit from the MCP normalize, one from the hook; the correction prompt itself counts none.
+      expect(stats.topTerms).toContainEqual({ canonical: 'Vercel', hits: 2 });
+      expect(stats.topTerms).toContainEqual({ canonical: 'Hetzner', hits: 2 });
+      expect(stats.files).toEqual([{ path: globalPath, scope: 'global', terms: 5 }]);
+      const cliStats = await cli(['stats', '--json']);
+      expect(cliStats.code, cliStats.stderr).toBe(0);
+      expect(JSON.parse(cliStats.stdout)).toEqual(stats);
+
+      // 7. Suggest: Vercel is no longer a new name to add; the garble is now alias
+      // material for it. Applying that suggestion fixes the garble too.
+      const after = await tool<Suggestion[]>('suggest_terms');
+      expect(after.some((x) => x.kind === 'term' && x.canonical === 'Vercel')).toBe(false);
+      const alias = after.find((x) => x.kind === 'alias' && x.canonical === 'Vercel');
+      expect(alias).toMatchObject({ alias: 'versal', scope: 'global', path: globalPath });
+      const cliSuggest = await cli(['suggest', '--json']);
+      expect(cliSuggest.code, cliSuggest.stderr).toBe(0);
+      expect(JSON.parse(cliSuggest.stdout)).toEqual(after);
+      expect(await tool('apply_suggestion', { suggestion: alias })).toMatchObject({ kind: 'alias', path: globalPath, created: false });
+      expect((await tool<{ output: string }>('normalize_transcript', { text: 'is versal down again' })).output).toBe('is Vercel down again');
+      expect(await hookContext('is versal down again')).toContain('Corrected prompt:\nis Vercel down again');
+      expect((await tool<Suggestion[]>('suggest_terms')).some((x) => x.canonical === 'Vercel')).toBe(false);
+    } finally {
+      expect(await rpc.close()).toBe(0);
+    }
+    // Nothing landed in the project, and stdout carried only JSON-RPC.
+    expect(await fs.readdir(h.repo)).toEqual(['.git']);
+    for (const line of rpc.stdoutLines) expect((JSON.parse(line) as { jsonrpc: string }).jsonrpc).toBe('2.0');
+  });
+});
