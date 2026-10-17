@@ -305,7 +305,13 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
 
   // 4. project directory name
   const rootName = path.basename(absRoot);
-  if (rootName && !GENERIC_ROOT_NAMES.has(rootName.toLowerCase()) && /^[A-Za-z]/.test(rootName)) {
+  // At least three letters: a scratch checkout named `w` or `x2` is not a name anyone dictates.
+  if (
+    rootName &&
+    !GENERIC_ROOT_NAMES.has(rootName.toLowerCase()) &&
+    /^[A-Za-z]/.test(rootName) &&
+    (rootName.match(/\p{L}/gu) ?? []).length >= 3
+  ) {
     bump(rootName, 'product', 'harvest:repo', 'directory name', 1, true);
   }
 
