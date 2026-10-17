@@ -52874,8 +52874,8 @@ var ParagraphIndex = class {
     if (found.length > 0 && found[0] + needle.length <= k1) return true;
     if (found.length > 0 && found[found.length - 1] >= k2) return true;
     const n = needle.length - 1;
-    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
-    return joined.includes(needle);
+    const joined2 = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined2.includes(needle);
   }
   paragraph(from, to) {
     const cached2 = this.cache.get(from);
@@ -57578,14 +57578,28 @@ function exportSuperwhisper(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/text.ts
+var ESCAPABLE = "\\|,:=";
+function escapeField(field, separators) {
+  let out = "";
+  for (let i = 0; i < field.length; i++) {
+    const c = field[i];
+    const next = field[i + 1];
+    if (separators.includes(c)) out += `\\${c}`;
+    else if (c === "=" && (i === 0 || /\s/.test(field[i - 1]))) out += "\\=";
+    else if (c === "\\" && (next === void 0 || ESCAPABLE.includes(next))) out += "\\\\";
+    else out += c;
+  }
+  return out;
+}
 function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    const canonical = /^\\*#/.test(t.canonical) ? `\\${t.canonical}` : t.canonical;
-    if (aliases.length === 0) return canonical.includes(":") ? `${canonical} =` : canonical;
-    const needsEquals = canonical.includes(":") || aliases.some((a) => a.includes(","));
-    return needsEquals ? `${canonical} = ${aliases.join(" | ")}` : `${canonical}: ${aliases.join(", ")}`;
+    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
+    let canonical = escapeField(t.canonical, "");
+    if (/^\\*#/.test(canonical)) canonical = `\\${canonical}`;
+    if (aliases.length === 0) return t.canonical.includes(":") ? `${canonical} =` : canonical;
+    return needsEquals ? `${canonical} = ${aliases.map((a) => escapeField(a, "|")).join(" | ")}` : `${canonical}: ${aliases.map((a) => escapeField(a, ",")).join(", ")}`;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }
@@ -58266,30 +58280,54 @@ function parseSuperwhisperImport(content) {
 }
 
 // src/core/importers/text.ts
-var EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
-var BARE_EQUALS_FORM = /^(.+?)\s+=$/;
 var ESCAPED_HASH = /^\\+#/;
-var SEPARATOR_COLON = /:(?!\/\/)/;
+var TEXT_ESCAPABLE = "\\|,:=";
+function lexLine(text) {
+  const out = [];
+  for (let i = 0; i < text.length; i++) {
+    const next = text[i + 1];
+    if (text[i] === "\\" && next !== void 0 && TEXT_ESCAPABLE.includes(next)) {
+      out.push({ c: next, escaped: true });
+      i++;
+    } else {
+      out.push({ c: text[i], escaped: false });
+    }
+  }
+  return out;
+}
+var isSpace2 = (ch) => ch !== void 0 && !ch.escaped && /\s/.test(ch.c);
+var isBare = (ch, c) => ch !== void 0 && !ch.escaped && ch.c === c;
+var joined = (chars) => chars.map((ch) => ch.c).join("");
+function splitAliases2(chars, sep2) {
+  const parts = [];
+  let from = 0;
+  for (let i = 0; i <= chars.length; i++) {
+    if (i === chars.length || isBare(chars[i], sep2)) {
+      parts.push(joined(chars.slice(from, i)).trim());
+      from = i + 1;
+    }
+  }
+  return parts.filter(Boolean);
+}
 function parseTextLine(raw) {
   let text = raw.trim();
   if (!text) return void 0;
   if (ESCAPED_HASH.test(text)) text = text.slice(1);
   else if (text.startsWith("#")) return void 0;
-  const eq = EQUALS_FORM.exec(text);
-  if (eq) {
-    return { canonical: eq[1].trim(), aliases: eq[2].split("|").map((a) => a.trim()).filter(Boolean) };
-  }
-  const bare = BARE_EQUALS_FORM.exec(text);
-  if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === "=") return { canonical: "", aliases: [] };
-  const colon = text.search(SEPARATOR_COLON);
-  if (colon >= 0) {
-    return {
-      canonical: text.slice(0, colon).trim(),
-      aliases: text.slice(colon + 1).split(",").map((a) => a.trim()).filter(Boolean)
-    };
+  const chars = lexLine(text);
+  for (let k = 2; k < chars.length; k++) {
+    if (!isBare(chars[k], "=") || !isSpace2(chars[k - 1])) continue;
+    if (k === chars.length - 1) return { canonical: joined(chars.slice(0, k)).trim(), aliases: [] };
+    if (isSpace2(chars[k + 1])) {
+      return { canonical: joined(chars.slice(0, k)).trim(), aliases: splitAliases2(chars.slice(k + 1), "|") };
+    }
   }
-  return { canonical: text, aliases: [] };
+  const colon = chars.findIndex((ch, i) => isBare(ch, ":") && !(isBare(chars[i + 1], "/") && isBare(chars[i + 2], "/")));
+  if (colon >= 0) {
+    return { canonical: joined(chars.slice(0, colon)).trim(), aliases: splitAliases2(chars.slice(colon + 1), ",") };
+  }
+  return { canonical: joined(chars).trim(), aliases: [] };
 }
 function parseTextImport(content) {
   const out = { rows: [], skipped: [] };
