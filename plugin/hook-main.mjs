@@ -20300,8 +20300,29 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   return true;
 }
+var CORRECTION_LIST_MAX_CHARS = 4e3;
+function capCorrectionList(summary, max = CORRECTION_LIST_MAX_CHARS) {
+  if (summary.length <= max) return summary;
+  const counts = /* @__PURE__ */ new Map();
+  for (const l of summary.split("\n")) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const more = (n) => `... ${n} more correction${n === 1 ? "" : "s"} not listed; call the lexicon normalize_transcript tool on the prompt for the full list.`;
+  const kept = [];
+  let used = 0;
+  let left = 0;
+  for (const [text, n] of counts) {
+    const shown = n > 1 ? `${text} (${n} times)` : text;
+    if (left > 0 || used + shown.length + 1 + more(Number.MAX_SAFE_INTEGER).length > max) {
+      left += n;
+      continue;
+    }
+    kept.push(shown);
+    used += shown.length + 1;
+  }
+  if (left === 0) return kept.join("\n");
+  return [...kept, more(left)].join("\n");
+}
 function formatAdditionalContext(result) {
-  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + diffSummary(result);
+  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}
 Corrected prompt:
@@ -20459,11 +20480,27 @@ async function loadOrExplain(cwd) {
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
     const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+      return {
+        note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
+Tell the user to run \`lexicon doctor\`, which names the file and what is wrong with it.`
+      };
+    }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
 Tell the user to run \`lexicon edit\` and fix the parse error. \`lexicon setup\` will not repair this, and \`lexicon doctor\` will show the same thing.`
     };
   }
+}
+var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+function payloadCwd(payload) {
+  const cwd = payload.cwd;
+  if (typeof cwd === "string" && cwd.trim() !== "") return cwd;
+  if (cwd !== void 0 && cwd !== null) {
+    process.stderr.write(`[lexicon hook] ignoring the payload's cwd ${shownValue(cwd)} (not a directory path); using ${shownValue(process.cwd())}
+`);
+  }
+  return void 0;
 }
 function emit(hookEventName, parts) {
   const output = {
@@ -20474,7 +20511,7 @@ function emit(hookEventName, parts) {
 async function userPromptSubmit(payload, opts) {
   const prompt = payload.prompt;
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
@@ -20506,7 +20543,7 @@ function formatBudgetNote(budgetMs) {
   return `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.`;
 }
 async function sessionStart(payload, opts) {
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
@@ -20609,12 +20646,14 @@ if (isMainModule()) {
 }
 export {
   CORRECTED_PROMPT_MAX_CHARS,
+  CORRECTION_LIST_MAX_CHARS,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
   SESSION_CONTEXT_MAX_CHARS,
+  capCorrectionList,
   dataBlockSpans,
   dropCorrectionSpans,
   dropDataBlockSpans,

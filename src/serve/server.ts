@@ -296,10 +296,20 @@ class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Extra response headers, such as the `Allow` a 405 must carry. */
+    readonly headers: Readonly<Record<string, string>> = {},
   ) {
     super(message);
     this.name = 'HttpError';
   }
+}
+
+/**
+ * A 405 with the `Allow` header RFC 9110 requires, so a client can tell which
+ * method the route takes without parsing the message. It used to be absent.
+ */
+function wrongMethod(allow: readonly string[], message = `use ${allow.join(' or ')}`): HttpError {
+  return new HttpError(405, message, { Allow: allow.join(', ') });
 }
 
 
@@ -795,7 +805,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
     if (pathname === '/health') {
       // Unauthenticated, so a wrong method is answered before the token check.
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       // Without the token /health only says the server is up: a `cwd` would
       // let any local caller probe which directories carry a .lexicon.yaml
       // and whether they are trusted.
@@ -806,7 +816,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       return json(200, await health(await resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       return pairPage(req);
     }
 
@@ -815,27 +825,27 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (pathname === '/normalize') {
-      if (method !== 'POST') throw new HttpError(405, 'use POST');
+      if (method !== 'POST') throw wrongMethod(['POST']);
       return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/learn') {
-      if (method !== 'POST') throw new HttpError(405, 'use POST');
+      if (method !== 'POST') throw wrongMethod(['POST']);
       return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/add') {
-      if (method !== 'POST') throw new HttpError(405, 'use POST');
+      if (method !== 'POST') throw wrongMethod(['POST']);
       return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/lexicon') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       return json(200, await handleLexicon(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/stats') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       return json(200, await handleStats(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/packs') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       return json(200, await handlePacks(await resolveCwd(url.searchParams.get('cwd'))));
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
@@ -849,15 +859,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         }
         return json(200, await handleUninstallPack(packMatch[1], url));
       }
-      throw new HttpError(405, 'use POST to install or DELETE to remove');
+      throw wrongMethod(['POST', 'DELETE'], 'use POST to install or DELETE to remove');
     }
     if (pathname === '/aliases') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       return json(200, handleAliases(url));
     }
     const exportMatch = EXPORT_ROUTE_RE.exec(pathname);
     if (exportMatch) {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw wrongMethod(['GET']);
       const format = resolveExportFormat(exportMatch[1]);
       if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
@@ -956,7 +966,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
             : 'internal error (the lexicon serve log has the detail)';
         }
         if (status === 500) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
-        const extra: Record<string, string> = { ...cors };
+        const extra: Record<string, string> = { ...cors, ...(err instanceof HttpError ? err.headers : {}) };
         if (status === 413) extra['Connection'] = 'close';
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
         send(res, json(status, { error: message }), extra);
