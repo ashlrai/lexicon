@@ -1191,3 +1191,21 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     }
   });
 });
+
+describe('environment variables the MCP server reads', () => {
+  // Catches: LEXICON_HARVEST_ROOTS and LEXICON_REGISTRIES were named in error
+  // messages and tool descriptions but listed nowhere a user setting up the
+  // server would look.
+  it('are each listed in docs/MCP.md, which the README links to', async () => {
+    const { HARVEST_ROOTS_ENV } = await import('../src/mcp/shared.js');
+    const { REGISTRIES_ENV, TRUST_ALL_ENV } = await import('../src/core/index.js');
+    const { PASSTHROUGH_ENV } = await import('../src/cli/cmd-install.js');
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const mcpDoc = await fs.readFile(path.join(root, 'docs', 'MCP.md'), 'utf8');
+    const section = /^## Environment variables\n([\s\S]*?)(?=^## )/m.exec(mcpDoc)?.[1] ?? '';
+    for (const name of [HARVEST_ROOTS_ENV, REGISTRIES_ENV, TRUST_ALL_ENV, ...PASSTHROUGH_ENV]) {
+      expect(section, name).toContain(`| \`${name}\` |`);
+    }
+    expect(await fs.readFile(path.join(root, 'README.md'), 'utf8')).toContain('(docs/MCP.md#environment-variables)');
+  });
+});

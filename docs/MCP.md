@@ -76,6 +76,18 @@ A tool that reads a path the model names (`harvest_repo`'s `path`, `suggest_term
 
 Why these tools exist and how an agent is meant to chain them is in [AGENT-NATIVE.md](AGENT-NATIVE.md).
 
+## Environment variables
+
+Set these in the MCP server's environment (the `env` block of the client's server entry, or `claude mcp add -e`). Each is a decision for you to make, not for the model: none can be changed from a tool call.
+
+| Variable | Effect |
+|---|---|
+| `LEXICON_PATH` | The global lexicon file. Default `$XDG_CONFIG_HOME/lexicon/lexicon.yaml`, else `~/.config/lexicon/lexicon.yaml`; `trust.json` and the other per-user files sit next to it |
+| `LEXICON_CWD` | The directory the server finds the project `.lexicon.yaml` from, instead of the client's first MCP root or its own working directory. `lexicon install` passes it through when set |
+| `LEXICON_HARVEST_ROOTS` | More absolute directories that `harvest_repo`'s `path`, `suggest_terms`'s `cwd` and `trust_project`'s `path` may name, separated by `:` (`;` on Windows). See [Writes and previews](#writes-and-previews) |
+| `LEXICON_REGISTRIES` | More community pack registry indexes `list_packs` and `add_pack` may read, separated by commas or newlines (an `https://` URL or an absolute path). Without it only an index you installed a pack from with the CLI is read; see [PACKS.md](PACKS.md) |
+| `LEXICON_TRUST_ALL` | `1` treats every project `.lexicon.yaml` as trusted. Only for CI or a throwaway container where the repo is already vetted; see [TRUST.md](TRUST.md) |
+
 ## See also
 
 - [AGENT-NATIVE.md](AGENT-NATIVE.md) explains why these tools exist and how an agent is meant to chain them.

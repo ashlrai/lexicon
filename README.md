@@ -155,6 +155,8 @@ Cursor (`~/.cursor/mcp.json`):
 { "mcpServers": { "lexicon": { "command": "npx", "args": ["-y", "-p", "@ashlr/lexicon", "lexicon-mcp"] } } }
 ```
 
+The environment variables the server reads (`LEXICON_PATH`, `LEXICON_HARVEST_ROOTS`, `LEXICON_REGISTRIES` and the rest) are listed in [docs/MCP.md](docs/MCP.md#environment-variables).
+
 ## Why
 
 Speech-to-text is about 95% accurate on ordinary English and much worse on invented names. In the benchmark above, raw whisper.cpp base.en transcribed 117 of 279 dictated proper nouns correctly. "Ashlr.AI" becomes "Ashler", "Kubernetes" becomes "Cooper Nettie's", "SaaS" becomes "sauce", "auth" becomes "off". Those are exactly the words an agent needs to get right.
