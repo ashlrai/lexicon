@@ -668,7 +668,7 @@ describe('lexicon MCP server', () => {
         const result = await client.callTool({ name: 'lexicon_doctor', arguments: {} });
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual(doctorReport);
-        expect(cli.runDoctorReport).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+        expect(cli.runDoctorReport).toHaveBeenCalledWith({ cwd: '/fake/repo', audience: 'mcp' });
       } finally {
         await close();
       }

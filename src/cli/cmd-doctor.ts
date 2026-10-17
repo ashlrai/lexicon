@@ -18,6 +18,7 @@ import { errorMessage } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
 import { configPathFor } from './cmd-install.js';
+import { cliCommand } from '../util/cli-hint.js';
 import type { LexiconFile, Term, TermScope } from '../core/index.js';
 import {
   HOOK_EVENTS,
@@ -348,6 +349,30 @@ function editCommand(scope: TermScope): string {
 }
 
 /**
+ * Who reads `nextStep`. `cli` names `lexicon` commands; `mcp` (the
+ * `lexicon_doctor` tool) names the MCP tool that does the same thing and the
+ * npx form of any command only the user can run, since a plugin-only user has
+ * no `lexicon` on PATH.
+ */
+export type DoctorAudience = 'cli' | 'mcp';
+
+/**
+ * Rewrites the `(run: lexicon ...)` hint a failing check ends with for an
+ * agent: installing a client is the `install_client` tool, creating the
+ * lexicon is `setup_lexicon`, and anything else is a command the user runs,
+ * named with its npx form.
+ */
+function mcpRunHints(message: string): string {
+  return message.replace(/\(run: (lexicon [^)]+)\)/g, (_all, commands: string) => {
+    const install = /^lexicon install (\S+) --apply$/.exec(commands);
+    if (install) return `(call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms)`;
+    if (commands === 'lexicon init') return '(call setup_lexicon; it previews first, apply: true once the user confirms)';
+    const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, '')));
+    return `(ask the user to run ${steps.join(', then ')})`;
+  });
+}
+
+/**
  * Turns the check list into the three fields a caller can act on without
  * reading it: `ready`, one sentence, and one next step.
  *
@@ -359,7 +384,9 @@ function editCommand(scope: TermScope): string {
 function summarize(
   checks: readonly DoctorCheck[],
   state: { terms: number; wired: boolean; untrustedProject: boolean; unreadable: readonly UnreadableLexicon[] },
+  audience: DoctorAudience = 'cli',
 ): { ready: boolean; summary: string; nextStep: string } {
+  const mcp = audience === 'mcp';
   const fails = checks.filter((c) => c.level === 'fail');
   const warns = checks.filter((c) => c.level === 'warn');
   const counts = `${state.terms} term${state.terms === 1 ? '' : 's'}`;
@@ -380,16 +407,20 @@ function summarize(
       // Command first, path second: a rendered line is capped at 200
       // characters and an absolute path can use most of that, so what gets
       // cut has to be the part the check list already showed.
-      nextStep:
-        `Open it and fix the parse error: ${editCommand(first.scope)}  ` +
-        `(lexicon setup will not repair this). The file is ${first.path}`,
+      nextStep: mcp
+        ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ''))} ` +
+          `(setup_lexicon will not repair this). The file is ${first.path}`
+        : `Open it and fix the parse error: ${editCommand(first.scope)}  ` +
+          `(lexicon setup will not repair this). The file is ${first.path}`,
     };
   }
   if (state.terms === 0) {
     return {
       ready: false,
       summary: 'Lexicon is not set up yet: there are no terms, so nothing will be corrected.',
-      nextStep: 'Run: lexicon setup',
+      nextStep: mcp
+        ? `Offer setup: call setup_lexicon (it previews first; apply: true once the user confirms), or the user can run ${cliCommand('setup')}`
+        : 'Run: lexicon setup',
     };
   }
   if (fails.length > 0) {
@@ -398,21 +429,27 @@ function summarize(
       summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? '' : 's'} failed: ${fails[0].message}`,
       // Every failing message ends in its own "(run: ...)" hint, so the first
       // failure carries its fix with it.
-      nextStep: `Fix the first failure: ${fails[0].message}`,
+      nextStep: `Fix the first failure: ${mcp ? mcpRunHints(fails[0].message) : fails[0].message}`,
     };
   }
   if (!state.wired) {
     return {
       ready: false,
       summary: `Lexicon has ${counts}, but no agent is wired up to use them yet.`,
-      nextStep: 'Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)',
+      nextStep: mcp
+        ? 'Offer to register it: call install_client with the client the user uses (it previews first; apply: true once they confirm), ' +
+          'or setup_lexicon, which detects every client they have'
+        : 'Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)',
     };
   }
   if (state.untrustedProject) {
     return {
       ready: true,
       summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
-      nextStep: 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust',
+      nextStep: mcp
+        ? 'Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", ' +
+          `which asks the user directly, or ask them to run ${cliCommand('trust')} in a terminal in that repo`
+        : 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust',
     };
   }
   return {
@@ -475,7 +512,12 @@ export async function runDoctor(opts: DoctorCliOptions, io: IO, deps: DoctorDeps
  * Runs every doctor check and returns them as data (no output). `runDoctor`
  * is this plus rendering; the MCP server hands the report to the model as is.
  */
-export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}): Promise<DoctorReport> {
+export interface DoctorReportOptions extends CommonOptions {
+  /** Who `nextStep` is phrased for. Default `cli`; the MCP `lexicon_doctor` tool passes `mcp`. */
+  audience?: DoctorAudience;
+}
+
+export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDeps = {}): Promise<DoctorReport> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   const home = deps.home ?? os.homedir();
@@ -697,7 +739,7 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable });
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
   return {
     ok: !checks.some((c) => c.level === 'fail'),
     ready: verdict.ready,

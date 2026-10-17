@@ -62206,7 +62206,17 @@ function parseReason(error62, filePath, max = 110) {
 function editCommand(scope) {
   return scope === "project" ? "lexicon edit --project" : "lexicon edit";
 }
-function summarize(checks, state) {
+function mcpRunHints(message) {
+  return message.replace(/\(run: (lexicon [^)]+)\)/g, (_all, commands) => {
+    const install = /^lexicon install (\S+) --apply$/.exec(commands);
+    if (install) return `(call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms)`;
+    if (commands === "lexicon init") return "(call setup_lexicon; it previews first, apply: true once the user confirms)";
+    const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
+    return `(ask the user to run ${steps.join(", then ")})`;
+  });
+}
+function summarize(checks, state, audience = "cli") {
+  const mcp = audience === "mcp";
   const fails = checks.filter((c) => c.level === "fail");
   const warns = checks.filter((c) => c.level === "warn");
   const counts = `${state.terms} term${state.terms === 1 ? "" : "s"}`;
@@ -62220,14 +62230,14 @@ function summarize(checks, state) {
       // Command first, path second: a rendered line is capped at 200
       // characters and an absolute path can use most of that, so what gets
       // cut has to be the part the check list already showed.
-      nextStep: `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
+      nextStep: mcp ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ""))} (setup_lexicon will not repair this). The file is ${first.path}` : `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
     };
   }
   if (state.terms === 0) {
     return {
       ready: false,
       summary: "Lexicon is not set up yet: there are no terms, so nothing will be corrected.",
-      nextStep: "Run: lexicon setup"
+      nextStep: mcp ? `Offer setup: call setup_lexicon (it previews first; apply: true once the user confirms), or the user can run ${cliCommand("setup")}` : "Run: lexicon setup"
     };
   }
   if (fails.length > 0) {
@@ -62236,21 +62246,21 @@ function summarize(checks, state) {
       summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? "" : "s"} failed: ${fails[0].message}`,
       // Every failing message ends in its own "(run: ...)" hint, so the first
       // failure carries its fix with it.
-      nextStep: `Fix the first failure: ${fails[0].message}`
+      nextStep: `Fix the first failure: ${mcp ? mcpRunHints(fails[0].message) : fails[0].message}`
     };
   }
   if (!state.wired) {
     return {
       ready: false,
       summary: `Lexicon has ${counts}, but no agent is wired up to use them yet.`,
-      nextStep: "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)"
+      nextStep: mcp ? "Offer to register it: call install_client with the client the user uses (it previews first; apply: true once they confirm), or setup_lexicon, which detects every client they have" : "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)"
     };
   }
   if (state.untrustedProject) {
     return {
       ready: true,
       summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
-      nextStep: 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
+      nextStep: mcp ? `Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", which asks the user directly, or ask them to run ${cliCommand("trust")} in a terminal in that repo` : 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
     };
   }
   return {
@@ -62447,7 +62457,7 @@ async function runDoctorReport(opts, deps = {}) {
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable });
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
   return {
     ok: !checks.some((c) => c.level === "fail"),
     ready: verdict.ready,
@@ -63930,7 +63940,7 @@ var registerSetupTools = (server, ctx) => {
       description: "Answers \"is lexicon set up for this user, and what is the one command that fixes it\" in a single call. WHEN TO CALL: when corrections are not happening, when the user asks whether it is set up, or before you offer to set it up, so you know whether there is anything to offer. Safe and free to call unprompted: it only reads. WHAT IT CHANGES: nothing. It writes no files and installs nothing. READ THESE THREE FIELDS FIRST: `ready` (boolean: true means terms are configured and an integration declaration was found; this does not verify a live client connection or an actual correction), `summary` (one sentence, safe to relay verbatim) and `nextStep` (the single thing to do next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ready being false does not always mean \"not set up yet\": a lexicon file that exists but does not parse also reports ready false, and setup_lexicon will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable lexicon it names the file and the command that opens it. Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), `checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.",
       inputSchema: {}
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd })))
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd, audience: "mcp" })))
   );
   server.registerTool(
     "install_client",
