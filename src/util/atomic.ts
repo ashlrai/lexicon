@@ -487,6 +487,18 @@ function startHeartbeat(lockPath: string, token: string, staleMs: number): () =>
   return () => clearInterval(timer);
 }
 
+/** The nearest existing ancestor of `dir` (or `dir` itself) that is not a directory, for the error that names it. */
+async function blockingFile(dir: string): Promise<string> {
+  for (let p = dir; ; p = path.dirname(p)) {
+    try {
+      if (!(await fs.stat(p)).isDirectory()) return p;
+    } catch {
+      // missing (or unreadable): look further up
+    }
+    if (path.dirname(p) === p) return dir;
+  }
+}
+
 async function acquire(lockPath: string, target: string, timeoutMs: number, staleMs: number): Promise<string> {
   const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const payload = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: new Date().toISOString() });
@@ -500,8 +512,18 @@ async function acquire(lockPath: string, target: string, timeoutMs: number, stal
     // not a reason to crash; one of eight processes trusting projects at once
     // used to exit 1 on it. It is still thrown if it outlasts `timeoutMs`.
     let transient: unknown;
+    // Outside the create's try: mkdir answers EEXIST when a file sits where a
+    // directory on the path should be, and taken as contention that waited
+    // the whole timeout and then blamed "another lexicon process".
     try {
       await fs.mkdir(path.dirname(lockPath), { recursive: true });
+    } catch (err) {
+      if (isEexist(err) || (err as NodeJS.ErrnoException).code === 'ENOTDIR') {
+        throw new FileLockError(target, lockPath, `${await blockingFile(path.dirname(lockPath))} is not a directory, so the lock cannot be created next to it`);
+      }
+      throw err;
+    }
+    try {
       // O_CREAT | O_EXCL: the create either wins outright or fails with EEXIST.
       await fs.writeFile(lockPath, payload, { encoding: 'utf8', flag: 'wx' });
       rememberForCleanup(lockPath);

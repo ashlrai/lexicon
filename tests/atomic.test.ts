@@ -152,6 +152,31 @@ describe('physical target aliases share one lock', () => {
   });
 });
 
+describe('a path that cannot hold a lock', () => {
+  // Catches: mkdir's EEXIST (a file where a directory on the path should be)
+  // was read as lock contention, so the call waited the whole timeout and
+  // then said the lock was "still held ... by another lexicon process".
+  it('fails at once naming the file in the way, not another process', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-lock-notdir-'));
+    try {
+      const blocker = path.join(dir, 'blocker');
+      await fs.writeFile(blocker, 'not a directory', 'utf8');
+      let entered = false;
+      const started = Date.now();
+      const failure = withFileLock(path.join(blocker, 'lexicon.yaml'), async () => { entered = true; }, { timeoutMs: 5_000, queueTimeoutMs: 5_000 });
+      await expect(failure).rejects.toMatchObject({ name: 'FileLockError', message: expect.stringContaining(`${blocker} is not a directory`) });
+      await expect(failure).rejects.not.toMatchObject({ message: expect.stringContaining('still held') });
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(entered).toBe(false);
+      // Deeper too: the file is a parent of the lock's directory.
+      await expect(withFileLock(path.join(blocker, 'sub', 'lexicon.yaml'), async () => undefined, { timeoutMs: 5_000, queueTimeoutMs: 5_000 }))
+        .rejects.toMatchObject({ name: 'FileLockError', message: expect.stringContaining(`${blocker} is not a directory`) });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});
+
 describe('a lock held by a live process is never broken by age', () => {
   /**
    * Catches: the stale rule breaking on age alone. The doc comment promised

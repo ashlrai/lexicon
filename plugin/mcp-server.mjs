@@ -53622,6 +53622,15 @@ function startHeartbeat(lockPath, token, staleMs) {
   timer.unref?.();
   return () => clearInterval(timer);
 }
+async function blockingFile(dir) {
+  for (let p = dir; ; p = import_node_path.default.dirname(p)) {
+    try {
+      if (!(await import_node_fs.promises.stat(p)).isDirectory()) return p;
+    } catch {
+    }
+    if (import_node_path.default.dirname(p) === p) return dir;
+  }
+}
 async function acquire(lockPath, target, timeoutMs, staleMs) {
   const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
@@ -53631,6 +53640,13 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
     let transient;
     try {
       await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
+    } catch (err) {
+      if (isEexist(err) || err.code === "ENOTDIR") {
+        throw new FileLockError(target, lockPath, `${await blockingFile(import_node_path.default.dirname(lockPath))} is not a directory, so the lock cannot be created next to it`);
+      }
+      throw err;
+    }
+    try {
       await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
