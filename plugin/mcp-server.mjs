@@ -48605,6 +48605,7 @@ async function removeAlias(canonical, alias, opts = {}) {
   }
   let termFound = false;
   let firstTerm;
+  let blocked;
   const files = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
@@ -48615,7 +48616,15 @@ async function removeAlias(canonical, alias, opts = {}) {
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      if (file2.scope === "project") {
+        try {
+          await assertProjectWritable(file2.path, opts);
+        } catch (error62) {
+          if (opts.scope !== void 0 || !isProjectTrustError(error62)) throw error62;
+          blocked = error62;
+          return;
+        }
+      }
       term.aliases = remaining;
       await writeLexiconFile(file2);
       if (file2.scope === "project") await refreshTrust(file2.path, opts);
@@ -48624,6 +48633,7 @@ async function removeAlias(canonical, alias, opts = {}) {
     });
   }
   if (firstTerm) return { term: firstTerm, files };
+  if (blocked !== void 0) throw blocked;
   const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
   if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
   throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);

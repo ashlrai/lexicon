@@ -867,9 +867,12 @@ export interface RemoveAliasResult {
  * holds it (project, then global): the merged lexicon unions aliases across
  * both, so removing it from only one would leave the correction in place.
  * With a scope only that file is touched. Each file is edited inside its own
- * lock; a project file must already be trusted (ProjectTrustError otherwise,
- * thrown before anything is written) and is re-pinned after the edit, as
- * removeTerm does.
+ * lock; a project file must already be trusted and is re-pinned after the
+ * edit, as removeTerm does. An untrusted or changed project file is never
+ * written: with `scope: 'project'` that is a ProjectTrustError (thrown before
+ * anything is written); without a scope the project copy is skipped, since
+ * it is not part of the merge, and the ProjectTrustError is thrown only when
+ * no other file held the alias.
  *
  * Throws when the alias is empty or is the canonical spelling itself, when no
  * searched file holds the term, and when the term holds no such alias.
@@ -889,6 +892,7 @@ export async function removeAlias(
 
   let termFound = false;
   let firstTerm: Term | undefined;
+  let blocked: unknown;
   const files: LexiconFile[] = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
@@ -899,7 +903,19 @@ export async function removeAlias(
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file.scope === 'project') await assertProjectWritable(file.path, opts);
+      if (file.scope === 'project') {
+        try {
+          await assertProjectWritable(file.path, opts);
+        } catch (error) {
+          // Without a scope, an untrusted project file is not part of the
+          // merge, so the active correction lives in global: skip the
+          // project copy (never written) and still edit global. The refusal
+          // surfaces only when nothing else held the alias.
+          if (opts.scope !== undefined || !isProjectTrustError(error)) throw error;
+          blocked = error;
+          return;
+        }
+      }
       term.aliases = remaining;
       await writeLexiconFile(file);
       // The user's own edit must not flip an already-trusted file to 'changed'.
@@ -909,6 +925,7 @@ export async function removeAlias(
     });
   }
   if (firstTerm) return { term: firstTerm, files };
+  if (blocked !== undefined) throw blocked;
   const where = opts.scope ? `the ${opts.scope} lexicon` : 'the global or project lexicon';
   if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
   throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);

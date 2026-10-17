@@ -693,6 +693,30 @@ describe('removeAlias', () => {
     expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
   });
 
+  it('without a scope, an untrusted project copy does not block removing the active global alias', async () => {
+    // The untrusted file is not part of the merge, so the correction the user
+    // sees comes from global; refusing the whole call left it in place (and
+    // the CLI has no --global flag to get around it).
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await addTerm({ canonical: 'Vercel', aliases: ['Versel', 'Vercell'] }, { cwd: nested, globalPath });
+    await writeLexiconFile({
+      path: projectPath,
+      scope: 'project',
+      lexicon: { version: 1, terms: [{ canonical: 'Vercel', aliases: ['Versel'] }] },
+      exists: false,
+    });
+    const before = await fs.readFile(projectPath);
+    const result = await removeAlias('Vercel', 'Versel', { cwd: nested, globalPath });
+    expect(result.files.map((f) => f.path)).toEqual([globalPath]);
+    expect(result.term.aliases).toEqual(['Vercell']);
+    expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
+    // An explicit project scope still refuses.
+    await expect(removeAlias('Vercel', 'Versel', { cwd: nested, globalPath, scope: 'project' })).rejects.toThrow(
+      ProjectTrustError,
+    );
+  });
+
   it('says clearly when the term or the alias is unknown, and writes nothing', async () => {
     const { nested } = await makeRepo();
     await addTerm({ canonical: 'Hetzner', aliases: ['Hetsner'] }, { cwd: nested, globalPath });
