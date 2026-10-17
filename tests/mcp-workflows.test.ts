@@ -497,3 +497,29 @@ describe('tool and resource descriptions agree with what the code does', () => {
     expect(description).toMatch(/case-only/);
   });
 });
+
+describe('list_packs with an untrusted project lexicon', () => {
+  // Catches: a pack the skipped project file records read as plain `installed: false`.
+  it('carries projectTrust, skippedProject and a note, path only', async () => {
+    const projectFile = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectFile, 'version: 1\nsettings:\n  packs: [developer]\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const payload = JSON.parse((await call('list_packs', {})).text) as {
+      packs: { name: string; installed: boolean }[];
+      projectTrust?: string;
+      skippedProject?: string;
+      note?: string;
+    };
+    expect(payload.packs.find((p) => p.name === 'developer')?.installed).toBe(false);
+    expect(payload.projectTrust).toBe('untrusted');
+    expect(payload.skippedProject).toBe(projectFile);
+    expect(payload.note).toMatch(/lexicon trust/);
+    expect(payload.note).toMatch(/shows as not installed/);
+    expect(JSON.stringify(payload)).not.toContain('Kubectl');
+  });
+
+  it('carries no skipped-project keys without a project file', async () => {
+    const payload = JSON.parse((await call('list_packs', {})).text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('skippedProject');
+    expect(payload).not.toHaveProperty('note');
+  });
+});

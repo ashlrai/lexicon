@@ -165,14 +165,17 @@ export function filePathsInUse(loaded: LoadedLexicon): { global: string; project
  */
 export function skippedProjectFields(
   loaded: LoadedLexicon,
+  /** One more sentence for the note: what the skipped file means for this result. */
+  consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
   if (!loaded.skippedProject) return {};
+  const note =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.';
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
-    note:
-      loaded.projectTrust === 'changed'
-        ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
-        : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.',
+    note: consequence ? `${note} ${consequence}` : note,
   };
 }

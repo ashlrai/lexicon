@@ -31,7 +31,7 @@ import {
   verifyPackChecksum,
 } from '../../core/index.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
-import { IMPORT_FORMAT_VALUES, bufferIO, guarded, textResult } from '../shared.js';
+import { IMPORT_FORMAT_VALUES, bufferIO, guarded, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 
@@ -55,6 +55,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
         'Pass registry (a local path, file:// or https:// URL) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
+        'The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. ' +
         'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
       inputSchema: {
         registry: z.string().optional().describe(REGISTRY_SOURCE_DESC),
@@ -83,7 +84,12 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
             installed: installed.includes(p.ref),
           }));
         }
-        return textResult(result);
+        // installedPacks reads trusted files only: a pack the skipped project
+        // file records shows as not installed, so name that file (path only).
+        return textResult({
+          ...result,
+          ...skippedProjectFields(loaded, 'A pack recorded only in that file shows as not installed until it is trusted.'),
+        });
       }),
   );
 

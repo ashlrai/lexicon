@@ -41,7 +41,7 @@ import {
 } from '../core/index.js';
 import { loadLexicon } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe } from './io.js';
+import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -72,6 +72,9 @@ export interface PackDeps {
   isInteractive?: () => boolean;
 }
 
+/** What a skipped project lexicon means for an `installed` flag. */
+const PACKS_SKIPPED = 'A pack recorded only in that file shows as not installed until it is trusted.';
+
 function scopeOf(opts: PackCliOptions): TermScope {
   return opts.project ? 'project' : 'global';
 }
@@ -82,16 +85,34 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
   const storeOpts = { cwd, scope: scopeOf(opts), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   try {
     const packs = await listPacks(deps);
-    const installed = installedPacks(await loadLexicon(storeOpts));
+    const loaded = await loadLexicon(storeOpts);
+    // installedPacks reads trusted files only: a pack the skipped project file
+    // records shows as not installed, so name that file (stderr, path only).
+    warnSkippedProject(loaded, io);
+    const installed = installedPacks(loaded);
     const rows = packs.map((p) => ({ ...p, installed: installed.includes(p.name) }));
     const communityInstalled = await installedRegistryPacks(storeOpts);
     if (opts.json) {
-      let registryPacks: RegistryIndexEntry[] | undefined;
+      let registryPacks: (RegistryIndexEntry & { installed: boolean })[] | undefined;
       if (opts.registry) {
         const { index } = await loadRegistryIndex(opts.registry, deps.registry);
-        registryPacks = index.packs;
+        // The same per-pack flag MCP list_packs gives its community entries.
+        registryPacks = index.packs.map((p) => ({ ...p, installed: communityInstalled.includes(p.ref) || installed.includes(p.ref) }));
       }
-      line(io, JSON.stringify({ packs: rows, installed, communityInstalled, ...(registryPacks ? { registry: registryPacks } : {}) }, null, 2));
+      line(
+        io,
+        JSON.stringify(
+          {
+            packs: rows,
+            installed,
+            communityInstalled,
+            ...(registryPacks ? { registry: registryPacks } : {}),
+            ...skippedProjectJson(loaded, PACKS_SKIPPED),
+          },
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     if (rows.length === 0 && communityInstalled.length === 0) {
@@ -222,9 +243,12 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
     const { index } = await loadRegistryIndex(opts.registry, deps.registry);
     const hits = searchRegistryIndex(index, query);
     const cwd = resolveCwd(opts);
-    const installed = installedPacks(await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) }));
+    const loaded = await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) });
+    warnSkippedProject(loaded, io);
+    const installed = installedPacks(loaded);
     if (opts.json) {
-      line(io, JSON.stringify({ query, registry: opts.registry, packs: hits }, null, 2));
+      const packs = hits.map((p) => ({ ...p, installed: installed.includes(p.ref) }));
+      line(io, JSON.stringify({ query, registry: opts.registry, packs, ...skippedProjectJson(loaded, PACKS_SKIPPED) }, null, 2));
       return 0;
     }
     if (hits.length === 0) {

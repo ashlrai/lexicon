@@ -262,3 +262,68 @@ describe('pack validate file handling', () => {
     expect(io.err).not.toContain('unknown pack');
   });
 });
+
+// Catches: a pack the untrusted project file records read as plain "not installed", with no word that the file was skipped.
+describe('pack list / pack search with an untrusted project lexicon', () => {
+  function untrustedRepo(): string {
+    const repo = path.join(dir, 'repo');
+    mkdirSync(path.join(repo, '.git'), { recursive: true });
+    writeFileSync(
+      path.join(repo, '.lexicon.yaml'),
+      'version: 1\nsettings:\n  packs: [developer, example/cardiology]\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n',
+    );
+    return repo;
+  }
+
+  it('pack list --json adds projectTrust, skippedProject and note; the table warns on stderr', async () => {
+    const repo = untrustedRepo();
+    const io = makeIO();
+    expect(await runPackList({ globalPath, cwd: repo, registry: indexPath, json: true }, io)).toBe(0);
+    const parsed = JSON.parse(io.out) as {
+      packs: { name: string; installed: boolean }[];
+      registry: { ref: string; installed: boolean }[];
+      projectTrust?: string;
+      skippedProject?: string;
+      note?: string;
+    };
+    expect(parsed.packs.find((p) => p.name === 'developer')?.installed).toBe(false);
+    expect(parsed.registry[0]).toMatchObject({ ref: 'example/cardiology', installed: false });
+    expect(parsed.projectTrust).toBe('untrusted');
+    expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(parsed.note).toMatch(/lexicon trust/);
+    expect(parsed.note).toMatch(/shows as not installed/);
+    expect(io.out).not.toContain('Kubectl');
+
+    const table = makeIO();
+    expect(await runPackList({ globalPath, cwd: repo }, table)).toBe(0);
+    expect(table.err).toContain(`untrusted project lexicon skipped: ${path.join(repo, '.lexicon.yaml')}`);
+  });
+
+  it('pack search --json gives each hit an installed flag and the skipped-project keys', async () => {
+    const repo = untrustedRepo();
+    const io = makeIO();
+    expect(await runPackSearch('cardio', { ...baseOpts(), cwd: repo, json: true }, io)).toBe(0);
+    const parsed = JSON.parse(io.out) as { packs: { ref: string; installed: boolean }[]; skippedProject?: string; projectTrust?: string };
+    expect(parsed.packs[0]).toMatchObject({ ref: 'example/cardiology', installed: false });
+    expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(parsed.projectTrust).toBe('untrusted');
+
+    const table = makeIO();
+    expect(await runPackSearch('cardio', { ...baseOpts(), cwd: repo }, table)).toBe(0);
+    expect(table.err).toContain('untrusted project lexicon skipped');
+  });
+
+  it('no project file: no skipped-project keys, and installed flags follow the global file', async () => {
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, makeIO())).toBe(0);
+    const io = makeIO();
+    expect(await runPackSearch('cardio', { ...baseOpts(), cwd: dir, json: true }, io)).toBe(0);
+    const parsed = JSON.parse(io.out) as Record<string, unknown> & { packs: { installed: boolean }[] };
+    expect(parsed.packs[0].installed).toBe(true);
+    expect(parsed).not.toHaveProperty('skippedProject');
+    const list = makeIO();
+    expect(await runPackList({ ...baseOpts(), cwd: dir, json: true }, list)).toBe(0);
+    const listed = JSON.parse(list.out) as Record<string, unknown> & { registry: { installed: boolean }[] };
+    expect(listed.registry[0].installed).toBe(true);
+    expect(listed).not.toHaveProperty('projectTrust');
+  });
+});

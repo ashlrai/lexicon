@@ -198,6 +198,28 @@ export function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 
 }
 
 /**
+ * The additive `--json` keys for a skipped project lexicon, the same three
+ * the MCP tools return: `projectTrust`, `skippedProject` (path only, never its
+ * contents) and `note`. Empty when nothing was skipped, so the shape is
+ * unchanged then. `consequence` adds what the skip means for this output.
+ */
+export function skippedProjectJson(
+  loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>,
+  consequence?: string,
+): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
+  if (!loaded.skippedProject) return {};
+  const head =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
+  return {
+    projectTrust: loaded.projectTrust,
+    skippedProject: loaded.skippedProject.path,
+    note: consequence ? `${head} ${consequence}` : head,
+  };
+}
+
+/**
  * The line naming a copy of a removed term that is still in another lexicon
  * file (removeTerm edits one file), with the command that removes only that
  * copy: `--project` or `--global`.

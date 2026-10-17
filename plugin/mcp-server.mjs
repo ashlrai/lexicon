@@ -59446,12 +59446,13 @@ function filePathsInUse(loaded) {
     ...loaded.project ? { project: loaded.project.path } : {}
   };
 }
-function skippedProjectFields(loaded) {
+function skippedProjectFields(loaded, consequence) {
   if (!loaded.skippedProject) return {};
+  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.";
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
-    note: loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it."
+    note: consequence ? `${note} ${consequence}` : note
   };
 }
 
@@ -63239,7 +63240,7 @@ var registerPackTools = (server, ctx) => {
     "list_packs",
     {
       title: "List the starter term packs",
-      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
       inputSchema: {
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
       }
@@ -63266,7 +63267,10 @@ var registerPackTools = (server, ctx) => {
           installed: installed.includes(p.ref)
         }));
       }
-      return textResult(result);
+      return textResult({
+        ...result,
+        ...skippedProjectFields(loaded, "A pack recorded only in that file shows as not installed until it is trusted.")
+      });
     })
   );
   server.registerTool(
