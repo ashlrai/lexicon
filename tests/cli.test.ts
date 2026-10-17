@@ -2128,6 +2128,44 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: a --cwd that is not a directory was taken as is: `stats --json`
+  // answered ok: true for the global lexicon alone and `doctor` said no project
+  // lexicon was "found from" the typo, as if the repository had none.
+  it('refuses a --cwd that is not an existing directory, with ok: false, error and nextStep under --json', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-cwd-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
+      const missing = path.join(tmp, 'no-such-dir');
+      const doc = {
+        ok: false,
+        error: `--cwd ${JSON.stringify(missing)} is not an existing directory`,
+        nextStep: 'pass a directory that exists, or leave --cwd out to use the current directory',
+      };
+      for (const args of [['stats', '--json'], ['doctor', '--json'], ['path', '--json'], ['list', '--full']]) {
+        const r = lexicon([...args, '--cwd', missing], globalPath);
+        expect(r.status, args.join(' ')).toBe(1);
+        expect(JSON.parse(r.stdout), args.join(' ')).toEqual(doc);
+        expect(r.stderr).toContain(`lexicon: --cwd "${missing}" is not an existing directory`);
+      }
+      // A file is not a directory either; without --json only stderr speaks.
+      const file = lexicon(['stats', '--cwd', globalPath], globalPath);
+      expect(file.status).toBe(1);
+      expect(file.stdout).toBe('');
+      expect(file.stderr).toContain('is not an existing directory');
+      // An existing directory still works, and the hook ignores --cwd and exits 0.
+      expect(lexicon(['stats', '--json', '--cwd', tmp], globalPath).status).toBe(0);
+      expect(spawnSync(process.execPath, ['--import', 'tsx', 'src/cli/index.ts', 'hook', '--cwd', missing], {
+        cwd: repoRoot,
+        env: { ...process.env, LEXICON_PATH: globalPath },
+        input: '{}',
+        encoding: 'utf8',
+      }).status).toBe(0);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   // Catches: `--full` implies --json on list and harvest, but a failure under
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.

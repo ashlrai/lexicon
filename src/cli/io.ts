@@ -8,6 +8,7 @@
  * every command can import it without a cycle -- which is why each command
  * used to carry its own copy of `line`, `safe` and `resolveCwd`.
  */
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import { conflictRemoveCommand, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermHolder } from '../core/index.js';
@@ -239,6 +240,39 @@ export function argvRequestsJson(args: readonly string[], flags: readonly string
   const end = args.indexOf('--');
   const before = end === -1 ? args : args.slice(0, end);
   return flags.some((flag) => before.includes(flag));
+}
+
+/**
+ * A refusal raised before a command runs (see `cwdOptionProblem`): `index.ts`
+ * reports it through `refuse`, so it gets the `lexicon:` lines and, under
+ * --json, `{ ok: false, error, nextStep }`.
+ */
+export class CliRefusal extends Error {
+  constructor(message: string, readonly nextStep?: string) {
+    super(message);
+    this.name = 'CliRefusal';
+  }
+}
+
+/**
+ * Why the global `--cwd` cannot be used, or undefined when it is absent or
+ * names an existing directory. A directory that does not exist (a typo) was
+ * taken as is: `lexicon stats --cwd /nope --json` answered `ok: true` for the
+ * global lexicon alone and `doctor` reported no project lexicon "found from
+ * /nope", as if the repository had none. serve refuses the same `cwd` with a
+ * 400 and MCP tools refuse a path outside their roots.
+ */
+export function cwdOptionProblem(cwd: string | undefined): CliRefusal | undefined {
+  if (cwd === undefined) return undefined;
+  try {
+    if (statSync(cwd).isDirectory()) return undefined;
+  } catch {
+    // missing or unreadable: refused below
+  }
+  return new CliRefusal(
+    `--cwd ${JSON.stringify(cwd)} is not an existing directory`,
+    'pass a directory that exists, or leave --cwd out to use the current directory',
+  );
 }
 
 /**
