@@ -2,7 +2,7 @@
 
 Every tool, resource and prompt the `lexicon` server exposes, for anyone wiring it into an MCP client or writing an agent that calls it. To *register* the server in a client, use [CLIENTS.md](CLIENTS.md); this page is what it answers once it is running.
 
-Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). The lexicon is re-read on every call, so edits to the file take effect immediately. Twenty tools, two resources, two prompts.
+Server name: `lexicon`. Transport: stdio. Bin: `lexicon-mcp` (or `lexicon mcp`, or `node plugin/mcp-server.mjs`). `lexicon-mcp --version` prints the package version and `--help` a one-line usage, both exiting 0 without starting the server (on the default branch, not yet in a published release). The lexicon is re-read on every call, so edits to the file take effect immediately. Twenty tools, two resources, two prompts.
 
 Registering it in a client is one command: see [CLIENTS.md](CLIENTS.md). Point any other MCP client at the stdio server directly:
 
