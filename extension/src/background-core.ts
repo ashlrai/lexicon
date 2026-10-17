@@ -262,11 +262,13 @@ export function createBackground(deps: BackgroundDeps): Background {
     const useApi = settings.mode === 'api' && (await health(settings)).health !== null;
     if (useApi) {
       try {
-        // Server reply: { term, created, aliasAdded, path } (src/serve/server.ts LearnResponse).
+        // Server reply: { term, created, aliasAdded, path, conflict?, untrustedProject? } (src/serve/server.ts LearnResponse).
         const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }) })) as {
           term?: { canonical?: string };
           created?: boolean;
           aliasAdded?: boolean;
+          conflict?: unknown;
+          untrustedProject?: unknown;
         };
         healthCache = null; // term count changed
         const canonical = raw?.term?.canonical ?? meant;
@@ -275,7 +277,7 @@ export function createBackground(deps: BackgroundDeps): Background {
           : raw?.aliasAdded
             ? `Added "${heard}" as an alias of ${canonical}.`
             : `"${heard}" is already an alias of ${canonical}.`;
-        return { ok: true, mode: 'api', message };
+        return { ok: true, mode: 'api', message: message + learnWarnings(heard, raw?.conflict, raw?.untrustedProject) };
       } catch (err) {
         return { ok: false, error: errorMessage(err) };
       }
@@ -356,4 +358,28 @@ export function createBackground(deps: BackgroundDeps): Background {
   }
 
   return { handle, getSettings, saveSettings };
+}
+
+/**
+ * What a /learn success must still say: another term that also holds `heard`
+ * (`conflict`), so a transcript may keep going to it, and an untrusted project
+ * lexicon that claims it too (`untrustedProject`, path only). The popup showed
+ * a bare "Added ..." for both, so the user believed a correction that may not
+ * win. Fields of an unexpected shape are ignored. Exported for tests.
+ */
+export function learnWarnings(heard: string, conflict: unknown, untrustedProject: unknown): string {
+  let out = '';
+  const c = conflict as { canonical?: unknown; scope?: unknown; as?: unknown; spelling?: unknown } | null | undefined;
+  if (c && typeof c.canonical === 'string' && (c.scope === 'global' || c.scope === 'project')) {
+    const spelling = typeof c.spelling === 'string' ? c.spelling : heard;
+    out +=
+      c.as === 'alias'
+        ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: lexicon remove ${JSON.stringify(c.canonical)} --alias ${JSON.stringify(spelling)} --${c.scope}).`
+        : ` But "${spelling}" is its own term (${c.scope} lexicon), so it may still be kept as written.`;
+  }
+  const u = untrustedProject as { path?: unknown; trust?: unknown } | null | undefined;
+  if (u && typeof u.path === 'string') {
+    out += ` The project lexicon ${u.path} is ${u.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'} and also claims "${heard}"; once it is trusted its term wins (review it with: lexicon trust).`;
+  }
+  return out;
 }
