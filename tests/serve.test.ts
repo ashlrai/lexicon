@@ -1140,15 +1140,18 @@ describe('requests that used to succeed while doing something else', () => {
 // ---------------------------------------------------------------------------
 
 describe('lexicon serve (CLI)', () => {
-  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty.
-  it('--json prints { ok: false, error } when two modes are combined', async () => {
+  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty;
+  // then the document had no nextStep, unlike every other refusal, and never named the flags that collided.
+  it('--json prints { ok: false, error, nextStep } naming the flags when two modes are combined', async () => {
+    const error = 'use only one of --show, --status, --pair, --install, --uninstall';
     const io = memIO();
     expect(await runServe({ show: true, status: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
-    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error, nextStep: 'pass only one of --show, --status (see lexicon serve --help)' });
+    expect(io.err.join('')).toContain('lexicon: pass only one of --show, --status');
     // --install takes --json too, so its refusal is a document as well.
     const install = memIO();
     expect(await runServe({ install: true, uninstall: true, json: true, globalPath: env.globalPath }, install)).toBe(1);
-    expect(JSON.parse(install.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    expect(JSON.parse(install.out.join(''))).toEqual({ ok: false, error, nextStep: 'pass only one of --install, --uninstall (see lexicon serve --help)' });
   });
 
   // Catches: `serve --install --json` and `--uninstall --json` printed the

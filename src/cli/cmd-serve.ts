@@ -836,9 +836,13 @@ async function runServeServiceJson(action: 'install' | 'uninstall', opts: ServeO
 }
 
 export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
-  const modes = [opts.show, opts.status, opts.pair, opts.install, opts.uninstall].filter(Boolean).length;
+  const given = (['show', 'status', 'pair', 'install', 'uninstall'] as const).filter((m) => opts[m] === true).map((m) => `--${m}`);
   const json = opts.json === true;
-  if (modes > 1) return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall');
+  // The nextStep names the flags that collided, as `lexicon voice` does for its
+  // modes; the document had only `error`, unlike every other refusal.
+  if (given.length > 1) {
+    return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall', `pass only one of ${given.join(', ')} (see lexicon serve --help)`);
+  }
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);
