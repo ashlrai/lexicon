@@ -1946,6 +1946,26 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: the hidden `install-claude` alias did not take --json (an
+  // unknown option, exit 1), and its `--scope` default of `user` beat
+  // `--project`, so it did not behave like `install claude`.
+  it('install-claude takes --json and --project exactly as install claude does', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-alias-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      for (const flags of [[], ['--project'], ['--scope', 'bogus']]) {
+        const alias = lexicon(['install-claude', '--json', '--home', tmp, ...flags, '--cwd', tmp], globalPath);
+        const install = lexicon(['install', 'claude', '--json', '--home', tmp, ...flags, '--cwd', tmp], globalPath);
+        expect(alias.status, flags.join(' ')).toBe(install.status);
+        expect(JSON.parse(alias.stdout), flags.join(' ')).toEqual(JSON.parse(install.stdout));
+      }
+      const project = lexicon(['install-claude', '--json', '--home', tmp, '--project', '--cwd', tmp], globalPath);
+      expect(JSON.parse(project.stdout)).toMatchObject({ ok: true, client: 'claude', scope: 'project', applied: false });
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: commander usage errors (unknown option, invalid --port, missing
   // argument) never printed JSON, so `lexicon add --json --bogus` left a
   // script parsing an empty stdout.
