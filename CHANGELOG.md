@@ -16,6 +16,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon voice --status` and `voice --list-devices` refuse a flag only a recording reads (`--seconds`, `--device`, `--model`, `--lang`, `--translate`, `--no-prompt`, `--no-history`, `--copy`, `--paste`) with exit 1, naming it: `--seconds only applies to a recording; --status records nothing`, and under `--json` `{ ok: false, error, nextStep, code: 1 }`. They answered and dropped the flag without a word.
 - The browser extension's popup names the way out of a canonical conflict, as the CLI and MCP do: learning `Ashler` -> `Ashley` while `Ashler` is its own term now ends `if the user never means it as its own term, drop it with: lexicon remove "Ashler" --project.`, the core `conflictNote` sentence the extension now bundles. It stopped at `so it may still be kept as written.`
 - `lexicon learn X X --json` (the same spelling twice) gives a `nextStep`, `run: lexicon learn <heard> "X", where <heard> is the misspelling STT wrote`, as every other learn refusal does. The document had only `error`.
 - `lexicon remove <term> --json` for a term it cannot find gives a `nextStep`: the flag that reaches the other file when that file holds it (`it is in the global lexicon (<path>); run with --global to remove it`, which only stderr said), otherwise `run lexicon list to see the exact canonical spellings`, as MCP `remove_term` points at `list_terms`. The document had only `error`.

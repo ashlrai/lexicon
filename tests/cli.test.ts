@@ -2087,6 +2087,33 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: `voice --status --seconds 5` and `voice --list-devices --model x`
+  // answered the status or device list and dropped the recording flag silently.
+  it('voice: --status and --list-devices refuse a recording-only flag, naming it', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-voice-flags-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      for (const [flags, error, nextStep] of [
+        [['--status', '--seconds', '5'], '--seconds only applies to a recording; --status records nothing', 'drop --seconds, or run lexicon voice without --status to record'],
+        [['--list-devices', '--model', 'base.en', '--no-history'], '--model, --no-history only apply to a recording; --list-devices records nothing', 'drop --model, --no-history, or run lexicon voice without --list-devices to record'],
+        [['--status', '--paste'], '--paste only applies to a recording; --status records nothing', 'drop --paste, or run lexicon voice without --status to record'],
+      ] as [string[], string, string][]) {
+        const json = lexicon(['voice', ...flags, '--json', '--cwd', tmp], globalPath);
+        expect(json.status, flags.join(' ')).toBe(1);
+        expect(JSON.parse(json.stdout)).toEqual({ ok: false, error, nextStep, code: 1 });
+        const plain = lexicon(['voice', ...flags, '--cwd', tmp], globalPath);
+        expect(plain.status).toBe(1);
+        expect(plain.stdout).toBe('');
+        expect(plain.stderr).toContain(`lexicon voice: ${error}`);
+      }
+      // The flags --status reads still work: idle is exit 1 with its own document.
+      const status = lexicon(['voice', '--status', '--json', '--quiet', '--cwd', tmp], globalPath);
+      expect(JSON.parse(status.stdout)).toEqual({ recording: false });
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: `--full` implies --json on list and harvest, but a failure under
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.

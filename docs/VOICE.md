@@ -42,6 +42,9 @@ Exit codes: `0` ok, `1` error, `2` ffmpeg or whisper-cli missing (with an instal
 hint), `3` nothing heard. `--status` exits `0` while a toggle recording is running
 and `1` when idle, so scripts can branch on it. `--toggle`, `--status` and
 `--list-devices` are separate modes: passing two of them exits `1` and names both.
+`--status` and `--list-devices` record nothing, so a recording flag with them
+(`--seconds`, `--device`, `--model`, `--lang`, `--translate`, `--no-prompt`,
+`--no-history`, `--copy`, `--paste`) exits `1` and names the flag.
 
 ## Install
 
