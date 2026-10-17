@@ -71,12 +71,26 @@ describe('HTML code elements', () => {
     );
   });
 
+  // Catches: only <code> and <pre> were protected, so a keyboard shortcut,
+  // sample output, a script or a stylesheet had its identifiers rewritten.
+  it('skips <kbd>, <samp>, <script> and <style> elements too', () => {
+    expect(out('press <kbd>ashler</kbd> then ashler')).toBe('press <kbd>ashler</kbd> then Ashlr.AI');
+    expect(out('<SAMP class="out">ashler: ok</SAMP> ashler')).toBe('<SAMP class="out">ashler: ok</SAMP> Ashlr.AI');
+    expect(out('<script type="module">\nconst ashler = 1;\n</script> ashler')).toBe('<script type="module">\nconst ashler = 1;\n</script> Ashlr.AI');
+    expect(out('<style>.ashler { color: red }</style > ashler')).toBe('<style>.ashler { color: red }</style > Ashlr.AI');
+    // Unclosed, or a longer name: text, as for <code>.
+    expect(out('the <kbd> key and <scripts>ashler</scripts>')).toBe('the <kbd> key and <scripts>Ashlr.AI</scripts>');
+    expect(out('<sampler>ashler</sampler> <styles>ashler</styles>')).toBe('<sampler>Ashlr.AI</sampler> <styles>Ashlr.AI</styles>');
+  });
+
   it('finds HTML code elements in linear time', () => {
     const unclosed = '<code> ashler <pre> '.repeat(20000);
     const t0 = performance.now();
     collectRanges(unclosed);
     const closed = '<code>x</code> <pre> '.repeat(20000);
     collectRanges(closed);
+    collectRanges('<kbd> <samp> <script> <style> <code> <pre> ashler '.repeat(20000));
+    collectRanges('<kbd>x</kbd> <samp> <script>y</script> <style> '.repeat(20000));
     expect(performance.now() - t0).toBeLessThan(500);
   });
 });

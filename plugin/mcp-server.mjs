@@ -52072,8 +52072,11 @@ function codeSpanRanges(text) {
   }
   return out;
 }
-var HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
-var HTML_CODE_CLOSE_RE = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+var HTML_CODE_ELEMENTS = ["code", "pre", "kbd", "samp", "script", "style"];
+var HTML_CODE_OPEN_RE = new RegExp(`<(${HTML_CODE_ELEMENTS.join("|")})(?=[\\s>/])[^<>]*>`, "gi");
+var HTML_CODE_CLOSE_RE = Object.fromEntries(
+  HTML_CODE_ELEMENTS.map((name) => [name, new RegExp(`</${name}\\s*>`, "gi")])
+);
 function htmlCodeRanges(text) {
   const out = [];
   if (!text.includes("<")) return out;
@@ -52088,7 +52091,7 @@ function htmlCodeRanges(text) {
     const c = close.exec(text);
     if (!c) {
       unclosed.add(name);
-      if (unclosed.size === 2) break;
+      if (unclosed.size === HTML_CODE_ELEMENTS.length) break;
       continue;
     }
     const end = c.index + c[0].length;
