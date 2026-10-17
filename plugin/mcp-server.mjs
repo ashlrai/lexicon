@@ -61214,14 +61214,32 @@ async function runInstall(client, opts, io, deps = {}) {
   }
   return 0;
 }
+async function installedLexiconPlugin(settingsPath, installedPluginsPath) {
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  return findInstalledLexiconPlugin(settings.error === void 0 ? settings.value : void 0, installed.error === void 0 ? installed.value : void 0);
+}
 var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
 async function runInstallClaude(opts, io, deps = {}) {
   const scope = opts.scope ?? "user";
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const settingsPath = deps.settingsPath ?? import_node_path20.default.join(claudeConfigDir(), "settings.json");
+  if (scope === "user") {
+    const pluginId = await installedLexiconPlugin(
+      settingsPath,
+      deps.installedPluginsPath ?? import_node_path20.default.join(import_node_path20.default.dirname(settingsPath), "plugins", "installed_plugins.json")
+    );
+    if (pluginId) {
+      line(
+        io,
+        `the lexicon Claude Code plugin (${safe(pluginId)}) already provides the MCP server and the ${HOOK_EVENTS.join(" and ")} hooks, so nothing was ${opts.apply ? "written" : "planned"}; to wire Claude Code by hand instead, uninstall it first: claude plugin uninstall ${safe(pluginId)}`
+      );
+      return 0;
+    }
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");

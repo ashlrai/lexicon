@@ -26,6 +26,7 @@ import {
   HOOK_EVENTS,
   claudeConfigDir,
   defaultExec,
+  findInstalledLexiconPlugin,
   hookConfigFor,
   hookTimeoutFor,
   launchCommandLine,
@@ -644,6 +645,19 @@ export interface InstallClaudeDeps {
   onWritten?: (file: string, outcome: InstallOutcome) => void;
   /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`. Default process.env. */
   env?: NodeJS.ProcessEnv;
+  /** Claude's plugin registry. Default `plugins/installed_plugins.json` beside `settingsPath`. */
+  installedPluginsPath?: string;
+}
+
+/**
+ * The lexicon plugin's id when Claude Code has it installed or enabled
+ * (`findInstalledLexiconPlugin` over settings.json and installed_plugins.json),
+ * else undefined. An unreadable file counts as not listing it.
+ */
+async function installedLexiconPlugin(settingsPath: string, installedPluginsPath: string): Promise<string | undefined> {
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  return findInstalledLexiconPlugin(settings.error === undefined ? settings.value : undefined, installed.error === undefined ? installed.value : undefined);
 }
 
 export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
@@ -657,8 +671,27 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
+  // The plugin already runs the MCP server and both hooks for every session.
+  // A user-scope registration on top of it doubled the hook notes on every
+  // prompt and added a second `lexicon` server (setup_lexicon from a plugin
+  // session asked for exactly that). A project-scope install writes the
+  // repo's config for whoever clones it, so it still goes ahead.
+  if (scope === 'user') {
+    const pluginId = await installedLexiconPlugin(
+      settingsPath,
+      deps.installedPluginsPath ?? path.join(path.dirname(settingsPath), 'plugins', 'installed_plugins.json'),
+    );
+    if (pluginId) {
+      line(
+        io,
+        `the lexicon Claude Code plugin (${safe(pluginId)}) already provides the MCP server and the ${HOOK_EVENTS.join(' and ')} hooks, so nothing was ${opts.apply ? 'written' : 'planned'}; ` +
+          `to wire Claude Code by hand instead, uninstall it first: claude plugin uninstall ${safe(pluginId)}`,
+      );
+      return 0;
+    }
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const exec = deps.exec ?? defaultExec;
   let failed = false;
 

@@ -45,7 +45,7 @@ Without `--apply` it prints the three steps. With `--apply` it performs the firs
 2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json`. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](../examples/claude-settings.hook.json).
 3. Reminds you to add "Read the `lexicon://me` resource before interpreting dictated text" to your `CLAUDE.md`.
 
-Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place.
+Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place. With the plugin installed (listed in `~/.claude/plugins/installed_plugins.json` or enabled in `settings.json`), a user-scope `lexicon install claude` (and `install_client` or `setup_lexicon` for `claude`) changes nothing and says so, because the plugin already runs the server and both hooks and a second copy would add every hook note twice; `--scope project` still writes the repo's config.
 
 Manual installs do not load `skills/lexicon/SKILL.md`; the hook notes and the tool descriptions carry the instructions. Install the plugin (option a) to get the skill and the `/lexicon` command.
 
