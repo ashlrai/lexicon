@@ -63,6 +63,8 @@ import {
   harvestRepo,
   loadLexicon,
   normalize,
+  isProjectTrustError,
+  removeAlias,
   removeTerm,
   resolvePaths,
   suggestAliases,
@@ -77,6 +79,7 @@ import type {
   HarvestOptions,
   LexiconFile,
   NormalizeOptions,
+  RemoveAliasResult,
   Term,
   TermCategory,
   TermScope,
@@ -368,10 +371,13 @@ export interface RemoveOptions extends CommonOptions {
   project?: boolean;
   /** Print `{ canonical, removed }` as JSON (exit 1 still means not found). */
   json?: boolean;
+  /** Remove only this alias from the term, keeping the term. */
+  alias?: string;
 }
 
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
+  if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, cwd, io);
   const removed = await removeTerm(canonical, opts.project ? { scope: 'project', cwd } : { cwd });
   if (opts.json) {
     line(io, JSON.stringify({ canonical, removed }, null, 2));
@@ -383,6 +389,32 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     return 1;
   }
   line(io, `removed ${bold(safe(canonical))}`);
+  return 0;
+}
+
+/**
+ * `remove <canonical> --alias <alias>`: drop one alias and keep the term. An
+ * unknown term or alias exits 1 (with `{ removed: false, error }` under
+ * --json); a refused untrusted project file throws as every other write does.
+ */
+async function runRemoveAlias(canonical: string, alias: string, opts: RemoveOptions, cwd: string, io: IO): Promise<number> {
+  let result: RemoveAliasResult;
+  try {
+    result = await removeAlias(canonical, alias, opts.project ? { scope: 'project', cwd } : { cwd });
+  } catch (err) {
+    if (isProjectTrustError(err)) throw err;
+    const message = errorMessage(err);
+    if (opts.json) line(io, JSON.stringify({ canonical, alias, removed: false, error: message }, null, 2));
+    io.stderr(`lexicon: ${safeLines(message)}\n`);
+    return 1;
+  }
+  const paths = result.files.map((f) => f.path);
+  if (opts.json) {
+    line(io, JSON.stringify({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths }, null, 2));
+    return 0;
+  }
+  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
+  line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   return 0;
 }
 

@@ -48106,7 +48106,7 @@ async function isTrusted(projectFile, opts = {}) {
 async function trustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
-  if (sha256 === void 0) throw new Error(`trustProject: cannot read ${projectPath}`);
+  if (sha256 === void 0) throw new Error(`cannot read the project lexicon at ${projectPath}`);
   return withTrustLock(async () => {
     const registry2 = await readTrustRegistry(opts);
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -48524,7 +48524,7 @@ async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
-  if (!canonical) throw new Error("addTerm: canonical must not be empty");
+  if (!canonical) throw new Error("canonical must not be empty");
   const incoming = {
     ...term,
     canonical,
@@ -48594,6 +48594,39 @@ async function removeTerm(canonical, opts = {}) {
     if (removed) return true;
   }
   return false;
+}
+async function removeAlias(canonical, alias, opts = {}) {
+  const wanted = canonical.trim();
+  const drop = alias.trim();
+  if (!wanted) throw new Error("canonical must not be empty");
+  if (!drop) throw new Error("alias must not be empty");
+  if (sameCanonical(wanted, drop)) {
+    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
+  }
+  let termFound = false;
+  let firstTerm;
+  const files = [];
+  for (const target of candidatePaths(opts, opts.scope)) {
+    await withLexiconLock(target.path, async () => {
+      const file2 = await readLexiconFile(target.path, target.scope);
+      if (!file2.exists) return;
+      const term = findTerm(file2.lexicon, wanted);
+      if (!term) return;
+      termFound = true;
+      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
+      if (remaining.length === term.aliases.length) return;
+      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      term.aliases = remaining;
+      await writeLexiconFile(file2);
+      if (file2.scope === "project") await refreshTrust(file2.path, opts);
+      files.push(file2);
+      firstTerm ??= term;
+    });
+  }
+  if (firstTerm) return { term: firstTerm, files };
+  const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
+  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
+  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
 }
 async function recordHits(canonicals, opts = {}) {
   try {
@@ -55470,7 +55503,7 @@ async function harvestRepo(root, opts = {}) {
   const absRoot = import_node_path6.default.resolve(root);
   const stat = safeStat(absRoot);
   if (!stat || !stat.isDirectory()) {
-    throw new Error(`harvestRepo: not a directory: ${absRoot}`);
+    throw new Error(`not a directory: ${absRoot}`);
   }
   const ignore2 = /* @__PURE__ */ new Set([...ALWAYS_IGNORED_DIRS, ...opts.ignore ?? []]);
   const wantGit = opts.git !== false;
@@ -59039,8 +59072,34 @@ function filePathsInUse(loaded) {
 // src/mcp/tools/terms.ts
 var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)];
 var EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES).map(([alias, format]) => `'${alias}' means '${format}'`).join(", ");
+function holds(terms, canonical) {
+  const key = canonical.trim().toLowerCase();
+  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
+}
 var registerTermTools = (server, ctx) => {
   const { load } = ctx;
+  async function whereElse(canonical, scope) {
+    const loaded = await load();
+    if (scope === "global" && holds(loaded.project?.lexicon.terms, canonical)) {
+      return {
+        foundIn: "project",
+        note: `"${canonical}" is in the project lexicon (${loaded.project?.path}), not the global one; call remove_term again with scope "project"`
+      };
+    }
+    if (scope === "global" && loaded.skippedProject && holds(loaded.skippedProject.lexicon.terms, canonical)) {
+      return {
+        foundIn: "project",
+        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run \`lexicon trust\` before it can be edited`
+      };
+    }
+    if (scope === "project" && holds(loaded.global.lexicon.terms, canonical)) {
+      return {
+        foundIn: "global",
+        note: `"${canonical}" is in the global lexicon (${loaded.global.path}), not the project one; call remove_term again with scope "global"`
+      };
+    }
+    return { note: `no term "${canonical}" in ${scope ? `the ${scope} lexicon` : "the global or project lexicon"}; list_terms shows the exact canonical spellings` };
+  }
   server.registerTool(
     "normalize_transcript",
     {
@@ -59110,16 +59169,31 @@ var registerTermTools = (server, ctx) => {
   server.registerTool(
     "remove_term",
     {
-      title: "Remove a lexicon term",
-      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive). WHEN TO CALL: only when the user asks for a name to be forgotten, or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term, and the corrections it was making stop happening. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means.",
+      title: "Remove a lexicon term or one of its aliases",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
       inputSchema: {
         canonical: external_exports.string().min(1),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("Which lexicon file to remove it from. Defaults to the store's resolution order.")
+        alias: external_exports.string().min(1).optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
+        scope: external_exports.enum(TERM_SCOPES).optional().describe(
+          "Which lexicon file to remove it from. Omitted: the project file first, then global (with `alias`, every file whose copy of the term has it)."
+        )
       }
     },
-    async ({ canonical, scope }) => guarded(async () => {
-      const removed = await removeTerm(canonical, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
-      return textResult({ canonical, removed });
+    async ({ canonical, alias, scope }) => guarded(async () => {
+      const opts = { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} };
+      if (alias !== void 0) {
+        const result = await removeAlias(canonical, alias, opts);
+        return textResult({
+          canonical: result.term.canonical,
+          alias,
+          removed: true,
+          aliases: result.term.aliases,
+          paths: result.files.map((f) => f.path)
+        });
+      }
+      const removed = await removeTerm(canonical, opts);
+      if (removed) return textResult({ canonical, removed });
+      return textResult({ canonical, removed, ...await whereElse(canonical, scope) });
     })
   );
   server.registerTool(

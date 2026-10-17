@@ -71,6 +71,13 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
       created: true,
     })),
     removeTerm: vi.fn(async (canonical: string) => canonical === 'Ashlr.AI'),
+    removeAlias: vi.fn(async (canonical: string, alias: string, opts?: { scope?: string }) => {
+      if (canonical !== 'Ashlr.AI') throw new Error(`no term "${canonical}" in the global or project lexicon`);
+      if (alias !== 'Ashler') throw new Error(`"${alias}" is not an alias of "Ashlr.AI" in the global or project lexicon`);
+      const term = { canonical: 'Ashlr.AI', aliases: ['Ashlar'] };
+      return { term, files: [{ path: opts?.scope === 'project' ? '/tmp/proj/.lexicon.yaml' : state.globalPath, scope: opts?.scope ?? 'global', lexicon, exists: true }] };
+    }),
+    isProjectTrustError: actual.isProjectTrustError,
     findTerm: vi.fn(),
     harvestRepo: vi.fn(async () => []),
     exportLexicon: vi.fn((_l: Lexicon, format: string) => `export:${format}`),
@@ -348,6 +355,29 @@ describe('add / remove / path', () => {
     const missing = makeIO();
     expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
     expect(JSON.parse(missing.out)).toEqual({ canonical: 'Nope', removed: false });
+  });
+
+  it('remove --alias drops one alias and keeps the term', async () => {
+    const io = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', project: true }, io)).toBe(0);
+    expect(core.removeAlias).toHaveBeenCalledWith('Ashlr.AI', 'Ashler', expect.objectContaining({ scope: 'project' }));
+    expect(core.removeTerm).not.toHaveBeenCalled();
+    expect(io.out).toContain('removed alias');
+    expect(io.out).toContain('aliases: Ashlar');
+
+    const json = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toEqual({ canonical: 'Ashlr.AI', alias: 'Ashler', removed: true, aliases: ['Ashlar'], paths: [state.globalPath] });
+  });
+
+  it('remove --alias exits 1 with a clear error for an unknown term or alias', async () => {
+    const term = makeIO();
+    expect(await runRemove('Nope', { alias: 'x' }, term)).toBe(1);
+    expect(term.err).toContain('no term "Nope"');
+    const alias = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashlr', json: true }, alias)).toBe(1);
+    expect(JSON.parse(alias.out)).toMatchObject({ canonical: 'Ashlr.AI', alias: 'Ashlr', removed: false, error: expect.stringContaining('not an alias') });
+    expect(alias.err).toContain('not an alias');
   });
 
   it('path prints both scopes', async () => {

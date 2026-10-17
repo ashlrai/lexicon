@@ -12,7 +12,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 |---|---|
 | [`lexicon init [options]`](#lexicon-init) | create the lexicon file (global by default) if it does not exist |
 | [`lexicon add [options] <canonical> [aliases...]`](#lexicon-add) | add a term, or merge aliases into an existing one |
-| [`lexicon remove\|rm [options] <canonical>`](#lexicon-remove) | remove a term (project lexicon first, then global) |
+| [`lexicon remove\|rm [options] <canonical>`](#lexicon-remove) | remove a term (project lexicon first, then global), or one alias of it with --alias |
 | [`lexicon list\|ls [options]`](#lexicon-list) | list terms from the merged global + project lexicon |
 | [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read |
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
@@ -52,7 +52,7 @@ Options:
 Commands:
   init [options]                          create the lexicon file (global by default) if it does not exist
   add [options] <canonical> [aliases...]  add a term, or merge aliases into an existing one
-  remove|rm [options] <canonical>         remove a term (project lexicon first, then global)
+  remove|rm [options] <canonical>         remove a term (project lexicon first, then global), or one alias of it with --alias
   list|ls [options]                       list terms from the merged global + project lexicon
   normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
@@ -122,12 +122,16 @@ Options:
 ```text
 Usage: lexicon remove|rm [options] <canonical>
 
-remove a term (project lexicon first, then global)
+remove a term (project lexicon first, then global), or one alias of it with
+--alias
 
 Options:
-  --project   only look in the project lexicon
-  --json      print { canonical, removed } as JSON (exit 1 when not found)
-  -h, --help  display help for command
+  --alias <alias>  remove only this alias from the term and keep the term (exit
+                   1 when the term or alias is unknown)
+  --project        only look in the project lexicon
+  --json           print { canonical, removed } as JSON (exit 1 when not found);
+                   with --alias also alias, aliases and paths
+  -h, --help       display help for command
 ```
 
 ## `lexicon list`

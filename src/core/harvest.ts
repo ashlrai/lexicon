@@ -262,7 +262,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
   const absRoot = path.resolve(root);
   const stat = safeStat(absRoot);
   if (!stat || !stat.isDirectory()) {
-    throw new Error(`harvestRepo: not a directory: ${absRoot}`);
+    throw new Error(`not a directory: ${absRoot}`);
   }
 
   const ignore = new Set<string>([...ALWAYS_IGNORED_DIRS, ...(opts.ignore ?? [])]);

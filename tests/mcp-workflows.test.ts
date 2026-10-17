@@ -60,3 +60,55 @@ describe('trust_project with a directory path', () => {
     expect(status.text).not.toContain('EISDIR');
   });
 });
+
+describe('remove_term', () => {
+  it('tells the agent where a term lives when the requested scope does not hold it', async () => {
+    const added = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
+    expect(added.isError).toBe(false);
+
+    const miss = await call('remove_term', { canonical: 'kubectl', scope: 'global' });
+    expect(miss.isError).toBe(false);
+    const payload = JSON.parse(miss.text) as { removed: boolean; foundIn?: string; note?: string };
+    expect(payload.removed).toBe(false);
+    expect(payload.foundIn).toBe('project');
+    expect(payload.note).toMatch(/scope "project"/);
+
+    const hit = await call('remove_term', { canonical: 'kubectl', scope: 'project' });
+    expect(JSON.parse(hit.text)).toMatchObject({ removed: true });
+
+    const gone = JSON.parse((await call('remove_term', { canonical: 'kubectl' })).text) as { removed: boolean; foundIn?: string; note?: string };
+    expect(gone.removed).toBe(false);
+    expect(gone.foundIn).toBeUndefined();
+    expect(gone.note).toMatch(/list_terms/);
+  });
+
+  it('removes a single alias with `alias`, and errors on an unknown term or alias', async () => {
+    await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner', 'Het zner'] });
+    const removed = await call('remove_term', { canonical: 'hetzner', alias: 'het zner' });
+    expect(removed.isError).toBe(false);
+    expect(JSON.parse(removed.text)).toMatchObject({
+      canonical: 'Hetzner',
+      alias: 'het zner',
+      removed: true,
+      aliases: ['Hetsner'],
+      paths: [path.join(home, 'lexicon.yaml')],
+    });
+    const listed = JSON.parse((await call('list_terms', { query: 'hetzner' })).text) as { terms: { aliases: string[] }[] };
+    expect(listed.terms[0]?.aliases).toEqual(['Hetsner']);
+
+    const unknownAlias = await call('remove_term', { canonical: 'Hetzner', alias: 'Hetznr' });
+    expect(unknownAlias.isError).toBe(true);
+    expect(unknownAlias.text).toMatch(/"Hetznr" is not an alias of "Hetzner"/);
+    const unknownTerm = await call('remove_term', { canonical: 'Nope', alias: 'x' });
+    expect(unknownTerm.isError).toBe(true);
+    expect(unknownTerm.text).toMatch(/no term "Nope"/);
+  });
+});
+
+describe('add_term errors', () => {
+  it('do not leak the internal function name', async () => {
+    const res = await call('add_term', { canonical: '   ' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toBe('canonical must not be empty');
+  });
+});

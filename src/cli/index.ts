@@ -108,10 +108,11 @@ program
 program
   .command('remove')
   .alias('rm')
-  .description('remove a term (project lexicon first, then global)')
+  .description('remove a term (project lexicon first, then global), or one alias of it with --alias')
   .argument('<canonical>')
+  .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
   .option('--project', 'only look in the project lexicon')
-  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found)')
+  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found); with --alias also alias, aliases and paths')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
 program
