@@ -63539,7 +63539,7 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon (global + project) as raw JSON.",
+      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; lexicon://me and list_terms name it.",
       mimeType: "application/json"
     },
     async (uri) => {

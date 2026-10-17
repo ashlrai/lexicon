@@ -377,4 +377,23 @@ describe('tool and resource descriptions agree with what the code does', () => {
     const sizes = JSON.parse((await call('list_packs', {})).text) as { packs: { terms: number }[] };
     expect(new Set(sizes.packs.map((p) => p.terms)).size).toBeGreaterThan(1);
   });
+
+  // Catches: lexicon://json promised "global + project" but leaves an untrusted project file out.
+  it('lexicon://json says an untrusted project lexicon is left out, and it is', async () => {
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const { resources } = await listed();
+    expect(resources.find((r) => r.uri === 'lexicon://json')?.description).toMatch(/untrusted/);
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const read = await client.readResource({ uri: 'lexicon://json' });
+      expect((read.contents[0] as { text: string }).text).not.toContain('Kubectl');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });

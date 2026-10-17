@@ -53,7 +53,7 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 | Resource | Type | Content |
 |---|---|---|
 | `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file |
-| `lexicon://json` | `application/json` | The merged lexicon as JSON |
+| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out) |
 
 ## Prompts
 

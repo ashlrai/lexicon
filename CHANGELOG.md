@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The MCP `lexicon://json` resource description says an untrusted (or changed) project lexicon is left out, and that `lexicon://me` and `list_terms` name it. It promised `global + project` and the JSON carries no note, so a skipped repo file looked merged.
 - MCP `add_pack` and the server instructions no longer say a starter pack is `sixty-odd terms`: the shipped packs hold 14 to 82. They now point at the `terms` count `list_packs` returns, so the agent names the real size when it asks.
 - The browser extension's toast says `Stopped early` when matching stopped at the time budget (the API or the embedded engine), next to the corrections it did make, and a send with nothing corrected still shows that one line. The `incomplete` field reached the content script and was dropped, so a long message that was only partly checked looked clean.
 - MCP `apply_suggestion` with kind `stale` on a term that has a copy in both the project and the global lexicon names the copy it left: the result carries `path` (the file it removed from) and `stillIn` (every file that still holds the term), and the `summary` says which `scope` removes that copy too. It removed only the project copy and reported `removed: true` while the global copy kept correcting.
