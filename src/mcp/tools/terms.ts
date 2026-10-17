@@ -33,6 +33,7 @@ import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../.
 import { filePathsInUse, guarded, log, nonBlank, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
+import { cliCommand } from '../../util/cli-hint.js';
 
 /**
  * Every name `export_lexicon` accepts: the formats plus the aliases the CLI
@@ -107,7 +108,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     if (scope === 'global' && loaded.skippedProject && holds(loaded.skippedProject.lexicon.terms, canonical)) {
       return {
         foundIn: 'project',
-        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run \`lexicon trust\` before it can be edited`,
+        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run ${cliCommand('trust')} before it can be edited`,
       };
     }
     if (scope === 'project' && holds(loaded.global.lexicon.terms, canonical)) {
@@ -340,7 +341,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
                   untrustedProject,
                   note:
                     `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
-                    'so it was neither loaded nor edited; that copy corrects again once the user runs `lexicon trust`, so tell them to review the file first.',
+                    'so it was neither loaded nor edited; that copy corrects again once the user runs ' + cliCommand('trust') + ', so tell them to review the file first.',
                 }
               : {}),
           });
@@ -376,7 +377,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         if (untrustedProject) {
           notes.push(
             `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
-              'so it was neither loaded nor edited; that copy corrects again once the user runs `lexicon trust`, so tell them to review the file first.',
+              'so it was neither loaded nor edited; that copy corrects again once the user runs ' + cliCommand('trust') + ', so tell them to review the file first.',
           );
         }
         return textResult({
@@ -505,7 +506,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ? ''
           : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, so it was not loaded, ` +
             `and another term in it also claims "${heard}": once it is trusted that term wins over this correction. ` +
-            'Tell the user; they can review the file with `lexicon trust` (or trust_project status), which previews it first. Do not open it with Read or cat.';
+            'Tell the user; they can review the file with trust_project status, or ' + cliCommand('trust') + ', which previews it first. Do not open it with Read or cat.';
         return textResult({
           term: learned.term,
           path: learned.file.path,

@@ -144,8 +144,8 @@ describe('trust_project never echoes an untrusted lexicon back', () => {
   it('names the fix for an invalid file in status and trust', async () => {
     const status = JSON.parse(await callTrust('status')) as { status: string; nextStep?: string };
     expect(status.status).toBe('invalid');
-    expect(status.nextStep).toContain('lexicon edit --project');
-    expect(status.nextStep).toContain('lexicon doctor');
+    expect(status.nextStep).toContain('`lexicon edit --project` (or `npx @ashlr/lexicon edit --project`) in that repo');
+    expect(status.nextStep).toContain('check it with lexicon_doctor');
     const trust = await callTrust('trust');
     expect(trust).toContain('lexicon edit --project');
     expect(trust).toContain('Do not open it yourself');

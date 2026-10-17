@@ -32,6 +32,7 @@ import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { cliCommand } from '../../util/cli-hint.js';
 
 /** An explicit path, where a directory means the `.lexicon.yaml` inside it (as `lexicon trust <dir>` reads it). */
 function explicitLexiconPath(cwd: string, path: string): string {
@@ -81,8 +82,8 @@ async function askUserToTrust(
  */
 function invalidFileNextStep(safePath: string): string {
   const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
-  const fix = isProjectFile ? 'run: lexicon edit --project, in that repo' : `open ${safePath} in an editor`;
-  return `Ask the user to fix the file (${fix}), check it with: lexicon doctor, then call trust_project again. Do not open it yourself.`;
+  const fix = isProjectFile ? `by running ${cliCommand('edit --project')} in that repo` : `by opening ${safePath} in an editor`;
+  return `Ask the user to fix the file ${fix}, check it with lexicon_doctor, then call trust_project again. Do not open it yourself.`;
 }
 
 export const registerTrustTools: ToolRegistrar = (server, ctx) => {
@@ -167,7 +168,7 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
           if (answer === 'unsupported') {
             throw new Error(
               `trusting ${safePath} needs the user's approval and this client cannot ask them; ` +
-                'ask the user to review it and run `lexicon trust` in a terminal in that repo',
+                `ask the user to review it and run ${cliCommand('trust')} in a terminal in that repo`,
             );
           }
           if (answer === 'decline') {

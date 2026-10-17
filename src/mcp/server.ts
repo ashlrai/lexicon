@@ -27,6 +27,7 @@ import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexicon
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
 import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
+import { cliCommand } from '../util/cli-hint.js';
 
 export interface ServerOptions {
   /**
@@ -328,7 +329,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
 function skippedProjectSuffix(loaded: LoadedLexicon): string {
   if (!loaded.skippedProject) return '';
   const where = pathForModel(loaded.skippedProject.path);
-  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run ${cliCommand('trust')}.`;
 }
 
 /** `EMPTY_LEXICON_NOTE` after a blank line when the merged lexicon has no terms, else ''. */

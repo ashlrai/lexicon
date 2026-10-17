@@ -59973,6 +59973,11 @@ function readPackageJson(file2) {
   return void 0;
 }
 
+// src/util/cli-hint.ts
+function cliCommand(args) {
+  return `\`lexicon ${args}\` (or \`npx @ashlr/lexicon ${args}\`)`;
+}
+
 // src/mcp/shared.ts
 var SERVER_NAME = "lexicon";
 function bufferIO() {
@@ -60026,7 +60031,7 @@ function withLexiconFix(message) {
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}
-Nothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
+Nothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ""))}, then check it with lexicon_doctor.`;
 }
 async function guarded(fn) {
   try {
@@ -60043,7 +60048,7 @@ function filePathsInUse(loaded) {
 }
 function skippedProjectFields(loaded, consequence) {
   if (!loaded.skippedProject) return {};
-  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.";
+  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run " + cliCommand("trust") + " again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run " + cliCommand("trust") + " to enable it.";
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
@@ -60084,7 +60089,7 @@ var registerTermTools = (server, ctx) => {
     if (scope === "global" && loaded.skippedProject && holds(loaded.skippedProject.lexicon.terms, canonical)) {
       return {
         foundIn: "project",
-        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run \`lexicon trust\` before it can be edited`
+        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run ${cliCommand("trust")} before it can be edited`
       };
     }
     if (scope === "project" && holds(loaded.global.lexicon.terms, canonical)) {
@@ -60226,7 +60231,7 @@ var registerTermTools = (server, ctx) => {
           paths: result.files.map((f) => f.path),
           ...untrustedProject2 ? {
             untrustedProject: untrustedProject2,
-            note: `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject2.path}), which is ${untrustedProject2.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+            note: `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject2.path}), which is ${untrustedProject2.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
           } : {}
         });
       }
@@ -60250,7 +60255,7 @@ var registerTermTools = (server, ctx) => {
       );
       if (untrustedProject) {
         notes.push(
-          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
         );
       }
       return textResult({
@@ -60333,7 +60338,7 @@ var registerTermTools = (server, ctx) => {
       const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
-      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with \`lexicon trust\` (or trust_project status), which previews it first. Do not open it with Read or cat.`;
+      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
       return textResult({
         term: learned.term,
         path: learned.file.path,
@@ -60564,8 +60569,8 @@ async function askUserToTrust(server, safePath, file2) {
 }
 function invalidFileNextStep(safePath) {
   const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
-  const fix = isProjectFile ? "run: lexicon edit --project, in that repo" : `open ${safePath} in an editor`;
-  return `Ask the user to fix the file (${fix}), check it with: lexicon doctor, then call trust_project again. Do not open it yourself.`;
+  const fix = isProjectFile ? `by running ${cliCommand("edit --project")} in that repo` : `by opening ${safePath} in an editor`;
+  return `Ask the user to fix the file ${fix}, check it with lexicon_doctor, then call trust_project again. Do not open it yourself.`;
 }
 var registerTrustTools = (server, ctx) => {
   const { load } = ctx;
@@ -60626,7 +60631,7 @@ var registerTrustTools = (server, ctx) => {
         const answer = await askUserToTrust(server, safePath ?? "", file2);
         if (answer === "unsupported") {
           throw new Error(
-            `trusting ${safePath} needs the user's approval and this client cannot ask them; ask the user to review it and run \`lexicon trust\` in a terminal in that repo`
+            `trusting ${safePath} needs the user's approval and this client cannot ask them; ask the user to review it and run ${cliCommand("trust")} in a terminal in that repo`
           );
         }
         if (answer === "decline") {
@@ -64290,7 +64295,7 @@ function skippedProjectSuffix(loaded) {
   const where = pathForModel(loaded.skippedProject.path);
   return `
 
-Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run ${cliCommand("trust")}.`;
 }
 function emptyLexiconSuffix(loaded) {
   return loaded.merged.terms.length === 0 ? `
