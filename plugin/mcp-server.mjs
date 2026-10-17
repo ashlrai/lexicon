@@ -53953,11 +53953,21 @@ function findGitRoot(start) {
     dir = parent;
   }
 }
+function ownedByUserOrRoot(candidate) {
+  const uid = typeof process.getuid === "function" ? process.getuid() : void 0;
+  if (uid === void 0) return true;
+  try {
+    const ok = (owner) => owner === uid || owner === 0;
+    return ok((0, import_node_fs5.lstatSync)(candidate).uid) && ok((0, import_node_fs5.statSync)(candidate).uid);
+  } catch {
+    return false;
+  }
+}
 function findProjectFile(start) {
   let dir = import_node_path5.default.resolve(start);
   for (; ; ) {
     const candidate = import_node_path5.default.join(dir, PROJECT_FILE_NAME);
-    if ((0, import_node_fs5.existsSync)(candidate)) return candidate;
+    if ((0, import_node_fs5.existsSync)(candidate) && ownedByUserOrRoot(candidate)) return candidate;
     if ((0, import_node_fs5.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
     const parent = import_node_path5.default.dirname(dir);
     if (parent === dir) return void 0;

@@ -17,7 +17,7 @@
  * matching prompt, and rewriting (and backing up) the user's whole YAML file
  * for a counter cost more than the rest of the hook put together.
  */
-import { promises as fs, existsSync } from 'node:fs';
+import { promises as fs, existsSync, lstatSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
@@ -96,11 +96,37 @@ function findGitRoot(start: string): string | undefined {
   }
 }
 
+/**
+ * True when a `.lexicon.yaml` found by the walk may be announced as this
+ * project's: on POSIX the entry (and, for a symlink, its target) must belong
+ * to the current user or to root, the rule OpenSSH applies to its config files
+ * and git (`safe.directory`) to repositories. Without a `.git` the walk goes
+ * up to `/`, so a file another local account planted in `/tmp` or `/home`
+ * was reported as "this repo has an untrusted .lexicon.yaml" to every user
+ * working below it. Windows has no meaningful uid in `stat`, so every file is
+ * accepted there, as before. A file that cannot be stat'ed is skipped.
+ */
+function ownedByUserOrRoot(candidate: string): boolean {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+  if (uid === undefined) return true;
+  try {
+    const ok = (owner: number): boolean => owner === uid || owner === 0;
+    return ok(lstatSync(candidate).uid) && ok(statSync(candidate).uid);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Walk up from `start` to the first `.lexicon.yaml` owned by the current user
+ * or root (see ownedByUserOrRoot; one owned by anyone else is passed over and
+ * the walk goes on), stopping at the git root or the filesystem root.
+ */
 function findProjectFile(start: string): string | undefined {
   let dir = path.resolve(start);
   for (;;) {
     const candidate = path.join(dir, PROJECT_FILE_NAME);
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate) && ownedByUserOrRoot(candidate)) return candidate;
     // The git root is the outermost directory we consider part of the project.
     if (existsSync(path.join(dir, '.git'))) return undefined;
     const parent = path.dirname(dir);

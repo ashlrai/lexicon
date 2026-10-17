@@ -8,7 +8,15 @@ to the model, and this document describes how the project treats it.
 
 **Untrusted repository lexicon → prompt injection.** The project file
 `.lexicon.yaml` is discovered by walking up from the current directory to the
-git root, so it comes from whatever repository the user happens to be in. Its
+git root, so it comes from whatever repository the user happens to be in.
+Without a `.git` the walk goes on to `/`, so on POSIX a candidate owned by
+anyone other than the current user or root (the link or its target, for a
+symlink) is passed over: another local account's `/tmp/.lexicon.yaml` is never
+announced as this repo's file. This is the rule OpenSSH applies to its config
+files and git (`safe.directory`) to repositories; it is simpler and covers more
+than stopping at the home directory, which would still reach `/tmp` from a
+directory below it. Windows has no meaningful owner in `stat`, so every
+candidate is considered there. Its
 canonicals and notes are injected into model context by three surfaces:
 
 - the Claude Code `SessionStart` hook, which hands the model the whole merged

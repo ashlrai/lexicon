@@ -245,7 +245,7 @@ Setup never re-implements an installer: each step calls the same handler the sta
 `resolvePaths()` in `store.ts`:
 
 1. Global: `$LEXICON_PATH`, else `$XDG_CONFIG_HOME/lexicon/lexicon.yaml`, else `~/.config/lexicon/lexicon.yaml`.
-2. Project: walk up from `cwd` looking for `.lexicon.yaml`. Stop at the directory containing `.git`, or at `/`.
+2. Project: walk up from `cwd` looking for `.lexicon.yaml`. Stop at the directory containing `.git`, or at `/`. On POSIX a candidate owned by another user (neither the current uid nor root; for a symlink, the link or its target) is passed over and the walk goes on, the rule OpenSSH applies to its config files and git's `safe.directory` to repositories, so a file another account planted in `/tmp` or `/home` is never announced as this repo's. Windows has no meaningful owner in `stat`, so every file is considered there.
 
 `loadLexicon()` merges the two. On a canonical collision (case-insensitive) the project term wins; aliases from both sides are unioned. Settings follow the same precedence. New project files are created at the git root (`defaultProjectPath()`).
 
