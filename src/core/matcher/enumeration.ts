@@ -36,7 +36,9 @@
  *
  * **A mention inside its own quotation marks is named, not used.** `"Ashler"`,
  * `'ashlur'`, `` `Ashlr AI` ``: the use-mention convention of written English,
- * and the only rule here that reads no vocabulary at all. That is why it is the
+ * and the only rule here that reads no vocabulary at all. Its anchor is the
+ * whole paragraph (to the nearest blank lines), not just the block and the one
+ * above, because the quotation marks already carry the evidence. That is why it is the
  * one that holds for the project's own documentation, where the words around
  * the quote - "pronounced", "generates likely STT misspellings", "you write" -
  * are ordinary English no word list is going to contain.
@@ -448,6 +450,34 @@ function leadContrasts(text: string, blockFrom: number, first: Point, second: Po
   return last === undefined || !DETERMINERS.has(last);
 }
 
+/** A blank line (spaces and tabs allowed) ends a paragraph. */
+const PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+
+/**
+ * True when the canonical stands (in any folded spelling) somewhere in the
+ * paragraph around `start..end`, outside the span itself. Both searches stop
+ * at the nearest blank line, so the cost is the paragraph, not the text.
+ */
+function paragraphHolds(text: string, start: number, end: number, canonical: string): boolean {
+  // Backwards: walk line starts until a line holding only whitespace.
+  let from = 0;
+  let lineEnd = text.lastIndexOf('\n', start - 1);
+  while (lineEnd > 0) {
+    const prevBreak = text.lastIndexOf('\n', lineEnd - 1);
+    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd))) {
+      from = lineEnd + 1;
+      break;
+    }
+    if (prevBreak < 0) break;
+    lineEnd = prevBreak;
+  }
+  PARAGRAPH_BREAK.lastIndex = end;
+  const next = PARAGRAPH_BREAK.exec(text);
+  const to = next ? next.index : text.length;
+  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
+  return rest.includes(foldSpelling(canonical));
+}
+
 /**
  * Drop the rewrites that would flatten a passage which is quoting spellings.
  * Pure, and order-preserving for everything it keeps.
@@ -510,16 +540,23 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
         // Folded, like every other test for the canonical here: the paragraph
         // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
         (previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result)));
-      if (!anchored) continue;
 
       // A mention inside its own quotation marks is named, not used, and that
       // is true whatever the rest of the sentence says. It is the one rule here
       // that consults no vocabulary, which is why it holds for the sentences
       // the vocabulary will never cover: `suggestAliases("Ashlr.AI") -> "Ashler"`,
       // `pronounced "ashler"`, `you write "Ashler", they say it's Ashlr.AI`.
+      //
+      // Its anchor reaches the whole paragraph, not only this sentence and the
+      // one above: a changelog bullet or README paragraph names the canonical,
+      // spends two sentences on something else and then quotes the alias. The
+      // quotation marks are the evidence, so the wider anchor costs dictation
+      // nothing; linking below still uses the narrow one.
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
       }
+      if (!anchored) continue;
 
       points.sort((a, b) => a.start - b.start);
       const links: Link[] = [];

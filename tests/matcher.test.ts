@@ -952,6 +952,21 @@ describe('bug J: text that quotes a misspelling is not flattened into one spelli
     const far = 'Ashlr.AI ships today.\n\nThe cluster is fine.\n\nreddis and red iss are the same box.';
     expect(apply(far, find(far, [REDIS]))).toBe('Ashlr.AI ships today.\n\nThe cluster is fine.\n\nRedis and Redis are the same box.');
   });
+
+  // The quote rule's anchor reached only this sentence and the one above, while
+  // tests/enumeration.property.test.ts holds it to the whole paragraph. A
+  // changelog bullet or README paragraph names the canonical, says something
+  // else for two sentences and then quotes the alias; that quote was flattened.
+  it('keeps a quoted spelling when the canonical stands anywhere in its paragraph', () => {
+    keeps('The term is Ashlr.AI. It has many aliases. One of them is "Ashler" and it stays.', [ASHLR]);
+    keeps('- Fixed the Ashlr.AI thing.\n- Other stuff here.\n- The alias "Ashler" is kept.\n', [ASHLR]);
+    keeps('Fixed the Ashlr.AI thing.\nOther stuff here.\nThe alias `Ashler` is kept.', [ASHLR]);
+    // the wider anchor stops at the paragraph, and an unquoted mention is still fixed
+    const apart = 'The term is Ashlr.AI.\n\nThe cluster is fine.\n\nOne of them is "Ashler" and it stays.';
+    expect(apply(apart, find(apart, [ASHLR]))).toBe('The term is Ashlr.AI.\n\nThe cluster is fine.\n\nOne of them is "Ashlr.AI" and it stays.');
+    const plain = 'The term is Ashlr.AI. It has many aliases. Then ashler went down.';
+    expect(apply(plain, find(plain, [ASHLR]))).toBe('The term is Ashlr.AI. It has many aliases. Then Ashlr.AI went down.');
+  });
 });
 
 // Three defects a review found in the matcher work of v0.5.3. Bug M is a

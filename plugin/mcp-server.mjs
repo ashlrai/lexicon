@@ -52636,6 +52636,25 @@ function leadContrasts(text, blockFrom, first, second) {
   const last = gapWords[gapWords.length - 1];
   return last === void 0 || !DETERMINERS.has(last);
 }
+var PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+function paragraphHolds(text, start, end, canonical) {
+  let from = 0;
+  let lineEnd2 = text.lastIndexOf("\n", start - 1);
+  while (lineEnd2 > 0) {
+    const prevBreak = text.lastIndexOf("\n", lineEnd2 - 1);
+    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd2))) {
+      from = lineEnd2 + 1;
+      break;
+    }
+    if (prevBreak < 0) break;
+    lineEnd2 = prevBreak;
+  }
+  PARAGRAPH_BREAK.lastIndex = end;
+  const next = PARAGRAPH_BREAK.exec(text);
+  const to = next ? next.index : text.length;
+  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
+  return rest.includes(foldSpelling(canonical));
+}
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
@@ -52674,10 +52693,11 @@ function declineCollapsedMentions(text, spans) {
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
       // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
       previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
-      if (!anchored) continue;
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
       }
+      if (!anchored) continue;
       points.sort((a, b2) => a.start - b2.start);
       const links = [];
       for (let i = 0; i + 1 < points.length; i++) {
@@ -63399,8 +63419,8 @@ var registerPackTools = (server, ctx) => {
       title: "Import an existing dictionary",
       description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it.",
       inputSchema: {
-        path: external_exports.string().optional().describe("File to import. Its extension helps auto-detection."),
-        content: external_exports.string().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine."),
+        path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
+        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
         format: external_exports.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")

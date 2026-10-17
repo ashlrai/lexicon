@@ -17,6 +17,8 @@ import {
   trustProject,
   untrustProject,
 } from '../src/core/trust.js';
+import { runTrust } from '../src/cli/cmd-trust.js';
+import { makeIO } from './helpers.js';
 
 let tmp: string;
 let globalPath: string;
@@ -254,5 +256,22 @@ describe('concurrent trust registrations', () => {
 
     const registry = await readTrustRegistry({ globalPath });
     expect(Object.keys(registry.trusted).sort()).toEqual([...projects].sort());
+  });
+});
+
+// `list`, `normalize` and the rest warn `(run: lexicon trust)` about a skipped
+// project file, so a user with a broken one lands here, and `trust` stopped at
+// the parser's reason with no word on what to run next.
+describe('lexicon trust on an invalid file', () => {
+  it('names the command that fixes it', async () => {
+    process.env.LEXICON_PATH = globalPath;
+    await fs.writeFile(projectPath, 'terms: [oops\n');
+    const io = makeIO();
+    const code = await runTrust(projectPath, { cwd: path.dirname(projectPath) }, io);
+    expect(code).toBe(1);
+    expect(io.err).toContain('refusing to trust an invalid lexicon');
+    expect(io.err).toContain('run: lexicon edit --project');
+    expect(io.err).toContain('lexicon doctor');
+    expect(await listTrusted({ cwd: path.dirname(projectPath) })).toEqual([]);
   });
 });

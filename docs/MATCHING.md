@@ -75,7 +75,7 @@ lexicon normalize --diff "deploy to head sner with cooper netties and kubernetee
 #   deploy to Hetzner with Kubernetes and Kubernetes
 ```
 
-`--diff` goes to stderr so stdout stays pipeable. `--min-confidence 0.9`, `--no-phonetic` and `--no-fuzzy` override the file settings for one run. If the lexicon fails to load, `normalize` prints the reason to stderr, passes the text through stdout byte-exactly so a pipeline never loses input, and exits 1. The exit code is the only channel left: without it "no corrections were applied" and "nothing needed correcting" look identical.
+`--diff` goes to stderr so stdout stays pipeable, and still does with `--json`. `--dry-run` prints the same summary to stderr and leaves stdout as the input. `--min-confidence 0.9`, `--no-phonetic` and `--no-fuzzy` override the file settings for one run. If the lexicon fails to load, `normalize` prints the reason to stderr, passes the text through stdout byte-exactly so a pipeline never loses input, and exits 1. The exit code is the only channel left: without it "no corrections were applied" and "nothing needed correcting" look identical.
 
 The three tiers are colour-coded in the [live demo](https://ashlrai.github.io/lexicon/), which runs this same matcher in your browser.
 
