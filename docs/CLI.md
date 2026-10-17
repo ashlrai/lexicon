@@ -504,8 +504,9 @@ Options:
   --reseed            also seed the guessed person/company (git user.name,
                       package scope) when the lexicon already has terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)
-  --json              print a machine-readable summary on stdout (progress goes
-                      to stderr; a refusal prints { ok: false, error })
+  --json              print a machine-readable summary on stdout, led by ok
+                      (progress goes to stderr; a refusal prints { ok: false,
+                      error })
   -h, --help          display help for command
 ```
 

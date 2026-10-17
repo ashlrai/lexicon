@@ -275,6 +275,10 @@ describe('runSetup --yes', () => {
     const { code, summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
     expect(code).toBe(1);
     expect(summary.serve).toBe('failed');
+    // Under --json the same failure leads with ok: false (exit 1), as MCP setup_lexicon reports it.
+    const failedJson = await run({ yes: true, json: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
+    expect(failedJson.code).toBe(1);
+    expect(JSON.parse(failedJson.io.out)).toMatchObject({ ok: false, serve: 'failed' });
 
     const win = fakes({ platform: 'win32' });
     const { summary: s2, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, win);
@@ -422,9 +426,11 @@ describe('runSetup --yes', () => {
   it('--json prints only the summary on stdout and progress on stderr', async () => {
     const f = fakes();
     const { summary, io } = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, f);
-    const parsed = JSON.parse(io.out) as SetupSummary;
-    expect(parsed).toEqual(summary);
-    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'packs', 'serve', 'termsAdded']);
+    const parsed = JSON.parse(io.out) as SetupSummary & { ok: boolean };
+    // Catches: the success document had no `ok`, while the refusal is `{ ok: false, error }`.
+    expect(parsed).toEqual({ ok: true, ...summary });
+    expect(Object.keys(parsed)[0]).toBe('ok');
+    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'ok', 'packs', 'serve', 'termsAdded']);
     expect(io.err).toContain('lexicon setup');
     expect(io.err).toContain('claude: installed');
     // The run ends in a correction the caller can show, not just a file list.
@@ -571,7 +577,7 @@ describe('runSetup --dry-run', () => {
   it('--json prints the plan instead of the summary', async () => {
     const f = fakes();
     const { plan, io } = await run({ yes: true, dryRun: true, json: true, clients: 'none', company: 'Ashlr.AI' }, f);
-    expect(JSON.parse(io.out)).toEqual(plan);
+    expect(JSON.parse(io.out)).toEqual({ ok: true, ...plan });
     expect(io.err).toContain('dry run');
   });
 });

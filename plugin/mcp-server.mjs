@@ -63058,9 +63058,9 @@ async function runSetup(opts, io, deps = {}) {
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  if (opts.json) io.stdout(`${JSON.stringify(ctx.plan ?? ctx.summary, null, 2)}
-`);
   const failed = ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...ctx.plan ?? ctx.summary }, null, 2)}
+`);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...ctx.plan ? { plan: ctx.plan } : {} };
 }
 

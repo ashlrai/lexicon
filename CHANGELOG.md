@@ -13,6 +13,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon setup --json` leads its summary (and the `--dry-run` plan) with `ok`: `true` on success, `false` when a client or the login service failed (exit 1), as MCP `setup_lexicon` reports it. Only the refusal carried `ok`, so a script had to tell success apart by the missing key.
 - `lexicon harvest --add --yes` (and `--add` off a terminal) refuses an untrusted (or changed) project lexicon before it scans, as the interactive walk does: the trust error on stderr and, under `--json`, `{ added: false, path, projectTrust, error }`. It printed the candidate table (or the `--json` array) first and then failed on the first write, so the output read as a success right above the error.
 - `lexicon setup --json` prints `{ ok: false, error }` on stdout when it refuses (an unknown `--app` or `--clients` value, a step that throws), with the `lexicon:` line on stderr and exit 1. The refusal was on stderr only, so a script reading the summary got an empty document.
 - The MCP `voice-context` prompt and the `lexicon://me` resource say when the lexicon has no terms, and point at the `onboard` prompt or `setup_lexicon`. `voice-context` sent an empty table under `Apply these canonical spellings`, which read as a lexicon that loaded and had nothing to correct. The skipped-project line in both now passes the path through the display sanitizer, since that text is raw markdown and the directory name comes from whoever published the repo.

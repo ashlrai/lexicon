@@ -52,7 +52,9 @@ lexicon setup --yes --packs developer,ai --json
 under `--yes`, because each writes a lot or installs a service. `--dry-run`
 prints the plan and writes nothing; run that first and show it to your user.
 `--clients none` installs into no client. `--json` gives you a `SetupSummary`
-instead of prose.
+(or the `SetupPlan` under `--dry-run`) instead of prose, led by `ok` (false
+when a client or the login service failed, exit 1); a refusal is
+`{ ok: false, error }`.
 
 ## Register the MCP server
 
