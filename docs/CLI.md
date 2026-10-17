@@ -505,7 +505,7 @@ Options:
                       package scope) when the lexicon already has terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)
   --json              print a machine-readable summary on stdout (progress goes
-                      to stderr)
+                      to stderr; a refusal prints { ok: false, error })
   -h, --help          display help for command
 ```
 
