@@ -296,7 +296,7 @@ export function targetFor(
   ctx: PathContext,
 ): InstallTarget {
   // `node <abs path>` normally; `npx -y @ashlr/lexicon@<v> mcp` when this copy
-  // is running out of an npx cache, which npm is free to delete (see launchFor).
+  // is running out of an npx or plugin cache, which may be deleted (see launchFor).
   const launch = launchFor(serverPath, 'mcp');
   const env = lexiconServerEnv(ctx.env, ctx.cwd);
   const base: StdioServerEntry = { command: launch.command, args: launch.args, ...(env ? { env } : {}) };
@@ -673,7 +673,7 @@ export async function runInstallClaude(
   // Arrow, not a bare reference: Array.map passes the index as the second
   // argument, which would land in `platform`.
   line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
-  if (serverLaunch.viaNpx) line(io, dim('   (run from an npx cache, so the config calls npx rather than a path npm may delete)'));
+  if (serverLaunch.viaNpx) line(io, dim('   (run from an npx or Claude Code plugin cache, so the config calls npx rather than a path that may be deleted)'));
   else if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !existsSync(serverPath)) {

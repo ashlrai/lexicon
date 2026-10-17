@@ -60544,8 +60544,9 @@ function resolveIntegrationPaths(cliDir) {
   };
 }
 var NPX_CACHE_SEGMENT = /[\\/]_npx[\\/]/;
+var PLUGIN_CACHE_SEGMENT = /[\\/]plugins[\\/]cache[\\/][^\\/]+[\\/]lexicon[\\/]/;
 function isVolatileEntry(p) {
-  return NPX_CACHE_SEGMENT.test(p);
+  return NPX_CACHE_SEGMENT.test(p) || PLUGIN_CACHE_SEGMENT.test(p);
 }
 function launchFor(entryPath, subcommand, version2) {
   if (!isVolatileEntry(entryPath)) return { command: "node", args: [entryPath], viaNpx: false };
@@ -61229,7 +61230,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const mcpArgs = ["mcp", "add", ...envArgs, "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
   line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
-  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
+  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx or Claude Code plugin cache, so the config calls npx rather than a path that may be deleted)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !(0, import_node_fs18.existsSync)(serverPath)) {
@@ -62484,7 +62485,7 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (isVolatileEntry(cliPath)) {
     io.stderr(
-      `lexicon: refusing to install the login service: this copy is running from an npx cache (${safe(cliPath)}), which npm deletes. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written
+      `lexicon: refusing to install the login service: this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written
 `
     );
     return 1;
