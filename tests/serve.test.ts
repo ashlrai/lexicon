@@ -1349,6 +1349,7 @@ describe('lexicon serve (CLI)', () => {
         reason: 'unexpected /health response',
         error: 'unexpected /health response (not lexicon serve)',
         hint: expect.stringContaining('lexicon serve --port <n>'),
+        nextStep: expect.stringContaining('lexicon serve --port <n>'),
       });
     } finally {
       await new Promise<void>((resolve) => other.close(() => resolve()));
@@ -1388,6 +1389,23 @@ describe('lexicon serve (CLI)', () => {
     expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
     expect(first(down.out.join(''))).toEqual(['ok', false]);
     expect(JSON.parse(down.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.any(String), hint: expect.any(String) });
+  });
+
+  // Catches: a failing --status --json had `hint` but no `nextStep`, the key
+  // every other failing --json document of the CLI uses for what to do next.
+  it('--status --json carries nextStep, equal to hint, whenever the server is not up', async () => {
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    const d = JSON.parse(down.out.join('')) as Record<string, unknown>;
+    expect(d).toMatchObject({ ok: false, error: expect.any(String), nextStep: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.' });
+    expect(d.nextStep).toBe(d.hint);
+
+    const io = memIO();
+    expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);
+    expect(JSON.parse(io.out.join(''))).not.toHaveProperty('nextStep');
   });
 
   it('refuses two modes at once', async () => {
