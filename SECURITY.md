@@ -180,10 +180,14 @@ service) unless `apply: true` is passed and then touches only the clients named
 in the call, and the skill instructs the model to show that preview and wait for
 a yes; `import_dictionary` has `dryRun`;
 `suggest_terms` proposes and `apply_suggestion` applies one accepted item at a
-time. Trust shows contents: `trust_project { action: 'status' }` returns a
-sanitized preview (canonicals, first alias, counts; notes reported as present,
-never quoted) and the model must show it before calling `action: 'trust'`; a hook
-note or a file can never trust itself. No writes to untrusted files: every
+time. Trust shows contents, to the human: `trust_project { action: 'status' }`
+returns only a short summary to the model (term, alias and note counts and at
+most 3 canonicals, each at most 40 characters, sanitized and with `<` / `>`
+neutralized; no alias or note is quoted), because that is the exchange in which
+the model is asked whether to trust the file, and points the user at
+`lexicon trust` in a terminal for the full preview. The model must show the
+summary before calling `action: 'trust'`, the client then asks the user, and a
+hook note or a file can never trust itself. No writes to untrusted files: every
 project-scope write from a tool goes through the same store gate as the CLI and
 fails with `ProjectTrustError` on an existing untrusted or changed file. The
 `SessionStart` onboarding note only asks the model to offer setup; nothing runs

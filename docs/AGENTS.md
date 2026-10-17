@@ -149,7 +149,7 @@ Project-scope writes are gated. A repository's `.lexicon.yaml` is untrusted unti
 the user reviews it, because its contents reach model context and a hostile
 repository could use that. If a write is refused with "project lexicon at
 &lt;path&gt; is untrusted", do not work around it: call
-`trust_project { action: 'status' }`, show your user the sanitized preview, and
+`trust_project { action: 'status' }`, show your user the sanitized summary (they see the full preview with `lexicon trust` in a terminal), and
 let them decide. Never set `LEXICON_TRUST_ALL=1` on a user's behalf.
 
 ## Verify it worked

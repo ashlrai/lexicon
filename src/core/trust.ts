@@ -24,7 +24,7 @@ import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { readBoundedRegularFile } from '../util/bounded-read.js';
 import { recalledParsedHash } from './parsed-hash.js';
 import { formatJson } from '../util/json.js';
-import { sanitizeForDisplay } from './schema.js';
+import { neutralizeMarkup, sanitizeForDisplay, sanitizeForDisplayMax } from './schema.js';
 
 export type TrustStatus = 'trusted' | 'untrusted' | 'changed';
 
@@ -326,4 +326,53 @@ export function trustPreview(file: LexiconFile): TrustPreview {
     hasNotes: typeof t.notes === 'string' && t.notes.trim() !== '',
   }));
   return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
+}
+
+/** Canonicals `trustSummaryForModel` names, at most. */
+export const TRUST_MODEL_SAMPLE_ROWS = 3;
+
+/** Longest canonical `trustSummaryForModel` names (ellipsis included). */
+export const TRUST_MODEL_SAMPLE_MAX_CHARS = 40;
+
+/** `trustSummaryForModel(file)`: counts, a few short canonicals and where the full preview is. */
+export interface TrustModelSummary {
+  termCount: number;
+  aliasCount: number;
+  termsWithNotes: number;
+  /** At most TRUST_MODEL_SAMPLE_ROWS canonicals, each display-sanitized, neutralized and capped. */
+  sample: string[];
+  /** Terms not named in `sample`. */
+  more: number;
+  /** One sentence telling the model the full preview is for the user, in a terminal. */
+  fullPreview: string;
+}
+
+/** What `trustSummaryForModel` says about the full preview. */
+export const TRUST_FULL_PREVIEW_NOTE =
+  'This is a summary. The full preview (every canonical and its first alias) is for the user, not for you: ' +
+  'ask them to run `lexicon trust` in a terminal in that repo, which shows it and asks before trusting.';
+
+/**
+ * What MCP `trust_project` hands the model about a file it is being asked to
+ * trust: counts, at most TRUST_MODEL_SAMPLE_ROWS canonicals (each through
+ * `sanitizeForDisplayMax(_, TRUST_MODEL_SAMPLE_MAX_CHARS)` and
+ * `neutralizeMarkup`), and a pointer to `lexicon trust` for the full preview.
+ * `trustPreview` put 25 canonicals and first aliases, about 2 KB of the file's
+ * own text, into the very exchange where the model is asked whether to trust
+ * it. Aliases and notes are never quoted here. The CLI preview
+ * (`trustPreview`) is unchanged.
+ */
+export function trustSummaryForModel(file: LexiconFile): TrustModelSummary {
+  const terms = file.lexicon.terms;
+  const sample = terms
+    .slice(0, TRUST_MODEL_SAMPLE_ROWS)
+    .map((t) => neutralizeMarkup(sanitizeForDisplayMax(t.canonical, TRUST_MODEL_SAMPLE_MAX_CHARS)));
+  return {
+    termCount: terms.length,
+    aliasCount: terms.reduce((n, t) => n + t.aliases.length, 0),
+    termsWithNotes: terms.filter((t) => typeof t.notes === 'string' && t.notes.trim() !== '').length,
+    sample,
+    more: Math.max(0, terms.length - sample.length),
+    fullPreview: TRUST_FULL_PREVIEW_NOTE,
+  };
 }

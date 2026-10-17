@@ -67,12 +67,13 @@ Decide what to do from the arguments:
     and skip the rest. With no suggestions, say the lexicon looks healthy.
 
 11. **`trust [path]`** - call `trust_project { action: 'status', path? }` and
-    show the user the file path, its status and the preview table (canonical,
-    first alias, alias count). Ask whether to trust it. Only on a clear yes
+    show the user the file path, its status and the summary (term, alias and
+    note counts, the sample canonicals), and say `lexicon trust` in a terminal
+    shows every term. Ask whether to trust it. Only on a clear yes
     call `trust_project { action: 'trust', path? }`; the client asks the user to
     confirm. Report the result in one line (if it says the client cannot ask,
     tell them to run `lexicon trust` in a terminal).
     `trust off [path]` or `untrust` calls `action: 'untrust'`. Never trust a
-    file whose preview the user has not just seen.
+    file whose summary the user has not just seen.
 
 Anything else: explain the forms above in one short paragraph.
