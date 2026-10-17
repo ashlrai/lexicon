@@ -766,3 +766,77 @@ describe('a lexicon file that does not parse', () => {
     }
   });
 });
+
+// Catches: a tool whose declared input schema disagrees with what the call
+// accepts (a required argument the handler treats as optional, or a property
+// typed one way and parsed another). Every tool in tools/list is probed with
+// its required arguments missing and with each property given the wrong type;
+// both must come back as an error that names the argument, never as a success.
+describe('every tool rejects a missing required argument and a mistyped property', () => {
+  interface PropSchema {
+    type?: string | string[];
+    enum?: unknown[];
+  }
+  /** A value of the wrong type for the property (or outside its enum). */
+  const mistyped = (s: PropSchema): unknown => {
+    if (s.enum) return '__not_a_member__';
+    const t = Array.isArray(s.type) ? s.type[0] : s.type;
+    return t === 'string' ? 12345 : t === 'boolean' || t === 'number' || t === 'integer' || t === 'array' || t === 'object' ? 'wrong type' : null;
+  };
+  /** A well-typed placeholder for a required property, so only the probed one is wrong. */
+  const valid = (s: PropSchema): unknown => {
+    if (s.enum) return s.enum[0];
+    const t = Array.isArray(s.type) ? s.type[0] : s.type;
+    return t === 'string' ? 'Zork' : t === 'object' ? { kind: 'alias', canonical: 'Zork', alias: 'zorc' } : t === 'array' ? [] : t === 'boolean' ? false : 1;
+  };
+
+  it('walks tools/list', async () => {
+    const savedHome = process.env.HOME;
+    const savedXdg = process.env.XDG_CONFIG_HOME;
+    // Nothing here should get past validation, but never let a probe touch the real home.
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = path.join(home, '.config');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? '').join('\n');
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.length).toBe(20);
+      let probes = 0;
+      for (const tool of tools) {
+        const props = (tool.inputSchema.properties ?? {}) as Record<string, PropSchema>;
+        const required = (tool.inputSchema.required ?? []) as string[];
+        const base = Object.fromEntries(required.map((k) => [k, valid(props[k] ?? {})]));
+        for (const name of required) {
+          const rest = Object.fromEntries(Object.entries(base).filter(([k]) => k !== name));
+          const r = (await client.callTool({ name: tool.name, arguments: rest })) as ToolResult;
+          expect([tool.name, name, r.isError]).toEqual([tool.name, name, true]);
+          expect(textOf(r), `${tool.name} without ${name}`).toContain(name);
+          probes += 1;
+        }
+        for (const [name, schema] of Object.entries(props)) {
+          const value = mistyped(schema);
+          expect([tool.name, name, value]).not.toEqual([tool.name, name, null]);
+          const r = (await client.callTool({ name: tool.name, arguments: { ...base, [name]: value } })) as ToolResult;
+          expect([tool.name, name, r.isError]).toEqual([tool.name, name, true]);
+          expect(textOf(r), `${tool.name} with ${name}=${JSON.stringify(value)}`).toMatch(new RegExp(`Input validation error[\\s\\S]*\\b${name}\\b`));
+          probes += 1;
+        }
+      }
+      expect(probes).toBeGreaterThan(40);
+      // Nothing was written anywhere.
+      await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+      await expect(fs.stat(path.join(repo, '.lexicon.yaml'))).rejects.toThrow();
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+      if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = savedXdg;
+      await client.close();
+      await server.close();
+    }
+  });
+});
