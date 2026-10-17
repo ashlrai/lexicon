@@ -54,14 +54,14 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 
 | Resource | Type | Content |
 |---|---|---|
-| `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file |
+| `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file, and one saying the lexicon is empty when it has no terms |
 | `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`) |
 
 ## Prompts
 
 | Prompt | Purpose |
 |---|---|
-| `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session |
+| `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session (with no terms, a note that there is nothing to apply and how to set it up instead) |
 | `onboard` | Walks the agent through first-run setup: ask for company, product and teammate spellings, which clients are in use, then call `setup_lexicon` and `add_term` |
 
 ## Writes and previews

@@ -63602,6 +63602,7 @@ function cwdFromRoots(roots) {
   return void 0;
 }
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
+var EMPTY_LEXICON_NOTE = "Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).";
 var ONBOARD_PROMPT = [
   "Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:",
   "1. Ask for my company or product names, spelled exactly as they should appear (capitalization and punctuation included), and how I pronounce each one.",
@@ -63693,7 +63694,7 @@ function createServer2(opts = {}) {
     },
     async (uri) => {
       const loaded = await load();
-      const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded);
+      const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text }]
       };
@@ -63726,13 +63727,14 @@ function createServer2(opts = {}) {
     async () => {
       const loaded = await load();
       const snippet2 = exportLexicon(loaded.merged, "claude-md").trimEnd() + skippedProjectSuffix(loaded);
+      const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
           {
             role: "user",
             content: { type: "text", text: `${snippet2}
 
-${VOICE_CONTEXT_INSTRUCTION}` }
+${instruction}` }
           }
         ]
       };
@@ -63752,9 +63754,15 @@ ${VOICE_CONTEXT_INSTRUCTION}` }
 }
 function skippedProjectSuffix(loaded) {
   if (!loaded.skippedProject) return "";
+  const where = sanitizeForDisplayMax(loaded.skippedProject.path, 4096);
   return `
 
-Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+}
+function emptyLexiconSuffix(loaded) {
+  return loaded.merged.terms.length === 0 ? `
+${EMPTY_LEXICON_NOTE}
+` : "";
 }
 async function main() {
   const server = createServer2();
