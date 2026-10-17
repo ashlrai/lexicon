@@ -1128,6 +1128,49 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect((await call('suggest_terms', { cwd: path.join(outside, 'other') })).isError).toBe(false);
   });
 
+  // Catches: trust_project resolved its model-chosen `path` wherever it
+  // pointed, so `status` read and summarized any file it named and `trust`
+  // asked the user to trust a file outside the project.
+  it('trust_project status and trust refuse a path outside the allowed roots', async () => {
+    const elsewhere = path.join(outside, 'other', '.lexicon.yaml');
+    await fs.writeFile(elsewhere, 'version: 1\nterms:\n  - canonical: PlantedName\n');
+    for (const action of ['status', 'trust'] as const) {
+      for (const target of [elsewhere, path.join(outside, 'other')]) {
+        const res = await call('trust_project', { action, path: target });
+        expect(res.isError, `${action} ${target}`).toBe(true);
+        expect(res.text).toContain('outside the directories this server may read');
+        expect(res.text).toContain('npx @ashlr/lexicon trust');
+        expect(res.text).toContain('LEXICON_HARVEST_ROOTS');
+        expect(res.text).not.toContain('PlantedName');
+      }
+    }
+    expect((await call('trust_project', { action: 'status', path: '/etc/passwd' })).isError).toBe(true);
+    // Through a symlink inside the repo, to the file or to its directory.
+    await fs.symlink(elsewhere, path.join(repo, 'linked.yaml'));
+    await fs.symlink(path.join(outside, 'other'), path.join(repo, 'linkdir'));
+    for (const target of ['linked.yaml', 'linkdir']) {
+      const res = await call('trust_project', { action: 'status', path: target });
+      expect(res.isError, target).toBe(true);
+      expect(res.text).not.toContain('PlantedName');
+    }
+    const registry = JSON.parse((await call('trust_project', { action: 'status' })).text) as { trusted: unknown[] };
+    expect(registry.trusted).toEqual([]);
+  });
+
+  it('trust_project reads an allowed path, a missing file in an allowed directory and a LEXICON_HARVEST_ROOTS file', async () => {
+    const missing = JSON.parse((await call('trust_project', { action: 'status', path: 'app/.lexicon.yaml' })).text) as { status: string };
+    expect(missing.status).toBe('missing');
+    await fs.writeFile(path.join(repo, 'app', '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n');
+    const inside = JSON.parse((await call('trust_project', { action: 'status', path: 'app' })).text) as { status: string; path: string };
+    expect(inside).toMatchObject({ status: 'untrusted', path: path.join(repo, 'app', '.lexicon.yaml') });
+
+    const elsewhere = path.join(outside, 'other', '.lexicon.yaml');
+    await fs.writeFile(elsewhere, 'version: 1\nterms:\n  - canonical: Kubectl\n');
+    process.env.LEXICON_HARVEST_ROOTS = outside;
+    const listed = JSON.parse((await call('trust_project', { action: 'status', path: elsewhere })).text) as { status: string };
+    expect(listed.status).toBe('untrusted');
+  });
+
   it('reads any directory the client named as an MCP root', async () => {
     const { pathToFileURL } = await import('node:url');
     const { ListRootsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');

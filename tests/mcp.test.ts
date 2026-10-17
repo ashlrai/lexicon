@@ -767,12 +767,13 @@ describe('lexicon MCP server', () => {
         return { action: 'accept', content: { trust: true } };
       });
       try {
-        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust', path: 'sub/.lexicon.yaml' } });
+        // The default path: an explicit one must exist inside the allowed roots (tests/mcp-workflows.test.ts).
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
         expect(result.isError).toBe(false);
         const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
         expect(payload).toMatchObject({
           action: 'trust',
-          path: path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'),
+          path: '/fake/repo/.lexicon.yaml',
           previousStatus: 'untrusted',
           status: 'trusted',
           result: 'trusted',
@@ -781,9 +782,9 @@ describe('lexicon MCP server', () => {
         });
         expect(payload.sample).toEqual(['Kubernetes', 'Entire.io']);
         expect(payload).not.toHaveProperty('preview');
-        expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
+        expect(mocks.trustProject).toHaveBeenCalledWith('/fake/repo/.lexicon.yaml', { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
         expect(asked).toHaveLength(1);
-        expect(asked[0]).toMatch(/Trust the project lexicon at .*sub.*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
+        expect(asked[0]).toMatch(/Trust the project lexicon at .*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
         expect(asked[0]).not.toContain('ignore me');
       } finally {
         await close();

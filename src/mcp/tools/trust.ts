@@ -27,20 +27,39 @@ import {
   trustSummaryForModel,
 } from '../../core/index.js';
 import type { LexiconFile } from '../../core/index.js';
-import { guarded, textResult, trustPreview } from '../shared.js';
+import { HARVEST_ROOTS_ENV, containedPath, guarded, shellWord, textResult, trustPreview } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
-import { statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { cliCommand } from '../../util/cli-hint.js';
 
-/** An explicit path, where a directory means the `.lexicon.yaml` inside it (as `lexicon trust <dir>` reads it). */
-function explicitLexiconPath(cwd: string, path: string): string {
+/**
+ * An explicit path, where a directory means the `.lexicon.yaml` inside it (as
+ * `lexicon trust <dir>` reads it), held to the directories this server may
+ * read (`containedPath`). A model picks `path`, so without this `status` read
+ * and summarized any file it named and `trust` asked the user to trust a file
+ * outside the project. The file is checked after symlinks are resolved, so a
+ * link inside a root pointing outside it is refused; a file that does not
+ * exist yet is held to its directory, so `status` can still say 'missing'.
+ */
+function explicitLexiconPath(ctx: Parameters<typeof containedPath>[0], path: string): string {
+  const hint = (target: string): string => `trust ${shellWord(target)}`;
+  const requested = resolve(ctx.cwd, path);
+  if (!existsSync(requested)) return join(containedPath(ctx, dirname(requested), hint), basename(requested));
+  const real = containedPath(ctx, requested, hint);
+  if (!statSync(real).isDirectory()) return real;
+  const inside = join(real, PROJECT_FILE_NAME);
+  return existsSync(inside) ? containedPath(ctx, inside, hint) : inside;
+}
+
+/** `untrust`'s target: like `lexicon untrust <path>`, a directory means the `.lexicon.yaml` inside it. */
+function untrustTarget(cwd: string, path: string): string {
   const resolved = resolve(cwd, path);
   try {
     if (statSync(resolved).isDirectory()) return join(resolved, PROJECT_FILE_NAME);
   } catch {
-    // missing: reported by the action below
+    // missing: untrustProject reports it was not registered
   }
   return resolved;
 }
@@ -101,12 +120,23 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         'Use this instead of reading .lexicon.yaml yourself: the summary passes every string through sanitizeForDisplay, quotes no alias or note, and names only a few short canonicals, so next to nothing the file says reaches the conversation as text. Do not open the file with Read or cat.',
       inputSchema: {
         action: z.enum(['status', 'trust', 'untrust']),
-        path: z.string().optional().describe('Lexicon file (or the project directory holding it) to act on. Defaults to the project .lexicon.yaml resolved from the server working directory.'),
+        path: z
+          .string()
+          .optional()
+          .describe(
+            'Lexicon file (or the project directory holding it) to act on. Defaults to the project .lexicon.yaml resolved from the server working directory. ' +
+              `For status and trust it must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused.`,
+          ),
       },
     },
     async ({ action, path }) =>
       guarded(async () => {
-        const filePath = path ? explicitLexiconPath(ctx.cwd, path) : resolvePaths({ cwd: ctx.cwd }).project;
+        // `untrust` only ever removes a registry entry, so any path may be named there.
+        const filePath = path
+          ? action === 'untrust'
+            ? untrustTarget(ctx.cwd, path)
+            : explicitLexiconPath(ctx, path)
+          : resolvePaths({ cwd: ctx.cwd }).project;
         const registry = getTrustPath({ cwd: ctx.cwd });
         // Everything this tool echoes is attacker-influenced: the file is
         // untrusted by definition, and the directory it sits in is named by
