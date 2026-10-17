@@ -159,6 +159,27 @@ describe('harvest --interactive', () => {
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
   });
 
+  // Catches: `harvest --add --yes` printed the candidate table (or the --json
+  // array) and only then hit the trust gate, so the output read as a success.
+  it('runHarvest --add --yes refuses an untrusted project lexicon before printing candidates', async () => {
+    await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n', 'utf8');
+    const io = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, minCount: 1, globalPath }, io, { isInteractive: () => false })).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toMatch(/is untrusted; review it and run `lexicon trust` first/);
+
+    const json = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true, minCount: 1, globalPath }, json, { isInteractive: () => false })).toBe(1);
+    expect(JSON.parse(json.out)).toEqual({ added: false, path: projectPath, projectTrust: 'untrusted', error: expect.stringContaining('is untrusted') });
+    expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
+
+    // Without --add nothing is written, so the scan still prints.
+    const scan = makeIO();
+    expect(await runHarvest(repo, { minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);
+    expect(scan.out).toContain('quokkatron');
+  });
+
   it('runHarvest --interactive without a terminal errors before scanning', async () => {
     await expect(
       runHarvest(repo, { interactive: true, globalPath }, makeIO(), { isInteractive: () => false }),
