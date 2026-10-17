@@ -86,6 +86,7 @@ program
   .command('init')
   .description('create the lexicon file (global by default) if it does not exist')
   .option('--project', 'create a project .lexicon.yaml at the git root (or cwd) instead')
+  .option('--json', 'print { ok: true, scope, path, created } as JSON (plus trust for --project)')
   .action(async (opts: InitOptions) => done(await runInit(withGlobals(opts), io)));
 
 program
@@ -241,9 +242,10 @@ program
   .command('install-claude', { hidden: true })
   .description('deprecated alias for `lexicon install claude`')
   .option('--apply', 'write the config (merge; existing keys are kept)')
-  .option('--scope <scope>', 'user|project', 'user')
+  .option('--scope <scope>', 'user|project (project = the repo-level config file)')
   .option('--project', 'same as --scope project')
   .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
+  .option('--json', 'print { ok: true, client, scope, applied, written, output } as JSON, as `lexicon install claude --json` does')
   .action(async (opts: InstallOptions) => done(await runInstall('claude', withGlobals(opts), io)));
 
 // Extension slots: each module registers its own commands (keeps index.ts small).

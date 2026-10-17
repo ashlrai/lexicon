@@ -459,6 +459,21 @@ describe('lexicon learn (CLI)', () => {
     const json = captureIO();
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
     expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
+    expect(JSON.parse(json.out()).note).toBe('"Kubernetes" is its own term (project), so it may still be kept as written.');
+
+    // Regression: `learn --json` had the conflict and no remove command, while
+    // `add --json` pairs its conflicts with a `note` naming the scoped one.
+    const alias = captureIO();
+    expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo', json: true }, alias.io)).toBe(0);
+    expect(JSON.parse(alias.out()).note).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
+        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+    );
+
+    // No conflict: no note.
+    const plain = captureIO();
+    expect(await runLearn(['Versel', 'Vercel'], { cwd: '/fake/repo', json: true }, plain.io)).toBe(0);
+    expect(JSON.parse(plain.out())).not.toHaveProperty('note');
   });
 
   it('--project writes to the project lexicon', async () => {

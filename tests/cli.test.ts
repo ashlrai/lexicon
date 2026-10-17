@@ -1447,6 +1447,16 @@ describe('runDoctorReport', () => {
         expect(report.nextStep).toContain('trust_project with action "trust"');
         expect(report.nextStep).toContain('`npx @ashlr/lexicon trust`');
         expect(report.nextStep).not.toMatch(bareCommand);
+        // The check names trust_project too, not `then run: lexicon trust`.
+        const check = report.checks.find((c) => c.message.startsWith('project lexicon is untrusted'));
+        expect(check?.message).toBe(
+          'project lexicon is untrusted and not merged: /tmp/proj/.lexicon.yaml (review it, then call trust_project with action "trust", which asks the user directly)',
+        );
+        vi.mocked(core.isTrusted).mockResolvedValue('changed');
+        const changed = await runDoctorReport({ audience: 'mcp' }, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
+        expect(changed.checks.find((c) => c.message.startsWith('project lexicon content changed'))?.message).toBe(
+          'project lexicon content changed since trusted; not merged (call trust_project with action "trust", which asks the user directly)',
+        );
       });
 
       it('rewrites the run hint of the first failure and of an unreadable file', async () => {
@@ -1457,8 +1467,16 @@ describe('runDoctorReport', () => {
         expect(failing.nextStep).toMatch(/^Fix the first failure: lexicon MCP server not registered with claude/);
         expect(failing.nextStep).toContain('call install_client with client "claude"');
         expect(failing.nextStep).not.toMatch(bareCommand);
-        // The check itself is unchanged: `checks` is the same list the CLI prints.
-        expect(failing.checks.some((c) => c.message.includes('(run: lexicon install claude --apply)'))).toBe(true);
+        // Regression: the checks kept the CLI's "(run: lexicon ...)" hints over
+        // MCP. Every check is phrased for the agent; the CLI's are unchanged.
+        expect(failing.checks.some((c) => c.message.includes('(call install_client with client "claude"'))).toBe(true);
+        for (const check of failing.checks) expect(check.message).not.toMatch(bareCommand);
+        expect(failing.checks.some((c) => c.message.includes('otherwise call install_client with client "claude"'))).toBe(true);
+        expect(failing.checks.some((c) => c.message.includes('keeps the local API up: `lexicon serve --install` (or `npx @ashlr/lexicon serve --install`)'))).toBe(true);
+        const cli = await runDoctorReport({}, deps);
+        expect(cli.checks.some((c) => c.message.includes('(run: lexicon install claude --apply)'))).toBe(true);
+        expect(cli.checks.some((c) => c.message.includes('otherwise run: lexicon install claude --apply)'))).toBe(true);
+        expect(cli.checks.length).toBe(failing.checks.length);
 
         vi.mocked(core.readLexiconFile).mockRejectedValue(new Error(`Failed to parse lexicon YAML at ${state.globalPath}: bad`));
         const broken = await runDoctorReport({ audience: 'mcp' }, deps);
@@ -1923,6 +1941,49 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(added.status).toBe(0);
       expect(added.stdout).toContain('created Foo (project)');
       expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical: Foo');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: `lexicon init --json` was an unknown option (exit 1, nothing
+  // created), though doctor's fix for a missing lexicon is `lexicon init` and
+  // every other command that writes a lexicon file takes --json.
+  it('init --json prints { ok, scope, path, created } and trust for --project', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-init-')));
+    try {
+      const globalPath = path.join(tmp, 'g', 'lexicon.yaml');
+      const repo = path.join(tmp, 'repo');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const first = lexicon(['init', '--json', '--cwd', repo], globalPath);
+      expect(first.status).toBe(0);
+      expect(JSON.parse(first.stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: true });
+      expect(JSON.parse(lexicon(['init', '--json', '--cwd', repo], globalPath).stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: false });
+      const project = lexicon(['init', '--project', '--json', '--cwd', repo], globalPath);
+      expect(project.status).toBe(0);
+      expect(JSON.parse(project.stdout)).toEqual({ ok: true, scope: 'project', path: path.join(repo, '.lexicon.yaml'), created: true, trust: 'trusted' });
+      // Without --json the text is unchanged.
+      expect(lexicon(['init', '--cwd', repo], globalPath).stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: the hidden `install-claude` alias did not take --json (an
+  // unknown option, exit 1), and its `--scope` default of `user` beat
+  // `--project`, so it did not behave like `install claude`.
+  it('install-claude takes --json and --project exactly as install claude does', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-alias-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      for (const flags of [[], ['--project'], ['--scope', 'bogus']]) {
+        const alias = lexicon(['install-claude', '--json', '--home', tmp, ...flags, '--cwd', tmp], globalPath);
+        const install = lexicon(['install', 'claude', '--json', '--home', tmp, ...flags, '--cwd', tmp], globalPath);
+        expect(alias.status, flags.join(' ')).toBe(install.status);
+        expect(JSON.parse(alias.stdout), flags.join(' ')).toEqual(JSON.parse(install.stdout));
+      }
+      const project = lexicon(['install-claude', '--json', '--home', tmp, '--project', '--cwd', tmp], globalPath);
+      expect(JSON.parse(project.stdout)).toMatchObject({ ok: true, client: 'claude', scope: 'project', applied: false });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

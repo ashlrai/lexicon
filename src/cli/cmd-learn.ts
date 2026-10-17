@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, conflictNote, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -93,11 +93,20 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       // The keys MCP learn_correction returns, plus heard and meant. `file`
       // keeps only its path and scope: the whole file's terms do not belong
       // in a one-correction result.
+      // A conflict comes with the `note` naming the scoped remove command, as
+      // `add --json` and the MCP summary do.
       const { file, ...rest } = result;
       line(
         io,
         JSON.stringify(
-          jsonOk({ ...rest, path: file.path, file: { path: file.path, scope: file.scope }, heard: correction.heard, meant: correction.meant }),
+          jsonOk({
+            ...rest,
+            path: file.path,
+            file: { path: file.path, scope: file.scope },
+            heard: correction.heard,
+            meant: correction.meant,
+            ...(result.conflict ? { note: conflictNote([result.conflict]) } : {}),
+          }),
           null,
           2,
         ),

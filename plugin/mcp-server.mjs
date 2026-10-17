@@ -53622,6 +53622,15 @@ function startHeartbeat(lockPath, token, staleMs) {
   timer.unref?.();
   return () => clearInterval(timer);
 }
+async function blockingFile(dir) {
+  for (let p = dir; ; p = import_node_path.default.dirname(p)) {
+    try {
+      if (!(await import_node_fs.promises.stat(p)).isDirectory()) return p;
+    } catch {
+    }
+    if (import_node_path.default.dirname(p) === p) return dir;
+  }
+}
 async function acquire(lockPath, target, timeoutMs, staleMs) {
   const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
@@ -53631,6 +53640,13 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
     let transient;
     try {
       await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
+    } catch (err) {
+      if (isEexist(err) || err.code === "ENOTDIR") {
+        throw new FileLockError(target, lockPath, `${await blockingFile(import_node_path.default.dirname(lockPath))} is not a directory, so the lock cannot be created next to it`);
+      }
+      throw err;
+    }
+    try {
       await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
@@ -62252,14 +62268,19 @@ function parseReason(error62, filePath, max = 110) {
 function editCommand(scope) {
   return scope === "project" ? "lexicon edit --project" : "lexicon edit";
 }
+function mcpCommandHint(commands) {
+  const install = /^lexicon install (\S+) --apply$/.exec(commands);
+  if (install) return `call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms`;
+  if (commands === "lexicon init") return "call setup_lexicon; it previews first, apply: true once the user confirms";
+  if (commands === "lexicon trust") return 'call trust_project with action "trust", which asks the user directly';
+  const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
+  return `ask the user to run ${steps.join(", then ")}`;
+}
 function mcpRunHints(message) {
-  return message.replace(/\(run: (lexicon [^)]+)\)/g, (_all, commands) => {
-    const install = /^lexicon install (\S+) --apply$/.exec(commands);
-    if (install) return `(call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms)`;
-    if (commands === "lexicon init") return "(call setup_lexicon; it previews first, apply: true once the user confirms)";
-    const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
-    return `(ask the user to run ${steps.join(", then ")})`;
-  });
+  return message.replace(
+    /\(run: (lexicon [^)]+)\)|\brun:? `?(lexicon [^)`;]+?)`?(?: again)?(?=[)`;]|$)|: (lexicon serve --install)(?=\))/g,
+    (_all, paren, inline, bare) => paren !== void 0 ? `(${mcpCommandHint(paren)})` : inline !== void 0 ? mcpCommandHint(inline) : `: ${cliCommand((bare ?? "").replace(/^lexicon /, ""))}`
+  );
 }
 function summarize(checks, state, audience = "cli") {
   const mcp = audience === "mcp";
@@ -62291,8 +62312,9 @@ function summarize(checks, state, audience = "cli") {
       ready: false,
       summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? "" : "s"} failed: ${fails[0].message}`,
       // Every failing message ends in its own "(run: ...)" hint, so the first
-      // failure carries its fix with it.
-      nextStep: `Fix the first failure: ${mcp ? mcpRunHints(fails[0].message) : fails[0].message}`
+      // failure carries its fix with it (for `mcp`, already rewritten by
+      // runDoctorReport along with every other check).
+      nextStep: `Fix the first failure: ${fails[0].message}`
     };
   }
   if (!state.wired) {
@@ -62503,6 +62525,7 @@ async function runDoctorReport(opts, deps = {}) {
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
+  if (opts.audience === "mcp") for (const check2 of checks) check2.message = mcpRunHints(check2.message);
   const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
   return {
     ok: !checks.some((c) => c.level === "fail"),
@@ -62685,7 +62708,25 @@ async function runInit(opts, io) {
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
   const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
-  const created = await withLexiconLock(target, async () => {
+  const created = await createLexiconFile(target, scope);
+  if (created && scope === "project") await trustProject(target, { cwd });
+  if (opts.json) {
+    const trust = scope === "project" ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
+    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    return 0;
+  }
+  if (!created) {
+    line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    return 0;
+  }
+  line(io, `created ${scope} lexicon: ${safe(target)}`);
+  if (scope === "project") {
+    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
+  }
+  return 0;
+}
+async function createLexiconFile(target, scope) {
+  return withLexiconLock(target, async () => {
     if ((0, import_node_fs22.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
@@ -62694,16 +62735,6 @@ async function runInit(opts, io) {
     await import_node_fs22.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
-  if (!created) {
-    line(io, `${scope} lexicon already exists: ${safe(target)}`);
-    return 0;
-  }
-  line(io, `created ${scope} lexicon: ${safe(target)}`);
-  if (scope === "project") {
-    await trustProject(target, { cwd });
-    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
-  }
-  return 0;
 }
 
 // src/cli/cmd-setup.ts
