@@ -16,6 +16,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The Claude Code hook checks only the first 50,000 characters of a prompt (`HOOK_PROMPT_MAX_CHARS`) and tells the agent the rest was not checked, as MCP `normalize_transcript` caps its input. The match budget bounded only the scan, not the code-span detection and tokenizing before it, so a 2 MB paste kept the hook busy for 2 s and a 10 MB one for 49 s, far past its 200 ms target and the plugin's hook timeout; they now take about 0.4 s and 0.5 s, mostly reading stdin.
 - The Claude Code hook given stdin that is not JSON writes one line, `[lexicon hook] stdin is not valid JSON (<n> bytes); expected the Claude Code hook payload object, nothing to do`, and prints nothing. It wrote JSON.parse's message, which quotes the start of the input, so raw prompt text (escape codes included) reached stderr, and `runHook` threw.
 - An unknown route of `lexicon serve` answers 404 with every route to choose from, `no route for POST /normalise (routes: GET /health, GET /pair, POST /normalize, ...)`, as an unknown export format names the formats. It named only the path that was not found.
 - `GET /export/<format>` of `lexicon serve` with an unknown format answers 404 with the formats to choose from, `unknown export format "nope" (one of: wispr, ...)`, as MCP `export_lexicon` does. It named only the bad format.

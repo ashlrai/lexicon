@@ -20550,6 +20550,20 @@ function cliCommand(args) {
 
 // src/hooks/user-prompt-submit.ts
 var HOOK_MATCH_BUDGET_MS = 100;
+var HOOK_PROMPT_MAX_CHARS = 5e4;
+function promptCut(text, max) {
+  if (text.length <= max) return text.length;
+  let cut = max;
+  const code = text.charCodeAt(cut - 1);
+  if (code >= 55296 && code <= 56319) cut -= 1;
+  for (let i = cut; i > 0 && i > cut - 200; i--) {
+    if (/\s/.test(text.charAt(i - 1))) return i;
+  }
+  return cut;
+}
+function formatLengthNote(checkedChars, totalChars) {
+  return `Lexicon checked only the first ${checkedChars} of this prompt's ${totalChars} characters for misspelled names; the rest was not checked. If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.`;
+}
 var CORRECTED_PROMPT_MAX_CHARS = 8e3;
 var SESSION_CONTEXT_MAX_CHARS = 4e3;
 var ONBOARD_NOTE_FILE = "onboard-note.json";
@@ -20870,7 +20884,11 @@ async function userPromptSubmit(payload, opts) {
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
-  const parsed = parseCorrection(prompt);
+  const cut = promptCut(prompt, HOOK_PROMPT_MAX_CHARS);
+  const head = cut < prompt.length ? prompt.slice(0, cut) : prompt;
+  const tail = prompt.slice(head.length);
+  const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : "";
+  const parsed = parseCorrection(head);
   const correction = parsed && parsed.heard.trim() !== "" && parsed.meant.trim() !== "" ? parsed : void 0;
   const correctionNote = correction ? formatCorrectionNote(correction) : "";
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;
@@ -20879,15 +20897,17 @@ async function userPromptSubmit(payload, opts) {
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
   let timedOut = false;
   const shouldStop = () => timedOut ||= process.hrtime.bigint() - started >= limit;
-  let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : void 0;
+  let result = index ? normalizeWithIndex(head, index, { shouldStop }) : void 0;
+  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : "";
   if (result && correction) result = dropCorrectionSpans(result, correction);
   if (result) result = dropDataBlockSpans(result);
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
-  if (!changed && !skippedNote && !correctionNote && !budgetNote) return "";
+  if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote) return "";
   const parts = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
+  if (lengthNote) parts.push(lengthNote);
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
@@ -21018,6 +21038,7 @@ export {
   CORRECTION_LIST_MAX_CHARS,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
+  HOOK_PROMPT_MAX_CHARS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
@@ -21029,6 +21050,7 @@ export {
   formatAdditionalContext,
   formatBudgetNote,
   formatCorrectionNote,
+  formatLengthNote,
   formatSkippedProjectNote,
   hookFlagOutput,
   main,
