@@ -36,6 +36,7 @@ import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
 import { IMPORT_FORMAT_VALUES, bufferIO, guarded, nonBlank, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
+import { cliCommand } from '../../util/cli-hint.js';
 
 const REGISTRY_SOURCE_DESC =
   'Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.';
@@ -58,7 +59,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
         'Pass registry (an index the user registered; others are refused) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
         'The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. ' +
-        'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). ' +
+        'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by ' + cliCommand('pack update') + ', recordOnly reads as not installed (' + cliCommand('pack remove <ref>') + ' clears the record). ' +
         'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
       inputSchema: {
         registry: z.string().optional().describe(REGISTRY_SOURCE_DESC),
@@ -107,8 +108,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). ' +
         'Adds the pack\'s terms with source "pack"; a term the user already has keeps its own spelling and aliases and only gains the pack\'s. Idempotent. ' +
-        'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with `lexicon pack remove <name>`. ' +
-        'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.',
+        'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with ' + cliCommand('pack remove <name>') + '. ' +
+        'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so ' + cliCommand('pack update') + ' re-checks it later.',
       inputSchema: {
         name: z.string().describe('Pack name from list_packs (e.g. developer) or a community ref like example/cardiology.'),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),

@@ -566,6 +566,26 @@ describe('project-scope writes never launder an unreviewed file', () => {
     expect((await loadLexicon({ cwd: nested, globalPath })).projectTrust).toBe('trusted');
   });
 
+  // An MCP harvest_repo add is a model's write: it must never be what makes a project file trusted.
+  it('leaveUntrusted writes a new, untrusted or trusted project file without pinning it', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await addTerm({ canonical: 'Foo', aliases: [] }, { cwd: nested, globalPath, scope: 'project', leaveUntrusted: true });
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Foo')).toBeDefined();
+    expect(await readTrustRegistry({ globalPath })).toEqual({ version: 1, trusted: {} });
+    expect((await loadLexicon({ cwd: nested, globalPath })).projectTrust).toBe('untrusted');
+
+    // The file is untrusted now; a second unpinned write merges into it rather than hitting the gate.
+    await addTerm({ canonical: 'Bar', aliases: [] }, { cwd: nested, globalPath, scope: 'project', leaveUntrusted: true });
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Bar')).toBeDefined();
+    expect(await readTrustRegistry({ globalPath })).toEqual({ version: 1, trusted: {} });
+
+    // A file the user trusted reads as changed until they review it again.
+    await trustProject(projectPath, { globalPath });
+    await addTerm({ canonical: 'Baz', aliases: [] }, { cwd: nested, globalPath, scope: 'project', leaveUntrusted: true });
+    expect((await loadLexicon({ cwd: nested, globalPath })).projectTrust).toBe('changed');
+  });
+
   it('honours LEXICON_TRUST_ALL=1 (trusted -> write allowed, and pinned)', async () => {
     const { nested, projectPath } = await hostileRepo();
     process.env.LEXICON_TRUST_ALL = '1';

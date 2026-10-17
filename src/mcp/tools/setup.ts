@@ -51,8 +51,8 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'next, already phrased as an instruction; always present, and when nothing is broken it tells the user how to try it). ' +
         'If ready is true and the user only asked whether it works, `summary` alone is the whole answer -- do not paste the checks. ' +
         'ready being false does not always mean "not set up yet": a lexicon file that exists but does not parse also reports ready false, ' +
-        'and `lexicon setup` will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable ' +
-        'lexicon it names the file and points at `lexicon edit`. ' +
+        'and setup_lexicon will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable ' +
+        'lexicon it names the file and the command that opens it. ' +
         'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), ' +
         "`checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for " +
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
@@ -113,7 +113,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
-        'Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.',
+        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file is left untrusted for the user to review).',
       inputSchema: {
         company: z.string().optional().describe('Company or product name, spelled exactly as it should appear.'),
         person: z.string().optional().describe("The user's own name as they write it."),
@@ -128,7 +128,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         harvest: z
           .boolean()
           .optional()
-          .describe('true = also add the repo names in wouldHarvest to the project .lexicon.yaml (and trust it). Only after the user agreed; omitted = not harvested.'),
+          .describe('true = also add the repo names in wouldHarvest to the project .lexicon.yaml, left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested.'),
         serve: z.boolean().optional().describe('true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed.'),
         apply: z
           .boolean()
@@ -155,9 +155,12 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           ...(packs !== undefined ? { packs: packs.length > 0 ? packs.join(',') : 'none' } : {}),
           // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
           serve: serve === true,
-          // So is the harvest (a project write plus a trust decision). The plan lists the
+          // So is the harvest (a write inside the user's repo). The plan lists the
           // candidates regardless, so the model can offer them; only an apply needs the flag.
           ...(applied || harvest === false ? { harvest: harvest === true } : {}),
+          // ...and the file it writes is left for the user to trust: the model
+          // relaying a yes is not the user reviewing the names.
+          harvestUntrusted: true,
           ...(applied ? {} : { dryRun: true }),
         };
         const { code, summary, plan } = await runSetup(options, io, cliDir !== undefined ? { cliDir } : {});
@@ -169,7 +172,21 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
             next: (plan?.serveBlocked !== undefined ? 'The login service cannot be installed from this copy (serveBlocked says why and how to fix it); do not offer serve: true until that is fixed. ' : '') + 'Nothing was written. Show this plan to the user; call again with apply: true, clients: [...] for the clients they agreed to, harvest: true only if they agreed to the repo names in wouldHarvest, and serve: true only if they agreed to the login service.',
           });
         }
-        return textResult({ ok: code === 0, applied: true, summary, ...(stderr ? { stderr } : {}) });
+        const untrusted = summary.untrustedProject;
+        return textResult({
+          ok: code === 0,
+          applied: true,
+          summary,
+          ...(stderr ? { stderr } : {}),
+          ...(untrusted !== undefined
+            ? {
+                nextStep:
+                  `The repo names were written to ${untrusted}, which is not trusted, so they do not apply yet. ` +
+                  `Ask the user to review the file and run ${cliCommand('trust')} in a terminal in that repo (it previews the file first), ` +
+                  'or call trust_project with action "trust", which asks them directly.',
+              }
+            : {}),
+        });
       }),
   );
 
@@ -178,7 +195,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Local API status',
       description:
-        'Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
+        'Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
         'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },

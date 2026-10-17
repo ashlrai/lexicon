@@ -17,7 +17,7 @@ Trust pins the file's sha256 in `~/.config/lexicon/trust.json` (next to your glo
 
 ## What a write does
 
-Writes you ask for through the tool (`lexicon init --project`, `add --project`, `import --project`, `learn --project`, `harvest --add`, `review --project`, `suggest --project`, `pack add --project`, and the MCP tools and local API with project scope) keep the file trusted, but only when the file does not exist yet or is already trusted.
+Writes you ask for through the tool (`lexicon init --project`, `add --project`, `import --project`, `learn --project`, `harvest --add`, `review --project`, `suggest --project`, `pack add --project`, and the MCP tools and local API with project scope) keep the file trusted, but only when the file does not exist yet or is already trusted. MCP `harvest_repo` with `add: true` and `setup_lexicon` with `harvest: true` are the exception: a model chose or relayed those names, so they write the file without trusting it (a trusted file reads as changed afterwards) and tell the agent to ask you to review it and run `lexicon trust`.
 
 If an existing `.lexicon.yaml` is untrusted or has changed, the write is refused with a `lexicon trust` hint and nothing is touched, so a repo's unreviewed file can never be pinned as trusted by the side door. `lexicon edit --project` re-pins a trusted file after you save; an untrusted one stays untrusted. Hand edits outside the tool need `lexicon trust` again.
 

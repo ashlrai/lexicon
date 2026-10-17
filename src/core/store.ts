@@ -976,12 +976,22 @@ export async function addTerm(
      * adding a never word, phonetic, category or notes appends nothing.
      */
     defaultAliases?: readonly string[];
+    /**
+     * Write a project file without registering it as trusted, for a write
+     * the user has not reviewed (MCP `harvest_repo`, where a model chose the
+     * names). Nothing is pinned, so the trust gate has nothing to protect and
+     * an existing untrusted or changed file may be written too; a file that
+     * was trusted reads as 'changed' afterwards. Either way it is merged only
+     * after the user runs `lexicon trust`. Ignored for the global file.
+     */
+    leaveUntrusted?: boolean;
   } = {},
 ): Promise<{ file: LexiconFile; term: Term; created: boolean }> {
   const scope: TermScope = opts.scope ?? 'global';
   // The trust gate stays ahead of every other check, as it was when this
   // resolved the file rather than the path.
-  const targetPath = await resolveScopeWritePath(scope, opts);
+  const targetPath = opts.leaveUntrusted && scope === 'project' ? projectWritePath(opts) : await resolveScopeWritePath(scope, opts);
+  const write = opts.leaveUntrusted ? (f: LexiconFile) => writeLexiconFile(f) : (f: LexiconFile) => writeAndTrust(f, opts);
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError('canonical must not be empty');
 
@@ -1007,7 +1017,7 @@ export async function addTerm(
       if (incoming.never?.length) {
         existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
       }
-      await writeAndTrust(file, opts);
+      await write(file);
       return { file, term: existing, created: false };
     }
 
@@ -1021,7 +1031,7 @@ export async function addTerm(
       };
       const idx = file.lexicon.terms.indexOf(existing);
       file.lexicon.terms[idx] = replaced;
-      await writeAndTrust(file, opts);
+      await write(file);
       return { file, term: replaced, created: false };
     }
 
@@ -1035,7 +1045,7 @@ export async function addTerm(
       createdAt: incoming.createdAt ?? new Date().toISOString(),
     };
     file.lexicon.terms.push(created);
-    await writeAndTrust(file, opts);
+    await write(file);
     return { file, term: created, created: true };
   });
 }
@@ -1314,11 +1324,15 @@ export function findTerm(lexicon: Lexicon, canonical: string): Term | undefined 
  * and then rewrites `settings.packs`, and those have to be one transaction.
  */
 export async function resolveScopeWritePath(scope: TermScope, opts: StoreOptions): Promise<string> {
-  const paths = resolvePaths(opts);
-  if (scope === 'global') return paths.global;
-  const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
+  if (scope === 'global') return resolvePaths(opts).global;
+  const projectPath = projectWritePath(opts);
   await assertProjectWritable(projectPath, opts);
   return projectPath;
+}
+
+/** The project file a project-scope write targets: the one found by the walk, else `.lexicon.yaml` at the git root. */
+function projectWritePath(opts: StoreOptions): string {
+  return resolvePaths(opts).project ?? defaultProjectPath(opts.cwd ?? process.cwd());
 }
 
 /**
