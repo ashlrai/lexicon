@@ -530,6 +530,21 @@ describe('lexicon learn (CLI)', () => {
     expect(store.addTerm).not.toHaveBeenCalled();
   });
 
+  // Catches: `learn X X --json` printed only `error`, with no nextStep like every other learn refusal.
+  it('--json names the next step when heard and meant are the same spelling', async () => {
+    for (const words of [['Ashlr.AI', 'Ashlr.AI'], ['Ashlr.AI ', ' Ashlr.AI']]) {
+      const { io, out, err } = captureIO();
+      expect(await runLearn(words, { json: true, cwd: '/fake/repo' }, io)).toBe(1);
+      expect(JSON.parse(out())).toEqual({
+        ok: false,
+        error: '"Ashlr.AI" and "Ashlr.AI" are the same spelling; nothing to learn',
+        nextStep: 'run: lexicon learn <heard> "Ashlr.AI", where <heard> is the misspelling STT wrote',
+      });
+      expect(err()).toContain('lexicon: run: lexicon learn <heard> "Ashlr.AI"');
+    }
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
   it('asks for the heard form when the sentence only names the spelling', async () => {
     const { io, out, err } = captureIO();
     const code = await runLearn([], { from: 'spelled Zoë' }, io);

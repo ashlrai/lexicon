@@ -30,6 +30,23 @@ interface VoiceCliOptions {
 /** The flag that selects each mode other than plain dictation. */
 const MODE_FLAGS = { toggle: '--toggle', status: '--status', listDevices: '--list-devices' } as const;
 
+/**
+ * The flags only a recording reads (plain dictation and `--toggle`), by
+ * commander attribute name. `--status` and `--list-devices` record nothing,
+ * so one of these given with them was dropped without a word.
+ */
+const RECORDING_FLAGS = {
+  seconds: '--seconds',
+  device: '--device',
+  model: '--model',
+  lang: '--lang',
+  translate: '--translate',
+  prompt: '--no-prompt',
+  history: '--no-history',
+  copy: '--copy',
+  paste: '--paste',
+} as const;
+
 function positiveNumber(value: string): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError('expected a positive number of seconds');
@@ -54,7 +71,7 @@ export function registerVoiceCommands(program: Command, io: IO): void {
     .option('--paste', 'copy and paste into the frontmost app (macOS; needs Accessibility permission)')
     .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
     .option('--quiet', 'no status lines on stderr')
-    .action(async (opts: VoiceCliOptions) => {
+    .action(async (opts: VoiceCliOptions, cmd: Command) => {
       // One mode per call: `--status --toggle` answered the status and dropped
       // the toggle without a word, so a hotkey script never recorded.
       const modes = (['toggle', 'status', 'listDevices'] as const).filter((m) => opts[m] === true).map((m) => MODE_FLAGS[m]);
@@ -65,6 +82,22 @@ export function registerVoiceCommands(program: Command, io: IO): void {
         if (opts.json) io.stdout(`${JSON.stringify({ ok: false, error, nextStep, code: EXIT_ERROR })}\n`);
         process.exitCode = EXIT_ERROR;
         return;
+      }
+      // `--status --seconds 5` answered the status and ignored the recording
+      // flag; refuse it, naming the flag, so a script learns it did nothing.
+      const mode = opts.status ? MODE_FLAGS.status : opts.listDevices ? MODE_FLAGS.listDevices : undefined;
+      if (mode !== undefined) {
+        const ignored = (Object.keys(RECORDING_FLAGS) as (keyof typeof RECORDING_FLAGS)[])
+          .filter((k) => cmd.getOptionValueSource(k) === 'cli')
+          .map((k) => RECORDING_FLAGS[k]);
+        if (ignored.length > 0) {
+          const error = `${ignored.join(', ')} ${ignored.length === 1 ? 'only applies' : 'only apply'} to a recording; ${mode} records nothing`;
+          const nextStep = `drop ${ignored.join(', ')}, or run lexicon voice without ${mode} to record`;
+          io.stderr(`lexicon voice: ${error}\n  ${nextStep}\n`);
+          if (opts.json) io.stdout(`${JSON.stringify({ ok: false, error, nextStep, code: EXIT_ERROR })}\n`);
+          process.exitCode = EXIT_ERROR;
+          return;
+        }
       }
       const { cwd } = program.opts<{ cwd?: string }>();
       const voiceOpts: VoiceOptions = {

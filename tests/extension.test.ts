@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
 import { createBackground } from '../extension/src/background-core.js';
+import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
 import { sendToBackground } from '../extension/src/chrome-store.js';
 import { installContent } from '../extension/src/content-core.js';
@@ -585,7 +586,15 @@ describe('message routing (mock chrome.runtime) and background', () => {
     );
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: { canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' } };
     const own = (await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { ok: true; message: string };
-    expect(own.message).toBe('Added "Ashler" as an alias of Ashley. But "Ashler" is its own term (project lexicon), so it may still be kept as written.');
+    // Catches: the popup's canonical-conflict sentence stopped at "kept as written"
+    // and named no way out, while the core conflictNote names the remove command.
+    expect(own.message).toBe(
+      'Added "Ashler" as an alias of Ashley. But "Ashler" is its own term (project), so it may still be kept as written; ' +
+        'if the user never means it as its own term, drop it with: lexicon remove "Ashler" --project.',
+    );
+    expect(own.message).toBe(
+      `Added "Ashler" as an alias of Ashley. But ${conflictNote([{ canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' }])}.`,
+    );
     // No conflict, or one of an unexpected shape: the plain message.
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: 'odd' };
     expect(((await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { message: string }).message).toBe('Added "Ashler" as an alias of Ashley.');

@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
+import { EXPORT_FORMATS, addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -625,6 +625,8 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(upper.headers.get('content-type')).toBe('text/csv; charset=utf-8');
     const unknown = await api('GET', '/export/nope');
     expect(unknown.status).toBe(404);
+    // Catches: the 404 named the bad format but not the ones to choose from, as MCP export_lexicon does.
+    expect(((await unknown.json()) as { error: string }).error).toBe(`unknown export format "nope" (one of: ${EXPORT_FORMATS.join(', ')})`);
   });
 
   // Catches: /export ignored ?category= and ?limit= (which `lexicon export`
@@ -687,6 +689,18 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(body.totalHits).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(body.topTerms)).toBe(true);
     expect(body.files[0]?.scope).toBe('global');
+    expect(body).not.toHaveProperty('skippedProject');
+  });
+
+  // Catches: /stats counted without a skipped (untrusted) project file and
+  // said nothing, while /lexicon, /packs and `stats --json` name it.
+  it('/stats names a skipped project file, path only, as /lexicon does', async () => {
+    const res = await api('GET', `/stats?cwd=${encodeURIComponent(env.untrustedProject)}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as LexiconStats & { projectTrust?: string; skippedProject?: string };
+    expect(body.projectTrust).toBe('untrusted');
+    expect(body.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    expect(body.files.map((f) => f.scope)).toEqual(['global']);
   });
 });
 

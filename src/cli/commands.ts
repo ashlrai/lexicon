@@ -925,6 +925,18 @@ function formatList(): string {
 
 export async function runExport(requested: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
   if (requested === undefined) {
+    // `lexicon export --out lex.md` (format forgotten) printed the format list
+    // and exited 0, so a script believed the file was written.
+    const given = [
+      ...(opts.out !== undefined ? ['--out'] : []),
+      ...(opts.category !== undefined && opts.category.length > 0 ? ['--category'] : []),
+      ...(opts.limit !== undefined ? ['--limit'] : []),
+    ];
+    if (given.length > 0) {
+      const code = refuse(io, false, `${given.join(', ')} ${given.length === 1 ? 'needs' : 'need'} a format; nothing was exported`, 'run: lexicon export <format> (formats below)');
+      io.stderr(formatList());
+      return code;
+    }
     line(io, 'usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>]');
     io.stdout(formatList());
     return 0;

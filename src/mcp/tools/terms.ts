@@ -310,8 +310,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'There is no undo through this server. ' +
         'WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot ' +
         'name exactly -- use list_terms first if you are unsure which canonical the user means. ' +
-        'A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other ' +
-        'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an ' +
+        'A term that is not found is not an error (isError stays false, unlike the CLI remove command, which exits 1): check `removed`. ' +
+        'The result has `removed: false` and a `note`; when the term lives in the other ' +
+        'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead, otherwise the `note` points at list_terms. With `alias`, an ' +
         'unknown term or an alias the term does not have is an error; when the other lexicon file\'s copy of the term has that alias, the error names that file and the scope to pass.',
       inputSchema: {
         canonical: nonBlank(),

@@ -85,6 +85,20 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     io.stderr(`run: lexicon learn <heard> ${JSON.stringify(correction.meant)}\n`);
     return 1;
   }
+  // The same spelling twice: learnCorrection refuses it with only an error, so
+  // `--json` left a script without the step every other learn refusal names.
+  // Normalized as learnCorrection does (trim, collapse whitespace); the error
+  // text is the core's.
+  const heardNorm = correction.heard.trim().replace(/\s+/g, ' ');
+  const meantNorm = correction.meant.trim().replace(/\s+/g, ' ');
+  if (meantNorm && heardNorm === meantNorm) {
+    const error = `"${heardNorm}" and "${meantNorm}" are the same spelling; nothing to learn`;
+    const nextStep = `run: lexicon learn <heard> ${JSON.stringify(meantNorm)}, where <heard> is the misspelling STT wrote`;
+    if (opts.json) printJsonError(io, error, nextStep);
+    io.stderr(`lexicon: ${safe(error)}\n`);
+    io.stderr(`lexicon: ${safe(nextStep)}\n`);
+    return 1;
+  }
 
   const scope: TermScope | undefined = opts.project ? 'project' : undefined;
   try {

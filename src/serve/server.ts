@@ -26,6 +26,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
+  EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
   addTerm,
   computeStats,
@@ -161,6 +162,17 @@ export interface LexiconResponse {
   paths: { global: string; project?: string };
   projectTrust?: LoadedLexicon['projectTrust'];
   /** Path only; the contents of an untrusted file never leave the disk. */
+  skippedProject?: string;
+}
+
+/**
+ * `GET /stats`: `LexiconStats` plus, as `/lexicon` and `/packs` carry them,
+ * `projectTrust` and the skipped project file's path. The counts leave a
+ * skipped file out, and nothing said so.
+ */
+export interface StatsResponse extends LexiconStats {
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /** Path only: its terms are not in the counts. */
   skippedProject?: string;
 }
 
@@ -763,8 +775,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     };
   }
 
-  async function handleStats(cwd: string): Promise<LexiconStats> {
-    return computeStats(await load(cwd));
+  async function handleStats(cwd: string): Promise<StatsResponse> {
+    const loaded = await load(cwd);
+    return {
+      ...computeStats(loaded),
+      ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
+      ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+    };
   }
 
   async function handlePacks(cwd: string): Promise<PacksResponse> {
@@ -926,7 +943,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (exportMatch) {
       if (method !== 'GET') throw notGet();
       const format = resolveExportFormat(exportMatch[1]);
-      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
+      // The formats to choose from, as MCP export_lexicon and `lexicon export` give them.
+      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}" (one of: ${EXPORT_FORMATS.join(', ')})`);
       strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
       const exportOpts = exportQueryOptions(url);
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
