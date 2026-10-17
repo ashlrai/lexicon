@@ -897,7 +897,7 @@ describe('apply_suggestion with a scope that does not hold the term', () => {
   });
 });
 
-describe('harvest_repo on a model-chosen path', () => {
+describe('harvest_repo and suggest_terms on a model-chosen path', () => {
   const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-repo');
   let outside: string;
   const savedRoots = process.env.LEXICON_HARVEST_ROOTS;
@@ -957,6 +957,10 @@ describe('harvest_repo on a model-chosen path', () => {
 
     expect((await call('harvest_repo', { path: '/etc' })).isError).toBe(true);
     expect((await call('harvest_repo', { path: '..' })).isError).toBe(true);
+
+    const sug = await call('suggest_terms', { cwd: path.join(outside, 'other') });
+    expect(sug.isError).toBe(true);
+    expect(sug.text).toContain('lexicon suggest --cwd');
   });
 
   it('resolves symlinks before the check, so a link inside the repo cannot point out of it', async () => {
@@ -964,16 +968,19 @@ describe('harvest_repo on a model-chosen path', () => {
     const res = await call('harvest_repo', { path: 'link' });
     expect(res.isError).toBe(true);
     expect(res.text).toContain('outside the directories this server may read');
+    expect((await call('suggest_terms', { cwd: 'link' })).isError).toBe(true);
   });
 
   it('reads a subdirectory of the repo and a directory listed in LEXICON_HARVEST_ROOTS', async () => {
     const inside = await call('harvest_repo', { path: 'app', minCount: 1 });
     expect(inside.isError).toBe(false);
     expect(JSON.parse(inside.text)).toMatchObject({ root: path.join(repo, 'app') });
+    expect((await call('suggest_terms', { cwd: 'app' })).isError).toBe(false);
 
     process.env.LEXICON_HARVEST_ROOTS = ['/nonexistent-root', outside].join(path.delimiter);
     const listed = await call('harvest_repo', { path: path.join(outside, 'other'), minCount: 1 });
     expect(listed.isError).toBe(false);
+    expect((await call('suggest_terms', { cwd: path.join(outside, 'other') })).isError).toBe(false);
   });
 
   it('reads any directory the client named as an MCP root', async () => {

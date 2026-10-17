@@ -2,7 +2,6 @@
  * Mining new terms: scanning the repo for names worth adding, proposing
  * what the lexicon should learn next, and applying one of those proposals.
  */
-import { resolve } from 'node:path';
 import { z } from 'zod';
 import {
   TERM_CATEGORIES,
@@ -119,13 +118,13 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, " +
         "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
-        cwd: z.string().optional().describe('Repository to scan for evidence. Defaults to the server working directory.'),
+        cwd: z.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe('Max suggestions to return.'),
       },
     },
     async ({ cwd: cwdArg, limit }) =>
       guarded(async () => {
-        const root = cwdArg ? resolve(ctx.cwd, cwdArg) : ctx.cwd;
+        const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord(dir)}`) : ctx.cwd;
         const loaded = await loadLexicon({ cwd: root });
         const history: VoiceHistoryEntry[] = await loadVoiceHistory(loaded.global.path).catch((err: unknown) => {
           log('loadVoiceHistory failed:', errorMessage(err));
