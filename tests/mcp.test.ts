@@ -1311,6 +1311,20 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: a plugin install's plan promised a login service the apply then refused.
+    it('setup_lexicon relays serveBlocked and tells the agent not to offer serve: true', async () => {
+      const blocked = 'this copy is running from an npx or Claude Code plugin cache (/x), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install';
+      cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] }, plan: { ...setupPlan, serveBlocked: blocked } });
+      const { client, close } = await connect();
+      try {
+        const body = JSON.parse(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { serve: true } }))) as { serveBlocked?: string; next: string };
+        expect(body.serveBlocked).toBe(blocked);
+        expect(body.next).toMatch(/^The login service cannot be installed from this copy \(serveBlocked says why and how to fix it\); do not offer serve: true/);
+      } finally {
+        await close();
+      }
+    });
+
     it('setup_lexicon apply: true installs only the listed clients and the login service only with serve: true', async () => {
       const { client, close } = await connect();
       try {

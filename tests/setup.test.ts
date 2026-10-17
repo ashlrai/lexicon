@@ -91,6 +91,8 @@ function fakes(overrides: Partial<SetupDeps> = {}, present: string[] = []): Fake
       return 0;
     },
     harvest: async () => [],
+    // The plan's real check resolves this checkout's CLI entry; tests that need it pass serveBlocker: undefined.
+    serveBlocker: async () => undefined,
     ...overrides,
   };
   return f;
@@ -498,6 +500,23 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('Playwright');
     expect(io.out).toContain('Plan (nothing written)');
     expect(io.err).toBe('');
+  });
+
+  // Catches: from a plugin or npx install the plan said wouldInstallServe: true, the
+  // agent asked the user, and the real run then refused the login service.
+  it('a plan from a plugin cache says the login service would be refused, and how to fix it', async () => {
+    const pluginCli = path.join(home, '.claude', 'plugins', 'cache', 'ashlr', 'lexicon', '0.5.6', 'dist', 'cli');
+    const f = fakes({ cliDir: pluginCli, serveBlocker: undefined });
+    const { code, plan, io } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
+    expect(code).toBe(0);
+    expect(plan?.wouldInstallServe).toBe(false);
+    expect(plan?.serveBlocked).toContain('Claude Code plugin cache');
+    expect(plan?.serveBlocked).toContain('npm i -g @ashlr/lexicon');
+    expect(io.out).toContain('login service: would not install (this copy is running from an npx or Claude Code plugin cache');
+    expect(f.serveCalls).toBe(0);
+    // Not asked for: nothing to report.
+    const quiet = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, fakes({ cliDir: pluginCli, serveBlocker: undefined }));
+    expect(quiet.plan?.serveBlocked).toBeUndefined();
   });
 
   it('describes the run that would actually happen: the prompts, and what Enter does to them', async () => {

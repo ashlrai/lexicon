@@ -509,6 +509,50 @@ async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly
   return result;
 }
 
+/**
+ * Why a login service pointing at `cliPath` would be refused, or undefined
+ * when it would not: a path in an npx or Claude Code plugin cache (npm may
+ * delete it, so the service would crash-loop; there is no npx form for a
+ * permanent service), or, on the platforms the installer writes a service
+ * for, a path that does not exist (a broken service would also replace a
+ * working install under the same label).
+ */
+async function cliEntryBlocker(cliPath: string, platform: NodeJS.Platform): Promise<{ reason: string; volatile: boolean } | undefined> {
+  if (isVolatileEntry(cliPath)) {
+    return {
+      volatile: true,
+      reason:
+        `this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), ` +
+        'which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install',
+    };
+  }
+  if (platform === 'darwin' || platform === 'linux' || platform === 'win32') {
+    try {
+      await fs.access(cliPath);
+    } catch {
+      return { volatile: false, reason: `${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js)` };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The reason `runServeInstall` with these deps would refuse before writing
+ * anything (the CLI entry cannot be located, sits in an npx or plugin cache,
+ * or does not exist), or undefined when it would go ahead. Lets a plan (setup
+ * `--dry-run`, MCP `setup_lexicon` without apply) say so up front instead of
+ * promising a login service the real run refuses.
+ */
+export async function serveInstallBlocker(deps: Pick<ServeDeps, 'cliPath' | 'env' | 'platform'> = {}): Promise<string | undefined> {
+  let cliPath: string;
+  try {
+    cliPath = resolveCliEntry({ env: deps.env ?? process.env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });
+  } catch (err) {
+    return errorMessage(err);
+  }
+  return (await cliEntryBlocker(cliPath, deps.platform ?? process.platform))?.reason;
+}
+
 export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? os.homedir();
@@ -526,26 +570,10 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   // crash-loop waiting to happen. Unlike a client config there is no npx form
   // to fall back to -- a service is meant to be permanent -- so this refuses
   // and names the one command that makes it permanent.
-  if (isVolatileEntry(cliPath)) {
-    io.stderr(
-      `lexicon: refusing to install the login service: this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), ` +
-        'which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written\n',
-    );
+  const blocked = await cliEntryBlocker(cliPath, platform);
+  if (blocked) {
+    io.stderr(`lexicon: refusing to install the login service: ${blocked.reason}${blocked.volatile ? '. Nothing was written' : '; nothing was written'}\n`);
     return 1;
-  }
-  if (platform === 'darwin' || platform === 'linux' || platform === 'win32') {
-    // A service whose program does not exist would crash-loop under KeepAlive /
-    // Restart / RestartOnFailure and, worse, replace a working install under the
-    // same label. Nothing is written and nothing is booted out until the path is
-    // known to exist.
-    try {
-      await fs.access(cliPath);
-    } catch {
-      io.stderr(
-        `lexicon: refusing to install the login service: ${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js); nothing was written\n`,
-      );
-      return 1;
-    }
   }
   // Make sure the token exists before the service starts, so `--show` right after works.
   await ensureServeConfig(storeOpts(opts));

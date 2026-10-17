@@ -35,7 +35,7 @@ import { bold, dim, plural, renderTable, safe, safeLines, tildify } from '../io.
 import type { IO } from '../io.js';
 import { runInstall } from '../cmd-install.js';
 import type { InstallOptions } from '../cmd-install.js';
-import { runServeInstall } from '../cmd-serve.js';
+import { runServeInstall, serveInstallBlocker } from '../cmd-serve.js';
 import type { ServeDeps } from '../cmd-serve.js';
 import { runInit } from '../commands.js';
 import type { InstallOutcome } from '../commands.js';
@@ -518,6 +518,17 @@ export async function stepClients(ctx: Ctx): Promise<void> {
   }
 }
 
+/** What the login service installer is called with. */
+function serveDepsFor(ctx: Ctx): ServeDeps {
+  const serveDeps: ServeDeps = { platform: ctx.platform, env: ctx.env };
+  if (ctx.homeOverridden) serveDeps.home = ctx.home;
+  // The MCP server passes the package's dist/cli (the bundle runs from plugin/, where
+  // "next to this module" would be plugin/index.js); runServeInstall resolves the path
+  // otherwise and refuses one that does not exist, so a broken plist is never written.
+  if (ctx.deps.cliDir) serveDeps.cliPath = path.join(ctx.deps.cliDir, 'index.js');
+  return serveDeps;
+}
+
 /** Step e: the local API as a login service. */
 export async function stepServe(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 5, 'Local API (lexicon serve)');
@@ -531,6 +542,16 @@ export async function stepServe(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.plan) {
+    // A real run would refuse a service pointing into an npx or plugin cache
+    // (or at a missing file): say so, with the fix, instead of "would install".
+    if (ctx.opts.serve === true || ctx.plan.interactive) {
+      const blocked = await (ctx.deps.serveBlocker ?? serveInstallBlocker)(serveDepsFor(ctx));
+      if (blocked) {
+        ctx.plan.serveBlocked = blocked;
+        ctx.say(`   would not install the login service: ${safe(blocked)}`);
+        return;
+      }
+    }
     // A real run asks on a terminal (default yes) and skips it otherwise, so
     // the plan must not report "skipped" to someone who would be asked.
     if (ctx.opts.serve === true) {
@@ -560,12 +581,7 @@ export async function stepServe(ctx: Ctx): Promise<void> {
     return;
   }
   const install = ctx.deps.installServe ?? runServeInstall;
-  const serveDeps: ServeDeps = { platform: ctx.platform, env: ctx.env };
-  if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  // The MCP server passes the package's dist/cli (the bundle runs from plugin/, where
-  // "next to this module" would be plugin/index.js); runServeInstall resolves the path
-  // otherwise and refuses one that does not exist, so a broken plist is never written.
-  if (ctx.deps.cliDir) serveDeps.cliPath = path.join(ctx.deps.cliDir, 'index.js');
+  const serveDeps = serveDepsFor(ctx);
   const captured = captureIO();
   let code: number;
   try {
