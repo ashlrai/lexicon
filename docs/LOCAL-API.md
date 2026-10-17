@@ -8,7 +8,7 @@ only, protected by a bearer token, and applies the same merged lexicon and
 trust gate as every other surface.
 
 ```bash
-lexicon serve                 # foreground, logs one line per request to stderr
+lexicon serve                 # foreground, logs one line per request to stderr (an aborted one too)
 lexicon serve --show          # print the URL and token (manual fallback for the extension options page)
 lexicon serve --status        # is it up?
 lexicon serve --pair          # open http://127.0.0.1:41733/pair in the browser; the extension pairs itself

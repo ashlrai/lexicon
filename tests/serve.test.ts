@@ -753,6 +753,45 @@ describe('limits and errors', () => {
   });
 });
 
+describe('request log', () => {
+  // Catches: a client that hung up before the response finished left no log line at all.
+  it('logs one line for a finished request and one for a request the client aborted', async () => {
+    const lines: string[] = [];
+    const logged = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, log: (l) => lines.push(l) });
+    const t = await logged.start();
+    try {
+      await (await fetch(`${t.url}/health`)).text();
+      await waitFor(() => lines.some((l) => l.startsWith('[serve] GET /health 200 ')));
+
+      const socket = net.connect(t.port, '127.0.0.1');
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+      });
+      socket.write(
+        `POST /normalize HTTP/1.1\r\nHost: 127.0.0.1:${t.port}\r\nAuthorization: Bearer ${t.token}\r\n` +
+          'Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{"text":',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      socket.destroy();
+      await waitFor(() => lines.some((l) => l.includes('aborted')));
+      const aborted = lines.filter((l) => l.startsWith('[serve] POST /normalize'));
+      expect(aborted).toHaveLength(1);
+      expect(aborted[0]).toMatch(/^\[serve\] POST \/normalize aborted by the client before a response was sent \d+ms$/);
+    } finally {
+      await logged.stop();
+    }
+  });
+});
+
+async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
+  const until = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > until) throw new Error('timed out waiting for the log line');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // trust gate
 // ---------------------------------------------------------------------------

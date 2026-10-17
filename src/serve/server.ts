@@ -858,6 +858,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} ${res.statusCode} ${Date.now() - started}ms`);
     };
     res.once('finish', logLine);
+    // A client that goes away before the response is complete never fires
+    // 'finish', so that request left no line at all. 'close' always fires.
+    res.once('close', () => {
+      if (opts.quiet || res.writableFinished) return;
+      const stage = res.headersSent ? `after ${res.statusCode} headers were sent` : 'before a response was sent';
+      log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} aborted by the client ${stage} ${Date.now() - started}ms`);
+    });
 
     const cors: Record<string, string> = {};
     const origin = req.headers.origin;
