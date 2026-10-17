@@ -72,3 +72,21 @@ describe('text export and import round trip', () => {
     expect(r.terms).toEqual([{ canonical: 'Re:Invent', aliases: [], source: 'import' }]);
   });
 });
+
+describe('espanso importer: triggers that are not words', () => {
+  it('says a non-string trigger is not a string, not that regex matches are skipped', () => {
+    const r = importLexicon('matches:\n  - trigger: 42\n    replace: Foo\n  - triggers: [7, true]\n    replace: Bar\n  - regex: "a(.*)"\n    replace: Baz\n  - replace: Qux\n', 'espanso');
+    expect(r.terms).toEqual([]);
+    expect(r.skipped).toEqual([
+      { line: 2, reason: 'trigger is not a string (quote it in the YAML)' },
+      { line: 4, reason: 'trigger is not a string (quote it in the YAML)' },
+      { line: 6, reason: 'match has no trigger (regex matches are skipped)' },
+      { line: 8, reason: 'match has no trigger' },
+    ]);
+  });
+
+  it('still imports the string triggers of a match that also lists a non-string one', () => {
+    const r = importLexicon('matches:\n  - triggers: [":ashler", 42]\n    replace: Ashlr.AI\n', 'espanso');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
+  });
+});

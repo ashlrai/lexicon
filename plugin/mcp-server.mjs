@@ -57893,12 +57893,20 @@ function parseEspansoImport(content) {
       return;
     }
     const triggers = [];
+    let nonString = false;
     if (typeof entry.trigger === "string") triggers.push(entry.trigger);
+    else if (entry.trigger !== void 0) nonString = true;
     if (Array.isArray(entry.triggers)) {
-      for (const t of entry.triggers) if (typeof t === "string") triggers.push(t);
+      for (const t of entry.triggers) {
+        if (typeof t === "string") triggers.push(t);
+        else nonString = true;
+      }
+    } else if (entry.triggers !== void 0) {
+      nonString = true;
     }
     if (triggers.length === 0) {
-      out.skipped.push({ line: line2, reason: "match has no trigger (regex matches are skipped)" });
+      const reason = nonString ? "trigger is not a string (quote it in the YAML)" : entry.regex !== void 0 ? "match has no trigger (regex matches are skipped)" : "match has no trigger";
+      out.skipped.push({ line: line2, reason });
       return;
     }
     const aliases = triggers.map((t) => t.replace(/^[:;]+/, ""));

@@ -45,12 +45,26 @@ export function parseEspansoImport(content: string): RawImport {
       return;
     }
     const triggers: string[] = [];
+    // A trigger YAML read as something other than a string (`trigger: 42`,
+    // `trigger: true`, `triggers: :x`) is a malformed entry, not a regex match.
+    let nonString = false;
     if (typeof entry.trigger === 'string') triggers.push(entry.trigger);
+    else if (entry.trigger !== undefined) nonString = true;
     if (Array.isArray(entry.triggers)) {
-      for (const t of entry.triggers) if (typeof t === 'string') triggers.push(t);
+      for (const t of entry.triggers) {
+        if (typeof t === 'string') triggers.push(t);
+        else nonString = true;
+      }
+    } else if (entry.triggers !== undefined) {
+      nonString = true;
     }
     if (triggers.length === 0) {
-      out.skipped.push({ line, reason: 'match has no trigger (regex matches are skipped)' });
+      const reason = nonString
+        ? 'trigger is not a string (quote it in the YAML)'
+        : entry.regex !== undefined
+          ? 'match has no trigger (regex matches are skipped)'
+          : 'match has no trigger';
+      out.skipped.push({ line, reason });
       return;
     }
     // espanso triggers are often prefixed with ':' or ';' to avoid firing on
