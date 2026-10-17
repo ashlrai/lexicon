@@ -10,7 +10,7 @@
  */
 import path from 'node:path';
 import { sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
-import type { LoadedLexicon } from '../core/index.js';
+import type { LoadedLexicon, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -195,4 +195,15 @@ export function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 
   if (!loaded.skippedProject) return;
   const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
   io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
+}
+
+/**
+ * The line naming a copy of a removed term that is still in another lexicon
+ * file (removeTerm edits one file), with the command that removes it too.
+ * Without --project, `lexicon remove` reaches the global copy once the project
+ * one is gone.
+ */
+export function stillInLine(canonical: string, holder: TermHolder): string {
+  const command = `lexicon remove ${JSON.stringify(safe(canonical))}${holder.scope === 'project' ? ' --project' : ''}`;
+  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
 }

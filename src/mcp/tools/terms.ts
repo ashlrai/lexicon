@@ -24,6 +24,7 @@ import {
   spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
+  termHolders,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, skippedProjectFields, textResult } from '../shared.js';
@@ -285,6 +286,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for ' +
         "that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. " +
         'WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. ' +
+        'Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` ' +
+        '(each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. ' +
         'There is no undo through this server. ' +
         'WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot ' +
         'name exactly -- use list_terms first if you are unsure which canonical the user means. ' +
@@ -319,9 +322,23 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             paths: result.files.map((f) => f.path),
           });
         }
+        // removeTerm edits one file (the project one first without a scope). A
+        // term with a copy in both files keeps correcting from the other copy,
+        // so name it rather than let `removed: true` read as gone.
+        const before = termHolders(await load(), canonical);
         const removed = await removeTerm(canonical, opts);
-        if (removed) return textResult({ canonical, removed });
-        return textResult({ canonical, removed, ...(await whereElse(canonical, scope)) });
+        if (!removed) return textResult({ canonical, removed, ...(await whereElse(canonical, scope)) });
+        const after = termHolders(await load(), canonical);
+        const from = before.find((b) => !after.some((a) => a.path === b.path));
+        if (after.length === 0) return textResult({ canonical, removed, ...(from ? { path: from.path } : {}) });
+        const note = after
+          .map(
+            (h) =>
+              `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; ` +
+              `if the user wants it gone too, call remove_term again with scope "${h.scope}".`,
+          )
+          .join(' ');
+        return textResult({ canonical, removed, ...(from ? { path: from.path } : {}), stillIn: after, note });
       }),
   );
 
@@ -465,7 +482,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above ' +
         "about 0.8 use the canonical and mention it in passing, below that ask \"did you mean X?\" and call learn_correction once " +
         'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
-        'offer to add it with add_term.',
+        'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user `lexicon trust` would enable it.',
       inputSchema: {
         heard: z
           .string()
@@ -489,7 +506,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           aliases: s.term.aliases,
           ...(s.term.category !== undefined ? { category: s.term.category } : {}),
         }));
-        return textResult({ heard, suggestions });
+        // No suggestion in a repo whose project lexicon was skipped may only
+        // mean the name is in that file; say so (path only), as list_terms does.
+        return textResult({ heard, suggestions, ...skippedProjectFields(loaded) });
       }),
   );
 

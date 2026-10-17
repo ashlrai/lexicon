@@ -613,6 +613,32 @@ describe('runSuggest', () => {
     expect(prompter.closed).toBe(false);
   });
 
+  // Catches: the stale removal dropped the project copy, printed "removed" and left the global copy correcting.
+  it('--apply on a stale term with a project and a global copy removes the project one and names the global one', async () => {
+    const globalLexicon = makeLexicon();
+    const projectLexicon: Lexicon = { version: 1, terms: [{ canonical: 'Zebrafish Labs', aliases: [], hits: 0, createdAt: OLD, scope: 'project' }] };
+    const store = mockStore([FIXED[4]]);
+    const loaded: LoadedLexicon = {
+      merged: { version: 1, terms: [...globalLexicon.terms.filter((t) => t.canonical !== 'Zebrafish Labs'), projectLexicon.terms[0]] },
+      global: { path: '/tmp/mock/lexicon.yaml', scope: 'global', lexicon: globalLexicon, exists: true },
+      project: { path: '/tmp/proj/.lexicon.yaml', scope: 'project', lexicon: projectLexicon, exists: true },
+    };
+    store.deps.loadLexicon = async () => loaded;
+    const io = makeIO();
+    expect(await runSuggest({ apply: true }, io, { ...store.deps, prompter: lenientPrompter(['y']) })).toBe(0);
+    expect(store.removed).toEqual([{ canonical: 'Zebrafish Labs', scope: 'project' }]);
+    expect(io.out).toContain('removed Zebrafish Labs from /tmp/proj/.lexicon.yaml');
+    expect(io.out).toContain('warn: Zebrafish Labs is still in the global lexicon (/tmp/mock/lexicon.yaml)');
+    expect(io.out).toContain('to remove that copy too: lexicon remove "Zebrafish Labs"');
+
+    // One copy only: no warning.
+    const single = mockStore([FIXED[4]]);
+    const io2 = makeIO();
+    expect(await runSuggest({ apply: true }, io2, { ...single.deps, prompter: lenientPrompter(['y']) })).toBe(0);
+    expect(io2.out).toContain('removed Zebrafish Labs from /tmp/mock/lexicon.yaml');
+    expect(io2.out).not.toContain('still in');
+  });
+
   it('--apply: q stops, Enter keeps a term (default n for stale) and applies the rest (default y)', async () => {
     const store = mockStore();
     const io = makeIO();

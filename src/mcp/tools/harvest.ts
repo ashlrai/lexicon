@@ -15,19 +15,12 @@ import {
   removeTerm,
   suggestAliases,
   suggestTerms,
+  termHolders,
 } from '../../core/index.js';
-import type { LexiconFile, LoadedLexicon, Term, TermScope, VoiceHistoryEntry } from '../../core/index.js';
+import type { Term, VoiceHistoryEntry } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
 import { SUGGESTION_KINDS, guarded, log, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
-
-/** The trusted lexicon files that hold `canonical` (case-insensitive), project first. */
-function holders(loaded: LoadedLexicon, canonical: string): { scope: TermScope; path: string }[] {
-  const key = canonical.trim().toLowerCase();
-  const holds = (file: LexiconFile | undefined): boolean =>
-    file?.lexicon.terms.some((t) => t.canonical.trim().toLowerCase() === key) === true;
-  return [loaded.project, loaded.global].filter(holds).map((f) => ({ scope: f!.scope, path: f!.path }));
-}
 
 export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
@@ -166,9 +159,9 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           // removeTerm edits one file (the project one first without a scope).
           // A term with a copy in both files keeps firing from the other copy,
           // so name every file still holding it rather than report it gone.
-          const before = holders(await load(), canonical);
+          const before = termHolders(await load(), canonical);
           const removed = await removeTerm(canonical, storeOpts);
-          const after = holders(await load(), canonical);
+          const after = termHolders(await load(), canonical);
           const from = before.find((b) => !after.some((a) => a.path === b.path));
           const stillIn = after.length > 0 ? { stillIn: after } : {};
           const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ''}` : `"${canonical}" was not in the ${target ?? 'global or project'} lexicon`;

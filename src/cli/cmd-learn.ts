@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { fail, line, renderTable, resolveCwd, safe } from './io.js';
+import { fail, line, renderTable, resolveCwd, safe, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -144,9 +144,13 @@ export function renderStats(stats: LexiconStats): string {
 export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
-    const stats = computeStats(await loadLexicon({ cwd }));
+    const loaded = await loadLexicon({ cwd });
+    // The counts leave a skipped project file out; say so, as lexicon_stats does.
+    warnSkippedProject(loaded, io);
+    const stats = computeStats(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(stats, null, 2));
+      const skipped = loaded.skippedProject ? { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path } : {};
+      line(io, JSON.stringify({ ...stats, ...skipped }, null, 2));
     } else {
       io.stdout(renderStats(stats));
     }

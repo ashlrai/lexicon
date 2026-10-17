@@ -54131,6 +54131,10 @@ async function removeTerm(canonical, opts = {}) {
   }
   return false;
 }
+function termHolders(loaded, canonical) {
+  const holds2 = (file2) => file2?.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical)) === true;
+  return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
+}
 async function removeAlias(canonical, alias, opts = {}) {
   const wanted = canonical.trim();
   const drop = alias.trim();
@@ -59592,7 +59596,7 @@ var registerTermTools = (server, ctx) => {
     "remove_term",
     {
       title: "Remove a lexicon term or one of its aliases",
-      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
       inputSchema: {
         canonical: external_exports.string().min(1),
         alias: external_exports.string().min(1).optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
@@ -59613,9 +59617,16 @@ var registerTermTools = (server, ctx) => {
           paths: result.files.map((f) => f.path)
         });
       }
+      const before = termHolders(await load(), canonical);
       const removed = await removeTerm(canonical, opts);
-      if (removed) return textResult({ canonical, removed });
-      return textResult({ canonical, removed, ...await whereElse(canonical, scope) });
+      if (!removed) return textResult({ canonical, removed, ...await whereElse(canonical, scope) });
+      const after = termHolders(await load(), canonical);
+      const from = before.find((b) => !after.some((a) => a.path === b.path));
+      if (after.length === 0) return textResult({ canonical, removed, ...from ? { path: from.path } : {} });
+      const note = after.map(
+        (h) => `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
+      ).join(" ");
+      return textResult({ canonical, removed, ...from ? { path: from.path } : {}, stillIn: after, note });
     })
   );
   server.registerTool(
@@ -59704,7 +59715,7 @@ var registerTermTools = (server, ctx) => {
     "suggest_canonical",
     {
       title: "Suggest the canonical form of a garbled word",
-      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term.',
+      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user `lexicon trust` would enable it.',
       inputSchema: {
         heard: external_exports.string().min(1).describe(`The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`)
       }
@@ -59722,7 +59733,7 @@ var registerTermTools = (server, ctx) => {
         aliases: s.term.aliases,
         ...s.term.category !== void 0 ? { category: s.term.category } : {}
       }));
-      return textResult({ heard, suggestions });
+      return textResult({ heard, suggestions, ...skippedProjectFields(loaded) });
     })
   );
   server.registerTool(
@@ -59741,11 +59752,6 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path13 = __toESM(require_node_path());
-function holders(loaded, canonical) {
-  const key = canonical.trim().toLowerCase();
-  const holds2 = (file2) => file2?.lexicon.terms.some((t) => t.canonical.trim().toLowerCase() === key) === true;
-  return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
-}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -59849,9 +59855,9 @@ var registerHarvestTools = (server, ctx) => {
       }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
-        const before = holders(await load(), canonical);
+        const before = termHolders(await load(), canonical);
         const removed = await removeTerm(canonical, storeOpts2);
-        const after = holders(await load(), canonical);
+        const after = termHolders(await load(), canonical);
         const from = before.find((b) => !after.some((a) => a.path === b.path));
         const stillIn = after.length > 0 ? { stillIn: after } : {};
         const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ""}` : `"${canonical}" was not in the ${target ?? "global or project"} lexicon`;
@@ -63539,15 +63545,16 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; lexicon://me and list_terms name it.",
+      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.",
       mimeType: "application/json"
     },
     async (uri) => {
       const loaded = await load();
+      const skipped = skippedProjectFields(loaded);
+      const text = Object.keys(skipped).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}
+` : exportLexicon(loaded.merged, "json");
       return {
-        contents: [
-          { uri: uri.href, mimeType: "application/json", text: exportLexicon(loaded.merged, "json") }
-        ]
+        contents: [{ uri: uri.href, mimeType: "application/json", text }]
       };
     }
   );

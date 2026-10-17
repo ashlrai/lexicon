@@ -22,7 +22,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { exportLexicon, loadLexicon } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
-import { SERVER_NAME, log, readPackageVersion } from './shared.js';
+import { SERVER_NAME, log, readPackageVersion, skippedProjectFields } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
 import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
@@ -210,15 +210,21 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Lexicon JSON',
       description:
-        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; lexicon://me and list_terms name it.',
+        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.',
       mimeType: 'application/json',
     },
     async (uri) => {
       const loaded = await load();
+      // Additive keys, present only when a project file was skipped (path
+      // only, never its contents), as list_terms and lexicon_stats report it.
+      // The lexicon JSON importer strips unknown keys, so the text still imports.
+      const skipped = skippedProjectFields(loaded);
+      const text =
+        Object.keys(skipped).length > 0
+          ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}\n`
+          : exportLexicon(loaded.merged, 'json');
       return {
-        contents: [
-          { uri: uri.href, mimeType: 'application/json', text: exportLexicon(loaded.merged, 'json') },
-        ],
+        contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };
     },
   );

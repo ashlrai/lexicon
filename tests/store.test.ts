@@ -50,6 +50,7 @@ import {
   removeAlias,
   removeTerm,
   resolvePaths,
+  termHolders,
   writeLexiconFile,
 } from '../src/core/store.js';
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
@@ -1306,5 +1307,24 @@ describe('a write keeps a hand-written file\'s layout', () => {
     expect(text).toContain('# Phantom project vocabulary.');
     expect(text).not.toContain('Ashlr.AI');
     expect(text).toContain('    aliases: [Locas]\n    never: [locust]\n    notes: Identity pins.');
+  });
+});
+
+describe('termHolders', () => {
+  const file = (scope: 'global' | 'project', canonicals: string[]): LexiconFile => ({
+    path: scope === 'global' ? '/g/lexicon.yaml' : '/p/.lexicon.yaml',
+    scope,
+    lexicon: { version: 1, terms: canonicals.map((canonical) => ({ canonical, aliases: [] })) },
+    exists: true,
+  });
+
+  it('lists every loaded file holding the canonical, project first, case-insensitively', () => {
+    const loaded = { global: file('global', ['Kubectl']), project: file('project', [' kubectl ']) };
+    expect(termHolders(loaded, 'KUBECTL')).toEqual([
+      { scope: 'project', path: '/p/.lexicon.yaml' },
+      { scope: 'global', path: '/g/lexicon.yaml' },
+    ]);
+    expect(termHolders(loaded, 'Helm')).toEqual([]);
+    expect(termHolders({ global: file('global', ['Helm']) }, 'helm')).toEqual([{ scope: 'global', path: '/g/lexicon.yaml' }]);
   });
 });

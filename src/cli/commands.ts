@@ -66,6 +66,7 @@ import {
   isProjectTrustError,
   removeAlias,
   removeTerm,
+  termHolders,
   resolvePaths,
   suggestAliases,
   trustProject,
@@ -95,6 +96,7 @@ import {
   resolveCwd,
   safe,
   safeLines,
+  stillInLine,
   warnSkippedProject,
 } from './io.js';
 import type { CommonOptions, IO } from './io.js';
@@ -378,17 +380,34 @@ export interface RemoveOptions extends CommonOptions {
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, cwd, io);
+  // Which files hold the term before the edit: removeTerm edits only the
+  // first (project, then global), and a copy left in the other file keeps
+  // correcting. Best effort: a file that will not load just loses the report.
+  const holders = await loadLexicon({ cwd }).then(
+    (loaded) => termHolders(loaded, canonical),
+    () => [],
+  );
   const removed = await removeTerm(canonical, opts.project ? { scope: 'project', cwd } : { cwd });
+  const from = removed ? (opts.project ? holders.find((h) => h.scope === 'project') : holders[0]) : undefined;
+  const stillIn = removed ? holders.filter((h) => h !== from) : [];
+  const notFound = (): string => {
+    const global = opts.project ? holders.find((h) => h.scope === 'global') : undefined;
+    return (
+      `lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n` +
+      (global ? `lexicon: it is in the global lexicon (${safe(global.path)}); run without --project to remove it\n` : '')
+    );
+  };
   if (opts.json) {
-    line(io, JSON.stringify({ canonical, removed }, null, 2));
-    if (!removed) io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
+    line(io, JSON.stringify({ canonical, removed, ...(stillIn.length > 0 ? { stillIn } : {}) }, null, 2));
+    if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
   if (!removed) {
-    io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
+    io.stderr(notFound());
     return 1;
   }
-  line(io, `removed ${bold(safe(canonical))}`);
+  line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safe(from.path)}` : ''}`);
+  for (const h of stillIn) line(io, stillInLine(canonical, h));
   return 0;
 }
 
@@ -718,7 +737,10 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   if (limit !== undefined) exportOpts.limit = limit;
 
   const cwd = resolveCwd(opts);
-  const { merged } = await loadLexicon({ cwd });
+  const loaded = await loadLexicon({ cwd });
+  // stderr only: stdout (or --out) is the export, and it leaves the skipped file out.
+  warnSkippedProject(loaded, io);
+  const { merged } = loaded;
   const text = exportLexicon(merged, format, exportOpts);
 
   if (opts.out) {

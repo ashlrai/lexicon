@@ -1047,6 +1047,25 @@ export async function removeTerm(
   return false;
 }
 
+/** One loaded lexicon file that holds a term: its scope and path. */
+export interface TermHolder {
+  scope: TermScope;
+  path: string;
+}
+
+/**
+ * Every loaded file (project first, then global) whose terms include
+ * `canonical`, compared case-insensitively as the store does. Only the
+ * trusted, merged files are searched: `skippedProject` is never read here.
+ * removeTerm edits one file, so a caller that removed a term uses this to
+ * name a copy left in the other file instead of reporting it gone.
+ */
+export function termHolders(loaded: Pick<LoadedLexicon, 'global' | 'project'>, canonical: string): TermHolder[] {
+  const holds = (file: LexiconFile | undefined): file is LexiconFile =>
+    file?.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical)) === true;
+  return [loaded.project, loaded.global].filter(holds).map((f) => ({ scope: f.scope, path: f.path }));
+}
+
 /** What `removeAlias` changed: the term as it now reads, and every file it was dropped from. */
 export interface RemoveAliasResult {
   /** The edited term (from the first file edited: project before global). */

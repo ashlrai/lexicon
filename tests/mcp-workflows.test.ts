@@ -82,6 +82,29 @@ describe('remove_term', () => {
     expect(gone.note).toMatch(/list_terms/);
   });
 
+  // Catches: without `scope` only the project copy went, and the result said nothing about the global copy.
+  it('names the copy left in the other lexicon file when the term is in both', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube cuddle'], scope: 'project' });
+
+    const first = JSON.parse((await call('remove_term', { canonical: 'kubectl' })).text) as {
+      removed: boolean;
+      path?: string;
+      stillIn?: { scope: string; path: string }[];
+      note?: string;
+    };
+    expect(first.removed).toBe(true);
+    expect(first.path).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(first.stillIn).toEqual([{ scope: 'global', path: path.join(home, 'lexicon.yaml') }]);
+    expect(first.note).toMatch(/still in the global lexicon/);
+    expect(first.note).toMatch(/scope "global"/);
+
+    const second = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
+    expect(second).toEqual({ canonical: 'kubectl', removed: true, path: path.join(home, 'lexicon.yaml') });
+    const listed = JSON.parse((await call('list_terms', { query: 'kubectl' })).text) as { terms: unknown[] };
+    expect(listed.terms).toEqual([]);
+  });
+
   it('removes a single alias with `alias`, and errors on an unknown term or alias', async () => {
     await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner', 'Het zner'] });
     const removed = await call('remove_term', { canonical: 'hetzner', alias: 'het zner' });
@@ -102,6 +125,27 @@ describe('remove_term', () => {
     const unknownTerm = await call('remove_term', { canonical: 'Nope', alias: 'x' });
     expect(unknownTerm.isError).toBe(true);
     expect(unknownTerm.text).toMatch(/no term "Nope"/);
+  });
+});
+
+describe('suggest_canonical with an untrusted project lexicon', () => {
+  // Catches: no suggestions read as "not in the lexicon" while the name sat in the skipped project file.
+  it('reports the skipped project file by path, never its terms', async () => {
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const payload = JSON.parse((await call('suggest_canonical', { heard: 'cube control' })).text) as {
+      suggestions: unknown[];
+      skippedProject?: string;
+      projectTrust?: string;
+    };
+    expect(payload.suggestions).toEqual([]);
+    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.projectTrust).toBe('untrusted');
+    expect(JSON.stringify(payload)).not.toContain('Kubectl');
+  });
+
+  it('carries no skippedProject key when there is no project file', async () => {
+    const payload = JSON.parse((await call('suggest_canonical', { heard: 'cube control' })).text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('skippedProject');
   });
 });
 
@@ -390,7 +434,19 @@ describe('tool and resource descriptions agree with what the code does', () => {
     await client.connect(clientTransport);
     try {
       const read = await client.readResource({ uri: 'lexicon://json' });
-      expect((read.contents[0] as { text: string }).text).not.toContain('Kubectl');
+      const text = (read.contents[0] as { text: string }).text;
+      expect(text).not.toContain('Kubectl');
+      // Additive keys naming the skipped file (path only); the lexicon keys are unchanged.
+      const parsed = JSON.parse(text) as { version: number; terms: unknown[]; skippedProject?: string; projectTrust?: string; note?: string };
+      expect(parsed.terms).toEqual([]);
+      expect(parsed.version).toBe(1);
+      expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+      expect(parsed.projectTrust).toBe('untrusted');
+      expect(parsed.note).toMatch(/lexicon trust/);
+      await fs.rm(path.join(repo, '.lexicon.yaml'));
+      const plain = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as Record<string, unknown>;
+      expect(plain).not.toHaveProperty('skippedProject');
+      expect(plain).not.toHaveProperty('projectTrust');
     } finally {
       await client.close();
       await server.close();
