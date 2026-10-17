@@ -18,6 +18,7 @@ import {
   createServer,
   getServePath,
   isLoopbackAddress,
+  isAllowedHost,
   isOriginAllowed,
   isPairHost,
   pairPageHtml,
@@ -292,6 +293,65 @@ describe('auth', () => {
       body: JSON.stringify({ text: 'ping ashler' }),
     });
     expect(post.status).toBe(401);
+  });
+});
+
+/**
+ * Catches: only /pair checking Host. Through DNS rebinding a page on
+ * evil.example resolves its own name to 127.0.0.1, so its requests reach the
+ * server with `Host: evil.example:<port>`; /health?cwd= then told it whether
+ * any directory has a .lexicon.yaml and whether it is trusted.
+ */
+describe('Host guard (DNS rebinding)', () => {
+  it('refuses a foreign Host on every route, with or without the token', async () => {
+    const routes: [string, string][] = [
+      ['GET', '/health'],
+      ['GET', `/health?cwd=${encodeURIComponent(env.untrustedProject)}`],
+      ['GET', '/stats'],
+      ['GET', '/lexicon'],
+      ['POST', '/normalize'],
+      ['OPTIONS', '/normalize'],
+      ['GET', '/nope'],
+    ];
+    for (const [method, route] of routes) {
+      for (const host of ['evil.example', `evil.example:${info.port}`, `127.0.0.1.evil.example:${info.port}`]) {
+        const res = await rawGet(route, { Host: host, Authorization: `Bearer ${info.token}` }, method);
+        expect(res.status, `${method} ${route} Host ${host}`).toBe(403);
+        expect(res.body).not.toContain('projectTrust');
+        expect((JSON.parse(res.body) as { error: string }).error).toContain('Host');
+      }
+    }
+  });
+
+  it('accepts 127.0.0.1, localhost and [::1] on the bound port only', async () => {
+    for (const host of [`127.0.0.1:${info.port}`, `localhost:${info.port}`, `LocalHost:${info.port}`, `[::1]:${info.port}`]) {
+      const res = await rawGet('/health', { Host: host });
+      expect(res.status, host).toBe(200);
+    }
+    for (const host of ['127.0.0.1', `127.0.0.1:${info.port + 1}`, `[::1]:${info.port + 1}`]) {
+      const res = await rawGet('/health', { Host: host });
+      expect(res.status, host).toBe(403);
+    }
+  });
+
+  it('isAllowedHost accepts the bound IP for a non-loopback --host, never a name', () => {
+    expect(isAllowedHost('192.168.1.5:41733', 41733, '192.168.1.5')).toBe(true);
+    expect(isAllowedHost('192.168.1.6:41733', 41733, '192.168.1.5')).toBe(false);
+    expect(isAllowedHost('192.168.1.6:41733', 41733, '0.0.0.0')).toBe(true);
+    expect(isAllowedHost('[fe80::1]:41733', 41733, '::')).toBe(true);
+    expect(isAllowedHost('evil.example:41733', 41733, '0.0.0.0')).toBe(false);
+    expect(isAllowedHost('192.168.1.5:41733', 41733)).toBe(false);
+    expect(isAllowedHost(undefined, 41733)).toBe(false);
+  });
+
+  it('/health takes ?cwd= only with the bearer token', async () => {
+    const q = `/health?cwd=${encodeURIComponent(env.untrustedProject)}`;
+    const anon = await fetch(`${info.url}${q}`);
+    expect(anon.status).toBe(401);
+    expect(await anon.text()).not.toContain('projectTrust');
+    const authed = await api('GET', q);
+    expect(authed.status).toBe(200);
+    expect(((await authed.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
   });
 });
 
@@ -625,7 +685,7 @@ describe('trust gate', () => {
     expect(body.output).toBe('ping hostyle');
     expect(body.changed).toBe(false);
 
-    const health = await fetch(`${info.url}/health?cwd=${encodeURIComponent(cwd)}`);
+    const health = await api('GET', `/health?cwd=${encodeURIComponent(cwd)}`);
     expect(((await health.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
 
     const lex = await api('GET', `/lexicon?cwd=${encodeURIComponent(cwd)}`);

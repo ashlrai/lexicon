@@ -3,9 +3,10 @@
  * cannot run a hook or an MCP server (browser extension, Claude Desktop, the
  * Codex app, macOS Shortcuts, Raycast, the menu bar app).
  *
- * node:http only, no framework. Every request except `GET /health` and
- * `GET /pair` needs `Authorization: Bearer <token>` (token from serve.json,
- * see ./config.ts). `/pair` is the one-click pairing page for the browser
+ * node:http only, no framework. Every request must carry a `Host` that names
+ * this server (isAllowedHost, the DNS rebinding guard). Every request except
+ * `GET /health` (without `?cwd=`) and `GET /pair` needs
+ * `Authorization: Bearer <token>` (token from serve.json, see ./config.ts). `/pair` is the one-click pairing page for the browser
  * extension: it carries the token in a <meta> tag and is served only to a
  * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
@@ -20,6 +21,7 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
@@ -386,6 +388,28 @@ export function isPairOrigin(origin: string | undefined, hostHeader: string | un
   return origin.trim().toLowerCase() === `http://${hostHeader.trim().toLowerCase()}`;
 }
 
+/**
+ * True when `hostHeader` names this server: `127.0.0.1:<port>`,
+ * `localhost:<port>` or `[::1]:<port>`, checked on every route. A page that
+ * rebinds its own DNS name to 127.0.0.1 reaches the server with its own name
+ * in `Host`, so it is refused before any route runs. With a non-loopback
+ * `--host`, the bound address itself is accepted too (any IP literal for a
+ * wildcard bind): an IP literal is what a client typed, never a rebound name.
+ */
+export function isAllowedHost(hostHeader: string | undefined, port: number, bindHost: string = DEFAULT_HOST): boolean {
+  if (!hostHeader) return false;
+  const h = hostHeader.trim().toLowerCase();
+  if (h === `127.0.0.1:${port}` || h === `localhost:${port}` || h === `[::1]:${port}`) return true;
+  const suffix = `:${port}`;
+  if (!h.endsWith(suffix)) return false;
+  let name = h.slice(0, -suffix.length);
+  if (name.startsWith('[') && name.endsWith(']')) name = name.slice(1, -1);
+  if (net.isIP(name) === 0) return false;
+  const bind = bindHost.trim().toLowerCase();
+  if (bind === '0.0.0.0' || bind === '::') return true;
+  return name === bind;
+}
+
 /** `127.0.0.1`, `::1` and the IPv4-mapped `::ffff:127.x.x.x` forms. */
 export function isLoopbackAddress(address: string | undefined): boolean {
   if (!address) return false;
@@ -674,7 +698,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (pathname === '/health') {
       // Unauthenticated, so a wrong method is answered before the token check.
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await health(resolveCwd(url.searchParams.get('cwd'))));
+      // Without the token /health only says the server is up: a `cwd` would
+      // let any local caller probe which directories carry a .lexicon.yaml
+      // and whether they are trusted.
+      const cwdParam = url.searchParams.get('cwd');
+      if (cwdParam !== null && (!config || !tokenMatches(req.headers.authorization, config.token))) {
+        throw new HttpError(401, '/health?cwd= needs the bearer token (see: lexicon serve --show); plain /health does not');
+      }
+      return json(200, await health(resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
@@ -777,6 +808,18 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       cors['Access-Control-Allow-Methods'] = 'GET, POST, DELETE';
       cors['Access-Control-Max-Age'] = '600';
       cors['Vary'] = 'Origin';
+    }
+
+    // Before anything else, OPTIONS included (see isAllowedHost).
+    if (!isAllowedHost(req.headers.host, boundPort, host)) {
+      send(
+        res,
+        json(403, {
+          error: `Host must be 127.0.0.1:${boundPort}, localhost:${boundPort} or [::1]:${boundPort} (DNS rebinding guard)`,
+        }),
+        {},
+      );
+      return;
     }
 
     if (method === 'OPTIONS') {
