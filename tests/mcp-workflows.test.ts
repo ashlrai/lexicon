@@ -79,6 +79,27 @@ describe('trust_project with a directory path', () => {
 });
 
 describe('remove_term', () => {
+  // Catches: a miss is isError:false while `lexicon remove` exits 1, and the
+  // description did not say so, so an agent took a quiet miss for success.
+  it('states in its description that a miss is not an error, unlike the CLI', async () => {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const tool = (await client.listTools()).tools.find((t) => t.name === 'remove_term');
+      expect(tool?.description).toContain('A term that is not found is not an error (isError stays false, unlike the CLI remove command, which exits 1): check `removed`.');
+      expect(tool?.description).toContain('otherwise the `note` points at list_terms');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+    const miss = await call('remove_term', { canonical: 'Nowhere' });
+    expect(miss.isError).toBe(false);
+    expect(JSON.parse(miss.text)).toMatchObject({ removed: false, note: expect.stringContaining('list_terms') });
+  });
+
   it('tells the agent where a term lives when the requested scope does not hold it', async () => {
     await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
