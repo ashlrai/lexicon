@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => ({
   verifyPackChecksum: vi.fn(),
   parsePackText: vi.fn(),
   installRegistryPack: vi.fn(),
+  assertUserRegistry: vi.fn(),
   // import_vocabulary
   listImportSources: vi.fn(),
   getImportSource: vi.fn(),
@@ -1060,6 +1061,7 @@ describe('lexicon MCP server', () => {
           { name: 'developer', title: 'Dev', description: 'd', version: 1, author: '', homepage: '', terms: 2, aliases: 3, path: '/fake/developer.yaml' },
         ]);
         mocks.loadLexicon.mockResolvedValue({ ...loaded, global: { ...loaded.global, lexicon: { version: 1, terms: [] } } });
+        mocks.assertUserRegistry.mockResolvedValue(undefined);
         mocks.loadRegistryIndex.mockResolvedValue({ index: { packs: [entry] }, base: '/fake' });
         mocks.findRegistryEntry.mockReturnValue(entry);
         mocks.downloadPack.mockResolvedValue(Buffer.from('pack-bytes'));
@@ -1154,6 +1156,24 @@ describe('lexicon MCP server', () => {
           const payload = JSON.parse(textOf(result)) as { name: string };
           expect(payload.name).toBe('developer');
           expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
+      it('refuses a registry the user did not register before reading it', async () => {
+        mocks.assertUserRegistry.mockRejectedValue(new Error('registry "/etc/passwd" is not one the user registered, so it was not read.'));
+        const { client, close } = await connect();
+        try {
+          const listed = await client.callTool({ name: 'list_packs', arguments: { registry: '/etc/passwd' } });
+          expect(listed.isError).toBe(true);
+          expect(textOf(listed)).toMatch(/not one the user registered/);
+          const added = await client.callTool({ name: 'add_pack', arguments: { name: 'example/cardiology', registry: 'https://evil.example/index.yaml' } });
+          expect(added.isError).toBe(true);
+          expect(mocks.assertUserRegistry).toHaveBeenCalledWith('/etc/passwd', { cwd: '/fake/repo' });
+          expect(mocks.assertUserRegistry).toHaveBeenCalledWith('https://evil.example/index.yaml', { cwd: '/fake/repo' });
+          expect(mocks.loadRegistryIndex).not.toHaveBeenCalled();
+          expect(mocks.downloadPack).not.toHaveBeenCalled();
         } finally {
           await close();
         }

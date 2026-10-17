@@ -59596,6 +59596,50 @@ async function writeRegistryState(state, opts = {}) {
 async function installedRegistryPacks(opts = {}) {
   return Object.keys((await readRegistryState(opts)).packs).sort();
 }
+var REGISTRIES_ENV = "LEXICON_REGISTRIES";
+function canonicalRegistrySource(source) {
+  const s = source.trim();
+  if (!s) return void 0;
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      return new URL(s).href;
+    } catch {
+      return void 0;
+    }
+  }
+  const file2 = s.startsWith("file://") ? s.slice("file://".length) : s;
+  return import_node_path10.default.isAbsolute(file2) ? import_node_path10.default.resolve(file2) : void 0;
+}
+async function userRegistrySources(opts = {}) {
+  const out = /* @__PURE__ */ new Set();
+  const env = opts.env ?? process.env;
+  for (const raw of (env[REGISTRIES_ENV] ?? "").split(/[,\n]/)) {
+    const c = canonicalRegistrySource(raw);
+    if (c) out.add(c);
+  }
+  for (const scope of ["global", "project"]) {
+    let state;
+    try {
+      state = await readRegistryState({ ...opts, scope });
+    } catch {
+      continue;
+    }
+    for (const p of Object.values(state.packs)) {
+      const c = typeof p?.indexSource === "string" ? canonicalRegistrySource(p.indexSource) : void 0;
+      if (c) out.add(c);
+    }
+  }
+  return [...out].sort();
+}
+async function assertUserRegistry(source, opts = {}) {
+  const allowed = await userRegistrySources(opts);
+  const c = canonicalRegistrySource(source);
+  if (c && allowed.includes(c)) return;
+  const shown = JSON.stringify(source.length > 200 ? `${source.slice(0, 200)}...` : source);
+  throw new Error(
+    `registry ${shown} is not one the user registered, so it was not read. ` + (allowed.length > 0 ? `Registered: ${allowed.join(", ")}. ` : "No registry is registered. ") + `A registry counts once the user installs a pack from it themselves (lexicon pack add <author>/<name> --registry <index>, or npx @ashlr/lexicon pack add ...) or lists it in ${REGISTRIES_ENV} in the MCP server's environment.`
+  );
+}
 function registryRecordMismatch(loaded, scope, recorded) {
   const file2 = scope === "project" ? loaded.project : loaded.global;
   if (!file2) return void 0;
@@ -63824,7 +63868,7 @@ function printReport(report, io) {
 }
 
 // src/mcp/tools/packs.ts
-var REGISTRY_SOURCE_DESC = "Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.";
+var REGISTRY_SOURCE_DESC = "Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.";
 var registerPackTools = (server, ctx) => {
   const { load } = ctx;
   const imports = /* @__PURE__ */ new Map();
@@ -63836,7 +63880,7 @@ var registerPackTools = (server, ctx) => {
     "list_packs",
     {
       title: "List the starter term packs",
-      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (an index the user registered; others are refused) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
       inputSchema: {
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
       }
@@ -63851,6 +63895,7 @@ var registerPackTools = (server, ctx) => {
         ...mismatch ? { registryMismatch: mismatch } : {}
       };
       if (registry2) {
+        await assertUserRegistry(registry2, { cwd: ctx.cwd });
         const { index } = await loadRegistryIndex(registry2);
         result.community = index.packs.map((p) => ({
           ref: p.ref,
@@ -63888,6 +63933,7 @@ var registerPackTools = (server, ctx) => {
       if (isRegistryRef(name)) {
         if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
         const parsed = parseRegistryRef(name);
+        await assertUserRegistry(registry2, { cwd: ctx.cwd });
         const { index, base } = await loadRegistryIndex(registry2);
         const entry = findRegistryEntry(index, parsed.ref);
         const bytes = await downloadPack(entry, base);

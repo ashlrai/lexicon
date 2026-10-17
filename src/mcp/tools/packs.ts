@@ -30,6 +30,7 @@ import {
   parsePackText,
   parseRegistryRef,
   verifyPackChecksum,
+  assertUserRegistry,
 } from '../../core/index.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
 import { IMPORT_FORMAT_VALUES, bufferIO, guarded, nonBlank, skippedProjectFields, textResult } from '../shared.js';
@@ -37,7 +38,7 @@ import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 
 const REGISTRY_SOURCE_DESC =
-  'Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.';
+  'Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.';
 
 export const registerPackTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
@@ -55,7 +56,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       title: 'List the starter term packs',
       description:
         'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
-        'Pass registry (a local path, file:// or https:// URL) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
+        'Pass registry (an index the user registered; others are refused) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
         'The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. ' +
         'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). ' +
         'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
@@ -75,6 +76,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           ...(mismatch ? { registryMismatch: mismatch } : {}),
         };
         if (registry) {
+          await assertUserRegistry(registry, { cwd: ctx.cwd });
           const { index } = await loadRegistryIndex(registry);
           result.community = index.packs.map((p) => ({
             ref: p.ref,
@@ -120,6 +122,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         if (isRegistryRef(name)) {
           if (!registry) throw new Error('a community pack ref needs the registry parameter (the index it was listed from)');
           const parsed = parseRegistryRef(name);
+          await assertUserRegistry(registry, { cwd: ctx.cwd });
           const { index, base } = await loadRegistryIndex(registry);
           const entry = findRegistryEntry(index, parsed.ref);
           const bytes = await downloadPack(entry, base);

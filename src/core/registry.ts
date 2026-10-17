@@ -469,6 +469,67 @@ export async function installedRegistryPacks(opts: RegistryStoreOptions = {}): P
   return Object.keys((await readRegistryState(opts)).packs).sort();
 }
 
+/** Environment variable a human sets (in the MCP server's env) to allow extra registry indexes, comma or newline separated. */
+export const REGISTRIES_ENV = 'LEXICON_REGISTRIES';
+
+/**
+ * Canonical spelling of a registry source for allowlist comparison: an
+ * http(s) URL as `URL.href`, a `file://` URL or absolute path as a resolved
+ * path. A relative path names a different file from every working directory,
+ * so it never matches (undefined).
+ */
+export function canonicalRegistrySource(source: string): string | undefined {
+  const s = source.trim();
+  if (!s) return undefined;
+  if (/^https?:\/\//i.test(s)) {
+    try { return new URL(s).href; } catch { return undefined; }
+  }
+  const file = s.startsWith('file://') ? s.slice('file://'.length) : s;
+  return path.isAbsolute(file) ? path.resolve(file) : undefined;
+}
+
+/**
+ * Registry indexes the user chose, which is all an agent surface may read:
+ * every index a recorded community pack was installed from (global scope, and
+ * the project scope of `opts.cwd`), plus `$LEXICON_REGISTRIES`. Canonical
+ * spellings, sorted. A scope whose state cannot be read contributes nothing.
+ */
+export async function userRegistrySources(opts: StoreOptions = {}): Promise<string[]> {
+  const out = new Set<string>();
+  const env = opts.env ?? process.env;
+  for (const raw of (env[REGISTRIES_ENV] ?? '').split(/[,\n]/)) {
+    const c = canonicalRegistrySource(raw);
+    if (c) out.add(c);
+  }
+  for (const scope of ['global', 'project'] as const) {
+    let state: RegistryState;
+    try { state = await readRegistryState({ ...opts, scope }); } catch { continue; }
+    for (const p of Object.values(state.packs)) {
+      const c = typeof p?.indexSource === 'string' ? canonicalRegistrySource(p.indexSource) : undefined;
+      if (c) out.add(c);
+    }
+  }
+  return [...out].sort();
+}
+
+/**
+ * Fail closed unless `source` is one of `userRegistrySources`: a model-chosen
+ * registry would otherwise make Lexicon read an arbitrary local file or fetch
+ * from an arbitrary host. Human CLI flags (`--registry`) do not go through
+ * this gate.
+ */
+export async function assertUserRegistry(source: string, opts: StoreOptions = {}): Promise<void> {
+  const allowed = await userRegistrySources(opts);
+  const c = canonicalRegistrySource(source);
+  if (c && allowed.includes(c)) return;
+  const shown = JSON.stringify(source.length > 200 ? `${source.slice(0, 200)}...` : source);
+  throw new Error(
+    `registry ${shown} is not one the user registered, so it was not read. ` +
+      (allowed.length > 0 ? `Registered: ${allowed.join(', ')}. ` : 'No registry is registered. ') +
+      `A registry counts once the user installs a pack from it themselves (lexicon pack add <author>/<name> --registry <index>, or npx @ashlr/lexicon pack add ...) or lists it in ${REGISTRIES_ENV} in the MCP server's environment.`,
+  );
+}
+
 /**
  * Where a registry pack is recorded, when the two records disagree: the
  * lexicon file's `settings.packs` (what the matcher and every `installed`
