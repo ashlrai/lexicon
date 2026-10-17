@@ -54456,9 +54456,15 @@ async function assertProjectWritable(projectPath, opts) {
   );
   if (status !== "trusted") throw new ProjectTrustError(projectPath, status);
 }
+async function projectWriteTrusted(opts = {}) {
+  const projectPath = projectWritePath(opts);
+  if (!(0, import_node_fs5.existsSync)(projectPath)) return false;
+  const status = await isTrusted({ path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true }, opts);
+  return status === "trusted";
+}
 async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
-  const targetPath = opts.leaveUntrusted && scope === "project" ? projectWritePath(opts) : await resolveScopeWritePath(scope, opts);
+  const targetPath = await resolveScopeWritePath(scope, opts);
   const write = opts.leaveUntrusted ? (f) => writeLexiconFile(f) : (f) => writeAndTrust(f, opts);
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError("canonical must not be empty");
@@ -54642,7 +54648,7 @@ function findTerm(lexicon, canonical) {
 async function resolveScopeWritePath(scope, opts) {
   if (scope === "global") return resolvePaths(opts).global;
   const projectPath = projectWritePath(opts);
-  await assertProjectWritable(projectPath, opts);
+  if (!opts.leaveUntrusted) await assertProjectWritable(projectPath, opts);
   return projectPath;
 }
 function projectWritePath(opts) {
@@ -58481,9 +58487,10 @@ async function learnCorrection(c, opts = {}) {
   if (heard === meant) {
     throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
-  const { scope, ...storeOpts2 } = opts;
+  const { scope, leaveUntrusted, ...storeOpts2 } = opts;
   const loaded = await loadLexicon(storeOpts2);
-  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts2, scope);
+  const writeOpts = { ...storeOpts2, ...leaveUntrusted ? { leaveUntrusted } : {} };
+  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, writeOpts, scope);
   const existing = termFor(loaded.merged, meant);
   const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
   const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
@@ -58493,14 +58500,14 @@ async function learnCorrection(c, opts = {}) {
     const targetScope = scope ?? existing.scope ?? "global";
     const saved2 = await addTerm(
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: "learned" },
-      { ...storeOpts2, scope: targetScope }
+      { ...writeOpts, scope: targetScope }
     );
     return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown, ...withConflict };
   }
   const aliases = dedupeCaseInsensitive2([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
     { canonical: meant, aliases, source: "learned" },
-    { ...storeOpts2, scope: scope ?? "global" }
+    { ...writeOpts, scope: scope ?? "global" }
   );
   return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
 }
@@ -60138,6 +60145,15 @@ function containedPath(ctx, path27, cliArgs, env = process.env) {
     `${JSON.stringify(path27)} is outside the directories this server may read (${roots.join(", ")}), so nothing was read. The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`
   );
 }
+async function mcpWriteOpts(ctx) {
+  return await projectWriteTrusted({ cwd: ctx.cwd }) ? {} : { leaveUntrusted: true };
+}
+function untrustedWriteFields(path27, what, plural3 = false) {
+  return {
+    trusted: false,
+    nextStep: `${what} ${plural3 ? "were" : "was"} written to ${path27}, which is not trusted, so ${plural3 ? "they do" : "it does"} not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
+  };
+}
 async function guarded(fn) {
   try {
     return await fn();
@@ -60263,7 +60279,7 @@ var registerTermTools = (server, ctx) => {
     "add_term",
     {
       title: "Add a lexicon term",
-      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.",
+      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): relay `nextStep`, since the term applies only after the user runs " + cliCommand("trust") + ". WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.",
       inputSchema: {
         canonical: external_exports.string().min(1).describe("The correct spelling, exactly as the user wants it written."),
         aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest (new terms only)."),
@@ -60286,20 +60302,25 @@ var registerTermTools = (server, ctx) => {
         ...never2 && never2.length > 0 ? { never: never2 } : {},
         ...scope !== void 0 ? { scope } : {}
       };
+      const writeOpts = await mcpWriteOpts(ctx);
       const saved = await addTerm(term, {
         cwd: ctx.cwd,
         ...scope !== void 0 ? { scope } : {},
-        ...given ? {} : { defaultAliases: suggestAliases(canonical) }
+        ...given ? {} : { defaultAliases: suggestAliases(canonical) },
+        ...writeOpts
       });
-      const conflicts = spellingConflicts((await load()).merged, saved.term.aliases, saved.term.canonical);
+      const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
+      const shown = untrusted && !saved.created ? term : saved.term;
+      const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
       const note = conflicts.map(
         (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`
       ).join(" ");
       return textResult({
-        term: saved.term,
+        term: shown,
         path: saved.file.path,
         created: saved.created,
-        ...conflicts.length > 0 ? { conflicts, note } : {}
+        ...conflicts.length > 0 ? { conflicts, note } : {},
+        ...untrusted ? untrustedWriteFields(saved.file.path, JSON.stringify(shown.canonical)) : {}
       });
     })
   );
@@ -60431,7 +60452,7 @@ var registerTermTools = (server, ctx) => {
     "learn_correction",
     {
       title: "Learn from a spelling correction",
-      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
+      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
         heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -60439,19 +60460,24 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ heard, meant, scope }) => guarded(async () => {
-      const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
+      const writeOpts = await mcpWriteOpts(ctx);
+      const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {}, ...writeOpts });
+      const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === "project";
+      const term = untrusted && !learned.created ? { canonical: learned.term.canonical, aliases: learned.aliasAdded ? [heard.trim().replace(/\s+/g, " ")] : [] } : learned.term;
       const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
+      const pending = untrusted ? untrustedWriteFields(learned.file.path, "It") : void 0;
       return textResult({
-        term: learned.term,
+        term,
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
         ...conflict ? { conflict } : {},
         ...untrustedProject ? { untrustedProject } : {},
-        summary: saved + conflictNote + untrustedNote
+        ...pending ?? {},
+        summary: saved + conflictNote + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
       });
     })
   );
@@ -60546,11 +60572,7 @@ var registerHarvestTools = (server, ctx) => {
         candidates,
         count: candidates.length,
         ...add ? { added, failures } : {},
-        ...written !== void 0 ? {
-          path: written,
-          trusted: false,
-          nextStep: `${added} name(s) were written to ${written}, which is not trusted, so they do not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
-        } : {},
+        ...written !== void 0 ? { path: written, ...untrustedWriteFields(written, `${added} name(s)`, true) } : {},
         ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
@@ -60582,7 +60604,7 @@ var registerHarvestTools = (server, ctx) => {
     "apply_suggestion",
     {
       title: "Apply one suggestion",
-      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received.",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
       inputSchema: {
         suggestion: external_exports.object({
           kind: external_exports.enum(SUGGESTION_KINDS),
@@ -60646,9 +60668,13 @@ var registerHarvestTools = (server, ctx) => {
         ...kind === "never" && alias ? { never: [alias] } : {},
         ...target !== void 0 ? { scope: target } : {}
       };
-      const saved = await addTerm(term, storeOpts2);
-      const summary = kind === "alias" ? `"${alias}" -> "${saved.term.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${saved.term.canonical}"` : `added "${saved.term.canonical}" (${saved.term.aliases.length} alias${saved.term.aliases.length === 1 ? "" : "es"})`;
-      return textResult({ kind, canonical: saved.term.canonical, term: saved.term, path: saved.file.path, created: saved.created, summary });
+      const writeOpts = await mcpWriteOpts(ctx);
+      const saved = await addTerm(term, { ...storeOpts2, ...writeOpts });
+      const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
+      const shown = untrusted && !saved.created ? term : saved.term;
+      const pending = untrusted ? untrustedWriteFields(saved.file.path, "It") : void 0;
+      const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : `added "${shown.canonical}" (${shown.aliases.length} alias${shown.aliases.length === 1 ? "" : "es"})`) + (pending ? `. ${pending.nextStep}` : "");
+      return textResult({ kind, canonical: shown.canonical, term: shown, path: saved.file.path, created: saved.created, ...pending ?? {}, summary });
     })
   );
 };
@@ -63835,9 +63861,7 @@ var registerSetupTools = (server, ctx) => {
         applied: true,
         summary,
         ...stderr ? { stderr } : {},
-        ...untrusted !== void 0 ? {
-          nextStep: `The repo names were written to ${untrusted}, which is not trusted, so they do not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
-        } : {}
+        ...untrusted !== void 0 ? { nextStep: untrustedWriteFields(untrusted, "The repo names", true).nextStep } : {}
       });
     })
   );
@@ -63985,9 +64009,10 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
     }
   } else {
     for (const term of result.terms) {
-      const added = await addTerm(term, { scope, cwd });
+      const added = await addTerm(term, { scope, cwd, ...opts.leaveUntrusted ? { leaveUntrusted: true } : {} });
       report.path ??= added.file.path;
-      report.terms.push({ canonical: added.term.canonical, aliases: added.term.aliases, created: added.created });
+      const shown = opts.leaveUntrusted && scope === "project" ? { canonical: term.canonical, aliases: term.aliases } : added.term;
+      report.terms.push({ canonical: shown.canonical, aliases: shown.aliases, created: added.created });
     }
   }
   report.counts.created = report.terms.filter((t) => t.created).length;
@@ -64223,7 +64248,7 @@ var registerPackTools = (server, ctx) => {
     "import_dictionary",
     {
       title: "Import an existing dictionary",
-      description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it.",
+      description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.",
       inputSchema: {
         path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
@@ -64235,9 +64260,10 @@ var registerPackTools = (server, ctx) => {
     async ({ path: path27, content, format, scope, dryRun }) => guarded(async () => {
       if (path27 === void 0 && content === void 0) throw new Error("pass path or content");
       const io = bufferIO();
+      const writeOpts = scope === "project" && dryRun !== true ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(
         path27 ?? "-",
-        { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true },
+        { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true, ...writeOpts },
         io,
         content !== void 0 ? async () => content : void 0
       );
@@ -64251,7 +64277,9 @@ var registerPackTools = (server, ctx) => {
       }
       const stderr = io.err().trim();
       if (isRecord(report) && report.ok === true) delete report.ok;
-      return textResult(isRecord(report) ? { ...report, ...stderr ? { stderr } : {} } : report);
+      const written = isRecord(report) && typeof report.path === "string" && writeOpts.leaveUntrusted === true ? report.path : void 0;
+      const pending = written !== void 0 ? untrustedWriteFields(written, "The imported terms", true) : {};
+      return textResult(isRecord(report) ? { ...report, ...pending, ...stderr ? { stderr } : {} } : report);
     })
   );
 };

@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
   diffSummary: vi.fn(),
   recordHits: vi.fn(),
   addTerm: vi.fn(),
+  // true: the project file is trusted, so writes keep today's arguments
+  projectWriteTrusted: vi.fn(),
   removeTerm: vi.fn(),
   harvestRepo: vi.fn(),
   exportLexicon: vi.fn(),
@@ -199,6 +201,7 @@ beforeEach(() => {
     created: true,
   }));
   mocks.removeTerm.mockResolvedValue(true);
+  mocks.projectWriteTrusted.mockResolvedValue(true);
   mocks.harvestRepo.mockResolvedValue([
     { canonical: 'FooBar', category: 'identifier', source: 'harvest:repo', evidence: ['src/a.ts'], count: 3, suggestedAliases: ['foo bar'] },
   ]);

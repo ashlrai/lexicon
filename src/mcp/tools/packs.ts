@@ -33,7 +33,7 @@ import {
   assertUserRegistry,
 } from '../../core/index.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
-import { IMPORT_FORMAT_VALUES, bufferIO, guarded, nonBlank, skippedProjectFields, textResult } from '../shared.js';
+import { IMPORT_FORMAT_VALUES, bufferIO, guarded, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 import { cliCommand } from '../../util/cli-hint.js';
@@ -251,7 +251,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. " +
         'Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). ' +
-        'Use dryRun: true first to show the user what would be added, then run again without it.',
+        'Use dryRun: true first to show the user what would be added, then run again without it. ' +
+        'With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.',
       inputSchema: {
         path: nonBlank().optional().describe('File to import. Its extension helps auto-detection.'),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine. Must not be blank.'),
@@ -264,9 +265,10 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         if (path === undefined && content === undefined) throw new Error('pass path or content');
         const io = bufferIO();
+        const writeOpts = scope === 'project' && dryRun !== true ? await mcpWriteOpts(ctx) : {};
         const code = await runImport(
           path ?? '-',
-          { cwd: ctx.cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true },
+          { cwd: ctx.cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true, ...writeOpts },
           io,
           content !== undefined ? async () => content : undefined,
         );
@@ -281,7 +283,9 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         const stderr = io.err().trim();
         // `import --json` leads with the CLI's `ok: true`; the tool result keeps its own shape.
         if (isRecord(report) && report.ok === true) delete report.ok;
-        return textResult(isRecord(report) ? { ...report, ...(stderr ? { stderr } : {}) } : report);
+        const written = isRecord(report) && typeof report.path === 'string' && writeOpts.leaveUntrusted === true ? report.path : undefined;
+        const pending = written !== undefined ? untrustedWriteFields(written, 'The imported terms', true) : {};
+        return textResult(isRecord(report) ? { ...report, ...pending, ...(stderr ? { stderr } : {}) } : report);
       }),
   );
 };

@@ -965,6 +965,26 @@ async function assertProjectWritable(projectPath: string, opts: StoreOptions): P
   if (status !== 'trusted') throw new ProjectTrustError(projectPath, status);
 }
 
+/**
+ * True when a project-scope write from `opts` would land in a project file
+ * the user has already trusted: it exists and reads 'trusted' (registry
+ * match, LEXICON_TRUST_ALL, or inside the global config dir). False for a
+ * file that does not exist yet and for one that is untrusted or changed.
+ *
+ * The MCP tools ask this before a write: a trusted file takes the edit and
+ * keeps its pin refreshed, as for any user edit, while anything else is
+ * written with `leaveUntrusted`, because a model relaying a request is not
+ * the user reviewing a project file. Checked outside the write lock; a file
+ * that changes trust in between fails closed (the gate refuses a file that
+ * is no longer trusted, and an unpinned write never pins).
+ */
+export async function projectWriteTrusted(opts: StoreOptions = {}): Promise<boolean> {
+  const projectPath = projectWritePath(opts);
+  if (!existsSync(projectPath)) return false;
+  const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, opts);
+  return status === 'trusted';
+}
+
 export async function addTerm(
   term: Term,
   opts: StoreOptions & {
@@ -978,8 +998,8 @@ export async function addTerm(
     defaultAliases?: readonly string[];
     /**
      * Write a project file without registering it as trusted, for a write
-     * the user has not reviewed (MCP `harvest_repo`, where a model chose the
-     * names). Nothing is pinned, so the trust gate has nothing to protect and
+     * the user has not reviewed (an MCP tool writing a project file that is
+     * not trusted yet, where a model chose the names). Nothing is pinned, so the trust gate has nothing to protect and
      * an existing untrusted or changed file may be written too; a file that
      * was trusted reads as 'changed' afterwards. Either way it is merged only
      * after the user runs `lexicon trust`. Ignored for the global file.
@@ -990,7 +1010,7 @@ export async function addTerm(
   const scope: TermScope = opts.scope ?? 'global';
   // The trust gate stays ahead of every other check, as it was when this
   // resolved the file rather than the path.
-  const targetPath = opts.leaveUntrusted && scope === 'project' ? projectWritePath(opts) : await resolveScopeWritePath(scope, opts);
+  const targetPath = await resolveScopeWritePath(scope, opts);
   const write = opts.leaveUntrusted ? (f: LexiconFile) => writeLexiconFile(f) : (f: LexiconFile) => writeAndTrust(f, opts);
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError('canonical must not be empty');
@@ -1316,17 +1336,19 @@ export function findTerm(lexicon: Lexicon, canonical: string): Term | undefined 
 
 /**
  * The path a scoped write targets. For project scope the trust gate runs here,
- * before the file is locked or read.
+ * before the file is locked or read, unless `opts.leaveUntrusted` says the
+ * write will not pin the file.
  *
  * Exported because a caller that performs several writes as one operation has
  * to lock the same path this resolves, and resolving it a second way would be
  * a second chance to disagree. `installPack` is the case: it adds every term
  * and then rewrites `settings.packs`, and those have to be one transaction.
  */
-export async function resolveScopeWritePath(scope: TermScope, opts: StoreOptions): Promise<string> {
+export async function resolveScopeWritePath(scope: TermScope, opts: StoreOptions & { leaveUntrusted?: boolean }): Promise<string> {
   if (scope === 'global') return resolvePaths(opts).global;
   const projectPath = projectWritePath(opts);
-  await assertProjectWritable(projectPath, opts);
+  // An unpinned write has no trust to protect (see addTerm's leaveUntrusted).
+  if (!opts.leaveUntrusted) await assertProjectWritable(projectPath, opts);
   return projectPath;
 }
 

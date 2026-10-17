@@ -195,9 +195,12 @@ neutralized; no alias or note is quoted), because that is the exchange in which
 the model is asked whether to trust the file, and points the user at
 `lexicon trust` in a terminal for the full preview. The model must show the
 summary before calling `action: 'trust'`, the client then asks the user, and a
-hook note or a file can never trust itself. No writes to untrusted files: every
-project-scope write from a tool goes through the same store gate as the CLI and
-fails with `ProjectTrustError` on an existing untrusted or changed file. The
+hook note or a file can never trust itself, and neither can a model's write:
+an MCP project-scope write to a file that is not trusted yet (new, untrusted or
+changed) is saved without being pinned, reports `trusted: false` with a
+`nextStep` for the user, and never returns that file's own copy of a term; the
+CLI and the local API refuse a write to an existing untrusted or changed file
+with `ProjectTrustError`. The
 `SessionStart` onboarding note only asks the model to offer setup; nothing runs
 until the user says yes.
 
@@ -222,10 +225,12 @@ treated as the user's own words).
 - **Auto-trust only for files the user authored.** Project-scope writes
   (`lexicon init --project`, `add --project`, `import --project`,
   `learn --project`, `harvest --add`, `review --project`, `suggest --project`,
-  the local API with `scope: 'project'`, and the MCP `add_term`,
-  `learn_correction`, `import_dictionary`, `apply_suggestion` and
-  `harvest_repo {add: true}` tools with project scope) pin the file they wrote
-  as trusted, because the user explicitly asked for that write. The rule is
+  and the local API with `scope: 'project'`) pin the file they wrote as
+  trusted, because the user explicitly asked for that write. MCP tools do not:
+  a model relaying a request is not the user reviewing a file, so `add_term`,
+  `learn_correction`, `import_dictionary` and `apply_suggestion` re-pin only a
+  file that is already trusted and write anything else unpinned, and
+  `harvest_repo {add: true}` and `setup_lexicon {harvest: true}` never pin. The rule is
   precise: a project file is written and pinned only when it **does not exist
   yet** (the tool creates it) or is **already trusted** (registry hash matches,
   `LEXICON_TRUST_ALL=1`, or the file sits in the global config directory). If

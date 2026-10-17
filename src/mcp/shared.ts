@@ -9,7 +9,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'no
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { resolvePaths } from '../core/index.js';
+import { projectWriteTrusted, resolvePaths } from '../core/index.js';
 import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -213,6 +213,33 @@ export function containedPath(ctx: Pick<ToolContext, 'cwd' | 'roots'>, path: str
       `The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, ` +
       `or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`,
   );
+}
+
+/**
+ * The store option every MCP write passes: `{ leaveUntrusted: true }` unless
+ * the project file the write would land in is already trusted. A model must
+ * not be the one that creates and trusts a project `.lexicon.yaml`, so a new,
+ * untrusted or changed file is written unpinned and applies only after the
+ * user runs `lexicon trust`; a file the user trusted takes the edit and keeps
+ * its pin refreshed. A global write ignores the option.
+ */
+export async function mcpWriteOpts(ctx: Pick<ToolContext, 'cwd'>): Promise<{ leaveUntrusted?: true }> {
+  return (await projectWriteTrusted({ cwd: ctx.cwd })) ? {} : { leaveUntrusted: true };
+}
+
+/**
+ * `{ trusted: false, nextStep }` for a tool result that wrote a project file
+ * without trusting it. `what` is the subject of the sentence (`"Kubectl"`,
+ * `3 name(s)`); `plural` picks the verb.
+ */
+export function untrustedWriteFields(path: string, what: string, plural = false): { trusted: false; nextStep: string } {
+  return {
+    trusted: false,
+    nextStep:
+      `${what} ${plural ? 'were' : 'was'} written to ${path}, which is not trusted, so ${plural ? 'they do' : 'it does'} not apply yet. ` +
+      `Ask the user to review the file and run ${cliCommand('trust')} in a terminal in that repo (it previews the file first), ` +
+      'or call trust_project with action "trust", which asks them directly.',
+  };
 }
 
 /** Runs a tool body and converts any thrown error into an isError result. */

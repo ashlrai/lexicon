@@ -11,6 +11,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
 import { runList } from '../src/cli/commands.js';
+import { trustProject } from '../src/core/trust.js';
 import { makeIO } from './helpers.js';
 
 let repo: string;
@@ -51,6 +52,18 @@ async function call(name: string, args: Record<string, unknown>): Promise<{ isEr
   }
 }
 
+/**
+ * The repo's .lexicon.yaml, created empty and trusted as `lexicon trust`
+ * would: an MCP write into a trusted file keeps it trusted, so the tests
+ * below that need project terms merged start from here.
+ */
+async function trustedProjectFile(): Promise<string> {
+  const file = path.join(repo, '.lexicon.yaml');
+  await fs.writeFile(file, 'version: 1\nterms: []\n');
+  await trustProject(file);
+  return file;
+}
+
 describe('trust_project with a directory path', () => {
   it('reads the .lexicon.yaml inside the directory, as `lexicon trust <dir>` does', async () => {
     await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
@@ -66,6 +79,7 @@ describe('trust_project with a directory path', () => {
 
 describe('remove_term', () => {
   it('tells the agent where a term lives when the requested scope does not hold it', async () => {
+    await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
     expect(added.isError).toBe(false);
 
@@ -87,6 +101,7 @@ describe('remove_term', () => {
 
   // Catches: without `scope` only the project copy went, and the result said nothing about the global copy.
   it('names the copy left in the other lexicon file when the term is in both', async () => {
+    await trustedProjectFile();
     await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
     await call('add_term', { canonical: 'Kubectl', aliases: ['cube cuddle'], scope: 'project' });
 
@@ -478,6 +493,7 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   // term. The project term wins the merge, so the alias never took effect;
   // the suggestion carries no scope, so the agent could not pass the right one.
   it('writes the alias where the term lives, so the next normalize uses it', async () => {
+    await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' });
     expect(added.isError).toBe(false);
     const projectPath = path.join(repo, '.lexicon.yaml');
@@ -500,6 +516,7 @@ describe('apply_suggestion stale on a term in both lexicon files', () => {
   // stale term with a project copy and a global copy lost only the project
   // copy, and the result said "removed" while the global one kept firing.
   it('removes the copy it targets and names the other one', async () => {
+    await trustedProjectFile();
     expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' })).isError).toBe(false);
     expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cube netties'], scope: 'global' })).isError).toBe(false);
     const projectPath = path.join(repo, '.lexicon.yaml');
@@ -922,6 +939,89 @@ describe('apply_suggestion with a scope that does not hold the term', () => {
     const res = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys' }, scope: 'global' });
     expect(res.isError).toBe(false);
     expect(JSON.parse(res.text)).toMatchObject({ path: globalPath, created: false });
+  });
+});
+
+describe('project-scope writes from MCP never trust the project file', () => {
+  const savedTrustAll = process.env.LEXICON_TRUST_ALL;
+  beforeEach(() => {
+    delete process.env.LEXICON_TRUST_ALL;
+  });
+  afterEach(() => {
+    if (savedTrustAll === undefined) delete process.env.LEXICON_TRUST_ALL;
+    else process.env.LEXICON_TRUST_ALL = savedTrustAll;
+  });
+
+  async function trustStatus(): Promise<string> {
+    return (JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string }).status;
+  }
+
+  // Catches: add_term, learn_correction, apply_suggestion and import_dictionary
+  // with scope: 'project' created the repo's .lexicon.yaml and registered it as
+  // trusted, so a model decided what every later prompt in that repo is
+  // rewritten with; trusting a project file is the user's call.
+  it.each([
+    ['add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' }],
+    ['learn_correction', { heard: 'cube control', meant: 'Kubectl', scope: 'project' }],
+    ['apply_suggestion', { suggestion: { kind: 'term', canonical: 'Kubectl', aliases: ['cube control'] }, scope: 'project' }],
+    ['import_dictionary', { content: 'Kubectl: cube control\n', format: 'text', scope: 'project' }],
+  ] as const)('%s writes a new project file untrusted and names the trust step', async (tool, args) => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const res = await call(tool, args);
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; trusted: boolean; nextStep: string };
+    expect(payload).toMatchObject({ path: projectPath, trusted: false });
+    expect(payload.nextStep).toContain('which is not trusted');
+    expect(payload.nextStep).toContain('`npx @ashlr/lexicon trust`');
+    expect(payload.nextStep).toContain('trust_project with action "trust"');
+    expect(await fs.readFile(projectPath, 'utf8')).toContain('Kubectl');
+    expect(await trustStatus()).toBe('untrusted');
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
+    expect(listed.terms).toEqual([]);
+    expect(listed.skippedProject).toBe(projectPath);
+  });
+
+  // Catches: a write into an existing untrusted file returned the file's own
+  // copy of the term (its notes and aliases) to the model.
+  it('merges into an existing untrusted file without trusting it or reading its term back', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [PLANTED-ALIAS]\n    notes: PLANTED-NOTE\n');
+    for (const [tool, args] of [
+      ['add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' }],
+      ['learn_correction', { heard: 'cube cuddle', meant: 'Kubectl', scope: 'project' }],
+      ['import_dictionary', { content: 'Kubectl: cube cutter\n', format: 'text', scope: 'project' }],
+    ] as const) {
+      const res = await call(tool, args);
+      expect(res.isError, `${tool}: ${res.text}`).toBe(false);
+      expect(JSON.parse(res.text)).toMatchObject({ path: projectPath, trusted: false });
+      expect(res.text).not.toContain('PLANTED');
+    }
+    expect(await trustStatus()).toBe('untrusted');
+    const onDisk = await fs.readFile(projectPath, 'utf8');
+    for (const alias of ['PLANTED-ALIAS', 'cube control', 'cube cuddle', 'cube cutter']) expect(onDisk).toContain(alias);
+  });
+
+  it('keeps a trusted project file trusted and merged after the edit', async () => {
+    const projectPath = await trustedProjectFile();
+    const res = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; trusted?: boolean; nextStep?: string };
+    expect(payload.path).toBe(projectPath);
+    expect(payload.trusted).toBeUndefined();
+    expect(payload.nextStep).toBeUndefined();
+    expect(await trustStatus()).toBe('trusted');
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'run cube control apply' })).text) as { output: string };
+    expect(normalized.output).toBe('run Kubectl apply');
+  });
+
+  it('leaves a project file that changed since it was trusted unpinned', async () => {
+    const projectPath = await trustedProjectFile();
+    await fs.appendFile(projectPath, '# edited by hand\n');
+    expect(await trustStatus()).toBe('changed');
+    const res = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
+    expect(res.isError).toBe(false);
+    expect(JSON.parse(res.text)).toMatchObject({ trusted: false });
+    expect(await trustStatus()).toBe('changed');
   });
 });
 

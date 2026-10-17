@@ -10,6 +10,7 @@ import {
   cliDirForInstall,
   guarded,
   textResult,
+  untrustedWriteFields,
 } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
@@ -179,12 +180,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           summary,
           ...(stderr ? { stderr } : {}),
           ...(untrusted !== undefined
-            ? {
-                nextStep:
-                  `The repo names were written to ${untrusted}, which is not trusted, so they do not apply yet. ` +
-                  `Ask the user to review the file and run ${cliCommand('trust')} in a terminal in that repo (it previews the file first), ` +
-                  'or call trust_project with action "trust", which asks them directly.',
-              }
+            ? { nextStep: untrustedWriteFields(untrusted, 'The repo names', true).nextStep }
             : {}),
         });
       }),
