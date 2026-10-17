@@ -195,10 +195,29 @@ export async function loadRegistryIndex(source: string, deps: RegistryDeps = {})
   return { index: parseIndexYaml(text, abs), base: path.dirname(abs) + path.sep };
 }
 
-/** Resolve an entry's `url` against the index base. Returns an https:// URL or an absolute path. */
+/**
+ * Resolve an entry's `url` against the index base. Returns an https:// URL or an absolute path.
+ *
+ * A remote index names remote files only: an absolute http(s) URL or a path
+ * relative to the index. An absolute local path (or any other scheme) in an
+ * index fetched over the network would have this machine read a file of the
+ * index author's choosing: `/dev/stdin` hangs the MCP server on its own
+ * protocol stream, `/dev/zero` reads forever, and a checksum mismatch on any
+ * other file reports that file's sha256. Only a local index may name local
+ * files.
+ */
 export function resolvePackUrl(entry: RegistryIndexEntry, base: string): string {
-  if (/^https?:\/\//i.test(entry.url) || path.isAbsolute(entry.url)) return entry.url;
-  if (/^https?:\/\//i.test(base)) return base + entry.url.replace(/^\.\//, '');
+  if (/^https?:\/\//i.test(entry.url)) return entry.url;
+  if (/^https?:\/\//i.test(base)) {
+    if (path.isAbsolute(entry.url) || path.win32.isAbsolute(entry.url) || /^[a-z][a-z0-9+.-]*:/i.test(entry.url)) {
+      throw new Error(
+        `registry entry ${entry.ref} names a local file or a non-http URL; a remote index may only name https:// URLs or paths relative to itself (refusing to install)`,
+      );
+    }
+    return base + entry.url.replace(/^\.\//, '');
+  }
+  if (entry.url.startsWith('file://')) return entry.url.slice('file://'.length);
+  if (path.isAbsolute(entry.url)) return entry.url;
   return path.resolve(base, entry.url);
 }
 

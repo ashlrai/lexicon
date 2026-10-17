@@ -81,7 +81,7 @@ Pack files are read from the package's `packs/` directory only, and the name is 
 
 1. Write the pack YAML: the same schema as above, plus `author` (required for community packs) and `homepage`.
 2. Run `lexicon pack validate <file>` until it is clean.
-3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`/`file://`, or relative to the index).
+3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`, or relative to the index; an index read from a local path or `file://` may also name an absolute local path or `file://` URL, but an index fetched over `https://` may not, so a remote index can never make `lexicon` read a file on your machine).
 4. Host the index and the pack files anywhere a URL reaches. Point users at `lexicon pack search --registry <your index>`.
 
 ## See also

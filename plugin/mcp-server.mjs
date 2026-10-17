@@ -59331,8 +59331,17 @@ async function loadRegistryIndex(source, deps = {}) {
   return { index: parseIndexYaml(text, abs), base: import_node_path10.default.dirname(abs) + import_node_path10.default.sep };
 }
 function resolvePackUrl(entry, base) {
-  if (/^https?:\/\//i.test(entry.url) || import_node_path10.default.isAbsolute(entry.url)) return entry.url;
-  if (/^https?:\/\//i.test(base)) return base + entry.url.replace(/^\.\//, "");
+  if (/^https?:\/\//i.test(entry.url)) return entry.url;
+  if (/^https?:\/\//i.test(base)) {
+    if (import_node_path10.default.isAbsolute(entry.url) || import_node_path10.default.win32.isAbsolute(entry.url) || /^[a-z][a-z0-9+.-]*:/i.test(entry.url)) {
+      throw new Error(
+        `registry entry ${entry.ref} names a local file or a non-http URL; a remote index may only name https:// URLs or paths relative to itself (refusing to install)`
+      );
+    }
+    return base + entry.url.replace(/^\.\//, "");
+  }
+  if (entry.url.startsWith("file://")) return entry.url.slice("file://".length);
+  if (import_node_path10.default.isAbsolute(entry.url)) return entry.url;
   return import_node_path10.default.resolve(base, entry.url);
 }
 function sha256Hex(data) {

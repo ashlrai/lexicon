@@ -132,6 +132,50 @@ describe('loadRegistryIndex', () => {
     expect(resolvePackUrl(entry, base)).toBe(path.join(dir, 'cardiology.yaml'));
   });
 
+  // Catches: an index fetched over https could name an absolute local path,
+  // and downloadPack read it from this machine (`/dev/stdin` hung the MCP
+  // server on its own protocol stream; any file's sha256 came back in the
+  // checksum error). Here the local file even matches the checksum, so the
+  // old code returned its bytes.
+  it('a remote index cannot name a local file', async () => {
+    const local = path.join(dir, 'cardiology.yaml');
+    const checksum = sha256Hex(readFileSync(local));
+    const remoteIndex = (url: string) =>
+      [
+        'version: 1',
+        'packs:',
+        '  - author: example',
+        '    name: cardiology',
+        '    title: Cardiology terms',
+        '    terms: 2',
+        '    aliases: 3',
+        `    checksum: ${checksum}`,
+        `    url: ${JSON.stringify(url)}`,
+        '',
+      ].join('\n');
+    const fetchBytes = vi.fn(async () => Buffer.from(PACK_V1));
+    for (const url of [local, `file://${local}`, 'C:\\Windows\\win.ini', '//other.example/x.yaml']) {
+      const fetchText = vi.fn(async () => remoteIndex(url));
+      const { index, base } = await loadRegistryIndex('https://registry.example/index.yaml', { fetchText });
+      const entry = entryFor(index);
+      expect(() => resolvePackUrl(entry, base)).toThrow(/a remote index may only name https:\/\/ URLs or paths relative to itself/);
+      await expect(downloadPack(entry, base, { fetchBytes })).rejects.toThrow(/names a local file/);
+    }
+    expect(fetchBytes).not.toHaveBeenCalled();
+    // Relative paths and https URLs still resolve against the remote index.
+    const fetchText = vi.fn(async () => remoteIndex('./packs/cardiology.yaml'));
+    const { index, base } = await loadRegistryIndex('https://registry.example/v1/index.yaml', { fetchText });
+    expect(resolvePackUrl(entryFor(index), base)).toBe('https://registry.example/v1/packs/cardiology.yaml');
+  });
+
+  it('a local index may name a file:// URL', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    const entry = { ...entryFor(index), url: `file://${path.join(dir, 'cardiology.yaml')}` };
+    expect(resolvePackUrl(entry, base)).toBe(path.join(dir, 'cardiology.yaml'));
+    expect((await downloadPack(entry, base)).toString('utf8')).toBe(PACK_V1);
+  });
+
   it('loads a file:// url', async () => {
     const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
     const { index } = await loadRegistryIndex(`file://${indexPath}`);
