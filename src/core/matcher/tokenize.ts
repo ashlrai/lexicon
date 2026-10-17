@@ -22,7 +22,8 @@ export interface Token {
 }
 
 const TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-const TRAILING_PUNCT_RE = /[.'’\-]+$/u;
+/** Characters trimmed off a token's end (trimTrailingPunct). */
+const TRAILING_PUNCT = new Set(['.', "'", '’', '-']);
 const POSSESSIVE_RE = /['’][sS]$/u;
 
 export interface Range {
@@ -34,7 +35,15 @@ const FENCE_RE = /```[\s\S]*?(?:```|$)/g;
 const INLINE_CODE_RE = /`[^`\n]*`/g;
 const URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 const WWW_RE = /\bwww\.\S+/gi;
-const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+/**
+ * The domain half of an email, matched sticky at each `@` (see emailRanges).
+ * The whole address used to be one regex, `[\w.+-]+@[\w-]+(?:\.[\w-]+)+`,
+ * which retries its local part from every position of a long `[\w.+-]` run
+ * that holds no `@`: 100 000 characters without a space took about 6 s before
+ * a single token was matched, out of reach of every time budget.
+ */
+const EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
+const EMAIL_LOCAL_CHAR_RE = /[\w.+-]/;
 /**
  * A file path or a `scope/name` slug: a token containing `/` with no spaces,
  * starting at a word boundary (`src/core/matcher.ts`, `~/ashlr`, `@ashlr/lexicon`,
@@ -183,9 +192,39 @@ export function indentedCodeRanges(text: string): Range[] {
   return out;
 }
 
+/**
+ * The ranges `[\w.+-]+@[\w-]+(?:\.[\w-]+)+` matches with the `g` flag, found in
+ * linear time: each `@` with a valid domain after it, extended left over the
+ * local-part characters no earlier than the end of the previous match.
+ */
+export function emailRanges(text: string): Range[] {
+  const out: Range[] = [];
+  let floor = 0;
+  let at = text.indexOf('@');
+  while (at !== -1) {
+    let start = at;
+    while (start > floor && EMAIL_LOCAL_CHAR_RE.test(text.charAt(start - 1))) start--;
+    if (start < at) {
+      EMAIL_DOMAIN_RE.lastIndex = at;
+      const m = EMAIL_DOMAIN_RE.exec(text);
+      if (m) {
+        const end = at + m[0].length;
+        out.push({ start, end });
+        floor = end;
+        at = text.indexOf('@', end);
+        continue;
+      }
+    }
+    at = text.indexOf('@', at + 1);
+  }
+  return out;
+}
+
 export function collectRanges(text: string): Range[] {
   const ranges: Range[] = indentedCodeRanges(text);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
+  // A loop, not push(...): a pasted address list can hold more ranges than a call takes arguments.
+  for (const r of emailRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
@@ -200,6 +239,17 @@ export function collectRanges(text: string): Range[] {
   return ranges;
 }
 
+/**
+ * `raw` without its trailing run of `.`, `'`, `’` and `-`. A loop rather than
+ * `/[.'’\-]+$/u`, which retries from every character of a long run of them
+ * that does not reach the end ("a----...b" took seconds for 50 000 dashes).
+ */
+function trimTrailingPunct(raw: string): string {
+  let end = raw.length;
+  while (end > 0 && TRAILING_PUNCT.has(raw.charAt(end - 1))) end--;
+  return end === raw.length ? raw : raw.slice(0, end);
+}
+
 export function tokenize(text: string, skipCode: boolean): Token[] {
   const ranges = skipCode ? collectRanges(text) : [];
   const tokens: Token[] = [];
@@ -211,7 +261,7 @@ export function tokenize(text: string, skipCode: boolean): Token[] {
   while ((m = TOKEN_RE.exec(text)) !== null) {
     let raw = m[0];
     const start = m.index;
-    const trimmed = raw.replace(TRAILING_PUNCT_RE, '');
+    const trimmed = trimTrailingPunct(raw);
     if (trimmed.length === 0) continue;
     raw = trimmed;
     const end = start + raw.length;

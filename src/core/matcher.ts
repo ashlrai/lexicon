@@ -453,16 +453,24 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
     return REASON_RANK[a.reason] - REASON_RANK[b.reason];
   });
 
+  // Which characters an accepted candidate already covers. Testing each
+  // candidate against every accepted one was quadratic in the number of hits,
+  // and ran after shouldStop had ended the scan, so a long paste full of
+  // aliases held the thread for seconds past any time budget. A candidate
+  // spans one window of tokens, so marking its characters stays linear.
+  const claimed = new Uint8Array(text.length);
   const accepted: Candidate[] = [];
   for (const c of candidates) {
     let overlaps = false;
-    for (const a of accepted) {
-      if (c.start < a.end && a.start < c.end) {
+    for (let k = c.start; k < c.end; k++) {
+      if (claimed[k] === 1) {
         overlaps = true;
         break;
       }
     }
-    if (!overlaps) accepted.push(c);
+    if (overlaps) continue;
+    claimed.fill(1, c.start, c.end);
+    accepted.push(c);
   }
   accepted.sort((a, b) => a.start - b.start);
 

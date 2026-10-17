@@ -365,6 +365,18 @@ function escapeRegExp(value: string): string {
  * actually produces, so "it's ashlr.ai, not Ashler" had no anchor and was
  * flattened to the one thing it must never say.
  */
+/** Index of the first value in ascending `sorted` that is at least `min`. */
+function firstAtOrAfter(sorted: readonly number[], min: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 function wordOccurrences(text: string, needle: string): number[] {
   const found: number[] = [];
   if (needle.length === 0) return found;
@@ -541,9 +553,16 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
         bare = wordOccurrences(text, result);
         occurrences.set(result, bare);
       }
-      for (const at of bare) {
-        if (at < from || at + result.length > to) continue;
-        if (here.some(({ span }) => at < span.end && span.start < at + result.length)) continue;
+      // `bare` is in offset order and `here` holds sorted, non-overlapping
+      // spans, so both walk forward from this block's start. Scanning every
+      // occurrence in the text per block, and every span per occurrence, made
+      // a long paste full of hits quadratic after the time budget had ended.
+      let span = 0;
+      for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
+        const at = bare[o];
+        if (at + result.length > to) break;
+        while (span < here.length && here[span].span.end <= at) span++;
+        if (span < here.length && here[span].span.start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
 

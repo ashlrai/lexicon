@@ -51861,13 +51861,14 @@ function similarity(a, b) {
 
 // src/core/matcher/tokenize.ts
 var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-var TRAILING_PUNCT_RE = /[.'’\-]+$/u;
+var TRAILING_PUNCT = /* @__PURE__ */ new Set([".", "'", "\u2019", "-"]);
 var POSSESSIVE_RE = /['’][sS]$/u;
 var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
-var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+var EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
+var EMAIL_LOCAL_CHAR_RE = /[\w.+-]/;
 var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
 var INDENT_UNIT = 4;
 var QUOTE_PREFIX_RE = /^ {0,3}(?:>[ \t]?)+/;
@@ -51942,9 +51943,32 @@ function indentedCodeRanges(text) {
   }
   return out;
 }
+function emailRanges(text) {
+  const out = [];
+  let floor = 0;
+  let at = text.indexOf("@");
+  while (at !== -1) {
+    let start = at;
+    while (start > floor && EMAIL_LOCAL_CHAR_RE.test(text.charAt(start - 1))) start--;
+    if (start < at) {
+      EMAIL_DOMAIN_RE.lastIndex = at;
+      const m = EMAIL_DOMAIN_RE.exec(text);
+      if (m) {
+        const end = at + m[0].length;
+        out.push({ start, end });
+        floor = end;
+        at = text.indexOf("@", end);
+        continue;
+      }
+    }
+    at = text.indexOf("@", at + 1);
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
+  for (const r of emailRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -51958,6 +51982,11 @@ function collectRanges(text) {
   ranges.sort((a, b) => a.start - b.start);
   return ranges;
 }
+function trimTrailingPunct(raw) {
+  let end = raw.length;
+  while (end > 0 && TRAILING_PUNCT.has(raw.charAt(end - 1))) end--;
+  return end === raw.length ? raw : raw.slice(0, end);
+}
 function tokenize(text, skipCode) {
   const ranges = skipCode ? collectRanges(text) : [];
   const tokens = [];
@@ -51968,7 +51997,7 @@ function tokenize(text, skipCode) {
   while ((m = TOKEN_RE.exec(text)) !== null) {
     let raw = m[0];
     const start = m.index;
-    const trimmed = raw.replace(TRAILING_PUNCT_RE, "");
+    const trimmed = trimTrailingPunct(raw);
     if (trimmed.length === 0) continue;
     raw = trimmed;
     const end = start + raw.length;
@@ -52586,6 +52615,16 @@ function blockBounds(text) {
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+function firstAtOrAfter(sorted, min) {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = lo + hi >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 function wordOccurrences(text, needle) {
   const found = [];
   if (needle.length === 0) return found;
@@ -52695,9 +52734,12 @@ function declineCollapsedMentions(text, spans) {
         bare = wordOccurrences(text, result);
         occurrences.set(result, bare);
       }
-      for (const at of bare) {
-        if (at < from || at + result.length > to) continue;
-        if (here.some(({ span }) => at < span.end && span.start < at + result.length)) continue;
+      let span = 0;
+      for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
+        const at = bare[o];
+        if (at + result.length > to) break;
+        while (span < here.length && here[span].span.end <= at) span++;
+        if (span < here.length && here[span].span.start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
@@ -52955,16 +52997,19 @@ function findReplacements(text, index, opts = {}) {
     if (a.confidence !== b.confidence) return b.confidence - a.confidence;
     return REASON_RANK[a.reason] - REASON_RANK[b.reason];
   });
+  const claimed = new Uint8Array(text.length);
   const accepted = [];
   for (const c of candidates) {
     let overlaps = false;
-    for (const a of accepted) {
-      if (c.start < a.end && a.start < c.end) {
+    for (let k = c.start; k < c.end; k++) {
+      if (claimed[k] === 1) {
         overlaps = true;
         break;
       }
     }
-    if (!overlaps) accepted.push(c);
+    if (overlaps) continue;
+    claimed.fill(1, c.start, c.end);
+    accepted.push(c);
   }
   accepted.sort((a, b) => a.start - b.start);
   const surviving = declineCollapsedMentions(
@@ -54307,11 +54352,14 @@ function normalizeWithIndex(text, index, opts = {}) {
   if (opts.dryRun || replacements.length === 0) {
     return { input: text, output: text, replacements, changed: false };
   }
-  let output2 = text;
-  for (let i = replacements.length - 1; i >= 0; i--) {
-    const r = replacements[i];
-    output2 = output2.slice(0, r.start) + r.replacement + output2.slice(r.end);
+  const parts = [];
+  let at = 0;
+  for (const r of replacements) {
+    parts.push(text.slice(at, r.start), r.replacement);
+    at = r.end;
   }
+  parts.push(text.slice(at));
+  const output2 = parts.join("");
   return { input: text, output: output2, replacements, changed: output2 !== text };
 }
 function diffSummary(result) {
@@ -58325,7 +58373,7 @@ function round(n) {
   return Math.round(n * 1e3) / 1e3;
 }
 var TOKEN_RE2 = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-var TRAILING_PUNCT_RE2 = /[.'’\-]+$/u;
+var TRAILING_PUNCT_RE = /[.'’\-]+$/u;
 var POSSESSIVE_RE2 = /['’][sS]$/u;
 var SKIP_RES = [
   /```[\s\S]*?(?:```|$)/g,
@@ -58349,7 +58397,7 @@ function tokenize2(text) {
   TOKEN_RE2.lastIndex = 0;
   let m;
   while ((m = TOKEN_RE2.exec(blanked)) !== null) {
-    const raw = m[0].replace(TRAILING_PUNCT_RE2, "");
+    const raw = m[0].replace(TRAILING_PUNCT_RE, "");
     if (raw.length === 0) continue;
     const start = m.index;
     const end = start + raw.length;

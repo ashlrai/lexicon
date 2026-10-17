@@ -21,12 +21,17 @@ export function normalizeWithIndex(text: string, index: MatcherIndex, opts: Norm
     return { input: text, output: text, replacements, changed: false };
   }
 
-  // Apply right-to-left so earlier offsets stay valid while splicing.
-  let output = text;
-  for (let i = replacements.length - 1; i >= 0; i--) {
-    const r = replacements[i];
-    output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+  // One pass over the sorted, non-overlapping replacements. Splicing each one
+  // into the whole string copied the text once per replacement, which made a
+  // long paste full of hits quadratic after the time budget had already ended.
+  const parts: string[] = [];
+  let at = 0;
+  for (const r of replacements) {
+    parts.push(text.slice(at, r.start), r.replacement);
+    at = r.end;
   }
+  parts.push(text.slice(at));
+  const output = parts.join('');
 
   return { input: text, output, replacements, changed: output !== text };
 }
