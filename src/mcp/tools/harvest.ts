@@ -2,16 +2,19 @@
  * Mining new terms: scanning the repo for names worth adding, proposing
  * what the lexicon should learn next, and applying one of those proposals.
  */
+import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
+  defaultProjectPath,
   harvestRepo,
   isProjectTrustError,
   loadLexicon,
   loadVoiceHistory,
   removeTerm,
+  resolvePaths,
   suggestAliases,
   suggestTerms,
   termHolders,
@@ -139,7 +142,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), " +
         "'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); " +
         'when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. ' +
-        'Pass the suggestion object back as received. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.',
+        "Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. " +
+        'A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.',
       inputSchema: {
         suggestion: z.object({
           kind: z.enum(SUGGESTION_KINDS),
@@ -198,6 +202,19 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             );
           }
           target ??= existing.scope;
+        }
+        // suggest_terms with `cwd` reads another repo, and its suggestions name
+        // that repo's project file in `path`; this server writes only its own
+        // project file, so applying one there edited a file the agent never
+        // named to the user (or created a copy of the term in it).
+        if (target === 'project' && suggestion.path !== undefined) {
+          const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+          if (resolve(suggestion.path) !== resolve(here)) {
+            throw new Error(
+              `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. ` +
+                `The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord(dirname(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`,
+            );
+          }
         }
         const storeOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
         if (kind === 'stale') {

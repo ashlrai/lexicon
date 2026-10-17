@@ -511,6 +511,34 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   });
 });
 
+describe('apply_suggestion for a suggestion from another repo', () => {
+  // Catches: suggest_terms with `cwd` named the other repo's .lexicon.yaml in
+  // each suggestion's `path`, but apply_suggestion wrote this server's own
+  // project file, so the agent told the user one file and edited another.
+  it('refuses a project suggestion whose path is not this server project file, and writes nothing', async () => {
+    const own = await trustedProjectFile();
+    await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' });
+    const ownBefore = await fs.readFile(own, 'utf8');
+    const other = path.join(home, 'other-repo', '.lexicon.yaml');
+    for (const suggestion of [
+      { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys', scope: 'project', path: other },
+      { kind: 'stale', canonical: 'Kubernetes', scope: 'project', path: other },
+    ]) {
+      const res = await call('apply_suggestion', { suggestion });
+      expect(res.isError, res.text).toBe(true);
+      expect(res.text).toContain(other);
+      expect(res.text).toContain(own);
+      expect(res.text).toContain('nothing was written');
+    }
+    expect(await fs.readFile(own, 'utf8')).toBe(ownBefore);
+
+    // Its own path, or none, is applied as before.
+    const ok = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys', scope: 'project', path: own } });
+    expect(ok.isError, ok.text).toBe(false);
+    expect(JSON.parse(ok.text)).toMatchObject({ path: own });
+  });
+});
+
 describe('apply_suggestion stale on a term in both lexicon files', () => {
   // Catches: removeTerm stops at the first file that holds the term, so a
   // stale term with a project copy and a global copy lost only the project
