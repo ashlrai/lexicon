@@ -17,8 +17,8 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read |
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
 | [`lexicon export [options] [format]`](#lexicon-export) | export the merged lexicon for another tool (run without a format to list them) |
-| [`lexicon path`](#lexicon-path) | print the resolved global and project lexicon paths |
-| [`lexicon doctor`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
+| [`lexicon path [options]`](#lexicon-path) | print the resolved global and project lexicon paths |
+| [`lexicon doctor [options]`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
@@ -57,8 +57,8 @@ Commands:
   normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
-  path                                    print the resolved global and project lexicon paths
-  doctor                                  check lexicon files, term conflicts and the Claude Code integration
+  path [options]                          print the resolved global and project lexicon paths
+  doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
@@ -217,6 +217,8 @@ Usage: lexicon path [options]
 print the resolved global and project lexicon paths
 
 Options:
+  --json      print { global, project } as JSON (project is null when there is
+              none)
   -h, --help  display help for command
 ```
 
@@ -228,6 +230,9 @@ Usage: lexicon doctor [options]
 check lexicon files, term conflicts and the Claude Code integration
 
 Options:
+  --json      print the report as JSON ({ ok, ready, summary, nextStep, checks,
+              paths, versions }, as MCP lexicon_doctor returns it); exit 1 when
+              a check fails
   -h, --help  display help for command
 ```
 

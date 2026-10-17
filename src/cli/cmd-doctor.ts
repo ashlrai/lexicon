@@ -456,8 +456,14 @@ export function renderDoctorReport(report: DoctorReport, io: IO): number {
   return failures === 0 ? 0 : 1;
 }
 
-export async function runDoctor(opts: CommonOptions, io: IO, deps: DoctorDeps = {}): Promise<number> {
-  return renderDoctorReport(await runDoctorReport(opts, deps), io);
+export async function runDoctor(opts: CommonOptions & { json?: boolean }, io: IO, deps: DoctorDeps = {}): Promise<number> {
+  const report = await runDoctorReport(opts, deps);
+  if (opts.json) {
+    // The same object MCP lexicon_doctor returns, and the same exit code as the text.
+    line(io, JSON.stringify(report, null, 2));
+    return report.ok ? 0 : 1;
+  }
+  return renderDoctorReport(report, io);
 }
 
 /**

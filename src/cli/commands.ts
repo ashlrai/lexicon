@@ -801,8 +801,13 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 // path
 // ---------------------------------------------------------------------------
 
-export async function runPath(opts: CommonOptions, io: IO): Promise<number> {
+export async function runPath(opts: CommonOptions & { json?: boolean }, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
+  if (opts.json) {
+    // `project` is the file the walk found, trusted or not; null when there is none.
+    line(io, JSON.stringify({ global: paths.global, project: paths.project ?? null }, null, 2));
+    return 0;
+  }
   line(io, `global: ${safe(paths.global)}`);
   line(io, `project: ${paths.project ? safe(paths.project) : '(none)'}`);
   return 0;

@@ -6,6 +6,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `lexicon doctor --json` prints the report as data, the same `{ ok, ready, summary, nextStep, checks, paths, versions }` object MCP `lexicon_doctor` returns, and exits 1 when a check fails, as the text does. A script had to scrape the check glyphs.
+- `lexicon path --json` prints `{ global, project }` (`project` is `null` when there is none).
 - `lexicon remove --global` removes only the global copy of a term, mirroring `--project` (the two together exit 1). With `--alias` it limits the alias removal to the global file too. The `warn:` line naming a copy left in the other file now gives `lexicon remove "<canonical>" --global` or `--project`, and `--project` on a term only the global file holds points at `--global`.
 
 ### Fixed

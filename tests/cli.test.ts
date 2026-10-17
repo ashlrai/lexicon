@@ -508,6 +508,16 @@ describe('add / remove / path', () => {
     await runPath({}, io);
     expect(io.out).toBe(`global: ${state.globalPath}\nproject: (none)\n`);
   });
+
+  it('path --json prints { global, project }, project null when there is none', async () => {
+    const none = makeIO();
+    expect(await runPath({ json: true }, none)).toBe(0);
+    expect(JSON.parse(none.out)).toEqual({ global: state.globalPath, project: null });
+    state.projectPath = '/tmp/proj/.lexicon.yaml';
+    const some = makeIO();
+    expect(await runPath({ json: true }, some)).toBe(0);
+    expect(JSON.parse(some.out)).toEqual({ global: state.globalPath, project: '/tmp/proj/.lexicon.yaml' });
+  });
 });
 
 describe('export', () => {
@@ -747,6 +757,28 @@ describe('doctor', () => {
     expect(io.out).toMatch(/✗ alias "Ashler" of "Ashlr\.AI" equals the canonical of "Ashler"/);
     expect(io.out).toMatch(/! alias "the" of "Ashlr\.AI" is a common English word/);
     expect(io.out).toMatch(/! no clipboard backend found \(.*wl-clipboard/);
+  });
+
+  // Catches: an agent scripting `lexicon doctor` had to scrape check glyphs; MCP lexicon_doctor had the data.
+  it('doctor --json prints the report lexicon_doctor returns, with the same exit code', async () => {
+    const conflicted: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'] },
+        { canonical: 'Ashler', aliases: ['Ashlar'] },
+      ],
+    };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: conflicted, exists: true });
+    const deps = { platform: 'linux' as const, env: { PATH: '' }, exec: () => 'no servers' };
+    const io = makeIO();
+    expect(await runDoctor({ json: true }, io, deps)).toBe(1);
+    const report = JSON.parse(io.out) as { ok: boolean; ready: boolean; summary: string; nextStep: string; checks: { level: string; message: string }[]; paths: { global: string } };
+    expect(report.ok).toBe(false);
+    expect(report.checks.some((c) => c.level === 'fail' && /equals the canonical of "Ashler"/.test(c.message))).toBe(true);
+    expect(report.paths.global).toBe(state.globalPath);
+    expect(typeof report.nextStep).toBe('string');
+    expect(io.out).not.toContain('✗');
+    expect(report).toEqual(JSON.parse(JSON.stringify(await runDoctorReport({}, deps))));
   });
 
   it('warns about an alias its own never list blocks', async () => {

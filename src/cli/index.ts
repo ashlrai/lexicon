@@ -167,12 +167,14 @@ program
 program
   .command('path')
   .description('print the resolved global and project lexicon paths')
-  .action(async () => done(await runPath(withGlobals({}), io)));
+  .option('--json', 'print { global, project } as JSON (project is null when there is none)')
+  .action(async (opts: { json?: boolean }) => done(await runPath(withGlobals(opts), io)));
 
 program
   .command('doctor')
   .description('check lexicon files, term conflicts and the Claude Code integration')
-  .action(async () => done(await runDoctor(withGlobals({}), io)));
+  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, paths, versions }, as MCP lexicon_doctor returns it); exit 1 when a check fails')
+  .action(async (opts: { json?: boolean }) => done(await runDoctor(withGlobals(opts), io)));
 
 program
   .command('mcp')
