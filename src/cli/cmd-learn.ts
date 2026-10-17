@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, fail, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -77,7 +77,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       line(
         io,
         JSON.stringify(
-          { ...rest, path: file.path, file: { path: file.path, scope: file.scope }, heard: correction.heard, meant: correction.meant },
+          jsonOk({ ...rest, path: file.path, file: { path: file.path, scope: file.scope }, heard: correction.heard, meant: correction.meant }),
           null,
           2,
         ),
@@ -162,7 +162,7 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     warnSkippedProject(loaded, io);
     const stats = computeStats(loaded);
     if (opts.json) {
-      line(io, JSON.stringify({ ...stats, ...skippedProjectJson(loaded) }, null, 2));
+      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded) }), null, 2));
     } else {
       io.stdout(renderStats(stats));
     }

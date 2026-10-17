@@ -14,6 +14,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The object-shaped `--json` successes of `lexicon add`, `list --full`, `path`, `learn`, `stats`, `import` and `import --guided` lead with `ok: true`, matching the `{ ok: false, error }` their failures print, so a script reads one key for either outcome. The other keys are unchanged, and array-shaped successes (`list --json`, `harvest --json`) stay bare arrays. MCP `import_dictionary`, which reads `import --json`, returns the report without the key, as before.
 - `lexicon serve --pair --json` leads with `ok: true` when the browser opened (it already led with `ok: false` when it did not), and `lexicon serve --show --json` and the `lexicon serve --json` listening line lead with `ok: true`, matching the `{ ok: false, error }` their failures print. The other keys are unchanged.
 - `lexicon remove --json` (and `remove --alias --json`) success documents lead with `ok: true`, matching the `ok: false` its failures lead with, so a script reads `ok` for either outcome. The other keys are unchanged.
 - The npm package no longer ships the 104 `dist/**/*.js.map` source maps (about 870 KB unpacked). They pointed at `../../src/*.ts`, which the package does not contain, so they mapped nothing. A new test checks the packed file list (computed with npm-packlist, as `npm pack` does) holds every `bin`, `main`, `types` and `exports` target, the plugin bundles and manifests, every vendored pack, skill and command, and no maps, sources, tests or fixtures.

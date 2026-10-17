@@ -490,6 +490,7 @@ describe('lexicon learn (CLI)', () => {
     expect(payload.path).toBe('/fake/global.yaml');
     expect(payload.file).toEqual({ path: '/fake/global.yaml', scope: 'global' });
     expect(out()).not.toContain('Mason Wyatt');
-    expect(Object.keys(payload).sort()).toEqual(['aliasAdded', 'created', 'file', 'heard', 'meant', 'path', 'term']);
+    expect(Object.keys(payload).sort()).toEqual(['aliasAdded', 'created', 'file', 'heard', 'meant', 'ok', 'path', 'term']);
+    expect(Object.keys(payload)[0]).toBe('ok');
   });
 });

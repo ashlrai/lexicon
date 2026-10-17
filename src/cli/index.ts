@@ -124,7 +124,7 @@ program
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
   .option('--json', 'print terms as JSON (a bare array)')
-  .option('--full', 'print { terms, counts, paths } as JSON, the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out (implies --json)')
+  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));
@@ -172,7 +172,7 @@ program
 program
   .command('path')
   .description('print the resolved global and project lexicon paths')
-  .option('--json', 'print { global, project } as JSON (project is null when there is no project lexicon)')
+  .option('--json', 'print { ok: true, global, project } as JSON (project is null when there is no project lexicon)')
   .action(async (opts: PathOptions) => done(await runPath(withGlobals(opts), io)));
 
 program

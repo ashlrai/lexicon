@@ -712,11 +712,11 @@ describe('add / remove / path', () => {
   it('path --json prints { global, project }, project null when there is none', async () => {
     const none = makeIO();
     expect(await runPath({ json: true }, none)).toBe(0);
-    expect(JSON.parse(none.out)).toEqual({ global: state.globalPath, project: null });
+    expect(JSON.parse(none.out)).toEqual({ ok: true, global: state.globalPath, project: null });
     state.projectPath = '/tmp/proj/.lexicon.yaml';
     const some = makeIO();
     expect(await runPath({ json: true }, some)).toBe(0);
-    expect(JSON.parse(some.out)).toEqual({ global: state.globalPath, project: '/tmp/proj/.lexicon.yaml' });
+    expect(JSON.parse(some.out)).toEqual({ ok: true, global: state.globalPath, project: '/tmp/proj/.lexicon.yaml' });
   });
 });
 

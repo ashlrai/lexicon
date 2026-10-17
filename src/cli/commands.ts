@@ -385,7 +385,7 @@ export async function runAdd(
     line(
       io,
       JSON.stringify(
-        { term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) },
+        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) }),
         null,
         2,
       ),
@@ -567,7 +567,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
       ...skippedProjectJson(loaded),
     };
-    line(io, JSON.stringify(payload, null, 2));
+    line(io, JSON.stringify(jsonOk(payload), null, 2));
     return 0;
   }
   if (opts.json) {
@@ -936,7 +936,7 @@ export interface PathOptions extends CommonOptions {
 export async function runPath(opts: PathOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
   if (opts.json) {
-    line(io, JSON.stringify({ global: paths.global, project: paths.project ?? null }, null, 2));
+    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null }), null, 2));
     return 0;
   }
   line(io, `global: ${safe(paths.global)}`);

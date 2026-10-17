@@ -275,6 +275,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           report = { output: out };
         }
         const stderr = io.err().trim();
+        // `import --json` leads with the CLI's `ok: true`; the tool result keeps its own shape.
+        if (isRecord(report) && report.ok === true) delete report.ok;
         return textResult(isRecord(report) ? { ...report, ...(stderr ? { stderr } : {}) } : report);
       }),
   );

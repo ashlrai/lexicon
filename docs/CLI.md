@@ -147,10 +147,10 @@ list terms from the merged global + project lexicon
 
 Options:
   --json                 print terms as JSON (a bare array)
-  --full                 print { terms, counts, paths } as JSON, the object MCP
-                         list_terms returns, plus projectTrust, skippedProject
-                         and note when an untrusted project lexicon was left out
-                         (implies --json)
+  --full                 print { ok: true, terms, counts, paths } as JSON, ok
+                         and then the object MCP list_terms returns, plus
+                         projectTrust, skippedProject and note when an untrusted
+                         project lexicon was left out (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
   -h, --help             display help for command
@@ -233,8 +233,8 @@ Usage: lexicon path [options]
 print the resolved global and project lexicon paths
 
 Options:
-  --json      print { global, project } as JSON (project is null when there is
-              no project lexicon)
+  --json      print { ok: true, global, project } as JSON (project is null when
+              there is no project lexicon)
   -h, --help  display help for command
 ```
 
