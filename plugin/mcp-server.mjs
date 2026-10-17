@@ -60616,7 +60616,7 @@ var registerTermTools = (server, ctx) => {
       const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
       const saved = learned.aliasAdded ? `"${heard}" -> "${term.canonical}" saved` : heard.trim().toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
-      const conflictText = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
+      const conflictText = conflict ? `. ${conflictNote([conflict], "mcp")}` : "";
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
       const pending = untrusted ? untrustedWriteFields(learned.file.path, "It") : void 0;
       return textResult({
@@ -60627,8 +60627,8 @@ var registerTermTools = (server, ctx) => {
         ...conflict ? { conflict } : {},
         ...untrustedProject ? { untrustedProject } : {},
         ...pending ?? {},
-        // `saved` has no full stop of its own (the conflict note continues
-        // its sentence), so one is added before any note that starts a new one.
+        // `saved` has no full stop of its own, so one is added before any
+        // note that follows it.
         summary: saved + (conflictText || (untrustedNote || pending ? "." : "")) + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
       });
     })
