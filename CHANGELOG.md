@@ -15,6 +15,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon learn --json` pairs `conflict` with a `note` naming the scoped remove command (`lexicon remove "<canonical>" --alias "<alias>" --global`), as `lexicon add --json` does for its `conflicts`. A script that learned a spelling another term holds got the conflict and no way out.
 - `lexicon normalize --min-confidence` outside 0 to 1 (`5`, `high`) is refused with a `nextStep` (`pass a value from 0 to 1, e.g. --min-confidence 0.8`), in `{ ok: false, error, nextStep }` under `--json` and as a second stderr line without it, before stdin is read. The JSON had only `error`.
 - MCP `apply_suggestion` with an `alias` suggestion and no `alias` says `an "alias" suggestion needs an alias`; it read `a "alias" suggestion`. A `never` suggestion without one says which word it needs.
 - `lexicon add --json` pairs `conflicts` with a `note` naming the remove command for each conflicting alias, as MCP `add_term` pairs them with its `remove_term` call; the JSON had the conflicts and no way out. The command, in the note and in the `warn:` line of `add` and `learn`, now ends in `--global` or `--project`, so it edits only the file that holds the alias.
