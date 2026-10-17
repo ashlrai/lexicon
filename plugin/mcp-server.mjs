@@ -52549,6 +52549,8 @@ function wordBefore(text, at) {
 function blockBounds(text) {
   const bounds = [];
   let start = 0;
+  let paragraph = 0;
+  let blank = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     let isBreak = false;
@@ -52567,10 +52569,15 @@ function blockBounds(text) {
     }
     if (!isBreak) continue;
     const end = ch === "\n" ? i : i + 1;
-    if (end > start) bounds.push([start, end]);
+    if (end > start) {
+      if (blank) paragraph++;
+      blank = false;
+      bounds.push([start, end, paragraph]);
+    }
+    if (ch === "\n") blank = bounds.length > 0;
     start = i + 1;
   }
-  if (start < text.length) bounds.push([start, text.length]);
+  if (start < text.length) bounds.push([start, text.length, blank ? paragraph + 1 : paragraph]);
   return bounds;
 }
 function escapeRegExp(value) {
@@ -52639,9 +52646,31 @@ function declineCollapsedMentions(text, spans) {
   const occurrences = /* @__PURE__ */ new Map();
   let cursor = 0;
   const bounds = blockBounds(text);
+  const paragraphs = /* @__PURE__ */ new Map();
+  for (const [from, to, p] of bounds) {
+    const seen = paragraphs.get(p);
+    paragraphs.set(p, seen ? [seen[0], to] : [from, to]);
+  }
+  const foldedParagraphs = /* @__PURE__ */ new Map();
+  const anchoredParagraphs = /* @__PURE__ */ new Map();
+  const paragraphHolds = (p, result) => {
+    const key = `${p}\0${result}`;
+    let held = anchoredParagraphs.get(key);
+    if (held === void 0) {
+      const extent = paragraphs.get(p);
+      let folded = foldedParagraphs.get(p);
+      if (folded === void 0 && extent) {
+        folded = foldSpelling(text.slice(extent[0], extent[1]));
+        foldedParagraphs.set(p, folded);
+      }
+      held = folded !== void 0 && folded.includes(foldSpelling(result));
+      anchoredParagraphs.set(key, held);
+    }
+    return held;
+  };
   for (let b = 0; b < bounds.length; b++) {
-    const [from, to] = bounds[b];
-    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
+    const [from, to, paragraph] = bounds[b];
+    const above = paragraphs.has(paragraph - 1) ? paragraph - 1 : null;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
     const here = [];
     for (let i = cursor; i < spans.length && spans[i].start < to; i++) {
@@ -52669,8 +52698,8 @@ function declineCollapsedMentions(text, spans) {
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
-      // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
-      previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
+      // says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
+      paragraphHolds(paragraph, result) || above !== null && paragraphHolds(above, result);
       if (!anchored) continue;
       for (const p of points) {
         if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);

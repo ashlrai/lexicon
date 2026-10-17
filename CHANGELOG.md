@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- A quoted spelling is no longer flattened when the canonical stands earlier in the same paragraph rather than in the same or the previous sentence. The quoting guard looked for its anchor in the sentence and the one before it only, so a bullet list that names `Ashlr.AI` in one item and quotes a case-only correction ("ashlr" should be "Ashlr") a few items down had both quoted words rewritten to `Ashlr.AI`. The anchor now reaches the whole paragraph (a blank line ends one, so a bullet list is one) and the paragraph directly above, as documented; linking is unchanged, so two unquoted mentions still have to contrast before either is kept.
+
 ## 0.5.6 (2026-10-16)
 
 ### Security

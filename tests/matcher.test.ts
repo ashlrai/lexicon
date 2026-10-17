@@ -952,6 +952,26 @@ describe('bug J: text that quotes a misspelling is not flattened into one spelli
     const far = 'Ashlr.AI ships today.\n\nThe cluster is fine.\n\nreddis and red iss are the same box.';
     expect(apply(far, find(far, [REDIS]))).toBe('Ashlr.AI ships today.\n\nThe cluster is fine.\n\nRedis and Redis are the same box.');
   });
+
+  // The anchor is the paragraph, not the sentence. A changelog bullet list is
+  // one paragraph; the canonical stood in an earlier bullet, and a later bullet
+  // quoted a case-only correction of the term's own alias ("ashlr" should be
+  // "Ashlr"). The anchor was looked up in the sentence and the one before it
+  // only, so both quoted spellings were flattened to Ashlr.AI.
+  it('anchors on the canonical anywhere in the same paragraph (quoted case-only correction)', () => {
+    const SHORT: Term = { canonical: 'Ashlr.AI', aliases: ['Ashlr AI', 'Ashlr', 'Ashler'] };
+    const text = [
+      '- Adding a never word to `Ashlr.AI` used to add "Ashlr AI" and three more. A new term still gets them.',
+      '- The hook is faster. It reads a cache.',
+      '- `lexicon learn` accepts a case-only correction ("ashlr" should be "Ashlr"): it recases the term.',
+    ].join('\n');
+    keeps(text, [SHORT]);
+    // the same reach in the paragraph above, past its first sentence
+    keeps('Ashlr.AI is the brand. It ships today.\n\nThe docs say "Ashler" in one place.', [SHORT]);
+    // and the reach stops at the paragraph: one further up does not anchor
+    const far = 'Ashlr.AI ships.\n\nThe cluster is fine.\n\nThe docs say "ashler" in one place.';
+    expect(apply(far, find(far, [SHORT]))).toBe('Ashlr.AI ships.\n\nThe cluster is fine.\n\nThe docs say "Ashlr.AI" in one place.');
+  });
 });
 
 // Three defects a review found in the matcher work of v0.5.3. Bug M is a
