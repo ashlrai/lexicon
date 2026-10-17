@@ -64230,13 +64230,13 @@ var registerPackTools = (server, ctx) => {
     "add_pack",
     {
       title: "Install a starter term pack",
-      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project; a project file that is not trusted yet is left untrusted, `trusted: false`: relay `nextStep`). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack adds dozens of terms (list_packs gives each pack's `terms` count), so name the pack and its size and ask before calling this. Remove one later with " + cliCommand("pack remove <name>") + ". For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so " + cliCommand("pack update") + " re-checks it later.",
+      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project; a project file that is not trusted yet is left untrusted, `trusted: false`: relay `nextStep`). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack adds dozens of terms (list_packs gives each pack's `terms` count), so name the pack and its size and ask before calling this. Remove one later with " + cliCommand("pack remove <name>") + ". For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. A vendored pack installs directly: registry, previewDigest or confirm: false with one is refused and nothing is written. Community installs pin the checksum, so " + cliCommand("pack update") + " re-checks it later.",
       inputSchema: {
         name: external_exports.string().describe("Pack name from list_packs (e.g. developer) or a community ref like example/cardiology."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC + " Required for community refs."),
-        confirm: external_exports.boolean().optional().describe("Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing."),
-        previewDigest: external_exports.string().regex(/^[a-f0-9]{64}$/).optional().describe("Community packs: digest returned by the approved full-content preview; required with confirm.")
+        confirm: external_exports.boolean().optional().describe("Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing. A vendored pack has no preview: confirm: false with one is refused."),
+        previewDigest: external_exports.string().regex(/^[a-f0-9]{64}$/).optional().describe("Community packs only: digest returned by the approved full-content preview; required with confirm. Refused with a vendored pack.")
       }
     },
     async ({ name, scope, registry: registry2, confirm, previewDigest }) => guarded(async () => {
@@ -64295,6 +64295,16 @@ var registerPackTools = (server, ctx) => {
         });
       }
       if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
+      const stray = [
+        ...registry2 !== void 0 ? ["registry"] : [],
+        ...previewDigest !== void 0 ? ["previewDigest"] : [],
+        ...confirm === false ? ["confirm: false"] : []
+      ];
+      if (stray.length > 0) {
+        throw new Error(
+          `"${name}" is a vendored starter pack, which installs directly without a preview, so ${stray.join(", ")} ${stray.length === 1 ? "does" : "do"} not apply (they are for <author>/<name> community refs). Nothing was installed. Call again with only name (and scope) once the user agreed to this pack, or pass the <author>/<name> ref for a community pack.`
+        );
+      }
       const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
       const result = await installPack(name, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {}, ...writeOpts });
       return textResult({
@@ -64318,12 +64328,18 @@ var registerPackTools = (server, ctx) => {
         sources: external_exports.array(external_exports.enum(IMPLEMENTED_IMPORT_SOURCES)).optional().describe("Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
-        previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply. Expires after five minutes or a server restart."),
-        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe("Only candidate ids approved by the user from that preview; required to apply, empty means import nothing.")
+        previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart."),
+        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe("Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.")
       }
     },
     async ({ sources, apply, scope, previewToken, approvedCandidateIds }) => guarded(async () => {
       pruneImports();
+      if (apply !== true && (previewToken !== void 0 || approvedCandidateIds !== void 0)) {
+        const stray = [...previewToken !== void 0 ? ["previewToken"] : [], ...approvedCandidateIds !== void 0 ? ["approvedCandidateIds"] : []];
+        throw new Error(
+          `${stray.join(" and ")} ${stray.length === 1 ? "is" : "are"} only used with apply: true, so nothing was read or written and the preview is kept. To import the approved candidates, call again with apply: true, the same sources and scope, previewToken and approvedCandidateIds; to preview again, omit them.`
+        );
+      }
       if (apply === true) {
         if (sources === void 0 || previewToken === void 0 || approvedCandidateIds === void 0) {
           throw new Error("apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview");
