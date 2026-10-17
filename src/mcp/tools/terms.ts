@@ -24,7 +24,7 @@ import {
   suggestAliases,
   suggestCanonicalFor,
 } from '../../core/index.js';
-import type { NormalizeResult, Term, TermScope } from '../../core/index.js';
+import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
@@ -70,13 +70,6 @@ export function normalizeCut(text: string, max: number): number {
     if (/\s/.test(text.charAt(i - 1))) return i;
   }
   return cut;
-}
-
-interface IncompleteNormalize {
-  reasons: ('length' | 'time')[];
-  checkedChars?: number;
-  totalChars: number;
-  note: string;
 }
 
 /** Case-insensitive canonical lookup, matching how the store compares canonicals. */
@@ -178,12 +171,12 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             log('recordHits failed:', errorMessage(err)),
           );
         }
-        const reasons: IncompleteNormalize['reasons'] = [...(tail ? (['length'] as const) : []), ...(timedOut ? (['time'] as const) : [])];
+        const reasons: NormalizeIncomplete['reasons'] = [...(tail ? (['length'] as const) : []), ...(timedOut ? (['time'] as const) : [])];
         const notes = [
           ...(tail ? [`Only the first ${head.length} of ${text.length} characters were checked; the rest is returned unchanged.`] : []),
           ...(timedOut ? [`Matching stopped at the ${ctx.normalizeBudgetMs} ms budget; later text may still hold uncorrected names.`] : []),
         ];
-        const incomplete: IncompleteNormalize | undefined =
+        const incomplete: NormalizeIncomplete | undefined =
           reasons.length > 0
             ? {
                 reasons,

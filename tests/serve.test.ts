@@ -414,7 +414,13 @@ describe('POST /normalize', () => {
         ).json()) as NormalizeResult;
       // The first token is always matched; the budget is checked before each later one.
       expect((await call('ashler hello')).replacements).toHaveLength(1);
-      expect((await call('hello ashler')).replacements).toHaveLength(0);
+      const cut = (await call('hello ashler')) as NormalizeResult & { incomplete?: { reasons: string[]; totalChars: number; note: string } };
+      expect(cut.replacements).toHaveLength(0);
+      // Without this the cut-short body reads as fully checked.
+      expect(cut.incomplete).toMatchObject({ reasons: ['time'], totalChars: 12 });
+      expect(cut.incomplete?.note).toMatch(/0 ms budget/);
+      // A one-token body never polls the budget, so it is complete.
+      expect((await call('ashler')) as object).not.toHaveProperty('incomplete');
     } finally {
       await tight.stop();
     }

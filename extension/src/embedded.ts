@@ -18,8 +18,9 @@ import {
   parseLexicon,
   parseYaml,
   stringifyYaml,
+  timeBudgetIncomplete,
 } from './core.js';
-import type { Lexicon, MatcherIndex, NormalizeResult } from './core.js';
+import type { Lexicon, MatcherIndex, NormalizeIncomplete, NormalizeResult } from './core.js';
 import { errorMessage } from './shared.js';
 
 export type Compiled = { lexicon: Lexicon; error: null } | { lexicon: null; error: string };
@@ -39,7 +40,12 @@ export interface EmbeddedEngine {
   lexicon(): Lexicon;
   error(): string | null;
   termCount(): number;
-  normalize(text: string, dryRun?: boolean): NormalizeResult;
+  /** `incomplete` is set only when matching stopped at the budget. */
+  normalize(text: string, dryRun?: boolean): EmbeddedNormalizeResult;
+}
+
+export interface EmbeddedNormalizeResult extends NormalizeResult {
+  incomplete?: NormalizeIncomplete;
 }
 
 /**
@@ -83,7 +89,9 @@ export function createEmbedded(initialYaml: string, opts: EmbeddedOptions = {}):
     normalize: (text, dryRun) => {
       index ??= buildIndex(compiled.lexicon ?? emptyLexicon());
       const started = now();
-      return normalizeWithIndex(text, index, { dryRun, shouldStop: () => now() - started >= budgetMs });
+      let timedOut = false;
+      const result = normalizeWithIndex(text, index, { dryRun, shouldStop: () => (timedOut ||= now() - started >= budgetMs) });
+      return timedOut ? { ...result, incomplete: timeBudgetIncomplete(text.length, budgetMs) } : result;
     },
   };
 }

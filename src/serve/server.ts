@@ -43,6 +43,7 @@ import {
   isProjectTrustError,
   sanitizeForDisplay,
   suggestAliases,
+  timeBudgetIncomplete,
   uninstallPack,
 } from '../core/index.js';
 import type {
@@ -52,6 +53,7 @@ import type {
   LexiconStats,
   LoadedLexicon,
   MatcherIndex,
+  NormalizeIncomplete,
   NormalizeResult,
   PackInfo,
   Term,
@@ -123,6 +125,8 @@ export interface HealthResponse {
 
 export interface NormalizeResponse extends NormalizeResult {
   summary: string;
+  /** Present only when matching stopped at the time budget (`reasons: ['time']`). */
+  incomplete?: NormalizeIncomplete;
 }
 
 export interface LearnResponse {
@@ -579,8 +583,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     // follows every hit-counting request.
     entry.index ??= await loadMatcherIndex(entry.loaded);
     const started = Date.now();
+    let timedOut = false;
     const result = normalizeWithIndex(body.text, entry.index, {
-      shouldStop: () => Date.now() - started >= normalizeBudgetMs,
+      shouldStop: () => (timedOut ||= Date.now() - started >= normalizeBudgetMs),
       ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
       ...(body.minConfidence !== undefined ? { minConfidence: body.minConfidence } : {}),
     });
@@ -590,7 +595,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       await recordHits(canonicals, { cwd, ...storeOpts }).catch(() => undefined);
       invalidate();
     }
-    return { ...result, summary: result.replacements.length > 0 ? diffSummary(result) : '' };
+    return {
+      ...result,
+      summary: result.replacements.length > 0 ? diffSummary(result) : '',
+      // Without it a body cut short by the budget reads as fully corrected.
+      ...(timedOut ? { incomplete: timeBudgetIncomplete(body.text.length, normalizeBudgetMs) } : {}),
+    };
   }
 
   async function handleLearn(raw: unknown): Promise<LearnResponse> {

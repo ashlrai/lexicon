@@ -7,7 +7,7 @@
  * The DOM lib reference above is deliberate: tests/extension.test.ts pulls
  * these modules into the root tsconfig, whose lib is ES2022 only.
  */
-import type { MatchReason } from '../../src/core/types.js';
+import type { MatchReason, NormalizeIncomplete } from '../../src/core/types.js';
 
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:41733';
 /** Path of the server's pairing page; `lexicon serve --pair` opens it, `pair.ts` runs on it. */
@@ -88,6 +88,8 @@ export interface NormalizeOk {
   mode: Mode;
   /** Set when `api` was configured but the request fell back to `embedded`. */
   fallback?: string;
+  /** Set when matching stopped at the engine's time budget: later text was not checked. */
+  incomplete?: NormalizeIncomplete;
 }
 export interface Failure {
   ok: false;

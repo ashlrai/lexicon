@@ -635,6 +635,24 @@ describe('a long prompt stays inside the hook budget', () => {
     expect(roomy.shouldStop!()).toBe(false);
   });
 
+  it('says so when matching stopped at the budget, even when nothing was corrected', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      opts?.shouldStop?.();
+      return fakeNormalize(text);
+    });
+    const out = await runUserPromptSubmitHook(payload('a long prompt with no names'), { matchBudgetMs: 0 });
+    expect(out).not.toBe('');
+    expect(context(out)).toMatch(/stopped checking this prompt .* after its 0 ms budget/);
+    expect(context(out)).toContain('normalize_transcript');
+    // Inside the budget: no note, and an unchanged prompt still prints nothing.
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      opts?.shouldStop?.();
+      return fakeNormalize(text);
+    });
+    expect(await runUserPromptSubmitHook(payload('a long prompt with no names'), { matchBudgetMs: 60_000 })).toBe('');
+  });
+
   it('starts the budget after the index is loaded, so a slow index load cannot cost the corrections', async () => {
     // The old hook started the clock before normalize built the index; on a
     // loaded machine a 2000-term build used up the whole budget and the

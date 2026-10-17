@@ -56,9 +56,13 @@ describe('embedded engine index cache', () => {
     expect(r.replacements.length).toBeGreaterThan(0);
     expect(r.replacements.length).toBeLessThan(200);
     expect(r.output.startsWith('ping Ashlr.AI')).toBe(true);
+    // Says it stopped early, as MCP normalize_transcript and serve do.
+    expect(r.incomplete).toMatchObject({ reasons: ['time'], totalChars: text.length });
+    expect(r.incomplete?.note).toMatch(/50 ms/);
 
     const unbounded = createEmbedded(EXAMPLE_YAML).normalize(text);
     expect(unbounded.replacements.length).toBe(200);
+    expect(unbounded.incomplete).toBeUndefined();
     expect(EMBEDDED_MATCH_BUDGET_MS).toBeGreaterThan(0);
   });
 });

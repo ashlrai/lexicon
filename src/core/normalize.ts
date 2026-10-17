@@ -7,7 +7,7 @@
  */
 import { buildIndex, findReplacements } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
-import type { Lexicon, NormalizeOptions, NormalizeResult } from './types.js';
+import type { Lexicon, NormalizeIncomplete, NormalizeOptions, NormalizeResult } from './types.js';
 
 export function normalize(text: string, lexicon: Lexicon, opts: NormalizeOptions = {}): NormalizeResult {
   return normalizeWithIndex(text, buildIndex(lexicon), opts);
@@ -37,4 +37,18 @@ export function diffSummary(result: NormalizeResult): string {
   return result.replacements
     .map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`)
     .join('\n');
+}
+
+/**
+ * The `incomplete` field for a normalize whose `shouldStop` budget of
+ * `budgetMs` ran out before the end of a `totalChars`-long text.
+ */
+export function timeBudgetIncomplete(totalChars: number, budgetMs: number): NormalizeIncomplete {
+  return {
+    reasons: ['time'],
+    totalChars,
+    note:
+      `Matching stopped at the ${budgetMs} ms budget; later text may still hold uncorrected names. ` +
+      'Normalize the rest again, in smaller pieces, if it matters.',
+  };
 }
