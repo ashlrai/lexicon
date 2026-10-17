@@ -118,7 +118,9 @@ import {
   runNormalize,
   runPath,
   runRemove,
+  runHarvest,
 } from '../src/cli/commands.js';
+import { fail } from '../src/cli/io.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
 import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
@@ -432,6 +434,30 @@ describe('add / remove / path', () => {
     const ok = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
     expect(JSON.parse(ok.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+  });
+
+  // Catches: `harvest --add --json` printed the candidate array before the
+  // writes, so a write that failed partway left two JSON documents on stdout
+  // (the array, then the `{ ok: false }` index.ts prints for the throw).
+  it('harvest --add --json prints exactly one JSON document, also when a write fails partway', async () => {
+    const candidate = (canonical: string) => ({ canonical, category: 'product' as const, count: 2, suggestedAliases: [`${canonical}x`], evidence: [], source: 'harvest:repo' as const });
+    const repo = os.tmpdir();
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([candidate('Quokka'), candidate('Wombat')]);
+    vi.mocked(core.addTerm).mockImplementationOnce(vi.mocked(core.addTerm).getMockImplementation()!).mockRejectedValueOnce(new Error('disk full'));
+    const io = makeIO();
+    // index.ts routes a thrown error through fail(io, err, json), so do the same here.
+    const code = await runHarvest(repo, { add: true, yes: true, json: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err, true));
+    expect(code).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: 'disk full', added: 1, created: 1, merged: 0, path: '/tmp/proj/.lexicon.yaml' });
+    expect(io.err).toContain('lexicon: disk full');
+    expect(io.err).toContain('added 1 new term, merged 0 before the failure');
+
+    // Success keeps the documented shape: the bare array on stdout, the summary on stderr.
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([candidate('Quokka')]);
+    const ok = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true }, ok, { isInteractive: () => false })).toBe(0);
+    expect(JSON.parse(ok.out)).toEqual([candidate('Quokka')]);
+    expect(ok.err).toContain('added 1 new term, merged 0');
   });
 
   it('add --json and remove --json print parseable JSON on stdout', async () => {

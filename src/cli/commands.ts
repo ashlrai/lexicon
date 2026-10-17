@@ -109,6 +109,7 @@ import {
   safeLines,
   skippedProjectJson,
   stillInLine,
+  unreadableLexiconHint,
   untrustedAliasLine,
   untrustedLine,
   warnSkippedProject,
@@ -799,8 +800,9 @@ export async function runHarvest(
     }
   }
 
-  if (opts.full) {
-    // Printed once the add (if any) is done, below.
+  if (opts.full || (opts.json && opts.add)) {
+    // Printed once the add (if any) is done, below: stdout under --json is
+    // one document, so a write that fails partway prints only the failure.
   } else if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
   } else if (candidates.length === 0) {
@@ -820,17 +822,31 @@ export async function runHarvest(
   let merged = 0;
   let filePath: string | undefined;
   if (opts.add && candidates.length > 0) {
-    for (const c of candidates) {
-      const term: Term = {
-        canonical: c.canonical,
-        aliases: c.suggestedAliases,
-        category: c.category,
-        source: c.source,
-      };
-      const result = await addTerm(term, { ...store, scope: 'project' });
-      filePath = result.file.path;
-      if (result.created) created += 1;
-      else merged += 1;
+    try {
+      for (const c of candidates) {
+        const term: Term = {
+          canonical: c.canonical,
+          aliases: c.suggestedAliases,
+          category: c.category,
+          source: c.source,
+        };
+        const result = await addTerm(term, { ...store, scope: 'project' });
+        filePath = result.file.path;
+        if (result.created) created += 1;
+        else merged += 1;
+      }
+    } catch (err) {
+      if (!json) throw err;
+      // The one --json document for a write that failed partway: the error
+      // and what was written before it, never the candidate array as well.
+      const message = errorMessage(err);
+      const hint = unreadableLexiconHint(message);
+      const where = filePath ? { path: filePath } : {};
+      line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+      io.stderr(`lexicon: ${safeLines(message)}\n`);
+      if (hint) io.stderr(`lexicon: ${hint}\n`);
+      io.stderr(`lexicon: added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} before the failure${filePath ? ` in ${safe(filePath)}` : ''}\n`);
+      return 1;
     }
     const where = filePath ? ` in ${safe(filePath)}` : '';
     const summary = `added ${created} new term${created === 1 ? '' : 's'}, merged ${merged}${where}`;
@@ -839,6 +855,7 @@ export async function runHarvest(
     // addTerm(scope: 'project') registers the file as trusted at its new content.
     if (filePath && !json) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   }
+  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
     line(io, JSON.stringify({ root: target, candidates, count: candidates.length, ...addResult }, null, 2));

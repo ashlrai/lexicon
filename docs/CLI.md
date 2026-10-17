@@ -201,8 +201,10 @@ Options:
   --yes              with --add: add every candidate without prompting
   --symbols          also propose names seen only as a code symbol (off: they
                      are what you type, not what you say)
-  --json             print candidates as JSON (a bare array; with --add the add
-                     summary goes to stderr)
+  --json             print candidates as JSON (a bare array; with --add it is
+                     printed after the writes, the add summary goes to stderr,
+                     and a failed write prints only { ok: false, error, added,
+                     created, merged, path })
   --full             print { root, candidates, count } as JSON, the object MCP
                      harvest_repo returns, plus added, created, merged and path
                      with --add (implies --json)
