@@ -1006,22 +1006,29 @@ describe('lexicon voice (foreground)', () => {
 
   // Catches: an override that points nowhere was reported as
   // "ffmpeg (LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist) not found on PATH"
-  // with an install hint, though PATH was never searched and nothing needs
-  // installing; and the Linux whisper hint said to set LEXICON_WHISPER_BIN twice.
+  // though PATH was never searched (the install hint now rides with the
+  // repoint step); and the Linux whisper hint said to set LEXICON_WHISPER_BIN twice.
   it('names LEXICON_FFMPEG_BIN when it points at a file that does not exist, without blaming PATH', async () => {
     const h = await harness({ missing: ['ffmpeg'], platform: 'linux' });
     h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/nope/ffmpeg' };
     expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
     expect(h.err.join('')).toBe(
-      'lexicon voice: LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist.\n  point LEXICON_FFMPEG_BIN at the ffmpeg binary, or unset it to look on PATH\n',
+      'lexicon voice: LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist.\n  point LEXICON_FFMPEG_BIN at the ffmpeg binary, or unset it to look on PATH (to install ffmpeg: sudo apt install ffmpeg)\n',
     );
     expect(JSON.parse(h.out.join(''))).toEqual({
       ok: false,
       error: 'LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist',
-      nextStep: 'point LEXICON_FFMPEG_BIN at the ffmpeg binary, or unset it to look on PATH',
+      nextStep: 'point LEXICON_FFMPEG_BIN at the ffmpeg binary, or unset it to look on PATH (to install ffmpeg: sudo apt install ffmpeg)',
       code: EXIT_MISSING_TOOL,
     });
     expect(h.spawnCalls).toHaveLength(0);
+
+    // The Windows CI step points both overrides at C:\nowhere and expects the
+    // winget hint: a dead override still says how to install the tool.
+    const win = await harness({ missing: ['ffmpeg'], platform: 'win32' });
+    win.deps.env = { PATH: win.binDir, LEXICON_FFMPEG_BIN: 'C:\\nowhere\\ffmpeg.exe' };
+    expect(await runVoice({ ...win.opts, json: true }, win.io, win.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(win.err.join('')).toContain('winget install Gyan.FFmpeg');
 
     const both = await harness({ missing: ['ffmpeg', 'whisper-cli', 'whisper-cpp'], platform: 'linux' });
     both.deps.env = { PATH: both.binDir, LEXICON_WHISPER_BIN: '/nope/whisper' };
@@ -1029,7 +1036,7 @@ describe('lexicon voice (foreground)', () => {
     expect(JSON.parse(both.out.join(''))).toEqual({
       ok: false,
       error: 'ffmpeg not found on PATH; LEXICON_WHISPER_BIN=/nope/whisper does not exist',
-      nextStep: 'install: sudo apt install ffmpeg (or set LEXICON_FFMPEG_BIN to the binary); point LEXICON_WHISPER_BIN at the whisper-cli binary, or unset it to look on PATH',
+      nextStep: 'install: sudo apt install ffmpeg (or set LEXICON_FFMPEG_BIN to the binary); point LEXICON_WHISPER_BIN at the whisper-cli binary, or unset it to look on PATH (to install whisper-cli: build whisper.cpp (https://github.com/ggml-org/whisper.cpp) and set LEXICON_WHISPER_BIN=/path/to/whisper-cli)',
       code: EXIT_MISSING_TOOL,
     });
 

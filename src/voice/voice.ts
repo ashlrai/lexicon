@@ -292,7 +292,12 @@ async function requireTools(r: Resolved, io: VoiceIO, deps: VoiceDeps, need: { f
     ...overrides.map((o) => `${o.name}=${o.value} does not exist`),
   ];
   const install = onPath.length > 0 ? installSteps(r.platform, which) : [];
-  const repoint = overrides.map((o) => `point ${o.name} at the ${o.tool} binary, or unset it to look on PATH`);
+  // The install hint still follows: an override can point nowhere because the
+  // tool was never installed there.
+  const repoint = overrides.map(
+    (o) =>
+      `point ${o.name} at the ${o.tool} binary, or unset it to look on PATH (to install ${o.tool}: ${installHint(r.platform, { ffmpeg: o.tool === 'ffmpeg', whisper: o.tool === 'whisper-cli' })})`,
+  );
   io.stderr(`lexicon voice: ${errors.join('; ')}.\n${[...install, ...repoint].map((step) => `  ${step}\n`).join('')}`);
   failed(r, EXIT_MISSING_TOOL, errors.join('; '), [...(install.length > 0 ? [install.join(' ')] : []), ...repoint].join('; '));
   return undefined;
