@@ -60181,7 +60181,9 @@ var registerHarvestTools = (server, ctx) => {
           scope: external_exports.enum(TERM_SCOPES).optional(),
           path: external_exports.string().optional()
         }),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'.")
+        scope: external_exports.enum(TERM_SCOPES).optional().describe(
+          "Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'. An 'alias' or 'never' scope must name a file that holds the term; one that does not is refused, as it would create a copy."
+        )
       }
     },
     async ({ suggestion, scope }) => guarded(async () => {
@@ -60190,10 +60192,18 @@ var registerHarvestTools = (server, ctx) => {
       let target = scope ?? suggestion.scope;
       if (kind === "alias" || kind === "never") {
         const key = canonical.trim().toLowerCase();
-        const existing = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+        const current = await load();
+        const existing = current.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
         if (!existing) {
           throw new Error(
             `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
+          );
+        }
+        const holders = termHolders(current, canonical);
+        if (target !== void 0 && target !== existing.scope && !holders.some((h) => h.scope === target)) {
+          const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(" and ") || `${existing.scope} lexicon`;
+          throw new Error(
+            `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === "alias" ? "alias" : "never word"} would create a copy of the term there; nothing was written. Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`
           );
         }
         target ??= existing.scope;

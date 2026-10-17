@@ -1190,10 +1190,16 @@ describe('lexicon MCP server', () => {
         const alias = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
         expect(alias.isError).toBe(false);
         expect(JSON.parse(textOf(alias))).toMatchObject({ kind: 'alias', canonical: 'Ashlr.AI', path: '/fake/global/lexicon.yaml', summary: '"ashlur" -> "Ashlr.AI" saved' });
-        // The scope suggest_terms reported is honoured when passed back.
+        // A scope naming a file the term is not in (Ashlr.AI is only global) is
+        // refused: writing there would create a copy holding just the alias.
         mocks.addTerm.mockClear();
-        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'project', path: '/fake/repo/.lexicon.yaml' } } });
-        expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'project' }), { cwd: '/fake/repo', scope: 'project' });
+        const elsewhere = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'project', path: '/fake/repo/.lexicon.yaml' } } });
+        expect(elsewhere.isError).toBe(true);
+        expect(textOf(elsewhere)).toContain('"Ashlr.AI" is in the global lexicon (/fake/global/lexicon.yaml), not the project one');
+        expect(mocks.addTerm).not.toHaveBeenCalled();
+        // The scope suggest_terms reported is honoured when passed back.
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'global', path: '/fake/global/lexicon.yaml' } } });
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'global' }), { cwd: '/fake/repo', scope: 'global' });
         await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
         // No scope given: written where the term lives (Ashlr.AI is a global term).
         expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Ashlr.AI', aliases: ['ashlur'], source: 'user', scope: 'global' }, { cwd: '/fake/repo', scope: 'global' });
