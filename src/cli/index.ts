@@ -263,6 +263,14 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   throw err;
 });
 
+// The command whose action is running, so an error it throws can be reported
+// in the form its flags asked for: under --json, a `{ ok: false, error }`
+// document on stdout as well as the stderr line.
+let active: Command | undefined;
+program.hook('preAction', (_program, actionCommand) => {
+  active = actionCommand;
+});
+
 try {
   await program.parseAsync(process.argv);
 } catch (err) {
@@ -272,6 +280,6 @@ try {
   } else {
     // fail() is the same `lexicon: <message>` line plus, for a lexicon file
     // that does not parse, the command that fixes it.
-    process.exitCode = fail(io, err);
+    process.exitCode = fail(io, err, active?.opts<{ json?: boolean }>().json === true);
   }
 }

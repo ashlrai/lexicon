@@ -406,6 +406,14 @@ describe('add / remove / path', () => {
     expect(missing.err).toContain('not found');
   });
 
+  // Catches: `remove --project --global --json` refused on stderr only, leaving stdout empty.
+  it('remove --project --global --json prints { ok: false, error }', async () => {
+    const io = makeIO();
+    expect(await runRemove('Ashlr.AI', { project: true, global: true, json: true }, io)).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('--project and --global cannot be combined') });
+    expect(io.err).toContain('lexicon: --project and --global cannot be combined');
+  });
+
   it('add --json and remove --json print parseable JSON on stdout', async () => {
     const added = makeIO();
     expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
@@ -1697,6 +1705,49 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(added.status).toBe(0);
       expect(added.stdout).toContain('created Foo (project)');
       expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical: Foo');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
+  it('a --json command that throws prints { ok: false, error, nextStep? } on stdout with exit 1', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      await fs.writeFile(projectPath, HOSTILE);
+
+      const refused = lexicon(['add', 'Foo', '--project', '--json', '--cwd', repo], globalPath);
+      expect(refused.status).toBe(1);
+      expect(JSON.parse(refused.stdout)).toEqual({ ok: false, error: expect.stringContaining(`project lexicon at ${projectPath} is untrusted`) });
+      expect(refused.stderr).toContain('lexicon: project lexicon at');
+
+      const category = lexicon(['list', '--json', '--category', 'nope', '--cwd', tmp], globalPath);
+      expect(category.status).toBe(1);
+      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"') });
+
+      const missing = lexicon(['import', path.join(tmp, 'nope.txt'), '--json', '--cwd', tmp], globalPath);
+      expect(missing.status).toBe(1);
+      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('file not found') });
+
+      // A lexicon file that does not parse: nextStep is the command that fixes it.
+      await fs.mkdir(path.dirname(globalPath), { recursive: true });
+      await fs.writeFile(globalPath, 'version: 1\nterms: [\n');
+      const broken = lexicon(['stats', '--json', '--cwd', tmp], globalPath);
+      expect(broken.status).toBe(1);
+      expect(JSON.parse(broken.stdout)).toEqual({
+        ok: false,
+        error: expect.stringContaining(globalPath),
+        nextStep: expect.stringContaining('lexicon edit'),
+      });
+
+      // Without --json nothing changes: stdout stays empty.
+      const plain = lexicon(['list', '--category', 'nope', '--cwd', tmp], globalPath);
+      expect(plain.status).toBe(1);
+      expect(plain.stdout).toBe('');
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

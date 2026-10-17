@@ -26,6 +26,9 @@
  *    A user-facing failure is one stderr line and code 1: `return fail(io, err)`
  *    (io.ts). Throw an `Error` only for a programming/usage error the top-level
  *    wiring should report -- and never print and exit from inside a handler.
+ *    Under `--json` a failure also prints `{ ok: false, error, nextStep? }` on
+ *    stdout: `fail(io, err, opts.json)`, `refuse(io, opts.json, message)` for
+ *    one that is not an exception, and index.ts does it for a thrown error.
  *
  * 4. SUCCESS. Human output goes to stdout via `line(io, ...)`; `--json` prints
  *    `JSON.stringify(value, null, 2)` and nothing else. Warnings that do not
@@ -98,6 +101,7 @@ import {
   green,
   line,
   plural,
+  refuse,
   renderTable,
   resolveCwd,
   safe,
@@ -406,8 +410,7 @@ export interface RemoveOptions extends CommonOptions {
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   if (opts.project && opts.global) {
-    io.stderr('lexicon: --project and --global cannot be combined (omit both to try the project lexicon, then the global one)\n');
-    return 1;
+    return refuse(io, opts.json, '--project and --global cannot be combined (omit both to try the project lexicon, then the global one)');
   }
   const scope: TermScope | undefined = opts.project ? 'project' : opts.global ? 'global' : undefined;
   if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, scope, cwd, io);

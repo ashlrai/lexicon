@@ -396,6 +396,24 @@ describe('lexicon learn (CLI)', () => {
     expect(correctionFromArgs([], undefined)).toBeUndefined();
   });
 
+  // Catches: `learn --json` with no correction printed only the usage on stderr, leaving stdout empty.
+  it('--json prints { ok: false, error, nextStep } when there is nothing to learn', async () => {
+    const { io, out } = captureIO();
+    expect(await runLearn(['just', 'some', 'words'], { json: true, cwd: '/fake/repo' }, io)).toBe(1);
+    expect(JSON.parse(out())).toEqual({
+      ok: false,
+      error: 'could not find a correction in "just some words"',
+      nextStep: expect.stringContaining('lexicon learn <heard> <meant>'),
+    });
+    const meantOnly = captureIO();
+    expect(await runLearn([], { json: true, from: 'that should be Ashlr.AI', cwd: '/fake/repo' }, meantOnly.io)).toBe(1);
+    expect(JSON.parse(meantOnly.out())).toEqual({
+      ok: false,
+      error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
+      nextStep: 'run: lexicon learn <heard> "Ashlr.AI"',
+    });
+  });
+
   it('--from learns a parsed correction', async () => {
     const { io, out } = captureIO();
     const code = await runLearn([], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, io);
@@ -448,10 +466,11 @@ describe('lexicon learn (CLI)', () => {
     expect(out()).toBe('');
   });
 
-  it('--json keeps stdout empty when there is nothing to learn (usage goes to stderr)', async () => {
+  it('--json prints only the error object on stdout when there is nothing to learn (usage goes to stderr)', async () => {
     const { io, out, err } = captureIO();
     expect(await runLearn([], { json: true }, io)).toBe(1);
-    expect(out()).toBe('');
+    expect(JSON.parse(out())).toEqual({ ok: false, error: 'nothing to learn', nextStep: expect.any(String) });
+    expect(out()).not.toContain('usage:');
     expect(err()).toContain('usage: lexicon learn');
   });
 

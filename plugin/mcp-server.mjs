@@ -9779,7 +9779,7 @@ var require_schema2 = __commonJS({
         stringify: stringifyJSON
       }
     ];
-    var jsonError = {
+    var jsonError2 = {
       default: true,
       tag: "",
       test: /^/,
@@ -9788,7 +9788,7 @@ var require_schema2 = __commonJS({
         return str;
       }
     };
-    var schema = [map2.map, seq.seq].concat(jsonScalars, jsonError);
+    var schema = [map2.map, seq.seq].concat(jsonScalars, jsonError2);
     exports.schema = schema;
   }
 });
@@ -51731,12 +51731,12 @@ zones
 zoo
 `;
 function freeze(set2) {
-  const refuse = () => {
+  const refuse2 = () => {
     throw new TypeError("STOPLIST is read-only");
   };
-  set2.add = refuse;
-  set2.delete = refuse;
-  set2.clear = refuse;
+  set2.add = refuse2;
+  set2.delete = refuse2;
+  set2.clear = refuse2;
   return Object.freeze(set2);
 }
 var STOPLIST = freeze(new Set(WORDS.split("\n").filter((w) => w.length > 0)));
@@ -57940,13 +57940,13 @@ function detectImportFormat(content, filename) {
   const text = content.replace(/^﻿/, "");
   const trimmed = text.trimStart();
   if (looksLikePlist(trimmed)) return "macos";
-  let jsonError;
+  let jsonError2;
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     let parsed;
     try {
       parsed = JSON.parse(trimmed);
     } catch (err) {
-      jsonError = err instanceof Error ? err.message : String(err);
+      jsonError2 = err instanceof Error ? err.message : String(err);
       try {
         const yaml = (0, import_yaml5.parse)(trimmed, { prettyErrors: false });
         if (looksLikeLexiconJson(yaml)) return "json";
@@ -57974,9 +57974,9 @@ function detectImportFormat(content, filename) {
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "csv") return "wispr";
   if (ext === "yml" || ext === "yaml") return "espanso";
-  if (jsonError !== void 0 && ext !== "txt") {
+  if (jsonError2 !== void 0 && ext !== "txt") {
     throw new Error(
-      `could not detect the import format: the content starts like JSON but does not parse (${jsonError}); fix the file or pass the format explicitly`
+      `could not detect the import format: the content starts like JSON but does not parse (${jsonError2}); fix the file or pass the format explicitly`
     );
   }
   return "text";
@@ -60179,14 +60179,22 @@ function renderTable(rows, header) {
   return `${out.join("\n")}
 `;
 }
-function fail(io, err) {
+function fail(io, err, json2) {
   const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (json2) printJsonError(io, message, hint);
   io.stderr(`lexicon: ${safeLines(message)}
 `);
-  const hint = unreadableLexiconHint(message);
   if (hint) io.stderr(`lexicon: ${hint}
 `);
   return 1;
+}
+function jsonError(error62, nextStep) {
+  return { ok: false, error: error62, ...nextStep ? { nextStep } : {} };
+}
+function printJsonError(io, error62, nextStep) {
+  io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
+`);
 }
 function unreadableLexiconHint(message) {
   const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);

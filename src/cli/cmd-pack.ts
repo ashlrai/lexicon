@@ -16,7 +16,6 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
-  ProjectTrustError,
   applyRegistryUpdate,
   downloadPack,
   findRegistryEntry,
@@ -41,7 +40,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { bold, dim, fail, line, plural, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -182,7 +181,7 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
     line(io, dim('community: lexicon pack search <query> --registry <index>'));
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -211,7 +210,7 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -249,7 +248,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
     printPackTerms(io, pack);
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -264,8 +263,7 @@ function printPackTerms(io: IO, pack: { name: string; title: string; description
 export async function runPackSearch(query: string, opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   try {
     if (!opts.registry) {
-      io.stderr('lexicon: pack search needs --registry <index> (a local path, file:// or https:// URL)\n');
-      return 1;
+      return refuse(io, opts.json, 'pack search needs --registry <index> (a local path, file:// or https:// URL)');
     }
     const { index } = await loadRegistryIndex(opts.registry, deps.registry);
     const hits = searchRegistryIndex(index, query);
@@ -309,13 +307,13 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
     line(io, dim(`install with: lexicon pack add <ref> --registry ${opts.registry}   (shows the term list before writing)`));
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
 function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   if (!opts.registry) {
-    io.stderr('lexicon: community packs need --registry <index> (a local path, file:// or https:// URL)\n');
+    refuse(io, opts.json, 'community packs need --registry <index> (a local path, file:// or https:// URL)');
     return false;
   }
   return true;
@@ -436,9 +434,10 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         if (!opts.json) line(io, dim('declined; nothing written.'));
         return 0;
       }
+      // Packs already installed are the --json document (the array, as on
+      // success); with none, the failure is: `{ ok: false, error }`.
       if (opts.json && results.length > 0) line(io, JSON.stringify(results, null, 2));
-      if (err instanceof ProjectTrustError) return fail(io, err);
-      return fail(io, err);
+      return fail(io, err, opts.json === true && results.length === 0);
     }
   }
   if (opts.json) line(io, JSON.stringify(results, null, 2));
@@ -522,7 +521,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
     if (opts.json) line(io, JSON.stringify({ updates: reports }, null, 2));
     return reports.some(report => report.status === 'failed' || report.status === 'not-installed') ? 1 : 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -552,7 +551,7 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     }
     return errors.length > 0 ? 1 : 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 

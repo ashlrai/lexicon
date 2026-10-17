@@ -70,6 +70,17 @@ describe('pack search', () => {
     const io = makeIO();
     expect(await runPackSearch('cardio', { globalPath }, io)).toBe(1);
     expect(io.err).toContain('--registry');
+    expect(io.out).toBe('');
+  });
+
+  // Catches: under --json the refusal was on stderr only, so a script parsing stdout got nothing.
+  it('prints { ok: false, error } under --json when it refuses or fails', async () => {
+    const io = makeIO();
+    expect(await runPackSearch('cardio', { globalPath, json: true }, io)).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('needs --registry') });
+    const missing = makeIO();
+    expect(await runPackSearch('cardio', { globalPath, json: true, registry: path.join(dir, 'nope.json') }, missing)).toBe(1);
+    expect(JSON.parse(missing.out)).toMatchObject({ ok: false, error: expect.any(String) });
   });
 
   it('finds the pack and prints install help', async () => {

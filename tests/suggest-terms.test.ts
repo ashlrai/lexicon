@@ -522,6 +522,14 @@ function mockStore(suggestions: TermSuggestion[] = FIXED, lexicon = makeLexicon(
 }
 
 describe('runSuggest', () => {
+  // Catches: `suggest --json --apply --yes` refused on stderr only; stdout was empty.
+  it('--json prints { ok: false, error } when it refuses', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    expect(await runSuggest({ json: true, apply: true, yes: true }, io, store.deps)).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: '--apply and --yes are mutually exclusive' });
+  });
+
   it('prints a table by default, sanitized, with the kind/canonical/alias/count/confidence/reason columns', async () => {
     const store = mockStore();
     const io = makeIO();

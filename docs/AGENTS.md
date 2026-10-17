@@ -56,6 +56,13 @@ prints the plan and writes nothing; run that first and show it to your user.
 when a client or the login service failed, exit 1); a refusal is
 `{ ok: false, error }`.
 
+Any other `--json` command that fails without a result of its own to print
+(an unknown flag value, a missing file, an untrusted project lexicon, a lexicon
+file that does not parse) prints `{ ok: false, error, nextStep? }` on stdout as
+well as the `lexicon:` line on stderr, and exits non-zero. `nextStep` names the
+command that fixes it when there is one. `lexicon voice --json` is the exception:
+its failures are on stderr with exit codes 1 to 3.
+
 ## Register the MCP server
 
 Server name `lexicon`, stdio transport, binary `lexicon-mcp`.

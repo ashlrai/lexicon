@@ -911,6 +911,17 @@ describe('requests that used to succeed while doing something else', () => {
 // ---------------------------------------------------------------------------
 
 describe('lexicon serve (CLI)', () => {
+  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty.
+  it('--json prints { ok: false, error } when two modes are combined', async () => {
+    const io = memIO();
+    expect(await runServe({ show: true, status: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
+    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    // --install prints a transcript, not JSON, so its refusal stays on stderr.
+    const install = memIO();
+    expect(await runServe({ install: true, uninstall: true, json: true, globalPath: env.globalPath }, install)).toBe(1);
+    expect(install.out.join('')).toBe('');
+  });
+
   it('--show prints the URL and token', async () => {
     const io = memIO();
     const code = await runServe({ show: true, port: info.port, globalPath: env.globalPath }, io, { home: env.home });

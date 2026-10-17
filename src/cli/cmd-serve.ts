@@ -16,7 +16,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { fail, line, safe, safeError, safeLines, tildify } from './io.js';
+import { fail, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -706,7 +706,7 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
   try {
     info = await server.start();
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
   if (opts.json) {
     line(io, JSON.stringify({ url: info.url, port: info.port, host: info.host, token: info.token, configPath: info.configPath }));
@@ -737,10 +737,10 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
 
 export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const modes = [opts.show, opts.status, opts.pair, opts.install, opts.uninstall].filter(Boolean).length;
-  if (modes > 1) {
-    io.stderr('lexicon: use only one of --show, --status, --pair, --install, --uninstall\n');
-    return 1;
-  }
+  // --install and --uninstall print a transcript, not JSON, so only the modes
+  // whose output --json shapes report a failure as `{ ok: false, error }`.
+  const json = opts.json === true && !opts.install && !opts.uninstall;
+  if (modes > 1) return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall');
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);
@@ -749,7 +749,7 @@ export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {})
     if (opts.uninstall) return await runServeUninstall(opts, io, deps);
     return await runServeForeground(opts, io, deps);
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, json);
   }
 }
 
