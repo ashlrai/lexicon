@@ -14,12 +14,19 @@ const loaded: LoadedLexicon = {
   global: { path: '/fake/global/lexicon.yaml', scope: 'global', lexicon: fixtureLexicon, exists: true },
 };
 
-const mocks = vi.hoisted(() => ({
-  loadLexicon: vi.fn(),
-  normalize: vi.fn(),
-  diffSummary: vi.fn(),
-  recordHits: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const m = {
+    loadLexicon: vi.fn(),
+    normalize: vi.fn(),
+    diffSummary: vi.fn(),
+    recordHits: vi.fn(),
+    // The hook matches through a (cached) index: route that back through the
+    // `normalize` mock so the tests below keep asserting on one function.
+    loadMatcherIndex: vi.fn(async (l: { merged: unknown }) => ({ lexicon: l.merged })),
+    normalizeWithIndex: vi.fn((text: string, index: { lexicon: unknown }, opts?: unknown) => m.normalize(text, index.lexicon, opts)),
+  };
+  return m;
+});
 
 // IO and matching are mocked; exportLexicon and parseCorrection are the real
 // pure functions so the SessionStart table and correction detection are tested
@@ -349,6 +356,17 @@ describe('runUserPromptSubmitHook', () => {
       expect(note).not.toContain('\n');
       expect(note).toContain('"Ashler" should be "Ashlr.AI"');
     });
+
+    it('formatCorrectionNote escapes a quote or backslash inside a spelling', async () => {
+      // Unescaped, `heard: "say "Ashler" again"` gives the agent no way to tell where the argument ends.
+      const { formatCorrectionNote } = await import('../src/hooks/user-prompt-submit.js');
+      const note = formatCorrectionNote({ heard: 'Ash"ler', meant: 'Ashlr\\AI' });
+      expect(note).toContain('heard: "Ash\\"ler", meant: "Ashlr\\\\AI".');
+      const args = /heard: ("(?:[^"\\]|\\.)*"), meant: ("(?:[^"\\]|\\.)*")/.exec(note);
+      expect(args && [JSON.parse(args[1]), JSON.parse(args[2])]).toEqual(['Ash"ler', 'Ashlr\\AI']);
+      // Non-ASCII stays readable.
+      expect(formatCorrectionNote({ heard: 'Zoe', meant: 'Zoë' })).toContain('"Zoe" should be "Zoë"');
+    });
   });
 });
 
@@ -612,6 +630,61 @@ describe('runHook', () => {
       // A cap smaller than header + footer still holds: hard cut.
       expect(truncateSessionContext(table, 20).length).toBeLessThanOrEqual(20);
     });
+  });
+});
+
+describe('a long prompt stays inside the hook budget', () => {
+  it('passes a stop condition to normalize and gives up once the budget is spent', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 0 });
+    const opts = mocks.normalize.mock.calls[0][2] as { shouldStop?: () => boolean } | undefined;
+    expect(typeof opts?.shouldStop).toBe('function');
+    expect(opts!.shouldStop!()).toBe(true);
+    mocks.normalize.mockClear();
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 60_000 });
+    const roomy = mocks.normalize.mock.calls[0][2] as { shouldStop?: () => boolean };
+    expect(roomy.shouldStop!()).toBe(false);
+  });
+
+  it('says so when matching stopped at the budget, even when nothing was corrected', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      opts?.shouldStop?.();
+      return fakeNormalize(text);
+    });
+    const out = await runUserPromptSubmitHook(payload('a long prompt with no names'), { matchBudgetMs: 0 });
+    expect(out).not.toBe('');
+    expect(context(out)).toMatch(/stopped checking this prompt .* after its 0 ms budget/);
+    expect(context(out)).toContain('normalize_transcript');
+    // Inside the budget: no note, and an unchanged prompt still prints nothing.
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      opts?.shouldStop?.();
+      return fakeNormalize(text);
+    });
+    expect(await runUserPromptSubmitHook(payload('a long prompt with no names'), { matchBudgetMs: 60_000 })).toBe('');
+  });
+
+  it('starts the budget after the index is loaded, so a slow index load cannot cost the corrections', async () => {
+    // The old hook started the clock before normalize built the index; on a
+    // loaded machine a 2000-term build used up the whole budget and the
+    // prompt came back uncorrected.
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    mocks.loadMatcherIndex.mockImplementationOnce(async (l: { merged: unknown }) => {
+      await new Promise((r) => setTimeout(r, 80));
+      return { lexicon: l.merged };
+    });
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 40 });
+    const opts = mocks.normalize.mock.calls[0][2] as { shouldStop: () => boolean };
+    expect(opts.shouldStop()).toBe(false);
+  });
+
+  it('does not repeat a huge prompt back as the corrected copy', async () => {
+    const { formatAdditionalContext, CORRECTED_PROMPT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const big = `hi Ashler ${'x'.repeat(CORRECTED_PROMPT_MAX_CHARS)}`;
+    const text = formatAdditionalContext(fakeNormalize(big));
+    expect(text).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
+    expect(text.length).toBeLessThan(CORRECTED_PROMPT_MAX_CHARS);
+    expect(text).not.toContain('Corrected prompt:');
   });
 });
 

@@ -104,10 +104,20 @@ export function stripControlChars(s: string): string {
  * terminal, set its title or hide text behind a cursor move.
  */
 export function sanitizeForDisplay(s: string): string {
+  return sanitizeForDisplayMax(s, DISPLAY_MAX_CHARS);
+}
+
+/**
+ * `sanitizeForDisplay` with its own cap of `max` code points, for text whose
+ * tail matters (an error naming a long file path). A separate function, not
+ * an optional parameter, so `.map(sanitizeForDisplay)` cannot read the array
+ * index as the cap.
+ */
+export function sanitizeForDisplayMax(s: string, max: number): string {
   const clean = stripControlChars(s.replace(ANSI_RE, '')).replace(OTHER_RE, '');
   const chars = Array.from(clean);
-  if (chars.length <= DISPLAY_MAX_CHARS) return clean;
-  return `${chars.slice(0, DISPLAY_MAX_CHARS - 1).join('')}\u2026`;
+  if (chars.length <= max) return clean;
+  return `${chars.slice(0, Math.max(0, max - 1)).join('')}\u2026`;
 }
 
 /** A trimmed string with invisible characters removed, no control characters, at most `max` chars. */
@@ -123,16 +133,18 @@ function SafeString(max: number) {
     );
 }
 
-const NonEmptyWord = z
-  .string()
-  .transform((s) => stripInvisible(s).trim())
-  .pipe(
-    z
-      .string()
-      .min(1, 'must not be empty')
-      .max(LIMITS.word, `must be at most ${LIMITS.word} characters`)
-      .refine((s) => !hasControlChars(s), 'must not contain control characters or newlines'),
-  );
+function NonEmptyWord() {
+  return z
+    .string()
+    .transform((s) => stripInvisible(s).trim())
+    .pipe(
+      z
+        .string()
+        .min(1, 'must not be empty')
+        .max(LIMITS.word, `must be at most ${LIMITS.word} characters`)
+        .refine((s) => !hasControlChars(s), 'must not contain control characters or newlines'),
+    );
+}
 
 /**
  * A list of strings: invisible chars stripped, trimmed, empties removed, then
@@ -155,46 +167,92 @@ function WordList(maxItems: number, what: string) {
     );
 }
 
-export const TermCategorySchema = z.enum(TERM_CATEGORIES);
+/**
+ * The schemas are built on first use rather than at import. Constructing them
+ * is the costliest thing this module does (10 to 20 ms in a cold process), and
+ * the prompt hook, which reads its lexicon from parse-cache.json, usually never
+ * validates anything. The exported constants below still exist for every other
+ * caller; they are marked pure so a bundle that never reads them (the hook)
+ * drops them and keeps only the lazy path through `parseLexicon`.
+ */
+interface Schemas {
+  category: ReturnType<typeof buildCategory>;
+  scope: ReturnType<typeof buildScope>;
+  source: ReturnType<typeof buildSource>;
+  term: ReturnType<typeof buildTerm>;
+  settings: ReturnType<typeof buildSettings>;
+  lexicon: ReturnType<typeof buildLexicon>;
+}
 
-export const TermScopeSchema = z.enum(TERM_SCOPES);
+const buildCategory = () => z.enum(TERM_CATEGORIES);
+const buildScope = () => z.enum(TERM_SCOPES);
+const buildSource = () => z.enum(TERM_SOURCES);
 
-export const TermSourceSchema = z.enum(TERM_SOURCES);
+function buildTerm(category: ReturnType<typeof buildCategory>, scope: ReturnType<typeof buildScope>, source: ReturnType<typeof buildSource>) {
+  return z.object({
+    canonical: NonEmptyWord(),
+    aliases: WordList(LIMITS.aliases, 'aliases per term'),
+    phonetic: SafeString(LIMITS.text).optional(),
+    category: category.optional(),
+    caseSensitive: z.boolean().optional(),
+    scope: scope.optional(),
+    source: source.optional(),
+    notes: SafeString(LIMITS.text).optional(),
+    // Not shown to models, but it round-trips through the file: same sanitising as the other strings.
+    createdAt: SafeString(64).optional(),
+    // Still accepted on the way in, and still written back out, because project
+    // lexicons committed before hits moved to the per-user sidecar carry it and
+    // rewriting somebody's tracked file to drop a field is not this parser's
+    // call. Only `writeLexiconFile` decides what a project file may gain: see
+    // `pinProjectHits` in store.ts.
+    hits: z.number().int().nonnegative().optional(),
+    never: WordList(LIMITS.aliases, 'never words per term').optional(),
+  });
+}
 
-export const TermSchema = z.object({
-  canonical: NonEmptyWord,
-  aliases: WordList(LIMITS.aliases, 'aliases per term'),
-  phonetic: SafeString(LIMITS.text).optional(),
-  category: TermCategorySchema.optional(),
-  caseSensitive: z.boolean().optional(),
-  scope: TermScopeSchema.optional(),
-  source: TermSourceSchema.optional(),
-  notes: SafeString(LIMITS.text).optional(),
-  // Not shown to models, but it round-trips through the file: same sanitising as the other strings.
-  createdAt: SafeString(64).optional(),
-  // Still accepted on the way in, and still written back out, because project
-  // lexicons committed before hits moved to the per-user sidecar carry it and
-  // rewriting somebody's tracked file to drop a field is not this parser's
-  // call. Only `writeLexiconFile` decides what a project file may gain: see
-  // `pinProjectHits` in store.ts.
-  hits: z.number().int().nonnegative().optional(),
-  never: WordList(LIMITS.aliases, 'never words per term').optional(),
-});
+function buildSettings() {
+  return z.object({
+    minConfidence: z.number().min(0).max(1).optional(),
+    phonetic: z.boolean().optional(),
+    fuzzy: z.boolean().optional(),
+    protectedWords: WordList(LIMITS.protectedWords, 'protected words').optional(),
+    skipCode: z.boolean().optional(),
+    packs: WordList(LIMITS.aliases, 'packs').optional(),
+  });
+}
 
-export const LexiconSettingsSchema = z.object({
-  minConfidence: z.number().min(0).max(1).optional(),
-  phonetic: z.boolean().optional(),
-  fuzzy: z.boolean().optional(),
-  protectedWords: WordList(LIMITS.protectedWords, 'protected words').optional(),
-  skipCode: z.boolean().optional(),
-  packs: WordList(LIMITS.aliases, 'packs').optional(),
-});
+function buildLexicon(term: ReturnType<typeof buildTerm>, settings: ReturnType<typeof buildSettings>) {
+  return z.object({
+    version: z.literal(1).default(1),
+    terms: z.array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
+    settings: settings.optional(),
+  });
+}
 
-export const LexiconSchema = z.object({
-  version: z.literal(1).default(1),
-  terms: z.array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
-  settings: LexiconSettingsSchema.optional(),
-});
+let built: Schemas | undefined;
+
+function schemas(): Schemas {
+  if (built) return built;
+  const category = buildCategory();
+  const scope = buildScope();
+  const source = buildSource();
+  const term = buildTerm(category, scope, source);
+  const settings = buildSettings();
+  built = { category, scope, source, term, settings, lexicon: buildLexicon(term, settings) };
+  return built;
+}
+
+export const TermCategorySchema = /* @__PURE__ */ (() => schemas().category)();
+
+export const TermScopeSchema = /* @__PURE__ */ (() => schemas().scope)();
+
+export const TermSourceSchema = /* @__PURE__ */ (() => schemas().source)();
+
+export const TermSchema = /* @__PURE__ */ (() => schemas().term)();
+
+export const LexiconSettingsSchema = /* @__PURE__ */ (() => schemas().settings)();
+
+export const LexiconSchema = /* @__PURE__ */ (() => schemas().lexicon)();
 
 /** Render a zod path like `terms[2].aliases[0]`. */
 function formatPath(path: ReadonlyArray<PropertyKey>): string {
@@ -223,7 +281,7 @@ export function parseLexicon(raw: unknown): Lexicon {
   if (typeof raw !== 'object') {
     throw new Error(`Invalid lexicon: expected an object, received ${typeof raw}`);
   }
-  const result = LexiconSchema.safeParse(raw);
+  const result = schemas().lexicon.safeParse(raw);
   if (!result.success) {
     const lines = result.error.issues.map(
       (issue) => `  - ${formatPath(issue.path)}: ${issue.message}`,

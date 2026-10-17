@@ -9,9 +9,10 @@
  */
 import { STOPLIST, phoneticKey, similarity } from './matcher.js';
 import { addTerm, loadLexicon } from './store.js';
+import { InputError } from '../util/errors.js';
 import type { StoreOptions } from './store.js';
 import { suggestAliases } from './suggest.js';
-import type { Lexicon, LexiconFile, Term, TermScope } from './types.js';
+import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
 
 export interface Correction {
   /**
@@ -32,6 +33,30 @@ export interface LearnResult {
   file: LexiconFile;
   /** False when `heard` was already an alias (or the canonical) of the term. */
   aliasAdded: boolean;
+  /**
+   * Another term that also claims `heard` (as an alias, or as its own
+   * canonical), so a transcript can still be corrected to that term instead.
+   * Absent when nothing else claims it.
+   */
+  conflict?: LearnConflict;
+  /**
+   * The project lexicon for this cwd that was skipped as untrusted (or
+   * changed since trusted) and also claims `heard` for some other term. It is
+   * never merged or read back to the caller: only its path and trust state
+   * are given, so the user can review it with `lexicon trust`. Once trusted
+   * that project term wins the merge over this correction.
+   */
+  untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
+}
+
+/** The term `LearnResult.conflict` names, and the spelling of `heard` it holds. */
+export interface LearnConflict {
+  canonical: string;
+  scope: TermScope;
+  /** 'alias': drop `spelling` from that term to let the correction win; 'canonical': `heard` is that term's own name. */
+  as: 'alias' | 'canonical';
+  /** `heard` as that term spells it. */
+  spelling: string;
 }
 
 export interface CanonicalSuggestion {
@@ -280,23 +305,27 @@ export async function learnCorrection(
 ): Promise<LearnResult> {
   const heard = c.heard.trim().replace(/\s+/g, ' ');
   const meant = c.meant.trim().replace(/\s+/g, ' ');
-  if (!meant) throw new Error('learnCorrection: the intended spelling (meant) must not be empty');
+  if (!meant) throw new InputError('the intended spelling (meant) must not be empty');
   if (!heard) {
-    throw new Error(
-      `learnCorrection: nothing to learn - say what was heard for "${meant}" (e.g. learn Ashler ${meant})`,
+    throw new InputError(
+      `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`,
     );
   }
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new Error(`learnCorrection: each side must be at most ${MAX_CORRECTION_LENGTH} characters`);
+    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
   if (heard === meant) {
-    throw new Error(`learnCorrection: "${heard}" and "${meant}" are the same spelling; nothing to learn`);
+    throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
 
   const { scope, ...storeOpts } = opts;
   const loaded = await loadLexicon(storeOpts);
   if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts, scope);
   const existing = termFor(loaded.merged, meant);
+
+  const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
+  const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
+  const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
 
   if (existing) {
     const alreadyKnown =
@@ -306,7 +335,7 @@ export async function learnCorrection(
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: 'learned' },
       { ...storeOpts, scope: targetScope },
     );
-    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown };
+    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown, ...withConflict };
   }
 
   const aliases = dedupeCaseInsensitive([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
@@ -314,7 +343,48 @@ export async function learnCorrection(
     { canonical: meant, aliases, source: 'learned' },
     { ...storeOpts, scope: scope ?? 'global' },
   );
-  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
+}
+
+/**
+ * Every spelling in `spellings` that a term other than `target` also holds,
+ * as its canonical or an alias: the `conflict` learnCorrection reports, for a
+ * whole alias list (MCP add_term). One entry per spelling, in order.
+ */
+export function spellingConflicts(lexicon: Lexicon, spellings: readonly string[], target: string): LearnConflict[] {
+  const out: LearnConflict[] = [];
+  for (const spelling of spellings) {
+    const c = conflictFor(lexicon, spelling, target);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * A term other than `target` that holds `heard` as its canonical or as an
+ * alias. learnCorrection never edits that term (one correction touches one
+ * term); it reports it so the caller can say why the correction may not win.
+ */
+function conflictFor(lexicon: Lexicon, heard: string, target: string): LearnConflict | undefined {
+  for (const t of lexicon.terms) {
+    if (sameText(t.canonical, target)) continue;
+    const scope: TermScope = t.scope ?? 'global';
+    if (sameText(t.canonical, heard)) return { canonical: t.canonical, scope, as: 'canonical', spelling: t.canonical };
+    const alias = t.aliases.find((a) => sameText(a, heard));
+    if (alias !== undefined) return { canonical: t.canonical, scope, as: 'alias', spelling: alias };
+  }
+  return undefined;
+}
+
+/**
+ * The skipped project file, when one of its terms other than `target` claims
+ * `heard`. Only a yes or no comes out of the untrusted content: the term it
+ * found is not returned, so nothing from the file reaches the caller.
+ */
+function untrustedClaim(loaded: LoadedLexicon, heard: string, target: string): LearnResult['untrustedProject'] {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !conflictFor(skipped.lexicon, heard, target)) return undefined;
+  return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
 }
 
 /**
@@ -341,9 +411,9 @@ async function learnCaseOnly(
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
-      throw new Error(
-        `learnCorrection: "${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; ` +
-          `remove the alias first (lexicon remove, or edit the term) if "${meant}" is its own name`,
+      throw new InputError(
+        `"${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; ` +
+          `if "${meant}" is its own name, first drop that alias from "${viaAlias.canonical}" (lexicon review or lexicon edit; removing the term would delete it)`,
       );
     }
     const saved = await addTerm(

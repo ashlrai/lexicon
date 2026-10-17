@@ -27,14 +27,14 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`. Also bumps each term's `hits` counter |
+| `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`, and `incomplete` when the text was longer than 100,000 characters or matching ran past 1 second (the unchecked rest comes back unchanged). Also bumps each term's `hits` counter |
 | `add_term` | `canonical`, `aliases?`, `phonetic?`, `category?`, `notes?`, `never?`, `scope?` | The stored term, its file path and `created`. Aliases are auto-suggested when omitted |
-| `remove_term` | `canonical`, `scope?` | Whether it existed |
+| `remove_term` | `canonical`, `alias?`, `scope?` | Whether it existed; when not, a `note` (and `foundIn`) saying which `scope` holds it. With `alias`, removes only that alias and returns the aliases the term keeps; an unknown term or alias is an error |
 | `list_terms` | `query?`, `category?` | Matching terms, counts per file, the paths in use, and a note when a project file was skipped as untrusted |
 | `harvest_repo` | `path?`, `limit?`, `minCount?`, `add?` | Candidates. `add: true` writes them to that repo's project lexicon |
 | `export_lexicon` | `format`, `categories?`, `limit?` | The export as text |
 | `learn_correction` | `heard`, `meant`, `scope?` | The term the alias was added to, `created`, `aliasAdded`, a one-line summary |
-| `suggest_canonical` | `heard` | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?" |
+| `suggest_canonical` | `heard` (at most 60 characters) | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?" |
 | `lexicon_stats` | none | Term and alias counts, total hits, top ten terms, never-hit terms, per-file breakdown |
 | `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, checks: [{ level, message }], paths, versions }` |
 | `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or `claude-desktop` |

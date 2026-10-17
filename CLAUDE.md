@@ -9,7 +9,7 @@ agent sees them. Not a dictation app. Ground truth for every doc is the code;
 - `src/core/` pure library: `types.ts` (contract), `schema.ts`, `store.ts` (YAML files, project-write trust gate), `trust.ts` (trust.json registry), `matcher.ts` (alias > phonetic > fuzzy), `normalize.ts`, `suggest.ts`, `learn.ts` (parseCorrection, learnCorrection, suggestCanonicalFor), `stats.ts`, `harvest.ts`, `exporters/` (15 formats), `importers/` (8 formats + auto). `index.ts` is the only cross-module import path.
 - `src/mcp/server.ts` stdio MCP server (bin `lexicon-mcp`): 20 tools, 2 resources, 2 prompts (`voice-context`, `onboard`). `--version` and `--help` print and exit 0 without starting the server (`cliFlagOutput`). stderr logging only.
 - `src/hooks/user-prompt-submit.ts` Claude Code hook for `UserPromptSubmit` (injects corrections as additionalContext, flags "it's X not Y" corrections for `learn_correction`, never rewrites the prompt or writes to the lexicon) and `SessionStart` (injects the claude-md export, capped at 4000 chars). `runHook` dispatches on `hook_event_name`.
-- `plugin/mcp-server.mjs`, `plugin/hook.mjs` committed esbuild bundles. The plugin runs them through `.claude-plugin/plugin.json` (declares the MCP server inline with the bare `${CLAUDE_PLUGIN_ROOT}`) and `hooks/hooks.json`; the repo's own `.mcp.json` runs the server bundle by relative path when the repo is opened as a project. `dist/` stays untracked.
+- `plugin/mcp-server.mjs`, `plugin/hook.mjs` (entry stub: enables Node's compile cache, imports `plugin/hook-main.mjs`, the hook bundle) committed esbuild bundles. The plugin runs them through `.claude-plugin/plugin.json` (declares the MCP server inline with the bare `${CLAUDE_PLUGIN_ROOT}`) and `hooks/hooks.json`; the repo's own `.mcp.json` runs the server bundle by relative path when the repo is opened as a project. `dist/` stays untracked.
 - `src/cli/` commander CLI (bin `lexicon`, 25 commands): `index.ts` only wires commander; handlers in `commands.ts` and `cmd-import.ts`, `cmd-install.ts`, `cmd-trust.ts`, `cmd-learn.ts`, `cmd-review.ts` (interactive harvest/review/edit), `cmd-serve.ts` (local HTTP API), `cmd-voice.ts` (whisper.cpp push-to-talk), `cmd-setup.ts` (onboarding wizard), `cmd-suggest.ts` (suggestions from history and hits); `prompt.ts` is the readline prompter.
 - `src/daemon/clipboard.ts` clipboard watcher (loop and `--once`); `src/daemon/clipboard-backends.ts` pbcopy/wl/xclip/xsel/powershell backends + PATH detection.
 - `src/serve/` local HTTP API on 127.0.0.1:41733 (`config.ts` serve.json + bearer token, `server.ts` createServer with 11 endpoints). `src/voice/` ffmpeg + whisper.cpp push-to-talk (`voice.ts` runners, exit codes 0/1/2/3; `history.ts` voice/history.jsonl; `models.ts` Hugging Face download).
@@ -34,7 +34,7 @@ agent sees them. Not a dictation app. Ground truth for every doc is the code;
 ## Commands
 ```bash
 npm run build          # tsc -> dist/
-npm run build:bundle   # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs
+npm run build:bundle   # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs
 npm run check:bundle   # rebuild and git diff --exit-code plugin/ (CI)
 npm test               # vitest, everything (LEXICON_SKIP_E2E=1 to skip the subprocess journeys)
 npm run test:e2e       # only tests/e2e.test.ts

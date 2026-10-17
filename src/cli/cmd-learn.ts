@@ -9,10 +9,11 @@ import type { Correction, LexiconStats, TermScope } from '../core/index.js';
 import { fail, line, renderTable, resolveCwd, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
+/** On stderr: it follows an error, and stdout must stay parseable under --json. */
 function usageHint(io: IO): void {
-  line(io, 'usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI');
-  line(io, '       lexicon learn --from "<sentence>"  supported phrasings:');
-  for (const example of CORRECTION_EXAMPLES) line(io, `         ${example}`);
+  io.stderr('usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI\n');
+  io.stderr('       lexicon learn --from "<sentence>"  supported phrasings:\n');
+  for (const example of CORRECTION_EXAMPLES) io.stderr(`         ${example}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     io.stderr(
       `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
-    line(io, `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`);
+    io.stderr(`run: lexicon learn <heard> ${JSON.stringify(correction.meant)}\n`);
     return 1;
   }
 
@@ -69,6 +70,23 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
         : 'already known';
     line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
+    const c = result.conflict;
+    if (c) {
+      line(
+        io,
+        c.as === 'alias'
+          ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
+          : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`,
+      );
+    }
+    const u = result.untrustedProject;
+    if (u) {
+      line(
+        io,
+        `warn: the ${u.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon ${safe(u.path)} also claims ${safe(correction.heard)} for another term; ` +
+          'once trusted it wins over this correction. Review it with: lexicon trust',
+      );
+    }
     return 0;
   } catch (err) {
     return fail(io, err);
@@ -111,8 +129,9 @@ export function renderStats(stats: LexiconStats): string {
   }
   out.push('');
 
-  out.push(`never hit (${stats.neverHit.length}${stats.neverHit.length >= 20 ? '+' : ''})`);
-  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}` : '  (none)');
+  out.push(`never hit (${stats.neverHitCount})`);
+  const more = stats.neverHitCount - stats.neverHit.length;
+  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}${more > 0 ? `, and ${more} more` : ''}` : '  (none)');
   out.push('');
 
   out.push('files');

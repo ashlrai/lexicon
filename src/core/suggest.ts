@@ -8,8 +8,10 @@
  *   2. strip a domain-style suffix                        ("Ashlr.AI" -> "Ashlr")
  *   3. insert a vowel into a word-final consonant cluster ("Ashlr" -> "Ashler", "Ashlar")
  *   4. acronyms: pronounced form and spelled letters      ("SaaS" -> "sass", "S a a S")
- *   5. common phoneme confusions                          (ph->f, hard c->k, k->c, y->i, doubled letters collapsed)
+ *   5. common phoneme confusions                          (ph->f, hard c->k, k->c, soft c->s, y->i, doubled letters collapsed)
  */
+
+import { STOPLIST } from './stoplist.js';
 
 const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u', 'y']);
@@ -149,6 +151,11 @@ function confusions(s: string): string[] {
   // hard c (before a/o/u or a consonant, not "ch") -> k
   tryAdd(s.replace(/c(?=[aou]|[^\p{L}eihy]|$)/giu, (m) => (m === 'C' ? 'K' : 'k')));
   tryAdd(s.replace(/k(?!e|i|y)/gi, (m) => (m === 'K' ? 'C' : 'c')));
+  // soft c (before e/i/y, not "sc") -> s: "Vercel" -> "Versel". Unlike the
+  // others this one often lands on a real word ("Cell" -> "Sell"), and an
+  // alias that is an everyday word would rewrite that word everywhere.
+  const softC = s.replace(/(?<!s)c(?=[eiy])/giu, (m) => (m === 'C' ? 'S' : 's'));
+  if (!softC.toLowerCase().split(/\s+/).some((w) => STOPLIST.has(w))) tryAdd(softC);
   // y as a vowel (not word-initial) -> i
   tryAdd(s.replace(/(?<=\p{L})y/giu, (m) => (m === 'Y' ? 'I' : 'i')));
   tryAdd(s.replace(/(\p{L})\1/giu, '$1'));

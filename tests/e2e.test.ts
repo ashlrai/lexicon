@@ -15,6 +15,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
+import nodeModule from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -1073,6 +1074,37 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: committed plugin 
       .toContain('ask Ada Lovelace about Orion Summit and SignalForge');
   });
 
+  it('committed hook answers the same from a cold start, from its caches, and from damaged caches', async () => {
+    const h = await freshHome('bundle-hook-cache');
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    const lines = ['version: 1', 'terms:', '  - canonical: Ashlr.AI', '    aliases: [Ashler]'];
+    for (let i = 0; i < 400; i++) lines.push(`  - canonical: Zorblax${i}`, `    aliases: [zorb lax ${i}]`);
+    await fs.writeFile(h.globalPath, `${lines.join('\n')}\n`);
+    const run = async (): Promise<string> => {
+      const r = await runNode(path.join(REPO_ROOT, 'plugin', 'hook.mjs'), [], { env: h.env, stdin: JSON.stringify({
+        cwd: h.repo, hook_event_name: 'UserPromptSubmit', prompt: 'ask ashler about zorb lax 7',
+      }) });
+      expect(r.code, r.stderr).toBe(0);
+      expect(r.stderr).toBe('');
+      return JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string;
+    };
+    const dir = path.dirname(h.globalPath);
+    const cold = await run();
+    expect(cold).toContain('ask Ashlr.AI about Zorblax7');
+    expect((await fs.readdir(dir)).sort()).toEqual(expect.arrayContaining(['index-cache.json', 'parse-cache.json']));
+    // plugin/hook.mjs keeps V8's compiled code for the hook bundle beside the
+    // global lexicon (Node >= 22.1), never in the shared temp directory.
+    if (typeof (nodeModule as { enableCompileCache?: unknown }).enableCompileCache === 'function') {
+      expect((await fs.readdir(path.join(dir, 'node-compile-cache'))).length).toBeGreaterThan(0);
+    }
+    expect(await run()).toBe(cold);
+    for (const file of ['index-cache.json', 'parse-cache.json']) await fs.writeFile(path.join(dir, file), '{"version":');
+    expect(await run()).toBe(cold);
+    expect(await run()).toBe(cold);
+    // Nothing lands in the project.
+    expect(await fs.readdir(h.repo)).toEqual(['.git']);
+  });
+
   it('committed MCP bundle exposes20 tools and loads all guided source tags', async () => {
     const h = await importedHome('bundle-mcp');
     const rpc = new StdioRpc(h.env, h.repo, path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs'));
@@ -1151,5 +1183,39 @@ console.log(JSON.stringify(data[args[1]]));
     expect(applied.code).toBe(1);
     expect(applied.stderr).toMatch(/changed since preview/);
     await expect(fs.access(h.globalPath)).rejects.toThrow();
+  });
+});
+
+/**
+ * `lexicon pack show developer | head -3` used to die with an unhandled
+ * EPIPE stack trace once head closed the pipe. A closed stdout is a reader
+ * that has seen enough: the CLI stops quietly with status 0.
+ */
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: a closed stdout pipe', () => {
+  it('ends quietly when the reader goes away', async () => {
+    const h = await freshHome('epipe');
+    const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ['--import', 'tsx', CLI, 'pack', 'show', 'developer', '--cwd', os.tmpdir()], {
+        cwd: REPO_ROOT,
+        env: h.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('timed out'));
+      }, TIMEOUT_MS);
+      // Close our end before it writes anything, the way `head` does once it has its lines.
+      child.stdout.destroy();
+      child.stderr.setEncoding('utf8').on('data', (d: string) => {
+        stderr += d;
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ code, stderr });
+      });
+    });
+    expect(result.stderr).not.toMatch(/EPIPE|Unhandled/);
+    expect(result.code).toBe(0);
   });
 });

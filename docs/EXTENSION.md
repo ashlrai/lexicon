@@ -98,15 +98,15 @@ With **Local API** selected, the extension falls back to the embedded lexicon wh
 
 **Sync from local API** (Options) pulls `GET /lexicon` into the embedded YAML, so the fallback carries your real terms rather than the example file. The YAML editor validates with the same `parseLexicon` the CLI uses and refuses to save an invalid file.
 
-**Live** (off by default) also corrects while you type: after 400 ms of idle it normalizes the text before the caret and rewrites only that part. Leave it off if your dictation tool streams partial words into the box.
+**Live** (off by default) also corrects while you type: after 400 ms of idle it normalizes the text before the caret and rewrites only that part, then puts the caret back where you were typing. Leave it off if your dictation tool streams partial words into the box.
 
 ## What triggers a correction
 
-- **Enter** (without Shift) in the composer, or a **click on the send button**. Both are intercepted in the capture phase, the text goes to the background worker, corrections are written back, a toast lists them for 3 seconds with **Undo**, then the original Enter or click is re-dispatched.
+- **Enter** (without Shift) in the composer, or a **click on the send button**. Both are intercepted in the capture phase, the text goes to the background worker, corrections are written back, a toast lists them for 3 seconds with **Undo**, then the original Enter or click is re-dispatched. A browser runs no default action for a re-dispatched Enter, so when no page handler takes it and the site has no known send button (any site other than the listed chat apps), the extension finishes the press itself: a newline in a textarea or rich text box, or the form's submit for a one-line field.
 - Text the worker already vetted as unchanged (checked on a short debounce while you type) is not intercepted at all: zero added delay for ordinary sentences.
 - Rich editors (ProseMirror on ChatGPT and Claude, Lexical on Perplexity, Quill on Gemini) get ranged `insertText` edits, the same path an IME or spellcheck uses, so their internal state stays in sync and formatting survives. Textareas get the React-safe native setter plus an `input` event.
 - Code spans, fenced blocks, URLs and emails are never touched (`skipCode` in the core matcher).
-- **Undo** puts the original wording back in the box. If the message already went out it cannot unsend it; it gives you the dictated text to resend.
+- **Undo** puts the original wording back in the box. If the message already went out it cannot unsend it; it gives you the dictated text to resend, but only into an empty box: once you have edited the text or started the next message, Undo leaves the box alone.
 
 ## Supported sites
 
@@ -138,7 +138,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 - **Voice modes are out of reach.** ChatGPT Voice, Claude voice mode and Gemini Live send audio straight to the server; no text passes through the composer, so there is nothing to rewrite. The extension covers dictation that lands in the text box: Wispr Flow, Superwhisper, macOS/Windows dictation, the browser's own mic button on Grok and others, or the "dictate" mic on ChatGPT that fills the composer before sending.
 - The extension cannot fix a transcript the site produced server-side after you sent audio. For those, give the model the vocabulary instead: `lexicon export claude-md` into custom instructions or memory.
 - Sites re-render the composer often. The guard listens at the document level and re-finds the composer per event, but a redesign can still move the send button; then Enter still works (it is re-dispatched to the composer) and only the button path needs a new selector.
-- Corrections run on the whole box at send time. Very long messages (many thousands of characters) add a few milliseconds through the API and a few more embedded.
+- Corrections run on the whole box at send time. Very long messages (many thousands of characters) add a few milliseconds through the API and a few more embedded. Either engine stops matching after a fixed budget (1 s for the API, 250 ms embedded) and applies what it found up to that point, so a huge paste never holds the send.
 - The synthetic Enter is not "trusted" (`isTrusted: false`). Every supported site handles it today; a site that filters on `isTrusted` would need the send-button path, which is why each adapter carries both.
 
 ## Privacy

@@ -279,3 +279,22 @@ describe('harvestRepo', () => {
     expect(HARVEST_STOPLIST.size).toBeGreaterThan(150);
   });
 });
+
+describe('directory-name candidate', () => {
+  it('does not propose a one- or two-letter directory name like "w"', async () => {
+    const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-harvest-short-')));
+    try {
+      for (const name of ['w', 'x2', 'ab']) {
+        const dir = path.join(base, name);
+        await fs.mkdir(dir);
+        const found = await harvestRepo(dir, { git: false });
+        expect(found.map((c) => c.canonical)).not.toContain(name);
+      }
+      const named = path.join(base, 'Zed');
+      await fs.mkdir(named);
+      expect((await harvestRepo(named, { git: false })).map((c) => c.canonical)).toContain('Zed');
+    } finally {
+      await fs.rm(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});

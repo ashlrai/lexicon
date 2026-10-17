@@ -1296,3 +1296,30 @@ describe('plurals keep their s', () => {
     expect(apply('the glass is full', find('the glass is full', [JWT, KPI, OLLAMA]))).toBe('the glass is full');
   });
 });
+
+describe('shouldStop (bounded scan)', () => {
+  const lex: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
+
+  it('ends the scan when it returns true and keeps what was found before', () => {
+    const index = buildIndex(lex);
+    const text = 'Ashler one two three Ashler';
+    expect(findReplacements(text, index).length).toBe(2);
+    let polls = 0;
+    const cut = findReplacements(text, index, { shouldStop: () => ++polls > 2 });
+    expect(cut.map((r) => r.start)).toEqual([0]);
+  });
+
+  it('always examines the first token, so a zero budget still corrects a one-word prompt', () => {
+    const index = buildIndex(lex);
+    expect(findReplacements('Ashler', index, { shouldStop: () => true }).map((r) => r.replacement)).toEqual(['Ashlr.AI']);
+  });
+});
+
+describe('a long text does not copy every earlier token per plural', () => {
+  it('matches a plural at the end of a long text', () => {
+    const index = buildIndex({ version: 1, terms: [{ canonical: 'Ollama', aliases: [] }] });
+    const text = `${'words here '.repeat(3000)}two ollamas`;
+    const r = findReplacements(text, index);
+    expect(r.map((x) => [x.original, x.replacement])).toEqual([['ollama', 'Ollama']]);
+  });
+});

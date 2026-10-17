@@ -63,6 +63,8 @@ import {
   harvestRepo,
   loadLexicon,
   normalize,
+  isProjectTrustError,
+  removeAlias,
   removeTerm,
   resolvePaths,
   suggestAliases,
@@ -77,6 +79,7 @@ import type {
   HarvestOptions,
   LexiconFile,
   NormalizeOptions,
+  RemoveAliasResult,
   Term,
   TermCategory,
   TermScope,
@@ -260,6 +263,8 @@ export interface AddOptions extends CommonOptions {
   never?: string[];
   /** `-i`: confirm suggested aliases as a checklist, then ask for phonetic and category. */
   interactive?: boolean;
+  /** Print `{ term, path, created, scope, suggested }` as JSON instead of the summary lines. */
+  json?: boolean;
   /** Explicit global lexicon path (test hook, no CLI flag). */
   globalPath?: string;
 }
@@ -278,6 +283,7 @@ export async function runAdd(
   if (opts.interactive && !prompter && !isInteractive()) {
     throw new Error('add --interactive needs a terminal (stdin and stdout must be a TTY); pass aliases as arguments instead');
   }
+  if (opts.interactive && opts.json) throw new Error('add: --interactive and --json cannot be combined');
   const ownPrompter = opts.interactive && !prompter;
   const p: Prompter | undefined = opts.interactive
     ? (prompter ?? createPrompter({ input: process.stdin, output: process.stdout }))
@@ -350,6 +356,10 @@ export async function runAdd(
     ...(opts.globalPath ? { globalPath: opts.globalPath } : {}),
     ...(fallbackOnly && suggested.length > 0 ? { defaultAliases: suggested } : {}),
   });
+  if (opts.json) {
+    line(io, JSON.stringify({ term: result.term, path: result.file.path, created: result.created, scope, suggested }, null, 2));
+    return 0;
+  }
   line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
   if (suggested.length > 0 && !p && (!fallbackOnly || result.created)) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
@@ -359,16 +369,52 @@ export async function runAdd(
 
 export interface RemoveOptions extends CommonOptions {
   project?: boolean;
+  /** Print `{ canonical, removed }` as JSON (exit 1 still means not found). */
+  json?: boolean;
+  /** Remove only this alias from the term, keeping the term. */
+  alias?: string;
 }
 
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
+  if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, cwd, io);
   const removed = await removeTerm(canonical, opts.project ? { scope: 'project', cwd } : { cwd });
+  if (opts.json) {
+    line(io, JSON.stringify({ canonical, removed }, null, 2));
+    if (!removed) io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
+    return removed ? 0 : 1;
+  }
   if (!removed) {
     io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
     return 1;
   }
   line(io, `removed ${bold(safe(canonical))}`);
+  return 0;
+}
+
+/**
+ * `remove <canonical> --alias <alias>`: drop one alias and keep the term. An
+ * unknown term or alias exits 1 (with `{ removed: false, error }` under
+ * --json); a refused untrusted project file throws as every other write does.
+ */
+async function runRemoveAlias(canonical: string, alias: string, opts: RemoveOptions, cwd: string, io: IO): Promise<number> {
+  let result: RemoveAliasResult;
+  try {
+    result = await removeAlias(canonical, alias, opts.project ? { scope: 'project', cwd } : { cwd });
+  } catch (err) {
+    if (isProjectTrustError(err)) throw err;
+    const message = errorMessage(err);
+    if (opts.json) line(io, JSON.stringify({ canonical, alias, removed: false, error: message }, null, 2));
+    io.stderr(`lexicon: ${safeLines(message)}\n`);
+    return 1;
+  }
+  const paths = result.files.map((f) => f.path);
+  if (opts.json) {
+    line(io, JSON.stringify({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths }, null, 2));
+    return 0;
+  }
+  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
+  line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   return 0;
 }
 
@@ -679,7 +725,13 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, ensureNewline(text), 'utf8');
-    line(io, `wrote ${format} export (${plural(merged.terms.length, 'term')}) to ${safe(outPath)}`);
+    // The terms actually written: the same category filter and cap exportLexicon applies.
+    const allowed = exportOpts.categories && exportOpts.categories.length > 0 ? new Set(exportOpts.categories) : undefined;
+    const matching = allowed
+      ? merged.terms.filter((t) => t.category !== undefined && allowed.has(t.category)).length
+      : merged.terms.length;
+    const written = exportOpts.limit !== undefined ? Math.min(matching, exportOpts.limit) : matching;
+    line(io, `wrote ${format} export (${plural(written, 'term')}) to ${safe(outPath)}`);
   } else {
     io.stdout(ensureNewline(text));
   }

@@ -65,11 +65,13 @@ describe('computeStats', () => {
     expect(stats.topTerms[0]).toEqual({ canonical: 'Hit0', hits: 100 });
     expect(stats.neverHit).toHaveLength(NEVER_HIT_CAP);
     expect(stats.neverHit[0]).toBe('Cold0');
+    // The cap hides how many there are; the count does not.
+    expect(stats.neverHitCount).toBe(30);
   });
 
   it('handles an empty lexicon', () => {
     const stats = computeStats(loadedOf([], false));
-    expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [] });
+    expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [], neverHitCount: 0 });
   });
 });
 
@@ -82,6 +84,13 @@ describe('lexicon stats (CLI)', () => {
     expect(text).toContain('never hit (2)\n  Mason Wyatt, Zoë');
     expect(text).toMatch(/global\s+\/fake\/global\.yaml\s+3 terms/);
     expect(text).toMatch(/project\s+\/fake\/repo\/\.lexicon\.yaml\s+1 term\n/);
+  });
+
+  it('gives the full never-hit count past the cap', () => {
+    const cold: Term[] = Array.from({ length: 30 }, (_, i) => ({ canonical: `Cold${i}`, aliases: [] }));
+    const text = renderStats(computeStats(loadedOf(cold)));
+    expect(text).toContain('never hit (30)\n  Cold0, ');
+    expect(text).toContain('Cold19, and 10 more');
   });
 
   it('says so when no hits were recorded', () => {

@@ -38,7 +38,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
     "build:bundle": "node scripts/build-bundle.mjs",
     "prepare": "npm run build && npm run build:bundle",
     "check:bundle": "npm run build:bundle && git diff --exit-code --stat -- plugin",
@@ -51,6 +51,7 @@
     "mcp": "node dist/mcp/server.js",
     "bench": "node --import tsx bench/run.ts",
     "bench:audio": "node --import tsx bench/audio/run.ts",
+    "bench:hook": "node bench/hook-latency.mjs",
     "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
     "check:links": "node scripts/check-links.mjs",
     "check:server-json": "node scripts/check-server-json.mjs",

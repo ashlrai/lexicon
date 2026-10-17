@@ -20,7 +20,8 @@ src/
     schema.ts               zod schemas, parseLexicon(), LIMITS, invisible-character stripping
     store.ts                path resolution, YAML read/write, global+project merge,
                             addTerm / removeTerm / recordHits, the project-write trust gate,
-                            per-user hit counts (hits.json), the parsed-YAML cache (parse-cache.json)
+                            per-user hit counts (hits.json), the parsed-YAML cache (parse-cache.json),
+                            the compiled matcher index cache (index-cache.json, loadMatcherIndex)
     trust.ts                trust registry (trust.json): isTrusted, trustProject, refreshTrust, listTrusted
     matcher.ts              the public face: buildIndex(), findReplacements(), phoneticKey(), similarity()
     matcher/                its four parts: build (the index), text (folding, metaphone, edit distance),
@@ -78,7 +79,8 @@ src/
 
 plugin/
   mcp-server.mjs            esbuild bundle of src/mcp/server.ts, every dependency inlined (committed)
-  hook.mjs                  esbuild bundle of src/hooks/user-prompt-submit.ts (committed)
+  hook.mjs                  esbuild bundle of src/hooks/plugin-entry.ts: enables Node's compile cache, imports hook-main.mjs (committed)
+  hook-main.mjs             esbuild bundle of src/hooks/user-prompt-submit.ts (committed)
 extension/
   manifest.json, src/       Manifest V3 browser extension; core.ts is the browser-safe slice of src/core
   dist/, dist-firefox/      build output (npm run build:extension)
@@ -94,6 +96,7 @@ scripts/
   install.sh                the curl | sh installer
   make-signing-identity.sh  the reusable ad-hoc identity the macOS app is signed with
   smoke.mjs                 runs the built CLI, hook and MCP server end to end (npm run smoke)
+  smoke-home.mjs            the temp HOME and lexicon copy smoke.mjs runs in, so it writes nothing into the repo
   check-links.mjs           every relative markdown link and anchor resolves (npm run check:links)
   check-facts.mjs           every number the docs state is re-derived from the code (npm run check:facts)
   check-server-json.mjs     server.json agrees with package.json (npm run check:server-json)
@@ -264,7 +267,7 @@ The hooks run on every prompt and every session start in Claude Code, so they ar
 
 | Path | Budget | How |
 |---|---|---|
-| `plugin/hook.mjs`, 1KB prompt | under 200ms end to end, including Node startup. Measured: about 100ms on an M-series Mac with an 8-term lexicon | No network. YAML read once. `buildIndex()` precomputes alias map and phonetic keys. Exact alias is a single word-boundary regex pass. One bundled file, no module resolution |
+| `plugin/hook.mjs`, 1KB prompt | under 200ms end to end, including Node startup. Measured: about 100ms on an M-series Mac with an 8-term lexicon | No network. The parsed lexicon comes from parse-cache.json and the compiled index from index-cache.json (`loadMatcherIndex`) when the lexicon is unchanged, so a warm prompt neither parses YAML nor runs `buildIndex()`; V8's compiled code for the bundle comes from the compile cache (Node >= 22.1). `bench/hook-latency.mjs` measures it: 2000 terms, warm, about 150ms on a loaded 4-core Linux VM where it was 250ms before those caches. Exact alias is a single word-boundary regex pass. One bundled file, no module resolution. Matching stops after `HOOK_MATCH_BUDGET_MS` (100ms), so a huge paste against a large lexicon cannot run into the 5 s hook timeout; it gets the corrections from its start |
 | `normalize_transcript` | under 50ms for a typical prompt | Same index; server process stays warm. Benchmark: 0.3 ms per sentence including `buildIndex()` |
 | `POST /normalize` | a few ms on loopback | Lexicon cached per cwd for 2 s; 1 MB body cap; 64 in-flight requests, then 503 |
 | extension send | zero added delay when nothing changes | The worker prechecks the text on a 250 ms debounce while you type; an unchanged send is not intercepted at all |

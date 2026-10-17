@@ -71,6 +71,13 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
       created: true,
     })),
     removeTerm: vi.fn(async (canonical: string) => canonical === 'Ashlr.AI'),
+    removeAlias: vi.fn(async (canonical: string, alias: string, opts?: { scope?: string }) => {
+      if (canonical !== 'Ashlr.AI') throw new Error(`no term "${canonical}" in the global or project lexicon`);
+      if (alias !== 'Ashler') throw new Error(`"${alias}" is not an alias of "Ashlr.AI" in the global or project lexicon`);
+      const term = { canonical: 'Ashlr.AI', aliases: ['Ashlar'] };
+      return { term, files: [{ path: opts?.scope === 'project' ? '/tmp/proj/.lexicon.yaml' : state.globalPath, scope: opts?.scope ?? 'global', lexicon, exists: true }] };
+    }),
+    isProjectTrustError: actual.isProjectTrustError,
     findTerm: vi.fn(),
     harvestRepo: vi.fn(async () => []),
     exportLexicon: vi.fn((_l: Lexicon, format: string) => `export:${format}`),
@@ -338,6 +345,41 @@ describe('add / remove / path', () => {
     expect(missing.err).toContain('not found');
   });
 
+  it('add --json and remove --json print parseable JSON on stdout', async () => {
+    const added = makeIO();
+    expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
+    expect(JSON.parse(added.out)).toMatchObject({ term: { canonical: 'Ashlr.AI' }, path: state.globalPath, created: true, scope: 'global' });
+    const removed = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true }, removed)).toBe(0);
+    expect(JSON.parse(removed.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+    const missing = makeIO();
+    expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
+    expect(JSON.parse(missing.out)).toEqual({ canonical: 'Nope', removed: false });
+  });
+
+  it('remove --alias drops one alias and keeps the term', async () => {
+    const io = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', project: true }, io)).toBe(0);
+    expect(core.removeAlias).toHaveBeenCalledWith('Ashlr.AI', 'Ashler', expect.objectContaining({ scope: 'project' }));
+    expect(core.removeTerm).not.toHaveBeenCalled();
+    expect(io.out).toContain('removed alias');
+    expect(io.out).toContain('aliases: Ashlar');
+
+    const json = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toEqual({ canonical: 'Ashlr.AI', alias: 'Ashler', removed: true, aliases: ['Ashlar'], paths: [state.globalPath] });
+  });
+
+  it('remove --alias exits 1 with a clear error for an unknown term or alias', async () => {
+    const term = makeIO();
+    expect(await runRemove('Nope', { alias: 'x' }, term)).toBe(1);
+    expect(term.err).toContain('no term "Nope"');
+    const alias = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashlr', json: true }, alias)).toBe(1);
+    expect(JSON.parse(alias.out)).toMatchObject({ canonical: 'Ashlr.AI', alias: 'Ashlr', removed: false, error: expect.stringContaining('not an alias') });
+    expect(alias.err).toContain('not an alias');
+  });
+
   it('path prints both scopes', async () => {
     const io = makeIO();
     await runPath({}, io);
@@ -375,6 +417,26 @@ describe('export', () => {
     await runExport('json', { out: path.join(dir, 'sub', 'lex.json') }, io2);
     expect(await fs.readFile(path.join(dir, 'sub', 'lex.json'), 'utf8')).toBe('export:json\n');
     expect(io2.out).toContain('wrote json export');
+  });
+
+  it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+    try {
+      const all = makeIO();
+      await runExport('text', { out: path.join(dir, 'all.txt') }, all);
+      expect(all.out).toContain('(2 terms)');
+      const capped = makeIO();
+      await runExport('text', { out: path.join(dir, 'one.txt'), limit: 1 }, capped);
+      expect(capped.out).toContain('(1 term)');
+      const people = makeIO();
+      await runExport('text', { out: path.join(dir, 'people.txt'), category: ['person'] }, people);
+      expect(people.out).toContain('(1 term)');
+      const none = makeIO();
+      await runExport('text', { out: path.join(dir, 'none.txt'), category: ['place'] }, none);
+      expect(none.out).toContain('(0 terms)');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('accepts the product name for a format (wispr-flow, any case)', async () => {
@@ -548,6 +610,17 @@ describe('doctor', () => {
     expect(io.out).toMatch(/✗ alias "Ashler" of "Ashlr\.AI" equals the canonical of "Ashler"/);
     expect(io.out).toMatch(/! alias "the" of "Ashlr\.AI" is a common English word/);
     expect(io.out).toMatch(/! no clipboard backend found \(.*wl-clipboard/);
+  });
+
+  it('warns about an alias its own never list blocks', async () => {
+    // Phantom's .lexicon.yaml shipped Locus with alias Locust and never: [locust];
+    // never is case-insensitive, so the alias could never fire and doctor said all was well.
+    const blocked: Lexicon = { version: 1, terms: [{ canonical: 'Locus', aliases: ['Locas', 'Locust'], never: ['locust'] }] };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: blocked, exists: true });
+    const io = makeIO();
+    await runDoctor({}, io, { platform: 'linux', env: { PATH: '' }, exec: () => 'no servers', home: doctorHome });
+    expect(io.out).toMatch(/! alias "Locust" of "Locus" is also in its never list, so it never fires/);
+    expect(io.out).not.toMatch(/alias "Locas" of "Locus" is also/);
   });
 });
 

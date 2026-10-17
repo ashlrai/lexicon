@@ -242,3 +242,23 @@ describe('pack list', () => {
     expect(io2.out).toContain('example/cardiology');
   });
 });
+
+describe('pack validate file handling', () => {
+  it('validates a pack whose file name differs from its name (docs: ./my-pack.yaml) or uses .yml', async () => {
+    for (const name of ['my-pack.yaml', 'cardiology.yml', 'Cardiology.yaml']) {
+      const file = path.join(dir, name);
+      writeFileSync(file, PACK);
+      const io = makeIO();
+      expect(await runPackValidate(file, { globalPath }, io)).toBe(0);
+      expect(io.out).toContain('cardiology');
+      expect(io.err).toBe('');
+    }
+  });
+
+  it('reports a missing file as missing, not as an unknown pack', async () => {
+    const io = makeIO();
+    expect(await runPackValidate(path.join(dir, 'nope.yaml'), { globalPath }, io)).toBe(1);
+    expect(io.err).toContain('file not found');
+    expect(io.err).not.toContain('unknown pack');
+  });
+});

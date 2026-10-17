@@ -41,10 +41,13 @@ import {
   readLexiconFile,
   PARSE_CACHE_FILE_NAME,
   PARSE_CACHE_MIN_BYTES,
+  PARSE_CACHE_VERSION,
+  cacheChecksum,
   readGlobalHits,
   readHitsFor,
   readProjectHits,
   recordHits,
+  removeAlias,
   removeTerm,
   resolvePaths,
   writeLexiconFile,
@@ -603,6 +606,11 @@ describe('addTerm', () => {
   it('rejects an empty canonical', async () => {
     await expect(addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath })).rejects.toThrow(/canonical/);
   });
+
+  it('names the problem, not the internal function, in its errors', async () => {
+    const err = await addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('canonical must not be empty');
+  });
 });
 
 describe('removeTerm', () => {
@@ -630,6 +638,77 @@ describe('removeTerm', () => {
     await addTerm({ canonical: 'Only', aliases: [] }, { cwd: nested, globalPath });
     expect(await removeTerm('Only', { cwd: nested, globalPath, scope: 'project' })).toBe(false);
     expect(await removeTerm('Only', { cwd: nested, globalPath, scope: 'global' })).toBe(true);
+  });
+});
+
+describe('removeAlias', () => {
+  it('removes one alias and leaves the term and its other aliases alone', async () => {
+    const { nested } = await makeRepo();
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'], notes: 'my company' }, { cwd: nested, globalPath });
+    const result = await removeAlias('ashlr.ai', 'ASHLER', { cwd: nested, globalPath });
+    expect(result.term.canonical).toBe('Ashlr.AI');
+    expect(result.term.aliases).toEqual(['Ashlar']);
+    expect(result.files.map((f) => f.path)).toEqual([globalPath]);
+    const term = findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Ashlr.AI');
+    expect(term).toMatchObject({ aliases: ['Ashlar'], notes: 'my company' });
+  });
+
+  it('removes the alias from every file whose copy of the term holds it, unless a scope is given', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await addTerm({ canonical: 'Shared', aliases: ['shard', 'g'] }, { cwd: nested, globalPath });
+    await addTerm({ canonical: 'shared', aliases: ['shard', 'p'] }, { cwd: nested, globalPath, scope: 'project' });
+
+    const scoped = await removeAlias('Shared', 'shard', { cwd: nested, globalPath, scope: 'global' });
+    expect(scoped.files.map((f) => f.path)).toEqual([globalPath]);
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Shared')?.aliases).toEqual(['shard', 'p']);
+
+    await addTerm({ canonical: 'Shared', aliases: ['shard'] }, { cwd: nested, globalPath });
+    const both = await removeAlias('Shared', 'shard', { cwd: nested, globalPath });
+    expect(both.files.map((f) => f.path)).toEqual([projectPath, globalPath]);
+    const merged = findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'Shared');
+    expect(merged?.aliases).toEqual(['p', 'g']);
+  });
+
+  it('re-pins a trusted project file rather than flipping it to changed', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await addTerm({ canonical: 'Kubectl', aliases: ['cube control', 'cube cuddle'] }, { cwd: nested, globalPath, scope: 'project' });
+    await removeAlias('Kubectl', 'cube cuddle', { cwd: nested, globalPath, scope: 'project' });
+    const loaded = await loadLexicon({ cwd: nested, globalPath });
+    expect(loaded.projectTrust).toBe('trusted');
+    expect(findTerm(loaded.merged, 'Kubectl')?.aliases).toEqual(['cube control']);
+    expect(Object.keys((await readTrustRegistry({ globalPath })).trusted)).toEqual([projectPath]);
+  });
+
+  it('refuses to rewrite an untrusted project file', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await writeLexiconFile({
+      path: projectPath,
+      scope: 'project',
+      lexicon: { version: 1, terms: [{ canonical: 'Kubectl', aliases: ['cube control'] }] },
+      exists: false,
+    });
+    const before = await fs.readFile(projectPath);
+    await expect(removeAlias('Kubectl', 'cube control', { cwd: nested, globalPath })).rejects.toThrow(ProjectTrustError);
+    expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
+  });
+
+  it('says clearly when the term or the alias is unknown, and writes nothing', async () => {
+    const { nested } = await makeRepo();
+    await addTerm({ canonical: 'Hetzner', aliases: ['Hetsner'] }, { cwd: nested, globalPath });
+    const before = await fs.readFile(globalPath);
+    await expect(removeAlias('Nope', 'x', { cwd: nested, globalPath })).rejects.toThrow('no term "Nope" in the global or project lexicon');
+    await expect(removeAlias('Hetzner', 'x', { cwd: nested, globalPath, scope: 'project' })).rejects.toThrow(
+      'no term "Hetzner" in the project lexicon',
+    );
+    await expect(removeAlias('Hetzner', 'Hetsnr', { cwd: nested, globalPath })).rejects.toThrow(
+      '"Hetsnr" is not an alias of "Hetzner"',
+    );
+    await expect(removeAlias('Hetzner', 'hetzner', { cwd: nested, globalPath })).rejects.toThrow(/canonical spelling/);
+    await expect(removeAlias('Hetzner', '  ', { cwd: nested, globalPath })).rejects.toThrow('alias must not be empty');
+    expect(Buffer.compare(await fs.readFile(globalPath), before)).toBe(0);
   });
 });
 
@@ -838,50 +917,98 @@ describe('global parse cache', () => {
     await expect(fs.stat(cachePath())).rejects.toThrow();
   });
 
+  interface CacheEntry {
+    version: number;
+    path: string;
+    text: string;
+    sum: string;
+    lexicon: string;
+  }
+  const readEntry = async (): Promise<CacheEntry> => JSON.parse(await fs.readFile(cachePath(), 'utf8')) as CacheEntry;
+  /** Rewrite the cached lexicon, keeping the key; `resum` false leaves the old checksum. */
+  const doctor = async (edit: (lex: Lexicon) => unknown, resum = true): Promise<void> => {
+    const entry = await readEntry();
+    const lexicon = JSON.stringify(edit(JSON.parse(entry.lexicon) as Lexicon));
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon, sum: resum ? cacheChecksum(lexicon) : entry.sum }));
+  };
+
   it('is written by loadLexicon, reused for the same bytes, and ignored once the file changes', async () => {
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n`);
     await fs.chmod(globalPath, 0o600);
     expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Ashlr.AI')).toBeDefined();
-    const cached = JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { sha256: string; lexicon: Lexicon };
-    expect(cached.lexicon.terms[0].canonical).toBe('Ashlr.AI');
+    const cached = await readEntry();
+    expect(cached.version).toBe(PARSE_CACHE_VERSION);
+    expect(cached.sum).toBe(cacheChecksum(cached.lexicon));
+    expect((JSON.parse(cached.lexicon) as Lexicon).terms[0].canonical).toBe('Ashlr.AI');
     // Same permission bits as the lexicon: it holds the same names.
     if (process.platform !== 'win32') expect((await fs.stat(cachePath())).mode & 0o777).toBe(0o600);
 
     // Proof the entry is what gets read: doctor it while keeping the key.
-    cached.lexicon.terms[0].aliases = ['from-cache'];
-    await fs.writeFile(cachePath(), JSON.stringify(cached));
+    await doctor((lex) => ({ ...lex, terms: [{ ...lex.terms[0], aliases: ['from-cache'] }] }));
     expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Ashlr.AI')?.aliases).toEqual(['from-cache']);
 
-    // A hand edit changes the hash, so the YAML is parsed again and the entry refreshed.
+    // A hand edit changes the text, so the YAML is parsed again and the entry refreshed.
     await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashlar]\n`);
     expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Ashlr.AI')?.aliases).toEqual(['Ashlar']);
-    expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { lexicon: Lexicon }).lexicon.terms[0].aliases).toEqual(['Ashlar']);
+    expect((JSON.parse((await readEntry()).lexicon) as Lexicon).terms[0].aliases).toEqual(['Ashlar']);
   });
 
-  it('falls back to the YAML on a corrupt or invalid cache, and never caches a file that does not parse', async () => {
+  it('falls back to the YAML on a corrupt, damaged or older cache, and never caches a file that does not parse', async () => {
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: G\n    aliases: [gee]\n`);
     await loadLexicon({ cwd: tmp, globalPath });
     await expect(fs.stat(cachePath())).resolves.toBeDefined();
     await fs.writeFile(cachePath(), '{ not json');
     expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
-    const entry = JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { lexicon: { terms: unknown[] } };
-    entry.lexicon.terms = [{ canonical: 5 }];
-    await fs.writeFile(cachePath(), JSON.stringify(entry));
-    // The cached value goes through the real validator, which rejects it, so the YAML wins.
-    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
-    schemaOverride.parseLexicon = realSchema.parseLexicon;
-    try {
-      expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
-    } finally {
-      schemaOverride.parseLexicon = undefined;
-    }
+
+    // A cached lexicon that no longer matches its checksum is damaged: the YAML wins.
+    await doctor(() => ({ version: 1, terms: [{ canonical: 5 }] }), false);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
+    expect((await readEntry()).sum).toBe(cacheChecksum((await readEntry()).lexicon));
+
+    // A version 2 entry (the lexicon as an object, no checksum) is reparsed and replaced.
+    const v3 = await readEntry();
+    await fs.writeFile(cachePath(), JSON.stringify({ version: 2, path: v3.path, text: v3.text, lexicon: { version: 1, terms: [{ canonical: 'G', aliases: ['stale'] }] } }));
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
+    expect((await readEntry()).version).toBe(PARSE_CACHE_VERSION);
+
+    // A cached value that is not a lexicon object at all is ignored even with a matching checksum.
+    await doctor(() => 'nope');
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
 
     await fs.rm(cachePath());
     await fs.writeFile(globalPath, `${PAD}terms: [\n  - :::\n`);
     await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(/Failed to parse lexicon YAML/);
     await expect(fs.stat(cachePath())).rejects.toThrow();
+  });
+
+  it('is refreshed by writeLexiconFile, so the next load reads the cache instead of the YAML', async () => {
+    // The real validator, so the cached value is what the reader would produce.
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: G\n    aliases: [gee]\n`);
+    await fs.chmod(globalPath, 0o600);
+    const loaded = await loadLexicon({ cwd: tmp, globalPath });
+    loaded.global.lexicon.terms.push({ canonical: 'Written', aliases: ['ritten'] });
+    await writeLexiconFile(loaded.global);
+    const entry = await readEntry();
+    expect(entry.text).toBe(await fs.readFile(globalPath, 'utf8'));
+    expect(findTerm(JSON.parse(entry.lexicon) as Lexicon, 'Written')?.aliases).toEqual(['ritten']);
+    if (process.platform !== 'win32') expect((await fs.stat(cachePath())).mode & 0o777).toBe(0o600);
+    // The entry is the parse of exactly what was written.
+    const fresh = await readLexiconFile(globalPath, 'global');
+    expect(JSON.parse(entry.lexicon)).toEqual(fresh.lexicon);
+  });
+
+  it('is not written for a project file', async () => {
+    const projectPath = path.join(tmp, '.lexicon.yaml');
+    await fs.writeFile(projectPath, `${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: []\n`);
+    const file = await readLexiconFile(projectPath, 'project');
+    file.lexicon.terms.push({ canonical: 'Q', aliases: [] });
+    await writeLexiconFile(file);
+    await expect(fs.stat(path.join(tmp, PARSE_CACHE_FILE_NAME))).rejects.toThrow();
   });
 });
 
@@ -1125,5 +1252,59 @@ describe('XDG base directories', () => {
     const home = path.join(path.sep, 'elsewhere');
     expect(resolvePaths({ cwd: tmp, env: {}, home }).global).toBe(path.join(home, '.config', 'lexicon', 'lexicon.yaml'));
     expect(resolvePaths({ cwd: tmp, env: { LEXICON_PATH: '/from/env.yaml' }, home }).global).toBe('/from/env.yaml');
+  });
+});
+
+describe('a write keeps a hand-written file\'s layout', () => {
+  // A committed project file is someone's prose: one learned alias must be a
+  // one-line diff, not the whole file re-serialized under our own header.
+  const handWritten = [
+    '# Phantom project vocabulary.',
+    '# Merged only after `lexicon trust`.',
+    'version: 1',
+    'terms:',
+    '  - canonical: Ashlr.AI',
+    '    category: brand',
+    '    aliases: [Ashler, Ashlar] # what STT writes',
+    '  - canonical: Locus',
+    '    aliases: [Locas]',
+    '    never: [locust]',
+    '    notes: Identity pins.',
+    '',
+  ].join('\n');
+
+  it('adding an alias changes only that alias list', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, handWritten);
+    await addTerm({ canonical: 'Locus', aliases: ['Lowkus'] }, { cwd: tmp, globalPath });
+    const text = await fs.readFile(globalPath, 'utf8');
+    expect(text).toBe(handWritten.replace('aliases: [Locas]', 'aliases: [Locas, Lowkus]'));
+  });
+
+  it('a new term is appended and the rest is left alone', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, handWritten);
+    await addTerm({ canonical: 'Cortex', aliases: ['Kortex'] }, { cwd: tmp, globalPath });
+    const text = await fs.readFile(globalPath, 'utf8');
+    expect(text.startsWith(handWritten.trimEnd())).toBe(true);
+    const back = await readLexiconFile(globalPath, 'global');
+    expect(back.lexicon.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Locus', 'Cortex']);
+    expect(findTerm(back.lexicon, 'Cortex')?.aliases).toEqual(['Kortex']);
+  });
+
+  it('removing a term removes only its entry', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, handWritten);
+    await removeTerm('Ashlr.AI', { cwd: tmp, globalPath });
+    const text = await fs.readFile(globalPath, 'utf8');
+    expect(text).toContain('# Phantom project vocabulary.');
+    expect(text).not.toContain('Ashlr.AI');
+    expect(text).toContain('    aliases: [Locas]\n    never: [locust]\n    notes: Identity pins.');
   });
 });

@@ -33,7 +33,7 @@ import type { AliasEntry, MatcherIndex } from './matcher.js';
 import { sanitizeForDisplay } from './schema.js';
 import { resolvePaths } from './store.js';
 import { suggestAliases } from './suggest.js';
-import type { LoadedLexicon, Replacement, Term, TermCategory } from './types.js';
+import type { LoadedLexicon, Replacement, Term, TermCategory, TermScope } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Contract
@@ -59,6 +59,14 @@ export interface TermSuggestion {
   aliases?: string[];
   /** For 'term' from a harvest: the category the harvester assigned. */
   category?: TermCategory;
+  /**
+   * The lexicon file applying it writes: where the term lives for 'alias',
+   * 'never' and 'stale', the global file for a new 'term'. Always set by
+   * suggestTerms; optional so a suggestion passed back without it still applies.
+   */
+  scope?: TermScope;
+  /** Path of that file. Set with `scope`. */
+  path?: string;
 }
 
 /** One line of `voice/history.jsonl`. `model` and `ms` are informational and optional here. */
@@ -887,5 +895,17 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
 
   const merged = mergeSuggestions(suggestions);
   merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
-  return merged.slice(0, limit);
+  return merged.slice(0, limit).map((s) => withTarget(s, loaded));
+}
+
+/**
+ * Name the file a suggestion touches, so the user can be told before they
+ * accept it. An existing term lives where the merge took it from (the
+ * project file wins), a new one goes to the global file, as apply does.
+ */
+function withTarget(s: TermSuggestion, loaded: LoadedLexicon): TermSuggestion {
+  const key = s.canonical.trim().toLowerCase();
+  const held = s.kind === 'term' ? undefined : loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+  const scope: TermScope = held?.scope === 'project' && loaded.project ? 'project' : 'global';
+  return { ...s, scope, path: scope === 'project' && loaded.project ? loaded.project.path : loaded.global.path };
 }

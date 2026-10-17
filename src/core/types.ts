@@ -161,6 +161,26 @@ export interface NormalizeOptions {
   skipCode?: boolean;
   /** Return candidates without applying them (output === input). */
   dryRun?: boolean;
+  /**
+   * Polled before each token after the first; once it returns true the scan
+   * ends and only the replacements found so far are returned. The prompt hook
+   * passes a clock-based budget here; the matcher itself never reads a clock.
+   */
+  shouldStop?: () => boolean;
+}
+
+/**
+ * Set on a normalize response when matching did not cover the whole text:
+ * `length` when only the first `checkedChars` characters were matched,
+ * `time` when the `shouldStop` budget ran out first. The unchecked text is
+ * returned unchanged. Shared by MCP normalize_transcript, serve /normalize
+ * and the extension's embedded engine.
+ */
+export interface NormalizeIncomplete {
+  reasons: ('length' | 'time')[];
+  checkedChars?: number;
+  totalChars: number;
+  note: string;
 }
 
 /** A term proposed by a harvester, before the user accepts it. */

@@ -36,7 +36,7 @@ import { alphaOnly, similarity } from './matcher/text.js';
 import { STOPLIST } from './stoplist.js';
 import { tokenize } from './matcher/tokenize.js';
 import type { Token } from './matcher/tokenize.js';
-import { separatorOffsets } from './matcher/build.js';
+import { firstAtLeast, separatorOffsets } from './matcher/build.js';
 import type { AliasEntry, MatcherIndex, PhoneticEntry } from './matcher/build.js';
 import { declineCollapsedMentions } from './matcher/enumeration.js';
 
@@ -224,7 +224,7 @@ function inventsBoundary(view: WindowView, e: AliasEntry): boolean {
   return false;
 }
 
-function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun'>>): Candidate | undefined {
+function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun' | 'shouldStop'>>): Candidate | undefined {
   // Held in an object read through a getter: TS does not invalidate narrowing of
   // a local across the closure calls below, so a plain `let best` narrows to never.
   const state: { best: Candidate | undefined } = { best: undefined };
@@ -344,7 +344,17 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
     const bucket = index.fuzzyBuckets.get(view.tokenCount);
     if (bucket) {
       const wlen = view.normLower.length;
-      for (const e of bucket) {
+      // The bucket is sorted by length (see sortFuzzyBuckets). An entry passes
+      // the length check below only if its length is within
+      // [minConfidence * wlen, wlen / minConfidence]; one character of slack on
+      // each side keeps floating-point rounding on the side of looking, and the
+      // exact check still decides.
+      const m = opts.minConfidence;
+      const lowest = Math.floor(m * wlen) - 1;
+      const highest = m > 0 ? Math.ceil(wlen / m) + 1 : Number.POSITIVE_INFINITY;
+      for (let k = lowest > 0 ? firstAtLeast(bucket, lowest) : 0; k < bucket.length; k++) {
+        const e = bucket[k];
+        if (e.normLower.length > highest) break;
         const max = Math.max(wlen, e.normLower.length);
         // similarity <= 1 - |lenDiff| / max, so prune before running any edit distance.
         if (Math.abs(wlen - e.normLower.length) > (1 - opts.minConfidence) * max) continue;
@@ -384,7 +394,9 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
   const tokens = tokenize(text, resolved.skipCode);
   const candidates: Candidate[] = [];
 
+  const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
+    if (i > 0 && shouldStop?.()) break;
     if (tokens[i].skipped) continue;
     // Every window starting here shares this left edge, so one check covers them all.
     if (GLUE_BEFORE.has(text.charAt(tokens[i].start - 1))) continue;
@@ -413,9 +425,11 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
       // term at higher confidence. See PLURAL_RE.
       if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === 'alias')) {
         const stripped = last.text.slice(0, -1);
-        const swapped = tokens.slice(0, j);
+        // Only the window's own tokens: copying every token before it made a
+        // long prompt quadratic in its plurals.
+        const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
-        const view = makeView(text, swapped, i, j, false, index.protectedWords);
+        const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
         const bestPl = gluedAfter(text, view.end) ? undefined : findBest(view, index, resolved);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === 'alias')) best = bestPl;
       }

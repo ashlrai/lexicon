@@ -8,6 +8,7 @@
  */
 import { z } from 'zod';
 import {
+  PROJECT_FILE_NAME,
   getTrustPath,
   hashFile,
   isTrusted,
@@ -23,7 +24,19 @@ import type { LexiconFile } from '../../core/index.js';
 import { guarded, textResult, trustPreview } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
-import { resolve } from 'node:path';
+import { statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+/** An explicit path, where a directory means the `.lexicon.yaml` inside it (as `lexicon trust <dir>` reads it). */
+function explicitLexiconPath(cwd: string, path: string): string {
+  const resolved = resolve(cwd, path);
+  try {
+    if (statSync(resolved).isDirectory()) return join(resolved, PROJECT_FILE_NAME);
+  } catch {
+    // missing: reported by the action below
+  }
+  return resolved;
+}
 
 /**
  * Ask the user, not the agent, whether to trust `filePath`. Trust lets the
@@ -69,12 +82,12 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         'Use this instead of reading .lexicon.yaml yourself: the preview passes every string through sanitizeForDisplay and reports notes as present without quoting them, so nothing the file says reaches the conversation as text. Do not open the file with Read or cat.',
       inputSchema: {
         action: z.enum(['status', 'trust', 'untrust']),
-        path: z.string().optional().describe('Lexicon file to act on. Defaults to the project .lexicon.yaml resolved from the server working directory.'),
+        path: z.string().optional().describe('Lexicon file (or the project directory holding it) to act on. Defaults to the project .lexicon.yaml resolved from the server working directory.'),
       },
     },
     async ({ action, path }) =>
       guarded(async () => {
-        const filePath = path ? resolve(ctx.cwd, path) : resolvePaths({ cwd: ctx.cwd }).project;
+        const filePath = path ? explicitLexiconPath(ctx.cwd, path) : resolvePaths({ cwd: ctx.cwd }).project;
         const registry = getTrustPath({ cwd: ctx.cwd });
         // Everything this tool echoes is attacker-influenced: the file is
         // untrusted by definition, and the directory it sits in is named by

@@ -13,22 +13,22 @@ import {
 } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
-import { errorMessage } from '../../util/errors.js';
 import { isRecord } from '../../util/json.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
-import { DEFAULT_PORT, readServeConfig, serveUrl } from '../../serve/config.js';
+import { DEFAULT_PORT, probeHealth, readServeConfig, serveUrl } from '../../serve/config.js';
 
 /**
- * `/health` of the API this user's `lexicon serve` listens on: the port in
- * serve.json (what `lexicon serve` and `serve --status` use, and what desktop
- * clients read), else the default. Read-only: never creates serve.json.
+ * The API this user's `lexicon serve` listens on: the port in serve.json
+ * (what `lexicon serve` and `serve --status` use, and what desktop clients
+ * read), else the default, plus the token so a failing server explains
+ * itself. Read-only: never creates serve.json.
  */
-async function serveHealthUrl(): Promise<string> {
+async function serveTarget(): Promise<{ base: string; token?: string }> {
   const config = await readServeConfig();
   const port = config !== undefined && config.port > 0 ? config.port : DEFAULT_PORT;
-  return `${serveUrl(port)}/health`;
+  return { base: serveUrl(port), ...(config?.token ? { token: config.token } : {}) };
 }
 
 export const registerSetupTools: ToolRegistrar = (server, ctx) => {
@@ -176,25 +176,31 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       title: 'Local API status',
       description:
         'Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
-        'Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.',
+        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); or { up: false, error } when nothing answers. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },
     async () =>
       guarded(async () => {
-        const url = await serveHealthUrl();
-        try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
-          if (!res.ok) return textResult({ up: false, url, status: res.status });
-          const body: unknown = await res.json();
-          return textResult({ up: true, url, ...(isRecord(body) ? body : { body }) });
-        } catch (err) {
+        const { base, token } = await serveTarget();
+        const url = `${base}/health`;
+        const probe = await probeHealth(base, token !== undefined ? { token } : {});
+        if (probe.state === 'up') return textResult({ up: true, url, ...(isRecord(probe.body) ? probe.body : { body: probe.body }) });
+        if (probe.state === 'failing') {
           return textResult({
             up: false,
+            running: true,
             url,
-            error: errorMessage(err),
-            hint: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same).',
+            status: probe.status,
+            error: probe.error,
+            hint: 'The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and call serve_status again. Starting another server will not help.',
           });
         }
+        return textResult({
+          up: false,
+          url,
+          error: probe.error,
+          hint: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same).',
+        });
       }),
   );
 

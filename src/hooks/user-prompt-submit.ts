@@ -27,13 +27,31 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
   cwd?: string;
+  /** Overrides HOOK_MATCH_BUDGET_MS. */
+  matchBudgetMs?: number;
 }
+
+/**
+ * How long the UserPromptSubmit hook spends matching before it stops and
+ * reports what it found. Matching is linear in prompt length times lexicon
+ * size: a 200 KB paste against a 2000-term lexicon took over 5 s, past the
+ * plugin's own hook timeout, so Claude Code killed it. A dictated prompt
+ * finishes far inside this; a huge paste gets the corrections from its start.
+ */
+export const HOOK_MATCH_BUDGET_MS = 100;
+
+/**
+ * Longest prompt the corrections note repeats back in full. Past this the
+ * note carries only the list of corrections: echoing a pasted log doubled the
+ * context the hook added for no benefit.
+ */
+export const CORRECTED_PROMPT_MAX_CHARS = 8000;
 
 /** Hook events this entry point handles. Anything else is treated as UserPromptSubmit. */
 export type HookEventName = 'UserPromptSubmit' | 'SessionStart';
@@ -126,12 +144,9 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
 
 /** Builds the note handed to the agent for a changed prompt. */
 export function formatAdditionalContext(result: NormalizeResult): string {
-  return (
-    'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' +
-    `${diffSummary(result)}\n` +
-    'Corrected prompt:\n' +
-    result.output
-  );
+  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + diffSummary(result);
+  if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
+  return `${head}\nCorrected prompt:\n${result.output}`;
 }
 
 /**
@@ -170,12 +185,14 @@ export function formatSkippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTru
  * unpunctuated tail ("versel please fix it").
  */
 export function formatCorrectionNote(correction: Correction): string {
-  const heard = stripControlChars(correction.heard).trim();
-  const meant = stripControlChars(correction.meant).trim();
+  // JSON string literals: a spelling holding `"` or `\` must not read as the
+  // end of the argument. A plain spelling comes out as "Ashler", as before.
+  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
+  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
   return (
-    `The user is correcting a spelling: "${heard}" should be "${meant}". ` +
-    `Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". ` +
-    `If "${heard}" contains words that are not part of the misspelled name, pass only the name. ` +
+    `The user is correcting a spelling: ${heard} should be ${meant}. ` +
+    `Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. ` +
+    `If ${heard} contains words that are not part of the misspelled name, pass only the name. ` +
     'Then continue with the rest of the message.'
   );
 }
@@ -416,7 +433,20 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
   const correctionNote = correction ? formatCorrectionNote(correction) : '';
 
-  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : undefined;
+  // The compiled index comes from index-cache.json when the lexicon has not
+  // changed since a previous prompt built it (see loadMatcherIndex). The
+  // match budget starts after it: it bounds the scan, which grows with the
+  // prompt, not the one-off cost of the index.
+  const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : undefined;
+  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  // process.hrtime rather than performance.now: the `performance` global
+  // loads node:perf_hooks on first touch, a few ms of a cold hook.
+  const started = process.hrtime.bigint();
+  const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
+  let timedOut = false;
+  const shouldStop = (): boolean => (timedOut ||= process.hrtime.bigint() - started >= limit);
+  let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : undefined;
+  const budgetNote = timedOut ? formatBudgetNote(budget) : '';
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   if (result && correction) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
@@ -424,13 +454,26 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
 
-  if (!changed && !skippedNote && !correctionNote) return '';
+  if (!changed && !skippedNote && !correctionNote && !budgetNote) return '';
 
   const parts: string[] = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
+  if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
   return emit('UserPromptSubmit', parts);
+}
+
+/**
+ * One line for a prompt whose matching stopped at the hook budget. Without it
+ * a long prompt cut short reads exactly like one that held no misspelled
+ * names past its start.
+ */
+export function formatBudgetNote(budgetMs: number): string {
+  return (
+    `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. ` +
+    'If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.'
+  );
 }
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
