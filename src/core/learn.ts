@@ -383,7 +383,8 @@ export function conflictRemoveCommand(c: LearnConflict, show: (s: string) => str
  * `learn --json` and `add --json`, MCP `add_term`, serve `POST /learn`): one
  * sentence per conflict, naming how to drop an alias from the other term if
  * the user agrees, as the `lexicon remove` command (`'cli'`, the default) or
- * the `remove_term` call (`'mcp'`). Unsanitized, like every JSON field.
+ * the `remove_term` call (`'mcp'`); for a spelling that is another term's
+ * canonical, how to remove that term. Unsanitized, like every JSON field.
  */
 export function conflictNote(conflicts: readonly LearnConflict[], audience: ConflictNoteAudience = 'cli'): string {
   return conflicts
@@ -393,7 +394,10 @@ export function conflictNote(conflicts: readonly LearnConflict[], audience: Conf
           (audience === 'mcp'
             ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
             : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`)
-        : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`,
+        : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` +
+          (audience === 'mcp'
+            ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".`
+            : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`),
     )
     .join(' ');
 }

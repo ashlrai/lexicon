@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
 import { runList } from '../src/cli/commands.js';
 import { trustProject } from '../src/core/trust.js';
+import { conflictNote } from '../src/core/learn.js';
 import { makeIO } from './helpers.js';
 
 let repo: string;
@@ -644,6 +645,20 @@ describe('learn_correction when another term already claims `heard`', () => {
     const payload = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercel' })).text) as { conflict?: { canonical: string; as: string }; summary: string };
     expect(payload.conflict).toMatchObject({ canonical: 'Verse', as: 'canonical' });
     expect(payload.summary).toMatch(/"Verse" is its own term/);
+  });
+
+  // Catches: learn_correction phrasing the conflict in its own words, so it
+  // drifted from the note add_term, `learn --json` and POST /learn give.
+  it('words the conflict with the shared conflictNote, as add_term does', async () => {
+    await call('add_term', { canonical: 'Verse', aliases: ['Versel'] });
+    const alias = JSON.parse((await call('learn_correction', { heard: 'versel', meant: 'Vercel' })).text) as { conflict: Parameters<typeof conflictNote>[0][number]; summary: string };
+    expect(alias.summary).toBe(`"versel" -> "Vercel" saved. ${conflictNote([alias.conflict], 'mcp')}`);
+    const own = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercell' })).text) as { conflict: Parameters<typeof conflictNote>[0][number]; summary: string };
+    expect(own.summary).toBe(`"Verse" -> "Vercell" saved. ${conflictNote([own.conflict], 'mcp')}`);
+    expect(own.summary).toBe(
+      '"Verse" -> "Vercell" saved. "Verse" is its own term (global), so it may still be kept as written; ' +
+        'if the user never means it as its own term, call remove_term with canonical "Verse", scope "global".',
+    );
   });
 
   it('adds no conflict when nothing else claims it', async () => {

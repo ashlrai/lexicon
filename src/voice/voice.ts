@@ -36,7 +36,7 @@ import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
 import { appendHistory } from './history.js';
-import { DEFAULT_MODEL } from './models.js';
+import { DEFAULT_MODEL, isModelPath, resolveModel } from './models.js';
 import type { Downloader } from './models.js';
 import {
   defaultExec,
@@ -278,20 +278,40 @@ async function requireTools(r: Resolved, io: VoiceIO, deps: VoiceDeps, need: { f
   const locate = { env: r.env, platform: r.platform, ...(deps.exists ? { exists: deps.exists } : {}), ...(deps.extraBinDirs ? { extraDirs: deps.extraBinDirs } : {}) };
   const ffmpeg = need.ffmpeg ? await locateFfmpeg(locate) : 'ffmpeg';
   const whisperCli = need.whisper ? await locateWhisperCli(locate) : 'whisper-cli';
-  const missing: string[] = [];
-  // A set override that points nowhere is a typo to fix, not a missing install.
-  if (!ffmpeg) missing.push(r.env.LEXICON_FFMPEG_BIN ? `ffmpeg (LEXICON_FFMPEG_BIN=${r.env.LEXICON_FFMPEG_BIN} does not exist)` : 'ffmpeg');
-  if (!whisperCli) missing.push(r.env.LEXICON_WHISPER_BIN ? `whisper-cli (LEXICON_WHISPER_BIN=${r.env.LEXICON_WHISPER_BIN} does not exist)` : 'whisper-cli');
-  if (missing.length > 0 || !ffmpeg || !whisperCli) {
-    const which = { ffmpeg: !ffmpeg, whisper: !whisperCli };
-    const vars = [...(which.whisper ? ['LEXICON_WHISPER_BIN'] : []), ...(which.ffmpeg ? ['LEXICON_FFMPEG_BIN'] : [])].join(' / ');
-    io.stderr(
-      `lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform, which)}\n  (or set ${vars} to the binary)\n`,
-    );
-    failed(r, EXIT_MISSING_TOOL, `${missing.join(' and ')} not found on PATH`, `install: ${installHint(r.platform, which)} (or set ${vars} to the binary)`);
-    return undefined;
-  }
-  return { ffmpeg, whisperCli };
+  if (ffmpeg && whisperCli) return { ffmpeg, whisperCli };
+  // A set override that points nowhere is a typo to fix, not a missing
+  // install: it is named on its own, and PATH (never searched for it) is not.
+  const overrides = [
+    ...(!whisperCli && r.env.LEXICON_WHISPER_BIN ? [{ tool: 'whisper-cli', name: 'LEXICON_WHISPER_BIN', value: r.env.LEXICON_WHISPER_BIN }] : []),
+    ...(!ffmpeg && r.env.LEXICON_FFMPEG_BIN ? [{ tool: 'ffmpeg', name: 'LEXICON_FFMPEG_BIN', value: r.env.LEXICON_FFMPEG_BIN }] : []),
+  ];
+  const which = { ffmpeg: !ffmpeg && !r.env.LEXICON_FFMPEG_BIN, whisper: !whisperCli && !r.env.LEXICON_WHISPER_BIN };
+  const onPath = [...(which.ffmpeg ? ['ffmpeg'] : []), ...(which.whisper ? ['whisper-cli'] : [])];
+  const errors = [
+    ...(onPath.length > 0 ? [`${onPath.join(' and ')} not found on PATH`] : []),
+    ...overrides.map((o) => `${o.name}=${o.value} does not exist`),
+  ];
+  const install = onPath.length > 0 ? installSteps(r.platform, which) : [];
+  // The install hint still follows: an override can point nowhere because the
+  // tool was never installed there.
+  const repoint = overrides.map(
+    (o) =>
+      `point ${o.name} at the ${o.tool} binary, or unset it to look on PATH (to install ${o.tool}: ${installHint(r.platform, { ffmpeg: o.tool === 'ffmpeg', whisper: o.tool === 'whisper-cli' })})`,
+  );
+  io.stderr(`lexicon voice: ${errors.join('; ')}.\n${[...install, ...repoint].map((step) => `  ${step}\n`).join('')}`);
+  failed(r, EXIT_MISSING_TOOL, errors.join('; '), [...(install.length > 0 ? [install.join(' ')] : []), ...repoint].join('; '));
+  return undefined;
+}
+
+/**
+ * `install: <hint>` and, for each override the hint does not already name,
+ * `(or set <VAR> to the binary)`: the Linux whisper hint already says to set
+ * LEXICON_WHISPER_BIN, so it is not said twice.
+ */
+function installSteps(platform: NodeJS.Platform, which: { ffmpeg: boolean; whisper: boolean }): string[] {
+  const hint = installHint(platform, which);
+  const vars = [...(which.whisper ? ['LEXICON_WHISPER_BIN'] : []), ...(which.ffmpeg ? ['LEXICON_FFMPEG_BIN'] : [])].filter((v) => !hint.includes(`${v}=`));
+  return [`install: ${hint}`, ...(vars.length > 0 ? [`(or set ${vars.join(' / ')} to the binary)`] : [])];
 }
 
 async function loadMerged(r: Resolved, opts: VoiceOptions): Promise<Lexicon> {
@@ -510,6 +530,23 @@ function micPermissionHint(r: Resolved, launcher: string): string {
 /** The --json `nextStep` for an input device ffmpeg could not resolve. */
 const DEVICE_HINT = 'run `lexicon voice --list-devices` and pass one of them with --device <name|index>';
 
+/**
+ * An explicit `--model <path>` that is not there, checked before anything is
+ * recorded. It was found only once whisper was about to run, so the user spoke
+ * into a recording that could not be transcribed. A model name is not checked
+ * here: a missing one is downloaded at transcription time.
+ */
+function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved): number | undefined {
+  const spec = opts.model ?? DEFAULT_MODEL;
+  if (!isModelPath(spec)) return undefined;
+  const model = resolveModel(spec, { globalPath: r.globalPath, env: r.env });
+  if (model.present) return undefined;
+  const error = `whisper model not found: ${model.path}`;
+  const nextStep = 'pass an existing ggml model file, or a model name like base.en to download it, with --model';
+  io.stderr(`lexicon voice: ${error}\n  ${nextStep}\n`);
+  return failed(r, EXIT_ERROR, error, nextStep);
+}
+
 /** The --json `error` of a capture with no usable audio: the parser's reason and ffmpeg's last line. */
 function recordingFailedError(reason: string | undefined, tail: string): string {
   const last = tail.split('\n').pop()?.trim();
@@ -627,7 +664,7 @@ function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string): nu
     r,
     missing ? EXIT_MISSING_TOOL : EXIT_ERROR,
     `${message(e)} (audio kept at ${wav})`,
-    missing ? `install: ${installHint(r.platform, { ffmpeg: false, whisper: true })} (or set LEXICON_WHISPER_BIN to the binary)` : undefined,
+    missing ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ') : undefined,
   );
 }
 
@@ -642,6 +679,8 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
+  const noModel = refuseMissingModelPath(opts, io, r);
+  if (noModel !== undefined) return noModel;
 
   let lexicon: Lexicon;
   try {
@@ -979,6 +1018,8 @@ async function recoverDeadRecorder(
 async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
+  const noModel = refuseMissingModelPath(opts, io, r);
+  if (noModel !== undefined) return noModel;
 
   let input;
   try {

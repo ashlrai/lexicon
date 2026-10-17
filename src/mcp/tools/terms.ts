@@ -549,15 +549,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             : `"${heard}" was already an alias of "${term.canonical}"`;
         const { conflict, untrustedProject } = learned;
         // The other term is never edited here; the agent gets what it needs to
-        // ask the user and fix it with remove_term.
-        const conflictText = !conflict
-          ? ''
-          : conflict.as === 'alias'
-            ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. ` +
-              // JSON literals: a `"` in a spelling must not blur where an argument ends.
-              `If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".`
-            : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. ` +
-              `If the user never means "${conflict.canonical}", remove that term with remove_term.`;
+        // ask the user and fix it with remove_term, in the same sentence
+        // add_term, `learn --json` and serve POST /learn give.
+        const conflictText = conflict ? `. ${conflictNote([conflict], 'mcp')}` : '';
         // Path only: the untrusted file's terms never reach the agent.
         const untrustedNote = !untrustedProject
           ? ''
@@ -573,8 +567,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(conflict ? { conflict } : {}),
           ...(untrustedProject ? { untrustedProject } : {}),
           ...(pending ?? {}),
-          // `saved` has no full stop of its own (the conflict note continues
-          // its sentence), so one is added before any note that starts a new one.
+          // `saved` has no full stop of its own, so one is added before any
+          // note that follows it.
           summary: saved + (conflictText || (untrustedNote || pending ? '.' : '')) + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
         });
       }),

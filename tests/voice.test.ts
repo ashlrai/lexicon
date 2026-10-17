@@ -993,7 +993,9 @@ describe('lexicon voice (foreground)', () => {
     expect(code).toBe(EXIT_MISSING_TOOL);
     expect(h.err.join('')).toContain('ffmpeg and whisper-cli not found');
     expect(h.err.join('')).toContain('install: sudo apt install ffmpeg, then build whisper.cpp');
-    expect(h.err.join('')).toContain('(or set LEXICON_WHISPER_BIN / LEXICON_FFMPEG_BIN to the binary)');
+    // The Linux hint already says to set LEXICON_WHISPER_BIN; only ffmpeg's override is added.
+    expect(h.err.join('')).toContain('\n  (or set LEXICON_FFMPEG_BIN to the binary)\n');
+    expect(h.err.join('')).not.toContain('(or set LEXICON_WHISPER_BIN');
 
     const onlyFfmpeg = await harness({ missing: ['ffmpeg'], platform: 'linux' });
     expect(await runVoice(onlyFfmpeg.opts, onlyFfmpeg.io, onlyFfmpeg.deps)).toBe(EXIT_MISSING_TOOL);
@@ -1002,12 +1004,47 @@ describe('lexicon voice (foreground)', () => {
     expect(err).not.toContain('whisper');
   });
 
-  it('names LEXICON_FFMPEG_BIN when it points at a file that does not exist', async () => {
+  // Catches: an override that points nowhere was reported as
+  // "ffmpeg (LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist) not found on PATH"
+  // though PATH was never searched (the install hint now rides with the
+  // repoint step); and the Linux whisper hint said to set LEXICON_WHISPER_BIN twice.
+  it('names LEXICON_FFMPEG_BIN when it points at a file that does not exist, without blaming PATH', async () => {
     const h = await harness({ missing: ['ffmpeg'], platform: 'linux' });
     h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/nope/ffmpeg' };
-    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
-    expect(h.err.join('')).toContain('ffmpeg (LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist)');
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(h.err.join('')).toBe(
+      'lexicon voice: LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist.\n  point LEXICON_FFMPEG_BIN at the ffmpeg binary, or unset it to look on PATH (to install ffmpeg: sudo apt install ffmpeg)\n',
+    );
+    expect(JSON.parse(h.out.join(''))).toEqual({
+      ok: false,
+      error: 'LEXICON_FFMPEG_BIN=/nope/ffmpeg does not exist',
+      nextStep: 'point LEXICON_FFMPEG_BIN at the ffmpeg binary, or unset it to look on PATH (to install ffmpeg: sudo apt install ffmpeg)',
+      code: EXIT_MISSING_TOOL,
+    });
     expect(h.spawnCalls).toHaveLength(0);
+
+    // The Windows CI step points both overrides at C:\nowhere and expects the
+    // winget hint: a dead override still says how to install the tool.
+    const win = await harness({ missing: ['ffmpeg'], platform: 'win32' });
+    win.deps.env = { PATH: win.binDir, LEXICON_FFMPEG_BIN: 'C:\\nowhere\\ffmpeg.exe' };
+    expect(await runVoice({ ...win.opts, json: true }, win.io, win.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(win.err.join('')).toContain('winget install Gyan.FFmpeg');
+
+    const both = await harness({ missing: ['ffmpeg', 'whisper-cli', 'whisper-cpp'], platform: 'linux' });
+    both.deps.env = { PATH: both.binDir, LEXICON_WHISPER_BIN: '/nope/whisper' };
+    expect(await runVoice({ ...both.opts, json: true }, both.io, both.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(JSON.parse(both.out.join(''))).toEqual({
+      ok: false,
+      error: 'ffmpeg not found on PATH; LEXICON_WHISPER_BIN=/nope/whisper does not exist',
+      nextStep: 'install: sudo apt install ffmpeg (or set LEXICON_FFMPEG_BIN to the binary); point LEXICON_WHISPER_BIN at the whisper-cli binary, or unset it to look on PATH (to install whisper-cli: build whisper.cpp (https://github.com/ggml-org/whisper.cpp) and set LEXICON_WHISPER_BIN=/path/to/whisper-cli)',
+      code: EXIT_MISSING_TOOL,
+    });
+
+    const linux = await harness({ missing: ['whisper-cli', 'whisper-cpp'], platform: 'linux' });
+    expect(await runVoice({ ...linux.opts, json: true }, linux.io, linux.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(JSON.parse(linux.out.join('')).nextStep).toBe(
+      'install: build whisper.cpp (https://github.com/ggml-org/whisper.cpp) and set LEXICON_WHISPER_BIN=/path/to/whisper-cli',
+    );
   });
 
   it('LEXICON_WHISPER_BIN points at a checkout binary named main', async () => {
@@ -1162,19 +1199,40 @@ describe('lexicon voice --json failures', () => {
     expect(h.err.join('')).toContain('lexicon voice: recording failed (the recording is empty)');
   });
 
-  it('a whisper failure and a missing explicit model keep the audio and say so in error', async () => {
+  it('a whisper failure keeps the audio and says so in error', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
     h.whisperExit = 1;
     expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
     expect(String(onlyDocument(h).error)).toMatch(/^whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)$/);
+  });
 
+  // Catches: a --model path that does not exist was found only when whisper
+  // was about to run, after the user had spoken into the recording.
+  it('a missing explicit model is refused with exit 1 before anything is recorded', async () => {
+    const nextStep = 'pass an existing ggml model file, or a model name like base.en to download it, with --model';
     const m = await harness();
     m.deps.waitForStop = async () => 'enter';
-    expect(await runVoice({ ...m.opts, model: path.join(m.dir, 'nope.bin'), json: true }, m.io, m.deps)).toBe(EXIT_ERROR);
-    const doc = onlyDocument(m);
-    expect(doc).toMatchObject({ ok: false, code: EXIT_ERROR });
-    expect(String(doc.error)).toContain('nope.bin');
+    const model = path.join(m.dir, 'nope.bin');
+    expect(await runVoice({ ...m.opts, model, json: true }, m.io, m.deps)).toBe(EXIT_ERROR);
+    expect(onlyDocument(m)).toEqual({ ok: false, error: `whisper model not found: ${model}`, nextStep, code: EXIT_ERROR });
+    expect(m.spawnCalls).toHaveLength(0);
+    expect(m.err.join('')).toContain(`lexicon voice: whisper model not found: ${model}`);
+
+    const t = await harness();
+    expect(await runVoiceToggle({ ...t.opts, model: path.join(t.dir, 'ggml-nope.bin'), json: true }, t.io, t.deps)).toBe(EXIT_ERROR);
+    expect(onlyDocument(t)).toMatchObject({ ok: false, nextStep, code: EXIT_ERROR });
+    expect(t.spawnCalls).toHaveLength(0);
+    expect(await runVoiceStatus(t.opts, { stdout: () => undefined, stderr: () => undefined }, t.deps)).toBe(EXIT_ERROR);
+
+    // A model name that is absent is still downloaded at transcription time.
+    const n = await harness();
+    n.deps.waitForStop = async () => 'enter';
+    n.deps.download = async (_url, dest) => {
+      await fs.writeFile(dest, 'fake');
+    };
+    expect(await runVoice({ ...n.opts, model: 'tiny.en' }, n.io, n.deps)).toBe(EXIT_OK);
+    expect(n.spawnCalls).toHaveLength(1);
   });
 
   it('nothing heard: exit 3, one document with ok: false and code 3 over the empty result', async () => {

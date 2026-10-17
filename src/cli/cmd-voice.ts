@@ -4,7 +4,7 @@
  * ../voice/voice.ts so it can be tested without a microphone.
  */
 import { Command, InvalidArgumentError } from 'commander';
-import { runVoice, runVoiceListDevices, runVoiceStatus, runVoiceToggle } from '../voice/voice.js';
+import { EXIT_ERROR, runVoice, runVoiceListDevices, runVoiceStatus, runVoiceToggle } from '../voice/voice.js';
 import type { VoiceOptions } from '../voice/voice.js';
 import type { IO } from './io.js';
 
@@ -26,6 +26,9 @@ interface VoiceCliOptions {
   json?: boolean;
   quiet?: boolean;
 }
+
+/** The flag that selects each mode other than plain dictation. */
+const MODE_FLAGS = { toggle: '--toggle', status: '--status', listDevices: '--list-devices' } as const;
 
 function positiveNumber(value: string): number {
   const n = Number(value);
@@ -52,6 +55,17 @@ export function registerVoiceCommands(program: Command, io: IO): void {
     .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
     .option('--quiet', 'no status lines on stderr')
     .action(async (opts: VoiceCliOptions) => {
+      // One mode per call: `--status --toggle` answered the status and dropped
+      // the toggle without a word, so a hotkey script never recorded.
+      const modes = (['toggle', 'status', 'listDevices'] as const).filter((m) => opts[m] === true).map((m) => MODE_FLAGS[m]);
+      if (modes.length > 1) {
+        const error = `${modes.join(' and ')} cannot be combined`;
+        const nextStep = 'pass one of --toggle, --status or --list-devices (see lexicon voice --help)';
+        io.stderr(`lexicon voice: ${error}\n  ${nextStep}\n`);
+        if (opts.json) io.stdout(`${JSON.stringify({ ok: false, error, nextStep, code: EXIT_ERROR })}\n`);
+        process.exitCode = EXIT_ERROR;
+        return;
+      }
       const { cwd } = program.opts<{ cwd?: string }>();
       const voiceOpts: VoiceOptions = {
         ...(cwd ? { cwd } : {}),

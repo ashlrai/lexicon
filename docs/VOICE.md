@@ -30,7 +30,9 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
 4. **Output.** The corrected text goes to stdout (default), the clipboard (`--copy`),
    or the frontmost app (`--paste`: copy plus an AppleScript Cmd+V, macOS only for
    now; elsewhere it falls back to `--copy` with a notice). `--json` prints
-   `{ raw, output, replacements, summary, model, seconds, ms: { record, transcribe, normalize } }`.
+   `{ ok: true, raw, output, replacements, summary, model, seconds, ms: { record, transcribe, normalize } }`,
+   and every failure, a bad flag included, prints `{ ok: false, error, nextStep?, code }`
+   with `code` the exit code.
 5. **Remember.** Each transcription appends `{ at, raw, output, model, ms }` to
    `~/.config/lexicon/voice/history.jsonl` (newest 1000 kept). The raw/output pairs
    are the material for `lexicon learn` and future alias suggestions; `--no-history`
@@ -38,7 +40,8 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
 
 Exit codes: `0` ok, `1` error, `2` ffmpeg or whisper-cli missing (with an install
 hint), `3` nothing heard. `--status` exits `0` while a toggle recording is running
-and `1` when idle, so scripts can branch on it.
+and `1` when idle, so scripts can branch on it. `--toggle`, `--status` and
+`--list-devices` are separate modes: passing two of them exits `1` and names both.
 
 ## Install
 
@@ -62,7 +65,8 @@ also looks in `bench/audio/models/` so the benchmark's download is reused. A mis
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
 progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). `--model /path/to/ggml-x.bin`
-uses a file directly and never downloads.
+uses a file directly and never downloads; a path that does not exist exits `1`
+before anything is recorded.
 
 ### Microphone permission (macOS)
 

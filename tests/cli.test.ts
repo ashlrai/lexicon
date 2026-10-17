@@ -477,7 +477,14 @@ describe('add / remove / path', () => {
   it('remove --json failure documents lead with ok: false and keep their keys', async () => {
     const term = makeIO();
     expect(await runRemove('Nope', { json: true, global: true }, term)).toBe(1);
-    expect(JSON.parse(term.out)).toEqual({ ok: false, error: 'term "Nope" not found in global lexicon', canonical: 'Nope', removed: false });
+    expect(JSON.parse(term.out)).toEqual({
+      ok: false,
+      error: 'term "Nope" not found in global lexicon',
+      nextStep: 'run lexicon list to see the exact canonical spellings',
+      canonical: 'Nope',
+      removed: false,
+    });
+    expect(term.err).toContain('lexicon: run lexicon list to see the exact canonical spellings');
     const alias = makeIO();
     expect(await runRemove('Nope', { json: true, alias: 'x' }, alias)).toBe(1);
     expect(JSON.parse(alias.out)).toEqual({ ok: false, error: 'no term "Nope" in the global or project lexicon', canonical: 'Nope', alias: 'x', removed: false });
@@ -529,7 +536,13 @@ describe('add / remove / path', () => {
     expect(JSON.parse(removed.out)).toEqual({ ok: true, canonical: 'Ashlr.AI', removed: true });
     const missing = makeIO();
     expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
-    expect(JSON.parse(missing.out)).toEqual({ ok: false, canonical: 'Nope', removed: false, error: 'term "Nope" not found' });
+    expect(JSON.parse(missing.out)).toEqual({
+      ok: false,
+      canonical: 'Nope',
+      removed: false,
+      error: 'term "Nope" not found',
+      nextStep: 'run lexicon list to see the exact canonical spellings',
+    });
   });
 
   // Catches: `lexicon remove` dropped the project copy, said "removed" and left the global copy correcting.
@@ -565,6 +578,16 @@ describe('add / remove / path', () => {
     expect(await runRemove('Mason Wyatt', { project: true }, io)).toBe(1);
     expect(io.err).toContain('not found in project lexicon');
     expect(io.err).toContain(`it is in the global lexicon (${state.globalPath}); run with --global to remove it`);
+
+    // Catches: under --json the miss gave only `error`, though stderr named the flag that removes it.
+    vi.mocked(core.removeTerm).mockResolvedValueOnce(false);
+    const json = makeIO();
+    expect(await runRemove('Mason Wyatt', { project: true, json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({
+      ok: false,
+      error: 'term "Mason Wyatt" not found in project lexicon',
+      nextStep: `it is in the global lexicon (${state.globalPath}); run with --global to remove it`,
+    });
   });
 
   it('remove --global removes only the global copy and names the project copy with --project', async () => {
@@ -2021,6 +2044,44 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       const help = lexicon(['add', '--help', '--json'], globalPath);
       expect(help.status).toBe(0);
       expect(help.stdout).toContain('Usage: lexicon add');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: `voice --json` promises `code` on every failure, but a commander
+  // usage error (`--seconds abc`) printed { ok, error, nextStep } without it;
+  // and `voice --status --toggle` answered the status and dropped the toggle.
+  it('voice: a usage error under --json carries code, and two modes are refused with exit 1', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-voice-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      for (const [args, error] of [
+        [['voice', '--seconds', 'abc', '--json'], "option '--seconds <n>' argument 'abc' is invalid"],
+        [['voice', '--bogus', '--json'], "unknown option '--bogus'"],
+        [['voice', 'extra', '--json'], 'too many arguments'],
+      ] as [string[], string][]) {
+        const r = lexicon([...args, '--cwd', tmp], globalPath);
+        expect(r.status, args.join(' ')).toBe(1);
+        expect(JSON.parse(r.stdout), args.join(' ')).toEqual({ ok: false, error: expect.stringContaining(error), nextStep: 'see the usage: lexicon voice --help', code: 1 });
+      }
+      for (const [flags, named] of [
+        [['--status', '--toggle'], '--toggle and --status'],
+        [['--list-devices', '--status'], '--status and --list-devices'],
+      ] as [string[], string][]) {
+        const json = lexicon(['voice', ...flags, '--json', '--cwd', tmp], globalPath);
+        expect(json.status, flags.join(' ')).toBe(1);
+        expect(JSON.parse(json.stdout)).toEqual({
+          ok: false,
+          error: `${named} cannot be combined`,
+          nextStep: 'pass one of --toggle, --status or --list-devices (see lexicon voice --help)',
+          code: 1,
+        });
+        const plain = lexicon(['voice', ...flags, '--cwd', tmp], globalPath);
+        expect(plain.status).toBe(1);
+        expect(plain.stdout).toBe('');
+        expect(plain.stderr).toContain(`lexicon voice: ${named} cannot be combined`);
+      }
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
