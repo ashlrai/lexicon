@@ -108,3 +108,21 @@ describe('espanso importer: empty triggers', () => {
     expect(r.skipped).toEqual([]);
   });
 });
+
+describe('superwhisper importer: entries with no usable original', () => {
+  it('skips, with a note, an entry whose original is not a string or is blank', () => {
+    const content = JSON.stringify([
+      { original: 5, replacement: 'Foo' },
+      { replacement: 'Bar' },
+      { original: '  ', replacement: 'Baz' },
+      { original: 'ashler', replacement: 'Ashlr.AI' },
+    ]);
+    const r = importLexicon(content, 'superwhisper');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
+    expect(r.skipped).toEqual([
+      { line: 1, reason: 'entry has no string `original`' },
+      { line: 2, reason: 'entry has no string `original`' },
+      { line: 3, reason: 'empty `original`' },
+    ]);
+  });
+});

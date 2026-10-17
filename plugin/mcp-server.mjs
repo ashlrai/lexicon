@@ -58222,9 +58222,16 @@ function parseSuperwhisperImport(content) {
       out.skipped.push({ line: line2, reason: "entry is not an object" });
       return;
     }
-    const original = typeof entry.original === "string" ? entry.original : "";
     const replacement = typeof entry.replacement === "string" ? entry.replacement : "";
-    const { row, skip } = rowFor(line2, replacement, original ? [original] : []);
+    if (!replacement.trim()) {
+      out.skipped.push({ line: line2, reason: "empty canonical" });
+      return;
+    }
+    if (typeof entry.original !== "string" || !entry.original.trim()) {
+      out.skipped.push({ line: line2, reason: typeof entry.original === "string" ? "empty `original`" : "entry has no string `original`" });
+      return;
+    }
+    const { row, skip } = rowFor(line2, replacement, [entry.original]);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);
   });
