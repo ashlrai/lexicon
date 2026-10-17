@@ -327,3 +327,84 @@ describe('pack list / pack search with an untrusted project lexicon', () => {
     expect(listed).not.toHaveProperty('projectTrust');
   });
 });
+
+describe('installed flags: one source of truth across pack list, pack search and MCP list_packs', () => {
+  // Catches: pack list marked a community pack installed from the registry
+  // state file while pack search and list_packs read settings.packs, so the
+  // three disagreed whenever the two records did.
+  it('all three read settings.packs; pack list reports the record that disagrees', async () => {
+    const cwd = path.join(dir, 'plain'); mkdirSync(cwd, { recursive: true });
+    const saved = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = globalPath;
+    const { createServer } = await import('../src/mcp/server.js');
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const listPacksMcp = async (): Promise<{ community: { ref: string; installed: boolean }[]; installed: string[] }> => {
+      const server = createServer({ cwd });
+      const client = new Client({ name: 'test', version: '0' });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(b);
+      await client.connect(a);
+      try {
+        const r = (await client.callTool({ name: 'list_packs', arguments: { registry: indexPath } })) as { content: { text: string }[] };
+        return JSON.parse(r.content[0].text);
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    };
+    const flags = async (): Promise<{ list: boolean; search: boolean; mcp: boolean; listIO: ReturnType<typeof makeIO> }> => {
+      const listIO = makeIO();
+      expect(await runPackList({ ...baseOpts(), cwd, json: true }, listIO), listIO.err).toBe(0);
+      const search = makeIO();
+      expect(await runPackSearch('cardio', { ...baseOpts(), cwd, json: true }, search)).toBe(0);
+      const mcp = await listPacksMcp();
+      return {
+        list: (JSON.parse(listIO.out) as { registry: { ref: string; installed: boolean }[] }).registry[0].installed,
+        search: (JSON.parse(search.out) as { packs: { installed: boolean }[] }).packs[0].installed,
+        mcp: mcp.community[0].installed,
+        listIO,
+      };
+    };
+    try {
+      expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), cwd, yes: true }, makeIO())).toBe(0);
+      const installedFile = readFileSync(globalPath, 'utf8');
+      expect(installedFile).toContain('example/cardiology');
+      expect(await flags()).toMatchObject({ list: true, search: true, mcp: true });
+
+      // 1. The registry state still records it; the lexicon file no longer lists it.
+      const { parse, stringify } = await import('yaml');
+      const doc = parse(installedFile) as { settings: { packs: string[] } };
+      doc.settings.packs = doc.settings.packs.filter((p) => p !== 'example/cardiology');
+      if (doc.settings.packs.length === 0) delete (doc as { settings?: unknown }).settings;
+      writeFileSync(globalPath, stringify(doc));
+      expect(readFileSync(globalPath, 'utf8')).not.toContain('example/cardiology');
+      const recordOnly = await flags();
+      expect(recordOnly).toMatchObject({ list: false, search: false, mcp: false });
+      const parsed = JSON.parse(recordOnly.listIO.out) as { communityInstalled: string[]; registryMismatch?: unknown };
+      expect(parsed.communityInstalled).toEqual(['example/cardiology']);
+      expect(parsed.registryMismatch).toEqual({ fileOnly: [], recordOnly: ['example/cardiology'] });
+      expect(recordOnly.listIO.err).toContain('has a registry record but is not in the global lexicon');
+
+      // 2. The other way round: the file lists it, the registry state has no record.
+      writeFileSync(globalPath, installedFile);
+      const statePath = path.join(path.dirname(globalPath), 'registry', 'registry.json');
+      const state = JSON.parse(readFileSync(statePath, 'utf8')) as { packs: Record<string, unknown> };
+      delete state.packs['example/cardiology'];
+      writeFileSync(statePath, JSON.stringify(state));
+      const fileOnly = await flags();
+      expect(fileOnly).toMatchObject({ list: true, search: true, mcp: true });
+      expect(JSON.parse(fileOnly.listIO.out)).toMatchObject({ communityInstalled: [], registryMismatch: { fileOnly: ['example/cardiology'], recordOnly: [] } });
+      expect(fileOnly.listIO.err).toContain('has no registry record, so pack update will not check it');
+
+      // The table agrees too.
+      const table = makeIO();
+      expect(await runPackList({ ...baseOpts(), cwd }, table)).toBe(0);
+      expect(table.out).toMatch(/community packs installed:[\s\S]*example\/cardiology/);
+      expect(table.out).toMatch(/example\/cardiology\s+Cardiology terms\s+1\s+yes/);
+    } finally {
+      if (saved === undefined) delete process.env.LEXICON_PATH;
+      else process.env.LEXICON_PATH = saved;
+    }
+  });
+});
