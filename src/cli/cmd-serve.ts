@@ -16,7 +16,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage } from '../util/errors.js';
-import { fail, line, safe, safeLines, tildify } from './io.js';
+import { fail, line, safe, safeError, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -168,7 +168,8 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
   }
   if (probe.state === 'failing') {
     // Running, so "start it" would be wrong advice: the error is what to fix.
-    line(io, `lexicon serve is running at ${url} but /health failed (HTTP ${probe.status}: ${safe(probe.error)})`);
+    // safeError, not safe: the 200-character cap of `safe` cut a long lexicon path in half.
+    line(io, `lexicon serve is running at ${url} but /health failed (HTTP ${probe.status}): ${safeError(probe.error)}`);
     return 1;
   }
   const reason = probe.state === 'down' ? probe.error : 'unexpected /health response';

@@ -813,6 +813,28 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: the error going through `safe`, which caps at 200 characters,
+  // so a long lexicon path was cut off before the part that names the file.
+  it('--status keeps the whole path of a broken lexicon file, and every line of the error', async () => {
+    const dir = path.join(await fs.mkdtemp(path.join(env.home, 'status-long-')), 'a-rather-long-directory-name-'.repeat(6));
+    await fs.mkdir(dir, { recursive: true });
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - aliases: [x]\n  - canonical: B\n    aliases: 7\n', 'utf8');
+    const broken = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await broken.start();
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port: t.port, globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(globalPath.length).toBeGreaterThan(200);
+      expect(out).toContain(`/health failed (HTTP 500): internal error: Invalid lexicon at ${globalPath}:`);
+      expect(out).toContain('terms[0].canonical');
+      expect(out).toContain('terms[1].aliases');
+    } finally {
+      await broken.stop();
+    }
+  });
+
   it('--status --json', async () => {
     const io = memIO();
     expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);

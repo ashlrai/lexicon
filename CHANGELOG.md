@@ -16,6 +16,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --status` prints the whole error of a running server whose `/health` fails, every line of it and the full path of the broken lexicon file. It went through the 200-character display cap, which cut a long path before the file name and joined a multi-line validation error into one truncated line. Output is now `... /health failed (HTTP 500): <error>`.
 - `npm run build` (and so `prepare` and `prepublishOnly`) removes `dist/` before `tsc` writes it. tsc never deletes output, so a module whose source was deleted or renamed kept its old `dist/` file and shipped in the npm tarball. The build is not incremental, so this costs no time.
 - MCP `suggest_canonical` refuses a `heard` longer than 60 characters (the `learn_correction` limit) with a message to pass only the garbled word. Scoring is linear in that length for every alias, so a pasted paragraph took seconds (4.5 s for 100,000 characters against 2000 terms) on the server's one thread.
 - MCP `normalize_transcript` matches against the cached matcher index (`index-cache.json`, as the hook and `lexicon serve` do) instead of rebuilding it on every call, checks at most the first 100,000 characters and stops matching after 1 second, like `POST /normalize`. A long paste used to hold the server's one thread, and every other tool call, for seconds (1 MB took about 14 s against 2000 terms). When a limit is hit the result carries `incomplete` with the reason and the unchecked text is returned unchanged.
