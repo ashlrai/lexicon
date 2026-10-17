@@ -61010,10 +61010,15 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   const aliasOwners = /* @__PURE__ */ new Map();
+  const fold2 = (w) => w.trim().replace(/\s+/g, " ").toLowerCase();
   for (const { term } of allTerms) {
+    const never2 = new Set((term.never ?? []).map(fold2));
     for (const alias of term.aliases) {
       const key = alias.trim().toLowerCase();
       if (!key) continue;
+      if (never2.has(fold2(alias))) {
+        push2("warn", `alias "${alias}" of "${term.canonical}" is also in its never list, so it never fires (remove one of them)`);
+      }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
         push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);

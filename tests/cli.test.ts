@@ -611,6 +611,17 @@ describe('doctor', () => {
     expect(io.out).toMatch(/! alias "the" of "Ashlr\.AI" is a common English word/);
     expect(io.out).toMatch(/! no clipboard backend found \(.*wl-clipboard/);
   });
+
+  it('warns about an alias its own never list blocks', async () => {
+    // Phantom's .lexicon.yaml shipped Locus with alias Locust and never: [locust];
+    // never is case-insensitive, so the alias could never fire and doctor said all was well.
+    const blocked: Lexicon = { version: 1, terms: [{ canonical: 'Locus', aliases: ['Locas', 'Locust'], never: ['locust'] }] };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: blocked, exists: true });
+    const io = makeIO();
+    await runDoctor({}, io, { platform: 'linux', env: { PATH: '' }, exec: () => 'no servers', home: doctorHome });
+    expect(io.out).toMatch(/! alias "Locust" of "Locus" is also in its never list, so it never fires/);
+    expect(io.out).not.toMatch(/alias "Locas" of "Locus" is also/);
+  });
 });
 
 describe('doctor: other MCP clients', () => {
