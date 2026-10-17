@@ -1090,6 +1090,31 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect(JSON.parse(again.text)).toMatchObject({ trusted: false });
   });
 
+  // Catches: add: true never pinned, so a project file the user had already
+  // trusted read as "changed" after the harvest and stopped applying, unlike
+  // every other MCP write into a trusted file (round 24's rule).
+  it('add: true keeps an already-trusted file trusted, and writes a changed one untrusted', async () => {
+    const projectPath = await trustedProjectFile();
+    const res = await call('harvest_repo', { add: true, minCount: 1 });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { added: number; path: string; trusted?: boolean; nextStep?: string };
+    expect(payload.added).toBeGreaterThan(0);
+    expect(payload.path).toBe(projectPath);
+    expect(payload).not.toHaveProperty('trusted');
+    expect(payload).not.toHaveProperty('nextStep');
+    const status = JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string };
+    expect(status.status).toBe('trusted');
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[] };
+    expect(listed.terms.length).toBe(payload.added);
+
+    // A hand edit makes it "changed": the next harvest writes it unpinned and says so.
+    await fs.appendFile(projectPath, '# edited\n');
+    const again = JSON.parse((await call('harvest_repo', { add: true, minCount: 1 })).text) as { trusted?: boolean };
+    expect(again.trusted).toBe(false);
+    const after = JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string };
+    expect(after.status).toBe('changed');
+  });
+
   // Catches: `path` was resolved and read wherever it pointed (a probe read /etc).
   it('refuses a path outside the server directory, its git root and the allowed roots', async () => {
     const res = await call('harvest_repo', { path: path.join(outside, 'other'), add: true });

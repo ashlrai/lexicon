@@ -114,7 +114,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
-        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file is left untrusted for the user to review).',
+        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
       inputSchema: {
         company: z.string().optional().describe('Company or product name, spelled exactly as it should appear.'),
         person: z.string().optional().describe("The user's own name as they write it."),
@@ -129,7 +129,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         harvest: z
           .boolean()
           .optional()
-          .describe('true = also add the repo names in wouldHarvest to the project .lexicon.yaml, left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested.'),
+          .describe('true = also add the repo names in wouldHarvest to the project .lexicon.yaml; a file the user already trusted stays trusted, any other is left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested.'),
         serve: z.boolean().optional().describe('true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed.'),
         apply: z
           .boolean()
@@ -159,8 +159,9 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           // So is the harvest (a write inside the user's repo). The plan lists the
           // candidates regardless, so the model can offer them; only an apply needs the flag.
           ...(applied || harvest === false ? { harvest: harvest === true } : {}),
-          // ...and the file it writes is left for the user to trust: the model
-          // relaying a yes is not the user reviewing the names.
+          // ...and a file it writes that the user has not trusted yet is left
+          // for them to trust: the model relaying a yes is not the user
+          // reviewing the names. An already-trusted file stays trusted.
           harvestUntrusted: true,
           ...(applied ? {} : { dryRun: true }),
         };

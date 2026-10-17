@@ -34,8 +34,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. ' +
         'WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project ' +
         'would add. Call it without `add` first -- that is a read-only preview. ' +
-        "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml but does not trust it: " +
-        'the file applies only after the user reviews it and runs ' + cliCommand('trust') + ', so show the candidate list and get a yes first, then relay `nextStep`. ' +
+        "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. " +
+        'A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs ' + cliCommand('trust') + ': relay `nextStep`. ' +
         `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. ` +
         'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
         'candidates come back as names, categories and counts.',
@@ -43,7 +43,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         path: z.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe('Max candidates to return (default 50).'),
         minCount: z.number().int().positive().optional().describe('Minimum occurrences for a candidate (default 2).'),
-        add: z.boolean().optional().describe('When true, add every candidate to the project lexicon, left untrusted for the user to review.'),
+        add: z.boolean().optional().describe('When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.'),
       },
     },
     async ({ path, limit, minCount, add }) =>
@@ -56,12 +56,15 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         let added = 0;
         let written: string | undefined;
         const failures: Array<{ canonical: string; error: string }> = [];
+        // Write into the harvested repo's own project lexicon, not the server
+        // cwd. A model chose these names, so a new, untrusted or changed file
+        // is never trusted by the write (trusting it is the user's call:
+        // lexicon trust); a file the user already trusted takes them and stays
+        // trusted, as for every other MCP write.
+        const writeOpts = add ? await mcpWriteOpts({ cwd: root }) : {};
         if (add) {
           for (const c of candidates) {
             try {
-              // Write into the harvested repo's own project lexicon, not the
-              // server cwd, and never trust it: a model chose these names,
-              // and trusting a project file is the user's call (lexicon trust).
               const saved = await addTerm(
                 {
                   canonical: c.canonical,
@@ -70,7 +73,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
                   source: c.source,
                   scope: 'project',
                 },
-                { cwd: root, scope: 'project', leaveUntrusted: true },
+                { cwd: root, scope: 'project', ...writeOpts },
               );
               written = saved.file.path;
               added += 1;
@@ -88,7 +91,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           count: candidates.length,
           ...(add ? { added, failures } : {}),
           ...(written !== undefined
-            ? { path: written, ...untrustedWriteFields(written, `${added} name(s)`, true) }
+            ? { path: written, ...(writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {}) }
             : {}),
           ...(failures.length > 0
             ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }

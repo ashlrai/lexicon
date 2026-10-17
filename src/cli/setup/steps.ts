@@ -19,6 +19,7 @@ import {
   listPacks,
   loadLexicon,
   loadPack,
+  projectWriteTrusted,
   readLexiconFile,
   resolvePaths,
   suggestAliases,
@@ -413,10 +414,14 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   let created = 0;
   let merged = 0;
   let file: string | undefined;
+  // A harvestUntrusted run (MCP) follows the rule every MCP write does: a file
+  // the user already trusted takes the names and keeps its pin refreshed; a
+  // new, untrusted or changed one is written unpinned.
+  const leaveUntrusted = ctx.opts.harvestUntrusted === true && !(await projectWriteTrusted({ cwd: root }));
   try {
     for (const c of candidates) {
       const term: Term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: 'project', cwd: root, ...(ctx.opts.harvestUntrusted ? { leaveUntrusted: true } : {}) });
+      const result = await addTerm(term, { scope: 'project', cwd: root, ...(leaveUntrusted ? { leaveUntrusted: true } : {}) });
       file = result.file.path;
       if (result.created) {
         created += 1;
@@ -430,7 +435,7 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
     }
     throw err;
   }
-  if (ctx.opts.harvestUntrusted && file !== undefined) {
+  if (leaveUntrusted && file !== undefined) {
     ctx.summary.untrustedProject = file;
     ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file, ctx.home))} (not trusted: review it and run lexicon trust)`);
     return;

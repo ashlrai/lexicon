@@ -430,8 +430,15 @@ describe('lexicon MCP server', () => {
       expect(mocks.harvestRepo).toHaveBeenCalledWith('/fake/repo', {});
       expect(mocks.addTerm).toHaveBeenCalledWith(
         expect.objectContaining({ canonical: 'FooBar', aliases: ['foo bar'], scope: 'project', source: 'harvest:repo' }),
-        { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true },
+        { cwd: '/fake/repo', scope: 'project' },
       );
+      expect(mocks.projectWriteTrusted).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+
+      // A project file that is not trusted yet is written unpinned.
+      mocks.projectWriteTrusted.mockResolvedValue(false);
+      const untrusted = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(JSON.parse(textOf(untrusted))).toMatchObject({ trusted: false });
+      expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'FooBar' }), { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
     } finally {
       await close();
     }

@@ -60580,12 +60580,12 @@ var registerHarvestTools = (server, ctx) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml but does not trust it: the file applies only after the user reviews it and runs " + cliCommand("trust") + `, so show the candidate list and get a yes first, then relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.`,
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.`,
       inputSchema: {
         path: external_exports.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
         minCount: external_exports.number().int().positive().optional().describe("Minimum occurrences for a candidate (default 2)."),
-        add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon, left untrusted for the user to review.")
+        add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.")
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
@@ -60597,6 +60597,7 @@ var registerHarvestTools = (server, ctx) => {
       let added = 0;
       let written;
       const failures = [];
+      const writeOpts = add ? await mcpWriteOpts({ cwd: root }) : {};
       if (add) {
         for (const c of candidates) {
           try {
@@ -60608,7 +60609,7 @@ var registerHarvestTools = (server, ctx) => {
                 source: c.source,
                 scope: "project"
               },
-              { cwd: root, scope: "project", leaveUntrusted: true }
+              { cwd: root, scope: "project", ...writeOpts }
             );
             written = saved.file.path;
             added += 1;
@@ -60623,7 +60624,7 @@ var registerHarvestTools = (server, ctx) => {
         candidates,
         count: candidates.length,
         ...add ? { added, failures } : {},
-        ...written !== void 0 ? { path: written, ...untrustedWriteFields(written, `${added} name(s)`, true) } : {},
+        ...written !== void 0 ? { path: written, ...writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {} } : {},
         ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
@@ -63437,10 +63438,11 @@ async function stepHarvest(ctx) {
   let created = 0;
   let merged = 0;
   let file2;
+  const leaveUntrusted = ctx.opts.harvestUntrusted === true && !await projectWriteTrusted({ cwd: root });
   try {
     for (const c of candidates) {
       const term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: "project", cwd: root, ...ctx.opts.harvestUntrusted ? { leaveUntrusted: true } : {} });
+      const result = await addTerm(term, { scope: "project", cwd: root, ...leaveUntrusted ? { leaveUntrusted: true } : {} });
       file2 = result.file.path;
       if (result.created) {
         created += 1;
@@ -63454,7 +63456,7 @@ async function stepHarvest(ctx) {
     }
     throw err;
   }
-  if (ctx.opts.harvestUntrusted && file2 !== void 0) {
+  if (leaveUntrusted && file2 !== void 0) {
     ctx.summary.untrustedProject = file2;
     ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2, ctx.home))} (not trusted: review it and run lexicon trust)`);
     return;
@@ -63871,13 +63873,13 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file is left untrusted for the user to review).",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
         clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
         packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in wouldInstallPacks so you can ask)."),
-        harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml, left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
+        harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml; a file the user already trusted stays trusted, any other is left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
         serve: external_exports.boolean().optional().describe("true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.")
       }
@@ -63903,8 +63905,9 @@ var registerSetupTools = (server, ctx) => {
         // So is the harvest (a write inside the user's repo). The plan lists the
         // candidates regardless, so the model can offer them; only an apply needs the flag.
         ...applied || harvest === false ? { harvest: harvest === true } : {},
-        // ...and the file it writes is left for the user to trust: the model
-        // relaying a yes is not the user reviewing the names.
+        // ...and a file it writes that the user has not trusted yet is left
+        // for them to trust: the model relaying a yes is not the user
+        // reviewing the names. An already-trusted file stays trusted.
         harvestUntrusted: true,
         ...applied ? {} : { dryRun: true }
       };

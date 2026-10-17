@@ -69,11 +69,13 @@ export interface SetupOptions extends CommonOptions {
    */
   harvest?: boolean;
   /**
-   * Write the harvest without trusting the project file (MCP setup_lexicon:
-   * a model must not be the one that trusts it). The file then applies only
-   * after the user runs `lexicon trust`, and the summary names it in
-   * `untrustedProject`. Not a CLI flag: a human running setup trusts the
-   * file by asking for the harvest.
+   * Write the harvest without trusting the project file unless the user
+   * already trusted it (MCP setup_lexicon: a model must not be the one that
+   * trusts it). A file that is already trusted takes the names and stays
+   * trusted, as for every MCP write; a new, untrusted or changed one then
+   * applies only after the user runs `lexicon trust`, and the summary names
+   * it in `untrustedProject`. Not a CLI flag: a human running setup trusts
+   * the file by asking for the harvest.
    */
   harvestUntrusted?: boolean;
   /**
@@ -146,7 +148,7 @@ export interface SetupSummary {
   exports: { format: string; path: string }[];
   /** The correction the run ended by demonstrating. Absent only if the step threw. */
   demo?: SetupDemo;
-  /** The project lexicon a `harvestUntrusted` harvest wrote; untrusted until the user runs `lexicon trust`. */
+  /** The project lexicon a `harvestUntrusted` harvest wrote without pinning it (it was not trusted before); untrusted until the user runs `lexicon trust`. */
   untrustedProject?: string;
 }
 

@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadLexicon, readLexiconFile, readTrustRegistry } from '../src/core/index.js';
+import { loadLexicon, readLexiconFile, readTrustRegistry, trustProject } from '../src/core/index.js';
 import type { HarvestCandidate } from '../src/core/index.js';
 import {
   SETUP_CLIENTS,
@@ -340,6 +340,25 @@ describe('runSetup --yes', () => {
     expect(io.out).toContain('(not trusted: review it and run lexicon trust)');
     expect((await readTrustRegistry({ globalPath })).trusted).toEqual({});
     expect((await loadLexicon({ cwd, globalPath })).projectTrust).toBe('untrusted');
+  });
+
+  // Catches: a harvestUntrusted run never pinned, so a project file the user
+  // had already trusted read as "changed" after MCP setup_lexicon harvested it.
+  it('with harvestUntrusted keeps an already-trusted project file trusted', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const projectPath = path.join(cwd, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n');
+    await trustProject(projectPath, { globalPath });
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: ['package.json'], count: 9, suggestedAliases: ['play right'] },
+      ],
+    });
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true, harvestUntrusted: true }, f);
+    expect((await readLexiconFile(projectPath, 'project')).lexicon.terms.map((t) => t.canonical)).toEqual(['Playwright']);
+    expect(summary.untrustedProject).toBeUndefined();
+    expect(io.out).toContain('(trusted)');
+    expect((await loadLexicon({ cwd, globalPath })).projectTrust).toBe('trusted');
   });
 
   it('never seeds a person or company that is already in the global lexicon, and the harvest skips names the global lexicon covers', async () => {
