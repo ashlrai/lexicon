@@ -18,7 +18,7 @@ import {
 } from '../../core/index.js';
 import type { LexiconFile, LoadedLexicon, Term, TermScope, VoiceHistoryEntry } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
-import { SUGGESTION_KINDS, guarded, log, textResult } from '../shared.js';
+import { SUGGESTION_KINDS, guarded, log, nonBlank, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 
 /** The trusted lexicon files that hold `canonical` (case-insensitive), project first. */
@@ -132,7 +132,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       inputSchema: {
         suggestion: z.object({
           kind: z.enum(SUGGESTION_KINDS),
-          canonical: z.string().min(1),
+          canonical: nonBlank(),
           alias: z.string().optional(),
           aliases: z.array(z.string()).optional(),
           category: z.enum(TERM_CATEGORIES).optional(),

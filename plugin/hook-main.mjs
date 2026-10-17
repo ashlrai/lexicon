@@ -18466,8 +18466,6 @@ function wordBefore(text, at) {
 function blockBounds(text) {
   const bounds = [];
   let start = 0;
-  let paragraph = 0;
-  let blank = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     let isBreak = false;
@@ -18486,29 +18484,14 @@ function blockBounds(text) {
     }
     if (!isBreak) continue;
     const end = ch === "\n" ? i : i + 1;
-    if (end > start) {
-      if (blank) paragraph++;
-      blank = false;
-      bounds.push([start, end, paragraph]);
-    }
-    if (ch === "\n") blank = bounds.length > 0;
+    if (end > start) bounds.push([start, end]);
     start = i + 1;
   }
-  if (start < text.length) bounds.push([start, text.length, blank ? paragraph + 1 : paragraph]);
+  if (start < text.length) bounds.push([start, text.length]);
   return bounds;
 }
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function firstAtOrAfter(sorted, min) {
-  let lo = 0;
-  let hi = sorted.length;
-  while (lo < hi) {
-    const mid = lo + hi >>> 1;
-    if (sorted[mid] < min) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
 }
 function wordOccurrences(text, needle) {
   const found = [];
@@ -18567,37 +18550,44 @@ function leadContrasts(text, blockFrom, first, second) {
   const last = gapWords[gapWords.length - 1];
   return last === void 0 || !DETERMINERS.has(last);
 }
+var PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+function firstAtOrAfter(sorted, min) {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = lo + hi >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+function paragraphHolds(text, start, end, canonical) {
+  let from = 0;
+  let lineEnd2 = text.lastIndexOf("\n", start - 1);
+  while (lineEnd2 > 0) {
+    const prevBreak = text.lastIndexOf("\n", lineEnd2 - 1);
+    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd2))) {
+      from = lineEnd2 + 1;
+      break;
+    }
+    if (prevBreak < 0) break;
+    lineEnd2 = prevBreak;
+  }
+  PARAGRAPH_BREAK.lastIndex = end;
+  const next = PARAGRAPH_BREAK.exec(text);
+  const to = next ? next.index : text.length;
+  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
+  return rest.includes(foldSpelling(canonical));
+}
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
   const occurrences = /* @__PURE__ */ new Map();
   let cursor = 0;
   const bounds = blockBounds(text);
-  const paragraphs = /* @__PURE__ */ new Map();
-  for (const [from, to, p] of bounds) {
-    const seen = paragraphs.get(p);
-    paragraphs.set(p, seen ? [seen[0], to] : [from, to]);
-  }
-  const foldedParagraphs = /* @__PURE__ */ new Map();
-  const anchoredParagraphs = /* @__PURE__ */ new Map();
-  const paragraphHolds = (p, result) => {
-    const key = `${p}\0${result}`;
-    let held = anchoredParagraphs.get(key);
-    if (held === void 0) {
-      const extent = paragraphs.get(p);
-      let folded = foldedParagraphs.get(p);
-      if (folded === void 0 && extent) {
-        folded = foldSpelling(text.slice(extent[0], extent[1]));
-        foldedParagraphs.set(p, folded);
-      }
-      held = folded !== void 0 && folded.includes(foldSpelling(result));
-      anchoredParagraphs.set(key, held);
-    }
-    return held;
-  };
   for (let b = 0; b < bounds.length; b++) {
-    const [from, to, paragraph] = bounds[b];
-    const above = paragraphs.has(paragraph - 1) ? paragraph - 1 : null;
+    const [from, to] = bounds[b];
+    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
     const here = [];
     for (let i = cursor; i < spans.length && spans[i].start < to; i++) {
@@ -18628,12 +18618,13 @@ function declineCollapsedMentions(text, spans) {
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
-      // says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
-      paragraphHolds(paragraph, result) || above !== null && paragraphHolds(above, result);
-      if (!anchored) continue;
+      // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
+      previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
       }
+      if (!anchored) continue;
       points.sort((a, b2) => a.start - b2.start);
       const links = [];
       for (let i = 0; i + 1 < points.length; i++) {
@@ -19145,7 +19136,7 @@ async function writeFileAtomic(target, data, opts = {}) {
   }
   try {
     if (opts.backup) await backupExisting(real);
-    await import_node_fs.promises.rename(tmp, real);
+    await renameReplacing(tmp, real);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
@@ -19167,12 +19158,32 @@ async function copyThroughTemp(from, to) {
     throw err;
   }
   try {
-    await import_node_fs.promises.rename(tmp, to);
+    await renameReplacing(tmp, to);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
   return true;
+}
+var WINDOWS_RENAME_RETRY_MS = 1e3;
+function isTransientWindowsError(err, platform = process.platform) {
+  if (platform !== "win32") return false;
+  const code = typeof err === "object" && err !== null ? err.code : void 0;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+async function renameReplacing(from, to) {
+  const deadline = Date.now() + WINDOWS_RENAME_RETRY_MS;
+  let wait = 5;
+  for (; ; ) {
+    try {
+      await import_node_fs.promises.rename(from, to);
+      return;
+    } catch (err) {
+      if (!isTransientWindowsError(err) || Date.now() >= deadline) throw err;
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 100);
+  }
 }
 async function isYoungerThan(file, ms) {
   try {
@@ -19276,16 +19287,19 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
   for (; ; ) {
+    let transient;
     try {
       await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
       await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
     } catch (err) {
-      if (!isEexist(err)) throw err;
+      if (isTransientWindowsError(err)) transient = err;
+      else if (!isEexist(err)) throw err;
     }
-    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (transient === void 0 && await breakIfStale(lockPath, staleMs)) continue;
     if (Date.now() >= deadline) {
+      if (transient !== void 0) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
     }
     await sleep(wait / 2 + Math.random() * wait);

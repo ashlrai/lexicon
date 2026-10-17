@@ -24,22 +24,21 @@
  * canonical already stands. The canonical counts in any spelling that folds to
  * it, so "ashlr.ai" and "Ashlr AI" anchor a sentence exactly as "Ashlr.AI" does.
  *
- * **The canonical must be present in the block's paragraph, or in the
- * paragraph directly above it.** Every passage that quotes a misspelling says
- * what the right spelling is; that is why it is being written. Two garbles
- * with no canonical anywhere is someone dictating, and the corpus insists on
- * it: `hard-022` is "the reddis and red iss instances are the same box", one
- * word said twice, both halves to be fixed. A paragraph is what a blank line
- * ends, so a bullet list is one. The paragraph above counts because a README
- * states the canonical, leaves a blank line and then lists the garbles; the
- * rest of the block's own paragraph counts because a changelog names the
- * canonical in one bullet and quotes a spelling of it in a later one. Only the
+ * **The canonical must be present in the block, or in the paragraph directly
+ * above it.** Every passage that quotes a misspelling says what the right
+ * spelling is; that is why it is being written. Two garbles with no canonical
+ * anywhere is someone dictating, and the corpus insists on it: `hard-022` is
+ * "the reddis and red iss instances are the same box", one word said twice,
+ * both halves to be fixed. The paragraph above counts because a README states
+ * the canonical, leaves a blank line and then lists the garbles; only the
  * *anchor* reaches that far, never the linking below, so two mentions in this
  * block still have to contrast with each other before anything is declined.
  *
  * **A mention inside its own quotation marks is named, not used.** `"Ashler"`,
  * `'ashlur'`, `` `Ashlr AI` ``: the use-mention convention of written English,
- * and the only rule here that reads no vocabulary at all. That is why it is the
+ * and the only rule here that reads no vocabulary at all. Its anchor is the
+ * whole paragraph (to the nearest blank lines), not just the block and the one
+ * above, because the quotation marks already carry the evidence. That is why it is the
  * one that holds for the project's own documentation, where the words around
  * the quote - "pronounced", "generates likely STT misspellings", "you write" -
  * are ordinary English no word list is going to contain.
@@ -308,16 +307,9 @@ function wordBefore(text: string, at: number): string {
   return text.slice(i, at).toLowerCase();
 }
 
-/**
- * Each block is `[start, end, paragraph]`, where `paragraph` counts the blank
- * lines before it: the blocks of one markdown paragraph, a bullet list
- * included, share a number.
- */
-function blockBounds(text: string): Array<[number, number, number]> {
-  const bounds: Array<[number, number, number]> = [];
+function blockBounds(text: string): Array<[number, number]> {
+  const bounds: Array<[number, number]> = [];
   let start = 0;
-  let paragraph = 0;
-  let blank = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     let isBreak = false;
@@ -340,18 +332,10 @@ function blockBounds(text: string): Array<[number, number, number]> {
     if (!isBreak) continue;
 
     const end = ch === '\n' ? i : i + 1;
-    if (end > start) {
-      if (blank) paragraph++;
-      blank = false;
-      bounds.push([start, end, paragraph]);
-    }
-    // Only a blank line ends a paragraph; a sentence break does not. Numbered
-    // as blocks are pushed, so a run of blank lines still leaves the paragraph
-    // above at `paragraph - 1`.
-    if (ch === '\n') blank = bounds.length > 0;
+    if (end > start) bounds.push([start, end]);
     start = i + 1;
   }
-  if (start < text.length) bounds.push([start, text.length, blank ? paragraph + 1 : paragraph]);
+  if (start < text.length) bounds.push([start, text.length]);
   return bounds;
 }
 
@@ -365,18 +349,6 @@ function escapeRegExp(value: string): string {
  * actually produces, so "it's ashlr.ai, not Ashler" had no anchor and was
  * flattened to the one thing it must never say.
  */
-/** Index of the first value in ascending `sorted` that is at least `min`. */
-function firstAtOrAfter(sorted: readonly number[], min: number): number {
-  let lo = 0;
-  let hi = sorted.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (sorted[mid] < min) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
 function wordOccurrences(text: string, needle: string): number[] {
   const found: number[] = [];
   if (needle.length === 0) return found;
@@ -478,6 +450,46 @@ function leadContrasts(text: string, blockFrom: number, first: Point, second: Po
   return last === undefined || !DETERMINERS.has(last);
 }
 
+/** A blank line (spaces and tabs allowed) ends a paragraph. */
+const PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+
+/** Index of the first value in ascending `sorted` that is at least `min`. */
+function firstAtOrAfter(sorted: readonly number[], min: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * True when the canonical stands (in any folded spelling) somewhere in the
+ * paragraph around `start..end`, outside the span itself. Both searches stop
+ * at the nearest blank line, so the cost is the paragraph, not the text.
+ */
+function paragraphHolds(text: string, start: number, end: number, canonical: string): boolean {
+  // Backwards: walk line starts until a line holding only whitespace.
+  let from = 0;
+  let lineEnd = text.lastIndexOf('\n', start - 1);
+  while (lineEnd > 0) {
+    const prevBreak = text.lastIndexOf('\n', lineEnd - 1);
+    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd))) {
+      from = lineEnd + 1;
+      break;
+    }
+    if (prevBreak < 0) break;
+    lineEnd = prevBreak;
+  }
+  PARAGRAPH_BREAK.lastIndex = end;
+  const next = PARAGRAPH_BREAK.exec(text);
+  const to = next ? next.index : text.length;
+  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
+  return rest.includes(foldSpelling(canonical));
+}
+
 /**
  * Drop the rewrites that would flatten a passage which is quoting spellings.
  * Pure, and order-preserving for everything it keeps.
@@ -493,42 +505,15 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
   let cursor = 0;
 
   const bounds = blockBounds(text);
-  // Paragraph extents, from the blocks that make them up.
-  const paragraphs = new Map<number, [number, number]>();
-  for (const [from, to, p] of bounds) {
-    const seen = paragraphs.get(p);
-    paragraphs.set(p, seen ? [seen[0], to] : [from, to]);
-  }
-  // Per paragraph, whether the canonical stands in it, in any folded spelling.
-  // Cached, so a long paragraph is folded and searched once per result rather
-  // than once per block.
-  const foldedParagraphs = new Map<number, string>();
-  const anchoredParagraphs = new Map<string, boolean>();
-  const paragraphHolds = (p: number, result: string): boolean => {
-    const key = `${p}\u0000${result}`;
-    let held = anchoredParagraphs.get(key);
-    if (held === undefined) {
-      const extent = paragraphs.get(p);
-      let folded = foldedParagraphs.get(p);
-      if (folded === undefined && extent) {
-        folded = foldSpelling(text.slice(extent[0], extent[1]));
-        foldedParagraphs.set(p, folded);
-      }
-      held = folded !== undefined && folded.includes(foldSpelling(result));
-      anchoredParagraphs.set(key, held);
-    }
-    return held;
-  };
   for (let b = 0; b < bounds.length; b++) {
-    const [from, to, paragraph] = bounds[b];
-    // The paragraph this block sits in, and the paragraph directly above it.
-    // A README states the canonical, leaves a blank line, and then lists the
-    // garbles; a changelog names the canonical in one bullet and quotes a
-    // spelling of it three bullets down. Either way the anchor is outside this
-    // block and no rule could reach it from inside. Widening only the *anchor*
-    // is safe because linking is unchanged: two mentions in this block still
-    // have to contrast with each other before anything is declined.
-    const above = paragraphs.has(paragraph - 1) ? paragraph - 1 : null;
+    const [from, to] = bounds[b];
+    // The block immediately before this one, when nothing but whitespace
+    // separates them. A README states the canonical, leaves a blank line, and
+    // then lists the garbles; the anchor is in the paragraph above and there is
+    // no rule that could reach it from inside this block. Widening only the
+    // *anchor* is safe because linking is unchanged: two mentions in this block
+    // still have to contrast with each other before anything is declined.
+    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
 
     const here: Array<{ span: T; index: number }> = [];
@@ -566,25 +551,31 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
 
-      // The canonical has to be standing somewhere in this block's paragraph,
-      // or in the paragraph directly above it. Without it there is nothing being
+      // The canonical has to be standing somewhere in this block, or in the
+      // paragraph directly above it. Without it there is nothing being
       // contrasted against, and this is someone dictating one word twice.
       const anchored =
         points.some((p) => p.anchor) ||
         // Folded, like every other test for the canonical here: the paragraph
-        // says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
-        paragraphHolds(paragraph, result) ||
-        (above !== null && paragraphHolds(above, result));
-      if (!anchored) continue;
+        // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
+        (previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result)));
 
       // A mention inside its own quotation marks is named, not used, and that
       // is true whatever the rest of the sentence says. It is the one rule here
       // that consults no vocabulary, which is why it holds for the sentences
       // the vocabulary will never cover: `suggestAliases("Ashlr.AI") -> "Ashler"`,
       // `pronounced "ashler"`, `you write "Ashler", they say it's Ashlr.AI`.
+      //
+      // Its anchor reaches the whole paragraph, not only this sentence and the
+      // one above: a changelog bullet or README paragraph names the canonical,
+      // spends two sentences on something else and then quotes the alias. The
+      // quotation marks are the evidence, so the wider anchor costs dictation
+      // nothing; linking below still uses the narrow one.
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
       }
+      if (!anchored) continue;
 
       points.sort((a, b) => a.start - b.start);
       const links: Link[] = [];

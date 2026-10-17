@@ -193,7 +193,7 @@ export async function writeFileAtomic(target: string, data: string, opts: Atomic
   }
   try {
     if (opts.backup) await backupExisting(real);
-    await fs.rename(tmp, real);
+    await renameReplacing(tmp, real);
   } catch (err) {
     // Never leave the temp file behind: callers assert on its absence, and a
     // stale one would keep its old mode.
@@ -236,12 +236,52 @@ async function copyThroughTemp(from: string, to: string): Promise<boolean> {
     throw err;
   }
   try {
-    await fs.rename(tmp, to);
+    await renameReplacing(tmp, to);
   } catch (err) {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
     throw err;
   }
   return true;
+}
+
+/**
+ * How long a rename over an existing file keeps retrying a Windows sharing
+ * error before it gives up and reports it. The holders are other processes
+ * reading the file for a few milliseconds (or a virus scanner looking at a
+ * file that just appeared), so a second is generous.
+ */
+export const WINDOWS_RENAME_RETRY_MS = 1_000;
+
+/**
+ * True for the errors Windows gives while another process briefly has a file
+ * open, or while a file it just deleted is still on its way out: EPERM,
+ * EACCES or EBUSY. On every other platform those codes mean what they say (a
+ * permission problem), so they are never retried there.
+ */
+export function isTransientWindowsError(err: unknown, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== 'win32') return false;
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
+}
+
+/**
+ * `rename(from, to)`, retrying for up to `WINDOWS_RENAME_RETRY_MS` while
+ * Windows refuses to replace `to` because someone else has it open. Anything
+ * else, and anything on another platform, fails at once.
+ */
+async function renameReplacing(from: string, to: string): Promise<void> {
+  const deadline = Date.now() + WINDOWS_RENAME_RETRY_MS;
+  let wait = 5;
+  for (;;) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (err) {
+      if (!isTransientWindowsError(err) || Date.now() >= deadline) throw err;
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 100);
+  }
 }
 
 /** True when `file` exists and was written less than `ms` ago. A missing file is due a copy. */
@@ -453,6 +493,13 @@ async function acquire(lockPath: string, target: string, timeoutMs: number, stal
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
   for (;;) {
+    // Windows answers the exclusive create with EPERM, not EEXIST, while the
+    // previous holder's lock file is deleted but still open somewhere (a
+    // waiter reading it to judge staleness, the holder's own release check).
+    // That is the lock changing hands, so it is contention like EEXIST and
+    // not a reason to crash; one of eight processes trusting projects at once
+    // used to exit 1 on it. It is still thrown if it outlasts `timeoutMs`.
+    let transient: unknown;
     try {
       await fs.mkdir(path.dirname(lockPath), { recursive: true });
       // O_CREAT | O_EXCL: the create either wins outright or fails with EEXIST.
@@ -460,10 +507,12 @@ async function acquire(lockPath: string, target: string, timeoutMs: number, stal
       rememberForCleanup(lockPath);
       return token;
     } catch (err) {
-      if (!isEexist(err)) throw err;
+      if (isTransientWindowsError(err)) transient = err;
+      else if (!isEexist(err)) throw err;
     }
-    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (transient === undefined && (await breakIfStale(lockPath, staleMs))) continue;
     if (Date.now() >= deadline) {
+      if (transient !== undefined) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
     }
     // Backoff with jitter so a dozen waiters do not retry in lockstep.

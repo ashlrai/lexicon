@@ -153,6 +153,75 @@ describe('normalize_transcript with an untrusted project lexicon', () => {
   });
 });
 
+describe('undeclared arguments', () => {
+  // The SDK's default object schema strips unknown keys, so `alias` (for
+  // `aliases`) vanished and add_term went ahead and auto-suggested aliases
+  // the agent never asked for.
+  it('are refused by name instead of silently dropped', async () => {
+    const res = await call('add_term', { canonical: 'Foo', alias: 'fu' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/Unrecognized key: "alias"/);
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[] };
+    expect(listed.terms).toEqual([]);
+
+    const typo = await call('normalize_transcript', { txt: 'ashler' });
+    expect(typo.isError).toBe(true);
+    expect(typo.text).toMatch(/Unrecognized key: "txt"/);
+    const noArgsTool = await call('lexicon_stats', { verbose: true });
+    expect(noArgsTool.isError).toBe(true);
+  });
+
+  it('are declared as not allowed in every tool schema', async () => {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.length).toBeGreaterThan(0);
+      for (const tool of tools) expect([tool.name, tool.inputSchema.additionalProperties]).toEqual([tool.name, false]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('still accepts every declared argument', async () => {
+    const res = await call('normalize_transcript', { text: 'hello', dryRun: true, minConfidence: 0.9 });
+    expect(res.isError).toBe(false);
+  });
+});
+
+describe('blank required strings', () => {
+  // `.min(1)` let "  " through: remove_term answered "no term" as a success
+  // and suggest_canonical searched for nothing.
+  it('are refused for remove_term and suggest_canonical', async () => {
+    const remove = await call('remove_term', { canonical: '   ' });
+    expect(remove.isError).toBe(true);
+    expect(remove.text).toMatch(/must not be blank at canonical/);
+    const alias = await call('remove_term', { canonical: 'Foo', alias: ' ' });
+    expect(alias.isError).toBe(true);
+    expect(alias.text).toMatch(/must not be blank at alias/);
+    const suggest = await call('suggest_canonical', { heard: '\t ' });
+    expect(suggest.isError).toBe(true);
+    expect(suggest.text).toMatch(/must not be blank at heard/);
+  });
+
+  // import_dictionary with blank content answered a success with 0 terms, so an
+  // agent that lost the file's text on the way reported an import that read nothing.
+  it('are refused for import_dictionary content and path', async () => {
+    for (const content of ['', '  \n\t']) {
+      const res = await call('import_dictionary', { content });
+      expect(res.isError).toBe(true);
+      expect(res.text).toMatch(/at content/);
+    }
+    const res = await call('import_dictionary', { path: ' ' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/must not be blank at path/);
+  });
+});
+
 describe('lexicon_stats and voice-context with an untrusted project lexicon', () => {
   // Both left the repo's terms out with no word why, while list_terms,
   // normalize_transcript and lexicon://me named the skipped file.

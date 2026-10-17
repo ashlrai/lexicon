@@ -25,6 +25,8 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 
 ## Tools
 
+Arguments are checked against each tool's schema before the tool runs. A key the schema does not declare (`alias` for `aliases`, `txt` for `text`) is refused with `Unrecognized key: "<name>"` instead of being dropped, and every schema in `tools/list` carries `additionalProperties: false`. `remove_term`'s `canonical` and `alias`, and `suggest_canonical`'s `heard`, must hold more than whitespace (on the default branch, not yet in a published release).
+
 | Tool | Arguments | Returns |
 |---|---|---|
 | `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`, and `incomplete` when the text was longer than 100,000 characters or matching ran past 1 second (the unchecked rest comes back unchanged). Also bumps each term's `hits` counter |
@@ -36,10 +38,10 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 | `learn_correction` | `heard`, `meant`, `scope?` | The term the alias was added to, `created`, `aliasAdded`, a one-line summary |
 | `suggest_canonical` | `heard` (at most 60 characters) | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?" |
 | `lexicon_stats` | none | Term and alias counts, total hits, top ten terms, never-hit terms, per-file breakdown |
-| `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, checks: [{ level, message }], paths, versions }` |
+| `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, ready, summary, nextStep, checks: [{ level, message }], paths, versions }`, the same object `lexicon doctor --json` prints |
 | `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or `claude-desktop` |
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
-| `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |
+| `import_dictionary` | `path?` or `content?` (neither may be blank), `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |
 | `import_vocabulary` | `sources?`, `apply?`, `scope?`, `previewToken?`, `approvedCandidateIds?` | Ask which sources to read first. Omitted sources returns descriptions without probing or harvesting. Explicit sources previews candidate contents and ids. Apply uses the saved five-minute snapshot and only user-approved ids, never a fresh harvest; a missing token, unknown id or changed destination is refused |
 | `list_packs` | `registry?` | The starter packs in `packs/`, their size and which are installed; with `registry` also the community packs in that index. See [PACKS.md](PACKS.md) |
 | `add_pack` | `name`, `scope?`, `registry?`, `confirm?`, `previewDigest?` | Install a starter pack into the global or project lexicon. `name` as `<author>/<name>` with `registry` installs a community pack: without `confirm: true` it returns every term field and a preview digest without writing; confirmation must include that digest and the same destination, and changed content is refused. See [PACKS.md](PACKS.md) |
