@@ -388,6 +388,26 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+    try {
+      const all = makeIO();
+      await runExport('text', { out: path.join(dir, 'all.txt') }, all);
+      expect(all.out).toContain('(2 terms)');
+      const capped = makeIO();
+      await runExport('text', { out: path.join(dir, 'one.txt'), limit: 1 }, capped);
+      expect(capped.out).toContain('(1 term)');
+      const people = makeIO();
+      await runExport('text', { out: path.join(dir, 'people.txt'), category: ['person'] }, people);
+      expect(people.out).toContain('(1 term)');
+      const none = makeIO();
+      await runExport('text', { out: path.join(dir, 'none.txt'), category: ['place'] }, none);
+      expect(none.out).toContain('(0 terms)');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('accepts the product name for a format (wispr-flow, any case)', async () => {
     for (const name of ['wispr-flow', 'Wispr-Flow', 'wisprflow']) {
       const io = makeIO();

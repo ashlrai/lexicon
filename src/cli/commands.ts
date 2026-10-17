@@ -685,7 +685,13 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, ensureNewline(text), 'utf8');
-    line(io, `wrote ${format} export (${plural(merged.terms.length, 'term')}) to ${safe(outPath)}`);
+    // The terms actually written: the same category filter and cap exportLexicon applies.
+    const allowed = exportOpts.categories && exportOpts.categories.length > 0 ? new Set(exportOpts.categories) : undefined;
+    const matching = allowed
+      ? merged.terms.filter((t) => t.category !== undefined && allowed.has(t.category)).length
+      : merged.terms.length;
+    const written = exportOpts.limit !== undefined ? Math.min(matching, exportOpts.limit) : matching;
+    line(io, `wrote ${format} export (${plural(written, 'term')}) to ${safe(outPath)}`);
   } else {
     io.stdout(ensureNewline(text));
   }
