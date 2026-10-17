@@ -111,6 +111,12 @@ jobs:
       - name: Smoke test the built CLI, the plugin hook and the MCP server
         run: npm run smoke
 
+      # The tarball a release would publish, installed into an empty project and
+      # driven through the CLI, MCP and hook surface Phantom relies on.
+      - name: Packed package installs and keeps the Phantom contract
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: node scripts/pack-smoke.mjs
+
       - name: Build the browser extension
         run: npm run build:extension
 
