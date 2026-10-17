@@ -104,12 +104,12 @@ const EMPTY_LEXICON_NOTE =
 const ONBOARD_PROMPT = [
   'Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:',
   '1. Ask for my company or product names, spelled exactly as they should appear (capitalization and punctuation included), and how I pronounce each one.',
-  '2. Ask for the names of teammates or people I mention often, spelled the way they write them.',
+  '2. Ask for my own name as I write it, then for the names of teammates or people I mention often, spelled the way they write them.',
   '3. Ask which agent clients I use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI or VS Code.',
   '4. Call setup_lexicon with my company, my name and those clients, show me its plan, and apply it only after I say yes. Tell me what it installed and where the lexicon file lives.',
-  '5. For every other name I gave you, call add_term without aliases so likely misspellings are generated, then show each term with its aliases on one line so I can veto any.',
+  '5. For every other name I gave you, call add_term with aliases omitted, which generates likely misspellings when it can. It often generates none (the aliases in the result are empty), so show each term with its aliases on one line so I can veto any, and for a term with no aliases propose two or three spellings speech-to-text is likely to write from how I pronounce it, or ask me what it writes. Add the ones I accept with add_term and aliases.',
   '6. Offer the starter packs once (list_packs; say in one line what each contains) and add only the ones I pick.',
-  '7. Finish by proving it works: take one of my names, write the sentence I can dictate to test it containing two of the names, and run normalize_transcript on that sentence spelled the way speech-to-text would mangle it, so I can see the before and after. Then tell me to try it in a new session.',
+  '7. Finish by proving it works: write one test sentence I can dictate that contains two of my names, then run normalize_transcript on that same sentence with those names spelled the way speech-to-text gets them wrong (use their aliases), so I can see the before and after. Then tell me to try it in a new session.',
   'Never install anything or trust a project file without telling me first. If a step fails, show me the error and continue with the rest.',
 ].join('\n');
 

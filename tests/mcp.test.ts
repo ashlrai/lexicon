@@ -1557,6 +1557,18 @@ describe('lexicon MCP server', () => {
         expect(text).toMatch(/teammates/i);
         expect(text).toMatch(/which agent clients/i);
         expect(text).toMatch(/sentence I can dictate/i);
+        // Regression: step 7 said "take one of my names" and then a sentence
+        // "containing two of the names", and step 5 promised add_term always
+        // generates misspellings, which it often does not.
+        expect(text).not.toMatch(/take one of my names/i);
+        expect(text).toMatch(/one test sentence I can dictate that contains two of my names/);
+        expect(text).not.toMatch(/without aliases so likely misspellings are generated/);
+        expect(text).toMatch(/often generates none/);
+        expect(text).toMatch(/propose two or three spellings/);
+        // Step 4 passes "my name" to setup_lexicon, so an earlier step asks for it.
+        expect(text.indexOf('Ask for my own name')).toBeGreaterThan(-1);
+        expect(text.indexOf('Ask for my own name')).toBeLessThan(text.indexOf('setup_lexicon'));
+        expect(text).not.toMatch(/[\u2013\u2014]/);
         expect(mocks.loadLexicon).not.toHaveBeenCalled();
       } finally {
         await close();
