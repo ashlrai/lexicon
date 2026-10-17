@@ -239,6 +239,24 @@ describe('normalize', () => {
     expect(json.err).toBe('');
   });
 
+  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep.
+  it.each([5, 'high', -1])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
+    const json = makeIO();
+    const readInput = vi.fn(async () => 'meet Ashler');
+    expect(await runNormalize([], { json: true, minConfidence: value }, json, readInput)).toBe(1);
+    expect(JSON.parse(json.out)).toEqual({
+      ok: false,
+      error: '--min-confidence must be a number between 0 and 1',
+      nextStep: 'pass a value from 0 to 1, e.g. --min-confidence 0.8 (see: lexicon normalize --help)',
+    });
+    expect(readInput).not.toHaveBeenCalled();
+    const text = makeIO();
+    expect(await runNormalize(['meet Ashler'], { minConfidence: value }, text)).toBe(1);
+    expect(text.out).toBe('');
+    expect(text.err).toContain('lexicon: --min-confidence must be a number between 0 and 1');
+    expect(text.err).toContain('e.g. --min-confidence 0.8');
+  });
+
   it('forwards only explicit disables and parsed min-confidence to normalize()', async () => {
     const io = makeIO();
     await runNormalize(['x Ashler'], { phonetic: false, fuzzy: true, minConfidence: '0.9', dryRun: true }, io);

@@ -652,9 +652,17 @@ export async function runNormalize(
   io: IO,
   readInput: () => Promise<string> = readStdin,
 ): Promise<number> {
+  // A bad flag value is a usage error, refused before stdin is read: under
+  // --json it is `{ ok: false, error, nextStep }` like every other refusal,
+  // where the thrown error left a document with no next step.
+  let normalizeOpts: NormalizeOptions;
+  try {
+    normalizeOpts = buildNormalizeOptions(opts);
+  } catch (err) {
+    return refuse(io, opts.json, errorMessage(err), 'pass a value from 0 to 1, e.g. --min-confidence 0.8 (see: lexicon normalize --help)');
+  }
   const fromArgs = args.length > 0;
   const text = fromArgs ? args.join(' ') : await readInput();
-  const normalizeOpts = buildNormalizeOptions(opts);
   const emit = (s: string): void => {
     io.stdout(fromArgs ? `${s}\n` : s);
   };

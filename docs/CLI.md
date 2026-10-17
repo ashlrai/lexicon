@@ -167,10 +167,11 @@ round-trips the input, exit 1 if the lexicon could not be read
 Options:
   --json                print ok: true and the full NormalizeResult as JSON ({
                         ok: false, error, nextStep } and the unchanged input
-                        when the lexicon fails to load), plus example: true when
-                        the built-in example terms stood in and projectTrust,
-                        skippedProject and note when an untrusted project
-                        lexicon was left out
+                        when the lexicon fails to load; { ok: false, error,
+                        nextStep } alone for a bad --min-confidence), plus
+                        example: true when the built-in example terms stood in
+                        and projectTrust, skippedProject and note when an
+                        untrusted project lexicon was left out
   --diff                print a summary of replacements to stderr (with --json
                         too)
   --dry-run             print the replacement summary to stderr and the text
