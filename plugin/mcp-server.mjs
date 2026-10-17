@@ -64102,6 +64102,7 @@ async function defaultReadInput(file2, cwd) {
 async function runImport(file2, opts, io, readInput = defaultReadInput) {
   const format = opts.format ?? "auto";
   if (!isImportFormat(format)) {
+    if (opts.json) printJsonError(io, `unknown import format "${format}"`, `pass one of: ${IMPORT_FORMATS.join(", ")} (or leave it out to detect the format)`);
     io.stderr(`lexicon: unknown import format "${safe(format)}"
 `);
     io.stderr(formatList());

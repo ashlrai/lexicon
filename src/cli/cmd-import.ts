@@ -20,7 +20,7 @@ import {
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
 import { TERM_SOURCES } from '../core/index.js';
-import { jsonOk, refuse, renderTable, safe } from './io.js';
+import { jsonOk, printJsonError, refuse, renderTable, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { runImportGuided } from './cmd-import-guided.js';
 import type { ImportGuidedOptions } from './cmd-import-guided.js';
@@ -167,6 +167,8 @@ export async function runImport(
 ): Promise<number> {
   const format = opts.format ?? 'auto';
   if (!isImportFormat(format)) {
+    // Under --json stdout carries the failure too, as every other refusal here does.
+    if (opts.json) printJsonError(io, `unknown import format "${format}"`, `pass one of: ${IMPORT_FORMATS.join(', ')} (or leave it out to detect the format)`);
     io.stderr(`lexicon: unknown import format "${safe(format)}"\n`);
     io.stderr(formatList());
     return 1;
@@ -262,6 +264,49 @@ function printReport(report: ImportReport, io: IO): void {
   }
 }
 
+/** Options that only `--guided` reads, by flag. */
+const GUIDED_ONLY_FLAGS = [
+  ['sources', '--sources'],
+  ['limit', '--limit'],
+  ['yes', '--yes'],
+  ['previewId', '--preview-id'],
+  ['accept', '--accept'],
+  ['home', '--home'],
+] as const;
+/** Options that only a file import reads, by flag. */
+const FILE_ONLY_FLAGS = [
+  ['source', '--source'],
+  ['category', '--category'],
+  ['format', '--format'],
+] as const;
+
+/**
+ * Why this `lexicon import` command line cannot run as given, or undefined.
+ * The two modes share one command, and each ignored the other's options: a
+ * file import with `--sources` or `--yes`, or `--guided` with `--category`,
+ * ran as if they were not there. A format given both as the positional
+ * argument and as `--format` with different values silently used the
+ * positional one.
+ */
+export function importOptionConflict(formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions): string | undefined {
+  if (formatArg !== undefined && opts.format !== undefined && formatArg !== opts.format) {
+    return `the format is given twice ("${formatArg}" and --format "${opts.format}"); pass one of them`;
+  }
+  const given = (flags: readonly (readonly [keyof (ImportCliOptions & ImportGuidedOptions), string])[]): string[] =>
+    flags.filter(([key]) => opts[key] !== undefined).map(([, flag]) => flag);
+  if (opts.guided) {
+    const stray = given(FILE_ONLY_FLAGS);
+    if (formatArg !== undefined && !stray.includes('--format')) stray.push('the format argument');
+    if (stray.length > 0) return `${stray.join(', ')} ${stray.length === 1 ? 'applies' : 'apply'} to a file import, not to --guided; drop ${stray.length === 1 ? 'it' : 'them'}`;
+    return undefined;
+  }
+  const stray = given(GUIDED_ONLY_FLAGS);
+  if (stray.length > 0) {
+    return `${stray.join(', ')} ${stray.length === 1 ? 'applies' : 'apply'} only with --guided; add --guided, or drop ${stray.length === 1 ? 'it' : 'them'} to import a file`;
+  }
+  return undefined;
+}
+
 export function registerImportCommands(program: Command, io: IO): void {
   program
     .command('import')
@@ -283,6 +328,11 @@ export function registerImportCommands(program: Command, io: IO): void {
     .option('--json', 'print the result as JSON')
     .action(async (file: string | undefined, formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();
+      const conflict = importOptionConflict(formatArg, opts);
+      if (conflict !== undefined) {
+        process.exitCode = refuse(io, opts.json, conflict, 'see the usage: lexicon import --help');
+        return;
+      }
       const merged: ImportCliOptions & ImportGuidedOptions = {
         ...opts,
         ...(formatArg !== undefined ? { format: formatArg } : {}),
