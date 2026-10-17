@@ -58088,6 +58088,10 @@ function untrustedClaim(loaded, heard, target) {
 }
 async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
+  const target = byCanonical?.canonical ?? meant;
+  const conflict = conflictFor(loaded.merged, heard, target);
+  const untrusted = untrustedClaim(loaded, heard, target);
+  const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
@@ -58099,12 +58103,12 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
       { canonical: meant, aliases: suggestAliases(meant).filter((a) => !sameText(a, meant)), source: "learned" },
       { ...storeOpts2, scope: scope ?? "global" }
     );
-    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true };
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true, ...withConflict };
   }
   const termScope = byCanonical.scope ?? "global";
   const file2 = termScope === "project" ? loaded.project : loaded.global;
   if (byCanonical.canonical === meant && file2) {
-    return { term: byCanonical, created: false, file: file2, aliasAdded: false };
+    return { term: byCanonical, created: false, file: file2, aliasAdded: false, ...withConflict };
   }
   const onDisk = file2?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));
   const base = onDisk ?? byCanonical;
@@ -58112,7 +58116,7 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
     { ...base, canonical: meant, aliases: base.aliases.filter((a) => !sameText(a, meant)) },
     { ...storeOpts2, scope: termScope, merge: false }
   );
-  return { term: saved.term, created: false, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: false, file: saved.file, aliasAdded: true, ...withConflict };
 }
 function suggestCanonicalFor(heard, lexicon) {
   const needle = heard.trim().toLowerCase();
