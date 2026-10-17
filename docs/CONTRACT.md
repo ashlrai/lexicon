@@ -94,7 +94,7 @@ Dependency-free shared types.
 - `emptyLexicon(): Lexicon`.
 
 ## src/core/store.ts
-- `PROJECT_FILE_NAME = '.lexicon.yaml'`, `MAX_LEXICON_BYTES` (2 MB; larger files are refused).
+- `PROJECT_FILE_NAME = '.lexicon.yaml'`, `MAX_LEXICON_BYTES` (2 MB; larger files are refused). Every lexicon read (and `hashFile`) follows symlinks but reads only a regular file, at most `MAX_LEXICON_BYTES + 1` bytes, from a non-blocking open: a `.lexicon.yaml` that is a FIFO or a symlink to a device (`/dev/zero`, `/dev/stdin`) is refused with `Refusing to read lexicon at <path>: not a regular file` (an untrusted project file is skipped, as for any read error) and `hashFile` returns undefined.
 - `StoreOptions { cwd?; globalPath? }`, `LoadOptions extends StoreOptions { includeUntrusted? }`.
 - `resolvePaths(opts?: StoreOptions): { global: string; project?: string }`
   - global: `$LEXICON_PATH` || `$XDG_CONFIG_HOME/lexicon/lexicon.yaml` || `~/.config/lexicon/lexicon.yaml` (or `opts.globalPath`).

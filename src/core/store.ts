@@ -30,6 +30,7 @@ import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 import { formatJson } from '../util/json.js';
 import { globalLexiconPath } from '../util/xdg.js';
 import type {
@@ -130,18 +131,26 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
   return parseLexiconText(read.text, filePath, scope);
 }
 
-/** The file's text and permission bits, or undefined when it does not exist. Enforces MAX_LEXICON_BYTES. */
+/**
+ * The file's text and permission bits, or undefined when it does not exist.
+ * Enforces MAX_LEXICON_BYTES on the bytes actually read, and reads only a
+ * regular file: a repository's `.lexicon.yaml` may be a symlink to
+ * `/dev/zero` or `/dev/stdin`, which a size check on `stat` cannot see (see
+ * util/bounded-read.ts).
+ */
 async function readLexiconText(filePath: string): Promise<{ text: string; mode: number } | undefined> {
   try {
-    const stat = await fs.stat(filePath);
-    if (stat.size > MAX_LEXICON_BYTES) {
-      throw new Error(
-        `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`,
-      );
-    }
-    return { text: await fs.readFile(filePath, 'utf8'), mode: stat.mode & 0o777 };
+    const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
+    return { text: bytes.toString('utf8'), mode };
   } catch (err) {
     if (isEnoent(err)) return undefined;
+    if (isBoundedReadError(err)) {
+      throw new Error(
+        err.reason === 'not-regular'
+          ? `Refusing to read lexicon at ${filePath}: not a regular file`
+          : `Refusing to read lexicon at ${filePath}: ${err.size ?? 'more than'} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`,
+      );
+    }
     throw err;
   }
 }

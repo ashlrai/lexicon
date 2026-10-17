@@ -6950,14 +6950,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs6 = this.flowScalar(this.type);
+              const fs7 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map.items.push({ start, key: fs6, sep: [] });
+                map.items.push({ start, key: fs7, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs6);
+                this.stack.push(fs7);
               } else {
-                Object.assign(it, { key: fs6, sep: [] });
+                Object.assign(it, { key: fs7, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -7085,13 +7085,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs6 = this.flowScalar(this.type);
+              const fs7 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs6, sep: [] });
+                fc.items.push({ start: [], key: fs7, sep: [] });
               else if (it.sep)
-                this.stack.push(fs6);
+                this.stack.push(fs7);
               else
-                Object.assign(it, { key: fs6, sep: [] });
+                Object.assign(it, { key: fs7, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -7562,7 +7562,7 @@ var require_node_crypto = __commonJS({
 });
 
 // src/hooks/user-prompt-submit.ts
-var import_node_fs6 = __toESM(require_node_fs(), 1);
+var import_node_fs7 = __toESM(require_node_fs(), 1);
 var import_node_path7 = __toESM(require_node_path(), 1);
 var import_node_url2 = __toESM(require_node_url(), 1);
 
@@ -13612,7 +13612,7 @@ function emptyLexicon() {
 }
 
 // src/core/store.ts
-var import_node_fs4 = __toESM(require_node_fs());
+var import_node_fs5 = __toESM(require_node_fs());
 var import_node_os3 = __toESM(require_node_os());
 var import_node_path5 = __toESM(require_node_path());
 var import_yaml = __toESM(require_dist());
@@ -19154,7 +19154,7 @@ function deserializeIndex(data, lexicon) {
 }
 
 // src/core/trust.ts
-var import_node_fs3 = __toESM(require_node_fs());
+var import_node_fs4 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
 
 // src/util/atomic.ts
@@ -19473,8 +19473,59 @@ function sleep(ms) {
   return new Promise((resolve2) => setTimeout(resolve2, ms));
 }
 
-// src/util/json.ts
+// src/util/bounded-read.ts
 var import_node_fs2 = __toESM(require_node_fs());
+var BoundedReadError = class extends Error {
+  path;
+  reason;
+  /** Bytes the file holds (or at least holds, for one that grew past the cap while being read). */
+  size;
+  constructor(filePath, reason, size) {
+    super(
+      reason === "not-regular" ? `${filePath} is not a regular file` : `${filePath} is ${size ?? "more than the limit of"} bytes`
+    );
+    this.name = "BoundedReadError";
+    this.path = filePath;
+    this.reason = reason;
+    if (size !== void 0) this.size = size;
+  }
+};
+function isBoundedReadError(err) {
+  return err instanceof Error && err.name === "BoundedReadError";
+}
+var OPEN_FLAGS = import_node_fs2.constants.O_RDONLY | (import_node_fs2.constants.O_NONBLOCK ?? 0);
+async function readBoundedRegularFile(filePath, maxBytes) {
+  const before = await import_node_fs2.promises.stat(filePath);
+  if (!before.isFile()) throw new BoundedReadError(filePath, "not-regular");
+  if (before.size > maxBytes) throw new BoundedReadError(filePath, "too-large", before.size);
+  const handle = await import_node_fs2.promises.open(filePath, OPEN_FLAGS);
+  try {
+    const st = await handle.stat();
+    if (!st.isFile()) throw new BoundedReadError(filePath, "not-regular");
+    if (st.size > maxBytes) throw new BoundedReadError(filePath, "too-large", st.size);
+    const buf = Buffer.alloc(Math.min(maxBytes + 1, Math.max(st.size, 0) + 64 * 1024));
+    let total = 0;
+    let chunk = buf;
+    for (; ; ) {
+      if (total === chunk.length) {
+        if (chunk.length > maxBytes) break;
+        const bigger = Buffer.alloc(Math.min(maxBytes + 1, chunk.length * 2));
+        chunk.copy(bigger, 0, 0, total);
+        chunk = bigger;
+      }
+      const { bytesRead } = await handle.read(chunk, total, chunk.length - total, total);
+      if (bytesRead === 0) break;
+      total += bytesRead;
+    }
+    if (total > maxBytes) throw new BoundedReadError(filePath, "too-large", total);
+    return { bytes: chunk.subarray(0, total), mode: st.mode & 511 };
+  } finally {
+    await handle.close();
+  }
+}
+
+// src/util/json.ts
+var import_node_fs3 = __toESM(require_node_fs());
 var import_node_path2 = __toESM(require_node_path());
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -19493,14 +19544,14 @@ function getTrustPath(opts = {}) {
 async function canonicalPath(filePath) {
   const resolved = import_node_path3.default.resolve(filePath);
   try {
-    return await import_node_fs3.promises.realpath(resolved);
+    return await import_node_fs4.promises.realpath(resolved);
   } catch {
     return resolved;
   }
 }
 async function hashFile(filePath) {
   try {
-    const bytes = await import_node_fs3.promises.readFile(filePath);
+    const { bytes } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     const { createHash } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
     return createHash("sha256").update(bytes).digest("hex");
   } catch {
@@ -19520,7 +19571,7 @@ function isTrustEntry(value) {
 async function readTrustRegistry(opts = {}) {
   let text;
   try {
-    text = await import_node_fs3.promises.readFile(getTrustPath(opts), "utf8");
+    text = await import_node_fs4.promises.readFile(getTrustPath(opts), "utf8");
   } catch {
     return emptyRegistry();
   }
@@ -19589,8 +19640,8 @@ function findProjectFile(start) {
   let dir = import_node_path5.default.resolve(start);
   for (; ; ) {
     const candidate = import_node_path5.default.join(dir, PROJECT_FILE_NAME);
-    if ((0, import_node_fs4.existsSync)(candidate)) return candidate;
-    if ((0, import_node_fs4.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
+    if ((0, import_node_fs5.existsSync)(candidate)) return candidate;
+    if ((0, import_node_fs5.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
     const parent = import_node_path5.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
@@ -19610,15 +19661,15 @@ async function readLexiconFile(filePath, scope) {
 }
 async function readLexiconText(filePath) {
   try {
-    const stat = await import_node_fs4.promises.stat(filePath);
-    if (stat.size > MAX_LEXICON_BYTES) {
-      throw new Error(
-        `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
-      );
-    }
-    return { text: await import_node_fs4.promises.readFile(filePath, "utf8"), mode: stat.mode & 511 };
+    const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
+    return { text: bytes.toString("utf8"), mode };
   } catch (err) {
     if (isEnoent(err)) return void 0;
+    if (isBoundedReadError(err)) {
+      throw new Error(
+        err.reason === "not-regular" ? `Refusing to read lexicon at ${filePath}: not a regular file` : `Refusing to read lexicon at ${filePath}: ${err.size ?? "more than"} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
+      );
+    }
     throw err;
   }
 }
@@ -19658,7 +19709,7 @@ async function readGlobalLexiconCached(filePath) {
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = import_node_path5.default.resolve(filePath);
   try {
-    const cached2 = JSON.parse(await import_node_fs4.promises.readFile(cachePath, "utf8"));
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
     if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
       if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) {
@@ -19691,7 +19742,7 @@ async function loadMatcherIndex(loaded, opts = {}) {
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
   try {
-    const text = await import_node_fs4.promises.readFile(cachePath, "utf8");
+    const text = await import_node_fs5.promises.readFile(cachePath, "utf8");
     const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
     if (text.startsWith(head.slice(0, -1))) {
       const cached2 = JSON.parse(text);
@@ -19722,7 +19773,7 @@ function hitKey(canonical) {
 async function canonicalPath2(filePath) {
   const resolved = import_node_path5.default.resolve(filePath);
   try {
-    return await import_node_fs4.promises.realpath(resolved);
+    return await import_node_fs5.promises.realpath(resolved);
   } catch {
     return resolved;
   }
@@ -19733,7 +19784,7 @@ function emptyHitsRegistry() {
 async function readHitsRegistry(opts) {
   let raw;
   try {
-    raw = JSON.parse(await import_node_fs4.promises.readFile(getHitsPath(opts), "utf8"));
+    raw = JSON.parse(await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8"));
   } catch {
     return emptyHitsRegistry();
   }
@@ -19879,7 +19930,7 @@ async function recordHits(canonicals, opts = {}) {
         for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
         registry2.global = global;
       }
-      await import_node_fs4.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
+      await import_node_fs5.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
     });
   } catch {
@@ -20272,7 +20323,7 @@ function parseCorrection(text) {
 }
 
 // src/util/package.ts
-var import_node_fs5 = __toESM(require_node_fs());
+var import_node_fs6 = __toESM(require_node_fs());
 var import_node_path6 = __toESM(require_node_path());
 var import_node_url = __toESM(require_node_url());
 var PACKAGE_NAME = "@ashlr/lexicon";
@@ -20293,7 +20344,7 @@ function packageVersion(moduleUrl) {
 }
 function readPackageJson(file) {
   try {
-    const parsed = JSON.parse((0, import_node_fs5.readFileSync)(file, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs6.readFileSync)(file, "utf8"));
     if (isRecord(parsed) && parsed.name === PACKAGE_NAME && typeof parsed.version === "string") {
       return { version: parsed.version };
     }
@@ -20315,7 +20366,7 @@ function onboardNotePath(globalPath) {
 async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   const file = onboardNotePath(globalPath);
   try {
-    const raw = await import_node_fs6.promises.readFile(file, "utf8");
+    const raw = await import_node_fs7.promises.readFile(file, "utf8");
     const parsed = JSON.parse(raw);
     const last = typeof parsed === "object" && parsed !== null ? parsed.lastNotedAt : void 0;
     const lastMs = typeof last === "string" ? Date.parse(last) : Number.NaN;
@@ -20324,8 +20375,8 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   const state = { lastNotedAt: new Date(now).toISOString() };
   try {
-    await import_node_fs6.promises.mkdir((0, import_node_path7.dirname)(file), { recursive: true });
-    await import_node_fs6.promises.writeFile(file, `${JSON.stringify(state)}
+    await import_node_fs7.promises.mkdir((0, import_node_path7.dirname)(file), { recursive: true });
+    await import_node_fs7.promises.writeFile(file, `${JSON.stringify(state)}
 `, "utf8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -20611,7 +20662,7 @@ async function readStdin() {
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (; ; ) {
-      const n = (0, import_node_fs6.readSync)(0, buf, 0, buf.length, null);
+      const n = (0, import_node_fs7.readSync)(0, buf, 0, buf.length, null);
       if (n === 0) return Buffer.concat(chunks).toString("utf8");
       chunks.push(Buffer.from(buf.subarray(0, n)));
     }
@@ -20623,7 +20674,7 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 var processSink = {
-  writeSync: (fd, buffer, offset, length) => (0, import_node_fs6.writeSync)(fd, buffer, offset, length),
+  writeSync: (fd, buffer, offset, length) => (0, import_node_fs7.writeSync)(fd, buffer, offset, length),
   get stream() {
     return process.stdout;
   },
@@ -20684,7 +20735,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs6.realpathSync)((0, import_node_path7.resolve)(entry)) === (0, import_node_fs6.realpathSync)((0, import_node_url2.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs7.realpathSync)((0, import_node_path7.resolve)(entry)) === (0, import_node_fs7.realpathSync)((0, import_node_url2.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

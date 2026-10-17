@@ -336,6 +336,53 @@ describe('loadLexicon trust gate', () => {
     expect(loaded.merged.terms).toHaveLength(2);
   });
 
+  // A repository can commit `.lexicon.yaml` as a symlink to a device. stat()
+  // follows it and reports size 0, so the size cap never fired and readFile
+  // read /dev/zero until Node gave up (seconds and most of a gigabyte on every
+  // prompt), or read /dev/stdin, which in the MCP server is the protocol
+  // stream. A FIFO blocked open() itself. Bounded by a race so a regression
+  // fails here instead of hanging the suite.
+  async function settlesWithin<T>(p: Promise<T>, ms: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`still reading after ${ms}ms`)), ms);
+    });
+    try {
+      return await Promise.race([p, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  it.skipIf(process.platform === 'win32')('skips a project .lexicon.yaml that is a symlink to /dev/zero, without reading it', async () => {
+    const { root, nested } = await makeRepo();
+    await writeLexiconFile({ path: globalPath, scope: 'global', lexicon: globalLex, exists: false });
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await fs.symlink('/dev/zero', projectPath);
+    const started = Date.now();
+    const loaded = await settlesWithin(loadLexicon({ cwd: nested, globalPath }), 1_500);
+    expect(Date.now() - started).toBeLessThan(1_500);
+    expect(loaded.projectTrust).toBe('untrusted');
+    expect(loaded.skippedProject?.path).toBe(projectPath);
+    expect(loaded.merged.terms.map((t) => t.canonical)).toEqual(['Mason']);
+    await expect(settlesWithin(readLexiconFile(projectPath, 'project'), 1_500)).rejects.toThrow(/not a regular file/);
+    expect(await settlesWithin(hashFile(projectPath), 1_500)).toBeUndefined();
+  });
+
+  it.skipIf(process.platform === 'win32')('does not block on a project .lexicon.yaml that is a FIFO', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    const made = await new Promise<boolean>((resolve) => {
+      const child = spawn('mkfifo', [projectPath], { stdio: 'ignore' });
+      child.on('error', () => resolve(false));
+      child.on('exit', (code) => resolve(code === 0));
+    });
+    if (!made) return; // no mkfifo on this machine
+    const loaded = await settlesWithin(loadLexicon({ cwd: nested, globalPath }), 1_500);
+    expect(loaded.projectTrust).toBe('untrusted');
+    expect(loaded.project).toBeUndefined();
+  });
+
   it('skips (does not throw on) an untrusted project file that fails to parse', async () => {
     const { root, nested } = await makeRepo();
     const projectPath = path.join(root, '.lexicon.yaml');

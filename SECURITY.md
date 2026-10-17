@@ -233,7 +233,9 @@ treated as the user's own words).
   phonetic at most 200, `createdAt` at most 64, at most 64 aliases per term,
   at most 5000 terms, no control characters or line breaks anywhere
   (including the Unicode line/paragraph separators U+2028/U+2029 and NEL).
-  Lexicon files over 2 MB are refused; `lexicon import` and `import_dictionary`
+  Lexicon files over 2 MB are refused, counted on the bytes actually read,
+  and only a regular file is read: a `.lexicon.yaml` committed as a symlink
+  to `/dev/zero` or `/dev/stdin`, or a FIFO, is refused without reading it; `lexicon import` and `import_dictionary`
   refuse files, stdin and `content` over 8 MB before reading them whole, and the
   importers are linear-time scanners. The local API caps bodies at 1 MB.
 - **Invisible-character stripping.** Zero-width characters (U+200B–U+200F),

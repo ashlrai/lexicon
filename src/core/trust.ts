@@ -17,10 +17,11 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { resolvePaths } from './store.js';
+import { MAX_LEXICON_BYTES, resolvePaths } from './store.js';
 import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import { readBoundedRegularFile } from '../util/bounded-read.js';
 import { formatJson } from '../util/json.js';
 import { sanitizeForDisplay } from './schema.js';
 
@@ -69,10 +70,15 @@ async function canonicalPath(filePath: string): Promise<string> {
   }
 }
 
-/** Hex sha256 of a file's bytes, or undefined when it cannot be read. */
+/**
+ * Hex sha256 of a file's bytes, or undefined when it cannot be read. Only a
+ * regular file of at most MAX_LEXICON_BYTES is hashed (anything larger could
+ * never be loaded): the path is a repository's, and a symlink to a device
+ * such as `/dev/zero` must not turn a trust check into an unbounded read.
+ */
 export async function hashFile(filePath: string): Promise<string | undefined> {
   try {
-    const bytes = await fs.readFile(filePath);
+    const { bytes } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     // Loaded on first use: node:crypto costs the prompt hook several ms to
     // load, and the hook only hashes when a project lexicon exists.
     const { createHash } = await import('node:crypto');
