@@ -89,8 +89,14 @@ function enableCompileCache() {
 }
 enableCompileCache();
 var target = new URL("./hook-main.mjs", import.meta.url).href;
-var hook = await import(target);
-await hook.main();
+try {
+  const hook = await import(target);
+  await hook.main();
+} catch (err) {
+  process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}
+`);
+  process.exitCode = 0;
+}
 export {
   COMPILE_CACHE_DIR_NAME
 };

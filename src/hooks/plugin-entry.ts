@@ -38,5 +38,11 @@ enableCompileCache();
 // A computed specifier, so esbuild leaves the import alone instead of inlining
 // the hook into this file (which would defeat the point).
 const target = new URL('./hook-main.mjs', import.meta.url).href;
-const hook = (await import(target)) as { main: () => Promise<void> };
-await hook.main();
+try {
+  const hook = (await import(target)) as { main: () => Promise<void> };
+  await hook.main();
+} catch (err) {
+  // The hook always exits 0: a missing or broken bundle must not block the prompt.
+  process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exitCode = 0;
+}
