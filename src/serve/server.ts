@@ -31,6 +31,7 @@ import {
   computeStats,
   diffSummary,
   exportLexicon,
+  findRegistryRecordMismatch,
   installPack,
   installedPacks,
   resolveExportFormat,
@@ -52,6 +53,7 @@ import type {
   LearnConflict,
   LexiconStats,
   LoadedLexicon,
+  RegistryRecordMismatch,
   MatcherIndex,
   NormalizeIncomplete,
   NormalizeResult,
@@ -159,8 +161,13 @@ export interface LexiconResponse {
 export interface PacksResponse {
   /** Every pack shipped with the package, with whether the loaded lexicon lists it. */
   packs: (PackInfo & { installed: boolean })[];
-  /** Names from `settings.packs` of the global and (trusted) project files. */
+  /** Names from `settings.packs` of the global and (trusted) project files, community refs (`author/name`) included. */
   installed: string[];
+  /** The lexicon files and the registry records disagree about a community pack (as MCP list_packs reports it). */
+  registryMismatch?: RegistryRecordMismatch;
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /** Path only: a pack only this skipped project file records reads as not installed. */
+  skippedProject?: string;
 }
 
 export interface AliasesResponse {
@@ -691,7 +698,17 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function handlePacks(cwd: string): Promise<PacksResponse> {
     const [packs, loaded] = await Promise.all([listPacks(), load(cwd)]);
     const installed = installedPacks(loaded);
-    return { packs: packs.map((p) => ({ ...p, installed: installed.includes(p.name) })), installed };
+    // The same additive keys MCP list_packs and `pack list --json` carry. A
+    // registry index is never read here: listing its community packs would
+    // have the local API fetch whatever URL or path a caller names.
+    const mismatch = await findRegistryRecordMismatch(loaded, { cwd, ...storeOpts });
+    return {
+      packs: packs.map((p) => ({ ...p, installed: installed.includes(p.name) })),
+      installed,
+      ...(mismatch ? { registryMismatch: mismatch } : {}),
+      ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
+      ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+    };
   }
 
   async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResult> {

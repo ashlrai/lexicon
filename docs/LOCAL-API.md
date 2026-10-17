@@ -72,7 +72,7 @@ and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses ar
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
 | GET | `/stats` | | `LexiconStats` |
-| GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }` |
+| GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }`; `installed` includes community refs (`author/name`) the lexicon files record. Plus `registryMismatch { fileOnly, recordOnly }` when those files and the registry records disagree, and `projectTrust` and `skippedProject` (path only) when a project file was not loaded, as MCP `list_packs` reports them. A registry index is never read: list its community packs with `lexicon pack list --registry <index>` or MCP `list_packs` |
 | POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope }`; an unknown pack is 404 |
 | DELETE | `/packs/:name` | | `{ pack, removed, kept, files }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone |
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form |

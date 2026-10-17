@@ -1703,6 +1703,35 @@ describe('packs and aliases routes', () => {
     expect((await api2('POST', '/packs', {})).status).toBe(405);
   });
 
+  // Catches: GET /packs left out what MCP list_packs and `pack list --json` report:
+  // a community pack the lexicon lists with no registry record, and a skipped project file.
+  it('GET /packs lists community refs and carries registryMismatch, projectTrust and skippedProject', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-packs-community-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repo = path.join(dir, 'repo');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nsettings:\n  packs: [developer, example/cardiology]\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nsettings:\n  packs: [ai]\nterms: []\n');
+    const srv = createServer({ port: 0, cwd: repo, globalPath, quiet: true, reloadMs: 0 });
+    const started = await srv.start();
+    try {
+      const res = await fetch(`${started.url}/packs`, { headers: { Authorization: `Bearer ${started.token}` } });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { packs: { name: string; installed: boolean }[]; installed: string[]; registryMismatch?: unknown; projectTrust?: string; skippedProject?: string };
+      expect(body.installed).toEqual(['developer', 'example/cardiology']);
+      expect(body.packs.find((p) => p.name === 'developer')?.installed).toBe(true);
+      // The untrusted project file records `ai`; it is not read, so `ai` is not installed.
+      expect(body.packs.find((p) => p.name === 'ai')?.installed).toBe(false);
+      expect(body.registryMismatch).toEqual({ fileOnly: ['example/cardiology'], recordOnly: [] });
+      expect(body.projectTrust).toBe('untrusted');
+      expect(body.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {
     const first = await api2('POST', '/packs/developer');
     expect(first.status).toBe(200);
