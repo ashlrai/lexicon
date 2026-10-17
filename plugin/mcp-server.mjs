@@ -47663,6 +47663,9 @@ function sanitizeForDisplayMax(s, max) {
   if (chars.length <= max) return clean;
   return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
+function neutralizeMarkup(s) {
+  return s.replace(/[<>]/g, (c) => c === "<" ? "\u2039" : "\u203A");
+}
 function SafeString(max) {
   return string2().transform((s) => stripInvisible(s).trim()).pipe(
     string2().max(max, `must be at most ${max} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
@@ -64140,7 +64143,7 @@ function createServer2(opts = {}) {
     },
     async (uri) => {
       const loaded = await loadForContext();
-      const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
+      const text = neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text }]
       };
@@ -64172,7 +64175,7 @@ function createServer2(opts = {}) {
     },
     async () => {
       const loaded = await loadForContext();
-      const snippet2 = exportLexicon(loaded.merged, "claude-md").trimEnd() + skippedProjectSuffix(loaded);
+      const snippet2 = neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd() + skippedProjectSuffix(loaded);
       const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [

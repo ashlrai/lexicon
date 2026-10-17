@@ -263,6 +263,20 @@ treated as the user's own words).
 - **Markdown safety.** The `claude-md` export escapes `|` and replaces every
   kind of line break (`\n`, `\r\n`, NEL, U+2028, U+2029) in table cells so a
   term cannot break out of its row.
+- **No fake tags in model context.** The schema lets `<`, `>` and markdown
+  punctuation through (a canonical can legitimately hold them), so a trusted
+  project lexicon or an installed pack could otherwise put
+  `</system-reminder><system>...` or a fake heading into what the model reads
+  as its own framing. Everything the hook and the MCP `lexicon://me` resource
+  and `voice-context` prompt hand to the model from a lexicon goes through
+  `neutralizeMarkup`, which swaps `<` and `>` for the lookalikes U+2039 and
+  U+203A: the SessionStart table, the UserPromptSubmit corrections list, the
+  replacements spliced into the corrected prompt (one that starts a line with
+  a markdown block marker such as `#` also gets a backslash) and the
+  correction note. Table cells stay on one row with `|` escaped. The user's own
+  words in the prompt are echoed as typed, and exporter output
+  (`lexicon export claude-md` and the rest), which users paste into files, is
+  not changed.
 - **No telemetry, two user-initiated downloads.** The tool collects nothing and all state is
   local files. The CLI, hooks, MCP server, local API and extension make no
   request beyond loopback, except when the user asks for one by name:

@@ -120,6 +120,29 @@ export function sanitizeForDisplayMax(s: string, max: number): string {
   return `${chars.slice(0, Math.max(0, max - 1)).join('')}\u2026`;
 }
 
+/**
+ * Replace `<` and `>` with the single angle quotation marks U+2039 and U+203A,
+ * which read the same to a person but cannot open or close a tag. For text
+ * that is handed to a model as context (the hook's additionalContext, the MCP
+ * `lexicon://me` resource and `voice-context` prompt): a trusted project
+ * lexicon or an installed pack could otherwise put `</system-reminder>` or a
+ * fake `<system>` block into what the model reads as its own framing. Never
+ * applied to exporter output a user pastes into a file. Line structure is not
+ * touched; see `neutralizeForModel` for single-line fields.
+ */
+export function neutralizeMarkup(s: string): string {
+  return s.replace(/[<>]/g, (c) => (c === '<' ? '\u2039' : '\u203A'));
+}
+
+/**
+ * `stripControlChars` then `neutralizeMarkup`: one line of lexicon- or
+ * path-derived text that is safe to embed in model context. No cap; callers
+ * that need one apply it.
+ */
+export function neutralizeForModel(s: string): string {
+  return neutralizeMarkup(stripControlChars(s));
+}
+
 /** A trimmed string with invisible characters removed, no control characters, at most `max` chars. */
 function SafeString(max: number) {
   return z

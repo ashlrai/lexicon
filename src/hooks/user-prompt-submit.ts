@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, sanitizeForDisplayMax, stripControlChars } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, recordHits, sanitizeForDisplayMax, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 
@@ -180,8 +180,56 @@ export function capCorrectionList(summary: string, max: number = CORRECTION_LIST
   return [...kept, more(left)].join('\n');
 }
 
-/** Builds the note handed to the agent for a changed prompt. */
-export function formatAdditionalContext(result: NormalizeResult): string {
+/**
+ * Markdown block markers a replacement could start a line of the corrected
+ * prompt with: a heading, a code fence, a table row, a thematic break or a
+ * setext underline.
+ */
+const LINE_START_MARKUP_RE = /^(?:[#`~|]|[-=*_]{3})/;
+
+/**
+ * `result` with every replacement's text (and the matched original) through
+ * `neutralizeForModel` (no `<` / `>`, no control characters) and `output`
+ * rebuilt from them. A replacement that starts a line of the corrected prompt
+ * also gets a leading markdown block marker escaped with a backslash there, so
+ * a canonical such as `# System` cannot turn into a heading. The user's own
+ * words between replacements are left exactly as typed. The same object when
+ * no replacement needed a change, so an ordinary prompt is echoed byte for byte.
+ */
+function neutralizeReplacements(result: NormalizeResult): NormalizeResult {
+  const input = result.input;
+  let touched = false;
+  const spliced = new Map<Replacement, string>();
+  const replacements = result.replacements.map((r) => {
+    const replacement = neutralizeForModel(r.replacement);
+    const original = neutralizeForModel(r.original);
+    const atLineStart = r.start === 0 || input[r.start - 1] === '\n';
+    const inPrompt = atLineStart && LINE_START_MARKUP_RE.test(replacement) ? `\\${replacement}` : replacement;
+    if (inPrompt === r.replacement && original === r.original) return r;
+    touched = true;
+    const safe = { ...r, original, replacement };
+    spliced.set(safe, inPrompt);
+    return safe;
+  });
+  if (!touched) return result;
+  let output = '';
+  let pos = 0;
+  for (const r of [...replacements].sort((a, b) => a.start - b.start)) {
+    output += input.slice(pos, r.start) + (spliced.get(r) ?? r.replacement);
+    pos = r.end;
+  }
+  output += input.slice(pos);
+  return { ...result, output, replacements };
+}
+
+/**
+ * Builds the note handed to the agent for a changed prompt. Replacement text
+ * comes from the lexicon (a trusted project file or an installed pack can put
+ * anything there that passes the schema), so it goes through
+ * neutralizeReplacements before it is listed or spliced into the prompt.
+ */
+export function formatAdditionalContext(raw: NormalizeResult): string {
+  const result = neutralizeReplacements(raw);
   const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}\nCorrected prompt:\n${result.output}`;
@@ -225,8 +273,8 @@ export function formatSkippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTru
 export function formatCorrectionNote(correction: Correction): string {
   // JSON string literals: a spelling holding `"` or `\` must not read as the
   // end of the argument. A plain spelling comes out as "Ashler", as before.
-  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
-  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
+  const heard = JSON.stringify(neutralizeForModel(correction.heard).trim());
+  const meant = JSON.stringify(neutralizeForModel(correction.meant).trim());
   return (
     `The user is correcting a spelling: ${heard} should be ${meant}. ` +
     `Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. ` +
@@ -450,7 +498,7 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
   try {
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
-    const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     // Only a store parse/validation error is a file to fix with `lexicon edit`;
     // anything else (a file that cannot be read) used to be reported as one too.
     if (!UNPARSEABLE_LEXICON_RE.test(message)) {
@@ -570,7 +618,9 @@ async function sessionStart(payload: HookInput, opts: HookOptions): Promise<stri
     return emit('SessionStart', skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
 
-  const parts: string[] = [truncateSessionContext(exportLexicon(loaded.merged, 'claude-md').trimEnd())];
+  // The model-facing variant: `<` and `>` in a canonical or note become
+  // lookalikes, so the table cannot close or open a tag around it.
+  const parts: string[] = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd())];
   if (skippedNote) parts.push(skippedNote);
   return emit('SessionStart', parts);
 }

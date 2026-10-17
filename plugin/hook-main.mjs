@@ -13548,6 +13548,12 @@ function sanitizeForDisplayMax(s, max) {
   if (chars.length <= max) return clean;
   return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
+function neutralizeMarkup(s) {
+  return s.replace(/[<>]/g, (c) => c === "<" ? "\u2039" : "\u203A");
+}
+function neutralizeForModel(s) {
+  return neutralizeMarkup(stripControlChars(s));
+}
 function SafeString(max) {
   return string2().transform((s) => stripInvisible(s).trim()).pipe(
     string2().max(max, `must be at most ${max} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
@@ -20464,7 +20470,34 @@ function capCorrectionList(summary, max = CORRECTION_LIST_MAX_CHARS) {
   if (left === 0) return kept.join("\n");
   return [...kept, more(left)].join("\n");
 }
-function formatAdditionalContext(result) {
+var LINE_START_MARKUP_RE = /^(?:[#`~|]|[-=*_]{3})/;
+function neutralizeReplacements(result) {
+  const input = result.input;
+  let touched = false;
+  const spliced = /* @__PURE__ */ new Map();
+  const replacements = result.replacements.map((r) => {
+    const replacement = neutralizeForModel(r.replacement);
+    const original = neutralizeForModel(r.original);
+    const atLineStart = r.start === 0 || input[r.start - 1] === "\n";
+    const inPrompt = atLineStart && LINE_START_MARKUP_RE.test(replacement) ? `\\${replacement}` : replacement;
+    if (inPrompt === r.replacement && original === r.original) return r;
+    touched = true;
+    const safe = { ...r, original, replacement };
+    spliced.set(safe, inPrompt);
+    return safe;
+  });
+  if (!touched) return result;
+  let output = "";
+  let pos = 0;
+  for (const r of [...replacements].sort((a, b) => a.start - b.start)) {
+    output += input.slice(pos, r.start) + (spliced.get(r) ?? r.replacement);
+    pos = r.end;
+  }
+  output += input.slice(pos);
+  return { ...result, output, replacements };
+}
+function formatAdditionalContext(raw) {
+  const result = neutralizeReplacements(raw);
   const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}
@@ -20481,8 +20514,8 @@ function formatSkippedProjectNote(loaded) {
   return `Note: this repo has an untrusted .lexicon.yaml at ${safePath} that was not applied. ${SKIPPED_PROJECT_REVIEW} Trust it only if the user says yes after seeing the preview.`;
 }
 function formatCorrectionNote(correction) {
-  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
-  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
+  const heard = JSON.stringify(neutralizeForModel(correction.heard).trim());
+  const meant = JSON.stringify(neutralizeForModel(correction.meant).trim());
   return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
 function spansOf(haystack, needle) {
@@ -20622,7 +20655,7 @@ async function loadOrExplain(cwd) {
   try {
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
-    const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     if (!UNPARSEABLE_LEXICON_RE.test(message)) {
       return {
         note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
@@ -20695,7 +20728,7 @@ async function sessionStart(payload, opts) {
     if (!await shouldEmitOnboardNote(loaded.global.path)) return skippedNote ? emit("SessionStart", [skippedNote]) : "";
     return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
-  const parts = [truncateSessionContext(exportLexicon(loaded.merged, "claude-md").trimEnd())];
+  const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd())];
   if (skippedNote) parts.push(skippedNote);
   return emit("SessionStart", parts);
 }

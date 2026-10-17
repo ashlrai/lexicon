@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon, sanitizeForDisplayMax } from '../core/index.js';
+import { exportLexicon, loadLexicon, neutralizeMarkup, sanitizeForDisplayMax } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
@@ -241,7 +241,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
     async (uri) => {
       const loaded = await loadForContext();
-      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
+      // neutralizeMarkup over the export: this text is read as context,
+      // so `<` / `>` in a canonical or note must not open or close a tag.
+      const text = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -286,7 +288,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const loaded = await loadForContext();
       // The same path-only note lexicon://me carries, so the session knows the
       // repo's own spellings are missing and why.
-      const snippet = exportLexicon(loaded.merged, 'claude-md').trimEnd() + skippedProjectSuffix(loaded);
+      const snippet = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd() + skippedProjectSuffix(loaded);
       // Nothing to apply: say so instead of asking the model to apply an empty table.
       const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
