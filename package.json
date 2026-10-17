@@ -23,8 +23,10 @@
   "exports": {
     ".": {
       "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
-    }
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
