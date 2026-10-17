@@ -80,6 +80,7 @@ const cli = vi.hoisted(() => ({
   runImport: vi.fn(),
   runInstall: vi.fn(),
   runSetup: vi.fn(),
+  serveInstallBlocker: vi.fn(),
 }));
 
 // The functions are faked; the core's plain data (the TERM_CATEGORIES /
@@ -94,6 +95,7 @@ vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport 
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
 vi.mock('../src/cli/cmd-install.js', () => ({ runInstall: cli.runInstall }));
 vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
+vi.mock('../src/cli/cmd-serve.js', () => ({ serveInstallBlocker: cli.serveInstallBlocker }));
 
 const doctorReport: DoctorReport = {
   ok: false,
@@ -1381,6 +1383,17 @@ describe('lexicon MCP server', () => {
         const down = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(down.isError).toBe(false);
         expect(JSON.parse(textOf(down))).toMatchObject({ up: false, error: 'ECONNREFUSED' });
+        expect(String(JSON.parse(textOf(down)).hint)).toContain('setup_lexicon with serve: true does the same');
+        expect(cli.serveInstallBlocker).toHaveBeenCalledWith({ cliPath: expect.stringMatching(/index\.js$/) });
+
+        // Catches: from a plugin copy the hint named `lexicon serve` (not installed) and
+        // setup_lexicon serve: true (refused there).
+        cli.serveInstallBlocker.mockResolvedValueOnce('this copy is running from an npx or Claude Code plugin cache (/p), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install');
+        fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+        const plugin = String(JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))).hint);
+        expect(plugin).toContain('Start it with `lexicon serve` (or `npx @ashlr/lexicon serve`)');
+        expect(plugin).toContain('npm i -g @ashlr/lexicon');
+        expect(plugin).not.toContain('setup_lexicon');
         expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:41733/health', expect.objectContaining({ signal: expect.anything() }));
         await expect(readFile(path.join(dir, 'serve.json'), 'utf8')).rejects.toThrow();
 

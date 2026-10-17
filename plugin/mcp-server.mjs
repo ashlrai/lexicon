@@ -18197,7 +18197,7 @@ var require_commander = __commonJS({
 
 // src/mcp/server.ts
 var import_node_fs28 = __toESM(require_node_fs(), 1);
-var import_node_path30 = __toESM(require_node_path(), 1);
+var import_node_path31 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 
 // node_modules/zod/v4/classic/external.js
@@ -63614,6 +63614,7 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
+var import_node_path29 = __toESM(require_node_path());
 async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
@@ -63735,11 +63736,13 @@ var registerSetupTools = (server, ctx) => {
           hint: SERVE_STATUS_HINTS.failing
         });
       }
+      const cliDir = cliDirForInstall();
+      const blocked = await serveInstallBlocker(cliDir !== void 0 ? { cliPath: (0, import_node_path29.join)(cliDir, "index.js") } : {});
       return textResult({
         up: false,
         url: url2,
         error: probe.error,
-        hint: `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
+        hint: blocked ? `Start it with ${cliCommand("serve")}. A login service that keeps it running cannot be installed from this copy: ${blocked}.` : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
       });
     })
   );
@@ -63750,7 +63753,7 @@ var import_node_crypto4 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
 var import_node_fs27 = __toESM(require_node_fs());
-var import_node_path29 = __toESM(require_node_path());
+var import_node_path30 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
 function parseSource(value) {
@@ -63795,7 +63798,7 @@ async function readStdinBytes(maxBytes) {
 }
 async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
-  const resolved2 = import_node_path29.default.resolve(cwd, file2);
+  const resolved2 = import_node_path30.default.resolve(cwd, file2);
   try {
     const stat = await import_node_fs27.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
@@ -63822,7 +63825,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   }
   const source = parseSource(opts.source);
   const category = parseCategory(opts.category);
-  const cwd = import_node_path29.default.resolve(opts.cwd ?? process.cwd());
+  const cwd = import_node_path30.default.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
   const content = await readInput(file2, cwd);
@@ -63830,7 +63833,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
   const result = importLexicon(content, format, {
     ...source ? { source } : {},
-    ...file2 !== "-" ? { filename: import_node_path29.default.basename(file2) } : {}
+    ...file2 !== "-" ? { filename: import_node_path30.default.basename(file2) } : {}
   });
   if (category) {
     for (const term of result.terms) term.category ??= category;
@@ -64342,7 +64345,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs28.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs28.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs28.realpathSync)((0, import_node_path31.resolve)(entry)) === (0, import_node_fs28.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

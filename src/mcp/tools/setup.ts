@@ -17,6 +17,9 @@ import { isRecord } from '../../util/json.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
+import { serveInstallBlocker } from '../../cli/cmd-serve.js';
+import { cliCommand } from '../../util/cli-hint.js';
+import { join } from 'node:path';
 import { DEFAULT_PORT, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, isLexiconHealth, probeHealth, readServeConfig, serveUrl } from '../../serve/config.js';
 
 /**
@@ -197,11 +200,17 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
             hint: SERVE_STATUS_HINTS.failing,
           });
         }
+        // The CLI's hint names `lexicon serve`, which a plugin-only user does not
+        // have, and setup_lexicon refuses the login service from a plugin or npx copy.
+        const cliDir = cliDirForInstall();
+        const blocked = await serveInstallBlocker(cliDir !== undefined ? { cliPath: join(cliDir, 'index.js') } : {});
         return textResult({
           up: false,
           url,
           error: probe.error,
-          hint: `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`,
+          hint: blocked
+            ? `Start it with ${cliCommand('serve')}. A login service that keeps it running cannot be installed from this copy: ${blocked}.`
+            : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`,
         });
       }),
   );

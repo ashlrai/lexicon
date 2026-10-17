@@ -254,7 +254,9 @@ failing server returns its full error: `{ up: true, url, version, terms,
 port, ... }`; `{ up: false, running: true, url, status, error, hint }` when
 the server answers with an error (a lexicon file that does not parse, say),
 so the agent fixes `error` instead of starting a second server; or
-`{ up: false, url, error, hint }` when nothing answers.
+`{ up: false, url, error, hint }` when nothing answers. From a plugin or npx
+copy that hint names `npx @ashlr/lexicon serve` and why a login service needs
+a permanent install, instead of `setup_lexicon` with `serve: true`.
 
 ## Safety rules
 
