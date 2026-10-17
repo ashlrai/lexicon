@@ -239,6 +239,24 @@ describe('normalize', () => {
     expect(json.err).toBe('');
   });
 
+  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep.
+  it.each([5, 'high', -1])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
+    const json = makeIO();
+    const readInput = vi.fn(async () => 'meet Ashler');
+    expect(await runNormalize([], { json: true, minConfidence: value }, json, readInput)).toBe(1);
+    expect(JSON.parse(json.out)).toEqual({
+      ok: false,
+      error: '--min-confidence must be a number between 0 and 1',
+      nextStep: 'pass a value from 0 to 1, e.g. --min-confidence 0.8 (see: lexicon normalize --help)',
+    });
+    expect(readInput).not.toHaveBeenCalled();
+    const text = makeIO();
+    expect(await runNormalize(['meet Ashler'], { minConfidence: value }, text)).toBe(1);
+    expect(text.out).toBe('');
+    expect(text.err).toContain('lexicon: --min-confidence must be a number between 0 and 1');
+    expect(text.err).toContain('e.g. --min-confidence 0.8');
+  });
+
   it('forwards only explicit disables and parsed min-confidence to normalize()', async () => {
     const io = makeIO();
     await runNormalize(['x Ashler'], { phonetic: false, fuzzy: true, minConfidence: '0.9', dryRun: true }, io);
@@ -418,11 +436,19 @@ describe('add / remove / path', () => {
     const json = makeIO();
     expect(await runAdd('Ashley', ['Ashler'], { json: true }, json)).toBe(0);
     expect(JSON.parse(json.out)).toMatchObject({ conflicts: [{ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' }] });
+    // Regression: MCP add_term pairs `conflicts` with a `note` naming the
+    // remove call; the CLI's JSON had the conflicts and no way out.
+    expect(JSON.parse(json.out).note).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
+        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+    );
+    expect(io.out).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
 
     // No conflict: no warning, and the JSON keeps its old shape.
     const plain = makeIO();
     expect(await runAdd('Hetzner', ['Hetsner'], { json: true }, plain)).toBe(0);
     expect(JSON.parse(plain.out)).not.toHaveProperty('conflicts');
+    expect(JSON.parse(plain.out)).not.toHaveProperty('note');
   });
 
   it('rejects an unknown category', async () => {
@@ -1374,6 +1400,77 @@ describe('runDoctorReport', () => {
       expect(report.ok).toBe(false);
       expect(report.ready).toBe(false);
       expect(report.nextStep).toMatch(/^Fix the first failure: /);
+    });
+
+    /**
+     * Regression: the MCP `lexicon_doctor` tool returned this report as is, so
+     * an agent was told `Run: lexicon setup` or `lexicon install claude
+     * --apply`, commands a plugin-only user has no binary for, instead of the
+     * setup_lexicon and install_client tools it can call itself.
+     */
+    describe("audience 'mcp' (the lexicon_doctor tool)", () => {
+      const noClients = async (): Promise<DoctorDeps> => {
+        const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-nohooks-'));
+        return {
+          platform: 'linux',
+          env: { PATH: '/nonexistent' },
+          exec: () => '',
+          settingsPath: path.join(empty, 'settings.json'),
+          installedPluginsPath: path.join(empty, 'installed_plugins.json'),
+          home: empty,
+        };
+      };
+      const bareCommand = /(^|[^`@/])lexicon (setup|install|trust|init|edit)\b/;
+
+      it('names setup_lexicon and the npx form when there are no terms', async () => {
+        vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
+        const report = await runDoctorReport({ audience: 'mcp' }, await noClients());
+        expect(report.nextStep).toContain('setup_lexicon');
+        expect(report.nextStep).toContain('`npx @ashlr/lexicon setup`');
+        expect(report.nextStep).not.toMatch(bareCommand);
+      });
+
+      it('names install_client when terms exist but nothing is wired up', async () => {
+        const report = await runDoctorReport({ audience: 'mcp' }, await noClients());
+        expect(report.ready).toBe(false);
+        expect(report.nextStep).toContain('install_client');
+        expect(report.nextStep).toContain('setup_lexicon');
+        expect(report.nextStep).not.toMatch(bareCommand);
+      });
+
+      it('names trust_project and the npx trust command for an untrusted project file', async () => {
+        state.projectPath = '/tmp/proj/.lexicon.yaml';
+        vi.mocked(core.isTrusted).mockResolvedValue('untrusted');
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+        await fs.writeFile(path.join(dir, 'claude'), '');
+        const report = await runDoctorReport({ audience: 'mcp' }, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
+        expect(report.nextStep).toContain('trust_project with action "trust"');
+        expect(report.nextStep).toContain('`npx @ashlr/lexicon trust`');
+        expect(report.nextStep).not.toMatch(bareCommand);
+      });
+
+      it('rewrites the run hint of the first failure and of an unreadable file', async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+        await fs.writeFile(path.join(dir, 'claude'), '');
+        const deps = { ...(await noClients()), env: { PATH: dir } };
+        const failing = await runDoctorReport({ audience: 'mcp' }, deps);
+        expect(failing.nextStep).toMatch(/^Fix the first failure: lexicon MCP server not registered with claude/);
+        expect(failing.nextStep).toContain('call install_client with client "claude"');
+        expect(failing.nextStep).not.toMatch(bareCommand);
+        // The check itself is unchanged: `checks` is the same list the CLI prints.
+        expect(failing.checks.some((c) => c.message.includes('(run: lexicon install claude --apply)'))).toBe(true);
+
+        vi.mocked(core.readLexiconFile).mockRejectedValue(new Error(`Failed to parse lexicon YAML at ${state.globalPath}: bad`));
+        const broken = await runDoctorReport({ audience: 'mcp' }, deps);
+        expect(broken.nextStep).toContain('`npx @ashlr/lexicon edit`');
+        expect(broken.nextStep).toContain('setup_lexicon will not repair this');
+        expect(broken.nextStep).not.toMatch(bareCommand);
+      });
+
+      it('leaves the CLI phrasing alone without it', async () => {
+        vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
+        expect((await runDoctorReport({}, await noClients())).nextStep).toBe('Run: lexicon setup');
+      });
     });
   });
 

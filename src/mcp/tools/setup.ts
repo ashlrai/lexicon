@@ -59,7 +59,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd }))),
+    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd, audience: 'mcp' }))),
   );
 
   server.registerTool(

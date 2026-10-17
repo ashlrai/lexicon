@@ -236,7 +236,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             .join('');
           return textResult({ kind, canonical, removed, ...(from ? { path: from.path } : {}), ...stillIn, summary: head + tail });
         }
-        if ((kind === 'alias' || kind === 'never') && !alias) throw new Error(`a "${kind}" suggestion needs an alias`);
+        if (kind === 'alias' && !alias) throw new Error('an "alias" suggestion needs an alias');
+        if (kind === 'never' && !alias) throw new Error('a "never" suggestion needs an alias (the word to keep as written)');
         const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== '') ?? [];
         const aliases = kind === 'never' ? [] : kind === 'alias' && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
         const term: Term = {

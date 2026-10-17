@@ -405,6 +405,49 @@ describe('generic, claude and the commander wiring', () => {
     await expect(run('emacs')).rejects.toThrow(/unknown client "emacs"/);
   });
 
+  // Catches: install had no --json, so an unknown client reached a script only as stderr text.
+  describe('--json', () => {
+    it('prints { ok: false, error, nextStep } for an unknown client or scope', async () => {
+      const unknown = await run('emacs', { json: true });
+      expect(unknown.code).toBe(1);
+      const doc = JSON.parse(unknown.io.out) as { ok: boolean; error: string; nextStep: string };
+      expect(doc.ok).toBe(false);
+      expect(doc.error).toMatch(/unknown client "emacs"/);
+      expect(doc.nextStep).toContain('cursor');
+      expect(doc.nextStep).toContain('lexicon install cursor --json');
+
+      const scope = await run('cursor', { json: true, scope: 'team' });
+      expect(scope.code).toBe(1);
+      expect(JSON.parse(scope.io.out)).toEqual({
+        ok: false,
+        error: '--scope must be "user" or "project" (got "team")',
+        nextStep: 'pass --scope user or --scope project',
+      });
+    });
+
+    it('prints the preview and then the written file as one document each', async () => {
+      const preview = await run('cursor', { json: true });
+      expect(preview.code).toBe(0);
+      const p = JSON.parse(preview.io.out) as { ok: boolean; client: string; scope: string; applied: boolean; written: unknown[]; output: string };
+      expect(p).toMatchObject({ ok: true, client: 'cursor', scope: 'user', applied: false, written: [] });
+      expect(p.output).toContain('would merge into');
+      expect(p.output).not.toMatch(/\x1b\[/);
+
+      const applied = await run('cursor', { json: true, apply: true });
+      expect(applied.code).toBe(0);
+      const file = path.join(home, '.cursor', 'mcp.json');
+      expect(JSON.parse(applied.io.out)).toMatchObject({ ok: true, applied: true, written: [{ file, outcome: 'created' }] });
+      expect(await readJson(file)).toHaveProperty('mcpServers.lexicon');
+    });
+
+    it('is a flag of the install command', () => {
+      const program = new Command();
+      registerInstallCommands(program, makeIO());
+      const install = program.commands.find((c) => c.name() === 'install');
+      expect(install?.options.map((o) => o.long)).toContain('--json');
+    });
+  });
+
   it('delegates claude to runInstallClaude (print mode) with the --home settings path', async () => {
     const { code, io } = await run('claude');
     expect(code).toBe(0);

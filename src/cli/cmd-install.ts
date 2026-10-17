@@ -20,7 +20,7 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { xdgConfigHome } from '../util/xdg.js';
-import { bold, dim, green, indent, line, red, safe, safeLines, yellow } from './io.js';
+import { bold, dim, green, indent, jsonError, line, red, safe, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -61,6 +61,12 @@ export interface InstallOptions extends CommonOptions {
   project?: boolean;
   /** Override the home directory (test hook). */
   home?: string;
+  /**
+   * Print one JSON document instead of the text: `{ ok: true, client, scope,
+   * applied, written, output }` (`written` the files `--apply` touched, `output`
+   * the text the command would have printed) or `{ ok: false, error, nextStep }`.
+   */
+  json?: boolean;
 }
 
 export interface InstallDeps {
@@ -543,6 +549,80 @@ export async function runInstall(
   io: IO,
   deps: InstallDeps = {},
 ): Promise<number> {
+  if (opts.json) return runInstallJson(client, opts, io, deps);
+  return installText(client, opts, io, deps);
+}
+
+/** What `lexicon install --json` prints when it succeeds. */
+export interface InstallJsonResult {
+  ok: true;
+  /** The client as resolved (`generic` when none was named). */
+  client: string;
+  scope: 'user' | 'project';
+  applied: boolean;
+  /** Each config file `--apply` touched and what happened to it; empty for a preview. */
+  written: { file: string; outcome: InstallOutcome }[];
+  /** The text `lexicon install` prints without --json, uncoloured. */
+  output: string;
+}
+
+/**
+ * `lexicon install --json`: the text run into a buffer, wrapped in one
+ * document. An unknown client or scope (and any other refusal) is
+ * `{ ok: false, error, nextStep }`, so a script never parses prose.
+ */
+async function runInstallJson(client: string | undefined, opts: InstallOptions, io: IO, deps: InstallDeps): Promise<number> {
+  let out = '';
+  let err = '';
+  const buffer: IO = {
+    stdout: (s) => {
+      out += s;
+    },
+    stderr: (s) => {
+      err += s;
+    },
+  };
+  const written: { file: string; outcome: InstallOutcome }[] = [];
+  const onWritten = (file: string, outcome: InstallOutcome): void => {
+    written.push({ file, outcome });
+    deps.onWritten?.(file, outcome);
+  };
+  const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+  const print = (doc: object): void => line(io, JSON.stringify(doc, null, 2));
+  const name = (client ?? 'generic').toLowerCase();
+  let code: number;
+  try {
+    code = await installText(client, { ...opts, json: false }, buffer, { ...deps, onWritten });
+  } catch (e) {
+    const message = errorMessage(e);
+    const nextStep = !isInstallClient(name)
+      ? `name one of: ${INSTALL_CLIENTS.join(', ')} (e.g. lexicon install cursor --json)`
+      : /--scope must be/.test(message)
+        ? 'pass --scope user or --scope project'
+        : `fix the problem in error, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`;
+    print(jsonError(message, nextStep));
+    return 1;
+  }
+  if (err) io.stderr(err);
+  if (code !== 0) {
+    print({
+      ...jsonError(`lexicon install ${name} did not complete; output says which step failed`, `fix that step, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`),
+      output: plain(out),
+    });
+    return code;
+  }
+  const scope = (opts.scope ?? (opts.project ? 'project' : 'user')) as 'user' | 'project';
+  const result: InstallJsonResult = { ok: true, client: name, scope, applied: opts.apply === true, written, output: plain(out) };
+  print(result);
+  return 0;
+}
+
+async function installText(
+  client: string | undefined,
+  opts: InstallOptions,
+  io: IO,
+  deps: InstallDeps,
+): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   const home = opts.home ? path.resolve(opts.home) : os.homedir();
@@ -615,6 +695,7 @@ export function registerInstallCommands(program: Command, io: IO): void {
     .option('--scope <scope>', 'user|project (project = the repo-level config file)')
     .option('--project', 'same as --scope project')
     .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
+    .option('--json', 'print { ok: true, client, scope, applied, written, output } as JSON ({ ok: false, error, nextStep } for an unknown client or scope)')
     .action(async (client: string | undefined, opts: InstallOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();
       const merged: InstallOptions = cwd ? { ...opts, cwd } : opts;

@@ -97,6 +97,7 @@ import type {
 import {
   bold,
   conflictLine,
+  conflictNote,
   dim,
   ensureNewline,
   green,
@@ -138,7 +139,7 @@ export {
 } from './claude-settings.js';
 export type { ClaudeSettings, HookCommand, HookGroup, IntegrationPaths } from './claude-settings.js';
 export { checkLoginService, renderDoctorReport, runDoctor, runDoctorReport } from './cmd-doctor.js';
-export type { DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorLevel, DoctorReport } from './cmd-doctor.js';
+export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorLevel, DoctorReport, DoctorReportOptions } from './cmd-doctor.js';
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
 import { runHarvestInteractive } from './cmd-review.js';
@@ -386,7 +387,7 @@ export async function runAdd(
     line(
       io,
       JSON.stringify(
-        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) }),
+        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : {}) }),
         null,
         2,
       ),
@@ -651,9 +652,17 @@ export async function runNormalize(
   io: IO,
   readInput: () => Promise<string> = readStdin,
 ): Promise<number> {
+  // A bad flag value is a usage error, refused before stdin is read: under
+  // --json it is `{ ok: false, error, nextStep }` like every other refusal,
+  // where the thrown error left a document with no next step.
+  let normalizeOpts: NormalizeOptions;
+  try {
+    normalizeOpts = buildNormalizeOptions(opts);
+  } catch (err) {
+    return refuse(io, opts.json, errorMessage(err), 'pass a value from 0 to 1, e.g. --min-confidence 0.8 (see: lexicon normalize --help)');
+  }
   const fromArgs = args.length > 0;
   const text = fromArgs ? args.join(' ') : await readInput();
-  const normalizeOpts = buildNormalizeOptions(opts);
   const emit = (s: string): void => {
     io.stdout(fromArgs ? `${s}\n` : s);
   };

@@ -402,6 +402,22 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  it('add_term with aliases: [] generates none (an explicit empty list is not an omission)', async () => {
+    const { client, close } = await connect();
+    try {
+      const tool = (await client.listTools()).tools.find((t) => t.name === 'add_term');
+      expect(JSON.stringify(tool?.inputSchema)).toMatch(/\[\] adds none/);
+      const result = await client.callTool({ name: 'add_term', arguments: { canonical: 'Zoë', aliases: [] } });
+      expect(result.isError).toBe(false);
+      const payload = JSON.parse(textOf(result)) as { term: Term };
+      expect(payload.term.aliases).toEqual([]);
+      expect(mocks.suggestAliases).not.toHaveBeenCalled();
+      expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Zoë', aliases: [], source: 'user' }, { cwd: '/fake/repo' });
+    } finally {
+      await close();
+    }
+  });
+
   it('list_terms filters case-insensitively over canonical and aliases', async () => {
     const { client, close } = await connect();
     try {
@@ -668,7 +684,7 @@ describe('lexicon MCP server', () => {
         const result = await client.callTool({ name: 'lexicon_doctor', arguments: {} });
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual(doctorReport);
-        expect(cli.runDoctorReport).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+        expect(cli.runDoctorReport).toHaveBeenCalledWith({ cwd: '/fake/repo', audience: 'mcp' });
       } finally {
         await close();
       }
@@ -1557,6 +1573,18 @@ describe('lexicon MCP server', () => {
         expect(text).toMatch(/teammates/i);
         expect(text).toMatch(/which agent clients/i);
         expect(text).toMatch(/sentence I can dictate/i);
+        // Regression: step 7 said "take one of my names" and then a sentence
+        // "containing two of the names", and step 5 promised add_term always
+        // generates misspellings, which it often does not.
+        expect(text).not.toMatch(/take one of my names/i);
+        expect(text).toMatch(/one test sentence I can dictate that contains two of my names/);
+        expect(text).not.toMatch(/without aliases so likely misspellings are generated/);
+        expect(text).toMatch(/often generates none/);
+        expect(text).toMatch(/propose two or three spellings/);
+        // Step 4 passes "my name" to setup_lexicon, so an earlier step asks for it.
+        expect(text.indexOf('Ask for my own name')).toBeGreaterThan(-1);
+        expect(text.indexOf('Ask for my own name')).toBeLessThan(text.indexOf('setup_lexicon'));
+        expect(text).not.toMatch(/[\u2013\u2014]/);
         expect(mocks.loadLexicon).not.toHaveBeenCalled();
       } finally {
         await close();
