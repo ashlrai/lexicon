@@ -67,6 +67,7 @@ import {
   removeAlias,
   removeTerm,
   termHolders,
+  untrustedAliasHolder,
   untrustedTermHolder,
   resolvePaths,
   spellingConflicts,
@@ -101,6 +102,7 @@ import {
   safeLines,
   skippedProjectJson,
   stillInLine,
+  untrustedAliasLine,
   untrustedLine,
   warnSkippedProject,
 } from './io.js';
@@ -462,7 +464,12 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
 /**
  * `remove <canonical> --alias <alias>`: drop one alias and keep the term. An
  * unknown term or alias exits 1 (with `{ removed: false, error }` under
- * --json); a refused untrusted project file throws as every other write does.
+ * --json). When the skipped (untrusted) project file's copy of the term holds
+ * the alias too, that copy is named (path only, `untrustedAliasHolder`) and
+ * never edited: a `warn:` line, and `untrustedProject` under --json. A
+ * refused untrusted project file (it comes first without a scope) prints the
+ * trust error, a `--global` hint when the global copy holds the alias, and
+ * exits 1, as `remove` does for a term.
  */
 async function runRemoveAlias(
   canonical: string,
@@ -472,23 +479,37 @@ async function runRemoveAlias(
   cwd: string,
   io: IO,
 ): Promise<number> {
+  // Best effort: a lexicon that will not load just loses the report.
+  const loaded = await loadLexicon({ cwd }).catch(() => undefined);
+  const untrusted = loaded ? untrustedAliasHolder(loaded, canonical, alias) : undefined;
+  const extra = untrusted ? { untrustedProject: untrusted } : {};
   let result: RemoveAliasResult;
   try {
     result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
-    if (isProjectTrustError(err)) throw err;
     const message = errorMessage(err);
-    if (opts.json) line(io, JSON.stringify({ canonical, alias, removed: false, error: message }, null, 2));
+    if (opts.json) line(io, JSON.stringify({ canonical, alias, removed: false, error: message, ...extra }, null, 2));
     io.stderr(`lexicon: ${safeLines(message)}\n`);
+    if (isProjectTrustError(err)) {
+      const holdsAlias = loaded?.global.lexicon.terms.some(
+        (t) => t.canonical.trim().toLowerCase() === canonical.trim().toLowerCase() && t.aliases.some((a) => a.trim().toLowerCase() === alias.trim().toLowerCase()),
+      );
+      if (holdsAlias) {
+        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --alias ${JSON.stringify(safe(alias))} --global\n`);
+      }
+    } else if (untrusted) {
+      io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);
+    }
     return 1;
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths }, null, 2));
+    line(io, JSON.stringify({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }, null, 2));
     return 0;
   }
   line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
+  if (untrusted) line(io, untrustedAliasLine(result.term.canonical, alias, untrusted));
   return 0;
 }
 

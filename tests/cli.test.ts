@@ -535,6 +535,81 @@ describe('add / remove / path', () => {
     expect(JSON.parse(json.out)).toEqual({ canonical: 'Ashlr.AI', alias: 'Ashler', removed: true, aliases: ['Ashlar'], paths: [state.globalPath] });
   });
 
+  // Catches: remove --alias dropped the global alias and printed success while the untrusted project copy (which wins once trusted) kept it.
+  it('remove --alias names an untrusted project copy that holds the alias, by path, and never edits it', async () => {
+    const skipped: Lexicon = { version: 1, terms: [{ canonical: 'ashlr.ai', aliases: ['Ash Lur', 'ASHLER'] }] };
+    const loaded = {
+      merged: FIXED_LEXICON,
+      global: { path: state.globalPath, scope: 'global' as const, lexicon: FIXED_LEXICON, exists: true },
+      projectTrust: 'untrusted' as const,
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project' as const, lexicon: skipped, exists: true },
+    };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
+    const io = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', global: true }, io)).toBe(0);
+    expect(io.out).toContain('warn: Ashler is also an alias of Ashlr.AI in the untrusted project lexicon (/tmp/proj/.lexicon.yaml)');
+    expect(io.out).not.toContain('Ash Lur');
+    expect(core.removeAlias).toHaveBeenCalledTimes(1);
+    expect(core.removeAlias).toHaveBeenCalledWith('Ashlr.AI', 'Ashler', expect.objectContaining({ scope: 'global' }));
+
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
+    const json = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', global: true, json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toEqual({
+      canonical: 'Ashlr.AI',
+      alias: 'Ashler',
+      removed: true,
+      aliases: ['Ashlar'],
+      paths: [state.globalPath],
+      untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' },
+    });
+
+    // A copy without that alias is not reported.
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ ...loaded, skippedProject: { ...loaded.skippedProject, lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ash Lur'] }] } } });
+    const other = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler', global: true, json: true }, other)).toBe(0);
+    expect(JSON.parse(other.out)).not.toHaveProperty('untrustedProject');
+
+    // The alias is not in the global copy: exit 1, and stderr says where it still is.
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
+    const missing = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashlar', global: true }, missing)).toBe(1);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ ...loaded, skippedProject: { ...loaded.skippedProject, lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashlar'] }] } } });
+    const missing2 = makeIO();
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(new Error('"Ashlar" is not an alias of "Ashlr.AI" in the global lexicon'));
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashlar', global: true, json: true }, missing2)).toBe(1);
+    expect(missing2.err).toContain('Ashlar is also an alias of Ashlr.AI in the untrusted project lexicon (/tmp/proj/.lexicon.yaml)');
+    expect(JSON.parse(missing2.out)).toMatchObject({ removed: false, untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' } });
+  });
+
+  // Catches: without a scope the refused untrusted project copy threw out of the handler, with no JSON and no way to reach the global copy.
+  it('remove --alias without a scope on an untrusted project copy prints the trust error and the --global command', async () => {
+    const skipped: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
+    const loaded = {
+      merged: FIXED_LEXICON,
+      global: { path: state.globalPath, scope: 'global' as const, lexicon: FIXED_LEXICON, exists: true },
+      projectTrust: 'changed' as const,
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project' as const, lexicon: skipped, exists: true },
+    };
+    for (const json of [false, true]) {
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
+      vi.mocked(core.removeAlias).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'changed'));
+      const io = makeIO();
+      expect(await runRemove('Ashlr.AI', { alias: 'Ashler', json }, io)).toBe(1);
+      expect(io.err).toContain('has changed since it was trusted');
+      expect(io.err).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      if (json) {
+        expect(JSON.parse(io.out)).toMatchObject({
+          canonical: 'Ashlr.AI',
+          alias: 'Ashler',
+          removed: false,
+          error: expect.stringContaining('lexicon trust'),
+          untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'changed' },
+        });
+      }
+    }
+  });
+
   it('remove --alias exits 1 with a clear error for an unknown term or alias', async () => {
     const term = makeIO();
     expect(await runRemove('Nope', { alias: 'x' }, term)).toBe(1);

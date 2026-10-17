@@ -242,6 +242,15 @@ export function untrustedLine(canonical: string, holder: { path: string; trust: 
   );
 }
 
+/** The alias counterpart of `untrustedLine`: the skipped project file's copy of the term still holds the alias. Path only. */
+export function untrustedAliasLine(canonical: string, alias: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
+  const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
+  return (
+    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    'it corrects from there once that file is trusted, so review it before running lexicon trust'
+  );
+}
+
 /**
  * The `warn:` line for a spelling another term also holds (`learn`, `add`):
  * the next transcript may still be corrected to that term. For an alias it

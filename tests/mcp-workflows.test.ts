@@ -136,6 +136,35 @@ describe('remove_term', () => {
     expect(refused.text).toMatch(/scope "global"/);
   });
 
+  // Catches: removing an alias from the global copy reported plain success while the untrusted project copy kept that alias.
+  it('with `alias`, names an untrusted project copy that holds the alias; without scope the refusal points at scope "global"', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control', 'cube cuddle'] });
+    const projectFile = path.join(repo, '.lexicon.yaml');
+    const text = 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube cuddle, secret spelling]\n';
+    await fs.writeFile(projectFile, text);
+
+    const refused = await call('remove_term', { canonical: 'kubectl', alias: 'cube cuddle' });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toMatch(/untrusted/);
+    expect(refused.text).toMatch(/alias and scope "global"/);
+
+    const result = JSON.parse((await call('remove_term', { canonical: 'kubectl', alias: 'cube cuddle', scope: 'global' })).text) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      canonical: 'Kubectl',
+      alias: 'cube cuddle',
+      removed: true,
+      aliases: ['cube control'],
+      untrustedProject: { path: projectFile, trust: 'untrusted' },
+    });
+    expect(result.note).toMatch(/lexicon trust/);
+    expect(JSON.stringify(result)).not.toContain('secret spelling');
+    expect(await fs.readFile(projectFile, 'utf8')).toBe(text);
+
+    // An alias the project copy does not hold is not reported.
+    const plain = JSON.parse((await call('remove_term', { canonical: 'kubectl', alias: 'cube control', scope: 'global' })).text) as Record<string, unknown>;
+    expect(plain).not.toHaveProperty('untrustedProject');
+  });
+
   it('removes a single alias with `alias`, and errors on an unknown term or alias', async () => {
     await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner', 'Het zner'] });
     const removed = await call('remove_term', { canonical: 'hetzner', alias: 'het zner' });

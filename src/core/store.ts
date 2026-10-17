@@ -1082,6 +1082,26 @@ export function untrustedTermHolder(
   return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
 }
 
+/**
+ * The skipped (untrusted or changed) project file, when its copy of
+ * `canonical` holds `alias` (both case-insensitive). The alias counterpart of
+ * `untrustedTermHolder`: path and trust only, never a term. `remove --alias`
+ * and `remove_term` with `alias` report it, because that copy keeps the
+ * correction alive once the user trusts the file, and `removeAlias` never
+ * edits it.
+ */
+export function untrustedAliasHolder(
+  loaded: Pick<LoadedLexicon, 'skippedProject' | 'projectTrust'>,
+  canonical: string,
+  alias: string,
+): { path: string; trust: 'untrusted' | 'changed' } | undefined {
+  const skipped = loaded.skippedProject;
+  const drop = alias.trim().toLowerCase();
+  const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
+  if (!skipped || !drop || !term || !term.aliases.some((a) => a.trim().toLowerCase() === drop)) return undefined;
+  return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
+}
+
 /** What `removeAlias` changed: the term as it now reads, and every file it was dropped from. */
 export interface RemoveAliasResult {
   /** The edited term (from the first file edited: project before global). */

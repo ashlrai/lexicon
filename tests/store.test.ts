@@ -51,6 +51,7 @@ import {
   removeTerm,
   resolvePaths,
   termHolders,
+  untrustedAliasHolder,
   untrustedTermHolder,
   writeLexiconFile,
 } from '../src/core/store.js';
@@ -1349,5 +1350,23 @@ describe('untrustedTermHolder', () => {
     });
     expect(untrustedTermHolder({ projectTrust: 'untrusted', skippedProject: skipped(['Helm']) }, 'kubectl')).toBeUndefined();
     expect(untrustedTermHolder({ projectTrust: 'trusted' }, 'kubectl')).toBeUndefined();
+  });
+});
+
+describe('untrustedAliasHolder', () => {
+  const skipped: LexiconFile = {
+    path: '/p/.lexicon.yaml',
+    scope: 'project',
+    lexicon: { version: 1, terms: [{ canonical: ' Kubectl ', aliases: [' Cube Cuddle ', 'other'] }] },
+    exists: true,
+  };
+
+  it('names the skipped file when its copy of the term holds the alias (case-insensitive), path and trust only', () => {
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'KUBECTL', 'cube cuddle')).toEqual({ path: '/p/.lexicon.yaml', trust: 'untrusted' });
+    expect(untrustedAliasHolder({ projectTrust: 'changed', skippedProject: skipped }, 'kubectl', 'CUBE CUDDLE ')).toEqual({ path: '/p/.lexicon.yaml', trust: 'changed' });
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'kubectl', 'cube control')).toBeUndefined();
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'helm', 'cube cuddle')).toBeUndefined();
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'kubectl', '  ')).toBeUndefined();
+    expect(untrustedAliasHolder({ projectTrust: 'trusted' }, 'kubectl', 'cube cuddle')).toBeUndefined();
   });
 });
