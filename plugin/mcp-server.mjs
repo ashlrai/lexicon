@@ -64587,6 +64587,13 @@ function strictInput(config2) {
   if (shape === void 0 || shape instanceof external_exports.ZodType) return config2;
   return { ...config2, inputSchema: external_exports.object(shape).strict() };
 }
+function strictPromptArgs(name, shape = {}) {
+  const declared = Object.keys(shape);
+  const takes = declared.length > 0 ? `it takes only ${declared.map((k) => JSON.stringify(k)).join(", ")}` : "it takes no arguments; omit arguments or pass {}";
+  return external_exports.strictObject(shape, {
+    error: (iss) => iss.code === "unrecognized_keys" ? `unknown argument${iss.keys.length === 1 ? "" : "s"} ${iss.keys.map((k) => JSON.stringify(k)).join(", ")} for prompt ${name}: ${takes}` : void 0
+  });
+}
 var ROOTS_TIMEOUT_MS = 2e3;
 function cwdFromRoots(roots) {
   return dirsFromRoots(roots)[0];
@@ -64757,7 +64764,7 @@ ${instruction}` }
         ]
       };
     }
-  );
+  ).argsSchema = strictPromptArgs("voice-context");
   server.registerPrompt(
     "onboard",
     {
@@ -64767,7 +64774,7 @@ ${instruction}` }
     async () => ({
       messages: [{ role: "user", content: { type: "text", text: ONBOARD_PROMPT } }]
     })
-  );
+  ).argsSchema = strictPromptArgs("onboard");
   return server;
 }
 function skippedProjectSuffix(loaded) {
@@ -64828,5 +64835,6 @@ export {
   cwdFromRoots,
   dirsFromRoots,
   main,
-  strictInput
+  strictInput,
+  strictPromptArgs
 };

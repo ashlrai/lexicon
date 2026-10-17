@@ -1590,6 +1590,30 @@ describe('lexicon MCP server', () => {
         await close();
       }
     });
+
+    // Catches: both prompts were registered without an argsSchema, so the SDK
+    // never looked at `arguments` and an undeclared one (`{ scope: 'project' }`)
+    // answered as if it had been applied, while a tool refuses an unknown key.
+    it('refuses undeclared prompt arguments with -32602 and says what the prompt takes', async () => {
+      const { client, close } = await connect();
+      try {
+        for (const name of ['voice-context', 'onboard']) {
+          const err = await client.getPrompt({ name, arguments: { scope: 'project' } }).then(
+            () => undefined,
+            (e: unknown) => e as { code?: number; message?: string },
+          );
+          expect(err?.code, name).toBe(-32602);
+          expect(err?.message).toContain(`unknown argument "scope" for prompt ${name}: it takes no arguments; omit arguments or pass {}`);
+          // Omitted and {} are fine.
+          expect((await client.getPrompt({ name })).messages).toHaveLength(1);
+          expect((await client.getPrompt({ name, arguments: {} })).messages).toHaveLength(1);
+        }
+        const two = await client.getPrompt({ name: 'onboard', arguments: { a: '1', b: '2' } }).catch((e: unknown) => e as Error);
+        expect((two as Error).message).toContain('unknown arguments "a", "b" for prompt onboard');
+      } finally {
+        await close();
+      }
+    });
   });
 });
 
