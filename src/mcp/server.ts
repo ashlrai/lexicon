@@ -23,7 +23,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { exportLexicon, loadLexicon, sanitizeForDisplayMax } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
-import { SERVER_NAME, log, readPackageVersion, skippedProjectFields } from './shared.js';
+import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
 import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
@@ -215,6 +215,21 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
 
+  // Resources and prompts have no isError result: a thrown error becomes the
+  // JSON-RPC error message. For a lexicon file that does not parse, that was
+  // the bare parse error; it now carries the fix, as a tool's error does.
+  const loadForContext = async (): Promise<LoadedLexicon> => {
+    try {
+      return await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      const fixed = withLexiconFix(message);
+      if (fixed === message) throw err;
+      log('lexicon unreadable:', message);
+      throw new Error(fixed);
+    }
+  };
+
   server.registerResource(
     'Personal voice lexicon',
     'lexicon://me',
@@ -225,7 +240,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       mimeType: 'text/markdown',
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
@@ -243,7 +258,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       mimeType: 'application/json',
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       // Additive keys, present only when a project file was skipped (path
       // only, never its contents), as list_terms and lexicon_stats report it.
       // The lexicon JSON importer strips unknown keys, so the text still imports.
@@ -268,7 +283,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
         "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session.",
     },
     async () => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       // The same path-only note lexicon://me carries, so the session knows the
       // repo's own spellings are missing and why.
       const snippet = exportLexicon(loaded.merged, 'claude-md').trimEnd() + skippedProjectSuffix(loaded);

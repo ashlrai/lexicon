@@ -238,10 +238,19 @@ export function refuse(io: IO, json: boolean | undefined, error: string, nextSte
  * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
  */
 export function unreadableLexiconHint(message: string): string | undefined {
+  const edit = unreadableLexiconEdit(message);
+  return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
+}
+
+/**
+ * The `lexicon edit` command that opens the file a store parse/validation
+ * error names (`--project` for a `.lexicon.yaml`), or undefined when the
+ * message is not one. The MCP server words its own next step around it.
+ */
+export function unreadableLexiconEdit(message: string): string | undefined {
   const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
   if (!m) return undefined;
-  const edit = path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
-  return `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor`;
+  return path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
 }
 
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */

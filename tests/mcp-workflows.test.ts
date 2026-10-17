@@ -710,3 +710,59 @@ describe('voice-context and lexicon://me', () => {
     }
   });
 });
+
+describe('a lexicon file that does not parse', () => {
+  // Catches: lexicon://me, lexicon://json and voice-context failed with the bare
+  // parse error, so a model reading them had the file but not the fix.
+  it('resources, prompts and tools name the file and the fix', async () => {
+    const globalPath = process.env.LEXICON_PATH as string;
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const failures: string[] = [];
+      for (const uri of ['lexicon://me', 'lexicon://json']) {
+        failures.push(await client.readResource({ uri }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      }
+      failures.push(await client.getPrompt({ name: 'voice-context' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      expect(tool.isError).toBe(true);
+      failures.push((tool.content ?? []).map((c) => c.text ?? '').join('\n'));
+      for (const message of failures) {
+        expect(message).toContain(`Failed to parse lexicon YAML at ${globalPath}`);
+        expect(message).toContain('run: lexicon edit)');
+        expect(message).toContain('lexicon doctor');
+      }
+      // The onboard prompt reads no lexicon and still works.
+      expect((await client.getPrompt({ name: 'onboard' })).messages.length).toBe(1);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('names lexicon edit --project for a broken trusted project file', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms: [\n', 'utf8');
+    const prev = process.env.LEXICON_TRUST_ALL;
+    process.env.LEXICON_TRUST_ALL = '1';
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const message = await client.readResource({ uri: 'lexicon://me' }).then(() => 'resolved', (e: unknown) => (e as Error).message);
+      expect(message).toContain(projectPath);
+      expect(message).toContain('run: lexicon edit --project');
+    } finally {
+      if (prev === undefined) delete process.env.LEXICON_TRUST_ALL;
+      else process.env.LEXICON_TRUST_ALL = prev;
+      await client.close();
+      await server.close();
+    }
+  });
+});

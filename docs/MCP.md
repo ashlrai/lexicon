@@ -64,6 +64,8 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 | `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session (with no terms, a note that there is nothing to apply and how to set it up instead) |
 | `onboard` | Walks the agent through first-run setup: ask for company, product and teammate spellings, which clients are in use, then call `setup_lexicon` and `add_term` |
 
+A lexicon file that does not parse fails every tool, resource and prompt that reads it (`onboard` reads none) with the store's error, which names the file, and a second line with the fix: `lexicon edit` (`lexicon edit --project` for a `.lexicon.yaml`), then `lexicon doctor`. A tool returns it as an `isError` result; a resource or prompt as the JSON-RPC error message.
+
 ## Writes and previews
 
 Project-scope writes (`add_term`, `learn_correction`, `apply_suggestion`, `import_dictionary`, `harvest_repo` with `add: true`) go through the same [trust gate](TRUST.md) as the CLI and return an error instead of touching an unreviewed `.lexicon.yaml`.
