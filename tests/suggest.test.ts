@@ -44,3 +44,16 @@ describe('suggestAliases', () => {
     expect(suggestAliases('   ')).toEqual([]);
   });
 });
+
+describe('suggestAliases soft c', () => {
+  it('suggests the s spelling STT writes for a soft c (GET /aliases?canonical=Vercel was empty)', () => {
+    expect(suggestAliases('Vercel')).toContain('Versel');
+    expect(suggestAliases('Mercedes')).toContain('Mersedes');
+  });
+
+  it('never suggests an everyday word that would then be rewritten everywhere', () => {
+    expect(suggestAliases('Cell')).not.toContain('Sell');
+    expect(suggestAliases('Cite')).not.toContain('Site');
+    expect(suggestAliases('Science')).not.toContain('Sience');
+  });
+});
