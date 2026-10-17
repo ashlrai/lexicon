@@ -157,7 +157,11 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return 1;
   }
   const entry = await trustProject(filePath, { cwd });
-  if (ask && entry.sha256 !== shownSha) {
+  // Asked or not (--yes, off a terminal), only the bytes that were parsed and
+  // previewed above may be pinned: trustProject hashes the file again, and a
+  // file swapped in meanwhile (even one that does not parse) would otherwise
+  // be trusted unseen.
+  if (entry.sha256 !== shownSha) {
     await untrustProject(filePath, { cwd });
     io.stderr(`lexicon: ${safe(filePath)} changed while it was being trusted; trust was revoked (run lexicon trust again)\n`);
     return 1;
