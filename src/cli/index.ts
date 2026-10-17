@@ -42,7 +42,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { fail } from './io.js';
+import { argvRequestsJson, fail, line, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -257,6 +257,32 @@ registerSuggestCommands(program, io);
 registerReviewCommands(program, io);
 registerPackCommands(program, io);
 
+// Commander usage errors (unknown option or command, missing argument, an
+// invalid --port) are raised before any handler runs, so under --json they
+// got no stdout document. Every command throws its own CommanderError, which
+// is remembered with the command, so the catch below can print
+// `{ ok: false, error, nextStep }` naming that command's --help. The stderr
+// text and the exit code stay commander's.
+const usageErrorCommand = new WeakMap<CommanderError, Command>();
+function trackUsageErrors(cmd: Command): void {
+  cmd.exitOverride((err) => {
+    usageErrorCommand.set(err, cmd);
+    throw err;
+  });
+  for (const sub of cmd.commands) trackUsageErrors(sub);
+}
+trackUsageErrors(program);
+
+/** `lexicon pack add` for the `add` subcommand of `pack`. */
+function commandPath(cmd: Command): string {
+  const names: string[] = [];
+  for (let c: Command | null = cmd; c; c = c.parent) names.unshift(c.name());
+  return names.join(' ');
+}
+
+/** Exits that are not usage errors: help and version output, which stay as they are. */
+const NOT_USAGE_ERRORS = new Set(['commander.helpDisplayed', 'commander.help', 'commander.version', 'commander.executeSubCommandAsync']);
+
 // A reader that closed the pipe (`lexicon list | head`) has seen all it wants:
 // stop quietly instead of dying on an unhandled EPIPE with a stack trace.
 process.stdout.on('error', (err: NodeJS.ErrnoException) => {
@@ -276,7 +302,11 @@ try {
   await program.parseAsync(process.argv);
 } catch (err) {
   if (err instanceof CommanderError) {
-    // commander already printed help/version/usage errors; just carry its exit code.
+    // commander already printed help/version/usage errors on stderr; under
+    // --json a usage error also gets its stdout document. Same exit code.
+    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2))) {
+      line(io, JSON.stringify(usageErrorJson(err.message, commandPath(usageErrorCommand.get(err) ?? program)), null, 2));
+    }
     process.exitCode = err.exitCode;
   } else {
     // fail() is the same `lexicon: <message>` line plus, for a lexicon file

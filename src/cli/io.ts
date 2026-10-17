@@ -219,6 +219,28 @@ export function printJsonError(io: IO, error: string, nextStep?: string): void {
 }
 
 /**
+ * Whether a command line asked for `--json`: the flag appears before any `--`
+ * (after it, `--json` is text for `normalize`, not a flag). index.ts uses it
+ * for the errors commander raises before any handler runs, when no command's
+ * parsed options exist to read it from.
+ */
+export function argvRequestsJson(args: readonly string[]): boolean {
+  const end = args.indexOf('--');
+  return (end === -1 ? args : args.slice(0, end)).includes('--json');
+}
+
+/**
+ * The `--json` document for a commander usage error (an unknown option or
+ * command, a missing argument, an invalid option value): commander's message
+ * without its `error: ` prefix, and the `--help` command of the command that
+ * rejected the line (`lexicon pack add`, or just `lexicon`) as `nextStep`.
+ */
+export function usageErrorJson(message: string, commandPath: string): JsonError {
+  const error = message.replace(/^error:\s*/, '').trim() || 'invalid command line';
+  return jsonError(error, `see the usage: ${commandPath} --help`);
+}
+
+/**
  * A refusal that is not an exception: the `lexicon: <error>` line (and a
  * `lexicon: <nextStep>` line) on stderr and, under --json, the `JsonError`
  * document on stdout. Exit code 1.

@@ -60,7 +60,11 @@ Any other `--json` command that fails without a result of its own to print
 (an unknown flag value, a missing file, an untrusted project lexicon, a lexicon
 file that does not parse) prints `{ ok: false, error, nextStep? }` on stdout as
 well as the `lexicon:` line on stderr, and exits non-zero. `nextStep` names the
-command that fixes it when there is one. `lexicon voice --json` is the exception:
+command that fixes it when there is one. A command line that does not parse
+(an unknown option or command, a missing argument, an invalid `--port`) does the
+same whenever `--json` is on it before any `--`: commander's message as `error`,
+`nextStep` naming that command's `--help`, and commander's exit code (1).
+`lexicon voice --json` is the exception:
 its failures are on stderr with exit codes 1 to 3.
 
 ## Register the MCP server

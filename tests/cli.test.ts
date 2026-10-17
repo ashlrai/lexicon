@@ -1758,6 +1758,43 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: commander usage errors (unknown option, invalid --port, missing
+  // argument) never printed JSON, so `lexicon add --json --bogus` left a
+  // script parsing an empty stdout.
+  it('a commander usage error under --json prints { ok: false, error, nextStep } with commander\'s exit code', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-usage-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const cases: [string[], string, string][] = [
+        [['add', 'Foo', '--bogus', '--json'], "unknown option '--bogus'", 'lexicon add --help'],
+        [['serve', '--port', 'nope', '--json'], "option '--port <n>' argument 'nope' is invalid", 'lexicon serve --help'],
+        [['add', '--json'], "missing required argument 'canonical'", 'lexicon add --help'],
+        [['pack', 'add', '--json'], "missing required argument 'name'", 'lexicon pack add --help'],
+        [['nope', '--json'], "unknown command 'nope'", 'lexicon --help'],
+      ];
+      for (const [args, error, help] of cases) {
+        const r = lexicon([...args, '--cwd', tmp], globalPath);
+        expect(r.status, args.join(' ')).toBe(1);
+        expect(JSON.parse(r.stdout)).toEqual({ ok: false, error: expect.stringContaining(error), nextStep: `see the usage: ${help}` });
+        expect(r.stderr).toContain(`error: ${error}`);
+      }
+      // Without --json (or with it only after `--`) nothing changes: stdout stays empty.
+      const plain = lexicon(['add', 'Foo', '--bogus', '--cwd', tmp], globalPath);
+      expect(plain.status).toBe(1);
+      expect(plain.stdout).toBe('');
+      expect(plain.stderr).toContain("error: unknown option '--bogus'");
+      const quoted = lexicon(['add', 'Foo', '--bogus', '--cwd', tmp, '--', '--json'], globalPath);
+      expect(quoted.status).toBe(1);
+      expect(quoted.stdout).toBe('');
+      // Help and version are not errors.
+      const help = lexicon(['add', '--help', '--json'], globalPath);
+      expect(help.status).toBe(0);
+      expect(help.stdout).toContain('Usage: lexicon add');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
   it('a --json command that throws prints { ok: false, error, nextStep? } on stdout with exit 1', async () => {
     const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
