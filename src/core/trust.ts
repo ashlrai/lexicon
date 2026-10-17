@@ -195,7 +195,7 @@ export async function isTrusted(projectFile: LexiconFile, opts: StoreOptions = {
 export async function trustProject(projectPath: string, opts: StoreOptions = {}): Promise<TrustEntry> {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
-  if (sha256 === undefined) throw new Error(`trustProject: cannot read ${projectPath}`);
+  if (sha256 === undefined) throw new Error(`cannot read the project lexicon at ${projectPath}`);
   return withTrustLock(async () => {
     const registry = await readTrustRegistry(opts);
     const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };

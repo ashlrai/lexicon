@@ -27,6 +27,8 @@ Decide what to do from the arguments:
    `assemblyai`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`. If the format is missing or unknown, list the valid ones instead.
 
 5. **`remove <canonical>`** - call `remove_term` and confirm whether it was found.
+   `remove <alias> from <canonical>` - call `remove_term` with `alias` to drop just
+   that alias. If the result has `foundIn`, retry with that `scope`.
 
 6. **`learn <heard> -> <meant>`** (also `learn <heard> => <meant>` or a sentence
    such as `learn it's Ashlr.AI not Ashler`) - call `learn_correction` with

@@ -45,6 +45,7 @@ import {
   readHitsFor,
   readProjectHits,
   recordHits,
+  removeAlias,
   removeTerm,
   resolvePaths,
   writeLexiconFile,
@@ -603,6 +604,11 @@ describe('addTerm', () => {
   it('rejects an empty canonical', async () => {
     await expect(addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath })).rejects.toThrow(/canonical/);
   });
+
+  it('names the problem, not the internal function, in its errors', async () => {
+    const err = await addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('canonical must not be empty');
+  });
 });
 
 describe('removeTerm', () => {
@@ -630,6 +636,77 @@ describe('removeTerm', () => {
     await addTerm({ canonical: 'Only', aliases: [] }, { cwd: nested, globalPath });
     expect(await removeTerm('Only', { cwd: nested, globalPath, scope: 'project' })).toBe(false);
     expect(await removeTerm('Only', { cwd: nested, globalPath, scope: 'global' })).toBe(true);
+  });
+});
+
+describe('removeAlias', () => {
+  it('removes one alias and leaves the term and its other aliases alone', async () => {
+    const { nested } = await makeRepo();
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'], notes: 'my company' }, { cwd: nested, globalPath });
+    const result = await removeAlias('ashlr.ai', 'ASHLER', { cwd: nested, globalPath });
+    expect(result.term.canonical).toBe('Ashlr.AI');
+    expect(result.term.aliases).toEqual(['Ashlar']);
+    expect(result.files.map((f) => f.path)).toEqual([globalPath]);
+    const term = findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Ashlr.AI');
+    expect(term).toMatchObject({ aliases: ['Ashlar'], notes: 'my company' });
+  });
+
+  it('removes the alias from every file whose copy of the term holds it, unless a scope is given', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await addTerm({ canonical: 'Shared', aliases: ['shard', 'g'] }, { cwd: nested, globalPath });
+    await addTerm({ canonical: 'shared', aliases: ['shard', 'p'] }, { cwd: nested, globalPath, scope: 'project' });
+
+    const scoped = await removeAlias('Shared', 'shard', { cwd: nested, globalPath, scope: 'global' });
+    expect(scoped.files.map((f) => f.path)).toEqual([globalPath]);
+    expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Shared')?.aliases).toEqual(['shard', 'p']);
+
+    await addTerm({ canonical: 'Shared', aliases: ['shard'] }, { cwd: nested, globalPath });
+    const both = await removeAlias('Shared', 'shard', { cwd: nested, globalPath });
+    expect(both.files.map((f) => f.path)).toEqual([projectPath, globalPath]);
+    const merged = findTerm((await loadLexicon({ cwd: nested, globalPath })).merged, 'Shared');
+    expect(merged?.aliases).toEqual(['p', 'g']);
+  });
+
+  it('re-pins a trusted project file rather than flipping it to changed', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await addTerm({ canonical: 'Kubectl', aliases: ['cube control', 'cube cuddle'] }, { cwd: nested, globalPath, scope: 'project' });
+    await removeAlias('Kubectl', 'cube cuddle', { cwd: nested, globalPath, scope: 'project' });
+    const loaded = await loadLexicon({ cwd: nested, globalPath });
+    expect(loaded.projectTrust).toBe('trusted');
+    expect(findTerm(loaded.merged, 'Kubectl')?.aliases).toEqual(['cube control']);
+    expect(Object.keys((await readTrustRegistry({ globalPath })).trusted)).toEqual([projectPath]);
+  });
+
+  it('refuses to rewrite an untrusted project file', async () => {
+    const { root, nested } = await makeRepo();
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await writeLexiconFile({
+      path: projectPath,
+      scope: 'project',
+      lexicon: { version: 1, terms: [{ canonical: 'Kubectl', aliases: ['cube control'] }] },
+      exists: false,
+    });
+    const before = await fs.readFile(projectPath);
+    await expect(removeAlias('Kubectl', 'cube control', { cwd: nested, globalPath })).rejects.toThrow(ProjectTrustError);
+    expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
+  });
+
+  it('says clearly when the term or the alias is unknown, and writes nothing', async () => {
+    const { nested } = await makeRepo();
+    await addTerm({ canonical: 'Hetzner', aliases: ['Hetsner'] }, { cwd: nested, globalPath });
+    const before = await fs.readFile(globalPath);
+    await expect(removeAlias('Nope', 'x', { cwd: nested, globalPath })).rejects.toThrow('no term "Nope" in the global or project lexicon');
+    await expect(removeAlias('Hetzner', 'x', { cwd: nested, globalPath, scope: 'project' })).rejects.toThrow(
+      'no term "Hetzner" in the project lexicon',
+    );
+    await expect(removeAlias('Hetzner', 'Hetsnr', { cwd: nested, globalPath })).rejects.toThrow(
+      '"Hetsnr" is not an alias of "Hetzner"',
+    );
+    await expect(removeAlias('Hetzner', 'hetzner', { cwd: nested, globalPath })).rejects.toThrow(/canonical spelling/);
+    await expect(removeAlias('Hetzner', '  ', { cwd: nested, globalPath })).rejects.toThrow('alias must not be empty');
+    expect(Buffer.compare(await fs.readFile(globalPath), before)).toBe(0);
   });
 });
 

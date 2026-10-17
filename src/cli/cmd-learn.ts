@@ -9,10 +9,11 @@ import type { Correction, LexiconStats, TermScope } from '../core/index.js';
 import { fail, line, renderTable, resolveCwd, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
+/** On stderr: it follows an error, and stdout must stay parseable under --json. */
 function usageHint(io: IO): void {
-  line(io, 'usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI');
-  line(io, '       lexicon learn --from "<sentence>"  supported phrasings:');
-  for (const example of CORRECTION_EXAMPLES) line(io, `         ${example}`);
+  io.stderr('usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI\n');
+  io.stderr('       lexicon learn --from "<sentence>"  supported phrasings:\n');
+  for (const example of CORRECTION_EXAMPLES) io.stderr(`         ${example}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     io.stderr(
       `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
-    line(io, `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`);
+    io.stderr(`run: lexicon learn <heard> ${JSON.stringify(correction.meant)}\n`);
     return 1;
   }
 
