@@ -1447,6 +1447,16 @@ describe('runDoctorReport', () => {
         expect(report.nextStep).toContain('trust_project with action "trust"');
         expect(report.nextStep).toContain('`npx @ashlr/lexicon trust`');
         expect(report.nextStep).not.toMatch(bareCommand);
+        // The check names trust_project too, not `then run: lexicon trust`.
+        const check = report.checks.find((c) => c.message.startsWith('project lexicon is untrusted'));
+        expect(check?.message).toBe(
+          'project lexicon is untrusted and not merged: /tmp/proj/.lexicon.yaml (review it, then call trust_project with action "trust", which asks the user directly)',
+        );
+        vi.mocked(core.isTrusted).mockResolvedValue('changed');
+        const changed = await runDoctorReport({ audience: 'mcp' }, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
+        expect(changed.checks.find((c) => c.message.startsWith('project lexicon content changed'))?.message).toBe(
+          'project lexicon content changed since trusted; not merged (call trust_project with action "trust", which asks the user directly)',
+        );
       });
 
       it('rewrites the run hint of the first failure and of an unreadable file', async () => {
@@ -1457,8 +1467,16 @@ describe('runDoctorReport', () => {
         expect(failing.nextStep).toMatch(/^Fix the first failure: lexicon MCP server not registered with claude/);
         expect(failing.nextStep).toContain('call install_client with client "claude"');
         expect(failing.nextStep).not.toMatch(bareCommand);
-        // The check itself is unchanged: `checks` is the same list the CLI prints.
-        expect(failing.checks.some((c) => c.message.includes('(run: lexicon install claude --apply)'))).toBe(true);
+        // Regression: the checks kept the CLI's "(run: lexicon ...)" hints over
+        // MCP. Every check is phrased for the agent; the CLI's are unchanged.
+        expect(failing.checks.some((c) => c.message.includes('(call install_client with client "claude"'))).toBe(true);
+        for (const check of failing.checks) expect(check.message).not.toMatch(bareCommand);
+        expect(failing.checks.some((c) => c.message.includes('otherwise call install_client with client "claude"'))).toBe(true);
+        expect(failing.checks.some((c) => c.message.includes('keeps the local API up: `lexicon serve --install` (or `npx @ashlr/lexicon serve --install`)'))).toBe(true);
+        const cli = await runDoctorReport({}, deps);
+        expect(cli.checks.some((c) => c.message.includes('(run: lexicon install claude --apply)'))).toBe(true);
+        expect(cli.checks.some((c) => c.message.includes('otherwise run: lexicon install claude --apply)'))).toBe(true);
+        expect(cli.checks.length).toBe(failing.checks.length);
 
         vi.mocked(core.readLexiconFile).mockRejectedValue(new Error(`Failed to parse lexicon YAML at ${state.globalPath}: bad`));
         const broken = await runDoctorReport({ audience: 'mcp' }, deps);

@@ -62252,14 +62252,19 @@ function parseReason(error62, filePath, max = 110) {
 function editCommand(scope) {
   return scope === "project" ? "lexicon edit --project" : "lexicon edit";
 }
+function mcpCommandHint(commands) {
+  const install = /^lexicon install (\S+) --apply$/.exec(commands);
+  if (install) return `call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms`;
+  if (commands === "lexicon init") return "call setup_lexicon; it previews first, apply: true once the user confirms";
+  if (commands === "lexicon trust") return 'call trust_project with action "trust", which asks the user directly';
+  const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
+  return `ask the user to run ${steps.join(", then ")}`;
+}
 function mcpRunHints(message) {
-  return message.replace(/\(run: (lexicon [^)]+)\)/g, (_all, commands) => {
-    const install = /^lexicon install (\S+) --apply$/.exec(commands);
-    if (install) return `(call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms)`;
-    if (commands === "lexicon init") return "(call setup_lexicon; it previews first, apply: true once the user confirms)";
-    const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
-    return `(ask the user to run ${steps.join(", then ")})`;
-  });
+  return message.replace(
+    /\(run: (lexicon [^)]+)\)|\brun:? `?(lexicon [^)`;]+?)`?(?: again)?(?=[)`;]|$)|: (lexicon serve --install)(?=\))/g,
+    (_all, paren, inline, bare) => paren !== void 0 ? `(${mcpCommandHint(paren)})` : inline !== void 0 ? mcpCommandHint(inline) : `: ${cliCommand((bare ?? "").replace(/^lexicon /, ""))}`
+  );
 }
 function summarize(checks, state, audience = "cli") {
   const mcp = audience === "mcp";
@@ -62291,8 +62296,9 @@ function summarize(checks, state, audience = "cli") {
       ready: false,
       summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? "" : "s"} failed: ${fails[0].message}`,
       // Every failing message ends in its own "(run: ...)" hint, so the first
-      // failure carries its fix with it.
-      nextStep: `Fix the first failure: ${mcp ? mcpRunHints(fails[0].message) : fails[0].message}`
+      // failure carries its fix with it (for `mcp`, already rewritten by
+      // runDoctorReport along with every other check).
+      nextStep: `Fix the first failure: ${fails[0].message}`
     };
   }
   if (!state.wired) {
@@ -62503,6 +62509,7 @@ async function runDoctorReport(opts, deps = {}) {
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
+  if (opts.audience === "mcp") for (const check2 of checks) check2.message = mcpRunHints(check2.message);
   const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
   return {
     ok: !checks.some((c) => c.level === "fail"),

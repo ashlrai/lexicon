@@ -357,19 +357,40 @@ function editCommand(scope: TermScope): string {
 export type DoctorAudience = 'cli' | 'mcp';
 
 /**
+ * What an agent does instead of running `commands` (one or more `lexicon ...`
+ * commands joined by `&&`): installing a client is the `install_client` tool,
+ * creating the lexicon is `setup_lexicon`, trusting the project file is
+ * `trust_project`, and anything else is a command the user runs, named with
+ * its npx form. A clause without parentheses, so it reads inside one.
+ */
+function mcpCommandHint(commands: string): string {
+  const install = /^lexicon install (\S+) --apply$/.exec(commands);
+  if (install) return `call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms`;
+  if (commands === 'lexicon init') return 'call setup_lexicon; it previews first, apply: true once the user confirms';
+  if (commands === 'lexicon trust') return 'call trust_project with action "trust", which asks the user directly';
+  const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, '')));
+  return `ask the user to run ${steps.join(', then ')}`;
+}
+
+/**
  * Rewrites the `(run: lexicon ...)` hint a failing check ends with for an
- * agent: installing a client is the `install_client` tool, creating the
- * lexicon is `setup_lexicon`, and anything else is a command the user runs,
- * named with its npx form.
+ * agent, and the other places a check names a `lexicon` command
+ * (`then run: lexicon trust`, `run lexicon trust again`, `run \`lexicon
+ * serve\``, `keeps the local API up: lexicon serve --install`), so a
+ * plugin-only user's agent is never handed a bare command. Every check
+ * message goes through it for the `mcp` audience.
  */
 function mcpRunHints(message: string): string {
-  return message.replace(/\(run: (lexicon [^)]+)\)/g, (_all, commands: string) => {
-    const install = /^lexicon install (\S+) --apply$/.exec(commands);
-    if (install) return `(call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms)`;
-    if (commands === 'lexicon init') return '(call setup_lexicon; it previews first, apply: true once the user confirms)';
-    const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, '')));
-    return `(ask the user to run ${steps.join(', then ')})`;
-  });
+  // One pass, so a rewritten hint ("ask the user to run `lexicon ...`") is never rewritten again.
+  return message.replace(
+    /\(run: (lexicon [^)]+)\)|\brun:? `?(lexicon [^)`;]+?)`?(?: again)?(?=[)`;]|$)|: (lexicon serve --install)(?=\))/g,
+    (_all, paren: string | undefined, inline: string | undefined, bare: string | undefined) =>
+      paren !== undefined
+        ? `(${mcpCommandHint(paren)})`
+        : inline !== undefined
+          ? mcpCommandHint(inline)
+          : `: ${cliCommand((bare ?? '').replace(/^lexicon /, ''))}`,
+  );
 }
 
 /**
@@ -428,8 +449,9 @@ function summarize(
       ready: false,
       summary: `Lexicon has ${counts} but ${fails.length} check${fails.length === 1 ? '' : 's'} failed: ${fails[0].message}`,
       // Every failing message ends in its own "(run: ...)" hint, so the first
-      // failure carries its fix with it.
-      nextStep: `Fix the first failure: ${mcp ? mcpRunHints(fails[0].message) : fails[0].message}`,
+      // failure carries its fix with it (for `mcp`, already rewritten by
+      // runDoctorReport along with every other check).
+      nextStep: `Fix the first failure: ${fails[0].message}`,
     };
   }
   if (!state.wired) {
@@ -739,6 +761,9 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
+  // For an agent every check's hint names the tool or the npx form, as
+  // `nextStep` does; `lexicon doctor` prints the checks unchanged.
+  if (opts.audience === 'mcp') for (const check of checks) check.message = mcpRunHints(check.message);
   const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
   return {
     ok: !checks.some((c) => c.level === 'fail'),
