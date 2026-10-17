@@ -52,6 +52,7 @@ lexicon pack validate ./my-pack.yaml                                 # the publi
 
 A community pack installs through the same merge rules as the vendored four, with three extra guarantees, because installed terms reach model context on every hooked prompt:
 
+- **https only.** An index and its pack files are fetched over `https://` (plain `http://` only from this machine, `localhost` or `127.0.0.1`), a redirect to plain `http://` elsewhere is refused, and every index or pack file over 2 MB is refused. The index is what vouches for each pack's checksum, so over plain http anyone on the path could swap both.
 - **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `<global-lexicon-dir>/registry/registry.json`. `pack update` re-checks it.
 - **Preview before the first write.** `pack add <author>/<name>` shows the whole term list and asks (default no; `--yes` off a terminal). With `--json` and no `--yes` it prints that preview and writes nothing. In a list such as `pack add developer example/cardiology`, a community pack that is previewed or declined writes nothing but does not stop the others, and the output reports each pack's outcome (under `--json`, one array in argument order). A pack that fails (unknown, a failed install or fetch) stops the run with exit 1: the output names it (under `--json`, a last `{ ref, ok: false, error }` entry, or that object for a single ref), and the packs after it are not attempted or reported. Updates are re-approved one by one, never silent.
 - **The ordinary-word guard, enforced.** `lexicon pack validate` runs the publish bar: schema, author present, and no canonical or alias that is an everyday English word. Run it in CI on the pack's own repo.
@@ -81,7 +82,7 @@ Pack files are read from the package's `packs/` directory only, and the name is 
 
 1. Write the pack YAML: the same schema as above, plus `author` (required for community packs) and `homepage`.
 2. Run `lexicon pack validate <file>` until it is clean.
-3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`/`file://`, or relative to the index).
+3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`, or relative to the index; an index read from a local path or `file://` may also name an absolute local path or `file://` URL, but an index fetched over `https://` may not, so a remote index can never make `lexicon` read a file on your machine).
 4. Host the index and the pack files anywhere a URL reaches. Point users at `lexicon pack search --registry <your index>`.
 
 ## See also

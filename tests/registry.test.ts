@@ -8,7 +8,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  MAX_LEXICON_BYTES,
+  MAX_REGISTRY_FILE_BYTES,
   applyRegistryUpdate,
+  assertSecureRegistryUrl,
   cachedPackPath,
   downloadPack,
   findRegistryEntry,
@@ -130,6 +133,133 @@ describe('loadRegistryIndex', () => {
     expect(entry.ref).toBe('example/cardiology');
     expect(entry.author).toBe('example');
     expect(resolvePackUrl(entry, base)).toBe(path.join(dir, 'cardiology.yaml'));
+  });
+
+  // Catches: an index fetched over https could name an absolute local path,
+  // and downloadPack read it from this machine (`/dev/stdin` hung the MCP
+  // server on its own protocol stream; any file's sha256 came back in the
+  // checksum error). Here the local file even matches the checksum, so the
+  // old code returned its bytes.
+  it('a remote index cannot name a local file', async () => {
+    const local = path.join(dir, 'cardiology.yaml');
+    const checksum = sha256Hex(readFileSync(local));
+    const remoteIndex = (url: string) =>
+      [
+        'version: 1',
+        'packs:',
+        '  - author: example',
+        '    name: cardiology',
+        '    title: Cardiology terms',
+        '    terms: 2',
+        '    aliases: 3',
+        `    checksum: ${checksum}`,
+        `    url: ${JSON.stringify(url)}`,
+        '',
+      ].join('\n');
+    const fetchBytes = vi.fn(async () => Buffer.from(PACK_V1));
+    for (const url of [local, `file://${local}`, 'C:\\Windows\\win.ini', '//other.example/x.yaml']) {
+      const fetchText = vi.fn(async () => remoteIndex(url));
+      const { index, base } = await loadRegistryIndex('https://registry.example/index.yaml', { fetchText });
+      const entry = entryFor(index);
+      expect(() => resolvePackUrl(entry, base)).toThrow(/a remote index may only name https:\/\/ URLs or paths relative to itself/);
+      await expect(downloadPack(entry, base, { fetchBytes })).rejects.toThrow(/names a local file/);
+    }
+    expect(fetchBytes).not.toHaveBeenCalled();
+    // Relative paths and https URLs still resolve against the remote index.
+    const fetchText = vi.fn(async () => remoteIndex('./packs/cardiology.yaml'));
+    const { index, base } = await loadRegistryIndex('https://registry.example/v1/index.yaml', { fetchText });
+    expect(resolvePackUrl(entryFor(index), base)).toBe('https://registry.example/v1/packs/cardiology.yaml');
+  });
+
+  // Catches: plain http:// was accepted for an index and for pack files, and
+  // the index is what vouches for each pack's checksum, so anyone on the path
+  // could swap both and land any terms in the lexicon.
+  it('refuses plain http:// for an index or a pack file, except from this machine', async () => {
+    const fetchText = vi.fn(async () => 'version: 1\npacks: []\n');
+    await expect(loadRegistryIndex('http://registry.example/index.yaml', { fetchText })).rejects.toThrow(/fetched over https:\/\/ only/);
+    expect(fetchText).not.toHaveBeenCalled();
+    const indexText = [
+      'version: 1', 'packs:', '  - author: example', '    name: cardiology', '    title: Cardiology terms',
+      '    terms: 2', '    aliases: 3', `    checksum: ${sha256Hex(PACK_V1)}`, '    url: http://cdn.example/cardiology.yaml', '',
+    ].join('\n');
+    const { index, base } = await loadRegistryIndex('https://registry.example/index.yaml', { fetchText: async () => indexText });
+    const fetchBytes = vi.fn(async () => Buffer.from(PACK_V1));
+    await expect(downloadPack(entryFor(index), base, { fetchBytes })).rejects.toThrow(/fetched over https:\/\/ only/);
+    expect(fetchBytes).not.toHaveBeenCalled();
+    for (const ok of ['https://registry.example/i.yaml', 'http://127.0.0.1:8080/i.yaml', 'http://localhost/i.yaml', 'http://[::1]:9/i.yaml']) {
+      expect(() => assertSecureRegistryUrl(ok)).not.toThrow();
+    }
+    for (const bad of ['http://registry.example/i.yaml', 'http://127.0.0.1.evil.example/i.yaml', 'ftp://registry.example/i.yaml']) {
+      expect(() => assertSecureRegistryUrl(bad)).toThrow(/https:\/\/ only/);
+    }
+  });
+
+  it('a local index may name a file:// URL', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    const entry = { ...entryFor(index), url: `file://${path.join(dir, 'cardiology.yaml')}` };
+    expect(resolvePackUrl(entry, base)).toBe(path.join(dir, 'cardiology.yaml'));
+    expect((await downloadPack(entry, base)).toString('utf8')).toBe(PACK_V1);
+  });
+
+  // Catches: registry reads had no size limit. The default fetch buffered a
+  // whole response (a hostile registry could stream until the process died),
+  // and a local index path (MCP list_packs takes one from the model) of
+  // /dev/zero read until Node gave up. Bounded by a race so a regression
+  // fails instead of stalling the suite; the server stops at 32 MB.
+  async function within<T>(p: Promise<T>, ms: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([p, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`still reading after ${ms}ms`)), ms); })]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  it('caps registry files at the lexicon size limit', () => {
+    expect(MAX_REGISTRY_FILE_BYTES).toBe(MAX_LEXICON_BYTES);
+  });
+
+  it('refuses a registry response over the size limit without buffering it', async () => {
+    const http = await import('node:http');
+    let sent = 0;
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/yaml' }); // no Content-Length: chunked
+      const chunk = Buffer.alloc(64 * 1024, 0x61);
+      const pump = (): void => {
+        while (sent < 32 * 1024 * 1024) {
+          sent += chunk.length;
+          if (!res.write(chunk)) { res.once('drain', pump); return; }
+        }
+        res.end();
+      };
+      res.on('close', () => { sent = Number.POSITIVE_INFINITY; });
+      pump();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      await expect(within(loadRegistryIndex(`http://127.0.0.1:${port}/index.yaml`), 10_000)).rejects.toThrow(/exceeds the \d+ byte limit/);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a local index or pack file that is a device', async () => {
+    await expect(within(loadRegistryIndex('/dev/zero'), 1_500)).rejects.toThrow(/not a regular file/);
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    await expect(within(downloadPack({ ...entryFor(index), url: '/dev/zero' }, base), 1_500)).rejects.toThrow(/not a regular file/);
+  });
+
+  it('does not quote the source of an index that fails to parse', async () => {
+    const file = path.join(dir, 'secret.yaml');
+    writeFileSync(file, 'api_key: sk-THIS-IS-SECRET-VALUE\n  bad: [indent\n');
+    const err = await loadRegistryIndex(file).catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/invalid registry index/);
+    expect((err as Error).message).not.toContain('sk-THIS-IS-SECRET-VALUE');
   });
 
   it('loads a file:// url', async () => {
