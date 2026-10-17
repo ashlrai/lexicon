@@ -4,10 +4,12 @@
  * discovery. Split out of server.ts so each `tools/*.ts` module can be read on
  * its own; server.ts keeps the resources, the prompts and the wiring.
  */
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { resolvePaths } from '../core/index.js';
 import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -27,6 +29,12 @@ export interface ToolContext {
    * answers `roots/list`.
    */
   readonly cwd: string;
+  /**
+   * Directories the client named as MCP roots (`file://` roots that exist),
+   * empty until it answers `roots/list` or when it has no roots. Read inside a
+   * handler, as with `cwd`.
+   */
+  readonly roots: readonly string[];
   load(): Promise<LoadedLexicon>;
   /** normalize_transcript's matching budget in ms (MCP_NORMALIZE_BUDGET_MS unless overridden). */
   readonly normalizeBudgetMs: number;
@@ -141,6 +149,71 @@ export function withLexiconFix(message: string): string {
   return `${message}\nNothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ''))}, then check it with lexicon_doctor.`;
 }
 
+
+/**
+ * Environment variable a human sets in the MCP server's env to let the
+ * repo-reading tools (harvest_repo, suggest_terms) read more directories,
+ * separated by the platform path delimiter (`:`, or `;` on Windows).
+ */
+export const HARVEST_ROOTS_ENV = 'LEXICON_HARVEST_ROOTS';
+
+function realOrResolved(dir: string): string {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return resolve(dir);
+  }
+}
+
+/**
+ * Directories a model-chosen `path` may name: the server's directory and the
+ * git root above it, the client's MCP roots, and `$LEXICON_HARVEST_ROOTS`.
+ * Each is realpath'd (or just resolved when it does not exist).
+ */
+export function readableRoots(ctx: Pick<ToolContext, 'cwd' | 'roots'>, env: NodeJS.ProcessEnv = process.env): string[] {
+  const dirs = [ctx.cwd, ...ctx.roots];
+  const project = resolvePaths({ cwd: ctx.cwd }).project;
+  if (project) dirs.push(dirname(project));
+  for (const raw of (env[HARVEST_ROOTS_ENV] ?? '').split(delimiter)) {
+    const dir = raw.trim();
+    if (dir && isAbsolute(dir)) dirs.push(dir);
+  }
+  return [...new Set(dirs.map(realOrResolved))];
+}
+
+/** `dir` as one shell word, for a command the user copies into a terminal. */
+export function shellWord(dir: string): string {
+  return /^[\w@%+=:,./-]+$/.test(dir) ? dir : `'${dir.replace(/'/g, `'\\''`)}'`;
+}
+
+function isWithin(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
+}
+
+/**
+ * The real path of `path` (resolved against the server directory) when it
+ * lies inside one of `readableRoots`; otherwise throws, naming the CLI
+ * command the user can run on it themselves. Symlinks are resolved first, so
+ * a link inside a root that points outside it is refused. A model picks
+ * `path`, so without this a tool would read whatever directory it named.
+ */
+export function containedPath(ctx: Pick<ToolContext, 'cwd' | 'roots'>, path: string, cliArgs: (dir: string) => string, env: NodeJS.ProcessEnv = process.env): string {
+  const requested = resolve(ctx.cwd, path);
+  let real: string;
+  try {
+    real = realpathSync(requested);
+  } catch {
+    throw new Error(`${JSON.stringify(path)} does not exist (resolved from ${ctx.cwd}); nothing was read.`);
+  }
+  const roots = readableRoots(ctx, env);
+  if (roots.some((root) => isWithin(real, root))) return real;
+  throw new Error(
+    `${JSON.stringify(path)} is outside the directories this server may read (${roots.join(', ')}), so nothing was read. ` +
+      `The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, ` +
+      `or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`,
+  );
+}
 
 /** Runs a tool body and converts any thrown error into an isError result. */
 export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult): Promise<CallToolResult> {

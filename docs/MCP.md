@@ -33,7 +33,7 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 | `add_term` | `canonical`, `aliases?`, `phonetic?`, `category?`, `notes?`, `never?`, `scope?` | The stored term, its file path and `created`. Aliases are auto-suggested when omitted |
 | `remove_term` | `canonical`, `alias?`, `scope?` | Whether it existed; when not, a `note` (and `foundIn`) saying which `scope` holds it; when a copy is left in the other lexicon file, `stillIn` and a `note` naming the `scope` that removes it; when the untrusted project lexicon has a copy, `untrustedProject` { path, trust } (that file is never edited). With `alias`, removes only that alias and returns the aliases the term keeps, plus `untrustedProject` and a `note` when the untrusted project lexicon's copy of the term holds that alias too; an unknown term or alias is an error, and a refused untrusted project copy names the `scope: "global"` call |
 | `list_terms` | `query?`, `category?` | Matching terms, counts per file, the paths in use, and a note when a project file was skipped as untrusted |
-| `harvest_repo` | `path?`, `limit?`, `minCount?`, `add?` | Candidates. `add: true` writes them to that repo's project lexicon and adds `added` and `failures` (plus a `note` when any write failed); when none could be written the result is an error carrying the same fields |
+| `harvest_repo` | `path?`, `limit?`, `minCount?`, `add?` | Candidates. `path` must be inside the server directory, its git root, a client root or a directory listed in `LEXICON_HARVEST_ROOTS` (otherwise an error naming `lexicon harvest <path>`). `add: true` writes them to that repo's project lexicon without trusting it and adds `added`, `failures`, `path`, `trusted: false` and a `nextStep` to relay (run `lexicon trust`; plus a `note` when any write failed); when none could be written the result is an error carrying the same fields |
 | `export_lexicon` | `format`, `categories?`, `limit?` | The export as text |
 | `learn_correction` | `heard`, `meant`, `scope?` | The term the alias was added to, `created`, `aliasAdded`, a one-line summary |
 | `suggest_canonical` | `heard` (at most 60 characters) | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?"; `skippedProject` when an untrusted project lexicon was left out |
@@ -68,7 +68,9 @@ A lexicon file that does not parse fails every tool, resource and prompt that re
 
 ## Writes and previews
 
-Project-scope writes (`add_term`, `learn_correction`, `apply_suggestion`, `import_dictionary`, `harvest_repo` with `add: true`) go through the same [trust gate](TRUST.md) as the CLI and return an error instead of touching an unreviewed `.lexicon.yaml`.
+Project-scope writes (`add_term`, `learn_correction`, `apply_suggestion`, `import_dictionary`, `harvest_repo` with `add: true`) go through the same [trust gate](TRUST.md) as the CLI and return an error instead of touching an unreviewed `.lexicon.yaml`. The exception is `harvest_repo` with `add: true`: it never pins the file it writes, so the names a model chose apply only after you review the file and run `lexicon trust`.
+
+A tool that reads a directory the model names (`harvest_repo`'s `path`) reads only inside the server directory and its git root, the client's MCP roots, and the absolute directories you list in `LEXICON_HARVEST_ROOTS` (separated by `:`, or `;` on Windows) in the server's environment. Symlinks are resolved first. Anything else is refused with the `lexicon harvest <path>` command you can run yourself.
 
 `setup_lexicon`, `install_client` and `trust_project` preview by default and only write when the agent passes `apply: true` or `action: 'trust'` after showing you the preview.
 

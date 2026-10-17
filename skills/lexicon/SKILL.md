@@ -131,7 +131,8 @@ note says a project file was skipped as untrusted or changed:
   each on one line ("add 'ashlur' to Ashlr.AI, heard 4 times"). Apply only
   accepted ones, one `apply_suggestion { suggestion }` each, object as received.
 - **New repo.** No `.lexicon.yaml`? `harvest_repo` without `add` previews
-  candidates; add them with `add: true` only after a yes.
+  candidates; add them with `add: true` only after a yes. The file it writes
+  stays untrusted: relay its `nextStep` (the user runs `lexicon trust`).
 - **Existing dictionary.** `import_dictionary { path | content, dryRun: true }`,
   show what would be added, then run it without `dryRun`.
 - **Non-MCP surfaces** (browser extension, Claude Desktop, Shortcuts, menu bar

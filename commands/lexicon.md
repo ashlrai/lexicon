@@ -19,7 +19,8 @@ Decide what to do from the arguments:
 3. **`harvest`** (optionally followed by a path) - call `harvest_repo` with that
    path (or none for the current repo) and no `add`. Show the candidates with their
    counts and suggested aliases, then ask whether to save them. If the user says
-   yes, call `harvest_repo` again with `add: true`.
+   yes, call `harvest_repo` again with `add: true` and relay its `nextStep`: the file
+   is not trusted until the user runs `lexicon trust` (or `npx @ashlr/lexicon trust`).
 
 4. **`export <format>`** - call `export_lexicon` with that format and print the
    returned text verbatim inside a fenced code block. Valid formats: `claude-md`,

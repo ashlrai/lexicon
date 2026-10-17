@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve4.call(this, root, ref);
+      let _sch = resolve5.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3040,7 +3040,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve4(root, ref) {
+    function resolve5(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3870,7 +3870,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve4(baseURI, relativeURI, options) {
+    function resolve5(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3903,49 +3903,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved2, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative = parse3(serialize(relative, options), options);
+        relative2 = parse3(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3953,7 +3953,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -4239,7 +4239,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve4,
+      resolve: resolve5,
       resolveComponent,
       equal,
       serialize,
@@ -11205,10 +11205,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep, value } = collItem;
+        const { start, key, sep: sep2, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep?.[0],
+          next: key ?? sep2?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -11222,7 +11222,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep) {
+          if (!keyProps.anchor && !keyProps.tag && !sep2) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map2.comment)
@@ -11246,7 +11246,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map2.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep ?? [], {
+        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -11262,7 +11262,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -11353,7 +11353,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep = "";
+        let sep2 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -11367,13 +11367,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep + cb;
-              sep = "";
+                comment += sep2 + cb;
+              sep2 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep += source;
+                sep2 += source;
               hasSpace = true;
               break;
             default:
@@ -11416,18 +11416,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep, value } = collItem;
+        const { start, key, sep: sep2, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep?.[0],
+          next: key ?? sep2?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep && !value) {
+          if (!props.anchor && !props.tag && !sep2 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -11481,8 +11481,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap3 && !sep && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
+        if (!isMap3 && !sep2 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -11494,7 +11494,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep ?? [], {
+          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -11505,8 +11505,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap3 && !props.found && ctx.options.strict) {
-              if (sep)
-                for (const st of sep) {
+              if (sep2)
+                for (const st of sep2) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -11523,7 +11523,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -11703,7 +11703,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep = "";
+      let sep2 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -11720,24 +11720,24 @@ var require_resolve_block_scalar = __commonJS({
           indent2 = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep + indent2.slice(trimIndent) + content;
-          sep = "\n";
+          value += sep2 + indent2.slice(trimIndent) + content;
+          sep2 = "\n";
         } else if (indent2.length > trimIndent || content[0] === "	") {
-          if (sep === " ")
-            sep = "\n";
-          else if (!prevMoreIndented && sep === "\n")
-            sep = "\n\n";
-          value += sep + indent2.slice(trimIndent) + content;
-          sep = "\n";
+          if (sep2 === " ")
+            sep2 = "\n";
+          else if (!prevMoreIndented && sep2 === "\n")
+            sep2 = "\n\n";
+          value += sep2 + indent2.slice(trimIndent) + content;
+          sep2 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep === "\n")
+          if (sep2 === "\n")
             value += "\n";
           else
-            sep = "\n";
+            sep2 = "\n";
         } else {
-          value += sep + content;
-          sep = " ";
+          value += sep2 + content;
+          sep2 = " ";
           prevMoreIndented = false;
         }
       }
@@ -11920,25 +11920,25 @@ var require_resolve_flow_scalar = __commonJS({
         trimBoth = /^[ \t]+|[ \t]+$/g;
       }
       let res = match[1].replace(trimEnd, "");
-      let sep = " ";
+      let sep2 = " ";
       let pos = line2.lastIndex;
       while (match = line2.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
-          if (sep === "\n")
-            res += sep;
+          if (sep2 === "\n")
+            res += sep2;
           else
-            sep = "\n";
+            sep2 = "\n";
         } else {
-          res += sep + lm;
-          sep = " ";
+          res += sep2 + lm;
+          sep2 = " ";
         }
         pos = line2.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep + (match?.[1] ?? "");
+      return res + sep2 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -12748,14 +12748,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep, value }) {
+    function stringifyItem({ start, key, sep: sep2, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep)
-        for (const st of sep)
+      if (sep2)
+        for (const st of sep2)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -13922,18 +13922,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep;
+          let sep2;
           if (scalar.end) {
-            sep = scalar.end;
-            sep.push(this.sourceToken);
+            sep2 = scalar.end;
+            sep2.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep = [this.sourceToken];
+            sep2 = [this.sourceToken];
           const map2 = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep }]
+            items: [{ start, key: scalar, sep: sep2 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map2;
@@ -14086,15 +14086,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep = it.sep;
-                  sep.push(this.sourceToken);
+                  const sep2 = it.sep;
+                  sep2.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep }]
+                    items: [{ start: start2, key, sep: sep2 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -14288,13 +14288,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep = fc.end.splice(1, fc.end.length);
-            sep.push(this.sourceToken);
+            const sep2 = fc.end.splice(1, fc.end.length);
+            sep2.push(this.sourceToken);
             const map2 = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep }]
+              items: [{ start, key: fc, sep: sep2 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map2;
@@ -18196,7 +18196,7 @@ var require_commander = __commonJS({
 });
 
 // src/mcp/server.ts
-var import_node_fs28 = __toESM(require_node_fs(), 1);
+var import_node_fs29 = __toESM(require_node_fs(), 1);
 var import_node_path31 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 
@@ -20210,8 +20210,8 @@ function emoji() {
 }
 var ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
 var ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
-var mac = (delimiter) => {
-  const escapedDelim = escapeRegex(delimiter ?? ":");
+var mac = (delimiter2) => {
+  const escapedDelim = escapeRegex(delimiter2 ?? ":");
   return new RegExp(`^(?:[0-9A-F]{2}${escapedDelim}){5}[0-9A-F]{2}$|^(?:[0-9a-f]{2}${escapedDelim}){5}[0-9a-f]{2}$`);
 };
 var cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
@@ -23267,7 +23267,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve4) {
+function isRecursive(inst, stack, resolve5) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -23277,7 +23277,7 @@ function isRecursive(inst, stack, resolve4) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve4);
+      const answer = isRecursive(child, stack, resolve5);
       if (answer > result)
         result = answer;
     }
@@ -23288,7 +23288,7 @@ function isRecursive(inst, stack, resolve4) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve4) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve5) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -23352,7 +23352,7 @@ function isRecursive(inst, stack, resolve4) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve4 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve5 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -45422,7 +45422,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error62) {
@@ -45439,7 +45439,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       const earlyReject = (error62) => {
         reject(error62);
       };
@@ -45517,7 +45517,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve4(parseResult.data);
+            resolve5(parseResult.data);
           }
         } catch (error62) {
           reject(error62);
@@ -45779,12 +45779,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve4, interval);
+      const timeoutId = setTimeout(resolve5, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -46915,7 +46915,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+      await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -47579,12 +47579,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve4) => {
+    return new Promise((resolve5) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve4();
+        resolve5();
       } else {
-        this._stdout.once("drain", resolve4);
+        this._stdout.once("drain", resolve5);
       }
     });
   }
@@ -47672,8 +47672,8 @@ function pathForModel(p, max = MODEL_PATH_MAX_CHARS) {
   const parts = clean.split(/[\\/]/).filter((part) => part !== "");
   let out = clean;
   if (parts.length > 3) {
-    const sep = clean.lastIndexOf("\\") > clean.lastIndexOf("/") ? "\\" : "/";
-    out = `\u2026${sep}${parts.slice(-3).join(sep)}`;
+    const sep2 = clean.lastIndexOf("\\") > clean.lastIndexOf("/") ? "\\" : "/";
+    out = `\u2026${sep2}${parts.slice(-3).join(sep2)}`;
   }
   const chars = Array.from(out);
   if (chars.length <= max) return out;
@@ -53546,7 +53546,7 @@ async function withFileLock(target, fn, opts = {}) {
   const tail = mine.then(ignore, ignore);
   queues.set(lockPath, tail);
   try {
-    return await new Promise((resolve4, reject) => {
+    return await new Promise((resolve5, reject) => {
       const timer = setTimeout(() => {
         if (started) return;
         abandoned = true;
@@ -53561,7 +53561,7 @@ async function withFileLock(target, fn, opts = {}) {
       mine.then(
         (value) => {
           clearTimeout(timer);
-          resolve4(value);
+          resolve5(value);
         },
         (err) => {
           clearTimeout(timer);
@@ -53692,7 +53692,7 @@ function isEexist(err) {
   return typeof err === "object" && err !== null && err.code === "EEXIST";
 }
 function sleep(ms) {
-  return new Promise((resolve4) => setTimeout(resolve4, ms));
+  return new Promise((resolve5) => setTimeout(resolve5, ms));
 }
 
 // src/util/bounded-read.ts
@@ -54458,7 +54458,8 @@ async function assertProjectWritable(projectPath, opts) {
 }
 async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
-  const targetPath = await resolveScopeWritePath(scope, opts);
+  const targetPath = opts.leaveUntrusted && scope === "project" ? projectWritePath(opts) : await resolveScopeWritePath(scope, opts);
+  const write = opts.leaveUntrusted ? (f) => writeLexiconFile(f) : (f) => writeAndTrust(f, opts);
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError("canonical must not be empty");
   const incoming = {
@@ -54478,7 +54479,7 @@ async function addTerm(term, opts = {}) {
       if (incoming.never?.length) {
         existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
       }
-      await writeAndTrust(file2, opts);
+      await write(file2);
       return { file: file2, term: existing, created: false };
     }
     if (existing) {
@@ -54490,7 +54491,7 @@ async function addTerm(term, opts = {}) {
       };
       const idx = file2.lexicon.terms.indexOf(existing);
       file2.lexicon.terms[idx] = replaced;
-      await writeAndTrust(file2, opts);
+      await write(file2);
       return { file: file2, term: replaced, created: false };
     }
     const created = {
@@ -54501,7 +54502,7 @@ async function addTerm(term, opts = {}) {
       createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
     };
     file2.lexicon.terms.push(created);
-    await writeAndTrust(file2, opts);
+    await write(file2);
     return { file: file2, term: created, created: true };
   });
 }
@@ -54639,11 +54640,13 @@ function findTerm(lexicon, canonical) {
   return lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
 }
 async function resolveScopeWritePath(scope, opts) {
-  const paths = resolvePaths(opts);
-  if (scope === "global") return paths.global;
-  const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
+  if (scope === "global") return resolvePaths(opts).global;
+  const projectPath = projectWritePath(opts);
   await assertProjectWritable(projectPath, opts);
   return projectPath;
+}
+function projectWritePath(opts) {
+  return resolvePaths(opts).project ?? defaultProjectPath(opts.cwd ?? process.cwd());
 }
 function candidatePaths(opts, scope) {
   const paths = resolvePaths(opts);
@@ -59923,6 +59926,7 @@ function demonstrate(lexicon, prefer = []) {
 }
 
 // src/mcp/shared.ts
+var import_node_fs12 = __toESM(require_node_fs());
 var import_node_path13 = __toESM(require_node_path());
 
 // src/cli/io.ts
@@ -60094,6 +60098,45 @@ function withLexiconFix(message) {
   if (!edit) return message;
   return `${message}
 Nothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ""))}, then check it with lexicon_doctor.`;
+}
+var HARVEST_ROOTS_ENV = "LEXICON_HARVEST_ROOTS";
+function realOrResolved(dir) {
+  try {
+    return (0, import_node_fs12.realpathSync)(dir);
+  } catch {
+    return (0, import_node_path13.resolve)(dir);
+  }
+}
+function readableRoots(ctx, env = process.env) {
+  const dirs = [ctx.cwd, ...ctx.roots];
+  const project = resolvePaths({ cwd: ctx.cwd }).project;
+  if (project) dirs.push((0, import_node_path13.dirname)(project));
+  for (const raw of (env[HARVEST_ROOTS_ENV] ?? "").split(import_node_path13.delimiter)) {
+    const dir = raw.trim();
+    if (dir && (0, import_node_path13.isAbsolute)(dir)) dirs.push(dir);
+  }
+  return [...new Set(dirs.map(realOrResolved))];
+}
+function shellWord(dir) {
+  return /^[\w@%+=:,./-]+$/.test(dir) ? dir : `'${dir.replace(/'/g, `'\\''`)}'`;
+}
+function isWithin(child, parent) {
+  const rel = (0, import_node_path13.relative)(parent, child);
+  return rel === "" || !(0, import_node_path13.isAbsolute)(rel) && rel !== ".." && !rel.startsWith(`..${import_node_path13.sep}`);
+}
+function containedPath(ctx, path27, cliArgs, env = process.env) {
+  const requested = (0, import_node_path13.resolve)(ctx.cwd, path27);
+  let real;
+  try {
+    real = (0, import_node_fs12.realpathSync)(requested);
+  } catch {
+    throw new Error(`${JSON.stringify(path27)} does not exist (resolved from ${ctx.cwd}); nothing was read.`);
+  }
+  const roots = readableRoots(ctx, env);
+  if (roots.some((root) => isWithin(real, root))) return real;
+  throw new Error(
+    `${JSON.stringify(path27)} is outside the directories this server may read (${roots.join(", ")}), so nothing was read. The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`
+  );
 }
 async function guarded(fn) {
   try {
@@ -60461,26 +60504,27 @@ var registerHarvestTools = (server, ctx) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml and trusts that file. That is a write inside the user's repository plus a trust decision, so show the candidate list and get a yes first. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.",
+      description: `Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without \`add\` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless \`add: true\`, which writes the candidates into the repo's .lexicon.yaml but does not trust it: the file applies only after the user reviews it and runs \`lexicon trust\` (or \`npx @ashlr/lexicon trust\`), so show the candidate list and get a yes first, then relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.`,
       inputSchema: {
-        path: external_exports.string().optional().describe("Repository root. Defaults to the server working directory."),
+        path: external_exports.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
         minCount: external_exports.number().int().positive().optional().describe("Minimum occurrences for a candidate (default 2)."),
-        add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon.")
+        add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon, left untrusted for the user to review.")
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
-      const root = path27 ? (0, import_node_path14.resolve)(ctx.cwd, path27) : ctx.cwd;
+      const root = path27 ? containedPath(ctx, path27, (dir) => `harvest ${shellWord(dir)}`) : ctx.cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
       });
       let added = 0;
+      let written;
       const failures = [];
       if (add) {
         for (const c of candidates) {
           try {
-            await addTerm(
+            const saved = await addTerm(
               {
                 canonical: c.canonical,
                 aliases: c.suggestedAliases,
@@ -60488,8 +60532,9 @@ var registerHarvestTools = (server, ctx) => {
                 source: c.source,
                 scope: "project"
               },
-              { cwd: root, scope: "project" }
+              { cwd: root, scope: "project", leaveUntrusted: true }
             );
+            written = saved.file.path;
             added += 1;
           } catch (err) {
             if (isProjectTrustError(err)) throw err;
@@ -60502,6 +60547,11 @@ var registerHarvestTools = (server, ctx) => {
         candidates,
         count: candidates.length,
         ...add ? { added, failures } : {},
+        ...written !== void 0 ? {
+          path: written,
+          trusted: false,
+          nextStep: `${added} name(s) were written to ${written}, which is not trusted, so they do not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
+        } : {},
         ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
@@ -60605,12 +60655,12 @@ var registerHarvestTools = (server, ctx) => {
 };
 
 // src/mcp/tools/trust.ts
-var import_node_fs12 = __toESM(require_node_fs());
+var import_node_fs13 = __toESM(require_node_fs());
 var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(cwd, path27) {
   const resolved2 = (0, import_node_path15.resolve)(cwd, path27);
   try {
-    if ((0, import_node_fs12.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
+    if ((0, import_node_fs13.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
   } catch {
   }
   return resolved2;
@@ -60736,22 +60786,22 @@ var registerTrustTools = (server, ctx) => {
 };
 
 // src/cli/commands.ts
-var import_node_fs21 = __toESM(require_node_fs());
+var import_node_fs22 = __toESM(require_node_fs());
 var import_node_path23 = __toESM(require_node_path());
 
 // src/cli/claude-settings.ts
-var import_node_fs15 = __toESM(require_node_fs());
+var import_node_fs16 = __toESM(require_node_fs());
 var import_node_child_process3 = __toESM(require_node_child_process());
 var import_node_os5 = __toESM(require_node_os());
 var import_node_path18 = __toESM(require_node_path());
 var import_node_url3 = __toESM(require_node_url());
 
 // src/cli/cli-entry.ts
-var import_node_fs14 = __toESM(require_node_fs());
+var import_node_fs15 = __toESM(require_node_fs());
 var import_node_path17 = __toESM(require_node_path());
 
 // src/util/which.ts
-var import_node_fs13 = __toESM(require_node_fs());
+var import_node_fs14 = __toESM(require_node_fs());
 var import_node_path16 = __toESM(require_node_path());
 var DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 var WELL_KNOWN_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
@@ -60768,7 +60818,7 @@ function candidateNames(bin, env, win) {
 }
 async function accessible(candidate, win) {
   try {
-    await import_node_fs13.promises.access(candidate, win ? import_node_fs13.constants.F_OK : import_node_fs13.constants.X_OK);
+    await import_node_fs14.promises.access(candidate, win ? import_node_fs14.constants.F_OK : import_node_fs14.constants.X_OK);
     return true;
   } catch {
     return false;
@@ -60798,7 +60848,7 @@ function findOnPathSync(bin, opts = {}) {
   for (const dir of pathDirs(env, win)) {
     for (const name of names) {
       const candidate = p.join(dir, name);
-      if ((0, import_node_fs13.existsSync)(candidate)) return candidate;
+      if ((0, import_node_fs14.existsSync)(candidate)) return candidate;
     }
   }
   return void 0;
@@ -60816,7 +60866,7 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
   for (const dir of extraDirsFor({}, platform)) {
     for (const name of names) {
       const candidate = p.join(dir, win ? `${name}.exe` : name);
-      if ((0, import_node_fs13.existsSync)(candidate)) return candidate;
+      if ((0, import_node_fs14.existsSync)(candidate)) return candidate;
     }
   }
   return void 0;
@@ -60831,12 +60881,12 @@ function resolveCliEntry(opts = {}) {
   if (override !== void 0 && override.trim() !== "") return import_node_path17.default.resolve(override.trim());
   const root = findPackageRoot2(opts.moduleUrl ?? import.meta.url);
   const built2 = root ? import_node_path17.default.join(root, "dist", "cli", "index.js") : void 0;
-  if (built2 && (0, import_node_fs14.existsSync)(built2)) return built2;
+  if (built2 && (0, import_node_fs15.existsSync)(built2)) return built2;
   const onPath = findOnPathSync("lexicon", { env });
   if (onPath) {
     let real = onPath;
     try {
-      real = (0, import_node_fs14.realpathSync)(onPath);
+      real = (0, import_node_fs15.realpathSync)(onPath);
     } catch {
     }
     if (/\.(?:[cm]?js)$/i.test(real)) return real;
@@ -60911,7 +60961,7 @@ function resolveIntegrationPaths(cliDir) {
   const root = import_node_path18.default.resolve(dir, "..", "..");
   const bundledServer = import_node_path18.default.join(root, "plugin", "mcp-server.mjs");
   const bundledHook = import_node_path18.default.join(root, "plugin", "hook.mjs");
-  if ((0, import_node_fs15.existsSync)(bundledServer) && (0, import_node_fs15.existsSync)(bundledHook)) {
+  if ((0, import_node_fs16.existsSync)(bundledServer) && (0, import_node_fs16.existsSync)(bundledHook)) {
     return { server: bundledServer, hook: bundledHook, bundled: true };
   }
   return {
@@ -60955,7 +61005,7 @@ function defaultExec(file2, args) {
 }
 
 // src/cli/cmd-doctor.ts
-var import_node_fs20 = __toESM(require_node_fs());
+var import_node_fs21 = __toESM(require_node_fs());
 var import_node_os8 = __toESM(require_node_os());
 var import_node_path22 = __toESM(require_node_path());
 
@@ -60976,7 +61026,7 @@ var ExecError = class extends Error {
 var MAX_OUTPUT = 16 * 1024 * 1024;
 function defaultClipboardExec(cmd, args, stdin) {
   const isWrite = stdin !== void 0;
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
       stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
       windowsHide: true
@@ -61004,7 +61054,7 @@ function defaultClipboardExec(cmd, args, stdin) {
     child.once(isWrite ? "exit" : "close", (code) => {
       if (settled) return;
       settled = true;
-      if (code === 0) resolve4(Buffer.concat(out).toString("utf8"));
+      if (code === 0) resolve5(Buffer.concat(out).toString("utf8"));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
     });
     if (isWrite && child.stdin) {
@@ -61113,7 +61163,7 @@ async function detectClipboardBackend(platform = process.platform, env = process
 }
 
 // src/voice/models.ts
-var import_node_fs16 = __toESM(require_node_fs());
+var import_node_fs17 = __toESM(require_node_fs());
 var import_node_os6 = __toESM(require_node_os());
 var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
@@ -61144,7 +61194,7 @@ function isModelPath(value) {
   return value.endsWith(".bin") || value.includes("/") || value.includes("\\") || value.startsWith(".") || value.startsWith("~");
 }
 function resolveModel(spec, opts) {
-  const exists = opts.exists ?? import_node_fs16.existsSync;
+  const exists = opts.exists ?? import_node_fs17.existsSync;
   if (isModelPath(spec)) {
     const abs = import_node_path19.default.resolve(expandTilde(spec));
     const base = import_node_path19.default.basename(abs);
@@ -61163,7 +61213,7 @@ function resolveModel(spec, opts) {
 
 // src/voice/process.ts
 var import_node_child_process5 = __toESM(require_node_child_process());
-var import_node_fs17 = __toESM(require_node_fs());
+var import_node_fs18 = __toESM(require_node_fs());
 var MAX_OUTPUT2 = 16 * 1024 * 1024;
 var WHISPER_BIN_NAMES = ["whisper-cli", "whisper-cpp"];
 var INSTALL_HINTS = {
@@ -61192,20 +61242,20 @@ function installHint(platform, missing = { ffmpeg: true, whisper: true }) {
 }
 
 // src/cli/doctor-config-read.ts
-var import_node_fs18 = __toESM(require_node_fs());
+var import_node_fs19 = __toESM(require_node_fs());
 var DOCTOR_CONFIG_MAX_BYTES = 1024 * 1024;
 var same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.uid === b.uid && a.gid === b.gid && a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 async function readDoctorConfigText(file2) {
   let inspected = false;
   let handle;
   try {
-    const before = await import_node_fs18.promises.lstat(file2, { bigint: true });
+    const before = await import_node_fs19.promises.lstat(file2, { bigint: true });
     inspected = true;
     if (!before.isFile() || before.isSymbolicLink()) return { status: "unconfirmed", reason: "nonregular" };
     if (before.size > BigInt(DOCTOR_CONFIG_MAX_BYTES)) return { status: "unconfirmed", reason: "too-large" };
-    const noFollow = typeof import_node_fs18.constants.O_NOFOLLOW === "number" ? import_node_fs18.constants.O_NOFOLLOW : 0;
-    const nonBlock = typeof import_node_fs18.constants.O_NONBLOCK === "number" ? import_node_fs18.constants.O_NONBLOCK : 0;
-    handle = await import_node_fs18.promises.open(file2, import_node_fs18.constants.O_RDONLY | noFollow | nonBlock);
+    const noFollow = typeof import_node_fs19.constants.O_NOFOLLOW === "number" ? import_node_fs19.constants.O_NOFOLLOW : 0;
+    const nonBlock = typeof import_node_fs19.constants.O_NONBLOCK === "number" ? import_node_fs19.constants.O_NONBLOCK : 0;
+    handle = await import_node_fs19.promises.open(file2, import_node_fs19.constants.O_RDONLY | noFollow | nonBlock);
     try {
       const opened = await handle.stat({ bigint: true });
       if (!opened.isFile() || !same(before, opened)) return { status: "unconfirmed", reason: "changed" };
@@ -61217,7 +61267,7 @@ async function readDoctorConfigText(file2) {
         if (bytesRead === 0) break;
         offset += bytesRead;
       }
-      if (offset !== size || !same(opened, await handle.stat({ bigint: true })) || !same(opened, await import_node_fs18.promises.lstat(file2, { bigint: true }))) return { status: "unconfirmed", reason: "changed" };
+      if (offset !== size || !same(opened, await handle.stat({ bigint: true })) || !same(opened, await import_node_fs19.promises.lstat(file2, { bigint: true }))) return { status: "unconfirmed", reason: "changed" };
       try {
         return { status: "read", text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, size)) };
       } catch {
@@ -61243,7 +61293,7 @@ async function readDoctorConfigJson(file2) {
 }
 
 // src/cli/cmd-install.ts
-var import_node_fs19 = __toESM(require_node_fs());
+var import_node_fs20 = __toESM(require_node_fs());
 var import_node_os7 = __toESM(require_node_os());
 var import_node_path20 = __toESM(require_node_path());
 var INSTALL_CLIENTS = [
@@ -61478,15 +61528,15 @@ ${block}
 }
 async function readText2(file2) {
   try {
-    return { text: await import_node_fs19.promises.readFile(file2, "utf8"), existed: true };
+    return { text: await import_node_fs20.promises.readFile(file2, "utf8"), existed: true };
   } catch (err) {
     if (isEnoent(err)) return { text: "", existed: false };
     throw new Error(`could not read ${file2}: ${errorMessage(err)}`);
   }
 }
 async function writeText(file2, text) {
-  await import_node_fs19.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
-  await import_node_fs19.promises.writeFile(file2, text, "utf8");
+  await import_node_fs20.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
+  await import_node_fs20.promises.writeFile(file2, text, "utf8");
 }
 async function applyJson(target) {
   const read = await readJsonFile(target.file);
@@ -61628,7 +61678,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx or Claude Code plugin cache, so the config calls npx rather than a path that may be deleted)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
-    if (!serverLaunch.viaNpx && !(0, import_node_fs19.existsSync)(serverPath)) {
+    if (!serverLaunch.viaNpx && !(0, import_node_fs20.existsSync)(serverPath)) {
       line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
@@ -61934,7 +61984,7 @@ async function checkLoginService(probe) {
     if (!loaded) {
       return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
     }
-    if (program2 !== void 0 && !(0, import_node_fs20.existsSync)(program2)) {
+    if (program2 !== void 0 && !(0, import_node_fs21.existsSync)(program2)) {
       return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
     }
     return { level: "ok", message: `${name} is registered and runs at logon` };
@@ -61943,7 +61993,7 @@ async function checkLoginService(probe) {
   }
   let fileExists = false;
   try {
-    const text = await import_node_fs20.promises.readFile(file2, "utf8");
+    const text = await import_node_fs21.promises.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch {
@@ -61952,7 +62002,7 @@ async function checkLoginService(probe) {
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
   }
-  if (program2 !== void 0 && !(0, import_node_fs20.existsSync)(program2)) {
+  if (program2 !== void 0 && !(0, import_node_fs21.existsSync)(program2)) {
     return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
   }
   if (!loaded) {
@@ -62202,11 +62252,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `no clipboard backend found (${errorMessage(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? (0, import_node_fs20.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  const whisperCli = whisperOverride ? (0, import_node_fs21.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
   else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: false, whisper: true })})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? (0, import_node_fs20.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  const ffmpegBin = ffmpegOverride ? (0, import_node_fs21.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
@@ -62269,18 +62319,18 @@ function createPrompter(io = {}) {
     }
     return rl;
   };
-  const readLine = (prompt) => new Promise((resolve4, reject) => {
+  const readLine = (prompt) => new Promise((resolve5, reject) => {
     const iface = closed ? void 0 : ensure();
     if (lines.length > 0) {
       output2.write(prompt);
-      resolve4(lines.shift());
+      resolve5(lines.shift());
       return;
     }
     if (!iface) {
       reject(new PromptClosedError());
       return;
     }
-    waiters.push({ resolve: resolve4, reject });
+    waiters.push({ resolve: resolve5, reject });
     iface.setPrompt(prompt);
     iface.prompt();
   });
@@ -62373,7 +62423,7 @@ var PROJECT_FILE_NAME2 = ".lexicon.yaml";
 function findGitRoot2(start) {
   let dir = import_node_path23.default.resolve(start);
   for (; ; ) {
-    if ((0, import_node_fs21.existsSync)(import_node_path23.default.join(dir, ".git"))) return dir;
+    if ((0, import_node_fs22.existsSync)(import_node_path23.default.join(dir, ".git"))) return dir;
     const parent = import_node_path23.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
@@ -62397,12 +62447,12 @@ async function runInit(opts, io) {
   const scope = opts.project ? "project" : "global";
   const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await withLexiconLock(target, async () => {
-    if ((0, import_node_fs21.existsSync)(target)) return false;
+    if ((0, import_node_fs22.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
     const file2 = { path: target, scope, lexicon, exists: false };
     await writeLexiconFile(file2);
-    await import_node_fs21.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+    await import_node_fs22.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
   if (!created) {
@@ -62420,7 +62470,7 @@ async function runInit(opts, io) {
 // src/cli/cmd-setup.ts
 var import_node_os11 = __toESM(require_node_os());
 var import_node_path28 = __toESM(require_node_path());
-var import_node_fs26 = __toESM(require_node_fs());
+var import_node_fs27 = __toESM(require_node_fs());
 
 // src/cli/setup/types.ts
 var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
@@ -62431,7 +62481,7 @@ var SEEDED_TERMS = 3;
 
 // src/cli/setup/detect.ts
 var import_node_child_process6 = __toESM(require_node_child_process());
-var import_node_fs22 = __toESM(require_node_fs());
+var import_node_fs23 = __toESM(require_node_fs());
 var import_node_os9 = __toESM(require_node_os());
 var import_node_path24 = __toESM(require_node_path());
 function captureIO() {
@@ -62501,7 +62551,7 @@ function suggestCompany(packageName, remoteUrl) {
 }
 async function readPackageName(cwd) {
   try {
-    const raw = await import_node_fs22.promises.readFile(import_node_path24.default.join(cwd, "package.json"), "utf8");
+    const raw = await import_node_fs23.promises.readFile(import_node_path24.default.join(cwd, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
     return typeof pkg.name === "string" ? pkg.name : void 0;
   } catch {
@@ -62542,7 +62592,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
     cwd,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs22.existsSync
+    exists: deps.exists ?? import_node_fs23.existsSync
   };
   const out = [];
   for (const name of SETUP_CLIENTS) {
@@ -62567,12 +62617,12 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
 }
 
 // src/cli/setup/steps.ts
-var import_node_fs25 = __toESM(require_node_fs());
+var import_node_fs26 = __toESM(require_node_fs());
 var import_node_path27 = __toESM(require_node_path());
 
 // src/cli/cmd-serve.ts
 var import_node_child_process7 = __toESM(require_node_child_process());
-var import_node_fs24 = __toESM(require_node_fs());
+var import_node_fs25 = __toESM(require_node_fs());
 var import_node_os10 = __toESM(require_node_os());
 var import_node_path26 = __toESM(require_node_path());
 
@@ -62595,7 +62645,7 @@ var {
 
 // src/serve/config.ts
 var import_node_crypto3 = __toESM(require_node_crypto());
-var import_node_fs23 = __toESM(require_node_fs());
+var import_node_fs24 = __toESM(require_node_fs());
 var import_node_path25 = __toESM(require_node_path());
 var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
@@ -62623,7 +62673,7 @@ function parseServeConfig(raw) {
 async function readServeConfig(opts = {}) {
   let text;
   try {
-    text = await import_node_fs23.promises.readFile(getServePath(opts), "utf8");
+    text = await import_node_fs24.promises.readFile(getServePath(opts), "utf8");
   } catch {
     return void 0;
   }
@@ -62645,13 +62695,13 @@ async function keepOwnerOnly(file2) {
   if (process.platform === "win32") return;
   let mode;
   try {
-    mode = (await import_node_fs23.promises.stat(file2)).mode & 511;
+    mode = (await import_node_fs24.promises.stat(file2)).mode & 511;
   } catch {
     return;
   }
   if ((mode & 63) === 0) return;
   try {
-    await import_node_fs23.promises.chmod(file2, SERVE_FILE_MODE);
+    await import_node_fs24.promises.chmod(file2, SERVE_FILE_MODE);
   } catch (err) {
     throw new Error(
       `${file2} holds the local API token and is readable by other users (mode ${mode.toString(8)}), and it could not be made private: ${err instanceof Error ? err.message : String(err)}; run: chmod 600 ${file2}`
@@ -62712,14 +62762,14 @@ async function probeHealth(baseUrl, opts = {}) {
 function storeOpts(opts) {
   return opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {};
 }
-var defaultServeExec = (cmd, args) => new Promise((resolve4) => {
+var defaultServeExec = (cmd, args) => new Promise((resolve5) => {
   let stdout = "";
   let stderr = "";
   let child;
   try {
     child = (0, import_node_child_process7.spawn)(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
-    resolve4({ code: null, stdout: "", stderr: errorMessage(err) });
+    resolve5({ code: null, stdout: "", stderr: errorMessage(err) });
     return;
   }
   child.stdout?.setEncoding("utf8").on("data", (d) => {
@@ -62728,8 +62778,8 @@ var defaultServeExec = (cmd, args) => new Promise((resolve4) => {
   child.stderr?.setEncoding("utf8").on("data", (d) => {
     stderr += d;
   });
-  child.on("error", (err) => resolve4({ code: null, stdout, stderr: stderr || err.message }));
-  child.on("close", (code) => resolve4({ code, stdout, stderr }));
+  child.on("error", (err) => resolve5({ code: null, stdout, stderr: stderr || err.message }));
+  child.on("close", (code) => resolve5({ code, stdout, stderr }));
 });
 function xmlEscape2(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -62895,7 +62945,7 @@ async function cliEntryBlocker(cliPath, platform) {
   }
   if (platform === "darwin" || platform === "linux" || platform === "win32") {
     try {
-      await import_node_fs24.promises.access(cliPath);
+      await import_node_fs25.promises.access(cliPath);
     } catch {
       return { volatile: false, reason: `${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js)` };
     }
@@ -62935,9 +62985,9 @@ async function runServeInstall(opts, io, deps = {}) {
     const label = serveLabel(env);
     const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
-    await import_node_fs24.promises.mkdir(import_node_path26.default.dirname(plistPath), { recursive: true });
-    await import_node_fs24.promises.mkdir(import_node_path26.default.dirname(logPath), { recursive: true });
-    await import_node_fs24.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), "utf8");
+    await import_node_fs25.promises.mkdir(import_node_path26.default.dirname(plistPath), { recursive: true });
+    await import_node_fs25.promises.mkdir(import_node_path26.default.dirname(logPath), { recursive: true });
+    await import_node_fs25.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), "utf8");
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
@@ -62957,8 +63007,8 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
-    await import_node_fs24.promises.mkdir(import_node_path26.default.dirname(unitPath), { recursive: true });
-    await import_node_fs24.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), "utf8");
+    await import_node_fs25.promises.mkdir(import_node_path26.default.dirname(unitPath), { recursive: true });
+    await import_node_fs25.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), "utf8");
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
@@ -62989,12 +63039,12 @@ async function runServeInstall(opts, io, deps = {}) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
         envFile = import_node_path26.default.join(import_node_path26.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
-        await import_node_fs24.promises.writeFile(envFile, text, "utf8");
+        await import_node_fs25.promises.writeFile(envFile, text, "utf8");
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
-    const xmlPath = import_node_path26.default.join(await import_node_fs24.promises.mkdtemp(import_node_path26.default.join(import_node_os10.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
-    await import_node_fs24.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
+    const xmlPath = import_node_path26.default.join(await import_node_fs25.promises.mkdtemp(import_node_path26.default.join(import_node_os10.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
+    await import_node_fs25.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
       if (created.code !== 0) {
@@ -63003,7 +63053,7 @@ async function runServeInstall(opts, io, deps = {}) {
         return 1;
       }
     } finally {
-      await import_node_fs24.promises.rm(import_node_path26.default.dirname(xmlPath), { recursive: true, force: true });
+      await import_node_fs25.promises.rm(import_node_path26.default.dirname(xmlPath), { recursive: true, force: true });
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
@@ -63500,8 +63550,8 @@ async function stepExport(ctx) {
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd });
   const text = exportLexicon(loaded.merged, format);
-  await import_node_fs25.promises.mkdir(dir, { recursive: true });
-  await import_node_fs25.promises.writeFile(file2, text, "utf8");
+  await import_node_fs26.promises.mkdir(dir, { recursive: true });
+  await import_node_fs26.promises.writeFile(file2, text, "utf8");
   ctx.summary.exports.push({ format, path: file2 });
   ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${plural2(loaded.merged.terms.length, "term")})`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
@@ -63623,7 +63673,7 @@ async function runSetup(opts, io, deps = {}) {
     home,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs26.existsSync,
+    exists: deps.exists ?? import_node_fs27.existsSync,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
@@ -63814,7 +63864,7 @@ var registerSetupTools = (server, ctx) => {
 var import_node_crypto4 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
-var import_node_fs27 = __toESM(require_node_fs());
+var import_node_fs28 = __toESM(require_node_fs());
 var import_node_path30 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -63862,10 +63912,10 @@ async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
   const resolved2 = import_node_path30.default.resolve(cwd, file2);
   try {
-    const stat = await import_node_fs27.promises.stat(resolved2);
+    const stat = await import_node_fs28.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
     if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved2, stat.size);
-    return { bytes: await import_node_fs27.promises.readFile(resolved2), path: resolved2 };
+    return { bytes: await import_node_fs28.promises.readFile(resolved2), path: resolved2 };
   } catch (err) {
     const code = err.code;
     if (code === "ENOENT") throw new Error(`file not found: ${resolved2}`);
@@ -64208,15 +64258,19 @@ function strictInput(config2) {
 }
 var ROOTS_TIMEOUT_MS = 2e3;
 function cwdFromRoots(roots) {
+  return dirsFromRoots(roots)[0];
+}
+function dirsFromRoots(roots) {
+  const dirs = [];
   for (const root of roots) {
     if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
     try {
       const dir = (0, import_node_url4.fileURLToPath)(root.uri);
-      if ((0, import_node_fs28.statSync)(dir).isDirectory()) return dir;
+      if ((0, import_node_fs29.statSync)(dir).isDirectory()) dirs.push(dir);
     } catch {
     }
   }
-  return void 0;
+  return dirs;
 }
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
 var EMPTY_LEXICON_NOTE = "Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).";
@@ -64256,6 +64310,7 @@ var SERVER_INSTRUCTIONS = [
 function createServer2(opts = {}) {
   const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || void 0);
   let cwd = explicit ?? process.cwd();
+  let clientRoots = [];
   let rootsPending;
   const load = async () => {
     if (rootsPending) await rootsPending;
@@ -64268,7 +64323,8 @@ function createServer2(opts = {}) {
   if (explicit === void 0) {
     const refreshRoots = () => {
       const pending = server.server.listRoots(void 0, { timeout: opts.rootsTimeoutMs ?? ROOTS_TIMEOUT_MS }).then(({ roots }) => {
-        const dir = cwdFromRoots(roots);
+        clientRoots = dirsFromRoots(roots);
+        const dir = clientRoots[0];
         if (dir !== void 0 && dir !== cwd) {
           cwd = dir;
           log("project directory from MCP roots:", dir);
@@ -64295,6 +64351,9 @@ function createServer2(opts = {}) {
   const ctx = {
     get cwd() {
       return cwd;
+    },
+    get roots() {
+      return clientRoots;
     },
     load,
     normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,
@@ -64407,7 +64466,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs28.realpathSync)((0, import_node_path31.resolve)(entry)) === (0, import_node_fs28.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs29.realpathSync)((0, import_node_path31.resolve)(entry)) === (0, import_node_fs29.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }
@@ -64436,6 +64495,7 @@ export {
   cliFlagOutput,
   createServer2 as createServer,
   cwdFromRoots,
+  dirsFromRoots,
   main,
   strictInput
 };

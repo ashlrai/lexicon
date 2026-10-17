@@ -69,16 +69,22 @@ export const ROOTS_TIMEOUT_MS = 2000;
  * directory is taken; anything else is ignored. Exported for tests.
  */
 export function cwdFromRoots(roots: ReadonlyArray<{ uri: string }>): string | undefined {
+  return dirsFromRoots(roots)[0];
+}
+
+/** Every `file://` root that names an existing directory, in order. Exported for tests. */
+export function dirsFromRoots(roots: ReadonlyArray<{ uri: string }>): string[] {
+  const dirs: string[] = [];
   for (const root of roots) {
     if (typeof root?.uri !== 'string' || !root.uri.startsWith('file:')) continue;
     try {
       const dir = fileURLToPath(root.uri);
-      if (statSync(dir).isDirectory()) return dir;
+      if (statSync(dir).isDirectory()) dirs.push(dir);
     } catch {
       // not a usable local path; try the next root
     }
   }
-  return undefined;
+  return dirs;
 }
 
 const VOICE_CONTEXT_INSTRUCTION =
@@ -147,6 +153,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // writes) always wins; otherwise the client's roots may replace the default.
   const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || undefined);
   let cwd = explicit ?? process.cwd();
+  // Every usable directory the client named as a root: tools that read a
+  // model-chosen path (harvest_repo, suggest_terms) may read inside these.
+  let clientRoots: string[] = [];
   let rootsPending: Promise<void> | undefined;
   const load = async (): Promise<LoadedLexicon> => {
     // A call that races the first roots/list answer waits for it (bounded by the timeout).
@@ -164,7 +173,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const pending = server.server
         .listRoots(undefined, { timeout: opts.rootsTimeoutMs ?? ROOTS_TIMEOUT_MS })
         .then(({ roots }) => {
-          const dir = cwdFromRoots(roots);
+          clientRoots = dirsFromRoots(roots);
+          const dir = clientRoots[0];
           if (dir !== undefined && dir !== cwd) {
             cwd = dir;
             log('project directory from MCP roots:', dir);
@@ -209,6 +219,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   const ctx = {
     get cwd(): string {
       return cwd;
+    },
+    get roots(): readonly string[] {
+      return clientRoots;
     },
     load,
     normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,

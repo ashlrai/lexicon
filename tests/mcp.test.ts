@@ -427,7 +427,7 @@ describe('lexicon MCP server', () => {
       expect(mocks.harvestRepo).toHaveBeenCalledWith('/fake/repo', {});
       expect(mocks.addTerm).toHaveBeenCalledWith(
         expect.objectContaining({ canonical: 'FooBar', aliases: ['foo bar'], scope: 'project', source: 'harvest:repo' }),
-        { cwd: '/fake/repo', scope: 'project' },
+        { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true },
       );
     } finally {
       await close();

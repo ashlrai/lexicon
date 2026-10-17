@@ -5,6 +5,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -893,5 +894,105 @@ describe('apply_suggestion with a scope that does not hold the term', () => {
     const res = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys' }, scope: 'global' });
     expect(res.isError).toBe(false);
     expect(JSON.parse(res.text)).toMatchObject({ path: globalPath, created: false });
+  });
+});
+
+describe('harvest_repo on a model-chosen path', () => {
+  const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-repo');
+  let outside: string;
+  const savedRoots = process.env.LEXICON_HARVEST_ROOTS;
+  const savedTrustAll = process.env.LEXICON_TRUST_ALL;
+
+  beforeEach(async () => {
+    outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-mcpflow-outside-')));
+    await fs.cp(FIXTURE, path.join(outside, 'other'), { recursive: true });
+    await fs.cp(FIXTURE, path.join(repo, 'app'), { recursive: true });
+    delete process.env.LEXICON_HARVEST_ROOTS;
+    delete process.env.LEXICON_TRUST_ALL;
+  });
+
+  afterEach(async () => {
+    if (savedRoots === undefined) delete process.env.LEXICON_HARVEST_ROOTS;
+    else process.env.LEXICON_HARVEST_ROOTS = savedRoots;
+    if (savedTrustAll === undefined) delete process.env.LEXICON_TRUST_ALL;
+    else process.env.LEXICON_TRUST_ALL = savedTrustAll;
+    await fs.rm(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // Catches: add: true wrote the candidates into the repo's .lexicon.yaml and
+  // registered it as trusted, so a model decided what every later prompt in
+  // that repo is rewritten with; trusting a project file is the user's call.
+  it('add: true writes the project file but leaves it untrusted, and names the trust step', async () => {
+    const res = await call('harvest_repo', { add: true, minCount: 1 });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { added: number; path: string; trusted: boolean; nextStep: string };
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    expect(payload.added).toBeGreaterThan(0);
+    expect(payload).toMatchObject({ path: projectPath, trusted: false });
+    expect(payload.nextStep).toContain('`npx @ashlr/lexicon trust`');
+    expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical:');
+
+    const status = JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string };
+    expect(status.status).toBe('untrusted');
+    // Not merged: list_terms sees only the (empty) global lexicon and names the skipped file.
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
+    expect(listed.terms).toEqual([]);
+    expect(listed.skippedProject).toBe(projectPath);
+
+    // A second harvest merges into the untrusted file rather than failing the trust gate.
+    const again = await call('harvest_repo', { add: true, minCount: 1 });
+    expect(again.isError).toBe(false);
+    expect(JSON.parse(again.text)).toMatchObject({ trusted: false });
+  });
+
+  // Catches: `path` was resolved and read wherever it pointed (a probe read /etc).
+  it('refuses a path outside the server directory, its git root and the allowed roots', async () => {
+    const res = await call('harvest_repo', { path: path.join(outside, 'other'), add: true });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('outside the directories this server may read');
+    expect(res.text).toContain(`\`lexicon harvest ${path.join(outside, 'other')}\``);
+    expect(res.text).toContain('npx @ashlr/lexicon harvest');
+    expect(res.text).toContain('LEXICON_HARVEST_ROOTS');
+    await expect(fs.stat(path.join(outside, 'other', '.lexicon.yaml'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+    expect((await call('harvest_repo', { path: '/etc' })).isError).toBe(true);
+    expect((await call('harvest_repo', { path: '..' })).isError).toBe(true);
+  });
+
+  it('resolves symlinks before the check, so a link inside the repo cannot point out of it', async () => {
+    await fs.symlink(path.join(outside, 'other'), path.join(repo, 'link'));
+    const res = await call('harvest_repo', { path: 'link' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('outside the directories this server may read');
+  });
+
+  it('reads a subdirectory of the repo and a directory listed in LEXICON_HARVEST_ROOTS', async () => {
+    const inside = await call('harvest_repo', { path: 'app', minCount: 1 });
+    expect(inside.isError).toBe(false);
+    expect(JSON.parse(inside.text)).toMatchObject({ root: path.join(repo, 'app') });
+
+    process.env.LEXICON_HARVEST_ROOTS = ['/nonexistent-root', outside].join(path.delimiter);
+    const listed = await call('harvest_repo', { path: path.join(outside, 'other'), minCount: 1 });
+    expect(listed.isError).toBe(false);
+  });
+
+  it('reads any directory the client named as an MCP root', async () => {
+    const { pathToFileURL } = await import('node:url');
+    const { ListRootsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
+    const server = createServer({ rootsTimeoutMs: 2000 });
+    const client = new Client({ name: 'roots', version: '0' }, { capabilities: { roots: {} } });
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: [{ uri: pathToFileURL(repo).href }, { uri: pathToFileURL(outside).href }],
+    }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const res = (await client.callTool({ name: 'harvest_repo', arguments: { path: path.join(outside, 'other'), minCount: 1 } })) as ToolResult;
+      expect(res.isError).toBe(false);
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 });
