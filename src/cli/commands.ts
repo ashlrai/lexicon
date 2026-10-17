@@ -860,7 +860,7 @@ export async function runHarvest(
   if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
-    line(io, JSON.stringify({ root: target, candidates, count: candidates.length, ...addResult }, null, 2));
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...addResult }), null, 2));
   }
   return 0;
 }

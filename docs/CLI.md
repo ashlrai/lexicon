@@ -205,9 +205,9 @@ Options:
                      printed after the writes, the add summary goes to stderr,
                      and a failed write prints only { ok: false, error, added,
                      created, merged, path })
-  --full             print { root, candidates, count } as JSON, the object MCP
-                     harvest_repo returns, plus added, created, merged and path
-                     with --add (implies --json)
+  --full             print { ok: true, root, candidates, count } as JSON, the
+                     keys MCP harvest_repo returns, plus added, created, merged
+                     and path with --add (implies --json)
   -h, --help         display help for command
 ```
 
