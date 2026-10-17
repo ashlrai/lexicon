@@ -171,7 +171,7 @@ describe('harvest --interactive', () => {
 
     const json = makeIO();
     expect(await runHarvest(repo, { add: true, yes: true, json: true, minCount: 1, globalPath }, json, { isInteractive: () => false })).toBe(1);
-    expect(JSON.parse(json.out)).toEqual({ added: false, path: projectPath, projectTrust: 'untrusted', error: expect.stringContaining('is untrusted') });
+    expect(JSON.parse(json.out)).toEqual({ ok: false, added: false, path: projectPath, projectTrust: 'untrusted', error: expect.stringContaining('is untrusted') });
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
 
     // Without --add nothing is written, so the scan still prints.

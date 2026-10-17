@@ -414,6 +414,26 @@ describe('add / remove / path', () => {
     expect(io.err).toContain('lexicon: --project and --global cannot be combined');
   });
 
+  // Catches: every `remove --json` failure document (not found, unknown alias,
+  // refused untrusted copy) lacked `ok: false`, the key every other --json
+  // refusal leads with, so a script had to special-case remove.
+  it('remove --json failure documents lead with ok: false and keep their keys', async () => {
+    const term = makeIO();
+    expect(await runRemove('Nope', { json: true, global: true }, term)).toBe(1);
+    expect(JSON.parse(term.out)).toEqual({ ok: false, error: 'term "Nope" not found in global lexicon', canonical: 'Nope', removed: false });
+    const alias = makeIO();
+    expect(await runRemove('Nope', { json: true, alias: 'x' }, alias)).toBe(1);
+    expect(JSON.parse(alias.out)).toEqual({ ok: false, error: 'no term "Nope" in the global or project lexicon', canonical: 'Nope', alias: 'x', removed: false });
+    vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
+    const trust = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true }, trust)).toBe(1);
+    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), canonical: 'Ashlr.AI', removed: false });
+    // Success is unchanged.
+    const ok = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
+    expect(JSON.parse(ok.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+  });
+
   it('add --json and remove --json print parseable JSON on stdout', async () => {
     const added = makeIO();
     expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
@@ -423,7 +443,7 @@ describe('add / remove / path', () => {
     expect(JSON.parse(removed.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
     const missing = makeIO();
     expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
-    expect(JSON.parse(missing.out)).toEqual({ canonical: 'Nope', removed: false });
+    expect(JSON.parse(missing.out)).toEqual({ ok: false, canonical: 'Nope', removed: false, error: 'term "Nope" not found' });
   });
 
   // Catches: `lexicon remove` dropped the project copy, said "removed" and left the global copy correcting.
@@ -540,6 +560,7 @@ describe('add / remove / path', () => {
       expect(io.err).toContain('lexicon remove "Ashlr.AI" --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
+          ok: false,
           canonical: 'Ashlr.AI',
           removed: false,
           error: expect.stringContaining('lexicon trust'),
@@ -606,7 +627,7 @@ describe('add / remove / path', () => {
     vi.mocked(core.removeAlias).mockRejectedValueOnce(new Error('"Ashlar" is not an alias of "Ashlr.AI" in the global lexicon'));
     expect(await runRemove('Ashlr.AI', { alias: 'Ashlar', global: true, json: true }, missing2)).toBe(1);
     expect(missing2.err).toContain('Ashlar is also an alias of Ashlr.AI in the untrusted project lexicon (/tmp/proj/.lexicon.yaml)');
-    expect(JSON.parse(missing2.out)).toMatchObject({ removed: false, untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' } });
+    expect(JSON.parse(missing2.out)).toMatchObject({ ok: false, removed: false, untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' } });
   });
 
   // Catches: without a scope the refused untrusted project copy threw out of the handler, with no JSON and no way to reach the global copy.
@@ -627,6 +648,7 @@ describe('add / remove / path', () => {
       expect(io.err).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
+          ok: false,
           canonical: 'Ashlr.AI',
           alias: 'Ashler',
           removed: false,
@@ -643,7 +665,7 @@ describe('add / remove / path', () => {
     expect(term.err).toContain('no term "Nope"');
     const alias = makeIO();
     expect(await runRemove('Ashlr.AI', { alias: 'Ashlr', json: true }, alias)).toBe(1);
-    expect(JSON.parse(alias.out)).toMatchObject({ canonical: 'Ashlr.AI', alias: 'Ashlr', removed: false, error: expect.stringContaining('not an alias') });
+    expect(JSON.parse(alias.out)).toMatchObject({ ok: false, canonical: 'Ashlr.AI', alias: 'Ashlr', removed: false, error: expect.stringContaining('not an alias') });
     expect(alias.err).toContain('not an alias');
   });
 

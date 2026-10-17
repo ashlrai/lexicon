@@ -99,6 +99,7 @@ import {
   dim,
   ensureNewline,
   green,
+  jsonError,
   line,
   plural,
   refuse,
@@ -431,7 +432,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // the global copy is still removable on its own.
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
-      line(io, JSON.stringify({ canonical, removed: false, error: errorMessage(err), ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err)), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
     io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --global\n`);
@@ -452,7 +453,9 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   };
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
-    line(io, JSON.stringify({ canonical, removed, ...extra }, null, 2));
+    // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it.
+    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`);
+    line(io, JSON.stringify({ ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -493,7 +496,7 @@ async function runRemoveAlias(
     result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
     const message = errorMessage(err);
-    if (opts.json) line(io, JSON.stringify({ canonical, alias, removed: false, error: message, ...extra }, null, 2));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message), canonical, alias, removed: false, ...extra }, null, 2));
     io.stderr(`lexicon: ${safeLines(message)}\n`);
     if (isProjectTrustError(err)) {
       const holdsAlias = loaded?.global.lexicon.terms.some(
@@ -765,7 +768,7 @@ export async function runHarvest(
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json) line(io, JSON.stringify({ added: false, path: projectPath, projectTrust: status, error: message }, null, 2));
+        if (json) line(io, JSON.stringify({ ...jsonError(message), added: false, path: projectPath, projectTrust: status }, null, 2));
         io.stderr(`lexicon: ${safeLines(message)}\n`);
         return 1;
       }
