@@ -18550,7 +18550,26 @@ function leadContrasts(text, blockFrom, first, second) {
   const last = gapWords[gapWords.length - 1];
   return last === void 0 || !DETERMINERS.has(last);
 }
-var PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+function isBlankLine(text, from, to) {
+  for (let i = from; i < to; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== 32 && c !== 9 && c !== 13) return false;
+  }
+  return true;
+}
+function lastAtMost(xs, x) {
+  let lo = 0;
+  let hi = xs.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    if (xs[mid] <= x) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
 function firstAtOrAfter(sorted, min) {
   let lo = 0;
   let hi = sorted.length;
@@ -18561,28 +18580,87 @@ function firstAtOrAfter(sorted, min) {
   }
   return lo;
 }
-function paragraphHolds(text, start, end, canonical) {
-  let from = 0;
-  let lineEnd2 = text.lastIndexOf("\n", start - 1);
-  while (lineEnd2 > 0) {
-    const prevBreak = text.lastIndexOf("\n", lineEnd2 - 1);
-    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd2))) {
-      from = lineEnd2 + 1;
-      break;
+var ParagraphIndex = class {
+  constructor(text) {
+    this.text = text;
+    let lineStart2 = 0;
+    let prevNewline = -1;
+    for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) {
+      if (isBlankLine(text, lineStart2, i)) {
+        if (i > 0) this.blankEnds.push(i);
+        if (prevNewline >= 0) this.breaks.push(prevNewline);
+      }
+      prevNewline = i;
+      lineStart2 = i + 1;
     }
-    if (prevBreak < 0) break;
-    lineEnd2 = prevBreak;
   }
-  PARAGRAPH_BREAK.lastIndex = end;
-  const next = PARAGRAPH_BREAK.exec(text);
-  const to = next ? next.index : text.length;
-  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
-  return rest.includes(foldSpelling(canonical));
+  text;
+  /** Newline offsets that end a blank line (a paragraph starts after one). */
+  blankEnds = [];
+  /** Newline offsets followed by a blank line that is itself newline-terminated. */
+  breaks = [];
+  cache = /* @__PURE__ */ new Map();
+  /**
+   * True when the canonical stands (in any folded spelling) somewhere in the
+   * paragraph around `start..end`, outside the span itself. A paragraph runs
+   * from just after the nearest blank line above to the nearest blank line
+   * below.
+   */
+  holds(start, end, canonical) {
+    const above = lastAtMost(this.blankEnds, start - 1);
+    const from = above < 0 ? 0 : this.blankEnds[above] + 1;
+    const belowAt = lastAtMost(this.breaks, end - 1) + 1;
+    const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
+    const para = this.paragraph(from, to);
+    const needle = foldPerCodePoint(canonical);
+    if (needle.length === 0) return false;
+    let found = para.matches.get(needle);
+    if (!found) {
+      found = [];
+      for (let at = para.folded.indexOf(needle); at >= 0; at = para.folded.indexOf(needle, at + 1)) found.push(at);
+      para.matches.set(needle, found);
+    }
+    const k1 = para.before[start - from];
+    const k2 = para.before[end - from];
+    if (found.length > 0 && found[0] + needle.length <= k1) return true;
+    if (found.length > 0 && found[found.length - 1] >= k2) return true;
+    const n = needle.length - 1;
+    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined.includes(needle);
+  }
+  paragraph(from, to) {
+    const cached2 = this.cache.get(from);
+    if (cached2) return cached2;
+    const before = new Uint32Array(to - from + 1);
+    const parts = [];
+    let length = 0;
+    let i = from;
+    while (i < to) {
+      const cp = this.text.codePointAt(i);
+      const width = cp > 65535 ? 2 : 1;
+      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      before[i - from] = length;
+      if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
+      parts.push(piece);
+      length += piece.length;
+      i += width;
+    }
+    before[to - from] = length;
+    const para = { folded: parts.join(""), before, matches: /* @__PURE__ */ new Map() };
+    this.cache.set(from, para);
+    return para;
+  }
+};
+function foldPerCodePoint(value) {
+  let out = "";
+  for (const ch of value) out += foldSpelling(ch);
+  return out;
 }
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
   const occurrences = /* @__PURE__ */ new Map();
+  let paragraphs = null;
   let cursor = 0;
   const bounds = blockBounds(text);
   for (let b = 0; b < bounds.length; b++) {
@@ -18622,7 +18700,9 @@ function declineCollapsedMentions(text, spans) {
       previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
       for (const p of points) {
         if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
-        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
+        if (anchored || (paragraphs ??= new ParagraphIndex(text)).holds(p.start, p.end, result)) {
+          declined.add(p.index);
+        }
       }
       if (!anchored) continue;
       points.sort((a, b2) => a.start - b2.start);

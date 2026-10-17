@@ -450,8 +450,38 @@ function leadContrasts(text: string, blockFrom: number, first: Point, second: Po
   return last === undefined || !DETERMINERS.has(last);
 }
 
-/** A blank line (spaces and tabs allowed) ends a paragraph. */
-const PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+/** A line holding only spaces, tabs or a carriage return. */
+function isBlankLine(text: string, from: number, to: number): boolean {
+  for (let i = from; i < to; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== 0x20 && c !== 0x09 && c !== 0x0d) return false;
+  }
+  return true;
+}
+
+/** Index of the last entry of sorted `xs` that is <= `x`, or -1. */
+function lastAtMost(xs: readonly number[], x: number): number {
+  let lo = 0;
+  let hi = xs.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= x) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
+
+/** One paragraph, folded once: `folded` plus the folded length before each offset. */
+interface FoldedParagraph {
+  folded: string;
+  /** `before[i]` is the folded length of `text.slice(from, from + i)`. */
+  before: Uint32Array;
+  /** Start offsets in `folded` of every (overlapping) match, per folded canonical. */
+  matches: Map<string, number[]>;
+}
 
 /** Index of the first value in ascending `sorted` that is at least `min`. */
 function firstAtOrAfter(sorted: readonly number[], min: number): number {
@@ -466,28 +496,95 @@ function firstAtOrAfter(sorted: readonly number[], min: number): number {
 }
 
 /**
- * True when the canonical stands (in any folded spelling) somewhere in the
- * paragraph around `start..end`, outside the span itself. Both searches stop
- * at the nearest blank line, so the cost is the paragraph, not the text.
+ * Answers `holds` for any span of the text in time proportional to the
+ * canonical, after one linear pass per paragraph. Recomputing the paragraph
+ * per quoted mention (walking back to the blank line, folding the paragraph)
+ * made a long paragraph of quoted aliases quadratic.
+ *
+ * Folding is per code point, on both the text and the canonical, so a slice
+ * folds to the same string as the matching stretch of the paragraph's fold.
  */
-function paragraphHolds(text: string, start: number, end: number, canonical: string): boolean {
-  // Backwards: walk line starts until a line holding only whitespace.
-  let from = 0;
-  let lineEnd = text.lastIndexOf('\n', start - 1);
-  while (lineEnd > 0) {
-    const prevBreak = text.lastIndexOf('\n', lineEnd - 1);
-    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd))) {
-      from = lineEnd + 1;
-      break;
+class ParagraphIndex {
+  /** Newline offsets that end a blank line (a paragraph starts after one). */
+  private readonly blankEnds: number[] = [];
+  /** Newline offsets followed by a blank line that is itself newline-terminated. */
+  private readonly breaks: number[] = [];
+  private readonly cache = new Map<number, FoldedParagraph>();
+
+  constructor(private readonly text: string) {
+    let lineStart = 0;
+    let prevNewline = -1;
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+      if (isBlankLine(text, lineStart, i)) {
+        if (i > 0) this.blankEnds.push(i);
+        if (prevNewline >= 0) this.breaks.push(prevNewline);
+      }
+      prevNewline = i;
+      lineStart = i + 1;
     }
-    if (prevBreak < 0) break;
-    lineEnd = prevBreak;
   }
-  PARAGRAPH_BREAK.lastIndex = end;
-  const next = PARAGRAPH_BREAK.exec(text);
-  const to = next ? next.index : text.length;
-  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
-  return rest.includes(foldSpelling(canonical));
+
+  /**
+   * True when the canonical stands (in any folded spelling) somewhere in the
+   * paragraph around `start..end`, outside the span itself. A paragraph runs
+   * from just after the nearest blank line above to the nearest blank line
+   * below.
+   */
+  holds(start: number, end: number, canonical: string): boolean {
+    const above = lastAtMost(this.blankEnds, start - 1);
+    const from = above < 0 ? 0 : this.blankEnds[above] + 1;
+    const belowAt = lastAtMost(this.breaks, end - 1) + 1;
+    const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
+
+    const para = this.paragraph(from, to);
+    const needle = foldPerCodePoint(canonical);
+    if (needle.length === 0) return false;
+    let found = para.matches.get(needle);
+    if (!found) {
+      found = [];
+      for (let at = para.folded.indexOf(needle); at >= 0; at = para.folded.indexOf(needle, at + 1)) found.push(at);
+      para.matches.set(needle, found);
+    }
+    const k1 = para.before[start - from];
+    const k2 = para.before[end - from];
+    // Wholly before the span, or wholly after it.
+    if (found.length > 0 && found[0] + needle.length <= k1) return true;
+    if (found.length > 0 && found[found.length - 1] >= k2) return true;
+    // Folding drops the quotation marks, so the text either side of the span
+    // can join into the canonical once the span is taken out.
+    const n = needle.length - 1;
+    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined.includes(needle);
+  }
+
+  private paragraph(from: number, to: number): FoldedParagraph {
+    const cached = this.cache.get(from);
+    if (cached) return cached;
+    const before = new Uint32Array(to - from + 1);
+    const parts: string[] = [];
+    let length = 0;
+    let i = from;
+    while (i < to) {
+      const cp = this.text.codePointAt(i)!;
+      const width = cp > 0xffff ? 2 : 1;
+      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      before[i - from] = length;
+      if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
+      parts.push(piece);
+      length += piece.length;
+      i += width;
+    }
+    before[to - from] = length;
+    const para = { folded: parts.join(''), before, matches: new Map<string, number[]>() };
+    this.cache.set(from, para);
+    return para;
+  }
+}
+
+function foldPerCodePoint(value: string): string {
+  let out = '';
+  for (const ch of value) out += foldSpelling(ch);
+  return out;
 }
 
 /**
@@ -499,6 +596,7 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
 
   const declined = new Set<number>();
   const occurrences = new Map<string, number[]>();
+  let paragraphs: ParagraphIndex | null = null;
   // Both lists are sorted by offset, so one pointer walks the spans once across
   // all blocks. Rescanning every span per block made this quadratic: a 1 MB
   // document, which is what the local API accepts, took seconds.
@@ -573,7 +671,9 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
       // nothing; linking below still uses the narrow one.
       for (const p of points) {
         if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
-        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
+        if (anchored || (paragraphs ??= new ParagraphIndex(text)).holds(p.start, p.end, result)) {
+          declined.add(p.index);
+        }
       }
       if (!anchored) continue;
 
