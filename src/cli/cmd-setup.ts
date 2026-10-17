@@ -307,7 +307,7 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
     .option('--no-serve', 'skip installing the local API login service (no prompt)')
     .option('--dry-run', 'detect and suggest only; write nothing and print what a run would do')
-    .option('--reseed', 'seed person/company terms even if the lexicon already has terms')
+    .option('--reseed', 'also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms')
     .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
     .option('--json', 'print a machine-readable summary on stdout (progress goes to stderr)')
     .action(async (opts: SetupOptions) => {

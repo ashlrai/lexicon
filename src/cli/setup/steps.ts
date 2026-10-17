@@ -145,16 +145,23 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   if (ctx.plan) ctx.plan.lexiconExists = existed;
 
   const before = existed ? (await readLexiconFile(global, 'global')).lexicon.terms.length : 0;
-  if (before >= SEEDED_TERMS && !ctx.opts.reseed) {
+  // An already seeded lexicon skips the guessed defaults (git user.name, the
+  // package scope), but a name passed explicitly (--person, --company, or
+  // setup_lexicon's company/person) is always seeded: the user just typed it.
+  const gated = before >= SEEDED_TERMS && !ctx.opts.reseed;
+  if (gated && !ctx.opts.person && !ctx.opts.company) {
     ctx.say(dim(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
     return;
   }
+  if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
+  const guessCompany = async (): Promise<string | undefined> =>
+    gated
+      ? undefined
+      : suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
   if (ctx.plan) {
     // Same defaults as the non-interactive path below, without the writes.
-    const person = ctx.opts.person ?? gitUserName(ctx);
-    const company =
-      ctx.opts.company ??
-      suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+    const person = ctx.opts.person ?? (gated ? undefined : gitUserName(ctx));
+    const company = ctx.opts.company ?? (await guessCompany());
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
       [person, 'person'],
@@ -178,7 +185,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
 
   // Person: the git user, confirmed on a terminal.
-  const gitName = ctx.opts.person ?? gitUserName(ctx);
+  const gitName = ctx.opts.person ?? (gated ? undefined : gitUserName(ctx));
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = (await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true))
@@ -187,17 +194,15 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: 'person', source: 'user' });
-  } else {
+  } else if (!gated) {
     ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
 
   // Company: suggested from the package scope or the git remote.
-  const suggestion =
-    ctx.opts.company ??
-    suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+  const suggestion = ctx.opts.company ?? (await guessCompany());
   let company: string | undefined = ctx.opts.company ?? (ctx.prompter ? undefined : suggestion);
   let phonetic: string | undefined = ctx.opts.phonetic;
-  if (ctx.prompter && !ctx.opts.company) {
+  if (ctx.prompter && !ctx.opts.company && !gated) {
     company = (
       await ctx.prompter.ask('   Your company or product name (as you want it spelled; Enter to skip)', {
         default: suggestion ?? '',
@@ -205,7 +210,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
     ).trim();
   }
   if (!company) {
-    ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
     return;
   }
   const aliases = suggestAliases(company);
@@ -221,7 +226,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   ctx.company = company;
 
   // More terms, one at a time, on a terminal only.
-  while (ctx.prompter && (await ctx.prompter.confirm('   add another term?', false))) {
+  while (ctx.prompter && !gated && (await ctx.prompter.confirm('   add another term?', false))) {
     const name = (await ctx.prompter.ask('   name (as you want it spelled; Enter to stop)', { default: '' })).trim();
     if (!name) break;
     const hint = (await ctx.prompter.ask('   phonetic hint (Enter for none)', { default: '' })).trim();

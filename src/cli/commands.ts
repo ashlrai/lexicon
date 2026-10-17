@@ -285,6 +285,9 @@ export async function runAdd(
 
   const aliases = aliasArgs.map((a) => a.trim()).filter(Boolean);
   let suggested: string[] = [];
+  // No aliases and no --suggest: the suggestions apply only if this creates the
+  // term (addTerm's defaultAliases), so `add X --never w` on an existing X adds none.
+  const fallbackOnly = !opts.suggest && aliases.length === 0 && !p;
   if (opts.suggest || aliases.length === 0) {
     const have = new Set(aliases.map((a) => a.toLowerCase()));
     suggested = suggestAliases(trimmed).filter((s) => {
@@ -310,7 +313,7 @@ export async function runAdd(
       });
       suggested = kept;
       aliases.push(...kept, ...extra);
-    } else {
+    } else if (!fallbackOnly) {
       aliases.push(...suggested);
     }
   }
@@ -341,9 +344,14 @@ export async function runAdd(
   const never = (opts.never ?? []).map((w) => w.trim()).filter(Boolean);
   if (never.length > 0) term.never = never;
 
-  const result = await addTerm(term, { scope, cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) });
+  const result = await addTerm(term, {
+    scope,
+    cwd,
+    ...(opts.globalPath ? { globalPath: opts.globalPath } : {}),
+    ...(fallbackOnly && suggested.length > 0 ? { defaultAliases: suggested } : {}),
+  });
   line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
-  if (suggested.length > 0 && !p) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
+  if (suggested.length > 0 && !p && (!fallbackOnly || result.created)) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
   return 0;

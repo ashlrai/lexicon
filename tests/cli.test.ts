@@ -65,9 +65,9 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     })),
     readLexiconFile: vi.fn(async (p: string, scope: string) => ({ path: p, scope, lexicon, exists: true })),
     resolvePaths: vi.fn(() => (state.projectPath ? { global: state.globalPath, project: state.projectPath } : { global: state.globalPath })),
-    addTerm: vi.fn(async (term: { canonical: string; aliases: string[] }, opts?: { scope?: string }) => ({
+    addTerm: vi.fn(async (term: { canonical: string; aliases: string[] }, opts?: { scope?: string; defaultAliases?: string[] }) => ({
       file: { path: opts?.scope === 'project' ? '/tmp/proj/.lexicon.yaml' : state.globalPath, scope: opts?.scope ?? 'global', lexicon, exists: true },
-      term,
+      term: term.aliases.length === 0 && opts?.defaultAliases ? { ...term, aliases: opts.defaultAliases } : term,
       created: true,
     })),
     removeTerm: vi.fn(async (canonical: string) => canonical === 'Ashlr.AI'),
@@ -306,9 +306,10 @@ describe('add / remove / path', () => {
     const io = makeIO();
     const code = await runAdd('Ashlr.AI', [], { project: true, category: 'brand' }, io);
     expect(code).toBe(0);
+    // The suggestions are the fallback for a new term, not aliases merged into an existing one.
     expect(core.addTerm).toHaveBeenCalledWith(
-      { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar', 'Ashlr AI'], category: 'brand' },
-      expect.objectContaining({ scope: 'project' }),
+      { canonical: 'Ashlr.AI', aliases: [], category: 'brand' },
+      expect.objectContaining({ scope: 'project', defaultAliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }),
     );
     expect(io.out).toContain('created');
     expect(io.out).toContain('suggested aliases: Ashler, Ashlar, Ashlr AI');
