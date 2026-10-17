@@ -704,7 +704,7 @@ describe('lexicon MCP server', () => {
       }
     });
 
-    it('trust_project status reports the state with a sanitized preview and never the notes', async () => {
+    it('trust_project status reports the state with a short sanitized summary and never the aliases or notes', async () => {
       const { client, close } = await connect();
       try {
         const tool = (await client.listTools()).tools.find((t) => t.name === 'trust_project');
@@ -720,17 +720,18 @@ describe('lexicon MCP server', () => {
           status: string;
           termCount: number;
           more: number;
-          preview: { canonical: string; firstAlias?: string; aliasCount: number; hasNotes: boolean }[];
+          sample: string[];
+          fullPreview: string;
           registry: string;
           trustAll: boolean;
           trusted: unknown[];
         };
-        expect(payload).toMatchObject({ action: 'status', path: '/fake/repo/.lexicon.yaml', status: 'untrusted', termCount: 2, more: 0, registry: '/fake/global/trust.json', trustAll: false, trusted: [] });
-        expect(payload.preview).toEqual([
-          { canonical: 'Kubernetes', firstAlias: 'cooper netties', aliasCount: 2, hasNotes: true },
-          { canonical: 'Entire.io', aliasCount: 0, hasNotes: false },
-        ]);
+        expect(payload).toMatchObject({ action: 'status', path: '/fake/repo/.lexicon.yaml', status: 'untrusted', termCount: 2, aliasCount: 2, termsWithNotes: 1, more: 0, registry: '/fake/global/trust.json', trustAll: false, trusted: [] });
+        expect(payload.sample).toEqual(['Kubernetes', 'Entire.io']);
+        expect(payload.fullPreview).toContain('`lexicon trust` in a terminal');
+        expect(payload).not.toHaveProperty('preview');
         expect(textOf(result)).not.toContain('ignore me');
+        expect(textOf(result)).not.toContain('cooper netties');
         expect(mocks.readLexiconFile).toHaveBeenCalledWith('/fake/repo/.lexicon.yaml', 'project');
         expect(mocks.trustProject).not.toHaveBeenCalled();
       } finally {
@@ -772,7 +773,8 @@ describe('lexicon MCP server', () => {
           sha256: 'abcdef012345',
           termCount: 2,
         });
-        expect((payload.preview as unknown[]).length).toBe(2);
+        expect(payload.sample).toEqual(['Kubernetes', 'Entire.io']);
+        expect(payload).not.toHaveProperty('preview');
         expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
         expect(asked).toHaveLength(1);
         expect(asked[0]).toMatch(/Trust the project lexicon at .*sub.*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);

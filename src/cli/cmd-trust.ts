@@ -39,7 +39,7 @@ import type { Prompter } from './prompt.js';
 
 export interface TrustOptions extends CommonOptions {
   list?: boolean;
-  /** Print the result as JSON (the shape MCP `trust_project` returns). */
+  /** Print the result as JSON (the shape MCP `trust_project` returns, with the full `trustPreview` in place of its summary). */
   json?: boolean;
   /** Trust without asking, even on a terminal. */
   yes?: boolean;
@@ -190,7 +190,8 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   }
   const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
   if (opts.json) {
-    // `ok: true`, then the object MCP trust_project returns for action 'trust'.
+    // `ok: true`, then the object MCP trust_project returns for action 'trust',
+    // with the full preview (trustPreview) where MCP hands the model a summary.
     printJson(io, jsonOk({
       action: 'trust',
       path: filePath,
@@ -267,7 +268,7 @@ export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps 
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .option('--list', 'list trusted project lexicons and whether they still match')
     .option('-y, --yes', 'trust without asking (off a terminal it never asks)')
-    .option('--json', 'print the result as JSON: ok, then the object MCP trust_project returns (with --list: { ok, registry, trustAll, trusted })')
+    .option('--json', 'print the result as JSON: ok, then the object MCP trust_project returns, with the full preview where MCP has a summary (with --list: { ok, registry, trustAll, trusted })')
     .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; json?: boolean }) =>
       done(await runTrust(target, { ...opts, ...globals() }, io, deps)),
     );

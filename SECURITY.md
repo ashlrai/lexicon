@@ -8,7 +8,15 @@ to the model, and this document describes how the project treats it.
 
 **Untrusted repository lexicon → prompt injection.** The project file
 `.lexicon.yaml` is discovered by walking up from the current directory to the
-git root, so it comes from whatever repository the user happens to be in. Its
+git root, so it comes from whatever repository the user happens to be in.
+Without a `.git` the walk goes on to `/`, so on POSIX a candidate owned by
+anyone other than the current user or root (the link or its target, for a
+symlink) is passed over: another local account's `/tmp/.lexicon.yaml` is never
+announced as this repo's file. This is the rule OpenSSH applies to its config
+files and git (`safe.directory`) to repositories; it is simpler and covers more
+than stopping at the home directory, which would still reach `/tmp` from a
+directory below it. Windows has no meaningful owner in `stat`, so every
+candidate is considered there. Its
 canonicals and notes are injected into model context by three surfaces:
 
 - the Claude Code `SessionStart` hook, which hands the model the whole merged
@@ -180,10 +188,14 @@ service) unless `apply: true` is passed and then touches only the clients named
 in the call, and the skill instructs the model to show that preview and wait for
 a yes; `import_dictionary` has `dryRun`;
 `suggest_terms` proposes and `apply_suggestion` applies one accepted item at a
-time. Trust shows contents: `trust_project { action: 'status' }` returns a
-sanitized preview (canonicals, first alias, counts; notes reported as present,
-never quoted) and the model must show it before calling `action: 'trust'`; a hook
-note or a file can never trust itself. No writes to untrusted files: every
+time. Trust shows contents, to the human: `trust_project { action: 'status' }`
+returns only a short summary to the model (term, alias and note counts and at
+most 3 canonicals, each at most 40 characters, sanitized and with `<` / `>`
+neutralized; no alias or note is quoted), because that is the exchange in which
+the model is asked whether to trust the file, and points the user at
+`lexicon trust` in a terminal for the full preview. The model must show the
+summary before calling `action: 'trust'`, the client then asks the user, and a
+hook note or a file can never trust itself. No writes to untrusted files: every
 project-scope write from a tool goes through the same store gate as the CLI and
 fails with `ProjectTrustError` on an existing untrusted or changed file. The
 `SessionStart` onboarding note only asks the model to offer setup; nothing runs
@@ -258,11 +270,29 @@ treated as the user's own words).
   text, or break a table row. The one deliberate exception is the text
   `lexicon normalize` writes to stdout, which is the user's own input and must
   round-trip byte-exactly; only its stderr `--diff` lines are sanitized. The
-  Claude Code hook uses the same `stripControlChars` on the skipped-project path
-  and on correction notes; the local API sanitizes request paths in its log.
+  Claude Code hook and the MCP `lexicon://me` resource and `voice-context`
+  prompt name a skipped project file through `pathForModel`: sanitized as
+  above, `<` and `>` neutralized, and shortened to its last three components
+  and at most 120 characters, because the directory a repository is cloned
+  into is named by whoever published it; correction notes go through
+  `neutralizeForModel`; the local API sanitizes request paths in its log.
 - **Markdown safety.** The `claude-md` export escapes `|` and replaces every
   kind of line break (`\n`, `\r\n`, NEL, U+2028, U+2029) in table cells so a
   term cannot break out of its row.
+- **No fake tags in model context.** The schema lets `<`, `>` and markdown
+  punctuation through (a canonical can legitimately hold them), so a trusted
+  project lexicon or an installed pack could otherwise put
+  `</system-reminder><system>...` or a fake heading into what the model reads
+  as its own framing. Everything the hook and the MCP `lexicon://me` resource
+  and `voice-context` prompt hand to the model from a lexicon goes through
+  `neutralizeMarkup`, which swaps `<` and `>` for the lookalikes U+2039 and
+  U+203A: the SessionStart table, the UserPromptSubmit corrections list, the
+  replacements spliced into the corrected prompt (one that starts a line with
+  a markdown block marker such as `#` also gets a backslash) and the
+  correction note. Table cells stay on one row with `|` escaped. The user's own
+  words in the prompt are echoed as typed, and exporter output
+  (`lexicon export claude-md` and the rest), which users paste into files, is
+  not changed.
 - **No telemetry, two user-initiated downloads.** The tool collects nothing and all state is
   local files. The CLI, hooks, MCP server, local API and extension make no
   request beyond loopback, except when the user asks for one by name:

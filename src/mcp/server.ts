@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon, sanitizeForDisplayMax } from '../core/index.js';
+import { exportLexicon, loadLexicon, neutralizeMarkup, pathForModel } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
@@ -241,7 +241,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
     async (uri) => {
       const loaded = await loadForContext();
-      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
+      // neutralizeMarkup over the export: this text is read as context,
+      // so `<` / `>` in a canonical or note must not open or close a tag.
+      const text = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -286,7 +288,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const loaded = await loadForContext();
       // The same path-only note lexicon://me carries, so the session knows the
       // repo's own spellings are missing and why.
-      const snippet = exportLexicon(loaded.merged, 'claude-md').trimEnd() + skippedProjectSuffix(loaded);
+      const snippet = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd() + skippedProjectSuffix(loaded);
       // Nothing to apply: say so instead of asking the model to apply an empty table.
       const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
@@ -317,14 +319,15 @@ export function createServer(opts: ServerOptions = {}): McpServer {
 
 /**
  * A path-only note on a skipped project lexicon, never its contents; '' when
- * none was skipped. The path goes through the display sanitizer: this text is
- * raw markdown (no JSON escaping), and the directory is named by whoever
- * published the repo, so an escape sequence or bidi override in it would
- * otherwise reach the conversation verbatim.
+ * none was skipped. The path goes through `pathForModel`, as in the hook's
+ * note: this text is raw markdown (no JSON escaping), and the directory is
+ * named by whoever published the repo, so an escape sequence, a bidi
+ * override, a fake tag or kilobytes of text in it would otherwise reach the
+ * conversation verbatim.
  */
 function skippedProjectSuffix(loaded: LoadedLexicon): string {
   if (!loaded.skippedProject) return '';
-  const where = sanitizeForDisplayMax(loaded.skippedProject.path, 4096);
+  const where = pathForModel(loaded.skippedProject.path);
   return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
 }
 

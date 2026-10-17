@@ -126,6 +126,33 @@ describe('resolvePaths', () => {
     expect(resolvePaths({ cwd: nested }).project).toBeUndefined();
   });
 
+  // Only root can hand a file to another uid, so these run where the suite runs as root.
+  const canChown = process.platform !== 'win32' && process.getuid?.() === 0;
+
+  it.skipIf(!canChown)("passes over a .lexicon.yaml another local user owns (a planted /tmp file)", async () => {
+    const shared = path.join(tmp, 'shared');
+    const work = path.join(shared, 'work');
+    await fs.mkdir(work, { recursive: true });
+    const planted = path.join(shared, '.lexicon.yaml');
+    await fs.writeFile(planted, 'version: 1\nterms: []\n');
+    await fs.chown(planted, 4242, 4242);
+    expect(resolvePaths({ cwd: work }).project).not.toBe(planted);
+    // A symlink of ours pointing at their file is passed over too.
+    const link = path.join(work, '.lexicon.yaml');
+    await fs.symlink(planted, link);
+    expect(resolvePaths({ cwd: work }).project).not.toBe(link);
+  });
+
+  it.skipIf(!canChown)('keeps walking past a foreign file to one the user owns', async () => {
+    const { root, nested } = await makeRepo();
+    const own = path.join(root, '.lexicon.yaml');
+    await fs.writeFile(own, 'version: 1\nterms: []\n');
+    const foreign = path.join(nested, '.lexicon.yaml');
+    await fs.writeFile(foreign, 'version: 1\nterms: []\n');
+    await fs.chown(foreign, 4242, 4242);
+    expect(resolvePaths({ cwd: nested }).project).toBe(own);
+  });
+
   it('returns no project when nothing is found', async () => {
     const { nested } = await makeRepo();
     expect(resolvePaths({ cwd: nested }).project).toBeUndefined();

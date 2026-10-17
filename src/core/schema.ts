@@ -120,6 +120,55 @@ export function sanitizeForDisplayMax(s: string, max: number): string {
   return `${chars.slice(0, Math.max(0, max - 1)).join('')}\u2026`;
 }
 
+/**
+ * Replace `<` and `>` with the single angle quotation marks U+2039 and U+203A,
+ * which read the same to a person but cannot open or close a tag. For text
+ * that is handed to a model as context (the hook's additionalContext, the MCP
+ * `lexicon://me` resource and `voice-context` prompt): a trusted project
+ * lexicon or an installed pack could otherwise put `</system-reminder>` or a
+ * fake `<system>` block into what the model reads as its own framing. Never
+ * applied to exporter output a user pastes into a file. Line structure is not
+ * touched; see `neutralizeForModel` for single-line fields.
+ */
+export function neutralizeMarkup(s: string): string {
+  return s.replace(/[<>]/g, (c) => (c === '<' ? '\u2039' : '\u203A'));
+}
+
+/**
+ * `stripControlChars` then `neutralizeMarkup`: one line of lexicon- or
+ * path-derived text that is safe to embed in model context. No cap; callers
+ * that need one apply it.
+ */
+export function neutralizeForModel(s: string): string {
+  return neutralizeMarkup(stripControlChars(s));
+}
+
+/** Longest path `pathForModel` returns (ellipsis included). */
+export const MODEL_PATH_MAX_CHARS = 120;
+
+/**
+ * A file path as it may appear in model context: display-sanitized
+ * (`sanitizeForDisplayMax`, no cap), `neutralizeMarkup`, then shortened to its
+ * last three components (two directories and the file name) behind `\u2026/`
+ * when it has more, and cut to its last `max` characters behind `\u2026` when
+ * still longer. The directory a repository is cloned into is named by whoever
+ * published it, so without a cap a path could carry kilobytes of instructions
+ * into the hook's skipped-project note. The full path is for the human: the
+ * CLI prints it on stderr and `lexicon trust` shows it.
+ */
+export function pathForModel(p: string, max: number = MODEL_PATH_MAX_CHARS): string {
+  const clean = neutralizeMarkup(sanitizeForDisplayMax(p, Number.POSITIVE_INFINITY));
+  const parts = clean.split(/[\\/]/).filter((part) => part !== '');
+  let out = clean;
+  if (parts.length > 3) {
+    const sep = clean.lastIndexOf('\\') > clean.lastIndexOf('/') ? '\\' : '/';
+    out = `\u2026${sep}${parts.slice(-3).join(sep)}`;
+  }
+  const chars = Array.from(out);
+  if (chars.length <= max) return out;
+  return `\u2026${chars.slice(chars.length - Math.max(0, max - 1)).join('')}`;
+}
+
 /** A trimmed string with invisible characters removed, no control characters, at most `max` chars. */
 function SafeString(max: number) {
   return z

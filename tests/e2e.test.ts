@@ -929,7 +929,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     const r = await runNode(HOOK, [], { env: h.env, stdin: payload('hello there', h.repo) });
     expect(r.code).toBe(0);
     const out = JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } };
-    expect(out.hookSpecificOutput.additionalContext).toContain(`untrusted .lexicon.yaml at ${projectPath}`);
+    // The path is shortened for the model (pathForModel): its last three components.
+    expect(out.hookSpecificOutput.additionalContext).toContain(`untrusted .lexicon.yaml at \u2026${path.sep}${projectPath.split(path.sep).slice(-3).join(path.sep)} that was not applied`);
     expect(out.hookSpecificOutput.additionalContext).not.toContain('SECRET-INJECTION');
   });
 
