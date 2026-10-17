@@ -129,9 +129,11 @@ Options:
   --alias <alias>  remove only this alias from the term and keep the term (exit
                    1 when the term or alias is unknown)
   --project        only look in the project lexicon
+  --global         only look in the global lexicon (not with --project)
   --json           print { canonical, removed } as JSON (exit 1 when not found),
-                   plus stillIn when a copy is left in the other lexicon file;
-                   with --alias also alias, aliases and paths
+                   plus stillIn when a copy is left in the other lexicon file
+                   and untrustedProject when the untrusted project lexicon has
+                   one; with --alias also alias, aliases and paths
   -h, --help       display help for command
 ```
 

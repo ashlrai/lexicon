@@ -51,6 +51,7 @@ import {
   removeTerm,
   resolvePaths,
   termHolders,
+  untrustedTermHolder,
   writeLexiconFile,
 } from '../src/core/store.js';
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
@@ -1326,5 +1327,27 @@ describe('termHolders', () => {
     ]);
     expect(termHolders(loaded, 'Helm')).toEqual([]);
     expect(termHolders({ global: file('global', ['Helm']) }, 'helm')).toEqual([{ scope: 'global', path: '/g/lexicon.yaml' }]);
+  });
+});
+
+describe('untrustedTermHolder', () => {
+  const skipped = (canonicals: string[]): LexiconFile => ({
+    path: '/p/.lexicon.yaml',
+    scope: 'project',
+    lexicon: { version: 1, terms: canonicals.map((canonical) => ({ canonical, aliases: ['secret alias'] })) },
+    exists: true,
+  });
+
+  it('names the skipped project file holding the canonical, path and trust only', () => {
+    expect(untrustedTermHolder({ projectTrust: 'untrusted', skippedProject: skipped([' Kubectl ']) }, 'KUBECTL')).toEqual({
+      path: '/p/.lexicon.yaml',
+      trust: 'untrusted',
+    });
+    expect(untrustedTermHolder({ projectTrust: 'changed', skippedProject: skipped(['Kubectl']) }, 'kubectl')).toEqual({
+      path: '/p/.lexicon.yaml',
+      trust: 'changed',
+    });
+    expect(untrustedTermHolder({ projectTrust: 'untrusted', skippedProject: skipped(['Helm']) }, 'kubectl')).toBeUndefined();
+    expect(untrustedTermHolder({ projectTrust: 'trusted' }, 'kubectl')).toBeUndefined();
   });
 });

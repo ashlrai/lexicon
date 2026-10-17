@@ -105,6 +105,37 @@ describe('remove_term', () => {
     expect(listed.terms).toEqual([]);
   });
 
+  // Catches: scope "global" removed the global copy with plain `removed: true` while the untrusted project copy waited to win once trusted.
+  it('names a copy in the untrusted project lexicon by path, and never edits that file', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    const projectFile = path.join(repo, '.lexicon.yaml');
+    const text = 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube cuddle]\n';
+    await fs.writeFile(projectFile, text);
+
+    const result = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      canonical: 'kubectl',
+      removed: true,
+      path: path.join(home, 'lexicon.yaml'),
+      untrustedProject: { path: projectFile, trust: 'untrusted' },
+    });
+    expect(result).not.toHaveProperty('stillIn');
+    expect(result.note).toMatch(/not trusted/);
+    expect(result.note).toMatch(/lexicon trust/);
+    expect(JSON.stringify(result)).not.toContain('cube cuddle');
+    expect(await fs.readFile(projectFile, 'utf8')).toBe(text);
+  });
+
+  // Catches: the bare trust error left the agent no way to remove the global copy it could reach.
+  it('a refused untrusted project copy says scope "global" removes the global one', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube cuddle]\n');
+    const refused = await call('remove_term', { canonical: 'Kubectl' });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toMatch(/untrusted/);
+    expect(refused.text).toMatch(/scope "global"/);
+  });
+
   it('removes a single alias with `alias`, and errors on an unknown term or alias', async () => {
     await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner', 'Het zner'] });
     const removed = await call('remove_term', { canonical: 'hetzner', alias: 'het zner' });

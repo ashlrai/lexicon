@@ -67,6 +67,7 @@ import {
   removeAlias,
   removeTerm,
   termHolders,
+  untrustedTermHolder,
   resolvePaths,
   suggestAliases,
   trustProject,
@@ -97,6 +98,7 @@ import {
   safe,
   safeLines,
   stillInLine,
+  untrustedLine,
   warnSkippedProject,
 } from './io.js';
 import type { CommonOptions, IO } from './io.js';
@@ -371,6 +373,8 @@ export async function runAdd(
 
 export interface RemoveOptions extends CommonOptions {
   project?: boolean;
+  /** Only the global lexicon (the mirror of `project`). */
+  global?: boolean;
   /** Print `{ canonical, removed }` as JSON (exit 1 still means not found). */
   json?: boolean;
   /** Remove only this alias from the term, keeping the term. */
@@ -379,26 +383,51 @@ export interface RemoveOptions extends CommonOptions {
 
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
-  if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, cwd, io);
+  if (opts.project && opts.global) {
+    io.stderr('lexicon: --project and --global cannot be combined (omit both to try the project lexicon, then the global one)\n');
+    return 1;
+  }
+  const scope: TermScope | undefined = opts.project ? 'project' : opts.global ? 'global' : undefined;
+  if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, scope, cwd, io);
   // Which files hold the term before the edit: removeTerm edits only the
   // first (project, then global), and a copy left in the other file keeps
-  // correcting. Best effort: a file that will not load just loses the report.
-  const holders = await loadLexicon({ cwd }).then(
-    (loaded) => termHolders(loaded, canonical),
-    () => [],
-  );
-  const removed = await removeTerm(canonical, opts.project ? { scope: 'project', cwd } : { cwd });
-  const from = removed ? (opts.project ? holders.find((h) => h.scope === 'project') : holders[0]) : undefined;
+  // correcting. A skipped (untrusted) project file is never edited, but a copy
+  // there wins the merge once the user trusts it, so it is named too (path
+  // only). Best effort: a file that will not load just loses the report.
+  const loaded = await loadLexicon({ cwd }).catch(() => undefined);
+  const holders = loaded ? termHolders(loaded, canonical) : [];
+  const untrusted = loaded ? untrustedTermHolder(loaded, canonical) : undefined;
+  let removed: boolean;
+  try {
+    removed = await removeTerm(canonical, scope ? { scope, cwd } : { cwd });
+  } catch (err) {
+    if (!isProjectTrustError(err)) throw err;
+    // Without a scope the untrusted project copy comes first and is refused;
+    // the global copy is still removable on its own.
+    const global = holders.find((h) => h.scope === 'global');
+    if (opts.json) {
+      line(io, JSON.stringify({ canonical, removed: false, error: errorMessage(err), ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
+    }
+    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --global\n`);
+    return 1;
+  }
+  const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
   const stillIn = removed ? holders.filter((h) => h !== from) : [];
   const notFound = (): string => {
-    const global = opts.project ? holders.find((h) => h.scope === 'global') : undefined;
+    const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
+    const otherFlag = other?.scope === 'project' ? '--project' : '--global';
     return (
-      `lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n` +
-      (global ? `lexicon: it is in the global lexicon (${safe(global.path)}); run without --project to remove it\n` : '')
+      `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
+      (other ? `lexicon: it is in the ${other.scope} lexicon (${safe(other.path)}); run with ${otherFlag} to remove it\n` : '') +
+      (untrusted
+        ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
+        : '')
     );
   };
+  const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
-    line(io, JSON.stringify({ canonical, removed, ...(stillIn.length > 0 ? { stillIn } : {}) }, null, 2));
+    line(io, JSON.stringify({ canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -408,6 +437,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   }
   line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safe(from.path)}` : ''}`);
   for (const h of stillIn) line(io, stillInLine(canonical, h));
+  if (untrusted) line(io, untrustedLine(canonical, untrusted));
   return 0;
 }
 
@@ -416,10 +446,17 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
  * unknown term or alias exits 1 (with `{ removed: false, error }` under
  * --json); a refused untrusted project file throws as every other write does.
  */
-async function runRemoveAlias(canonical: string, alias: string, opts: RemoveOptions, cwd: string, io: IO): Promise<number> {
+async function runRemoveAlias(
+  canonical: string,
+  alias: string,
+  opts: RemoveOptions,
+  scope: TermScope | undefined,
+  cwd: string,
+  io: IO,
+): Promise<number> {
   let result: RemoveAliasResult;
   try {
-    result = await removeAlias(canonical, alias, opts.project ? { scope: 'project', cwd } : { cwd });
+    result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
     if (isProjectTrustError(err)) throw err;
     const message = errorMessage(err);

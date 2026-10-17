@@ -54135,6 +54135,11 @@ function termHolders(loaded, canonical) {
   const holds2 = (file2) => file2?.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical)) === true;
   return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
 }
+function untrustedTermHolder(loaded, canonical) {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !skipped.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical))) return void 0;
+  return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
+}
 async function removeAlias(canonical, alias, opts = {}) {
   const wanted = canonical.trim();
   const drop = alias.trim();
@@ -59596,7 +59601,7 @@ var registerTermTools = (server, ctx) => {
     "remove_term",
     {
       title: "Remove a lexicon term or one of its aliases",
-      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term, the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
       inputSchema: {
         canonical: external_exports.string().min(1),
         alias: external_exports.string().min(1).optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
@@ -59618,15 +59623,36 @@ var registerTermTools = (server, ctx) => {
         });
       }
       const before = termHolders(await load(), canonical);
-      const removed = await removeTerm(canonical, opts);
+      let removed;
+      try {
+        removed = await removeTerm(canonical, opts);
+      } catch (err) {
+        const global = before.find((h) => h.scope === "global");
+        if (!isProjectTrustError(err) || !global) throw err;
+        throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with scope "global" to remove only that copy.`);
+      }
       if (!removed) return textResult({ canonical, removed, ...await whereElse(canonical, scope) });
-      const after = termHolders(await load(), canonical);
+      const loadedAfter = await load();
+      const after = termHolders(loadedAfter, canonical);
       const from = before.find((b) => !after.some((a) => a.path === b.path));
-      if (after.length === 0) return textResult({ canonical, removed, ...from ? { path: from.path } : {} });
-      const note = after.map(
+      const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
+      if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...from ? { path: from.path } : {} });
+      const notes = after.map(
         (h) => `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
-      ).join(" ");
-      return textResult({ canonical, removed, ...from ? { path: from.path } : {}, stillIn: after, note });
+      );
+      if (untrustedProject) {
+        notes.push(
+          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+        );
+      }
+      return textResult({
+        canonical,
+        removed,
+        ...from ? { path: from.path } : {},
+        ...after.length > 0 ? { stillIn: after } : {},
+        ...untrustedProject ? { untrustedProject } : {},
+        note: notes.join(" ")
+      });
     })
   );
   server.registerTool(

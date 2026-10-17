@@ -4,8 +4,14 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `lexicon remove --global` removes only the global copy of a term, mirroring `--project` (the two together exit 1). With `--alias` it limits the alias removal to the global file too. The `warn:` line naming a copy left in the other file now gives `lexicon remove "<canonical>" --global` or `--project`, and `--project` on a term only the global file holds points at `--global`.
+
 ### Fixed
 
+- `lexicon remove` and MCP `remove_term` name a copy of the term in the repo's untrusted (or changed) project lexicon: a `warn:` line, and `untrustedProject { path, trust }` under `--json` and in the MCP result, with a `note`. The global copy went and the result said `removed` while that copy waited to win the merge once the file was trusted. The file is still never loaded or edited, and only its path is reported.
+- `lexicon remove` on a term the untrusted project lexicon holds, without a scope, prints the `lexicon remove "<canonical>" --global` command when the global file has the term too, and under `--json` prints `{ canonical, removed: false, error, untrustedProject }`. The trust error told the user to write to the global lexicon, with no flag that did. MCP `remove_term` adds the `scope: "global"` call to the same error.
 - `lexicon suggest --apply` on a stale term with a copy in both the project and the global lexicon prints the file it removed and a `warn:` line naming the copy left in the other file, with the `lexicon remove` command that removes it too. It removed only the project copy and printed `removed` while the global copy kept correcting.
 - MCP `remove_term` without `alias`, on a term in both lexicon files, names the copy it left: the result carries `path` (the file it removed from), `stillIn` and a `note` with the `scope` that removes the other copy. It removed the project copy and reported `removed: true` with no word about the global one.
 - `lexicon remove` does the same: it prints the file it removed from, a `warn:` line per copy left in the other file, and `stillIn` under `--json` (absent when nothing is left, so the old shape is unchanged). `lexicon remove --project` on a term only the global lexicon holds says where it is.

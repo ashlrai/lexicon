@@ -112,7 +112,8 @@ program
   .argument('<canonical>')
   .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
   .option('--project', 'only look in the project lexicon')
-  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found), plus stillIn when a copy is left in the other lexicon file; with --alias also alias, aliases and paths')
+  .option('--global', 'only look in the global lexicon (not with --project)')
+  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found), plus stillIn when a copy is left in the other lexicon file and untrustedProject when the untrusted project lexicon has one; with --alias also alias, aliases and paths')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
 program

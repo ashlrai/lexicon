@@ -1066,6 +1066,22 @@ export function termHolders(loaded: Pick<LoadedLexicon, 'global' | 'project'>, c
   return [loaded.project, loaded.global].filter(holds).map((f) => ({ scope: f.scope, path: f.path }));
 }
 
+/**
+ * The skipped (untrusted or changed) project file, when its terms include
+ * `canonical` (case-insensitive). Only a yes or no comes out of the untrusted
+ * content: the result is the file's path and trust status, never a term.
+ * A removal reports it because that copy wins the merge once the user trusts
+ * the file, and it is never edited here: `removeTerm` refuses the file.
+ */
+export function untrustedTermHolder(
+  loaded: Pick<LoadedLexicon, 'skippedProject' | 'projectTrust'>,
+  canonical: string,
+): { path: string; trust: 'untrusted' | 'changed' } | undefined {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !skipped.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical))) return undefined;
+  return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
+}
+
 /** What `removeAlias` changed: the term as it now reads, and every file it was dropped from. */
 export interface RemoveAliasResult {
   /** The edited term (from the first file edited: project before global). */
