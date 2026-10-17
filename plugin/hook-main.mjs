@@ -20300,8 +20300,29 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   return true;
 }
+var CORRECTION_LIST_MAX_CHARS = 4e3;
+function capCorrectionList(summary, max = CORRECTION_LIST_MAX_CHARS) {
+  if (summary.length <= max) return summary;
+  const counts = /* @__PURE__ */ new Map();
+  for (const l of summary.split("\n")) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const more = (n) => `... ${n} more correction${n === 1 ? "" : "s"} not listed; call the lexicon normalize_transcript tool on the prompt for the full list.`;
+  const kept = [];
+  let used = 0;
+  let left = 0;
+  for (const [text, n] of counts) {
+    const shown = n > 1 ? `${text} (${n} times)` : text;
+    if (left > 0 || used + shown.length + 1 + more(Number.MAX_SAFE_INTEGER).length > max) {
+      left += n;
+      continue;
+    }
+    kept.push(shown);
+    used += shown.length + 1;
+  }
+  if (left === 0) return kept.join("\n");
+  return [...kept, more(left)].join("\n");
+}
 function formatAdditionalContext(result) {
-  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + diffSummary(result);
+  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}
 Corrected prompt:
@@ -20625,12 +20646,14 @@ if (isMainModule()) {
 }
 export {
   CORRECTED_PROMPT_MAX_CHARS,
+  CORRECTION_LIST_MAX_CHARS,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
   SESSION_CONTEXT_MAX_CHARS,
+  capCorrectionList,
   dataBlockSpans,
   dropCorrectionSpans,
   dropDataBlockSpans,

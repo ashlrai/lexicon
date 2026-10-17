@@ -142,9 +142,46 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
   return true;
 }
 
+/**
+ * Longest list of corrections the note carries. The list had no bound: a
+ * pasted log naming a term thousands of times put one line per occurrence
+ * into the context (tens of kilobytes), even after the prompt itself stopped
+ * being echoed past CORRECTED_PROMPT_MAX_CHARS.
+ */
+export const CORRECTION_LIST_MAX_CHARS = 4000;
+
+/**
+ * `summary` (one correction per line) when it fits in `max` characters.
+ * Otherwise identical lines are merged with a count (`... (12 times)`), lines
+ * are kept from the start while they fit, and one closing line says how many
+ * corrections were left out and where to get them all. Exported for tests.
+ */
+export function capCorrectionList(summary: string, max: number = CORRECTION_LIST_MAX_CHARS): string {
+  if (summary.length <= max) return summary;
+  const counts = new Map<string, number>();
+  for (const l of summary.split('\n')) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const more = (n: number): string =>
+    `... ${n} more correction${n === 1 ? '' : 's'} not listed; call the lexicon normalize_transcript tool on the prompt for the full list.`;
+  const kept: string[] = [];
+  let used = 0;
+  let left = 0;
+  for (const [text, n] of counts) {
+    const shown = n > 1 ? `${text} (${n} times)` : text;
+    // Room for the closing line, whatever count it ends up with.
+    if (left > 0 || used + shown.length + 1 + more(Number.MAX_SAFE_INTEGER).length > max) {
+      left += n;
+      continue;
+    }
+    kept.push(shown);
+    used += shown.length + 1;
+  }
+  if (left === 0) return kept.join('\n');
+  return [...kept, more(left)].join('\n');
+}
+
 /** Builds the note handed to the agent for a changed prompt. */
 export function formatAdditionalContext(result: NormalizeResult): string {
-  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + diffSummary(result);
+  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}\nCorrected prompt:\n${result.output}`;
 }

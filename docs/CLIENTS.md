@@ -69,7 +69,7 @@ Corrected prompt:
 tell Ashlr.AI to ship it to Hetzner
 ```
 
-The model starts the turn already knowing that "Ashler" means "Ashlr.AI". When nothing changed it prints nothing. It always exits 0, logs errors to stderr only, and measures about 100ms end to end including Node startup (budget 200ms), so a broken lexicon never blocks a prompt. It also bumps each matched term's `hits` counter in the background, so `lexicon stats` counts hook matches from any session, including headless and scripted ones.
+The model starts the turn already knowing that "Ashler" means "Ashlr.AI". A prompt over 8000 characters is not repeated back, and a list of corrections over about 4000 characters merges repeats into one line with a count and ends with how many more were left out. When nothing changed it prints nothing. It always exits 0, logs errors to stderr only, and measures about 100ms end to end including Node startup (budget 200ms), so a broken lexicon never blocks a prompt. It also bumps each matched term's `hits` counter in the background, so `lexicon stats` counts hook matches from any session, including headless and scripted ones.
 
 When the prompt itself is a correction ("it's Ashlr.AI, not Ashlar", "Ashlar -> Ashlr.AI", "replace Ashlar with Ashlr.AI", "it's Ashlr.AI not Ashlar. remember that.") the hook adds one more line asking the model to call `learn_correction` with `heard: "Ashlar", meant: "Ashlr.AI"`. On a correction prompt the hook does not normalize the words being corrected: "Ashlar" is left as the user wrote it, is not counted as a hit, and the rest of the prompt is still corrected. The hook never writes to the lexicon; the model makes the call, so a false positive costs nothing.
 
