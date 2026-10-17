@@ -185,3 +185,60 @@ describe('text format: a canonical that starts with #', () => {
     ]);
   });
 });
+
+describe('text format: separators inside a canonical or an alias', () => {
+  // Catches: `A = B` was written as is and read back as canonical "A" with
+  // the alias "B"; an alias holding `|` in the `=` form was split in two; an
+  // alias holding ` = ` or a lone `=` in the `:` form moved the separator.
+  it('round-trips every awkward canonical and alias exactly', () => {
+    const lexicon: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'A = B', aliases: [] },
+        { canonical: 'C = D', aliases: ['see equals dee'] },
+        { canonical: 'E =', aliases: [] },
+        { canonical: '=', aliases: [] },
+        { canonical: '= F', aliases: ['eff'] },
+        { canonical: 'Pipe', aliases: ['a|b', 'c, d'] },
+        { canonical: 'Pipe2', aliases: ['x | y'] },
+        { canonical: 'Re:Pipe', aliases: ['r|p'] },
+        { canonical: 'Eq', aliases: ['x = y', '=', '= z'] },
+        { canonical: 'Comma, Inc', aliases: ['comma inc'] },
+        { canonical: 'Colon: Inc', aliases: ['a, b', 'c|d'] },
+        { canonical: 'Back\\', aliases: ['slash\\'] },
+        { canonical: 'Back\\:slash', aliases: ['b\\,c', 'b\\|c', 'b\\=c', 'b\\\\c'] },
+        { canonical: 'Win\\Path', aliases: ['c:\\temp'] },
+        { canonical: '#A = B', aliases: ['hash'] },
+        { canonical: '\\', aliases: [] },
+        { canonical: 'https://x.dev', aliases: ['x | dev'] },
+        { canonical: 'a=b', aliases: ['k=v'] },
+      ],
+    };
+    const text = exportText(lexicon);
+    const r = importLexicon(text, 'text');
+    expect(r.skipped).toEqual([]);
+    expect(r.terms.map((t) => [t.canonical, t.aliases]).sort()).toEqual(
+      lexicon.terms.map((t) => [t.canonical, t.aliases]).sort(),
+    );
+    // Exporting what was read writes the same text again.
+    expect(exportText({ version: 1, terms: r.terms })).toBe(text);
+  });
+
+  it('keeps the plain forms unchanged and reads escapes in hand-written lines', () => {
+    const plain: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'] },
+        { canonical: 'Re:Invent', aliases: ['reinvent'] },
+        { canonical: 'kubectl', aliases: [] },
+      ],
+    };
+    expect(exportText(plain)).toBe('Ashlr.AI: Ashler, Ashlar\nkubectl\nRe:Invent = reinvent\n');
+    const r = importLexicon('A \\= B\nFoo = a\\|b | c\nBar: x\\, y, z\n', 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['A = B', []],
+      ['Foo', ['a|b', 'c']],
+      ['Bar', ['x, y', 'z']],
+    ]);
+  });
+});

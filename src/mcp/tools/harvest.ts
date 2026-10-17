@@ -2,16 +2,19 @@
  * Mining new terms: scanning the repo for names worth adding, proposing
  * what the lexicon should learn next, and applying one of those proposals.
  */
+import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
+  defaultProjectPath,
   harvestRepo,
   isProjectTrustError,
   loadLexicon,
   loadVoiceHistory,
   removeTerm,
+  resolvePaths,
   suggestAliases,
   suggestTerms,
   termHolders,
@@ -34,8 +37,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. ' +
         'WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project ' +
         'would add. Call it without `add` first -- that is a read-only preview. ' +
-        "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml but does not trust it: " +
-        'the file applies only after the user reviews it and runs ' + cliCommand('trust') + ', so show the candidate list and get a yes first, then relay `nextStep`. ' +
+        "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. " +
+        'A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs ' + cliCommand('trust') + ': relay `nextStep`. ' +
         `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. ` +
         'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
         'candidates come back as names, categories and counts.',
@@ -43,7 +46,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         path: z.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe('Max candidates to return (default 50).'),
         minCount: z.number().int().positive().optional().describe('Minimum occurrences for a candidate (default 2).'),
-        add: z.boolean().optional().describe('When true, add every candidate to the project lexicon, left untrusted for the user to review.'),
+        add: z.boolean().optional().describe('When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.'),
       },
     },
     async ({ path, limit, minCount, add }) =>
@@ -56,12 +59,15 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         let added = 0;
         let written: string | undefined;
         const failures: Array<{ canonical: string; error: string }> = [];
+        // Write into the harvested repo's own project lexicon, not the server
+        // cwd. A model chose these names, so a new, untrusted or changed file
+        // is never trusted by the write (trusting it is the user's call:
+        // lexicon trust); a file the user already trusted takes them and stays
+        // trusted, as for every other MCP write.
+        const writeOpts = add ? await mcpWriteOpts({ cwd: root }) : {};
         if (add) {
           for (const c of candidates) {
             try {
-              // Write into the harvested repo's own project lexicon, not the
-              // server cwd, and never trust it: a model chose these names,
-              // and trusting a project file is the user's call (lexicon trust).
               const saved = await addTerm(
                 {
                   canonical: c.canonical,
@@ -70,7 +76,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
                   source: c.source,
                   scope: 'project',
                 },
-                { cwd: root, scope: 'project', leaveUntrusted: true },
+                { cwd: root, scope: 'project', ...writeOpts },
               );
               written = saved.file.path;
               added += 1;
@@ -88,7 +94,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           count: candidates.length,
           ...(add ? { added, failures } : {}),
           ...(written !== undefined
-            ? { path: written, ...untrustedWriteFields(written, `${added} name(s)`, true) }
+            ? { path: written, ...(writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {}) }
             : {}),
           ...(failures.length > 0
             ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }
@@ -136,7 +142,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), " +
         "'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); " +
         'when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. ' +
-        'Pass the suggestion object back as received. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.',
+        "Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. " +
+        'A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.',
       inputSchema: {
         suggestion: z.object({
           kind: z.enum(SUGGESTION_KINDS),
@@ -195,6 +202,19 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             );
           }
           target ??= existing.scope;
+        }
+        // suggest_terms with `cwd` reads another repo, and its suggestions name
+        // that repo's project file in `path`; this server writes only its own
+        // project file, so applying one there edited a file the agent never
+        // named to the user (or created a copy of the term in it).
+        if (target === 'project' && suggestion.path !== undefined) {
+          const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+          if (resolve(suggestion.path) !== resolve(here)) {
+            throw new Error(
+              `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. ` +
+                `The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord(dirname(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`,
+            );
+          }
         }
         const storeOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
         if (kind === 'stale') {

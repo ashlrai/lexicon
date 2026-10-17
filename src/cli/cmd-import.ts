@@ -4,7 +4,7 @@
  * file) into the global or project lexicon in one command. The handler lives in
  * runImport so it is unit-testable; registerImportCommands only wires commander.
  */
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
@@ -42,7 +42,10 @@ export interface ImportCliOptions extends CommonOptions {
    * Not a CLI flag: write a project file without registering it as trusted
    * (addTerm's `leaveUntrusted`), for MCP import_dictionary on a project file
    * the user has not trusted. The report then lists each term as imported,
-   * not as merged, so nothing already in that file is read back out.
+   * not as merged, so nothing already in that file is read back out. With
+   * `dryRun` the project file is not read at all: the report sets
+   * `untrustedTarget` and leaves out each row's `created`, since telling new
+   * from merged would be a read of the untrusted file's terms.
    */
   leaveUntrusted?: boolean;
 }
@@ -50,8 +53,12 @@ export interface ImportCliOptions extends CommonOptions {
 export interface ImportedTermReport {
   canonical: string;
   aliases: string[];
-  /** true when the term did not exist in the target lexicon before. */
-  created: boolean;
+  /**
+   * true when the term did not exist in the target lexicon before. Absent
+   * only in a `leaveUntrusted` dry run against an existing project file
+   * (`ImportReport.untrustedTarget`), which is not read.
+   */
+  created?: boolean;
 }
 
 export interface ImportReport {
@@ -59,6 +66,11 @@ export interface ImportReport {
   scope: TermScope;
   path?: string;
   dryRun: boolean;
+  /**
+   * A `leaveUntrusted` dry run whose project file exists: it is not trusted,
+   * so its terms were not read and no row says new or merged.
+   */
+  untrustedTarget?: true;
   terms: ImportedTermReport[];
   skipped: ImportResult['skipped'];
   counts: { total: number; created: number; merged: number; skipped: number };
@@ -191,9 +203,18 @@ export async function runImport(
     // Preview against the target file so "new" vs "merge" is accurate without writing.
     const paths = resolvePaths({ cwd });
     const target = scope === 'project' ? paths.project : paths.global;
-    const existing = target ? (await readLexiconFile(target, scope)).lexicon : undefined;
+    // An untrusted project file is not read, not even for one new-or-merged
+    // bit per term (the MCP caller is a model, and those bits spell out
+    // which of its names the file already holds).
+    const blind = opts.leaveUntrusted === true && scope === 'project' && target !== undefined && existsSync(target);
+    const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : undefined;
     if (target) report.path = target;
+    if (blind) report.untrustedTarget = true;
     for (const term of result.terms) {
+      if (blind) {
+        report.terms.push({ canonical: term.canonical, aliases: term.aliases });
+        continue;
+      }
       const created = !existing || findTerm(existing, term.canonical) === undefined;
       report.terms.push({ canonical: term.canonical, aliases: term.aliases, created });
     }
@@ -206,8 +227,8 @@ export async function runImport(
       report.terms.push({ canonical: shown.canonical, aliases: shown.aliases, created: added.created });
     }
   }
-  report.counts.created = report.terms.filter((t) => t.created).length;
-  report.counts.merged = report.terms.length - report.counts.created;
+  report.counts.created = report.terms.filter((t) => t.created === true).length;
+  report.counts.merged = report.terms.filter((t) => t.created === false).length;
 
   if (opts.json) {
     io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
@@ -223,7 +244,7 @@ function printReport(report: ImportReport, io: IO): void {
     const rows = report.terms.map((t) => [
       t.canonical,
       t.aliases.length > 0 ? t.aliases.join(', ') : '(none)',
-      t.created ? 'new' : 'merged',
+      t.created === undefined ? 'untrusted file' : t.created ? 'new' : 'merged',
     ]);
     io.stdout(renderTable(rows, ['canonical', 'aliases', 'status']));
   }

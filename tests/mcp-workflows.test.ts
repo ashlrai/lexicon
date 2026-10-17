@@ -511,6 +511,34 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   });
 });
 
+describe('apply_suggestion for a suggestion from another repo', () => {
+  // Catches: suggest_terms with `cwd` named the other repo's .lexicon.yaml in
+  // each suggestion's `path`, but apply_suggestion wrote this server's own
+  // project file, so the agent told the user one file and edited another.
+  it('refuses a project suggestion whose path is not this server project file, and writes nothing', async () => {
+    const own = await trustedProjectFile();
+    await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' });
+    const ownBefore = await fs.readFile(own, 'utf8');
+    const other = path.join(home, 'other-repo', '.lexicon.yaml');
+    for (const suggestion of [
+      { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys', scope: 'project', path: other },
+      { kind: 'stale', canonical: 'Kubernetes', scope: 'project', path: other },
+    ]) {
+      const res = await call('apply_suggestion', { suggestion });
+      expect(res.isError, res.text).toBe(true);
+      expect(res.text).toContain(other);
+      expect(res.text).toContain(own);
+      expect(res.text).toContain('nothing was written');
+    }
+    expect(await fs.readFile(own, 'utf8')).toBe(ownBefore);
+
+    // Its own path, or none, is applied as before.
+    const ok = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys', scope: 'project', path: own } });
+    expect(ok.isError, ok.text).toBe(false);
+    expect(JSON.parse(ok.text)).toMatchObject({ path: own });
+  });
+});
+
 describe('apply_suggestion stale on a term in both lexicon files', () => {
   // Catches: removeTerm stops at the first file that holds the term, so a
   // stale term with a project copy and a global copy lost only the project
@@ -1001,6 +1029,52 @@ describe('project-scope writes from MCP never trust the project file', () => {
     for (const alias of ['PLANTED-ALIAS', 'cube control', 'cube cuddle', 'cube cutter']) expect(onDisk).toContain(alias);
   });
 
+  // Catches: learn_correction merging into an untrusted file's term returned
+  // that term's canonical as the file spells it (here "KUBECTL"), a read of
+  // the untrusted file; the result now names only what the call supplied.
+  it('never shows the canonical as the untrusted file capitalises it', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: KUBECTL\n    aliases: [kube see tee el]\n');
+    for (const [tool, args] of [
+      ['learn_correction', { heard: 'cube cuddle', meant: 'Kubectl', scope: 'project' }],
+      ['learn_correction', { heard: 'kubectl', meant: 'Kubectl', scope: 'project' }],
+      ['add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' }],
+      ['apply_suggestion', { suggestion: { kind: 'term', canonical: 'Kubectl', aliases: ['cube cutter'] }, scope: 'project' }],
+      ['import_dictionary', { content: 'Kubectl: cube cutlet\n', format: 'text', scope: 'project' }],
+    ] as const) {
+      const res = await call(tool, args);
+      expect(res.isError, `${tool}: ${res.text}`).toBe(false);
+      expect(JSON.parse(res.text)).toMatchObject({ path: projectPath, trusted: false });
+      expect(res.text, `${tool}: ${res.text}`).not.toContain('KUBECTL');
+      expect(res.text).toContain('Kubectl');
+    }
+    expect(await fs.readFile(projectPath, 'utf8')).toContain('KUBECTL');
+  });
+
+  // Catches: a project-scope dry run read the untrusted file to label each
+  // imported term new or merged, one bit per name about what the file holds.
+  it('a project-scope import_dictionary dry run does not read an untrusted file', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const text = 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n';
+    await fs.writeFile(projectPath, text);
+    const res = await call('import_dictionary', { content: 'Kubectl: cube cutter\nHetzner: het snore\n', format: 'text', scope: 'project', dryRun: true });
+    expect(res.isError, res.text).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; untrustedTarget?: boolean; trusted?: boolean; note?: string; terms: Record<string, unknown>[]; counts: Record<string, number> };
+    expect(payload).toMatchObject({ path: projectPath, untrustedTarget: true, trusted: false, dryRun: true });
+    expect(payload.terms.map((t) => t.canonical)).toEqual(['Kubectl', 'Hetzner']);
+    for (const row of payload.terms) expect(row).not.toHaveProperty('created');
+    expect(payload.counts).toMatchObject({ total: 2, created: 0, merged: 0 });
+    expect(payload.note).toContain('not trusted');
+    expect(await fs.readFile(projectPath, 'utf8')).toBe(text);
+    expect(await trustStatus()).toBe('untrusted');
+
+    // A trusted file is read as before.
+    await trustProject(projectPath);
+    const trusted = JSON.parse((await call('import_dictionary', { content: 'Kubectl: cube cutter\nHetzner: het snore\n', format: 'text', scope: 'project', dryRun: true })).text) as { untrustedTarget?: boolean; terms: { created?: boolean }[] };
+    expect(trusted.untrustedTarget).toBeUndefined();
+    expect(trusted.terms.map((t) => t.created)).toEqual([false, true]);
+  });
+
   it('keeps a trusted project file trusted and merged after the edit', async () => {
     const projectPath = await trustedProjectFile();
     const res = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
@@ -1088,6 +1162,31 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     const again = await call('harvest_repo', { add: true, minCount: 1 });
     expect(again.isError).toBe(false);
     expect(JSON.parse(again.text)).toMatchObject({ trusted: false });
+  });
+
+  // Catches: add: true never pinned, so a project file the user had already
+  // trusted read as "changed" after the harvest and stopped applying, unlike
+  // every other MCP write into a trusted file (round 24's rule).
+  it('add: true keeps an already-trusted file trusted, and writes a changed one untrusted', async () => {
+    const projectPath = await trustedProjectFile();
+    const res = await call('harvest_repo', { add: true, minCount: 1 });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { added: number; path: string; trusted?: boolean; nextStep?: string };
+    expect(payload.added).toBeGreaterThan(0);
+    expect(payload.path).toBe(projectPath);
+    expect(payload).not.toHaveProperty('trusted');
+    expect(payload).not.toHaveProperty('nextStep');
+    const status = JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string };
+    expect(status.status).toBe('trusted');
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[] };
+    expect(listed.terms.length).toBe(payload.added);
+
+    // A hand edit makes it "changed": the next harvest writes it unpinned and says so.
+    await fs.appendFile(projectPath, '# edited\n');
+    const again = JSON.parse((await call('harvest_repo', { add: true, minCount: 1 })).text) as { trusted?: boolean };
+    expect(again.trusted).toBe(false);
+    const after = JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string };
+    expect(after.status).toBe('changed');
   });
 
   // Catches: `path` was resolved and read wherever it pointed (a probe read /etc).

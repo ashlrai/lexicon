@@ -17955,8 +17955,11 @@ function codeSpanRanges(text) {
   }
   return out;
 }
-var HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
-var HTML_CODE_CLOSE_RE = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+var HTML_CODE_ELEMENTS = ["code", "pre", "kbd", "samp", "script", "style"];
+var HTML_CODE_OPEN_RE = new RegExp(`<(${HTML_CODE_ELEMENTS.join("|")})(?=[\\s>/])[^<>]*>`, "gi");
+var HTML_CODE_CLOSE_RE = Object.fromEntries(
+  HTML_CODE_ELEMENTS.map((name) => [name, new RegExp(`</${name}\\s*>`, "gi")])
+);
 function htmlCodeRanges(text) {
   const out = [];
   if (!text.includes("<")) return out;
@@ -17971,7 +17974,7 @@ function htmlCodeRanges(text) {
     const c = close.exec(text);
     if (!c) {
       unclosed.add(name);
-      if (unclosed.size === 2) break;
+      if (unclosed.size === HTML_CODE_ELEMENTS.length) break;
       continue;
     }
     const end = c.index + c[0].length;
@@ -20322,14 +20325,28 @@ function exportSuperwhisper(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/text.ts
+var ESCAPABLE = "\\|,:=";
+function escapeField(field, separators) {
+  let out = "";
+  for (let i = 0; i < field.length; i++) {
+    const c = field[i];
+    const next = field[i + 1];
+    if (separators.includes(c)) out += `\\${c}`;
+    else if (c === "=" && (i === 0 || /\s/.test(field[i - 1]))) out += "\\=";
+    else if (c === "\\" && (next === void 0 || ESCAPABLE.includes(next))) out += "\\\\";
+    else out += c;
+  }
+  return out;
+}
 function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    const canonical = /^\\*#/.test(t.canonical) ? `\\${t.canonical}` : t.canonical;
-    if (aliases.length === 0) return canonical.includes(":") ? `${canonical} =` : canonical;
-    const needsEquals = canonical.includes(":") || aliases.some((a) => a.includes(","));
-    return needsEquals ? `${canonical} = ${aliases.join(" | ")}` : `${canonical}: ${aliases.join(", ")}`;
+    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
+    let canonical = escapeField(t.canonical, "");
+    if (/^\\*#/.test(canonical)) canonical = `\\${canonical}`;
+    if (aliases.length === 0) return t.canonical.includes(":") ? `${canonical} =` : canonical;
+    return needsEquals ? `${canonical} = ${aliases.map((a) => escapeField(a, "|")).join(" | ")}` : `${canonical}: ${aliases.map((a) => escapeField(a, ",")).join(", ")}`;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }

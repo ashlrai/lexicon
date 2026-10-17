@@ -283,22 +283,31 @@ export function codeSpanRanges(text: string): Range[] {
 }
 
 /**
- * An HTML `<code>` or `<pre>` opening tag (any case, with attributes), and the
- * closing tag of each. Only real tags: the escaped `&lt;code&gt;` an HTML page
- * uses to show markup as text is prose, and is corrected like any other.
+ * The HTML elements whose content is code, keyboard input, program output or
+ * script, never prose: `<code>`, `<pre>`, `<kbd>`, `<samp>`, `<script>` and
+ * `<style>`.
  */
-const HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
-const HTML_CODE_CLOSE_RE: Readonly<Record<string, RegExp>> = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+const HTML_CODE_ELEMENTS = ['code', 'pre', 'kbd', 'samp', 'script', 'style'] as const;
 
 /**
- * `<code>...</code>` and `<pre>...</pre>` in HTML (or in markdown, which
- * allows inline HTML), opening tag to closing tag. An element that never
- * closes is literal text, not a range: unlike a fence, a stray `<code>` in a
- * sentence is usually someone naming the tag.
+ * One of those opening tags (any case, with attributes), and the closing tag
+ * of each. Only real tags: the escaped `&lt;code&gt;` an HTML page uses to
+ * show markup as text is prose, and is corrected like any other.
+ */
+const HTML_CODE_OPEN_RE = new RegExp(`<(${HTML_CODE_ELEMENTS.join('|')})(?=[\\s>/])[^<>]*>`, 'gi');
+const HTML_CODE_CLOSE_RE: Readonly<Record<string, RegExp>> = Object.fromEntries(
+  HTML_CODE_ELEMENTS.map((name) => [name, new RegExp(`</${name}\\s*>`, 'gi')]),
+);
+
+/**
+ * `<code>`, `<pre>`, `<kbd>`, `<samp>`, `<script>` and `<style>` elements in
+ * HTML (or in markdown, which allows inline HTML), opening tag to closing
+ * tag. An element that never closes is literal text, not a range: unlike a
+ * fence, a stray `<code>` in a sentence is usually someone naming the tag.
  *
  * Linear: the search for a closing tag starts where the last range ended, and
  * once a tag name has no closing tag left in the text no later opener of that
- * name is searched for again.
+ * name is searched for again, so each name scans to the end at most once.
  */
 export function htmlCodeRanges(text: string): Range[] {
   const out: Range[] = [];
@@ -314,7 +323,7 @@ export function htmlCodeRanges(text: string): Range[] {
     const c = close.exec(text);
     if (!c) {
       unclosed.add(name);
-      if (unclosed.size === 2) break;
+      if (unclosed.size === HTML_CODE_ELEMENTS.length) break;
       continue;
     }
     const end = c.index + c[0].length;

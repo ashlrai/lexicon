@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve4.call(this, root, ref);
+      let _sch = resolve5.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3040,7 +3040,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve4(root, ref) {
+    function resolve5(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3870,7 +3870,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve4(baseURI, relativeURI, options) {
+    function resolve5(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4239,7 +4239,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve4,
+      resolve: resolve5,
       resolveComponent,
       equal,
       serialize,
@@ -18197,7 +18197,7 @@ var require_commander = __commonJS({
 
 // src/mcp/server.ts
 var import_node_fs29 = __toESM(require_node_fs(), 1);
-var import_node_path30 = __toESM(require_node_path(), 1);
+var import_node_path31 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 
 // node_modules/zod/v4/classic/external.js
@@ -23267,7 +23267,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve4) {
+function isRecursive(inst, stack, resolve5) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -23277,7 +23277,7 @@ function isRecursive(inst, stack, resolve4) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve4);
+      const answer = isRecursive(child, stack, resolve5);
       if (answer > result)
         result = answer;
     }
@@ -23288,7 +23288,7 @@ function isRecursive(inst, stack, resolve4) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve4) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve5) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -23352,7 +23352,7 @@ function isRecursive(inst, stack, resolve4) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve4 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve5 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -45422,7 +45422,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error62) {
@@ -45439,7 +45439,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       const earlyReject = (error62) => {
         reject(error62);
       };
@@ -45517,7 +45517,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve4(parseResult.data);
+            resolve5(parseResult.data);
           }
         } catch (error62) {
           reject(error62);
@@ -45779,12 +45779,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve4, interval);
+      const timeoutId = setTimeout(resolve5, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -46915,7 +46915,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+      await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -47579,12 +47579,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve4) => {
+    return new Promise((resolve5) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve4();
+        resolve5();
       } else {
-        this._stdout.once("drain", resolve4);
+        this._stdout.once("drain", resolve5);
       }
     });
   }
@@ -52072,8 +52072,11 @@ function codeSpanRanges(text) {
   }
   return out;
 }
-var HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
-var HTML_CODE_CLOSE_RE = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+var HTML_CODE_ELEMENTS = ["code", "pre", "kbd", "samp", "script", "style"];
+var HTML_CODE_OPEN_RE = new RegExp(`<(${HTML_CODE_ELEMENTS.join("|")})(?=[\\s>/])[^<>]*>`, "gi");
+var HTML_CODE_CLOSE_RE = Object.fromEntries(
+  HTML_CODE_ELEMENTS.map((name) => [name, new RegExp(`</${name}\\s*>`, "gi")])
+);
 function htmlCodeRanges(text) {
   const out = [];
   if (!text.includes("<")) return out;
@@ -52088,7 +52091,7 @@ function htmlCodeRanges(text) {
     const c = close.exec(text);
     if (!c) {
       unclosed.add(name);
-      if (unclosed.size === 2) break;
+      if (unclosed.size === HTML_CODE_ELEMENTS.length) break;
       continue;
     }
     const end = c.index + c[0].length;
@@ -52874,8 +52877,8 @@ var ParagraphIndex = class {
     if (found.length > 0 && found[0] + needle.length <= k1) return true;
     if (found.length > 0 && found[found.length - 1] >= k2) return true;
     const n = needle.length - 1;
-    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
-    return joined.includes(needle);
+    const joined2 = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined2.includes(needle);
   }
   paragraph(from, to) {
     const cached2 = this.cache.get(from);
@@ -53572,7 +53575,7 @@ async function withFileLock(target, fn, opts = {}) {
   const tail = mine.then(ignore, ignore);
   queues.set(lockPath, tail);
   try {
-    return await new Promise((resolve4, reject) => {
+    return await new Promise((resolve5, reject) => {
       const timer = setTimeout(() => {
         if (started) return;
         abandoned = true;
@@ -53587,7 +53590,7 @@ async function withFileLock(target, fn, opts = {}) {
       mine.then(
         (value) => {
           clearTimeout(timer);
-          resolve4(value);
+          resolve5(value);
         },
         (err) => {
           clearTimeout(timer);
@@ -53718,7 +53721,7 @@ function isEexist(err) {
   return typeof err === "object" && err !== null && err.code === "EEXIST";
 }
 function sleep(ms) {
-  return new Promise((resolve4) => setTimeout(resolve4, ms));
+  return new Promise((resolve5) => setTimeout(resolve5, ms));
 }
 
 // src/util/bounded-read.ts
@@ -57578,14 +57581,28 @@ function exportSuperwhisper(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/text.ts
+var ESCAPABLE = "\\|,:=";
+function escapeField(field, separators) {
+  let out = "";
+  for (let i = 0; i < field.length; i++) {
+    const c = field[i];
+    const next = field[i + 1];
+    if (separators.includes(c)) out += `\\${c}`;
+    else if (c === "=" && (i === 0 || /\s/.test(field[i - 1]))) out += "\\=";
+    else if (c === "\\" && (next === void 0 || ESCAPABLE.includes(next))) out += "\\\\";
+    else out += c;
+  }
+  return out;
+}
 function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    const canonical = /^\\*#/.test(t.canonical) ? `\\${t.canonical}` : t.canonical;
-    if (aliases.length === 0) return canonical.includes(":") ? `${canonical} =` : canonical;
-    const needsEquals = canonical.includes(":") || aliases.some((a) => a.includes(","));
-    return needsEquals ? `${canonical} = ${aliases.join(" | ")}` : `${canonical}: ${aliases.join(", ")}`;
+    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
+    let canonical = escapeField(t.canonical, "");
+    if (/^\\*#/.test(canonical)) canonical = `\\${canonical}`;
+    if (aliases.length === 0) return t.canonical.includes(":") ? `${canonical} =` : canonical;
+    return needsEquals ? `${canonical} = ${aliases.map((a) => escapeField(a, "|")).join(" | ")}` : `${canonical}: ${aliases.map((a) => escapeField(a, ",")).join(", ")}`;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }
@@ -58266,30 +58283,54 @@ function parseSuperwhisperImport(content) {
 }
 
 // src/core/importers/text.ts
-var EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
-var BARE_EQUALS_FORM = /^(.+?)\s+=$/;
 var ESCAPED_HASH = /^\\+#/;
-var SEPARATOR_COLON = /:(?!\/\/)/;
+var TEXT_ESCAPABLE = "\\|,:=";
+function lexLine(text) {
+  const out = [];
+  for (let i = 0; i < text.length; i++) {
+    const next = text[i + 1];
+    if (text[i] === "\\" && next !== void 0 && TEXT_ESCAPABLE.includes(next)) {
+      out.push({ c: next, escaped: true });
+      i++;
+    } else {
+      out.push({ c: text[i], escaped: false });
+    }
+  }
+  return out;
+}
+var isSpace2 = (ch) => ch !== void 0 && !ch.escaped && /\s/.test(ch.c);
+var isBare = (ch, c) => ch !== void 0 && !ch.escaped && ch.c === c;
+var joined = (chars) => chars.map((ch) => ch.c).join("");
+function splitAliases2(chars, sep2) {
+  const parts = [];
+  let from = 0;
+  for (let i = 0; i <= chars.length; i++) {
+    if (i === chars.length || isBare(chars[i], sep2)) {
+      parts.push(joined(chars.slice(from, i)).trim());
+      from = i + 1;
+    }
+  }
+  return parts.filter(Boolean);
+}
 function parseTextLine(raw) {
   let text = raw.trim();
   if (!text) return void 0;
   if (ESCAPED_HASH.test(text)) text = text.slice(1);
   else if (text.startsWith("#")) return void 0;
-  const eq = EQUALS_FORM.exec(text);
-  if (eq) {
-    return { canonical: eq[1].trim(), aliases: eq[2].split("|").map((a) => a.trim()).filter(Boolean) };
-  }
-  const bare = BARE_EQUALS_FORM.exec(text);
-  if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === "=") return { canonical: "", aliases: [] };
-  const colon = text.search(SEPARATOR_COLON);
-  if (colon >= 0) {
-    return {
-      canonical: text.slice(0, colon).trim(),
-      aliases: text.slice(colon + 1).split(",").map((a) => a.trim()).filter(Boolean)
-    };
+  const chars = lexLine(text);
+  for (let k = 2; k < chars.length; k++) {
+    if (!isBare(chars[k], "=") || !isSpace2(chars[k - 1])) continue;
+    if (k === chars.length - 1) return { canonical: joined(chars.slice(0, k)).trim(), aliases: [] };
+    if (isSpace2(chars[k + 1])) {
+      return { canonical: joined(chars.slice(0, k)).trim(), aliases: splitAliases2(chars.slice(k + 1), "|") };
+    }
   }
-  return { canonical: text, aliases: [] };
+  const colon = chars.findIndex((ch, i) => isBare(ch, ":") && !(isBare(chars[i + 1], "/") && isBare(chars[i + 2], "/")));
+  if (colon >= 0) {
+    return { canonical: joined(chars.slice(0, colon)).trim(), aliases: splitAliases2(chars.slice(colon + 1), ",") };
+  }
+  return { canonical: joined(chars).trim(), aliases: [] };
 }
 function parseTextImport(content) {
   const out = { rows: [], skipped: [] };
@@ -60514,8 +60555,11 @@ var registerTermTools = (server, ctx) => {
       const writeOpts = await mcpWriteOpts(ctx);
       const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {}, ...writeOpts });
       const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === "project";
-      const term = untrusted && !learned.created ? { canonical: learned.term.canonical, aliases: learned.aliasAdded ? [heard.trim().replace(/\s+/g, " ")] : [] } : learned.term;
-      const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+      const heardText = heard.trim().replace(/\s+/g, " ");
+      const meantText = meant.trim().replace(/\s+/g, " ");
+      const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
+      const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
+      const saved = learned.aliasAdded ? `"${heard}" -> "${term.canonical}" saved` : heard.trim().toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
@@ -60574,18 +60618,19 @@ var registerTermTools = (server, ctx) => {
 };
 
 // src/mcp/tools/harvest.ts
+var import_node_path14 = __toESM(require_node_path());
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml but does not trust it: the file applies only after the user reviews it and runs " + cliCommand("trust") + `, so show the candidate list and get a yes first, then relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.`,
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts.`,
       inputSchema: {
         path: external_exports.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
         minCount: external_exports.number().int().positive().optional().describe("Minimum occurrences for a candidate (default 2)."),
-        add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon, left untrusted for the user to review.")
+        add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.")
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
@@ -60597,6 +60642,7 @@ var registerHarvestTools = (server, ctx) => {
       let added = 0;
       let written;
       const failures = [];
+      const writeOpts = add ? await mcpWriteOpts({ cwd: root }) : {};
       if (add) {
         for (const c of candidates) {
           try {
@@ -60608,7 +60654,7 @@ var registerHarvestTools = (server, ctx) => {
                 source: c.source,
                 scope: "project"
               },
-              { cwd: root, scope: "project", leaveUntrusted: true }
+              { cwd: root, scope: "project", ...writeOpts }
             );
             written = saved.file.path;
             added += 1;
@@ -60623,7 +60669,7 @@ var registerHarvestTools = (server, ctx) => {
         candidates,
         count: candidates.length,
         ...add ? { added, failures } : {},
-        ...written !== void 0 ? { path: written, ...untrustedWriteFields(written, `${added} name(s)`, true) } : {},
+        ...written !== void 0 ? { path: written, ...writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {} } : {},
         ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
@@ -60655,7 +60701,7 @@ var registerHarvestTools = (server, ctx) => {
     "apply_suggestion",
     {
       title: "Apply one suggestion",
-      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
       inputSchema: {
         suggestion: external_exports.object({
           kind: external_exports.enum(SUGGESTION_KINDS),
@@ -60697,6 +60743,14 @@ var registerHarvestTools = (server, ctx) => {
         }
         target ??= existing.scope;
       }
+      if (target === "project" && suggestion.path !== void 0) {
+        const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+        if ((0, import_node_path14.resolve)(suggestion.path) !== (0, import_node_path14.resolve)(here)) {
+          throw new Error(
+            `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
+          );
+        }
+      }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
         const before = termHolders(await load(), canonical);
@@ -60732,20 +60786,20 @@ var registerHarvestTools = (server, ctx) => {
 
 // src/mcp/tools/trust.ts
 var import_node_fs13 = __toESM(require_node_fs());
-var import_node_path14 = __toESM(require_node_path());
+var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(ctx, path27) {
   const hint = (target) => `trust ${shellWord(target)}`;
-  const requested = (0, import_node_path14.resolve)(ctx.cwd, path27);
-  if (!(0, import_node_fs13.existsSync)(requested)) return (0, import_node_path14.join)(containedPath(ctx, (0, import_node_path14.dirname)(requested), hint), (0, import_node_path14.basename)(requested));
+  const requested = (0, import_node_path15.resolve)(ctx.cwd, path27);
+  if (!(0, import_node_fs13.existsSync)(requested)) return (0, import_node_path15.join)(containedPath(ctx, (0, import_node_path15.dirname)(requested), hint), (0, import_node_path15.basename)(requested));
   const real = containedPath(ctx, requested, hint);
   if (!(0, import_node_fs13.statSync)(real).isDirectory()) return real;
-  const inside = (0, import_node_path14.join)(real, PROJECT_FILE_NAME);
+  const inside = (0, import_node_path15.join)(real, PROJECT_FILE_NAME);
   return (0, import_node_fs13.existsSync)(inside) ? containedPath(ctx, inside, hint) : inside;
 }
 function untrustTarget(cwd, path27) {
-  const resolved2 = (0, import_node_path14.resolve)(cwd, path27);
+  const resolved2 = (0, import_node_path15.resolve)(cwd, path27);
   try {
-    if ((0, import_node_fs13.statSync)(resolved2).isDirectory()) return (0, import_node_path14.join)(resolved2, PROJECT_FILE_NAME);
+    if ((0, import_node_fs13.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
   } catch {
   }
   return resolved2;
@@ -60874,22 +60928,22 @@ var registerTrustTools = (server, ctx) => {
 
 // src/cli/commands.ts
 var import_node_fs22 = __toESM(require_node_fs());
-var import_node_path22 = __toESM(require_node_path());
+var import_node_path23 = __toESM(require_node_path());
 
 // src/cli/claude-settings.ts
 var import_node_fs16 = __toESM(require_node_fs());
 var import_node_child_process3 = __toESM(require_node_child_process());
 var import_node_os5 = __toESM(require_node_os());
-var import_node_path17 = __toESM(require_node_path());
+var import_node_path18 = __toESM(require_node_path());
 var import_node_url3 = __toESM(require_node_url());
 
 // src/cli/cli-entry.ts
 var import_node_fs15 = __toESM(require_node_fs());
-var import_node_path16 = __toESM(require_node_path());
+var import_node_path17 = __toESM(require_node_path());
 
 // src/util/which.ts
 var import_node_fs14 = __toESM(require_node_fs());
-var import_node_path15 = __toESM(require_node_path());
+var import_node_path16 = __toESM(require_node_path());
 var DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 var WELL_KNOWN_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 function pathDirs(env, win) {
@@ -60898,7 +60952,7 @@ function pathDirs(env, win) {
 }
 function candidateNames(bin, env, win) {
   if (!win) return [bin];
-  const p = import_node_path15.default.win32;
+  const p = import_node_path16.default.win32;
   if (p.extname(bin) !== "") return [bin];
   const exts = (env.PATHEXT ?? DEFAULT_PATHEXT).split(";").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...exts.map((ext) => bin + ext), ...exts.map((ext) => bin + ext.toLowerCase()), bin])];
@@ -60915,7 +60969,7 @@ async function findOnPath(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? import_node_path15.default.win32 : import_node_path15.default.posix;
+  const p = win ? import_node_path16.default.win32 : import_node_path16.default.posix;
   const exists = opts.exists ?? ((candidate) => accessible(candidate, win));
   const names = candidateNames(bin, env, win);
   for (const dir of pathDirs(env, win)) {
@@ -60930,7 +60984,7 @@ function findOnPathSync(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? import_node_path15.default.win32 : import_node_path15.default.posix;
+  const p = win ? import_node_path16.default.win32 : import_node_path16.default.posix;
   const names = candidateNames(bin, env, win);
   for (const dir of pathDirs(env, win)) {
     for (const name of names) {
@@ -60949,7 +61003,7 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
     if (onPath) return onPath;
   }
   const win = platform === "win32";
-  const p = win ? import_node_path15.default.win32 : import_node_path15.default.posix;
+  const p = win ? import_node_path16.default.win32 : import_node_path16.default.posix;
   for (const dir of extraDirsFor({}, platform)) {
     for (const name of names) {
       const candidate = p.join(dir, win ? `${name}.exe` : name);
@@ -60962,12 +61016,12 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
 // src/cli/cli-entry.ts
 var CLI_ENV_VAR = "LEXICON_CLI";
 function resolveCliEntry(opts = {}) {
-  if (opts.cliPath !== void 0 && opts.cliPath !== "") return import_node_path16.default.resolve(opts.cliPath);
+  if (opts.cliPath !== void 0 && opts.cliPath !== "") return import_node_path17.default.resolve(opts.cliPath);
   const env = opts.env ?? process.env;
   const override = env[CLI_ENV_VAR];
-  if (override !== void 0 && override.trim() !== "") return import_node_path16.default.resolve(override.trim());
+  if (override !== void 0 && override.trim() !== "") return import_node_path17.default.resolve(override.trim());
   const root = findPackageRoot2(opts.moduleUrl ?? import.meta.url);
-  const built2 = root ? import_node_path16.default.join(root, "dist", "cli", "index.js") : void 0;
+  const built2 = root ? import_node_path17.default.join(root, "dist", "cli", "index.js") : void 0;
   if (built2 && (0, import_node_fs15.existsSync)(built2)) return built2;
   const onPath = findOnPathSync("lexicon", { env });
   if (onPath) {
@@ -60990,7 +61044,7 @@ function resolveCliEntry(opts = {}) {
 var HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"];
 function claudeConfigDir(env = process.env, home = import_node_os5.default.homedir()) {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
-  return override ? override : import_node_path17.default.join(home, ".claude");
+  return override ? override : import_node_path18.default.join(home, ".claude");
 }
 var LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;
 function findInstalledLexiconPlugin(settings, installedPlugins) {
@@ -61044,16 +61098,16 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
 }
 function resolveIntegrationPaths(cliDir) {
   const pkgRoot = cliDir === void 0 ? findPackageRoot2(import.meta.url) : void 0;
-  const dir = cliDir ?? (pkgRoot ? import_node_path17.default.join(pkgRoot, "dist", "cli") : import_node_path17.default.dirname((0, import_node_url3.fileURLToPath)(import.meta.url)));
-  const root = import_node_path17.default.resolve(dir, "..", "..");
-  const bundledServer = import_node_path17.default.join(root, "plugin", "mcp-server.mjs");
-  const bundledHook = import_node_path17.default.join(root, "plugin", "hook.mjs");
+  const dir = cliDir ?? (pkgRoot ? import_node_path18.default.join(pkgRoot, "dist", "cli") : import_node_path18.default.dirname((0, import_node_url3.fileURLToPath)(import.meta.url)));
+  const root = import_node_path18.default.resolve(dir, "..", "..");
+  const bundledServer = import_node_path18.default.join(root, "plugin", "mcp-server.mjs");
+  const bundledHook = import_node_path18.default.join(root, "plugin", "hook.mjs");
   if ((0, import_node_fs16.existsSync)(bundledServer) && (0, import_node_fs16.existsSync)(bundledHook)) {
     return { server: bundledServer, hook: bundledHook, bundled: true };
   }
   return {
-    server: import_node_path17.default.resolve(dir, "../mcp/server.js"),
-    hook: import_node_path17.default.resolve(dir, "../hooks/user-prompt-submit.js"),
+    server: import_node_path18.default.resolve(dir, "../mcp/server.js"),
+    hook: import_node_path18.default.resolve(dir, "../hooks/user-prompt-submit.js"),
     bundled: false
   };
 }
@@ -61073,7 +61127,7 @@ function hookTimeoutFor(launch) {
 }
 function launchCommandLine(launch, platform = process.platform) {
   const win = platform === "win32";
-  const p = win ? import_node_path17.default.win32 : import_node_path17.default.posix;
+  const p = win ? import_node_path18.default.win32 : import_node_path18.default.posix;
   const quote = (s) => {
     if (win) return /[\s"]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
     return /[\s"'$`\\]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
@@ -61094,7 +61148,7 @@ function defaultExec(file2, args) {
 // src/cli/cmd-doctor.ts
 var import_node_fs21 = __toESM(require_node_fs());
 var import_node_os8 = __toESM(require_node_os());
-var import_node_path21 = __toESM(require_node_path());
+var import_node_path22 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
@@ -61113,7 +61167,7 @@ var ExecError = class extends Error {
 var MAX_OUTPUT = 16 * 1024 * 1024;
 function defaultClipboardExec(cmd, args, stdin) {
   const isWrite = stdin !== void 0;
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
       stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
       windowsHide: true
@@ -61141,7 +61195,7 @@ function defaultClipboardExec(cmd, args, stdin) {
     child.once(isWrite ? "exit" : "close", (code) => {
       if (settled) return;
       settled = true;
-      if (code === 0) resolve4(Buffer.concat(out).toString("utf8"));
+      if (code === 0) resolve5(Buffer.concat(out).toString("utf8"));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
     });
     if (isWrite && child.stdin) {
@@ -61252,7 +61306,7 @@ async function detectClipboardBackend(platform = process.platform, env = process
 // src/voice/models.ts
 var import_node_fs17 = __toESM(require_node_fs());
 var import_node_os6 = __toESM(require_node_os());
-var import_node_path18 = __toESM(require_node_path());
+var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
 var import_promises = __toESM(require_promises());
 var DEFAULT_MODEL = "base.en";
@@ -61260,7 +61314,7 @@ var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 var REPO_MODELS_DIR = repoModelsDir();
 function repoModelsDir() {
   const root = findPackageRoot2(import.meta.url);
-  return root ? import_node_path18.default.join(root, "bench", "audio", "models") : void 0;
+  return root ? import_node_path19.default.join(root, "bench", "audio", "models") : void 0;
 }
 function modelFileName(name) {
   return `ggml-${name}.bin`;
@@ -61269,12 +61323,12 @@ function modelUrl(name) {
   return `${MODEL_BASE_URL}/${modelFileName(name)}`;
 }
 function modelsDir(globalPath, env = process.env) {
-  return env.LEXICON_WHISPER_MODELS || import_node_path18.default.join(import_node_path18.default.dirname(globalPath), "models");
+  return env.LEXICON_WHISPER_MODELS || import_node_path19.default.join(import_node_path19.default.dirname(globalPath), "models");
 }
 function expandTilde(spec, home = import_node_os6.default.homedir()) {
   if (spec === "~") return home;
-  if (spec.startsWith("~/")) return import_node_path18.default.join(home, spec.slice(2));
-  if (process.platform === "win32" && spec.startsWith("~\\")) return import_node_path18.default.join(home, spec.slice(2));
+  if (spec.startsWith("~/")) return import_node_path19.default.join(home, spec.slice(2));
+  if (process.platform === "win32" && spec.startsWith("~\\")) return import_node_path19.default.join(home, spec.slice(2));
   return spec;
 }
 function isModelPath(value) {
@@ -61283,16 +61337,16 @@ function isModelPath(value) {
 function resolveModel(spec, opts) {
   const exists = opts.exists ?? import_node_fs17.existsSync;
   if (isModelPath(spec)) {
-    const abs = import_node_path18.default.resolve(expandTilde(spec));
-    const base = import_node_path18.default.basename(abs);
+    const abs = import_node_path19.default.resolve(expandTilde(spec));
+    const base = import_node_path19.default.basename(abs);
     const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
     return { name, path: abs, present: exists(abs) };
   }
   const file2 = modelFileName(spec);
-  const primary = import_node_path18.default.join(modelsDir(opts.globalPath, opts.env), file2);
+  const primary = import_node_path19.default.join(modelsDir(opts.globalPath, opts.env), file2);
   if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
   for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
-    const candidate = import_node_path18.default.join(dir, file2);
+    const candidate = import_node_path19.default.join(dir, file2);
     if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
   return { name: spec, path: primary, present: false, url: modelUrl(spec) };
@@ -61382,7 +61436,7 @@ async function readDoctorConfigJson(file2) {
 // src/cli/cmd-install.ts
 var import_node_fs20 = __toESM(require_node_fs());
 var import_node_os7 = __toESM(require_node_os());
-var import_node_path19 = __toESM(require_node_path());
+var import_node_path20 = __toESM(require_node_path());
 var INSTALL_CLIENTS = [
   "claude",
   "codex",
@@ -61398,7 +61452,7 @@ function lexiconServerEnv(env, cwd, names = PASSTHROUGH_ENV) {
   const out = {};
   for (const name of names) {
     const value = env[name]?.trim();
-    if (value) out[name] = import_node_path19.default.resolve(cwd, value);
+    if (value) out[name] = import_node_path20.default.resolve(cwd, value);
   }
   return Object.keys(out).length > 0 ? out : void 0;
 }
@@ -61409,41 +61463,41 @@ function resolveServerPath(cliDir) {
   return resolveIntegrationPaths(cliDir).server;
 }
 function appData(ctx) {
-  return ctx.env.APPDATA ?? import_node_path19.default.join(ctx.home, "AppData", "Roaming");
+  return ctx.env.APPDATA ?? import_node_path20.default.join(ctx.home, "AppData", "Roaming");
 }
 function codexHome(ctx) {
   const override = ctx.env.CODEX_HOME?.trim();
-  return override ? override : import_node_path19.default.join(ctx.home, ".codex");
+  return override ? override : import_node_path20.default.join(ctx.home, ".codex");
 }
 function geminiHome(ctx) {
   const override = ctx.env.GEMINI_CLI_HOME?.trim();
-  return import_node_path19.default.join(override ? override : ctx.home, ".gemini");
+  return import_node_path20.default.join(override ? override : ctx.home, ".gemini");
 }
 function configPathFor(client, ctx) {
   const { home, cwd, platform, project } = ctx;
   switch (client) {
     case "codex":
-      return project ? import_node_path19.default.join(cwd, ".codex", "config.toml") : import_node_path19.default.join(codexHome(ctx), "config.toml");
+      return project ? import_node_path20.default.join(cwd, ".codex", "config.toml") : import_node_path20.default.join(codexHome(ctx), "config.toml");
     case "cursor":
-      return project ? import_node_path19.default.join(cwd, ".cursor", "mcp.json") : import_node_path19.default.join(home, ".cursor", "mcp.json");
+      return project ? import_node_path20.default.join(cwd, ".cursor", "mcp.json") : import_node_path20.default.join(home, ".cursor", "mcp.json");
     case "windsurf":
       if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
-      return import_node_path19.default.join(home, ".codeium", "windsurf", "mcp_config.json");
+      return import_node_path20.default.join(home, ".codeium", "windsurf", "mcp_config.json");
     case "gemini":
-      return project ? import_node_path19.default.join(cwd, ".gemini", "settings.json") : import_node_path19.default.join(geminiHome(ctx), "settings.json");
+      return project ? import_node_path20.default.join(cwd, ".gemini", "settings.json") : import_node_path20.default.join(geminiHome(ctx), "settings.json");
     case "claude-desktop": {
       if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
       if (platform === "darwin") {
-        return import_node_path19.default.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+        return import_node_path20.default.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
-      if (platform === "win32") return import_node_path19.default.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return import_node_path19.default.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
+      if (platform === "win32") return import_node_path20.default.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return import_node_path20.default.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
-      if (project) return import_node_path19.default.join(cwd, ".vscode", "mcp.json");
-      if (platform === "darwin") return import_node_path19.default.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return import_node_path19.default.join(appData(ctx), "Code", "User", "mcp.json");
-      return import_node_path19.default.join(home, ".config", "Code", "User", "mcp.json");
+      if (project) return import_node_path20.default.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return import_node_path20.default.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return import_node_path20.default.join(appData(ctx), "Code", "User", "mcp.json");
+      return import_node_path20.default.join(home, ".config", "Code", "User", "mcp.json");
     }
   }
 }
@@ -61622,7 +61676,7 @@ async function readText2(file2) {
   }
 }
 async function writeText(file2, text) {
-  await import_node_fs20.promises.mkdir(import_node_path19.default.dirname(file2), { recursive: true });
+  await import_node_fs20.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
   await import_node_fs20.promises.writeFile(file2, text, "utf8");
 }
 async function applyJson(target) {
@@ -61675,8 +61729,8 @@ function printGeneric(io, serverPath, env) {
 async function runInstall(client, opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? import_node_path19.default.resolve(opts.home) : import_node_os7.default.homedir();
-  const cwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? import_node_path20.default.resolve(opts.home) : import_node_os7.default.homedir();
+  const cwd = import_node_path20.default.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
   if (scope !== "user" && scope !== "project") {
@@ -61697,7 +61751,7 @@ async function runInstall(client, opts, io, deps = {}) {
     const claudeOpts = { ...opts, scope: project ? "project" : "user" };
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: import_node_path19.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      ...opts.home ? { settingsPath: import_node_path20.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
       env
@@ -61739,11 +61793,11 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? import_node_path19.default.join(claudeConfigDir(), "settings.json");
+  const settingsPath = deps.settingsPath ?? import_node_path20.default.join(claudeConfigDir(), "settings.json");
   if (scope === "user") {
     const pluginId = await installedLexiconPlugin(
       settingsPath,
-      deps.installedPluginsPath ?? import_node_path19.default.join(import_node_path19.default.dirname(settingsPath), "plugins", "installed_plugins.json")
+      deps.installedPluginsPath ?? import_node_path20.default.join(import_node_path20.default.dirname(settingsPath), "plugins", "installed_plugins.json")
     );
     if (pluginId) {
       line(
@@ -61757,7 +61811,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
-  const serverEnv = lexiconServerEnv(deps.env ?? process.env, import_node_path19.default.resolve(opts.cwd ?? process.cwd()));
+  const serverEnv = lexiconServerEnv(deps.env ?? process.env, import_node_path20.default.resolve(opts.cwd ?? process.cwd()));
   const envArgs = Object.entries(serverEnv ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
   const mcpArgs = ["mcp", "add", ...envArgs, "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
@@ -61818,12 +61872,12 @@ async function runInstallClaude(opts, io, deps = {}) {
   return failed ? 1 : 0;
 }
 function quoteArg(s, platform = process.platform) {
-  if (platform === "win32") return /[\s"]/.test(s) || import_node_path19.default.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
+  if (platform === "win32") return /[\s"]/.test(s) || import_node_path20.default.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 
 // src/cli/serve-paths.ts
-var import_node_path20 = __toESM(require_node_path());
+var import_node_path21 = __toESM(require_node_path());
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
 var SCHEDULED_TASK_NAME = "Lexicon";
@@ -61837,13 +61891,13 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return import_node_path20.default.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return import_node_path21.default.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return import_node_path20.default.join(home, "Library", "Logs", "lexicon", "serve.log");
+  return import_node_path21.default.join(home, "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  return import_node_path20.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+  return import_node_path21.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -62266,8 +62320,8 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? import_node_path21.default.join(claudeConfigDir(env, home), "settings.json");
-  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path21.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "settings.json");
+  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
   const settings = await readDoctorConfigJson(settingsPath);
   const installed = await readDoctorConfigJson(installedPluginsPath);
   if (settings.error) push2("warn", `Claude settings configuration is unconfirmed (${settings.error})`);
@@ -62406,18 +62460,18 @@ function createPrompter(io = {}) {
     }
     return rl;
   };
-  const readLine = (prompt) => new Promise((resolve4, reject) => {
+  const readLine = (prompt) => new Promise((resolve5, reject) => {
     const iface = closed ? void 0 : ensure();
     if (lines.length > 0) {
       output2.write(prompt);
-      resolve4(lines.shift());
+      resolve5(lines.shift());
       return;
     }
     if (!iface) {
       reject(new PromptClosedError());
       return;
     }
-    waiters.push({ resolve: resolve4, reject });
+    waiters.push({ resolve: resolve5, reject });
     iface.setPrompt(prompt);
     iface.prompt();
   });
@@ -62508,10 +62562,10 @@ function createPrompter(io = {}) {
 // src/cli/commands.ts
 var PROJECT_FILE_NAME2 = ".lexicon.yaml";
 function findGitRoot2(start) {
-  let dir = import_node_path22.default.resolve(start);
+  let dir = import_node_path23.default.resolve(start);
   for (; ; ) {
-    if ((0, import_node_fs22.existsSync)(import_node_path22.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path22.default.dirname(dir);
+    if ((0, import_node_fs22.existsSync)(import_node_path23.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path23.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -62532,7 +62586,7 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? import_node_path22.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await withLexiconLock(target, async () => {
     if ((0, import_node_fs22.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
@@ -62556,7 +62610,7 @@ async function runInit(opts, io) {
 
 // src/cli/cmd-setup.ts
 var import_node_os11 = __toESM(require_node_os());
-var import_node_path27 = __toESM(require_node_path());
+var import_node_path28 = __toESM(require_node_path());
 var import_node_fs27 = __toESM(require_node_fs());
 
 // src/cli/setup/types.ts
@@ -62570,7 +62624,7 @@ var SEEDED_TERMS = 3;
 var import_node_child_process6 = __toESM(require_node_child_process());
 var import_node_fs23 = __toESM(require_node_fs());
 var import_node_os9 = __toESM(require_node_os());
-var import_node_path23 = __toESM(require_node_path());
+var import_node_path24 = __toESM(require_node_path());
 function captureIO() {
   const sink = {
     out: "",
@@ -62619,10 +62673,10 @@ function parsePackList(value, available) {
   return out;
 }
 function findGitRoot3(start, exists) {
-  let dir = import_node_path23.default.resolve(start);
+  let dir = import_node_path24.default.resolve(start);
   for (; ; ) {
-    if (exists(import_node_path23.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path23.default.dirname(dir);
+    if (exists(import_node_path24.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path24.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -62638,7 +62692,7 @@ function suggestCompany(packageName, remoteUrl) {
 }
 async function readPackageName(cwd) {
   try {
-    const raw = await import_node_fs23.promises.readFile(import_node_path23.default.join(cwd, "package.json"), "utf8");
+    const raw = await import_node_fs23.promises.readFile(import_node_path24.default.join(cwd, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
     return typeof pkg.name === "string" ? pkg.name : void 0;
   } catch {
@@ -62671,7 +62725,7 @@ var CLI_NAMES = {
 function configDirFor(client, ctx) {
   if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
   const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
-  return client === "vscode" ? import_node_path23.default.dirname(import_node_path23.default.dirname(file2)) : import_node_path23.default.dirname(file2);
+  return client === "vscode" ? import_node_path24.default.dirname(import_node_path24.default.dirname(file2)) : import_node_path24.default.dirname(file2);
 }
 async function detectClients(deps = {}, cwd = process.cwd()) {
   const ctx = {
@@ -62687,7 +62741,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
     const dir = configDirFor(name, ctx);
     if (ctx.exists(dir)) evidence = dir;
     if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
-      const bundle = import_node_path23.default.join("/Applications", APP_BUNDLES[name]);
+      const bundle = import_node_path24.default.join("/Applications", APP_BUNDLES[name]);
       if (ctx.exists(bundle)) evidence = bundle;
     }
     if (!evidence && CLI_NAMES[name]) {
@@ -62705,13 +62759,13 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
 
 // src/cli/setup/steps.ts
 var import_node_fs26 = __toESM(require_node_fs());
-var import_node_path26 = __toESM(require_node_path());
+var import_node_path27 = __toESM(require_node_path());
 
 // src/cli/cmd-serve.ts
 var import_node_child_process7 = __toESM(require_node_child_process());
 var import_node_fs25 = __toESM(require_node_fs());
 var import_node_os10 = __toESM(require_node_os());
-var import_node_path25 = __toESM(require_node_path());
+var import_node_path26 = __toESM(require_node_path());
 
 // node_modules/commander/esm.mjs
 var import_index2 = __toESM(require_commander(), 1);
@@ -62733,14 +62787,14 @@ var {
 // src/serve/config.ts
 var import_node_crypto3 = __toESM(require_node_crypto());
 var import_node_fs24 = __toESM(require_node_fs());
-var import_node_path24 = __toESM(require_node_path());
+var import_node_path25 = __toESM(require_node_path());
 var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
 var DEFAULT_HOST = "127.0.0.1";
 var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
 function getServePath(opts = {}) {
-  return import_node_path24.default.join(import_node_path24.default.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
+  return import_node_path25.default.join(import_node_path25.default.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
 }
 function parseServeConfig(raw) {
   if (typeof raw !== "object" || raw === null) return void 0;
@@ -62849,14 +62903,14 @@ async function probeHealth(baseUrl, opts = {}) {
 function storeOpts(opts) {
   return opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {};
 }
-var defaultServeExec = (cmd, args) => new Promise((resolve4) => {
+var defaultServeExec = (cmd, args) => new Promise((resolve5) => {
   let stdout = "";
   let stderr = "";
   let child;
   try {
     child = (0, import_node_child_process7.spawn)(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
-    resolve4({ code: null, stdout: "", stderr: errorMessage(err) });
+    resolve5({ code: null, stdout: "", stderr: errorMessage(err) });
     return;
   }
   child.stdout?.setEncoding("utf8").on("data", (d) => {
@@ -62865,8 +62919,8 @@ var defaultServeExec = (cmd, args) => new Promise((resolve4) => {
   child.stderr?.setEncoding("utf8").on("data", (d) => {
     stderr += d;
   });
-  child.on("error", (err) => resolve4({ code: null, stdout, stderr: stderr || err.message }));
-  child.on("close", (code) => resolve4({ code, stdout, stderr }));
+  child.on("error", (err) => resolve5({ code: null, stdout, stderr: stderr || err.message }));
+  child.on("close", (code) => resolve5({ code, stdout, stderr }));
 });
 function xmlEscape2(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -63067,13 +63121,13 @@ async function runServeInstall(opts, io, deps = {}) {
     return 1;
   }
   await ensureServeConfig(storeOpts(opts));
-  const serviceEnv = lexiconServerEnv(env, import_node_path25.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
+  const serviceEnv = lexiconServerEnv(env, import_node_path26.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
   if (platform === "darwin") {
     const label = serveLabel(env);
     const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
-    await import_node_fs25.promises.mkdir(import_node_path25.default.dirname(plistPath), { recursive: true });
-    await import_node_fs25.promises.mkdir(import_node_path25.default.dirname(logPath), { recursive: true });
+    await import_node_fs25.promises.mkdir(import_node_path26.default.dirname(plistPath), { recursive: true });
+    await import_node_fs25.promises.mkdir(import_node_path26.default.dirname(logPath), { recursive: true });
     await import_node_fs25.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), "utf8");
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
@@ -63094,7 +63148,7 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
-    await import_node_fs25.promises.mkdir(import_node_path25.default.dirname(unitPath), { recursive: true });
+    await import_node_fs25.promises.mkdir(import_node_path26.default.dirname(unitPath), { recursive: true });
     await import_node_fs25.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), "utf8");
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
@@ -63125,12 +63179,12 @@ async function runServeInstall(opts, io, deps = {}) {
         } catch (err) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
-        envFile = import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+        envFile = import_node_path26.default.join(import_node_path26.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
         await import_node_fs25.promises.writeFile(envFile, text, "utf8");
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
-    const xmlPath = import_node_path25.default.join(await import_node_fs25.promises.mkdtemp(import_node_path25.default.join(import_node_os10.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
+    const xmlPath = import_node_path26.default.join(await import_node_fs25.promises.mkdtemp(import_node_path26.default.join(import_node_os10.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
     await import_node_fs25.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
@@ -63140,7 +63194,7 @@ async function runServeInstall(opts, io, deps = {}) {
         return 1;
       }
     } finally {
-      await import_node_fs25.promises.rm(import_node_path25.default.dirname(xmlPath), { recursive: true, force: true });
+      await import_node_fs25.promises.rm(import_node_path26.default.dirname(xmlPath), { recursive: true, force: true });
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
@@ -63413,7 +63467,7 @@ async function stepHarvest(ctx) {
   }
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
-    const file3 = safe(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"));
+    const file3 = safe(import_node_path27.default.join(tildify(root, ctx.home), ".lexicon.yaml"));
     const found = `${candidates.length} name${candidates.length === 1 ? "" : "s"} in ${safe(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`;
     if (ctx.opts.harvest === true) {
       ctx.say(`   would add to ${file3}: ${found}`);
@@ -63429,7 +63483,7 @@ async function stepHarvest(ctx) {
     ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
     ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
-    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
+    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(import_node_path27.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
       ctx.say(dim("   skipped; add them later with: lexicon harvest --add, or one by one with: lexicon harvest --interactive"));
       return;
     }
@@ -63437,10 +63491,11 @@ async function stepHarvest(ctx) {
   let created = 0;
   let merged = 0;
   let file2;
+  const leaveUntrusted = ctx.opts.harvestUntrusted === true && !await projectWriteTrusted({ cwd: root });
   try {
     for (const c of candidates) {
       const term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: "project", cwd: root, ...ctx.opts.harvestUntrusted ? { leaveUntrusted: true } : {} });
+      const result = await addTerm(term, { scope: "project", cwd: root, ...leaveUntrusted ? { leaveUntrusted: true } : {} });
       file2 = result.file.path;
       if (result.created) {
         created += 1;
@@ -63454,7 +63509,7 @@ async function stepHarvest(ctx) {
     }
     throw err;
   }
-  if (ctx.opts.harvestUntrusted && file2 !== void 0) {
+  if (leaveUntrusted && file2 !== void 0) {
     ctx.summary.untrustedProject = file2;
     ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2, ctx.home))} (not trusted: review it and run lexicon trust)`);
     return;
@@ -63540,7 +63595,7 @@ async function stepClients(ctx) {
 function serveDepsFor(ctx) {
   const serveDeps = { platform: ctx.platform, env: ctx.env };
   if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  if (ctx.deps.cliDir) serveDeps.cliPath = import_node_path26.default.join(ctx.deps.cliDir, "index.js");
+  if (ctx.deps.cliDir) serveDeps.cliPath = import_node_path27.default.join(ctx.deps.cliDir, "index.js");
   return serveDeps;
 }
 async function stepServe(ctx) {
@@ -63630,9 +63685,9 @@ async function stepExport(ctx) {
     return;
   }
   const format = app;
-  const desktop = import_node_path26.default.join(ctx.home, "Desktop");
-  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : import_node_path26.default.dirname(ctx.summary.lexiconPath));
-  const file2 = import_node_path26.default.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  const desktop = import_node_path27.default.join(ctx.home, "Desktop");
+  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : import_node_path27.default.dirname(ctx.summary.lexiconPath));
+  const file2 = import_node_path27.default.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
   if (ctx.plan) {
     ctx.plan.wouldExport.push({ format, path: file2 });
     ctx.say(
@@ -63736,8 +63791,8 @@ function printSummary(ctx) {
   printNext(ctx);
 }
 async function runSetup(opts, io, deps = {}) {
-  const cwd = import_node_path27.default.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? import_node_path27.default.resolve(opts.home) : deps.home ?? import_node_os11.default.homedir();
+  const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? import_node_path28.default.resolve(opts.home) : deps.home ?? import_node_os11.default.homedir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
@@ -63818,7 +63873,7 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
-var import_node_path28 = __toESM(require_node_path());
+var import_node_path29 = __toESM(require_node_path());
 async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
@@ -63871,13 +63926,13 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file is left untrusted for the user to review).",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
         clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
         packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in wouldInstallPacks so you can ask)."),
-        harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml, left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
+        harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml; a file the user already trusted stays trusted, any other is left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
         serve: external_exports.boolean().optional().describe("true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.")
       }
@@ -63903,8 +63958,9 @@ var registerSetupTools = (server, ctx) => {
         // So is the harvest (a write inside the user's repo). The plan lists the
         // candidates regardless, so the model can offer them; only an apply needs the flag.
         ...applied || harvest === false ? { harvest: harvest === true } : {},
-        // ...and the file it writes is left for the user to trust: the model
-        // relaying a yes is not the user reviewing the names.
+        // ...and a file it writes that the user has not trusted yet is left
+        // for them to trust: the model relaying a yes is not the user
+        // reviewing the names. An already-trusted file stays trusted.
         harvestUntrusted: true,
         ...applied ? {} : { dryRun: true }
       };
@@ -63951,7 +64007,7 @@ var registerSetupTools = (server, ctx) => {
         });
       }
       const cliDir = cliDirForInstall();
-      const blocked = await serveInstallBlocker(cliDir !== void 0 ? { cliPath: (0, import_node_path28.join)(cliDir, "index.js") } : {});
+      const blocked = await serveInstallBlocker(cliDir !== void 0 ? { cliPath: (0, import_node_path29.join)(cliDir, "index.js") } : {});
       return textResult({
         up: false,
         url: url2,
@@ -63967,7 +64023,7 @@ var import_node_crypto4 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
 var import_node_fs28 = __toESM(require_node_fs());
-var import_node_path29 = __toESM(require_node_path());
+var import_node_path30 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
 function parseSource(value) {
@@ -64012,7 +64068,7 @@ async function readStdinBytes(maxBytes) {
 }
 async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
-  const resolved2 = import_node_path29.default.resolve(cwd, file2);
+  const resolved2 = import_node_path30.default.resolve(cwd, file2);
   try {
     const stat = await import_node_fs28.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
@@ -64039,7 +64095,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   }
   const source = parseSource(opts.source);
   const category = parseCategory(opts.category);
-  const cwd = import_node_path29.default.resolve(opts.cwd ?? process.cwd());
+  const cwd = import_node_path30.default.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
   const content = await readInput(file2, cwd);
@@ -64047,7 +64103,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
   const result = importLexicon(content, format, {
     ...source ? { source } : {},
-    ...file2 !== "-" ? { filename: import_node_path29.default.basename(file2) } : {}
+    ...file2 !== "-" ? { filename: import_node_path30.default.basename(file2) } : {}
   });
   if (category) {
     for (const term of result.terms) term.category ??= category;
@@ -64063,9 +64119,15 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (dryRun) {
     const paths = resolvePaths({ cwd });
     const target = scope === "project" ? paths.project : paths.global;
-    const existing = target ? (await readLexiconFile(target, scope)).lexicon : void 0;
+    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs28.existsSync)(target);
+    const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : void 0;
     if (target) report.path = target;
+    if (blind) report.untrustedTarget = true;
     for (const term of result.terms) {
+      if (blind) {
+        report.terms.push({ canonical: term.canonical, aliases: term.aliases });
+        continue;
+      }
       const created = !existing || findTerm(existing, term.canonical) === void 0;
       report.terms.push({ canonical: term.canonical, aliases: term.aliases, created });
     }
@@ -64077,8 +64139,8 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
       report.terms.push({ canonical: shown.canonical, aliases: shown.aliases, created: added.created });
     }
   }
-  report.counts.created = report.terms.filter((t) => t.created).length;
-  report.counts.merged = report.terms.length - report.counts.created;
+  report.counts.created = report.terms.filter((t) => t.created === true).length;
+  report.counts.merged = report.terms.filter((t) => t.created === false).length;
   if (opts.json) {
     io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}
 `);
@@ -64093,7 +64155,7 @@ function printReport(report, io) {
     const rows = report.terms.map((t) => [
       t.canonical,
       t.aliases.length > 0 ? t.aliases.join(", ") : "(none)",
-      t.created ? "new" : "merged"
+      t.created === void 0 ? "untrusted file" : t.created ? "new" : "merged"
     ]);
     io.stdout(renderTable(rows, ["canonical", "aliases", "status"]));
   }
@@ -64317,7 +64379,7 @@ var registerPackTools = (server, ctx) => {
     "import_dictionary",
     {
       title: "Import an existing dictionary",
-      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`.`,
+      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`. A dry run against such a file does not read it, so its rows carry no \`created\` (the report has \`untrustedTarget: true\`).`,
       inputSchema: {
         path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
@@ -64330,7 +64392,7 @@ var registerPackTools = (server, ctx) => {
       if (path27 === void 0 && content === void 0) throw new Error("pass path or content");
       const file2 = content === void 0 && path27 !== void 0 ? containedPath(ctx, path27, (f) => `import ${shellWord(f)}`) : path27 ?? "-";
       const io = bufferIO();
-      const writeOpts = scope === "project" && dryRun !== true ? await mcpWriteOpts(ctx) : {};
+      const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(
         file2,
         { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true, ...writeOpts },
@@ -64347,8 +64409,11 @@ var registerPackTools = (server, ctx) => {
       }
       const stderr = io.err().trim();
       if (isRecord(report) && report.ok === true) delete report.ok;
-      const written = isRecord(report) && typeof report.path === "string" && writeOpts.leaveUntrusted === true ? report.path : void 0;
-      const pending = written !== void 0 ? untrustedWriteFields(written, "The imported terms", true) : {};
+      const target = isRecord(report) && typeof report.path === "string" && writeOpts.leaveUntrusted === true ? report.path : void 0;
+      const pending = target === void 0 ? {} : dryRun !== true ? untrustedWriteFields(target, "The imported terms", true) : {
+        trusted: false,
+        note: `A run without dryRun would write to ${target}, which is not trusted, so the terms would not apply until the user trusts it` + (isRecord(report) && report.untrustedTarget === true ? "; its terms were not read, so no row says whether it is new or merged." : ".")
+      };
       return textResult(isRecord(report) ? { ...report, ...pending, ...stderr ? { stderr } : {} } : report);
     })
   );
@@ -64580,7 +64645,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs29.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs29.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs29.realpathSync)((0, import_node_path31.resolve)(entry)) === (0, import_node_fs29.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }
