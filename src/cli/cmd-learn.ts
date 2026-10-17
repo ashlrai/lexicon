@@ -79,6 +79,14 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
           : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`,
       );
     }
+    const u = result.untrustedProject;
+    if (u) {
+      line(
+        io,
+        `warn: the ${u.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon ${safe(u.path)} also claims ${safe(correction.heard)} for another term; ` +
+          'once trusted it wins over this correction. Review it with: lexicon trust',
+      );
+    }
     return 0;
   } catch (err) {
     return fail(io, err);

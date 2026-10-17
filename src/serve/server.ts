@@ -137,6 +137,8 @@ export interface LearnResponse {
   path: string;
   /** Another term that also claims `heard` (LearnResult.conflict). */
   conflict?: LearnConflict;
+  /** The untrusted project lexicon that also claims `heard`, path only (LearnResult.untrustedProject). */
+  untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
 }
 
 export interface AddResponse {
@@ -617,6 +619,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       aliasAdded: result.aliasAdded,
       path: result.file.path,
       ...(result.conflict ? { conflict: result.conflict } : {}),
+      ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
     };
   }
 

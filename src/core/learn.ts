@@ -12,7 +12,7 @@ import { addTerm, loadLexicon } from './store.js';
 import { InputError } from '../util/errors.js';
 import type { StoreOptions } from './store.js';
 import { suggestAliases } from './suggest.js';
-import type { Lexicon, LexiconFile, Term, TermScope } from './types.js';
+import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
 
 export interface Correction {
   /**
@@ -39,6 +39,14 @@ export interface LearnResult {
    * Absent when nothing else claims it.
    */
   conflict?: LearnConflict;
+  /**
+   * The project lexicon for this cwd that was skipped as untrusted (or
+   * changed since trusted) and also claims `heard` for some other term. It is
+   * never merged or read back to the caller: only its path and trust state
+   * are given, so the user can review it with `lexicon trust`. Once trusted
+   * that project term wins the merge over this correction.
+   */
+  untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
 }
 
 /** The term `LearnResult.conflict` names, and the spelling of `heard` it holds. */
@@ -316,7 +324,8 @@ export async function learnCorrection(
   const existing = termFor(loaded.merged, meant);
 
   const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
-  const withConflict = conflict ? { conflict } : {};
+  const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
+  const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
 
   if (existing) {
     const alreadyKnown =
@@ -351,6 +360,17 @@ function conflictFor(lexicon: Lexicon, heard: string, target: string): LearnConf
     if (alias !== undefined) return { canonical: t.canonical, scope, as: 'alias', spelling: alias };
   }
   return undefined;
+}
+
+/**
+ * The skipped project file, when one of its terms other than `target` claims
+ * `heard`. Only a yes or no comes out of the untrusted content: the term it
+ * found is not returned, so nothing from the file reaches the caller.
+ */
+function untrustedClaim(loaded: LoadedLexicon, heard: string, target: string): LearnResult['untrustedProject'] {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !conflictFor(skipped.lexicon, heard, target)) return undefined;
+  return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
 }
 
 /**

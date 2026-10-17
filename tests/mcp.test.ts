@@ -525,6 +525,27 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  it('learn_correction names an untrusted project lexicon that also claims heard, by path only', async () => {
+    mocks.learnCorrection.mockResolvedValue({
+      term: { canonical: 'Vercel', aliases: ['Versel'], scope: 'global' },
+      created: true,
+      aliasAdded: true,
+      file: { path: '/fake/global/lexicon.yaml', scope: 'global', lexicon: fixtureLexicon, exists: true },
+      untrustedProject: { path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' },
+    });
+    const { client, close } = await connect();
+    try {
+      const result = await client.callTool({ name: 'learn_correction', arguments: { heard: 'Versel', meant: 'Vercel' } });
+      const payload = JSON.parse(textOf(result)) as { untrustedProject?: unknown; summary: string };
+      expect(payload.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+      expect(payload.summary).toContain('/fake/repo/.lexicon.yaml is not trusted');
+      expect(payload.summary).toContain('`lexicon trust`');
+      expect(payload.summary).toContain('also claims "Versel"');
+    } finally {
+      await close();
+    }
+  });
+
   it('learn_correction passes scope through and reports refusals as isError', async () => {
     mocks.learnCorrection.mockRejectedValueOnce(new Error('"Ashler" and "ashler" are the same spelling; nothing to learn'));
     const { client, close } = await connect();

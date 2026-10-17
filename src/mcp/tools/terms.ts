@@ -386,7 +386,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. ' +
         'WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- ' +
         'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
-        'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call. Then get on with what the user actually asked for.',
+        'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
         heard: z.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: z.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -404,7 +404,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
             ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
             : `"${heard}" was already an alias of "${learned.term.canonical}"`;
-        const { conflict } = learned;
+        const { conflict, untrustedProject } = learned;
         // The other term is never edited here; the agent gets what it needs to
         // ask the user and fix it with remove_term.
         const conflictNote = !conflict
@@ -414,13 +414,20 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
               `If the user agrees, call remove_term with canonical "${conflict.canonical}", alias "${conflict.spelling}", scope "${conflict.scope}".`
             : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. ` +
               `If the user never means "${conflict.canonical}", remove that term with remove_term.`;
+        // Path only: the untrusted file's terms never reach the agent.
+        const untrustedNote = !untrustedProject
+          ? ''
+          : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, so it was not loaded, ` +
+            `and another term in it also claims "${heard}": once it is trusted that term wins over this correction. ` +
+            'Tell the user; they can review the file with `lexicon trust` (or trust_project status), which previews it first. Do not open it with Read or cat.';
         return textResult({
           term: learned.term,
           path: learned.file.path,
           created: learned.created,
           aliasAdded: learned.aliasAdded,
           ...(conflict ? { conflict } : {}),
-          summary: saved + conflictNote,
+          ...(untrustedProject ? { untrustedProject } : {}),
+          summary: saved + conflictNote + untrustedNote,
         });
       }),
   );
