@@ -857,6 +857,32 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: UserPromptSubmit hook', () =
     expect(out.hookSpecificOutput.additionalContext).not.toContain('SECRET-INJECTION');
   });
 
+  // Catches: a reader that closed the pipe (Claude Code timing the hook out) made the
+  // stream fallback throw an unhandled EPIPE: a stack trace and exit 1 from a hook that must exit 0.
+  it('exits 0 with one stderr line when stdout is already closed', async () => {
+    const h = await cloneOf(shared, 'hook-epipe');
+    const r = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ['--import', 'tsx', HOOK], { cwd: REPO_ROOT, env: h.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      child.stdout.destroy();
+      let stderr = '';
+      child.stderr.setEncoding('utf8').on('data', (d: string) => {
+        stderr += d;
+      });
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error(`timed out\n${stderr}`));
+      }, TIMEOUT_MS);
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ code, stderr });
+      });
+      child.stdin.end(payload('ask Ashler about it', h.repo));
+    });
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stderr).not.toContain('Unhandled');
+    expect(r.stderr).toContain('[lexicon hook] could not write the hook output (EPIPE)');
+  });
+
   it('is reachable through `lexicon hook` as well', async () => {
     const h = await cloneOf(shared, 'hook-cli');
     const r = await runCli(['hook'], { env: h.env, stdin: payload('ping Ashler', h.repo) });

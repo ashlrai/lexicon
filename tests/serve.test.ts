@@ -756,6 +756,90 @@ describe('trust gate', () => {
 });
 
 // ---------------------------------------------------------------------------
+// requests that used to succeed while doing something else
+// ---------------------------------------------------------------------------
+
+describe('requests that used to succeed while doing something else', () => {
+  // A server of its own, so these writes cannot shift another suite's counts.
+  let home3: string;
+  let global3: string;
+  let cwd3: string;
+  let srv3: LexiconHttpServer;
+  let info3: ServeStartInfo;
+  const api = (method: string, route: string, body?: unknown): Promise<Response> =>
+    fetch(`${info3.url}${route}`, {
+      method,
+      headers: { Authorization: `Bearer ${info3.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  beforeAll(async () => {
+    home3 = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-strict-')));
+    global3 = path.join(home3, 'lexicon', 'lexicon.yaml');
+    cwd3 = path.join(home3, 'work');
+    await fs.mkdir(cwd3, { recursive: true });
+    srv3 = createServer({ port: 0, cwd: cwd3, globalPath: global3, quiet: true, reloadMs: 0 });
+    info3 = await srv3.start();
+  });
+  afterAll(async () => {
+    await srv3.stop();
+    await fs.rm(home3, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // Catches: `dry_run` (for dryRun) was dropped, so the "dry run" recorded hits and answered 200.
+  it('an unknown body key is a 400 naming it, on every POST route, and nothing is written', async () => {
+    await addTerm({ canonical: 'Strictly', aliases: ['strictlee'] }, { globalPath: global3, cwd: cwd3 });
+    const before = await fs.readFile(global3, 'utf8');
+    const routes: [string, Record<string, unknown>][] = [
+      ['/normalize', { text: 'ping strictlee', dry_run: true }],
+      ['/learn', { heard: 'strictlea', meant: 'Strictly', scop: 'global' }],
+      ['/add', { canonical: 'Typo', alias: ['typoo'] }],
+      ['/packs/developer', { scpe: 'project' }],
+    ];
+    for (const [route, body] of routes) {
+      const res = await api('POST', route, body);
+      expect(res.status, route).toBe(400);
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toMatch(/invalid request body/);
+      expect(error).toMatch(/dry_run|scop|alias|scpe/);
+    }
+    expect(await fs.readFile(global3, 'utf8')).toBe(before);
+    const stats = (await (await api('GET', '/stats')).json()) as LexiconStats;
+    expect(stats.topTerms.find((t) => t.canonical === 'Strictly')).toBeUndefined();
+  });
+
+  // Catches: a typo'd cwd fell back to the global lexicon alone and answered 200 for a project nobody looked at.
+  it('a cwd that is empty or not an existing directory is a 400, on GET and POST', async () => {
+    const missing = path.join(home3, 'no-such-dir');
+    const file = global3;
+    for (const cwd of [missing, file]) {
+      const post = await api('POST', '/normalize', { text: 'hello', cwd });
+      expect(post.status).toBe(400);
+      expect(((await post.json()) as { error: string }).error).toContain('cwd is not an existing directory');
+      for (const route of ['/lexicon', '/stats', '/packs', '/export/json', '/health']) {
+        const res = await api('GET', `${route}?cwd=${encodeURIComponent(cwd)}`);
+        expect(res.status, route).toBe(400);
+      }
+      expect((await api('DELETE', `/packs/developer?cwd=${encodeURIComponent(cwd)}`)).status).toBe(400);
+    }
+    const empty = await api('GET', '/lexicon?cwd=');
+    expect(empty.status).toBe(400);
+    expect(((await empty.json()) as { error: string }).error).toContain('cwd must not be empty');
+    // Without the token /health?cwd= is still a 401, so it cannot probe which directories exist.
+    expect((await fetch(`${info3.url}/health?cwd=${encodeURIComponent(missing)}`)).status).toBe(401);
+    // An existing directory works as before.
+    expect((await api('GET', `/lexicon?cwd=${encodeURIComponent(cwd3)}`)).status).toBe(200);
+  });
+
+  // Catches: DELETE ignored its body, so { scope: 'project' } removed the pack from the global lexicon.
+  it('DELETE /packs/:name with a body is a 400 that points at the query string', async () => {
+    const res = await api('DELETE', '/packs/developer', { scope: 'project' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('query string');
+    expect((await api('DELETE', '/packs/developer')).status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CLI handlers
 // ---------------------------------------------------------------------------
 

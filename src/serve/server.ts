@@ -20,6 +20,7 @@
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
 import { timingSafeEqual } from 'node:crypto';
+import { promises as fs } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
@@ -225,19 +226,24 @@ const TERM_SCOPES = ['global', 'project'] as const satisfies readonly TermScope[
 
 const CwdField = z.string().min(1).optional();
 
+// Bodies are strict: an unknown key is a 400, not ignored. A typo such as
+// `dry_run` for `dryRun` used to be dropped, so the request ran as if the
+// option had not been sent (a dry run that recorded hits, an add that
+// generated aliases the caller never asked for) and still answered 200.
+
 const NormalizeBody = z.object({
   text: z.string(),
   dryRun: z.boolean().optional(),
   minConfidence: z.number().min(0).max(1).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 const LearnBody = z.object({
   heard: z.string(),
   meant: z.string(),
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 const AddBody = z.object({
   canonical: z.string().min(1),
@@ -248,12 +254,12 @@ const AddBody = z.object({
   never: z.array(z.string()).optional(),
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 const PackBody = z.object({
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
@@ -537,8 +543,24 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   let inFlight = 0;
   const cache = new Map<string, CachedLexicon>();
 
-  function resolveCwd(given: string | null | undefined): string {
-    return given ? path.resolve(given) : defaultCwd;
+  /**
+   * The request's `cwd` (body field or `?cwd=`), or the server's own when it
+   * has none. A `cwd` that is empty or is not an existing directory is a 400:
+   * a typo used to fall through to the global lexicon alone, so the answer
+   * came back 200 for a project that was never looked at.
+   */
+  async function resolveCwd(given: string | null | undefined): Promise<string> {
+    if (given === null || given === undefined) return defaultCwd;
+    if (given.trim() === '') throw new HttpError(400, 'cwd must not be empty (omit it to use the server\'s directory)');
+    const resolved = path.resolve(given);
+    let isDir = false;
+    try {
+      isDir = (await fs.stat(resolved)).isDirectory();
+    } catch {
+      // missing or unreadable: reported below
+    }
+    if (!isDir) throw new HttpError(400, `cwd is not an existing directory: ${sanitizeForDisplay(resolved)}`);
+    return resolved;
   }
 
   async function loadEntry(cwd: string): Promise<CachedLexicon> {
@@ -578,7 +600,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function handleNormalize(raw: unknown): Promise<NormalizeResponse> {
     const body = parseBody(NormalizeBody, raw);
-    const cwd = resolveCwd(body.cwd);
+    const cwd = await resolveCwd(body.cwd);
     const entry = await loadEntry(cwd);
     // From index-cache.json when the hook (or an earlier load) already built
     // the index for this exact lexicon, which survives the reload that
@@ -607,7 +629,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function handleLearn(raw: unknown): Promise<LearnResponse> {
     const body = parseBody(LearnBody, raw);
-    const cwd = resolveCwd(body.cwd);
+    const cwd = await resolveCwd(body.cwd);
     const result = await learnCorrection(
       { heard: body.heard, meant: body.meant },
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
@@ -625,7 +647,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function handleAdd(raw: unknown): Promise<AddResponse> {
     const body = parseBody(AddBody, raw);
-    const cwd = resolveCwd(body.cwd);
+    const cwd = await resolveCwd(body.cwd);
     // Generated aliases only when this creates the term (see addTerm's defaultAliases).
     const aliases = body.aliases ?? [];
     const given = aliases.length > 0;
@@ -672,14 +694,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResult> {
     const body = parseBody(PackBody, raw);
-    const cwd = resolveCwd(body.cwd);
+    const cwd = await resolveCwd(body.cwd);
     const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
     invalidate();
     return result;
   }
 
   async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {
-    const cwd = resolveCwd(url.searchParams.get('cwd'));
+    const cwd = await resolveCwd(url.searchParams.get('cwd'));
     const scopeParam = url.searchParams.get('scope');
     const scope = TERM_SCOPES.find((s) => s === scopeParam);
     if (scopeParam !== null && scope === undefined) throw new HttpError(400, `invalid scope "${sanitizeForDisplay(scopeParam)}" (global or project)`);
@@ -743,7 +765,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       if (cwdParam !== null && (!config || !tokenMatches(req.headers.authorization, config.token))) {
         throw new HttpError(401, '/health?cwd= needs the bearer token (see: lexicon serve --show); plain /health does not');
       }
-      return json(200, await health(resolveCwd(cwdParam)));
+      return json(200, await health(await resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
@@ -768,20 +790,27 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
     if (pathname === '/lexicon') {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await handleLexicon(resolveCwd(url.searchParams.get('cwd'))));
+      return json(200, await handleLexicon(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/stats') {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await handleStats(resolveCwd(url.searchParams.get('cwd'))));
+      return json(200, await handleStats(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/packs') {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await handlePacks(resolveCwd(url.searchParams.get('cwd'))));
+      return json(200, await handlePacks(await resolveCwd(url.searchParams.get('cwd'))));
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
     if (packMatch) {
       if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, true)));
-      if (method === 'DELETE') return json(200, await handleUninstallPack(packMatch[1], url));
+      if (method === 'DELETE') {
+        // Options travel in the query string. A body was ignored, so
+        // `{ "scope": "project" }` removed the pack from the global lexicon.
+        if ((await readBody(req, MAX_BODY_BYTES)).trim() !== '') {
+          throw new HttpError(400, 'DELETE /packs/:name takes no body; pass scope and cwd in the query string (?scope=project&cwd=...)');
+        }
+        return json(200, await handleUninstallPack(packMatch[1], url));
+      }
       throw new HttpError(405, 'use POST to install or DELETE to remove');
     }
     if (pathname === '/aliases') {
@@ -793,7 +822,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
       const format = resolveExportFormat(exportMatch[1]);
       if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
-      const loaded = await load(resolveCwd(url.searchParams.get('cwd')));
+      const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
       return { status: 200, text: exportLexicon(loaded.merged, format), contentType: exportContentType(format) };
     }
     throw new HttpError(404, `no route for ${method} ${sanitizeForDisplay(pathname)}`);

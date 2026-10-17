@@ -484,8 +484,11 @@ async function sessionStart(payload: HookInput, opts: HookOptions): Promise<stri
   const skippedNote = formatSkippedProjectNote(loaded);
 
   if (loaded.merged.terms.length === 0) {
-    // Nothing to inject; nudge the model to offer onboarding, but not every session.
-    if (!(await shouldEmitOnboardNote(loaded.global.path))) return '';
+    // Nothing to inject; nudge the model to offer onboarding, but not every
+    // session. The skipped-project note is not rationed with it: a session
+    // with terms always gets it, and an empty global lexicon is exactly when
+    // the repo's file is the only vocabulary there is.
+    if (!(await shouldEmitOnboardNote(loaded.global.path))) return skippedNote ? emit('SessionStart', [skippedNote]) : '';
     return emit('SessionStart', skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
 
@@ -544,22 +547,56 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/** What `writeStdout` writes through; tests replace it. */
+export interface StdoutSink {
+  writeSync(fd: number, buffer: Uint8Array, offset: number, length: number): number;
+  stream: Pick<NodeJS.WritableStream, 'write' | 'once'>;
+  stderr(line: string): void;
+}
+
+const processSink: StdoutSink = {
+  writeSync: (fd, buffer, offset, length) => writeSync(fd, buffer, offset, length),
+  get stream() {
+    return process.stdout;
+  },
+  stderr: (line) => process.stderr.write(line),
+};
+
 /**
  * Write `text` to stdout. Synchronously first, for the same reason stdin is
  * read that way: touching `process.stdout` on a pipe loads `node:net`. A
  * non-blocking descriptor that refuses part of it (EAGAIN) gets the rest
  * through the stream.
+ *
+ * A reader that has gone away (EPIPE: Claude Code timed the hook out or
+ * closed the pipe) gets nothing more: handing the rest to the stream used to
+ * end in an unhandled 'error' event, a stack trace and exit 1, which breaks
+ * the hook's exit-0 rule. That case, and any error the stream reports later,
+ * is one stderr line instead. Exported for tests.
  */
-function writeStdout(text: string): void {
+export function writeStdout(text: string, sink: StdoutSink = processSink): void {
   const bytes = Buffer.from(text, 'utf8');
   let off = 0;
   try {
-    while (off < bytes.length) off += writeSync(1, bytes, off, bytes.length - off);
+    while (off < bytes.length) off += sink.writeSync(1, bytes, off, bytes.length - off);
     return;
-  } catch {
-    // finish through the stream below
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== 'EAGAIN') {
+      sink.stderr(`[lexicon hook] could not write the hook output (${code ?? errorText(err)}); the prompt goes through without it\n`);
+      return;
+    }
+    // EAGAIN: finish through the stream below
   }
-  process.stdout.write(bytes.subarray(off));
+  const stream = sink.stream;
+  stream.once('error', (err: unknown) => {
+    sink.stderr(`[lexicon hook] could not write the hook output (${(err as NodeJS.ErrnoException | undefined)?.code ?? errorText(err)}); the prompt goes through without it\n`);
+  });
+  stream.write(bytes.subarray(off));
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export async function main(): Promise<void> {
