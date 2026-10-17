@@ -477,7 +477,14 @@ describe('add / remove / path', () => {
   it('remove --json failure documents lead with ok: false and keep their keys', async () => {
     const term = makeIO();
     expect(await runRemove('Nope', { json: true, global: true }, term)).toBe(1);
-    expect(JSON.parse(term.out)).toEqual({ ok: false, error: 'term "Nope" not found in global lexicon', canonical: 'Nope', removed: false });
+    expect(JSON.parse(term.out)).toEqual({
+      ok: false,
+      error: 'term "Nope" not found in global lexicon',
+      nextStep: 'run lexicon list to see the exact canonical spellings',
+      canonical: 'Nope',
+      removed: false,
+    });
+    expect(term.err).toContain('lexicon: run lexicon list to see the exact canonical spellings');
     const alias = makeIO();
     expect(await runRemove('Nope', { json: true, alias: 'x' }, alias)).toBe(1);
     expect(JSON.parse(alias.out)).toEqual({ ok: false, error: 'no term "Nope" in the global or project lexicon', canonical: 'Nope', alias: 'x', removed: false });
@@ -529,7 +536,13 @@ describe('add / remove / path', () => {
     expect(JSON.parse(removed.out)).toEqual({ ok: true, canonical: 'Ashlr.AI', removed: true });
     const missing = makeIO();
     expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
-    expect(JSON.parse(missing.out)).toEqual({ ok: false, canonical: 'Nope', removed: false, error: 'term "Nope" not found' });
+    expect(JSON.parse(missing.out)).toEqual({
+      ok: false,
+      canonical: 'Nope',
+      removed: false,
+      error: 'term "Nope" not found',
+      nextStep: 'run lexicon list to see the exact canonical spellings',
+    });
   });
 
   // Catches: `lexicon remove` dropped the project copy, said "removed" and left the global copy correcting.
@@ -565,6 +578,16 @@ describe('add / remove / path', () => {
     expect(await runRemove('Mason Wyatt', { project: true }, io)).toBe(1);
     expect(io.err).toContain('not found in project lexicon');
     expect(io.err).toContain(`it is in the global lexicon (${state.globalPath}); run with --global to remove it`);
+
+    // Catches: under --json the miss gave only `error`, though stderr named the flag that removes it.
+    vi.mocked(core.removeTerm).mockResolvedValueOnce(false);
+    const json = makeIO();
+    expect(await runRemove('Mason Wyatt', { project: true, json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({
+      ok: false,
+      error: 'term "Mason Wyatt" not found in project lexicon',
+      nextStep: `it is in the global lexicon (${state.globalPath}); run with --global to remove it`,
+    });
   });
 
   it('remove --global removes only the global copy and names the project copy with --project', async () => {

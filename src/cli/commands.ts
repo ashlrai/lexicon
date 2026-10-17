@@ -459,22 +459,25 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
   const stillIn = removed ? holders.filter((h) => h !== from) : [];
-  const notFound = (): string => {
-    const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
-    const otherFlag = other?.scope === 'project' ? '--project' : '--global';
-    return (
-      `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
-      (other ? `lexicon: it is in the ${other.scope} lexicon (${safe(other.path)}); run with ${otherFlag} to remove it\n` : '') +
-      (untrusted
-        ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
-        : '')
-    );
-  };
+  const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
+  // What to do about a miss, also the `nextStep` under --json: the flag for
+  // the file that does hold it, else how to find the exact spelling.
+  const missStep = other
+    ? `it is in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it`
+    : untrusted
+      ? undefined
+      : 'run lexicon list to see the exact canonical spellings';
+  const notFound = (): string =>
+    `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
+    (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +
+    (untrusted
+      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
+      : '');
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
-    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`);
+    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
     line(io, JSON.stringify(removed ? jsonOk({ canonical, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
