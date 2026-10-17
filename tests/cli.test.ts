@@ -418,11 +418,19 @@ describe('add / remove / path', () => {
     const json = makeIO();
     expect(await runAdd('Ashley', ['Ashler'], { json: true }, json)).toBe(0);
     expect(JSON.parse(json.out)).toMatchObject({ conflicts: [{ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' }] });
+    // Regression: MCP add_term pairs `conflicts` with a `note` naming the
+    // remove call; the CLI's JSON had the conflicts and no way out.
+    expect(JSON.parse(json.out).note).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
+        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+    );
+    expect(io.out).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
 
     // No conflict: no warning, and the JSON keeps its old shape.
     const plain = makeIO();
     expect(await runAdd('Hetzner', ['Hetsner'], { json: true }, plain)).toBe(0);
     expect(JSON.parse(plain.out)).not.toHaveProperty('conflicts');
+    expect(JSON.parse(plain.out)).not.toHaveProperty('note');
   });
 
   it('rejects an unknown category', async () => {

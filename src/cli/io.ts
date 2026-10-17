@@ -368,6 +368,27 @@ export function untrustedAliasLine(canonical: string, alias: string, holder: { p
  */
 export function conflictLine(c: LearnConflict): string {
   return c.as === 'alias'
-    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
+    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: ${conflictRemoveCommand(c, safe)}`
     : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`;
+}
+
+/** The `lexicon remove --alias` command that drops a conflicting alias from the other term, limited to the file that holds it. */
+function conflictRemoveCommand(c: LearnConflict, show: (s: string) => string = (s) => s): string {
+  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+}
+
+/**
+ * The `note` that goes with `conflicts` under `--json`: one sentence per
+ * conflict, naming the remove command for an alias, the way MCP `add_term`
+ * names its remove_term call. Unsanitized, like every JSON field.
+ */
+export function conflictNote(conflicts: readonly LearnConflict[]): string {
+  return conflicts
+    .map((c) =>
+      c.as === 'alias'
+        ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
+          `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`
+        : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`,
+    )
+    .join(' ');
 }

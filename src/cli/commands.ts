@@ -97,6 +97,7 @@ import type {
 import {
   bold,
   conflictLine,
+  conflictNote,
   dim,
   ensureNewline,
   green,
@@ -386,7 +387,7 @@ export async function runAdd(
     line(
       io,
       JSON.stringify(
-        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) }),
+        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : {}) }),
         null,
         2,
       ),
