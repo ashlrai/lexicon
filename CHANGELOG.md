@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `apply_suggestion` with kind `stale` on a term that has a copy in both the project and the global lexicon names the copy it left: the result carries `path` (the file it removed from) and `stillIn` (every file that still holds the term), and the `summary` says which `scope` removes that copy too. It removed only the project copy and reported `removed: true` while the global copy kept correcting.
 - `learn_correction` (MCP, `lexicon learn`, `POST /learn`) on a case-only correction (`ashlr` to `Ashlr`) runs the same checks as any other correction: the result carries `conflict` when another term holds the spelling as an alias, and `untrustedProject` when the repo's skipped project lexicon claims it for another term. The case-only path returned neither, so the correction looked saved while the next transcript could still go to the other term.
 - MCP `add_term` reports an alias another term already holds, as `learn_correction` does: the result carries `conflicts` and a `note` with the `remove_term` call that lets the new alias win. It reported plain success while the next transcript could still go to the other term.
 - MCP `learn_correction` writes the `remove_term` arguments in its conflict summary as JSON string literals, so a canonical or alias holding a double quote no longer blurs where an argument ends.

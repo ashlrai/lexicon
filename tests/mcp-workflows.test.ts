@@ -282,6 +282,34 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   });
 });
 
+describe('apply_suggestion stale on a term in both lexicon files', () => {
+  // Catches: removeTerm stops at the first file that holds the term, so a
+  // stale term with a project copy and a global copy lost only the project
+  // copy, and the result said "removed" while the global one kept firing.
+  it('removes the copy it targets and names the other one', async () => {
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' })).isError).toBe(false);
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cube netties'], scope: 'global' })).isError).toBe(false);
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const globalPath = process.env.LEXICON_PATH as string;
+
+    const first = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'stale', canonical: 'Kubernetes', scope: 'project', path: projectPath } })).text) as {
+      removed: boolean;
+      path?: string;
+      stillIn?: { scope: string; path: string }[];
+      summary: string;
+    };
+    expect(first).toMatchObject({ removed: true, path: projectPath, stillIn: [{ scope: 'global', path: globalPath }] });
+    expect(first.summary).toContain(globalPath);
+    expect(first.summary).toMatch(/scope "global"/);
+
+    const second = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'stale', canonical: 'Kubernetes' }, scope: 'global' })).text) as Record<string, unknown>;
+    expect(second).toMatchObject({ removed: true, path: globalPath });
+    expect(second.stillIn).toBeUndefined();
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'deploy to cube netties' })).text) as { output: string };
+    expect(normalized.output).toBe('deploy to cube netties');
+  });
+});
+
 describe('learn_correction when another term already claims `heard`', () => {
   // Catches: "it's Vercel not Versel" while Versel is an alias of Verse.
   // The alias was added to Vercel and reported saved, but the next transcript

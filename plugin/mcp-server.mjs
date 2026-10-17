@@ -59741,6 +59741,11 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path13 = __toESM(require_node_path());
+function holders(loaded, canonical) {
+  const key = canonical.trim().toLowerCase();
+  const holds2 = (file2) => file2?.lexicon.terms.some((t) => t.canonical.trim().toLowerCase() === key) === true;
+  return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
+}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -59816,7 +59821,7 @@ var registerHarvestTools = (server, ctx) => {
     "apply_suggestion",
     {
       title: "Apply one suggestion",
-      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term. Pass the suggestion object back as received.",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received.",
       inputSchema: {
         suggestion: external_exports.object({
           kind: external_exports.enum(SUGGESTION_KINDS),
@@ -59844,8 +59849,14 @@ var registerHarvestTools = (server, ctx) => {
       }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
+        const before = holders(await load(), canonical);
         const removed = await removeTerm(canonical, storeOpts2);
-        return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
+        const after = holders(await load(), canonical);
+        const from = before.find((b) => !after.some((a) => a.path === b.path));
+        const stillIn = after.length > 0 ? { stillIn: after } : {};
+        const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ""}` : `"${canonical}" was not in the ${target ?? "global or project"} lexicon`;
+        const tail = after.map((h) => `; it is still in the ${h.scope} lexicon (${h.path}): ask the user, then call apply_suggestion again with scope "${h.scope}" to remove that copy too`).join("");
+        return textResult({ kind, canonical, removed, ...from ? { path: from.path } : {}, ...stillIn, summary: head + tail });
       }
       if ((kind === "alias" || kind === "never") && !alias) throw new Error(`a "${kind}" suggestion needs an alias`);
       const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
