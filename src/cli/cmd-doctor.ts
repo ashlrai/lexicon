@@ -551,10 +551,17 @@ export async function runDoctorReport(opts: CommonOptions, deps: DoctorDeps = {}
   }
 
   const aliasOwners = new Map<string, Term[]>();
+  const fold = (w: string): string => w.trim().replace(/\s+/g, ' ').toLowerCase();
   for (const { term } of allTerms) {
+    // The matcher compares never-words case-insensitively, so an alias that is
+    // also one of them is dead weight that looks like it works.
+    const never = new Set((term.never ?? []).map(fold));
     for (const alias of term.aliases) {
       const key = alias.trim().toLowerCase();
       if (!key) continue;
+      if (never.has(fold(alias))) {
+        push('warn', `alias "${alias}" of "${term.canonical}" is also in its never list, so it never fires (remove one of them)`);
+      }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
         push('fail', `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);

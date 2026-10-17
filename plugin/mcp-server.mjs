@@ -4676,15 +4676,15 @@ var require_core = __commonJS({
         }
         return metaSchema;
       }
-      _removeAllSchemas(schemas, regex) {
-        for (const keyRef in schemas) {
-          const sch = schemas[keyRef];
+      _removeAllSchemas(schemas2, regex) {
+        for (const keyRef in schemas2) {
+          const sch = schemas2[keyRef];
           if (!regex || regex.test(keyRef)) {
             if (typeof sch == "string") {
-              delete schemas[keyRef];
+              delete schemas2[keyRef];
             } else if (sch && !sch.meta) {
               this._cache.delete(sch.schema);
-              delete schemas[keyRef];
+              delete schemas2[keyRef];
             }
           }
         }
@@ -7255,10 +7255,10 @@ var require_identity = __commonJS({
     var NODE_TYPE = /* @__PURE__ */ Symbol.for("yaml.node.type");
     var isAlias = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === ALIAS;
     var isDocument = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === DOC;
-    var isMap2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === MAP;
+    var isMap3 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === MAP;
     var isPair = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === PAIR;
-    var isScalar = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SCALAR;
-    var isSeq2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SEQ;
+    var isScalar2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SCALAR;
+    var isSeq3 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SEQ;
     function isCollection(node2) {
       if (node2 && typeof node2 === "object")
         switch (node2[NODE_TYPE]) {
@@ -7279,7 +7279,7 @@ var require_identity = __commonJS({
         }
       return false;
     }
-    var hasAnchor = (node2) => (isScalar(node2) || isCollection(node2)) && !!node2.anchor;
+    var hasAnchor = (node2) => (isScalar2(node2) || isCollection(node2)) && !!node2.anchor;
     exports.ALIAS = ALIAS;
     exports.DOC = DOC;
     exports.MAP = MAP;
@@ -7291,11 +7291,11 @@ var require_identity = __commonJS({
     exports.isAlias = isAlias;
     exports.isCollection = isCollection;
     exports.isDocument = isDocument;
-    exports.isMap = isMap2;
+    exports.isMap = isMap3;
     exports.isNode = isNode;
     exports.isPair = isPair;
-    exports.isScalar = isScalar;
-    exports.isSeq = isSeq2;
+    exports.isScalar = isScalar2;
+    exports.isSeq = isSeq3;
   }
 });
 
@@ -10416,7 +10416,7 @@ var require_tags = __commonJS({
     var schema$2 = require_schema3();
     var set2 = require_set();
     var timestamp = require_timestamp();
-    var schemas = /* @__PURE__ */ new Map([
+    var schemas2 = /* @__PURE__ */ new Map([
       ["core", schema.schema],
       ["failsafe", [map2.map, seq.seq, string4.string]],
       ["json", schema$1.schema],
@@ -10452,7 +10452,7 @@ var require_tags = __commonJS({
       "tag:yaml.org,2002:timestamp": timestamp.timestamp
     };
     function getTags(customTags, schemaName, addMergeTag) {
-      const schemaTags = schemas.get(schemaName);
+      const schemaTags = schemas2.get(schemaName);
       if (schemaTags && !customTags) {
         return addMergeTag && !schemaTags.includes(merge2.merge) ? schemaTags.concat(merge2.merge) : schemaTags.slice();
       }
@@ -10461,7 +10461,7 @@ var require_tags = __commonJS({
         if (Array.isArray(customTags))
           tags = [];
         else {
-          const keys = Array.from(schemas.keys()).filter((key) => key !== "yaml11").map((key) => JSON.stringify(key)).join(", ");
+          const keys = Array.from(schemas2.keys()).filter((key) => key !== "yaml11").map((key) => JSON.stringify(key)).join(", ");
           throw new Error(`Unknown schema "${schemaName}"; use one of ${keys} or define customTags array`);
         }
       }
@@ -11403,9 +11403,9 @@ var require_resolve_flow_collection = __commonJS({
     var blockMsg = "Block collections are not allowed within flow collections";
     var isBlock = (token) => token && (token.type === "block-map" || token.type === "block-seq");
     function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag) {
-      const isMap2 = fc.start.source === "{";
-      const fcName = isMap2 ? "flow map" : "flow sequence";
-      const NodeClass = tag?.nodeClass ?? (isMap2 ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
+      const isMap3 = fc.start.source === "{";
+      const fcName = isMap3 ? "flow map" : "flow sequence";
+      const NodeClass = tag?.nodeClass ?? (isMap3 ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
       const coll = new NodeClass(ctx.schema);
       coll.flow = true;
       const atRoot = ctx.atRoot;
@@ -11441,7 +11441,7 @@ var require_resolve_flow_collection = __commonJS({
             offset = props.end;
             continue;
           }
-          if (!isMap2 && ctx.options.strict && utilContainsNewline.containsNewline(key))
+          if (!isMap3 && ctx.options.strict && utilContainsNewline.containsNewline(key))
             onError(
               key,
               // checked by containsNewline()
@@ -11481,7 +11481,7 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap2 && !sep && !props.found) {
+        if (!isMap3 && !sep && !props.found) {
           const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
@@ -11504,7 +11504,7 @@ var require_resolve_flow_collection = __commonJS({
             startOnNewline: false
           });
           if (valueProps.found) {
-            if (!isMap2 && !props.found && ctx.options.strict) {
+            if (!isMap3 && !props.found && ctx.options.strict) {
               if (sep)
                 for (const st of sep) {
                   if (st === valueProps.found)
@@ -11536,7 +11536,7 @@ var require_resolve_flow_collection = __commonJS({
           const pair = new Pair.Pair(keyNode, valueNode);
           if (ctx.options.keepSourceTokens)
             pair.srcToken = collItem;
-          if (isMap2) {
+          if (isMap3) {
             const map2 = coll;
             if (utilMapIncludes.mapIncludes(ctx, map2.items, keyNode))
               onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
@@ -11552,7 +11552,7 @@ var require_resolve_flow_collection = __commonJS({
           offset = valueNode ? valueNode.range[2] : valueProps.end;
         }
       }
-      const expectedEnd = isMap2 ? "}" : "]";
+      const expectedEnd = isMap3 ? "}" : "]";
       const [ce, ...ee] = fc.end;
       let cePos = offset;
       if (ce?.source === expectedEnd)
@@ -12839,7 +12839,7 @@ var require_cst = __commonJS({
     var FLOW_END = "";
     var SCALAR = "";
     var isCollection = (token) => !!token && "items" in token;
-    var isScalar = (token) => !!token && (token.type === "scalar" || token.type === "single-quoted-scalar" || token.type === "double-quoted-scalar" || token.type === "block-scalar");
+    var isScalar2 = (token) => !!token && (token.type === "scalar" || token.type === "single-quoted-scalar" || token.type === "double-quoted-scalar" || token.type === "block-scalar");
     function prettyToken(token) {
       switch (token) {
         case BOM:
@@ -12923,7 +12923,7 @@ var require_cst = __commonJS({
     exports.FLOW_END = FLOW_END;
     exports.SCALAR = SCALAR;
     exports.isCollection = isCollection;
-    exports.isScalar = isScalar;
+    exports.isScalar = isScalar2;
     exports.prettyToken = prettyToken;
     exports.tokenType = tokenType;
   }
@@ -14453,7 +14453,7 @@ var require_public_api = __commonJS({
         return docs;
       return Object.assign([], { empty: true }, composer$1.streamInfo());
     }
-    function parseDocument2(source, options = {}) {
+    function parseDocument3(source, options = {}) {
       const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options);
       const parser$1 = new parser.Parser(lineCounter2?.addNewLine);
       const composer$1 = new composer.Composer(options);
@@ -14479,7 +14479,7 @@ var require_public_api = __commonJS({
       } else if (options === void 0 && reviver && typeof reviver === "object") {
         options = reviver;
       }
-      const doc = parseDocument2(src, options);
+      const doc = parseDocument3(src, options);
       if (!doc)
         return null;
       doc.warnings.forEach((warning) => log2.warn(doc.options.logLevel, warning));
@@ -14515,7 +14515,7 @@ var require_public_api = __commonJS({
     }
     exports.parse = parse3;
     exports.parseAllDocuments = parseAllDocuments;
-    exports.parseDocument = parseDocument2;
+    exports.parseDocument = parseDocument3;
     exports.stringify = stringify;
   }
 });
@@ -14569,20 +14569,6 @@ var require_dist2 = __commonJS({
     exports.stringify = publicApi.stringify;
     exports.visit = visit2.visit;
     exports.visitAsync = visit2.visitAsync;
-  }
-});
-
-// builtin-cjs:node:async_hooks
-var require_node_async_hooks = __commonJS({
-  "builtin-cjs:node:async_hooks"(exports, module) {
-    module.exports = __require("node:async_hooks");
-  }
-});
-
-// builtin-cjs:node:crypto
-var require_node_crypto = __commonJS({
-  "builtin-cjs:node:crypto"(exports, module) {
-    module.exports = __require("node:crypto");
   }
 });
 
@@ -14731,6 +14717,20 @@ var require_mod = __commonJS({
       return arr[min_index];
     };
     exports.closest = closest;
+  }
+});
+
+// builtin-cjs:node:async_hooks
+var require_node_async_hooks = __commonJS({
+  "builtin-cjs:node:async_hooks"(exports, module) {
+    module.exports = __require("node:async_hooks");
+  }
+});
+
+// builtin-cjs:node:crypto
+var require_node_crypto = __commonJS({
+  "builtin-cjs:node:crypto"(exports, module) {
+    module.exports = __require("node:crypto");
   }
 });
 
@@ -21150,12 +21150,12 @@ var ZodTuple = class _ZodTuple extends ZodType {
     });
   }
 };
-ZodTuple.create = (schemas, params) => {
-  if (!Array.isArray(schemas)) {
+ZodTuple.create = (schemas2, params) => {
+  if (!Array.isArray(schemas2)) {
     throw new Error("You must pass an array of schemas to z.tuple([ ... ])");
   }
   return new ZodTuple({
-    items: schemas,
+    items: schemas2,
     typeName: ZodFirstPartyTypeKind.ZodTuple,
     rest: null,
     ...processCreateParams(params)
@@ -38646,7 +38646,7 @@ function toJSONSchema(input2, params) {
       const [_, schema] = entry;
       processSchema(schema, ctx2);
     }
-    const schemas = {};
+    const schemas2 = {};
     const external = {
       registry: registry2,
       uri: params?.uri,
@@ -38656,15 +38656,15 @@ function toJSONSchema(input2, params) {
     for (const entry of registry2._idmap.entries()) {
       const [key, schema] = entry;
       extractDefs(ctx2, schema);
-      assignProp(schemas, key, finalize(ctx2, schema));
+      assignProp(schemas2, key, finalize(ctx2, schema));
     }
     if (Object.keys(defs).length > 0) {
       const defsSegment = ctx2.target === "draft-2020-12" ? "$defs" : "definitions";
-      schemas.__shared = {
+      schemas2.__shared = {
         [defsSegment]: defs
       };
     }
-    return { schemas };
+    return { schemas: schemas2 };
   }
   const ctx = initializeContext({ ...params, processors: allProcessors });
   processSchema(input2, ctx);
@@ -47616,9 +47616,11 @@ function SafeString(max) {
     string2().max(max, `must be at most ${max} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
   );
 }
-var NonEmptyWord = string2().transform((s) => stripInvisible(s).trim()).pipe(
-  string2().min(1, "must not be empty").max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
-);
+function NonEmptyWord() {
+  return string2().transform((s) => stripInvisible(s).trim()).pipe(
+    string2().min(1, "must not be empty").max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
+  );
+}
 function WordList(maxItems, what) {
   return array(string2()).default([]).transform((list) => list.map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
     array(
@@ -47626,41 +47628,58 @@ function WordList(maxItems, what) {
     ).max(maxItems, `at most ${maxItems} ${what}`)
   );
 }
-var TermCategorySchema = _enum2(TERM_CATEGORIES);
-var TermScopeSchema = _enum2(TERM_SCOPES);
-var TermSourceSchema = _enum2(TERM_SOURCES);
-var TermSchema = object2({
-  canonical: NonEmptyWord,
-  aliases: WordList(LIMITS.aliases, "aliases per term"),
-  phonetic: SafeString(LIMITS.text).optional(),
-  category: TermCategorySchema.optional(),
-  caseSensitive: boolean2().optional(),
-  scope: TermScopeSchema.optional(),
-  source: TermSourceSchema.optional(),
-  notes: SafeString(LIMITS.text).optional(),
-  // Not shown to models, but it round-trips through the file: same sanitising as the other strings.
-  createdAt: SafeString(64).optional(),
-  // Still accepted on the way in, and still written back out, because project
-  // lexicons committed before hits moved to the per-user sidecar carry it and
-  // rewriting somebody's tracked file to drop a field is not this parser's
-  // call. Only `writeLexiconFile` decides what a project file may gain: see
-  // `pinProjectHits` in store.ts.
-  hits: number2().int().nonnegative().optional(),
-  never: WordList(LIMITS.aliases, "never words per term").optional()
-});
-var LexiconSettingsSchema = object2({
-  minConfidence: number2().min(0).max(1).optional(),
-  phonetic: boolean2().optional(),
-  fuzzy: boolean2().optional(),
-  protectedWords: WordList(LIMITS.protectedWords, "protected words").optional(),
-  skipCode: boolean2().optional(),
-  packs: WordList(LIMITS.aliases, "packs").optional()
-});
-var LexiconSchema = object2({
-  version: literal(1).default(1),
-  terms: array(TermSchema).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
-  settings: LexiconSettingsSchema.optional()
-});
+var buildCategory = () => _enum2(TERM_CATEGORIES);
+var buildScope = () => _enum2(TERM_SCOPES);
+var buildSource = () => _enum2(TERM_SOURCES);
+function buildTerm(category, scope, source) {
+  return object2({
+    canonical: NonEmptyWord(),
+    aliases: WordList(LIMITS.aliases, "aliases per term"),
+    phonetic: SafeString(LIMITS.text).optional(),
+    category: category.optional(),
+    caseSensitive: boolean2().optional(),
+    scope: scope.optional(),
+    source: source.optional(),
+    notes: SafeString(LIMITS.text).optional(),
+    // Not shown to models, but it round-trips through the file: same sanitising as the other strings.
+    createdAt: SafeString(64).optional(),
+    // Still accepted on the way in, and still written back out, because project
+    // lexicons committed before hits moved to the per-user sidecar carry it and
+    // rewriting somebody's tracked file to drop a field is not this parser's
+    // call. Only `writeLexiconFile` decides what a project file may gain: see
+    // `pinProjectHits` in store.ts.
+    hits: number2().int().nonnegative().optional(),
+    never: WordList(LIMITS.aliases, "never words per term").optional()
+  });
+}
+function buildSettings() {
+  return object2({
+    minConfidence: number2().min(0).max(1).optional(),
+    phonetic: boolean2().optional(),
+    fuzzy: boolean2().optional(),
+    protectedWords: WordList(LIMITS.protectedWords, "protected words").optional(),
+    skipCode: boolean2().optional(),
+    packs: WordList(LIMITS.aliases, "packs").optional()
+  });
+}
+function buildLexicon(term, settings) {
+  return object2({
+    version: literal(1).default(1),
+    terms: array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
+    settings: settings.optional()
+  });
+}
+var built;
+function schemas() {
+  if (built) return built;
+  const category = buildCategory();
+  const scope = buildScope();
+  const source = buildSource();
+  const term = buildTerm(category, scope, source);
+  const settings = buildSettings();
+  built = { category, scope, source, term, settings, lexicon: buildLexicon(term, settings) };
+  return built;
+}
 function formatPath(path27) {
   if (path27.length === 0) return "(root)";
   let out = "";
@@ -47677,7 +47696,7 @@ function parseLexicon(raw) {
   if (typeof raw !== "object") {
     throw new Error(`Invalid lexicon: expected an object, received ${typeof raw}`);
   }
-  const result = LexiconSchema.safeParse(raw);
+  const result = schemas().lexicon.safeParse(raw);
   if (!result.success) {
     const lines = result.error.issues.map(
       (issue2) => `  - ${formatPath(issue2.path)}: ${issue2.message}`
@@ -47697,1031 +47716,6 @@ var import_node_fs4 = __toESM(require_node_fs());
 var import_node_os3 = __toESM(require_node_os());
 var import_node_path5 = __toESM(require_node_path());
 var import_yaml = __toESM(require_dist2());
-
-// src/core/trust.ts
-var import_node_fs3 = __toESM(require_node_fs());
-var import_node_path3 = __toESM(require_node_path());
-
-// src/util/atomic.ts
-var import_node_fs = __toESM(require_node_fs());
-var import_node_async_hooks = __toESM(require_node_async_hooks());
-var import_node_os = __toESM(require_node_os());
-var import_node_path = __toESM(require_node_path());
-
-// src/util/errors.ts
-function errorMessage(err) {
-  return err instanceof Error ? err.message : String(err);
-}
-function isEnoent(err) {
-  return typeof err === "object" && err !== null && err.code === "ENOENT";
-}
-
-// src/util/atomic.ts
-var BACKUP_SUFFIX = ".bak";
-var OLDER_BACKUP_SUFFIX = ".1.bak";
-var BACKUP_ROTATE_MS = 15 * 6e4;
-var LOCK_SUFFIX = ".lock";
-var DEFAULT_LOCK_TIMEOUT_MS = 1e4;
-var DEFAULT_LOCK_STALE_MS = 3e4;
-var DEFAULT_LOCK_QUEUE_TIMEOUT_MS = 3e5;
-async function resolveWriteTarget(target) {
-  const abs = import_node_path.default.resolve(target);
-  try {
-    return await import_node_fs.promises.realpath(abs);
-  } catch {
-    return abs;
-  }
-}
-async function resolveLockTarget(target) {
-  const abs = import_node_path.default.resolve(target);
-  let candidate = abs;
-  const suffix = [];
-  for (; ; ) {
-    try {
-      return import_node_path.default.join(await import_node_fs.promises.realpath(candidate), ...suffix);
-    } catch {
-      const parent = import_node_path.default.dirname(candidate);
-      if (parent === candidate) return abs;
-      suffix.unshift(import_node_path.default.basename(candidate));
-      candidate = parent;
-    }
-  }
-}
-async function resolveMode(target, opts) {
-  if (opts.mode !== void 0) return opts.mode;
-  try {
-    return (await import_node_fs.promises.stat(target)).mode & 4095;
-  } catch {
-    return void 0;
-  }
-}
-async function writeFileAtomic(target, data, opts = {}) {
-  await import_node_fs.promises.mkdir(import_node_path.default.dirname(import_node_path.default.resolve(target)), { recursive: true });
-  const real = await resolveWriteTarget(target);
-  const tmp = `${real}.${process.pid}.tmp`;
-  const mode = await resolveMode(real, opts);
-  if (mode === void 0) {
-    await import_node_fs.promises.writeFile(tmp, data, "utf8");
-  } else {
-    await import_node_fs.promises.writeFile(tmp, data, { encoding: "utf8", mode });
-    await import_node_fs.promises.chmod(tmp, mode);
-  }
-  try {
-    if (opts.backup) await backupExisting(real);
-    await import_node_fs.promises.rename(tmp, real);
-  } catch (err) {
-    await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
-    throw err;
-  }
-}
-async function backupExisting(target) {
-  const copied = await copyThroughTemp(target, `${target}${BACKUP_SUFFIX}`);
-  if (!copied) return;
-  const older = `${target}${OLDER_BACKUP_SUFFIX}`;
-  if (await isYoungerThan(older, BACKUP_ROTATE_MS)) return;
-  await copyThroughTemp(target, older);
-}
-async function copyThroughTemp(from, to) {
-  const tmp = `${to}.${process.pid}.tmp`;
-  try {
-    await import_node_fs.promises.copyFile(from, tmp);
-  } catch (err) {
-    if (isEnoent(err)) return false;
-    throw err;
-  }
-  try {
-    await import_node_fs.promises.rename(tmp, to);
-  } catch (err) {
-    await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
-    throw err;
-  }
-  return true;
-}
-async function isYoungerThan(file2, ms) {
-  try {
-    return Date.now() - (await import_node_fs.promises.stat(file2)).mtimeMs < ms;
-  } catch {
-    return false;
-  }
-}
-var FileLockError = class extends Error {
-  path;
-  lockPath;
-  constructor(target, lockPath, detail) {
-    super(`could not lock ${target} for writing: ${detail} (lock file: ${lockPath})`);
-    this.name = "FileLockError";
-    this.path = target;
-    this.lockPath = lockPath;
-  }
-};
-var ownedLocks = /* @__PURE__ */ new Set();
-var exitHookInstalled = false;
-var heldLocks = new import_node_async_hooks.AsyncLocalStorage();
-var queues = /* @__PURE__ */ new Map();
-async function withFileLock(target, fn, opts = {}) {
-  const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
-  const held = heldLocks.getStore();
-  if (held?.has(lockPath)) return fn();
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
-  const staleMs = opts.staleMs ?? DEFAULT_LOCK_STALE_MS;
-  const queueTimeoutMs = opts.queueTimeoutMs ?? DEFAULT_LOCK_QUEUE_TIMEOUT_MS;
-  const run = async () => {
-    const token = await acquire(lockPath, target, timeoutMs, staleMs);
-    const stopHeartbeat = startHeartbeat(lockPath, token, staleMs);
-    const next = new Set(held ?? []);
-    next.add(lockPath);
-    try {
-      return await heldLocks.run(next, fn);
-    } finally {
-      stopHeartbeat();
-      await release(lockPath, token);
-    }
-  };
-  let started = false;
-  let abandoned = false;
-  const previous = queues.get(lockPath) ?? Promise.resolve();
-  const turn = async () => {
-    if (abandoned) throw new FileLockError(target, lockPath, "the caller stopped waiting for its turn");
-    started = true;
-    return run();
-  };
-  const mine = previous.then(turn, turn);
-  const tail = mine.then(ignore, ignore);
-  queues.set(lockPath, tail);
-  try {
-    return await new Promise((resolve4, reject) => {
-      const timer = setTimeout(() => {
-        if (started) return;
-        abandoned = true;
-        reject(
-          new FileLockError(
-            target,
-            lockPath,
-            `another operation in this process still held it after ${queueTimeoutMs}ms (a lock ordering bug, not contention)`
-          )
-        );
-      }, queueTimeoutMs);
-      mine.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve4(value);
-        },
-        (err) => {
-          clearTimeout(timer);
-          reject(err);
-        }
-      );
-    });
-  } finally {
-    if (queues.get(lockPath) === tail) queues.delete(lockPath);
-  }
-}
-function ignore() {
-}
-function startHeartbeat(lockPath, token, staleMs) {
-  const every = Math.max(250, Math.min(Math.floor(staleMs / 3), 5e3));
-  const timer = setInterval(() => {
-    void (async () => {
-      try {
-        if (parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"))?.token !== token) return;
-        const now = /* @__PURE__ */ new Date();
-        await import_node_fs.promises.utimes(lockPath, now, now);
-      } catch {
-      }
-    })();
-  }, every);
-  timer.unref?.();
-  return () => clearInterval(timer);
-}
-async function acquire(lockPath, target, timeoutMs, staleMs) {
-  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
-  const deadline = Date.now() + timeoutMs;
-  let wait = 4;
-  for (; ; ) {
-    try {
-      await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
-      await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
-      rememberForCleanup(lockPath);
-      return token;
-    } catch (err) {
-      if (!isEexist(err)) throw err;
-    }
-    if (await breakIfStale(lockPath, staleMs)) continue;
-    if (Date.now() >= deadline) {
-      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
-    }
-    await sleep(wait / 2 + Math.random() * wait);
-    wait = Math.min(wait * 2, 120);
-  }
-}
-async function breakIfStale(lockPath, staleMs) {
-  let before;
-  let mtimeMs;
-  try {
-    before = await import_node_fs.promises.readFile(lockPath, "utf8");
-    mtimeMs = (await import_node_fs.promises.stat(lockPath)).mtimeMs;
-  } catch (err) {
-    return isEnoent(err);
-  }
-  const owner = parseOwner(before);
-  if (owner && owner.host === import_node_os.default.hostname()) {
-    if (pidAlive(owner.pid)) return false;
-  } else if (Date.now() - mtimeMs < staleMs) {
-    return false;
-  }
-  try {
-    if (await import_node_fs.promises.readFile(lockPath, "utf8") !== before) return false;
-    await import_node_fs.promises.unlink(lockPath);
-  } catch {
-    return false;
-  }
-  return true;
-}
-async function release(lockPath, token) {
-  ownedLocks.delete(lockPath);
-  try {
-    if (parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"))?.token !== token) return;
-    await import_node_fs.promises.unlink(lockPath);
-  } catch {
-  }
-}
-function rememberForCleanup(lockPath) {
-  ownedLocks.add(lockPath);
-  if (exitHookInstalled) return;
-  exitHookInstalled = true;
-  process.on("exit", () => {
-    for (const held of ownedLocks) {
-      try {
-        (0, import_node_fs.unlinkSync)(held);
-      } catch {
-      }
-    }
-  });
-}
-async function describeHolder(lockPath) {
-  try {
-    const owner = parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"));
-    if (owner) return `pid ${owner.pid} on ${owner.host} since ${owner.at}`;
-  } catch {
-  }
-  return "another lexicon process";
-}
-function parseOwner(text) {
-  try {
-    const raw = JSON.parse(text);
-    if (typeof raw !== "object" || raw === null) return void 0;
-    const { pid, host, token, at } = raw;
-    if (typeof pid !== "number" || typeof host !== "string" || typeof token !== "string") return void 0;
-    if (!Number.isInteger(pid) || pid <= 0) return void 0;
-    return { pid, host, token, at: typeof at === "string" ? at : "an unknown time" };
-  } catch {
-    return void 0;
-  }
-}
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return true;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === "EPERM";
-  }
-}
-function isEexist(err) {
-  return typeof err === "object" && err !== null && err.code === "EEXIST";
-}
-function sleep(ms) {
-  return new Promise((resolve4) => setTimeout(resolve4, ms));
-}
-
-// src/util/json.ts
-var import_node_fs2 = __toESM(require_node_fs());
-var import_node_path2 = __toESM(require_node_path());
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function formatJson(value) {
-  return `${JSON.stringify(value, null, 2)}
-`;
-}
-async function readJsonFile(file2) {
-  let raw;
-  try {
-    raw = await import_node_fs2.promises.readFile(file2, "utf8");
-  } catch (err) {
-    if (isEnoent(err)) return { exists: false };
-    return { exists: true, error: errorMessage(err) };
-  }
-  try {
-    return { exists: true, value: raw.trim() === "" ? {} : JSON.parse(raw) };
-  } catch (err) {
-    return { exists: true, error: errorMessage(err) };
-  }
-}
-async function writeJsonFile(file2, value) {
-  await import_node_fs2.promises.mkdir(import_node_path2.default.dirname(file2), { recursive: true });
-  await import_node_fs2.promises.writeFile(file2, formatJson(value), "utf8");
-}
-
-// src/core/trust.ts
-var TRUST_FILE_NAME = "trust.json";
-var TRUST_ALL_ENV = "LEXICON_TRUST_ALL";
-function getTrustPath(opts = {}) {
-  return import_node_path3.default.join(import_node_path3.default.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
-}
-async function canonicalPath(filePath) {
-  const resolved2 = import_node_path3.default.resolve(filePath);
-  try {
-    return await import_node_fs3.promises.realpath(resolved2);
-  } catch {
-    return resolved2;
-  }
-}
-async function hashFile(filePath) {
-  try {
-    const bytes = await import_node_fs3.promises.readFile(filePath);
-    const { createHash: createHash4 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
-    return createHash4("sha256").update(bytes).digest("hex");
-  } catch {
-    return void 0;
-  }
-}
-function trustAllEnabled(env = process.env) {
-  const value = env[TRUST_ALL_ENV]?.trim().toLowerCase();
-  return value === "1" || value === "true";
-}
-function emptyRegistry() {
-  return { version: 1, trusted: {} };
-}
-function isTrustEntry(value) {
-  return typeof value === "object" && value !== null && typeof value.sha256 === "string" && typeof value.trustedAt === "string";
-}
-async function readTrustRegistry(opts = {}) {
-  let text;
-  try {
-    text = await import_node_fs3.promises.readFile(getTrustPath(opts), "utf8");
-  } catch {
-    return emptyRegistry();
-  }
-  let raw;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return emptyRegistry();
-  }
-  if (typeof raw !== "object" || raw === null) return emptyRegistry();
-  const trustedRaw = raw.trusted;
-  if (typeof trustedRaw !== "object" || trustedRaw === null) return emptyRegistry();
-  const trusted = {};
-  for (const [key, value] of Object.entries(trustedRaw)) {
-    if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
-  }
-  return { version: 1, trusted };
-}
-function withTrustLock(fn, opts = {}) {
-  return withFileLock(getTrustPath(opts), fn);
-}
-async function writeTrustRegistry(registry2, opts = {}) {
-  await withTrustLock(() => writeFileAtomic(getTrustPath(opts), formatJson(registry2)), opts);
-}
-async function isInsideGlobalConfig(filePath, opts) {
-  const globalPath = await canonicalPath(resolvePaths(opts).global);
-  const target = await canonicalPath(filePath);
-  if (target === globalPath) return true;
-  return import_node_path3.default.dirname(target) === import_node_path3.default.dirname(globalPath);
-}
-async function isTrusted(projectFile, opts = {}) {
-  if (trustAllEnabled()) return "trusted";
-  if (!projectFile.exists) return "trusted";
-  if (await isInsideGlobalConfig(projectFile.path, opts)) return "trusted";
-  const key = await canonicalPath(projectFile.path);
-  const registry2 = await readTrustRegistry(opts);
-  const entry = registry2.trusted[key];
-  if (!entry) return "untrusted";
-  const sha = await hashFile(key);
-  if (sha === void 0) return "untrusted";
-  return sha === entry.sha256 ? "trusted" : "changed";
-}
-async function trustProject(projectPath, opts = {}) {
-  const key = await canonicalPath(projectPath);
-  const sha256 = await hashFile(key);
-  if (sha256 === void 0) throw new Error(`cannot read the project lexicon at ${projectPath}`);
-  return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
-    const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
-    registry2.trusted[key] = entry;
-    await writeTrustRegistry(registry2, opts);
-    return entry;
-  }, opts);
-}
-async function refreshTrust(projectPath, opts = {}) {
-  const key = await canonicalPath(projectPath);
-  return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
-    const existing = registry2.trusted[key];
-    if (!existing) return false;
-    const sha256 = await hashFile(key);
-    if (sha256 === void 0 || sha256 === existing.sha256) return false;
-    registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
-    await writeTrustRegistry(registry2, opts);
-    return true;
-  }, opts);
-}
-async function untrustProject(projectPath, opts = {}) {
-  const key = await canonicalPath(projectPath);
-  return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
-    if (!(key in registry2.trusted)) return false;
-    delete registry2.trusted[key];
-    await writeTrustRegistry(registry2, opts);
-    return true;
-  }, opts);
-}
-async function listTrusted(opts = {}) {
-  const registry2 = await readTrustRegistry(opts);
-  const out = [];
-  for (const [filePath, entry] of Object.entries(registry2.trusted)) {
-    const sha = await hashFile(filePath);
-    const status = sha === void 0 ? "missing" : sha === entry.sha256 ? "trusted" : "changed";
-    out.push({ path: filePath, ...entry, status });
-  }
-  return out.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-// src/util/xdg.ts
-var import_node_path4 = __toESM(require_node_path());
-var import_node_os2 = __toESM(require_node_os());
-function absoluteOr(value, fallback) {
-  const trimmed = value?.trim();
-  if (!trimmed) return fallback;
-  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback;
-}
-function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
-  return absoluteOr(env.XDG_CONFIG_HOME, import_node_path4.default.join(home, ".config"));
-}
-
-// src/core/store.ts
-var PROJECT_FILE_NAME = ".lexicon.yaml";
-var MAX_LEXICON_BYTES = 2 * 1024 * 1024;
-var HEADER_COMMENT = [
-  "Lexicon: personal vocabulary for voice-to-agents.",
-  "canonical: the spelling you want; aliases: what STT actually hears.",
-  "",
-  "Each term may also carry: phonetic (pronunciation hint), category",
-  "(brand|person|product|acronym|identifier|place|other), notes (shown to the",
-  "agent), never (words that must not be rewritten to this canonical).",
-  "settings: minConfidence, phonetic, fuzzy, protectedWords, skipCode."
-].join("\n");
-function findGitRoot(start) {
-  let dir = import_node_path5.default.resolve(start);
-  for (; ; ) {
-    if ((0, import_node_fs4.existsSync)(import_node_path5.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path5.default.dirname(dir);
-    if (parent === dir) return void 0;
-    dir = parent;
-  }
-}
-function findProjectFile(start) {
-  let dir = import_node_path5.default.resolve(start);
-  for (; ; ) {
-    const candidate = import_node_path5.default.join(dir, PROJECT_FILE_NAME);
-    if ((0, import_node_fs4.existsSync)(candidate)) return candidate;
-    if ((0, import_node_fs4.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
-    const parent = import_node_path5.default.dirname(dir);
-    if (parent === dir) return void 0;
-    dir = parent;
-  }
-}
-function resolvePaths(opts = {}) {
-  const cwd = opts.cwd ?? process.cwd();
-  const env = opts.env ?? process.env;
-  const configHome = xdgConfigHome(env, opts.home ?? import_node_os3.default.homedir());
-  const global = opts.globalPath || env.LEXICON_PATH || import_node_path5.default.join(configHome, "lexicon", "lexicon.yaml");
-  const project = findProjectFile(cwd);
-  return project ? { global, project } : { global };
-}
-function defaultProjectPath(cwd = process.cwd()) {
-  return import_node_path5.default.join(findGitRoot(cwd) ?? import_node_path5.default.resolve(cwd), PROJECT_FILE_NAME);
-}
-async function readLexiconFile(filePath, scope) {
-  const read = await readLexiconText(filePath);
-  if (read === void 0) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
-  return parseLexiconText(read.text, filePath, scope);
-}
-async function readLexiconText(filePath) {
-  try {
-    const stat = await import_node_fs4.promises.stat(filePath);
-    if (stat.size > MAX_LEXICON_BYTES) {
-      throw new Error(
-        `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
-      );
-    }
-    return { text: await import_node_fs4.promises.readFile(filePath, "utf8"), mode: stat.mode & 511 };
-  } catch (err) {
-    if (isEnoent(err)) return void 0;
-    throw err;
-  }
-}
-function parseLexiconText(text, filePath, scope) {
-  let raw;
-  try {
-    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
-  } catch (err) {
-    throw new Error(`Failed to parse lexicon YAML at ${filePath}: ${errorMessage(err)}`);
-  }
-  if (raw === null || raw === void 0) {
-    return { path: filePath, scope, lexicon: emptyLexicon(), exists: true };
-  }
-  let lexicon;
-  try {
-    lexicon = parseLexicon(raw);
-  } catch (err) {
-    throw new Error(`Invalid lexicon at ${filePath}: ${errorMessage(err)}`);
-  }
-  return { path: filePath, scope, lexicon, exists: true };
-}
-var PARSE_CACHE_FILE_NAME = "parse-cache.json";
-var PARSE_CACHE_MIN_BYTES = 8 * 1024;
-var PARSE_CACHE_VERSION = 2;
-async function readGlobalLexiconCached(filePath) {
-  const read = await readLexiconText(filePath);
-  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
-  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
-  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
-  const key = import_node_path5.default.resolve(filePath);
-  try {
-    const cached2 = JSON.parse(await import_node_fs4.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text) {
-      return { path: filePath, scope: "global", lexicon: parseLexicon(cached2.lexicon), exists: true };
-    }
-  } catch {
-  }
-  const file2 = parseLexiconText(read.text, filePath, "global");
-  try {
-    await writeFileAtomic(cachePath, JSON.stringify({ version: PARSE_CACHE_VERSION, path: key, text: read.text, lexicon: file2.lexicon }), {
-      mode: read.mode
-    });
-  } catch {
-  }
-  return file2;
-}
-async function writeLexiconFile(file2) {
-  const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
-  await withLexiconLock(file2.path, async () => {
-    await pinCommittedHits(file2);
-    const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
-    const text = `${header}
-
-${body}`;
-    assertReadsBack(text, file2.path);
-    await writeFileAtomic(file2.path, text, { backup: true });
-  });
-  file2.exists = true;
-}
-async function pinCommittedHits(file2) {
-  const onDisk = /* @__PURE__ */ new Map();
-  try {
-    const current = await readLexiconFile(file2.path, file2.scope);
-    for (const term of current.lexicon.terms) {
-      if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
-    }
-  } catch {
-  }
-  for (const term of file2.lexicon.terms) {
-    const committed = onDisk.get(hitKey(term.canonical));
-    if (committed === void 0) delete term.hits;
-    else term.hits = committed;
-  }
-}
-function assertReadsBack(text, filePath) {
-  let raw;
-  try {
-    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
-  } catch (err) {
-    throw new Error(
-      `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`
-    );
-  }
-  try {
-    parseLexicon(raw ?? emptyLexicon());
-  } catch (err) {
-    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
-  }
-}
-function withLexiconLock(filePath, fn) {
-  return withFileLock(filePath, fn);
-}
-var TERM_KEY_ORDER = [
-  "canonical",
-  "aliases",
-  "phonetic",
-  "category",
-  "notes",
-  "caseSensitive",
-  "never",
-  "scope",
-  "source",
-  "createdAt",
-  "hits"
-];
-function orderLexicon(lexicon) {
-  const out = { version: lexicon.version };
-  if (lexicon.settings && Object.keys(stripUndefined(lexicon.settings)).length > 0) {
-    out.settings = stripUndefined(lexicon.settings);
-  }
-  out.terms = lexicon.terms.map((term) => {
-    const ordered = {};
-    for (const key of TERM_KEY_ORDER) {
-      const value = term[key];
-      if (value !== void 0) ordered[key] = value;
-    }
-    for (const [key, value] of Object.entries(term)) {
-      if (!(key in ordered) && value !== void 0) ordered[key] = value;
-    }
-    return ordered;
-  });
-  return out;
-}
-function stripUndefined(obj) {
-  const out = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (value === void 0) continue;
-    if (Array.isArray(value) && value.length === 0) continue;
-    out[key] = value;
-  }
-  return out;
-}
-var HITS_FILE_NAME = "hits.json";
-function getHitsPath(opts = {}) {
-  return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
-}
-function hitKey(canonical) {
-  return canonical.trim().toLowerCase();
-}
-async function canonicalPath2(filePath) {
-  const resolved2 = import_node_path5.default.resolve(filePath);
-  try {
-    return await import_node_fs4.promises.realpath(resolved2);
-  } catch {
-    return resolved2;
-  }
-}
-function emptyHitsRegistry() {
-  return { version: 1, projects: {} };
-}
-async function readHitsRegistry(opts) {
-  let raw;
-  try {
-    raw = JSON.parse(await import_node_fs4.promises.readFile(getHitsPath(opts), "utf8"));
-  } catch {
-    return emptyHitsRegistry();
-  }
-  const out = emptyHitsRegistry();
-  const projects = isPlainObject3(raw) ? raw.projects : void 0;
-  if (isPlainObject3(projects)) {
-    for (const [file2, counts] of Object.entries(projects)) {
-      if (isPlainObject3(counts)) out.projects[file2] = validCounts(counts);
-    }
-  }
-  const global = isPlainObject3(raw) ? raw.global : void 0;
-  if (isPlainObject3(global)) out.global = validCounts(global);
-  return out;
-}
-function isPlainObject3(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function validCounts(counts) {
-  const entry = {};
-  for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
-  }
-  return entry;
-}
-async function dropProjectHits(projectPath, canonical, opts) {
-  try {
-    const hitsPath = getHitsPath(opts);
-    const key = await canonicalPath2(projectPath);
-    await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
-      const entry = registry2.projects[key];
-      if (!entry || !(hitKey(canonical) in entry)) return;
-      delete entry[hitKey(canonical)];
-      await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
-  } catch {
-  }
-}
-async function dropGlobalHits(canonical, opts) {
-  try {
-    const hitsPath = getHitsPath(opts);
-    await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
-      if (!registry2.global || !(hitKey(canonical) in registry2.global)) return;
-      delete registry2.global[hitKey(canonical)];
-      await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
-  } catch {
-  }
-}
-async function hydrateHits(merged, project, opts) {
-  let registry2;
-  try {
-    registry2 = await readHitsRegistry(opts);
-  } catch {
-    return;
-  }
-  const projectCounts = project ? registry2.projects[await canonicalPath2(project.path)] ?? {} : {};
-  const globalCounts = registry2.global ?? {};
-  if (Object.keys(projectCounts).length === 0 && Object.keys(globalCounts).length === 0) return;
-  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
-  for (const term of merged.terms) {
-    const key = hitKey(term.canonical);
-    const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
-    if (n) term.hits = (term.hits ?? 0) + n;
-  }
-}
-async function loadLexicon(opts = {}) {
-  const paths = resolvePaths(opts);
-  const global = await readGlobalLexiconCached(paths.global);
-  if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
-  let project;
-  try {
-    project = await readLexiconFile(paths.project, "project");
-  } catch (err) {
-    const placeholder = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
-    const trust = await isTrusted(placeholder, opts);
-    if (trust === "trusted" || opts.includeUntrusted) throw err;
-    return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
-  }
-  const projectTrust = await isTrusted(project, opts);
-  if (projectTrust === "trusted" || opts.includeUntrusted) {
-    const merged = mergeLexicons(global.lexicon, project.lexicon);
-    await hydrateHits(merged, project, opts);
-    return { merged, global, project, projectTrust };
-  }
-  return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: project };
-  async function hydrated(merged) {
-    await hydrateHits(merged, void 0, opts);
-    return merged;
-  }
-}
-function mergeLexicons(global, project) {
-  const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
-  if (project) {
-    for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
-      const replacement = { ...pt, scope: pt.scope ?? "project" };
-      if (idx === -1) {
-        terms.push({ ...replacement, aliases: [...pt.aliases] });
-      } else {
-        replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
-        terms[idx] = replacement;
-      }
-    }
-  }
-  const settings = mergeSettings(global.settings, project?.settings);
-  const merged = { version: 1, terms };
-  if (settings) merged.settings = settings;
-  return merged;
-}
-function mergeSettings(global, project) {
-  if (!global && !project) return void 0;
-  const out = { ...global ?? {}, ...project ?? {} };
-  const protectedWords = dedupeCaseInsensitive([
-    ...global?.protectedWords ?? [],
-    ...project?.protectedWords ?? []
-  ]);
-  if (protectedWords.length > 0) out.protectedWords = protectedWords;
-  else delete out.protectedWords;
-  return out;
-}
-var ProjectTrustError = class extends Error {
-  path;
-  status;
-  constructor(projectPath, status) {
-    const why = status === "changed" ? "has changed since it was trusted" : "is untrusted";
-    super(
-      `project lexicon at ${projectPath} ${why}; review it and run \`lexicon trust\` first, or write to the global lexicon instead`
-    );
-    this.name = "ProjectTrustError";
-    this.path = projectPath;
-    this.status = status;
-  }
-};
-function isProjectTrustError(err) {
-  return err instanceof Error && err.name === "ProjectTrustError";
-}
-async function assertProjectWritable(projectPath, opts) {
-  if (!(0, import_node_fs4.existsSync)(projectPath)) return;
-  const status = await isTrusted(
-    { path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true },
-    opts
-  );
-  if (status !== "trusted") throw new ProjectTrustError(projectPath, status);
-}
-async function addTerm(term, opts = {}) {
-  const scope = opts.scope ?? "global";
-  const targetPath = await resolveScopeWritePath(scope, opts);
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new Error("canonical must not be empty");
-  const incoming = {
-    ...term,
-    canonical,
-    aliases: dedupeAliases(term.aliases ?? [], canonical)
-  };
-  return withLexiconLock(targetPath, async () => {
-    const file2 = await readLexiconFile(targetPath, scope);
-    const existing = findTerm(file2.lexicon, canonical);
-    if (existing && opts.merge !== false) {
-      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
-      existing.phonetic ??= incoming.phonetic;
-      existing.category ??= incoming.category;
-      existing.notes ??= incoming.notes;
-      existing.caseSensitive ??= incoming.caseSensitive;
-      if (incoming.never?.length) {
-        existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
-      }
-      await writeAndTrust(file2, opts);
-      return { file: file2, term: existing, created: false };
-    }
-    if (existing) {
-      const replaced = {
-        ...incoming,
-        scope,
-        source: incoming.source ?? "user",
-        createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-      };
-      const idx = file2.lexicon.terms.indexOf(existing);
-      file2.lexicon.terms[idx] = replaced;
-      await writeAndTrust(file2, opts);
-      return { file: file2, term: replaced, created: false };
-    }
-    const created = {
-      ...incoming,
-      ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
-      scope,
-      source: incoming.source ?? "user",
-      createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-    };
-    file2.lexicon.terms.push(created);
-    await writeAndTrust(file2, opts);
-    return { file: file2, term: created, created: true };
-  });
-}
-async function writeAndTrust(file2, opts) {
-  await writeLexiconFile(file2);
-  if (file2.scope === "project") await trustProject(file2.path, opts);
-}
-async function removeTerm(canonical, opts = {}) {
-  for (const target of candidatePaths(opts, opts.scope)) {
-    const removed = await withLexiconLock(target.path, async () => {
-      const file2 = await readLexiconFile(target.path, target.scope);
-      if (!file2.exists) return false;
-      const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
-      if (remaining.length === file2.lexicon.terms.length) return false;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
-      file2.lexicon.terms = remaining;
-      await writeLexiconFile(file2);
-      if (file2.scope === "project") {
-        await refreshTrust(file2.path, opts);
-        await dropProjectHits(file2.path, canonical, opts);
-      } else {
-        await dropGlobalHits(canonical, opts);
-      }
-      return true;
-    });
-    if (removed) return true;
-  }
-  return false;
-}
-async function removeAlias(canonical, alias, opts = {}) {
-  const wanted = canonical.trim();
-  const drop = alias.trim();
-  if (!wanted) throw new Error("canonical must not be empty");
-  if (!drop) throw new Error("alias must not be empty");
-  if (sameCanonical(wanted, drop)) {
-    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
-  }
-  let termFound = false;
-  let firstTerm;
-  const files = [];
-  for (const target of candidatePaths(opts, opts.scope)) {
-    await withLexiconLock(target.path, async () => {
-      const file2 = await readLexiconFile(target.path, target.scope);
-      if (!file2.exists) return;
-      const term = findTerm(file2.lexicon, wanted);
-      if (!term) return;
-      termFound = true;
-      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
-      if (remaining.length === term.aliases.length) return;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
-      term.aliases = remaining;
-      await writeLexiconFile(file2);
-      if (file2.scope === "project") await refreshTrust(file2.path, opts);
-      files.push(file2);
-      firstTerm ??= term;
-    });
-  }
-  if (firstTerm) return { term: firstTerm, files };
-  const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
-  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
-  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
-}
-async function recordHits(canonicals, opts = {}) {
-  try {
-    if (canonicals.length === 0) return;
-    const counts = /* @__PURE__ */ new Map();
-    for (const c of canonicals) {
-      const key = hitKey(c);
-      if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    if (counts.size === 0) return;
-    const paths = resolvePaths(opts);
-    let projectFile;
-    if (opts.loaded) {
-      if (opts.loaded.project && opts.loaded.projectTrust === "trusted") projectFile = opts.loaded.project;
-    } else if (paths.project) {
-      const file2 = await readLexiconFile(paths.project, "project");
-      if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
-    }
-    let project;
-    if (projectFile) {
-      const mine = /* @__PURE__ */ new Map();
-      for (const term of projectFile.lexicon.terms) {
-        const key = hitKey(term.canonical);
-        const n = counts.get(key);
-        if (n === void 0) continue;
-        mine.set(key, n);
-        counts.delete(key);
-      }
-      if (mine.size > 0) project = { key: await canonicalPath2(projectFile.path), counts: mine };
-    }
-    if (counts.size > 0) {
-      const globalFile = opts.loaded?.global ?? await readLexiconFile(paths.global, "global");
-      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
-      for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
-    }
-    if (!project && counts.size === 0) return;
-    const hitsPath = getHitsPath(opts);
-    await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
-      if (project) {
-        const entry = { ...registry2.projects[project.key] ?? {} };
-        for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;
-        registry2.projects[project.key] = entry;
-      }
-      if (counts.size > 0) {
-        const global = { ...registry2.global ?? {} };
-        for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
-        registry2.global = global;
-      }
-      await import_node_fs4.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
-      await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
-  } catch {
-  }
-}
-function findTerm(lexicon, canonical) {
-  return lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
-}
-async function resolveScopeWritePath(scope, opts) {
-  const paths = resolvePaths(opts);
-  if (scope === "global") return paths.global;
-  const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
-  await assertProjectWritable(projectPath, opts);
-  return projectPath;
-}
-function candidatePaths(opts, scope) {
-  const paths = resolvePaths(opts);
-  if (scope === "global") return [{ path: paths.global, scope: "global" }];
-  if (scope === "project") return paths.project ? [{ path: paths.project, scope: "project" }] : [];
-  const targets = [];
-  if (paths.project) targets.push({ path: paths.project, scope: "project" });
-  targets.push({ path: paths.global, scope: "global" });
-  return targets;
-}
-function sameCanonical(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
-}
-function dedupeAliases(aliases, canonical) {
-  const canon = canonical.trim().toLowerCase();
-  return dedupeCaseInsensitive(aliases).filter((a) => a.toLowerCase() !== canon);
-}
-function dedupeCaseInsensitive(values) {
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  for (const raw of values) {
-    const value = typeof raw === "string" ? raw.trim() : "";
-    if (!value) continue;
-    const key = value.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(value);
-  }
-  return out;
-}
 
 // node_modules/double-metaphone/index.js
 var vowels = /[AEIOUY]/;
@@ -53053,6 +52047,19 @@ function suffixedAliases(canonical, aliases) {
   }
   return out;
 }
+function sortFuzzyBuckets(buckets) {
+  for (const list of buckets.values()) list.sort((a, b) => a.normLower.length - b.normLower.length);
+}
+function firstAtLeast(bucket, len) {
+  let lo = 0;
+  let hi = bucket.length;
+  while (lo < hi) {
+    const mid = lo + hi >>> 1;
+    if (bucket[mid].normLower.length < len) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 function buildIndex(lexicon) {
   const settings = lexicon.settings ?? {};
   const exact = /* @__PURE__ */ new Map();
@@ -53061,6 +52068,8 @@ function buildIndex(lexicon) {
   const fuzzyBuckets = /* @__PURE__ */ new Map();
   const never2 = [];
   const hasExplicitAliases = [];
+  const aliasEntries = [];
+  const phoneticEntries = [];
   let maxWindow = 1;
   let maxFuzzyWindow = 1;
   let phoneticMinLen = Number.POSITIVE_INFINITY;
@@ -53108,6 +52117,7 @@ function buildIndex(lexicon) {
         separators: separatorOffsets(norm),
         explicit
       };
+      aliasEntries.push(entry);
       push(exact, normLower, entry);
       push(collapsed, collapsedLower, entry);
       push(fuzzyBuckets, tokenCount, entry);
@@ -53120,7 +52130,9 @@ function buildIndex(lexicon) {
           const dedupePhonetic = `${key}\0${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length, startsNonWord, endsNonWord });
+            const phoneticEntry = { termIndex, term, alias, alpha, length: alpha.length, key, startsNonWord, endsNonWord };
+            phoneticEntries.push(phoneticEntry);
+            push(phoneticKeys, key, phoneticEntry);
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
             const noSound = aliasTokens.filter((t) => isNonWordToken(t)).length;
@@ -53131,6 +52143,7 @@ function buildIndex(lexicon) {
     }
   });
   if (!Number.isFinite(phoneticMinLen)) phoneticMinLen = 0;
+  sortFuzzyBuckets(fuzzyBuckets);
   const protectedWords = /* @__PURE__ */ new Set();
   for (const w of settings.protectedWords ?? []) {
     const n = foldLower(squash(w));
@@ -53152,7 +52165,9 @@ function buildIndex(lexicon) {
     collapsed,
     phoneticKeys,
     fuzzyBuckets,
-    never: never2
+    never: never2,
+    aliasEntries,
+    phoneticEntries
   };
 }
 
@@ -53835,7 +52850,12 @@ function findBest(view, index, opts) {
     const bucket = index.fuzzyBuckets.get(view.tokenCount);
     if (bucket) {
       const wlen = view.normLower.length;
-      for (const e of bucket) {
+      const m = opts.minConfidence;
+      const lowest = Math.floor(m * wlen) - 1;
+      const highest = m > 0 ? Math.ceil(wlen / m) + 1 : Number.POSITIVE_INFINITY;
+      for (let k = lowest > 0 ? firstAtLeast(bucket, lowest) : 0; k < bucket.length; k++) {
+        const e = bucket[k];
+        if (e.normLower.length > highest) break;
         const max = Math.max(wlen, e.normLower.length);
         if (Math.abs(wlen - e.normLower.length) > (1 - opts.minConfidence) * max) continue;
         const bar = barFor(e.termIndex, view.plainWord);
@@ -53863,7 +52883,9 @@ function findReplacements(text, index, opts = {}) {
   };
   const tokens = tokenize(text, resolved2.skipCode);
   const candidates = [];
+  const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
+    if (i > 0 && shouldStop?.()) break;
     if (tokens[i].skipped) continue;
     if (GLUE_BEFORE.has(text.charAt(tokens[i].start - 1))) continue;
     for (let n = 1; n <= index.maxWindow; n++) {
@@ -53881,9 +52903,9 @@ function findReplacements(text, index, opts = {}) {
       }
       if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === "alias")) {
         const stripped = last.text.slice(0, -1);
-        const swapped = tokens.slice(0, j);
+        const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
-        const view = makeView(text, swapped, i, j, false, index.protectedWords);
+        const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
         const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved2);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === "alias")) best = bestPl;
       }
@@ -53932,9 +52954,1119 @@ function clamp01(n) {
   return Math.min(1, Math.max(0, n));
 }
 
+// src/core/trust.ts
+var import_node_fs3 = __toESM(require_node_fs());
+var import_node_path3 = __toESM(require_node_path());
+
+// src/util/atomic.ts
+var import_node_fs = __toESM(require_node_fs());
+var import_node_async_hooks = __toESM(require_node_async_hooks());
+var import_node_os = __toESM(require_node_os());
+var import_node_path = __toESM(require_node_path());
+
+// src/util/errors.ts
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function isEnoent(err) {
+  return typeof err === "object" && err !== null && err.code === "ENOENT";
+}
+
+// src/util/atomic.ts
+var BACKUP_SUFFIX = ".bak";
+var OLDER_BACKUP_SUFFIX = ".1.bak";
+var BACKUP_ROTATE_MS = 15 * 6e4;
+var LOCK_SUFFIX = ".lock";
+var DEFAULT_LOCK_TIMEOUT_MS = 1e4;
+var DEFAULT_LOCK_STALE_MS = 3e4;
+var DEFAULT_LOCK_QUEUE_TIMEOUT_MS = 3e5;
+async function resolveWriteTarget(target) {
+  const abs = import_node_path.default.resolve(target);
+  try {
+    return await import_node_fs.promises.realpath(abs);
+  } catch {
+    return abs;
+  }
+}
+async function resolveLockTarget(target) {
+  const abs = import_node_path.default.resolve(target);
+  let candidate = abs;
+  const suffix = [];
+  for (; ; ) {
+    try {
+      return import_node_path.default.join(await import_node_fs.promises.realpath(candidate), ...suffix);
+    } catch {
+      const parent = import_node_path.default.dirname(candidate);
+      if (parent === candidate) return abs;
+      suffix.unshift(import_node_path.default.basename(candidate));
+      candidate = parent;
+    }
+  }
+}
+async function resolveMode(target, opts) {
+  if (opts.mode !== void 0) return opts.mode;
+  try {
+    return (await import_node_fs.promises.stat(target)).mode & 4095;
+  } catch {
+    return void 0;
+  }
+}
+async function writeFileAtomic(target, data, opts = {}) {
+  await import_node_fs.promises.mkdir(import_node_path.default.dirname(import_node_path.default.resolve(target)), { recursive: true });
+  const real = await resolveWriteTarget(target);
+  const tmp = `${real}.${process.pid}.tmp`;
+  const mode = await resolveMode(real, opts);
+  if (mode === void 0) {
+    await import_node_fs.promises.writeFile(tmp, data, "utf8");
+  } else {
+    await import_node_fs.promises.writeFile(tmp, data, { encoding: "utf8", mode });
+    await import_node_fs.promises.chmod(tmp, mode);
+  }
+  try {
+    if (opts.backup) await backupExisting(real);
+    await import_node_fs.promises.rename(tmp, real);
+  } catch (err) {
+    await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
+    throw err;
+  }
+}
+async function backupExisting(target) {
+  const copied = await copyThroughTemp(target, `${target}${BACKUP_SUFFIX}`);
+  if (!copied) return;
+  const older = `${target}${OLDER_BACKUP_SUFFIX}`;
+  if (await isYoungerThan(older, BACKUP_ROTATE_MS)) return;
+  await copyThroughTemp(target, older);
+}
+async function copyThroughTemp(from, to) {
+  const tmp = `${to}.${process.pid}.tmp`;
+  try {
+    await import_node_fs.promises.copyFile(from, tmp);
+  } catch (err) {
+    if (isEnoent(err)) return false;
+    throw err;
+  }
+  try {
+    await import_node_fs.promises.rename(tmp, to);
+  } catch (err) {
+    await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
+    throw err;
+  }
+  return true;
+}
+async function isYoungerThan(file2, ms) {
+  try {
+    return Date.now() - (await import_node_fs.promises.stat(file2)).mtimeMs < ms;
+  } catch {
+    return false;
+  }
+}
+var FileLockError = class extends Error {
+  path;
+  lockPath;
+  constructor(target, lockPath, detail) {
+    super(`could not lock ${target} for writing: ${detail} (lock file: ${lockPath})`);
+    this.name = "FileLockError";
+    this.path = target;
+    this.lockPath = lockPath;
+  }
+};
+var ownedLocks = /* @__PURE__ */ new Set();
+var exitHookInstalled = false;
+var heldLocks = new import_node_async_hooks.AsyncLocalStorage();
+var queues = /* @__PURE__ */ new Map();
+async function withFileLock(target, fn, opts = {}) {
+  const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
+  const held = heldLocks.getStore();
+  if (held?.has(lockPath)) return fn();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const staleMs = opts.staleMs ?? DEFAULT_LOCK_STALE_MS;
+  const queueTimeoutMs = opts.queueTimeoutMs ?? DEFAULT_LOCK_QUEUE_TIMEOUT_MS;
+  const run = async () => {
+    const token = await acquire(lockPath, target, timeoutMs, staleMs);
+    const stopHeartbeat = startHeartbeat(lockPath, token, staleMs);
+    const next = new Set(held ?? []);
+    next.add(lockPath);
+    try {
+      return await heldLocks.run(next, fn);
+    } finally {
+      stopHeartbeat();
+      await release(lockPath, token);
+    }
+  };
+  let started = false;
+  let abandoned = false;
+  const previous = queues.get(lockPath) ?? Promise.resolve();
+  const turn = async () => {
+    if (abandoned) throw new FileLockError(target, lockPath, "the caller stopped waiting for its turn");
+    started = true;
+    return run();
+  };
+  const mine = previous.then(turn, turn);
+  const tail = mine.then(ignore, ignore);
+  queues.set(lockPath, tail);
+  try {
+    return await new Promise((resolve4, reject) => {
+      const timer = setTimeout(() => {
+        if (started) return;
+        abandoned = true;
+        reject(
+          new FileLockError(
+            target,
+            lockPath,
+            `another operation in this process still held it after ${queueTimeoutMs}ms (a lock ordering bug, not contention)`
+          )
+        );
+      }, queueTimeoutMs);
+      mine.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve4(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
+  } finally {
+    if (queues.get(lockPath) === tail) queues.delete(lockPath);
+  }
+}
+function ignore() {
+}
+function startHeartbeat(lockPath, token, staleMs) {
+  const every = Math.max(250, Math.min(Math.floor(staleMs / 3), 5e3));
+  const timer = setInterval(() => {
+    void (async () => {
+      try {
+        if (parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"))?.token !== token) return;
+        const now = /* @__PURE__ */ new Date();
+        await import_node_fs.promises.utimes(lockPath, now, now);
+      } catch {
+      }
+    })();
+  }, every);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+async function acquire(lockPath, target, timeoutMs, staleMs) {
+  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
+  const deadline = Date.now() + timeoutMs;
+  let wait = 4;
+  for (; ; ) {
+    try {
+      await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
+      await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
+      rememberForCleanup(lockPath);
+      return token;
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+    }
+    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (Date.now() >= deadline) {
+      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
+    }
+    await sleep(wait / 2 + Math.random() * wait);
+    wait = Math.min(wait * 2, 120);
+  }
+}
+async function breakIfStale(lockPath, staleMs) {
+  let before;
+  let mtimeMs;
+  try {
+    before = await import_node_fs.promises.readFile(lockPath, "utf8");
+    mtimeMs = (await import_node_fs.promises.stat(lockPath)).mtimeMs;
+  } catch (err) {
+    return isEnoent(err);
+  }
+  const owner = parseOwner(before);
+  if (owner && owner.host === import_node_os.default.hostname()) {
+    if (pidAlive(owner.pid)) return false;
+  } else if (Date.now() - mtimeMs < staleMs) {
+    return false;
+  }
+  try {
+    if (await import_node_fs.promises.readFile(lockPath, "utf8") !== before) return false;
+    await import_node_fs.promises.unlink(lockPath);
+  } catch {
+    return false;
+  }
+  return true;
+}
+async function release(lockPath, token) {
+  ownedLocks.delete(lockPath);
+  try {
+    if (parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"))?.token !== token) return;
+    await import_node_fs.promises.unlink(lockPath);
+  } catch {
+  }
+}
+function rememberForCleanup(lockPath) {
+  ownedLocks.add(lockPath);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const held of ownedLocks) {
+      try {
+        (0, import_node_fs.unlinkSync)(held);
+      } catch {
+      }
+    }
+  });
+}
+async function describeHolder(lockPath) {
+  try {
+    const owner = parseOwner(await import_node_fs.promises.readFile(lockPath, "utf8"));
+    if (owner) return `pid ${owner.pid} on ${owner.host} since ${owner.at}`;
+  } catch {
+  }
+  return "another lexicon process";
+}
+function parseOwner(text) {
+  try {
+    const raw = JSON.parse(text);
+    if (typeof raw !== "object" || raw === null) return void 0;
+    const { pid, host, token, at } = raw;
+    if (typeof pid !== "number" || typeof host !== "string" || typeof token !== "string") return void 0;
+    if (!Number.isInteger(pid) || pid <= 0) return void 0;
+    return { pid, host, token, at: typeof at === "string" ? at : "an unknown time" };
+  } catch {
+    return void 0;
+  }
+}
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function sleep(ms) {
+  return new Promise((resolve4) => setTimeout(resolve4, ms));
+}
+
+// src/util/json.ts
+var import_node_fs2 = __toESM(require_node_fs());
+var import_node_path2 = __toESM(require_node_path());
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function formatJson(value) {
+  return `${JSON.stringify(value, null, 2)}
+`;
+}
+async function readJsonFile(file2) {
+  let raw;
+  try {
+    raw = await import_node_fs2.promises.readFile(file2, "utf8");
+  } catch (err) {
+    if (isEnoent(err)) return { exists: false };
+    return { exists: true, error: errorMessage(err) };
+  }
+  try {
+    return { exists: true, value: raw.trim() === "" ? {} : JSON.parse(raw) };
+  } catch (err) {
+    return { exists: true, error: errorMessage(err) };
+  }
+}
+async function writeJsonFile(file2, value) {
+  await import_node_fs2.promises.mkdir(import_node_path2.default.dirname(file2), { recursive: true });
+  await import_node_fs2.promises.writeFile(file2, formatJson(value), "utf8");
+}
+
+// src/core/trust.ts
+var TRUST_FILE_NAME = "trust.json";
+var TRUST_ALL_ENV = "LEXICON_TRUST_ALL";
+function getTrustPath(opts = {}) {
+  return import_node_path3.default.join(import_node_path3.default.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
+}
+async function canonicalPath(filePath) {
+  const resolved2 = import_node_path3.default.resolve(filePath);
+  try {
+    return await import_node_fs3.promises.realpath(resolved2);
+  } catch {
+    return resolved2;
+  }
+}
+async function hashFile(filePath) {
+  try {
+    const bytes = await import_node_fs3.promises.readFile(filePath);
+    const { createHash: createHash4 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+    return createHash4("sha256").update(bytes).digest("hex");
+  } catch {
+    return void 0;
+  }
+}
+function trustAllEnabled(env = process.env) {
+  const value = env[TRUST_ALL_ENV]?.trim().toLowerCase();
+  return value === "1" || value === "true";
+}
+function emptyRegistry() {
+  return { version: 1, trusted: {} };
+}
+function isTrustEntry(value) {
+  return typeof value === "object" && value !== null && typeof value.sha256 === "string" && typeof value.trustedAt === "string";
+}
+async function readTrustRegistry(opts = {}) {
+  let text;
+  try {
+    text = await import_node_fs3.promises.readFile(getTrustPath(opts), "utf8");
+  } catch {
+    return emptyRegistry();
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return emptyRegistry();
+  }
+  if (typeof raw !== "object" || raw === null) return emptyRegistry();
+  const trustedRaw = raw.trusted;
+  if (typeof trustedRaw !== "object" || trustedRaw === null) return emptyRegistry();
+  const trusted = {};
+  for (const [key, value] of Object.entries(trustedRaw)) {
+    if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
+  }
+  return { version: 1, trusted };
+}
+function withTrustLock(fn, opts = {}) {
+  return withFileLock(getTrustPath(opts), fn);
+}
+async function writeTrustRegistry(registry2, opts = {}) {
+  await withTrustLock(() => writeFileAtomic(getTrustPath(opts), formatJson(registry2)), opts);
+}
+async function isInsideGlobalConfig(filePath, opts) {
+  const globalPath = await canonicalPath(resolvePaths(opts).global);
+  const target = await canonicalPath(filePath);
+  if (target === globalPath) return true;
+  return import_node_path3.default.dirname(target) === import_node_path3.default.dirname(globalPath);
+}
+async function isTrusted(projectFile, opts = {}) {
+  if (trustAllEnabled()) return "trusted";
+  if (!projectFile.exists) return "trusted";
+  if (await isInsideGlobalConfig(projectFile.path, opts)) return "trusted";
+  const key = await canonicalPath(projectFile.path);
+  const registry2 = await readTrustRegistry(opts);
+  const entry = registry2.trusted[key];
+  if (!entry) return "untrusted";
+  const sha = await hashFile(key);
+  if (sha === void 0) return "untrusted";
+  return sha === entry.sha256 ? "trusted" : "changed";
+}
+async function trustProject(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  const sha256 = await hashFile(key);
+  if (sha256 === void 0) throw new Error(`cannot read the project lexicon at ${projectPath}`);
+  return withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    registry2.trusted[key] = entry;
+    await writeTrustRegistry(registry2, opts);
+    return entry;
+  }, opts);
+}
+async function refreshTrust(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  return withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    const existing = registry2.trusted[key];
+    if (!existing) return false;
+    const sha256 = await hashFile(key);
+    if (sha256 === void 0 || sha256 === existing.sha256) return false;
+    registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
+    await writeTrustRegistry(registry2, opts);
+    return true;
+  }, opts);
+}
+async function untrustProject(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  return withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    if (!(key in registry2.trusted)) return false;
+    delete registry2.trusted[key];
+    await writeTrustRegistry(registry2, opts);
+    return true;
+  }, opts);
+}
+async function listTrusted(opts = {}) {
+  const registry2 = await readTrustRegistry(opts);
+  const out = [];
+  for (const [filePath, entry] of Object.entries(registry2.trusted)) {
+    const sha = await hashFile(filePath);
+    const status = sha === void 0 ? "missing" : sha === entry.sha256 ? "trusted" : "changed";
+    out.push({ path: filePath, ...entry, status });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+// src/util/xdg.ts
+var import_node_path4 = __toESM(require_node_path());
+var import_node_os2 = __toESM(require_node_os());
+function absoluteOr(value, fallback) {
+  const trimmed = value?.trim();
+  if (!trimmed) return fallback;
+  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback;
+}
+function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
+  return absoluteOr(env.XDG_CONFIG_HOME, import_node_path4.default.join(home, ".config"));
+}
+function globalLexiconPath(env = process.env, home = import_node_os2.default.homedir()) {
+  return env.LEXICON_PATH || import_node_path4.default.join(xdgConfigHome(env, home), "lexicon", "lexicon.yaml");
+}
+
+// src/core/store.ts
+var PROJECT_FILE_NAME = ".lexicon.yaml";
+var MAX_LEXICON_BYTES = 2 * 1024 * 1024;
+var HEADER_COMMENT = [
+  "Lexicon: personal vocabulary for voice-to-agents.",
+  "canonical: the spelling you want; aliases: what STT actually hears.",
+  "",
+  "Each term may also carry: phonetic (pronunciation hint), category",
+  "(brand|person|product|acronym|identifier|place|other), notes (shown to the",
+  "agent), never (words that must not be rewritten to this canonical).",
+  "settings: minConfidence, phonetic, fuzzy, protectedWords, skipCode."
+].join("\n");
+function findGitRoot(start) {
+  let dir = import_node_path5.default.resolve(start);
+  for (; ; ) {
+    if ((0, import_node_fs4.existsSync)(import_node_path5.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path5.default.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function findProjectFile(start) {
+  let dir = import_node_path5.default.resolve(start);
+  for (; ; ) {
+    const candidate = import_node_path5.default.join(dir, PROJECT_FILE_NAME);
+    if ((0, import_node_fs4.existsSync)(candidate)) return candidate;
+    if ((0, import_node_fs4.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
+    const parent = import_node_path5.default.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function resolvePaths(opts = {}) {
+  const cwd = opts.cwd ?? process.cwd();
+  const env = opts.env ?? process.env;
+  const global = opts.globalPath || globalLexiconPath(env, opts.home ?? import_node_os3.default.homedir());
+  const project = findProjectFile(cwd);
+  return project ? { global, project } : { global };
+}
+function defaultProjectPath(cwd = process.cwd()) {
+  return import_node_path5.default.join(findGitRoot(cwd) ?? import_node_path5.default.resolve(cwd), PROJECT_FILE_NAME);
+}
+async function readLexiconFile(filePath, scope) {
+  const read = await readLexiconText(filePath);
+  if (read === void 0) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
+  return parseLexiconText(read.text, filePath, scope);
+}
+async function readLexiconText(filePath) {
+  try {
+    const stat = await import_node_fs4.promises.stat(filePath);
+    if (stat.size > MAX_LEXICON_BYTES) {
+      throw new Error(
+        `Refusing to read lexicon at ${filePath}: ${stat.size} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
+      );
+    }
+    return { text: await import_node_fs4.promises.readFile(filePath, "utf8"), mode: stat.mode & 511 };
+  } catch (err) {
+    if (isEnoent(err)) return void 0;
+    throw err;
+  }
+}
+function parseLexiconText(text, filePath, scope) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+  } catch (err) {
+    throw new Error(`Failed to parse lexicon YAML at ${filePath}: ${errorMessage(err)}`);
+  }
+  if (raw === null || raw === void 0) {
+    return { path: filePath, scope, lexicon: emptyLexicon(), exists: true };
+  }
+  let lexicon;
+  try {
+    lexicon = parseLexicon(raw);
+  } catch (err) {
+    throw new Error(`Invalid lexicon at ${filePath}: ${errorMessage(err)}`);
+  }
+  return { path: filePath, scope, lexicon, exists: true };
+}
+var PARSE_CACHE_FILE_NAME = "parse-cache.json";
+var PARSE_CACHE_MIN_BYTES = 8 * 1024;
+var PARSE_CACHE_VERSION = 3;
+function cacheChecksum(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+async function readGlobalLexiconCached(filePath) {
+  const read = await readLexiconText(filePath);
+  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
+  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
+  const key = import_node_path5.default.resolve(filePath);
+  try {
+    const cached2 = JSON.parse(await import_node_fs4.promises.readFile(cachePath, "utf8"));
+    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+      const lexicon = JSON.parse(cached2.lexicon);
+      if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) {
+        return { path: filePath, scope: "global", lexicon, exists: true };
+      }
+    }
+  } catch {
+  }
+  const file2 = parseLexiconText(read.text, filePath, "global");
+  await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
+  return file2;
+}
+async function writeParseCache(filePath, text, lexicon, mode) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
+  try {
+    const lexiconJson = JSON.stringify(lexicon);
+    await writeFileAtomic(
+      import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME),
+      JSON.stringify({ version: PARSE_CACHE_VERSION, path: import_node_path5.default.resolve(filePath), text, sum: cacheChecksum(lexiconJson), lexicon: lexiconJson }),
+      { mode }
+    );
+  } catch {
+  }
+}
+async function writeLexiconFile(file2) {
+  const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
+  await withLexiconLock(file2.path, async () => {
+    await pinCommittedHits(file2);
+    const ordered = orderLexicon(file2.lexicon);
+    const existing = await readLexiconText(file2.path).catch(() => void 0);
+    const text = (existing && updateInPlace(existing.text, ordered)) ?? `${header}
+
+${(0, import_yaml.stringify)(ordered, { lineWidth: 0 })}`;
+    const readBack = assertReadsBack(text, file2.path);
+    await writeFileAtomic(file2.path, text, { backup: true });
+    if (file2.scope === "global") {
+      const mode = await import_node_fs4.promises.stat(file2.path).then((st) => st.mode & 511, () => void 0);
+      if (mode !== void 0) await writeParseCache(file2.path, text, readBack, mode);
+    }
+  });
+  file2.exists = true;
+}
+function updateInPlace(text, ordered) {
+  let doc;
+  try {
+    doc = (0, import_yaml.parseDocument)(text, { prettyErrors: false });
+  } catch {
+    return void 0;
+  }
+  if (doc.errors.length > 0 || !(0, import_yaml.isMap)(doc.contents)) return void 0;
+  const root = doc.contents;
+  const terms = root.get("terms", true);
+  if (terms !== void 0 && terms !== null && !((0, import_yaml.isSeq)(terms) || (0, import_yaml.isScalar)(terms) && terms.value === null)) {
+    return void 0;
+  }
+  const byCanonical = /* @__PURE__ */ new Map();
+  if ((0, import_yaml.isSeq)(terms)) {
+    for (const item of terms.items) {
+      if (!(0, import_yaml.isMap)(item)) return void 0;
+      const canonical = item.get("canonical");
+      if (typeof canonical === "string" && !byCanonical.has(canonical.toLowerCase())) {
+        byCanonical.set(canonical.toLowerCase(), item);
+      }
+    }
+  }
+  const { terms: newTerms, ...top } = ordered;
+  updateMap(doc, root, top, ["terms"]);
+  const items = newTerms.map((term) => {
+    const node2 = byCanonical.get(String(term.canonical).toLowerCase());
+    if (!node2) return doc.createNode(term);
+    byCanonical.delete(String(term.canonical).toLowerCase());
+    updateMap(doc, node2, term, []);
+    return node2;
+  });
+  if ((0, import_yaml.isSeq)(terms)) {
+    terms.items = items;
+  } else {
+    root.set("terms", doc.createNode(items));
+  }
+  return doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+}
+function updateMap(doc, node2, value, keep) {
+  for (const pair of [...node2.items]) {
+    const key = (0, import_yaml.isScalar)(pair.key) ? pair.key.value : pair.key;
+    if (typeof key === "string" && !(key in value) && !keep.includes(key)) node2.delete(key);
+  }
+  for (const [key, next] of Object.entries(value)) {
+    const current = node2.get(key, true);
+    if (current === void 0 && Array.isArray(next) && next.length === 0) continue;
+    if ((0, import_yaml.isMap)(current) && next !== null && typeof next === "object" && !Array.isArray(next)) {
+      updateMap(doc, current, next, []);
+      continue;
+    }
+    const was = current === void 0 ? void 0 : (0, import_yaml.isScalar)(current) ? current.value : current.toJSON();
+    if (current !== void 0 && JSON.stringify(was) === JSON.stringify(next)) continue;
+    const created = doc.createNode(next);
+    if ((0, import_yaml.isSeq)(current) && (0, import_yaml.isSeq)(created)) created.flow = current.flow;
+    node2.set(key, created);
+  }
+}
+async function pinCommittedHits(file2) {
+  const onDisk = /* @__PURE__ */ new Map();
+  try {
+    const current = await readLexiconFile(file2.path, file2.scope);
+    for (const term of current.lexicon.terms) {
+      if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
+    }
+  } catch {
+  }
+  for (const term of file2.lexicon.terms) {
+    const committed = onDisk.get(hitKey(term.canonical));
+    if (committed === void 0) delete term.hits;
+    else term.hits = committed;
+  }
+}
+function assertReadsBack(text, filePath) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+  } catch (err) {
+    throw new Error(
+      `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`
+    );
+  }
+  try {
+    return parseLexicon(raw ?? emptyLexicon());
+  } catch (err) {
+    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+  }
+}
+function withLexiconLock(filePath, fn) {
+  return withFileLock(filePath, fn);
+}
+var TERM_KEY_ORDER = [
+  "canonical",
+  "aliases",
+  "phonetic",
+  "category",
+  "notes",
+  "caseSensitive",
+  "never",
+  "scope",
+  "source",
+  "createdAt",
+  "hits"
+];
+function orderLexicon(lexicon) {
+  const out = { version: lexicon.version };
+  if (lexicon.settings && Object.keys(stripUndefined(lexicon.settings)).length > 0) {
+    out.settings = stripUndefined(lexicon.settings);
+  }
+  out.terms = lexicon.terms.map((term) => {
+    const ordered = {};
+    for (const key of TERM_KEY_ORDER) {
+      const value = term[key];
+      if (value !== void 0) ordered[key] = value;
+    }
+    for (const [key, value] of Object.entries(term)) {
+      if (!(key in ordered) && value !== void 0) ordered[key] = value;
+    }
+    return ordered;
+  });
+  return out;
+}
+function stripUndefined(obj) {
+  const out = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === void 0) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
+  }
+  return out;
+}
+var HITS_FILE_NAME = "hits.json";
+function getHitsPath(opts = {}) {
+  return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
+}
+function hitKey(canonical) {
+  return canonical.trim().toLowerCase();
+}
+async function canonicalPath2(filePath) {
+  const resolved2 = import_node_path5.default.resolve(filePath);
+  try {
+    return await import_node_fs4.promises.realpath(resolved2);
+  } catch {
+    return resolved2;
+  }
+}
+function emptyHitsRegistry() {
+  return { version: 1, projects: {} };
+}
+async function readHitsRegistry(opts) {
+  let raw;
+  try {
+    raw = JSON.parse(await import_node_fs4.promises.readFile(getHitsPath(opts), "utf8"));
+  } catch {
+    return emptyHitsRegistry();
+  }
+  const out = emptyHitsRegistry();
+  const projects = isPlainObject3(raw) ? raw.projects : void 0;
+  if (isPlainObject3(projects)) {
+    for (const [file2, counts] of Object.entries(projects)) {
+      if (isPlainObject3(counts)) out.projects[file2] = validCounts(counts);
+    }
+  }
+  const global = isPlainObject3(raw) ? raw.global : void 0;
+  if (isPlainObject3(global)) out.global = validCounts(global);
+  return out;
+}
+function isPlainObject3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function validCounts(counts) {
+  const entry = {};
+  for (const [canonical, n] of Object.entries(counts)) {
+    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+  }
+  return entry;
+}
+async function dropProjectHits(projectPath, canonical, opts) {
+  try {
+    const hitsPath = getHitsPath(opts);
+    const key = await canonicalPath2(projectPath);
+    await withFileLock(hitsPath, async () => {
+      const registry2 = await readHitsRegistry(opts);
+      const entry = registry2.projects[key];
+      if (!entry || !(hitKey(canonical) in entry)) return;
+      delete entry[hitKey(canonical)];
+      await writeFileAtomic(hitsPath, formatJson(registry2));
+    });
+  } catch {
+  }
+}
+async function dropGlobalHits(canonical, opts) {
+  try {
+    const hitsPath = getHitsPath(opts);
+    await withFileLock(hitsPath, async () => {
+      const registry2 = await readHitsRegistry(opts);
+      if (!registry2.global || !(hitKey(canonical) in registry2.global)) return;
+      delete registry2.global[hitKey(canonical)];
+      await writeFileAtomic(hitsPath, formatJson(registry2));
+    });
+  } catch {
+  }
+}
+async function hydrateHits(merged, project, opts) {
+  let registry2;
+  try {
+    registry2 = await readHitsRegistry(opts);
+  } catch {
+    return;
+  }
+  const projectCounts = project ? registry2.projects[await canonicalPath2(project.path)] ?? {} : {};
+  const globalCounts = registry2.global ?? {};
+  if (Object.keys(projectCounts).length === 0 && Object.keys(globalCounts).length === 0) return;
+  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
+  for (const term of merged.terms) {
+    const key = hitKey(term.canonical);
+    const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
+    if (n) term.hits = (term.hits ?? 0) + n;
+  }
+}
+async function loadLexicon(opts = {}) {
+  const paths = resolvePaths(opts);
+  const global = await readGlobalLexiconCached(paths.global);
+  if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
+  let project;
+  try {
+    project = await readLexiconFile(paths.project, "project");
+  } catch (err) {
+    const placeholder = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+    const trust = await isTrusted(placeholder, opts);
+    if (trust === "trusted" || opts.includeUntrusted) throw err;
+    return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
+  }
+  const projectTrust = await isTrusted(project, opts);
+  if (projectTrust === "trusted" || opts.includeUntrusted) {
+    const merged = mergeLexicons(global.lexicon, project.lexicon);
+    await hydrateHits(merged, project, opts);
+    return { merged, global, project, projectTrust };
+  }
+  return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: project };
+  async function hydrated(merged) {
+    await hydrateHits(merged, void 0, opts);
+    return merged;
+  }
+}
+function mergeLexicons(global, project) {
+  const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
+  if (project) {
+    for (const pt of project.terms) {
+      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const replacement = { ...pt, scope: pt.scope ?? "project" };
+      if (idx === -1) {
+        terms.push({ ...replacement, aliases: [...pt.aliases] });
+      } else {
+        replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
+        terms[idx] = replacement;
+      }
+    }
+  }
+  const settings = mergeSettings(global.settings, project?.settings);
+  const merged = { version: 1, terms };
+  if (settings) merged.settings = settings;
+  return merged;
+}
+function mergeSettings(global, project) {
+  if (!global && !project) return void 0;
+  const out = { ...global ?? {}, ...project ?? {} };
+  const protectedWords = dedupeCaseInsensitive([
+    ...global?.protectedWords ?? [],
+    ...project?.protectedWords ?? []
+  ]);
+  if (protectedWords.length > 0) out.protectedWords = protectedWords;
+  else delete out.protectedWords;
+  return out;
+}
+var ProjectTrustError = class extends Error {
+  path;
+  status;
+  constructor(projectPath, status) {
+    const why = status === "changed" ? "has changed since it was trusted" : "is untrusted";
+    super(
+      `project lexicon at ${projectPath} ${why}; review it and run \`lexicon trust\` first, or write to the global lexicon instead`
+    );
+    this.name = "ProjectTrustError";
+    this.path = projectPath;
+    this.status = status;
+  }
+};
+function isProjectTrustError(err) {
+  return err instanceof Error && err.name === "ProjectTrustError";
+}
+async function assertProjectWritable(projectPath, opts) {
+  if (!(0, import_node_fs4.existsSync)(projectPath)) return;
+  const status = await isTrusted(
+    { path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true },
+    opts
+  );
+  if (status !== "trusted") throw new ProjectTrustError(projectPath, status);
+}
+async function addTerm(term, opts = {}) {
+  const scope = opts.scope ?? "global";
+  const targetPath = await resolveScopeWritePath(scope, opts);
+  const canonical = term.canonical.trim();
+  if (!canonical) throw new Error("canonical must not be empty");
+  const incoming = {
+    ...term,
+    canonical,
+    aliases: dedupeAliases(term.aliases ?? [], canonical)
+  };
+  return withLexiconLock(targetPath, async () => {
+    const file2 = await readLexiconFile(targetPath, scope);
+    const existing = findTerm(file2.lexicon, canonical);
+    if (existing && opts.merge !== false) {
+      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
+      existing.phonetic ??= incoming.phonetic;
+      existing.category ??= incoming.category;
+      existing.notes ??= incoming.notes;
+      existing.caseSensitive ??= incoming.caseSensitive;
+      if (incoming.never?.length) {
+        existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
+      }
+      await writeAndTrust(file2, opts);
+      return { file: file2, term: existing, created: false };
+    }
+    if (existing) {
+      const replaced = {
+        ...incoming,
+        scope,
+        source: incoming.source ?? "user",
+        createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const idx = file2.lexicon.terms.indexOf(existing);
+      file2.lexicon.terms[idx] = replaced;
+      await writeAndTrust(file2, opts);
+      return { file: file2, term: replaced, created: false };
+    }
+    const created = {
+      ...incoming,
+      ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
+      scope,
+      source: incoming.source ?? "user",
+      createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+    };
+    file2.lexicon.terms.push(created);
+    await writeAndTrust(file2, opts);
+    return { file: file2, term: created, created: true };
+  });
+}
+async function writeAndTrust(file2, opts) {
+  await writeLexiconFile(file2);
+  if (file2.scope === "project") await trustProject(file2.path, opts);
+}
+async function removeTerm(canonical, opts = {}) {
+  for (const target of candidatePaths(opts, opts.scope)) {
+    const removed = await withLexiconLock(target.path, async () => {
+      const file2 = await readLexiconFile(target.path, target.scope);
+      if (!file2.exists) return false;
+      const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
+      if (remaining.length === file2.lexicon.terms.length) return false;
+      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      file2.lexicon.terms = remaining;
+      await writeLexiconFile(file2);
+      if (file2.scope === "project") {
+        await refreshTrust(file2.path, opts);
+        await dropProjectHits(file2.path, canonical, opts);
+      } else {
+        await dropGlobalHits(canonical, opts);
+      }
+      return true;
+    });
+    if (removed) return true;
+  }
+  return false;
+}
+async function removeAlias(canonical, alias, opts = {}) {
+  const wanted = canonical.trim();
+  const drop = alias.trim();
+  if (!wanted) throw new Error("canonical must not be empty");
+  if (!drop) throw new Error("alias must not be empty");
+  if (sameCanonical(wanted, drop)) {
+    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
+  }
+  let termFound = false;
+  let firstTerm;
+  const files = [];
+  for (const target of candidatePaths(opts, opts.scope)) {
+    await withLexiconLock(target.path, async () => {
+      const file2 = await readLexiconFile(target.path, target.scope);
+      if (!file2.exists) return;
+      const term = findTerm(file2.lexicon, wanted);
+      if (!term) return;
+      termFound = true;
+      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
+      if (remaining.length === term.aliases.length) return;
+      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      term.aliases = remaining;
+      await writeLexiconFile(file2);
+      if (file2.scope === "project") await refreshTrust(file2.path, opts);
+      files.push(file2);
+      firstTerm ??= term;
+    });
+  }
+  if (firstTerm) return { term: firstTerm, files };
+  const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
+  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
+  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
+}
+async function recordHits(canonicals, opts = {}) {
+  try {
+    if (canonicals.length === 0) return;
+    const counts = /* @__PURE__ */ new Map();
+    for (const c of canonicals) {
+      const key = hitKey(c);
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    if (counts.size === 0) return;
+    const paths = resolvePaths(opts);
+    let projectFile;
+    if (opts.loaded) {
+      if (opts.loaded.project && opts.loaded.projectTrust === "trusted") projectFile = opts.loaded.project;
+    } else if (paths.project) {
+      const file2 = await readLexiconFile(paths.project, "project");
+      if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
+    }
+    let project;
+    if (projectFile) {
+      const mine = /* @__PURE__ */ new Map();
+      for (const term of projectFile.lexicon.terms) {
+        const key = hitKey(term.canonical);
+        const n = counts.get(key);
+        if (n === void 0) continue;
+        mine.set(key, n);
+        counts.delete(key);
+      }
+      if (mine.size > 0) project = { key: await canonicalPath2(projectFile.path), counts: mine };
+    }
+    if (counts.size > 0) {
+      const globalFile = opts.loaded?.global ?? await readLexiconFile(paths.global, "global");
+      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
+      for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
+    }
+    if (!project && counts.size === 0) return;
+    const hitsPath = getHitsPath(opts);
+    await withFileLock(hitsPath, async () => {
+      const registry2 = await readHitsRegistry(opts);
+      if (project) {
+        const entry = { ...registry2.projects[project.key] ?? {} };
+        for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;
+        registry2.projects[project.key] = entry;
+      }
+      if (counts.size > 0) {
+        const global = { ...registry2.global ?? {} };
+        for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
+        registry2.global = global;
+      }
+      await import_node_fs4.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
+      await writeFileAtomic(hitsPath, formatJson(registry2));
+    });
+  } catch {
+  }
+}
+function findTerm(lexicon, canonical) {
+  return lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
+}
+async function resolveScopeWritePath(scope, opts) {
+  const paths = resolvePaths(opts);
+  if (scope === "global") return paths.global;
+  const projectPath = paths.project ?? defaultProjectPath(opts.cwd ?? process.cwd());
+  await assertProjectWritable(projectPath, opts);
+  return projectPath;
+}
+function candidatePaths(opts, scope) {
+  const paths = resolvePaths(opts);
+  if (scope === "global") return [{ path: paths.global, scope: "global" }];
+  if (scope === "project") return paths.project ? [{ path: paths.project, scope: "project" }] : [];
+  const targets = [];
+  if (paths.project) targets.push({ path: paths.project, scope: "project" });
+  targets.push({ path: paths.global, scope: "global" });
+  return targets;
+}
+function sameCanonical(a, b) {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+function dedupeAliases(aliases, canonical) {
+  const canon = canonical.trim().toLowerCase();
+  return dedupeCaseInsensitive(aliases).filter((a) => a.toLowerCase() !== canon);
+}
+function dedupeCaseInsensitive(values) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const raw of values) {
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
 // src/core/normalize.ts
 function normalize(text, lexicon, opts = {}) {
-  const index = buildIndex(lexicon);
+  return normalizeWithIndex(text, buildIndex(lexicon), opts);
+}
+function normalizeWithIndex(text, index, opts = {}) {
   const replacements = findReplacements(text, index, opts);
   if (opts.dryRun || replacements.length === 0) {
     return { input: text, output: text, replacements, changed: false };
@@ -59068,6 +59200,14 @@ function filePathsInUse(loaded) {
     ...loaded.project ? { project: loaded.project.path } : {}
   };
 }
+function skippedProjectFields(loaded) {
+  if (!loaded.skippedProject) return {};
+  return {
+    projectTrust: loaded.projectTrust,
+    skippedProject: loaded.skippedProject.path,
+    note: loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it."
+  };
+}
 
 // src/mcp/tools/terms.ts
 var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)];
@@ -59104,7 +59244,7 @@ var registerTermTools = (server, ctx) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently.",
+      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.",
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them (output === input)."),
@@ -59127,7 +59267,10 @@ var registerTermTools = (server, ctx) => {
         output: result.output,
         changed: result.changed,
         replacements: result.replacements,
-        summary: result.replacements.length > 0 ? diffSummary(result) : ""
+        summary: result.replacements.length > 0 ? diffSummary(result) : "",
+        // Without this an unchanged transcript in a repo whose lexicon is not
+        // trusted yet looks exactly like one that needed no correction.
+        ...skippedProjectFields(loaded)
       });
     })
   );
@@ -59224,11 +59367,7 @@ var registerTermTools = (server, ctx) => {
           project: loaded.project?.lexicon.terms.length ?? 0
         },
         paths: filePathsInUse(loaded),
-        ...loaded.skippedProject ? {
-          projectTrust: loaded.projectTrust,
-          skippedProject: loaded.skippedProject.path,
-          note: loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it."
-        } : {}
+        ...skippedProjectFields(loaded)
       });
     })
   );
@@ -59695,8 +59834,8 @@ function resolveCliEntry(opts = {}) {
   const override = env[CLI_ENV_VAR];
   if (override !== void 0 && override.trim() !== "") return import_node_path17.default.resolve(override.trim());
   const root = findPackageRoot2(opts.moduleUrl ?? import.meta.url);
-  const built = root ? import_node_path17.default.join(root, "dist", "cli", "index.js") : void 0;
-  if (built && (0, import_node_fs13.existsSync)(built)) return built;
+  const built2 = root ? import_node_path17.default.join(root, "dist", "cli", "index.js") : void 0;
+  if (built2 && (0, import_node_fs13.existsSync)(built2)) return built2;
   const onPath = findOnPathSync("lexicon", { env });
   if (onPath) {
     let real = onPath;
@@ -59710,7 +59849,7 @@ function resolveCliEntry(opts = {}) {
     );
   }
   throw new Error(
-    `could not locate the lexicon CLI: ${built ?? "no @ashlr/lexicon package.json above " + (opts.moduleUrl ?? import.meta.url)}${built ? " does not exist" : ""} and no lexicon binary is on PATH; run npm run build, or set ${CLI_ENV_VAR}=/path/to/dist/cli/index.js`
+    `could not locate the lexicon CLI: ${built2 ?? "no @ashlr/lexicon package.json above " + (opts.moduleUrl ?? import.meta.url)}${built2 ? " does not exist" : ""} and no lexicon binary is on PATH; run npm run build, or set ${CLI_ENV_VAR}=/path/to/dist/cli/index.js`
   );
 }
 
@@ -60942,10 +61081,15 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   const aliasOwners = /* @__PURE__ */ new Map();
+  const fold2 = (w) => w.trim().replace(/\s+/g, " ").toLowerCase();
   for (const { term } of allTerms) {
+    const never2 = new Set((term.never ?? []).map(fold2));
     for (const alias of term.aliases) {
       const key = alias.trim().toLowerCase();
       if (!key) continue;
+      if (never2.has(fold2(alias))) {
+        push2("warn", `alias "${alias}" of "${term.canonical}" is also in its never list, so it never fires (remove one of them)`);
+      }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
         push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);

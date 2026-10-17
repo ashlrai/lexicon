@@ -113,3 +113,17 @@ kept) because Whisper capitalizes and punctuates on its own. Sentence accuracy a
 also counts Whisper errors on ordinary words, so it is the whole-pipeline number, not the matcher's.
 There is deliberately no vitest guard on these numbers: they depend on a locally installed
 recognizer and TTS voices.
+
+## Hook latency
+
+```bash
+npm run bench:hook                          # plugin/hook.mjs, 2000 synthetic terms, best/median of 5
+npm run bench:hook -- --terms 500 --runs 9  # other sizes
+npm run bench:hook -- --hook /tmp/old.mjs   # compare another build of the hook
+```
+
+Spawns a fresh `node` per run, as Claude Code does, against a lexicon in a temp
+directory (HOME, XDG_CONFIG_HOME and LEXICON_PATH all point there). The cold run
+is the first one after the lexicon is written and includes writing the caches;
+warm runs read parse-cache.json, index-cache.json and the compile cache. Compare
+best-of-N between builds on the same machine: the numbers move with load.

@@ -63,8 +63,8 @@ Every request except `GET /health` and `GET /pair` needs
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth) |
-| GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback and `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`) |
-| POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary` |
+| GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
+| POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start |
 | POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path }` |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
@@ -77,7 +77,7 @@ Every request except `GET /health` and `GET /pair` needs
 
 Status codes: 400 invalid JSON or a bad field, 401 missing or wrong token,
 403 a project-scope write into an untrusted `.lexicon.yaml` or `/pair` with
-the wrong `Host` / a non-loopback client, 404 unknown route or export format,
+the wrong `Host` / a non-loopback client / a cross-origin `Origin`, 404 unknown route or export format,
 405 wrong method, 413 body over 1 MB, 503 more than 64 requests in flight.
 
 `/pair` is for `lexicon serve --pair`: the CLI confirms `/health`, opens the

@@ -308,3 +308,106 @@ export function invertCorrections(corrections: readonly Correction[]): Correctio
     return { ...c, start, end, original: c.replacement, replacement: c.original };
   });
 }
+
+/**
+ * Put a collapsed caret at flattened offset `offset` (clamped to the text).
+ * Rewrites leave the caret after the last edit they made, which for
+ * right-to-left corrections is the leftmost one: in live mode that dropped the
+ * user's next keystrokes into the middle of their sentence.
+ */
+export function setCaret(doc: Document, el: HTMLElement, offset: number): void {
+  if (isTextField(el)) {
+    const pos = Math.max(0, Math.min(offset, el.value.length));
+    try {
+      el.setSelectionRange(pos, pos);
+    } catch {
+      // input types without selection support
+    }
+    return;
+  }
+  const sel = doc.getSelection?.();
+  if (!sel) return;
+  const flat = flatten(el);
+  const at = locate(flat, Math.max(0, Math.min(offset, flat.text.length)));
+  const range = doc.createRange();
+  if (at) range.setStart(at.node, at.offset);
+  else range.selectNodeContents(el);
+  range.collapse(at !== null);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** The form's default button (HTML implicit submission): its first submit button in tree order. */
+function defaultButton(form: HTMLFormElement): HTMLButtonElement | HTMLInputElement | null {
+  for (const el of Array.from(form.elements)) {
+    if (el.tagName === 'BUTTON' && (el as HTMLButtonElement).type === 'submit') return el as HTMLButtonElement;
+    if (el.tagName === 'INPUT') {
+      const type = (el as HTMLInputElement).type;
+      if (type === 'submit' || type === 'image') return el as HTMLInputElement;
+    }
+  }
+  return null;
+}
+
+/**
+ * Carry out what a real Enter does in `el` when no handler cancelled it: a
+ * script-dispatched keydown has no default action, so after the composer guard
+ * swallowed the user's Enter and re-dispatched it, nothing else would.
+ *
+ * - single-line input: implicit submission (click the form's default button,
+ *   or submit a form without one);
+ * - textarea: a newline replacing the selection;
+ * - contenteditable: a new paragraph (a line break when the editor refuses).
+ */
+export function performEnterDefault(doc: Document, el: HTMLElement): void {
+  if (isTextField(el)) {
+    if (el.tagName === 'INPUT') {
+      const form = (el as HTMLInputElement).form;
+      if (!form) return;
+      const button = defaultButton(form);
+      if (button) {
+        if (!button.disabled) button.click();
+        return;
+      }
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.submit();
+      return;
+    }
+    const field = el as HTMLTextAreaElement;
+    let done = false;
+    if (typeof doc.execCommand === 'function' && doc.activeElement === field) {
+      try {
+        const before = field.value;
+        done = doc.execCommand('insertText', false, '\n') && field.value !== before;
+      } catch {
+        done = false;
+      }
+    }
+    if (!done) {
+      const start = field.selectionStart ?? field.value.length;
+      const end = field.selectionEnd ?? start;
+      field.setRangeText('\n', start, end, 'end');
+      fireInput(field, 'insertLineBreak');
+    }
+    return;
+  }
+  if (typeof doc.execCommand === 'function') {
+    try {
+      if (doc.execCommand('insertParagraph', false) || doc.execCommand('insertLineBreak', false)) return;
+    } catch {
+      // fall through to the DOM splice
+    }
+  }
+  const sel = doc.getSelection?.();
+  if (!sel || sel.rangeCount === 0 || !el.contains(sel.getRangeAt(0).endContainer)) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const br = doc.createElement('br');
+  range.insertNode(br);
+  const after = doc.createRange();
+  after.setStartAfter(br);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+  fireInput(el, 'insertLineBreak');
+}

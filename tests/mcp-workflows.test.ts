@@ -112,3 +112,25 @@ describe('add_term errors', () => {
     expect(res.text).toBe('canonical must not be empty');
   });
 });
+
+describe('normalize_transcript with an untrusted project lexicon', () => {
+  // An agent in a repo whose .lexicon.yaml is not trusted yet got an
+  // unchanged transcript and no reason why; list_terms and lexicon://me say so.
+  it('names the skipped file (path only) so the agent can tell the user', async () => {
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
+    const res = await call('normalize_transcript', { text: 'ask fantom' });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { output: string; changed: boolean; skippedProject?: string; projectTrust?: string; note?: string };
+    expect(payload.output).toBe('ask fantom');
+    expect(payload.changed).toBe(false);
+    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.projectTrust).toBe('untrusted');
+    expect(payload.note).toMatch(/lexicon trust/);
+    expect(res.text).not.toContain('Fantom');
+  });
+
+  it('adds nothing when there is no project file', async () => {
+    const payload = JSON.parse((await call('normalize_transcript', { text: 'ask fantom' })).text) as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(['changed', 'output', 'replacements', 'summary']);
+  });
+});

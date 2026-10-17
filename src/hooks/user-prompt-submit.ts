@@ -27,13 +27,31 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
   cwd?: string;
+  /** Overrides HOOK_MATCH_BUDGET_MS. */
+  matchBudgetMs?: number;
 }
+
+/**
+ * How long the UserPromptSubmit hook spends matching before it stops and
+ * reports what it found. Matching is linear in prompt length times lexicon
+ * size: a 200 KB paste against a 2000-term lexicon took over 5 s, past the
+ * plugin's own hook timeout, so Claude Code killed it. A dictated prompt
+ * finishes far inside this; a huge paste gets the corrections from its start.
+ */
+export const HOOK_MATCH_BUDGET_MS = 100;
+
+/**
+ * Longest prompt the corrections note repeats back in full. Past this the
+ * note carries only the list of corrections: echoing a pasted log doubled the
+ * context the hook added for no benefit.
+ */
+export const CORRECTED_PROMPT_MAX_CHARS = 8000;
 
 /** Hook events this entry point handles. Anything else is treated as UserPromptSubmit. */
 export type HookEventName = 'UserPromptSubmit' | 'SessionStart';
@@ -126,12 +144,9 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
 
 /** Builds the note handed to the agent for a changed prompt. */
 export function formatAdditionalContext(result: NormalizeResult): string {
-  return (
-    'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' +
-    `${diffSummary(result)}\n` +
-    'Corrected prompt:\n' +
-    result.output
-  );
+  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + diffSummary(result);
+  if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
+  return `${head}\nCorrected prompt:\n${result.output}`;
 }
 
 /**
@@ -416,7 +431,18 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
   const correctionNote = correction ? formatCorrectionNote(correction) : '';
 
-  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : undefined;
+  // The compiled index comes from index-cache.json when the lexicon has not
+  // changed since a previous prompt built it (see loadMatcherIndex). The
+  // match budget starts after it: it bounds the scan, which grows with the
+  // prompt, not the one-off cost of the index.
+  const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : undefined;
+  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  // process.hrtime rather than performance.now: the `performance` global
+  // loads node:perf_hooks on first touch, a few ms of a cold hook.
+  const started = process.hrtime.bigint();
+  const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
+  const shouldStop = (): boolean => process.hrtime.bigint() - started >= limit;
+  let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : undefined;
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   if (result && correction) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.

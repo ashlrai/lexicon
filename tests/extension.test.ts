@@ -686,7 +686,8 @@ describe('live-site regressions (2026-09-19)', () => {
     box.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
     await handle.idle();
-    expect(box.value).toBe('ping Ashlr.AI about Kubernetes');
+    // The Enter itself still lands: a plain textarea on a generic site gets its newline.
+    expect(box.value).toBe('ping Ashlr.AI about Kubernetes\n');
     expect(toastText()).toContain('Kubernetes');
   });
 
@@ -725,5 +726,128 @@ describe('live-site regressions (2026-09-19)', () => {
     expect(flushesSeen[0]).toBe(0); // first edit is synchronous
     expect(flushesSeen[1]).toBeGreaterThanOrEqual(1); // second edit waited for the flush
     expect(e.querySelector('span[data-lexical-text]')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit (round 4): the composer guard must not break ordinary inputs.
+// ---------------------------------------------------------------------------
+
+describe('content: generic sites keep the Enter key working', () => {
+  // A browser runs no default action for a script-dispatched (untrusted)
+  // keydown: re-dispatching Enter after the rewrite inserts no newline and
+  // submits no form. On a site without a known send button the guard has to
+  // carry out what the real Enter would have done.
+
+  it('a plain textarea still gets its newline, at the caret, after the rewrite', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    t.value = 'ping ashler';
+    t.focus();
+    t.setSelectionRange(t.value.length, t.value.length);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    t.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(t.value).toBe('ping Ashlr.AI\n');
+    expect(t.selectionEnd).toBe(t.value.length);
+  });
+
+  it('a single-line input inside a form still submits it through its default button', async () => {
+    document.body.innerHTML = '<form id="f"><input id="q" type="text"><button id="go" type="submit">go</button></form>';
+    const q = document.getElementById('q') as HTMLInputElement;
+    const form = document.getElementById('f') as HTMLFormElement;
+    const submitted = vi.fn((e: Event) => e.preventDefault());
+    const clicked = vi.fn();
+    form.addEventListener('submit', submitted);
+    document.getElementById('go')!.addEventListener('click', clicked);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    q.value = 'ping ashler';
+    q.focus();
+    q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(q.value).toBe('ping Ashlr.AI');
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(submitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('a site that handles Enter itself (keydown or keypress) gets the event and no extra newline', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    const onKeypress = vi.fn((e: KeyboardEvent) => e.preventDefault());
+    t.addEventListener('keypress', onKeypress);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    t.value = 'ping ashler';
+    t.focus();
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(onKeypress).toHaveBeenCalledTimes(1);
+    expect(t.value).toBe('ping Ashlr.AI');
+  });
+
+  it('a known site whose send button is missing gets no stray newline either', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(readText(composer)).toBe('ping Ashlr.AI');
+  });
+});
+
+describe('content: undo never overwrites what the user typed since', () => {
+  it('leaves a new draft alone when the corrected message was sent and the user started another', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    composer.addEventListener('keydown', (ev) => ev.preventDefault());
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(readText(composer)).toBe('ping Ashlr.AI');
+    // The site sent it and cleared the box; the user is typing the next message.
+    composer.innerHTML = '<p>and one more thing</p>';
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    expect(readText(composer)).toBe('and one more thing');
+  });
+
+  it('still restores the dictated wording into an emptied composer', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    composer.addEventListener('keydown', (ev) => ev.preventDefault());
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    composer.innerHTML = '<p><br></p>';
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    expect(readText(composer)).toBe('ping ashler');
+  });
+});
+
+describe('content: live mode keeps the caret where the user is typing', () => {
+  it('contenteditable: the caret ends after the corrected prefix, not after the first rewrite', async () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping ashler about cooper netties and</p></div>';
+    const e = document.getElementById('e')!;
+    handle = installContent({
+      doc: document,
+      hostname: 'example.org',
+      send: vi.fn(fakeSend),
+      settings: { enabled: true, live: true },
+      liveDebounceMs: 5,
+      precheckDebounceMs: 1000,
+    });
+    e.focus();
+    const text = e.querySelector('p')!.firstChild as Text;
+    const sel = document.getSelection()!;
+    const r = document.createRange();
+    r.setStart(text, text.data.length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(60);
+    expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
+    const { caretOffset } = await import('../extension/src/editable.js');
+    expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
   });
 });

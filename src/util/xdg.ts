@@ -41,3 +41,13 @@ export function xdgDataHome(env: NodeJS.ProcessEnv = process.env, home: string =
 export function xdgStateHome(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
   return absoluteOr(env.XDG_STATE_HOME, path.join(home, '.local', 'state'));
 }
+
+/**
+ * The global lexicon file: `$LEXICON_PATH` when set, else
+ * `<XDG config home>/lexicon/lexicon.yaml`. `resolvePaths` in core/store.ts
+ * adds an explicit override on top; the plugin hook's entry stub uses this to
+ * find the directory its compile cache lives in without loading the store.
+ */
+export function globalLexiconPath(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
+  return env.LEXICON_PATH || path.join(xdgConfigHome(env, home), 'lexicon', 'lexicon.yaml');
+}

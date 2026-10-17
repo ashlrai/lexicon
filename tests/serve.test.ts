@@ -23,6 +23,7 @@ import {
   pairPageHtml,
   readServeConfig,
   DEFAULT_PORT,
+  NORMALIZE_BUDGET_MS,
   PAIR_HEADERS,
   PAIR_META,
 } from '../src/serve/index.js';
@@ -87,7 +88,11 @@ async function fakeCli(home: string, rel = 'opt/lexicon/dist/cli/index.js'): Pro
 }
 
 /** Raw GET with an arbitrary Host header (undici's fetch silently replaces Host). */
-function rawGet(route: string, headers: Record<string, string>, method = 'GET'): Promise<{ status: number; body: string }> {
+function rawGet(
+  route: string,
+  headers: Record<string, string>,
+  method = 'GET',
+): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: info.port, path: route, method, headers }, (res) => {
       let body = '';
@@ -95,7 +100,7 @@ function rawGet(route: string, headers: Record<string, string>, method = 'GET'):
       res.on('data', (d: string) => {
         body += d;
       });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
     });
     req.on('error', reject);
     req.end();
@@ -326,6 +331,32 @@ describe('POST /normalize', () => {
     expect(await hitsOf()).toBe(before + 1);
   });
 
+  it('stops matching once its time budget is spent, so one huge paste cannot stall the server', async () => {
+    // A 1 MB body against a large lexicon took many seconds of a single-threaded
+    // server: every other client waited, and the extension (1.5 s timeout) fell
+    // back while its send hung. Same contract as the hook: the corrections
+    // found before the budget ran out, never a stall.
+    expect(NORMALIZE_BUDGET_MS).toBeGreaterThan(0);
+    expect(NORMALIZE_BUDGET_MS).toBeLessThan(1500);
+    const tight = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true, normalizeBudgetMs: 0 });
+    const t = await tight.start();
+    try {
+      const call = async (text: string): Promise<NormalizeResult> =>
+        (await (
+          await fetch(`${t.url}/normalize`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, dryRun: true }),
+          })
+        ).json()) as NormalizeResult;
+      // The first token is always matched; the budget is checked before each later one.
+      expect((await call('ashler hello')).replacements).toHaveLength(1);
+      expect((await call('hello ashler')).replacements).toHaveLength(0);
+    } finally {
+      await tight.stop();
+    }
+  });
+
   it('400 on a missing text field', async () => {
     const res = await api('POST', '/normalize', { dryRun: true });
     expect(res.status).toBe(400);
@@ -471,6 +502,29 @@ describe('GET /pair', () => {
     expect(withToken.status).toBe(403);
     // Only GET.
     expect((await fetch(`${info.url}/pair`, { method: 'POST' })).status).toBe(405);
+  });
+
+  it('never hands the token to another origin: no CORS headers, and 403 to a cross-origin fetch', async () => {
+    // CORS is granted to every browser-extension origin for the API routes,
+    // which are useless without the token. /pair carries the token, so any
+    // installed extension (or an allowedOrigins page) that could read it
+    // cross-origin would get the whole API. The extension reads the page
+    // through a content script on a navigation, which sends no Origin.
+    for (const origin of ['chrome-extension://someoneelse', 'moz-extension://other', 'https://evil.example', 'null']) {
+      const res = await rawGet('/pair', { Host: `127.0.0.1:${info.port}`, Origin: origin });
+      expect(res.status, origin).toBe(403);
+      expect(res.headers['access-control-allow-origin'], origin).toBeUndefined();
+      expect(res.body).not.toContain(info.token);
+    }
+    const pre = await fetch(`${info.url}/pair`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'chrome-extension://someoneelse', 'Access-Control-Request-Method': 'GET' },
+    });
+    expect(pre.headers.get('access-control-allow-origin')).toBeNull();
+    // Its own origin (a same-origin request that carries one) is still served.
+    const same = await rawGet('/pair', { Host: `127.0.0.1:${info.port}`, Origin: `http://127.0.0.1:${info.port}` });
+    expect(same.status).toBe(200);
+    expect(same.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('isPairHost / isLoopbackAddress / pairPageHtml', () => {
