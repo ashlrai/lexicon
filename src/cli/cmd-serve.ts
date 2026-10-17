@@ -786,18 +786,65 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
   return 0;
 }
 
+/** What `lexicon serve --install --json` and `--uninstall --json` print. */
+export interface ServeServiceJson {
+  ok: boolean;
+  action: 'install' | 'uninstall';
+  platform: NodeJS.Platform;
+  /** The transcript the command prints without --json, uncoloured. */
+  output: string;
+  /** Present when ok is false: the last `lexicon:` line of the run's stderr. */
+  error?: string;
+  nextStep?: string;
+}
+
+/**
+ * `--install` / `--uninstall` under `--json`: the text run into a buffer,
+ * wrapped in one document. It printed the transcript as is, so a script that
+ * passed --json parsed prose. Its stderr (the commands it ran and how they
+ * failed) still goes to stderr.
+ */
+async function runServeServiceJson(action: 'install' | 'uninstall', opts: ServeOptions, io: IO, deps: ServeDeps): Promise<number> {
+  let out = '';
+  let err = '';
+  const buffer: IO = {
+    stdout: (s) => {
+      out += s;
+    },
+    stderr: (s) => {
+      err += s;
+    },
+  };
+  const textOpts: ServeOptions = { ...opts, json: false };
+  let code: number;
+  try {
+    code = action === 'install' ? await runServeInstall(textOpts, buffer, deps) : await runServeUninstall(textOpts, buffer, deps);
+  } catch (e) {
+    code = fail(buffer, e);
+  }
+  if (err) io.stderr(err);
+  const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+  const doc: ServeServiceJson = { ok: code === 0, action, platform: deps.platform ?? process.platform, output: plain(out) };
+  if (code !== 0) {
+    const errLines = plain(err).split('\n').filter((l) => l.trim() !== '');
+    const own = errLines.filter((l) => l.startsWith('lexicon: ')).at(-1);
+    doc.error = own !== undefined ? own.slice('lexicon: '.length) : (errLines.at(-1)?.trim() ?? `serve --${action} failed`);
+    doc.nextStep = `fix the problem in error, then run lexicon serve --${action} --json again`;
+  }
+  line(io, JSON.stringify(doc, null, 2));
+  return code;
+}
+
 export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const modes = [opts.show, opts.status, opts.pair, opts.install, opts.uninstall].filter(Boolean).length;
-  // --install and --uninstall print a transcript, not JSON, so only the modes
-  // whose output --json shapes report a failure as `{ ok: false, error }`.
-  const json = opts.json === true && !opts.install && !opts.uninstall;
+  const json = opts.json === true;
   if (modes > 1) return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall');
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);
     if (opts.pair) return await runServePair(opts, io, deps);
-    if (opts.install) return await runServeInstall(opts, io, deps);
-    if (opts.uninstall) return await runServeUninstall(opts, io, deps);
+    if (opts.install) return json ? await runServeServiceJson('install', opts, io, deps) : await runServeInstall(opts, io, deps);
+    if (opts.uninstall) return json ? await runServeServiceJson('uninstall', opts, io, deps) : await runServeUninstall(opts, io, deps);
     return await runServeForeground(opts, io, deps);
   } catch (err) {
     return fail(io, err, json);
@@ -830,7 +877,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .description(`run the local HTTP API on http://127.0.0.1:${DEFAULT_PORT} for extensions, Shortcuts, Raycast and desktop apps`)
     .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
     .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
-    .option('--json', 'print the listening info (or --show/--status result) as JSON, led by ok (for --status, ok equals up)')
+    .option('--json', 'print the listening info (or the --show, --status, --pair, --install or --uninstall result) as JSON, led by ok (for --status, ok equals up)')
     .option('--quiet', 'do not log requests')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')

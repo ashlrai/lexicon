@@ -1054,10 +1054,60 @@ describe('lexicon serve (CLI)', () => {
     const io = memIO();
     expect(await runServe({ show: true, status: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
     expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
-    // --install prints a transcript, not JSON, so its refusal stays on stderr.
+    // --install takes --json too, so its refusal is a document as well.
     const install = memIO();
     expect(await runServe({ install: true, uninstall: true, json: true, globalPath: env.globalPath }, install)).toBe(1);
-    expect(install.out.join('')).toBe('');
+    expect(JSON.parse(install.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+  });
+
+  // Catches: `serve --install --json` and `--uninstall --json` printed the
+  // prose transcript on stdout, so a script that asked for JSON parsed text.
+  it('--install --json and --uninstall --json print one document, success or failure', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const unitPath = systemdUnitPath(home, {});
+      const ok = memIO();
+      expect(await runServe({ install: true, json: true, globalPath: env.globalPath }, ok, { platform: 'linux', home, env: {}, exec: fakeExec([]), cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      const installed = JSON.parse(ok.out.join(''));
+      expect(installed).toMatchObject({ ok: true, action: 'install', platform: 'linux' });
+      expect(installed.output).toContain(`wrote ${unitPath}`);
+      expect(installed.output).toContain(`installed ${SYSTEMD_UNIT_NAME}`);
+      expect(installed).not.toHaveProperty('error');
+
+      const failing = memIO();
+      expect(await runServe({ install: true, json: true, globalPath: env.globalPath }, failing, { platform: 'linux', home, env: {}, exec: fakeExec([], 1), cliPath: cli })).toBe(1);
+      expect(JSON.parse(failing.out.join(''))).toMatchObject({
+        ok: false,
+        action: 'install',
+        error: expect.stringContaining('could not enable the unit'),
+        nextStep: 'fix the problem in error, then run lexicon serve --install --json again',
+      });
+      // The commands it ran and how they failed stay on stderr.
+      expect(failing.err.join('')).toContain('exit 1: nope');
+
+      const blocked = memIO();
+      expect(await runServe({ install: true, json: true, globalPath: env.globalPath }, blocked, { platform: 'linux', home, env: {}, exec: fakeExec([]), cliPath: path.join(home, 'missing.js') })).toBe(1);
+      expect(JSON.parse(blocked.out.join(''))).toMatchObject({ ok: false, action: 'install', error: expect.stringContaining('refusing to install the login service') });
+
+      const removed = memIO();
+      expect(await runServe({ uninstall: true, json: true, globalPath: env.globalPath }, removed, { platform: 'linux', home, env: {}, exec: fakeExec([]) })).toBe(0);
+      expect(JSON.parse(removed.out.join(''))).toMatchObject({ ok: true, action: 'uninstall', output: expect.stringContaining(`removed ${unitPath}`) });
+
+      await fs.mkdir(unitPath, { recursive: true });
+      const stuck = memIO();
+      expect(await runServe({ uninstall: true, json: true, globalPath: env.globalPath }, stuck, { platform: 'linux', home, env: {}, exec: fakeExec([]) })).toBe(1);
+      expect(JSON.parse(stuck.out.join(''))).toMatchObject({ ok: false, action: 'uninstall', error: expect.stringContaining(`could not remove ${unitPath}`) });
+
+      // Without --json the transcript is unchanged.
+      await fs.rm(unitPath, { recursive: true, force: true });
+      const text = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, text, { platform: 'linux', home, env: {}, exec: fakeExec([]) })).toBe(0);
+      expect(text.out.join('')).toContain(`${unitPath} was not installed\n`);
+      expect(() => JSON.parse(text.out.join(''))).toThrow();
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 
   it('--show prints the URL and token', async () => {

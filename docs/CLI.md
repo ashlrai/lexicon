@@ -438,8 +438,9 @@ Options:
   --port <n>     port to listen on (default 41733; 0 picks a free port)
   --host <host>  interface to bind (default 127.0.0.1; anything else is exposed
                  to the network)
-  --json         print the listening info (or --show/--status result) as JSON,
-                 led by ok (for --status, ok equals up)
+  --json         print the listening info (or the --show, --status, --pair,
+                 --install or --uninstall result) as JSON, led by ok (for
+                 --status, ok equals up)
   --quiet        do not log requests
   --show         print the URL and bearer token (for the extension options page)
                  and exit
