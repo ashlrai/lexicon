@@ -1,6 +1,6 @@
 ---
 description: Show, add, harvest, export, set up, diagnose or improve the user's personal voice lexicon (STT spelling corrections).
-argument-hint: "[add <canonical> as <alias>, <alias> | learn <heard> -> <meant> | stats | harvest | export <format> | setup | doctor | suggest | trust [path]]"
+argument-hint: "[add <canonical> as <alias>, <alias> | remove <canonical> | learn <heard> -> <meant> | stats | harvest | export <format> | setup | doctor | suggest | trust [path]]"
 ---
 
 Manage the user's voice lexicon through the `lexicon` MCP server. Arguments: `$ARGUMENTS`

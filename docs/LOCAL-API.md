@@ -82,7 +82,7 @@ Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a mis
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route or export format,
-405 wrong method, 413 body over 1 MB, 500 a problem on the server's side,
+405 wrong method (with an `Allow` header naming the route's methods), 413 body over 1 MB, 500 a problem on the server's side,
 503 more than 64 requests in flight.
 
 400 always means the request itself is wrong: fix the input and do not retry

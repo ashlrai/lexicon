@@ -42,7 +42,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { argvRequestsJson, fail, line, usageErrorJson } from './io.js';
+import { argvRequestsJson, fail, jsonFlagsOf, line, optsRequestJson, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -191,10 +191,11 @@ program
 
 program
   .command('hook')
-  .description('run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)')
+  .description('run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)')
   .action(async () => {
     const { main } = await import('../hooks/user-prompt-submit.js');
-    await main();
+    // commander already parsed this command's argv; the hook reads only stdin.
+    await main([]);
   });
 
 program
@@ -304,13 +305,15 @@ try {
   if (err instanceof CommanderError) {
     // commander already printed help/version/usage errors on stderr; under
     // --json a usage error also gets its stdout document. Same exit code.
-    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2))) {
-      line(io, JSON.stringify(usageErrorJson(err.message, commandPath(usageErrorCommand.get(err) ?? program)), null, 2));
+    const failed = usageErrorCommand.get(err) ?? program;
+    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2), jsonFlagsOf(failed))) {
+      line(io, JSON.stringify(usageErrorJson(err.message, commandPath(failed)), null, 2));
     }
     process.exitCode = err.exitCode;
   } else {
     // fail() is the same `lexicon: <message>` line plus, for a lexicon file
     // that does not parse, the command that fixes it.
-    process.exitCode = fail(io, err, active?.opts<{ json?: boolean }>().json === true);
+    // `--full` (list, harvest) implies --json, so its failure gets the document too.
+    process.exitCode = fail(io, err, optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()));
   }
 }

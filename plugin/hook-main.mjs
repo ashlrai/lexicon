@@ -146,17 +146,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path6) {
-      const ctrl = callVisitor(key, node2, visitor, path6);
+    function visit_(key, node2, visitor, path7) {
+      const ctrl = callVisitor(key, node2, visitor, path7);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path6, ctrl);
-        return visit_(key, ctrl, visitor, path6);
+        replaceNode(key, path7, ctrl);
+        return visit_(key, ctrl, visitor, path7);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
+          path7 = Object.freeze(path7.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path6);
+            const ci = visit_(i, node2.items[i], visitor, path7);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -167,13 +167,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path6);
+          path7 = Object.freeze(path7.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path7);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path6);
+          const cv = visit_("value", node2.value, visitor, path7);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -194,17 +194,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path6) {
-      const ctrl = await callVisitor(key, node2, visitor, path6);
+    async function visitAsync_(key, node2, visitor, path7) {
+      const ctrl = await callVisitor(key, node2, visitor, path7);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path6, ctrl);
-        return visitAsync_(key, ctrl, visitor, path6);
+        replaceNode(key, path7, ctrl);
+        return visitAsync_(key, ctrl, visitor, path7);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
+          path7 = Object.freeze(path7.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path6);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path7);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -215,13 +215,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path6);
+          path7 = Object.freeze(path7.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path7);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path6);
+          const cv = await visitAsync_("value", node2.value, visitor, path7);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -248,23 +248,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path6) {
+    function callVisitor(key, node2, visitor, path7) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path6);
+        return visitor(key, node2, path7);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path6);
+        return visitor.Map?.(key, node2, path7);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path6);
+        return visitor.Seq?.(key, node2, path7);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path6);
+        return visitor.Pair?.(key, node2, path7);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path6);
+        return visitor.Scalar?.(key, node2, path7);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path6);
+        return visitor.Alias?.(key, node2, path7);
       return void 0;
     }
-    function replaceNode(key, path6, node2) {
-      const parent = path6[path6.length - 1];
+    function replaceNode(key, path7, node2) {
+      const parent = path7[path7.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -876,10 +876,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path6, value) {
+    function collectionFromPath(schema, path7, value) {
       let v = value;
-      for (let i = path6.length - 1; i >= 0; --i) {
-        const k = path6[i];
+      for (let i = path7.length - 1; i >= 0; --i) {
+        const k = path7[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -898,7 +898,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path6) => path6 == null || typeof path6 === "object" && !!path6[Symbol.iterator]().next().done;
+    var isEmptyPath = (path7) => path7 == null || typeof path7 === "object" && !!path7[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -928,11 +928,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path6, value) {
-        if (isEmptyPath(path6))
+      addIn(path7, value) {
+        if (isEmptyPath(path7))
           this.add(value);
         else {
-          const [key, ...rest] = path6;
+          const [key, ...rest] = path7;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -946,8 +946,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path6) {
-        const [key, ...rest] = path6;
+      deleteIn(path7) {
+        const [key, ...rest] = path7;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -961,8 +961,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path6, keepScalar) {
-        const [key, ...rest] = path6;
+      getIn(path7, keepScalar) {
+        const [key, ...rest] = path7;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -980,8 +980,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path6) {
-        const [key, ...rest] = path6;
+      hasIn(path7) {
+        const [key, ...rest] = path7;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -991,8 +991,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path6, value) {
-        const [key, ...rest] = path6;
+      setIn(path7, value) {
+        const [key, ...rest] = path7;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -3507,9 +3507,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path6, value) {
+      addIn(path7, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path6, value);
+          this.contents.addIn(path7, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -3584,14 +3584,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path6) {
-        if (Collection.isEmptyPath(path6)) {
+      deleteIn(path7) {
+        if (Collection.isEmptyPath(path7)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path6) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path7) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -3606,10 +3606,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path6, keepScalar) {
-        if (Collection.isEmptyPath(path6))
+      getIn(path7, keepScalar) {
+        if (Collection.isEmptyPath(path7))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path6, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path7, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -3620,10 +3620,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path6) {
-        if (Collection.isEmptyPath(path6))
+      hasIn(path7) {
+        if (Collection.isEmptyPath(path7))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path6) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path7) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -3640,13 +3640,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path6, value) {
-        if (Collection.isEmptyPath(path6)) {
+      setIn(path7, value) {
+        if (Collection.isEmptyPath(path7)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path6), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path7), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path6, value);
+          this.contents.setIn(path7, value);
         }
       }
       /**
@@ -5607,9 +5607,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path6) => {
+    visit.itemAtPath = (cst, path7) => {
       let item = cst;
-      for (const [field, index] of path6) {
+      for (const [field, index] of path7) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -5618,23 +5618,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path6) => {
-      const parent = visit.itemAtPath(cst, path6.slice(0, -1));
-      const field = path6[path6.length - 1][0];
+    visit.parentCollection = (cst, path7) => {
+      const parent = visit.itemAtPath(cst, path7.slice(0, -1));
+      const field = path7[path7.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path6, item, visitor) {
-      let ctrl = visitor(item, path6);
+    function _visit(path7, item, visitor) {
+      let ctrl = visitor(item, path7);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path6.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path7.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -5645,10 +5645,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path6);
+            ctrl = ctrl(item, path7);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path6) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path7) : ctrl;
     }
     exports.visit = visit;
   }
@@ -7562,9 +7562,9 @@ var require_node_crypto = __commonJS({
 });
 
 // src/hooks/user-prompt-submit.ts
-var import_node_fs5 = __toESM(require_node_fs(), 1);
-var import_node_path6 = __toESM(require_node_path(), 1);
-var import_node_url = __toESM(require_node_url(), 1);
+var import_node_fs6 = __toESM(require_node_fs(), 1);
+var import_node_path7 = __toESM(require_node_path(), 1);
+var import_node_url2 = __toESM(require_node_url(), 1);
 
 // src/core/types.ts
 var TERM_CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -7835,10 +7835,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path6) {
-  if (!path6)
+function getElementAtPath(obj, path7) {
+  if (!path7)
     return obj;
-  return path6.reduce((acc, key) => acc?.[key], obj);
+  return path7.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -8178,11 +8178,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path6, issues) {
+function prefixIssues(path7, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path6);
+    iss.path.unshift(path7);
     return iss;
   });
 }
@@ -8628,16 +8628,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path6 = []) => {
+  const processError = (error3, path7 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path6, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path7, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path7, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path7, ...issue2.path]);
       } else {
-        const fullpath = [...path6, ...issue2.path];
+        const fullpath = [...path7, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -13580,10 +13580,10 @@ function schemas() {
   built = { category, scope, source, term, settings, lexicon: buildLexicon(term, settings) };
   return built;
 }
-function formatPath(path6) {
-  if (path6.length === 0) return "(root)";
+function formatPath(path7) {
+  if (path7.length === 0) return "(root)";
   let out = "";
-  for (const seg of path6) {
+  for (const seg of path7) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -19476,6 +19476,9 @@ function sleep(ms) {
 // src/util/json.ts
 var import_node_fs2 = __toESM(require_node_fs());
 var import_node_path2 = __toESM(require_node_path());
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
@@ -20268,6 +20271,37 @@ function parseCorrection(text) {
   return void 0;
 }
 
+// src/util/package.ts
+var import_node_fs5 = __toESM(require_node_fs());
+var import_node_path6 = __toESM(require_node_path());
+var import_node_url = __toESM(require_node_url());
+var PACKAGE_NAME = "@ashlr/lexicon";
+var UNKNOWN_VERSION = "0.0.0";
+function findPackageRoot(from) {
+  let dir = from.startsWith("file:") ? import_node_path6.default.dirname((0, import_node_url.fileURLToPath)(from)) : import_node_path6.default.resolve(from);
+  for (; ; ) {
+    if (readPackageJson(import_node_path6.default.join(dir, "package.json"))) return dir;
+    const parent = import_node_path6.default.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function packageVersion(moduleUrl) {
+  const root = findPackageRoot(moduleUrl);
+  const pkg = root ? readPackageJson(import_node_path6.default.join(root, "package.json")) : void 0;
+  return pkg?.version ?? UNKNOWN_VERSION;
+}
+function readPackageJson(file) {
+  try {
+    const parsed = JSON.parse((0, import_node_fs5.readFileSync)(file, "utf8"));
+    if (isRecord(parsed) && parsed.name === PACKAGE_NAME && typeof parsed.version === "string") {
+      return { version: parsed.version };
+    }
+  } catch {
+  }
+  return void 0;
+}
+
 // src/hooks/user-prompt-submit.ts
 var HOOK_MATCH_BUDGET_MS = 100;
 var CORRECTED_PROMPT_MAX_CHARS = 8e3;
@@ -20276,12 +20310,12 @@ var ONBOARD_NOTE_FILE = "onboard-note.json";
 var ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1e3;
 var ONBOARD_NOTE = "The user's voice lexicon is empty, so dictated names are not being corrected. Do not act on this now and do not mention it on its own. Wait until a message looks dictated (run-on prose, spoken filler, or a proper noun that looks like speech-to-text mangled it). When that happens: answer what the user asked first, then add one short sentence offering to fix it, naming the word that looked wrong. Offer once. If they decline or ignore it, do not raise it again this session. If they accept, ask for (1) their company/product names, spelled exactly, and how they pronounce them; (2) their own name as they write it; (3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool with company, person and clients (or use the onboard prompt). setup_lexicon previews by default: show the user its plan and call it again with apply: true only after they say yes. Install nothing they did not name.";
 function onboardNotePath(globalPath) {
-  return (0, import_node_path6.join)((0, import_node_path6.dirname)(globalPath), ONBOARD_NOTE_FILE);
+  return (0, import_node_path7.join)((0, import_node_path7.dirname)(globalPath), ONBOARD_NOTE_FILE);
 }
 async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   const file = onboardNotePath(globalPath);
   try {
-    const raw = await import_node_fs5.promises.readFile(file, "utf8");
+    const raw = await import_node_fs6.promises.readFile(file, "utf8");
     const parsed = JSON.parse(raw);
     const last = typeof parsed === "object" && parsed !== null ? parsed.lastNotedAt : void 0;
     const lastMs = typeof last === "string" ? Date.parse(last) : Number.NaN;
@@ -20290,8 +20324,8 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   const state = { lastNotedAt: new Date(now).toISOString() };
   try {
-    await import_node_fs5.promises.mkdir((0, import_node_path6.dirname)(file), { recursive: true });
-    await import_node_fs5.promises.writeFile(file, `${JSON.stringify(state)}
+    await import_node_fs6.promises.mkdir((0, import_node_path7.dirname)(file), { recursive: true });
+    await import_node_fs6.promises.writeFile(file, `${JSON.stringify(state)}
 `, "utf8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -20300,8 +20334,29 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   return true;
 }
+var CORRECTION_LIST_MAX_CHARS = 4e3;
+function capCorrectionList(summary, max = CORRECTION_LIST_MAX_CHARS) {
+  if (summary.length <= max) return summary;
+  const counts = /* @__PURE__ */ new Map();
+  for (const l of summary.split("\n")) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const more = (n) => `... ${n} more correction${n === 1 ? "" : "s"} not listed; call the lexicon normalize_transcript tool on the prompt for the full list.`;
+  const kept = [];
+  let used = 0;
+  let left = 0;
+  for (const [text, n] of counts) {
+    const shown = n > 1 ? `${text} (${n} times)` : text;
+    if (left > 0 || used + shown.length + 1 + more(Number.MAX_SAFE_INTEGER).length > max) {
+      left += n;
+      continue;
+    }
+    kept.push(shown);
+    used += shown.length + 1;
+  }
+  if (left === 0) return kept.join("\n");
+  return [...kept, more(left)].join("\n");
+}
 function formatAdditionalContext(result) {
-  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + diffSummary(result);
+  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}
 Corrected prompt:
@@ -20459,11 +20514,27 @@ async function loadOrExplain(cwd) {
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
     const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+      return {
+        note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
+Tell the user to run \`lexicon doctor\`, which names the file and what is wrong with it.`
+      };
+    }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
 Tell the user to run \`lexicon edit\` and fix the parse error. \`lexicon setup\` will not repair this, and \`lexicon doctor\` will show the same thing.`
     };
   }
+}
+var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+function payloadCwd(payload) {
+  const cwd = payload.cwd;
+  if (typeof cwd === "string" && cwd.trim() !== "") return cwd;
+  if (cwd !== void 0 && cwd !== null) {
+    process.stderr.write(`[lexicon hook] ignoring the payload's cwd ${shownValue(cwd)} (not a directory path); using ${shownValue(process.cwd())}
+`);
+  }
+  return void 0;
 }
 function emit(hookEventName, parts) {
   const output = {
@@ -20474,7 +20545,7 @@ function emit(hookEventName, parts) {
 async function userPromptSubmit(payload, opts) {
   const prompt = payload.prompt;
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
@@ -20506,7 +20577,7 @@ function formatBudgetNote(budgetMs) {
   return `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.`;
 }
 async function sessionStart(payload, opts) {
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
@@ -20540,7 +20611,7 @@ async function readStdin() {
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (; ; ) {
-      const n = (0, import_node_fs5.readSync)(0, buf, 0, buf.length, null);
+      const n = (0, import_node_fs6.readSync)(0, buf, 0, buf.length, null);
       if (n === 0) return Buffer.concat(chunks).toString("utf8");
       chunks.push(Buffer.from(buf.subarray(0, n)));
     }
@@ -20552,7 +20623,7 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 var processSink = {
-  writeSync: (fd, buffer, offset, length) => (0, import_node_fs5.writeSync)(fd, buffer, offset, length),
+  writeSync: (fd, buffer, offset, length) => (0, import_node_fs6.writeSync)(fd, buffer, offset, length),
   get stream() {
     return process.stdout;
   },
@@ -20582,7 +20653,21 @@ function writeStdout(text, sink = processSink) {
 function errorText(err) {
   return err instanceof Error ? err.message : String(err);
 }
-async function main() {
+function hookFlagOutput(argv) {
+  if (argv.includes("--version") || argv.includes("-v")) return packageVersion(import.meta.url);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    return "Usage: hook.mjs [--version] [--help]  (Claude Code UserPromptSubmit and SessionStart hook for the personal lexicon; reads the hook JSON on stdin)";
+  }
+  return void 0;
+}
+async function main(argv = process.argv.slice(2)) {
+  const flagOutput = hookFlagOutput(argv);
+  if (flagOutput !== void 0) {
+    writeStdout(`${flagOutput}
+`);
+    process.exitCode = 0;
+    return;
+  }
   try {
     const raw = await readStdin();
     const out = await runHook(raw);
@@ -20599,7 +20684,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs5.realpathSync)((0, import_node_path6.resolve)(entry)) === (0, import_node_fs5.realpathSync)((0, import_node_url.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs6.realpathSync)((0, import_node_path7.resolve)(entry)) === (0, import_node_fs6.realpathSync)((0, import_node_url2.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }
@@ -20609,12 +20694,14 @@ if (isMainModule()) {
 }
 export {
   CORRECTED_PROMPT_MAX_CHARS,
+  CORRECTION_LIST_MAX_CHARS,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
   SESSION_CONTEXT_MAX_CHARS,
+  capCorrectionList,
   dataBlockSpans,
   dropCorrectionSpans,
   dropDataBlockSpans,
@@ -20622,6 +20709,7 @@ export {
   formatBudgetNote,
   formatCorrectionNote,
   formatSkippedProjectNote,
+  hookFlagOutput,
   main,
   onboardNotePath,
   runHook,

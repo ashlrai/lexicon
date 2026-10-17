@@ -414,6 +414,27 @@ describe('lexicon learn (CLI)', () => {
     });
   });
 
+  // Catches: learn allows unknown options (so a bare `->` is a word), and
+  // `lexicon learn --dry-run Ashlr.AI` saved "--dry-run" as an alias of Ashlr.AI.
+  it('refuses a word that reads as an option and writes nothing', async () => {
+    for (const words of [['--dry-run', 'Ashlr.AI'], ['--scope=project', 'Ashlr.AI'], ['-n', 'Ashler', 'Ashlr.AI']]) {
+      const { io, out, err } = captureIO();
+      expect(await runLearn(words, { json: true, cwd: '/fake/repo' }, io), words.join(' ')).toBe(1);
+      expect(JSON.parse(out())).toEqual({
+        ok: false,
+        error: `unknown option '${words[0]}'; nothing was learned`,
+        nextStep: expect.stringContaining('lexicon learn --help'),
+      });
+      expect(err()).toContain(`lexicon: unknown option '${words[0]}'`);
+    }
+    // An option-like word next to --from is refused too, not ignored.
+    expect(await runLearn(['--yes'], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, captureIO().io)).toBe(1);
+    expect(store.addTerm).not.toHaveBeenCalled();
+    // The arrows are still words.
+    expect(await runLearn(['Ashlur', '->', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+    expect(await runLearn(['Ashlur', '=>', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+  });
+
   it('--from learns a parsed correction', async () => {
     const { io, out } = captureIO();
     const code = await runLearn([], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, io);

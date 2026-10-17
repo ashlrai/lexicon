@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -941,6 +941,43 @@ describe('install-claude', () => {
     expect(again.hooks.UserPromptSubmit).toHaveLength(1);
   });
 
+  // install_client / setup_lexicon called from a plugin session (and `lexicon
+  // install claude` by a plugin user) registered a second server and a second
+  // pair of hooks, so every prompt got two correction notes.
+  it('leaves a user-scope install alone when the lexicon plugin already provides it', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-plugin-installed-'));
+    try {
+      const settingsPath = path.join(dir, '.claude', 'settings.json');
+      await fs.mkdir(path.join(dir, '.claude', 'plugins'), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, '.claude', 'plugins', 'installed_plugins.json'),
+        JSON.stringify({ version: 2, plugins: { 'lexicon@ashlrai': [{ scope: 'user', installPath: '/p', version: '0.5.6' }] } }),
+      );
+      const exec = vi.fn(() => 'Added stdio MCP server lexicon');
+      const io = makeIO();
+      const code = await runInstallClaude({ apply: true }, io, { cliDir: '/x/dist/cli', settingsPath, exec });
+      expect(code).toBe(0);
+      expect(exec).not.toHaveBeenCalled();
+      expect(existsSync(settingsPath)).toBe(false);
+      expect(io.out).toContain('lexicon Claude Code plugin (lexicon@ashlrai) already provides the MCP server');
+
+      // enabledPlugins alone counts too, and a preview says the same without planning anything.
+      await fs.rm(path.join(dir, '.claude', 'plugins'), { recursive: true, force: true });
+      await fs.writeFile(settingsPath, JSON.stringify({ enabledPlugins: { 'lexicon@ashlrai': true } }));
+      const preview = makeIO();
+      expect(await runInstallClaude({}, preview, { cliDir: '/x/dist/cli', settingsPath, exec })).toBe(0);
+      expect(preview.out).toContain('nothing was planned');
+      expect(preview.out).not.toContain('claude mcp add');
+
+      // A project-scope install is for whoever clones the repo, so it still runs.
+      const project = makeIO();
+      expect(await runInstallClaude({ apply: true, scope: 'project' }, project, { cliDir: '/x/dist/cli', settingsPath, exec })).toBe(0);
+      expect(exec).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   it('rejects an invalid scope', async () => {
     await expect(runInstallClaude({ scope: 'galaxy' }, makeIO(), { cliDir: '/x' })).rejects.toThrow(/--scope/);
   });
@@ -1826,6 +1863,34 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       const help = lexicon(['add', '--help', '--json'], globalPath);
       expect(help.status).toBe(0);
       expect(help.stdout).toContain('Usage: lexicon add');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: `--full` implies --json on list and harvest, but a failure under
+  // --full alone (a usage error, or a handler that threw) printed only the
+  // stderr line, so a script parsing stdout got an empty document.
+  it('a failure under --full alone (list, harvest) prints { ok: false, error } on stdout', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-full-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const usage = lexicon(['list', '--full', '--bogus', '--cwd', tmp], globalPath);
+      expect(usage.status).toBe(1);
+      expect(JSON.parse(usage.stdout)).toEqual({ ok: false, error: expect.stringContaining("unknown option '--bogus'"), nextStep: 'see the usage: lexicon list --help' });
+
+      const category = lexicon(['list', '--full', '--category', 'nope', '--cwd', tmp], globalPath);
+      expect(category.status).toBe(1);
+      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"') });
+
+      const missing = lexicon(['harvest', path.join(tmp, 'no-such-dir'), '--full', '--cwd', tmp], globalPath);
+      expect(missing.status).toBe(1);
+      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('path does not exist') });
+
+      // A command without --full keeps an empty stdout for it: there it is just an unknown option.
+      const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);
+      expect(other.status).toBe(1);
+      expect(other.stdout).toBe('');
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

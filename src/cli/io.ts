@@ -231,11 +231,27 @@ export function printJsonError(io: IO, error: string, nextStep?: string): void {
  * Whether a command line asked for `--json`: the flag appears before any `--`
  * (after it, `--json` is text for `normalize`, not a flag). index.ts uses it
  * for the errors commander raises before any handler runs, when no command's
- * parsed options exist to read it from.
+ * parsed options exist to read it from. `flags` are the spellings that ask
+ * for JSON on that command: `--json`, plus `--full` where it implies --json
+ * (`list`, `harvest`).
  */
-export function argvRequestsJson(args: readonly string[]): boolean {
+export function argvRequestsJson(args: readonly string[], flags: readonly string[] = ['--json']): boolean {
   const end = args.indexOf('--');
-  return (end === -1 ? args : args.slice(0, end)).includes('--json');
+  const before = end === -1 ? args : args.slice(0, end);
+  return flags.some((flag) => before.includes(flag));
+}
+
+/**
+ * The flags that ask `cmd` for a JSON document: `--json`, and `--full` on a
+ * command that defines it (`list --full` and `harvest --full` imply --json).
+ */
+export function jsonFlagsOf(cmd: { options: readonly { long?: string }[] } | undefined): string[] {
+  return cmd?.options.some((o) => o.long === '--full') ? ['--json', '--full'] : ['--json'];
+}
+
+/** Whether a command's parsed options ask for JSON: `--json`, or `--full`, which implies it. */
+export function optsRequestJson(opts: { json?: unknown; full?: unknown } | undefined): boolean {
+  return opts?.json === true || opts?.full === true;
 }
 
 /**

@@ -39,8 +39,28 @@ export function correctionFromArgs(words: readonly string[], from: string | unde
   return parseCorrection(words.join(' '));
 }
 
+/**
+ * A word that reads as a command-line option (`--dry-run`, `-n`, `--scope=project`).
+ * `learn` allows unknown options so a bare `->` passes as a word, which also let
+ * a mistyped or unsupported flag through as the heard spelling: `lexicon learn
+ * --dry-run Ashlr.AI` saved `--dry-run` as an alias. No STT spelling starts with
+ * a dash followed by a letter; the arrows (`->`, `=>`) do not match.
+ */
+export function optionLikeWord(words: readonly string[]): string | undefined {
+  return words.find((w) => /^--?[\p{L}]/u.test(w));
+}
+
 export async function runLearn(words: readonly string[], opts: LearnOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
+  const option = optionLikeWord(words);
+  if (option !== undefined) {
+    const error = `unknown option '${option}'; nothing was learned`;
+    const nextStep = 'see the usage: lexicon learn --help (learn takes --from, --project and --json)';
+    if (opts.json) printJsonError(io, error, nextStep);
+    io.stderr(`lexicon: unknown option '${safe(option)}'; nothing was learned\n`);
+    io.stderr(`lexicon: ${nextStep}\n`);
+    return 1;
+  }
   const correction = correctionFromArgs(words, opts.from);
   if (!correction) {
     const source = opts.from ?? words.join(' ');

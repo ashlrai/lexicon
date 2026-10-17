@@ -761,6 +761,43 @@ describe('formatAdditionalContext', () => {
     expect(text.startsWith('Voice lexicon corrections for this prompt')).toBe(true);
     expect(text.endsWith('Corrected prompt:\nhi Ashlr.AI')).toBe(true);
   });
+
+  // Catches: the corrections list had no bound, so a paste naming a term
+  // thousands of times put one line per occurrence into the context (tens of
+  // KB), even though the prompt itself stops being echoed past 8000 chars.
+  it('caps the corrections list, merging repeats and counting what it leaves out', async () => {
+    const { formatAdditionalContext, CORRECTION_LIST_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const line = (r: { original: string; replacement: string }): string => `"${r.original}" -> "${r.replacement}" (alias, 1.00)`;
+    mocks.diffSummary.mockImplementation((r: NormalizeResult) => r.replacements.map(line).join('\n'));
+    const many = (words: string[]): NormalizeResult => {
+      const input = words.join(' ');
+      let at = 0;
+      const replacements = words.map((w) => {
+        const r = { start: at, end: at + w.length, original: w, replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'alias' as const, confidence: 1 };
+        at += w.length + 1;
+        return r;
+      });
+      return { input, output: words.map(() => 'Ashlr.AI').join(' '), replacements, changed: true };
+    };
+
+    // 3000 of the same correction: one line with its count.
+    const repeated = formatAdditionalContext(many(Array.from({ length: 3000 }, () => 'Ashler')));
+    expect(repeated.length).toBeLessThan(CORRECTION_LIST_MAX_CHARS + 200);
+    expect(repeated).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00) (3000 times)');
+    expect(repeated).not.toContain('more correction');
+
+    // 3000 distinct ones: as many as fit, then how many were left out.
+    const distinct = formatAdditionalContext(many(Array.from({ length: 3000 }, (_, i) => `Ashler${i}`)));
+    expect(distinct.length).toBeLessThan(CORRECTION_LIST_MAX_CHARS + 200);
+    expect(distinct).toContain('"Ashler0" -> "Ashlr.AI"');
+    const left = /\.\.\. (\d+) more corrections not listed; call the lexicon normalize_transcript tool/.exec(distinct);
+    expect(left).not.toBeNull();
+    const listed = distinct.split('\n').filter((l) => l.startsWith('"Ashler')).length;
+    expect(listed + Number(left?.[1])).toBe(3000);
+
+    // A short list is untouched.
+    expect(formatAdditionalContext(many(['Ashler', 'Ashler']))).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)\n"Ashler" -> "Ashlr.AI" (alias, 1.00)\nCorrected prompt:');
+  });
 });
 
 /**
@@ -790,6 +827,42 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       // Whatever else happens, the hook never rewrites the prompt.
       expect(said).not.toContain('Ashlr.AI');
     }
+  });
+});
+
+// Catches: a payload `cwd` that is not a string reached loadLexicon, whose
+// TypeError came back to the model as "its file does not parse ... run
+// `lexicon edit`", about a lexicon that was fine; and any other load error
+// (a file that cannot be read) was worded as a parse error too.
+describe('a payload cwd that is not a path, and a load error that is not a parse error', () => {
+  it('ignores a non-string or blank cwd and loads from the process directory', async () => {
+    mocks.normalize.mockImplementation(fakeNormalize);
+    mocks.diffSummary.mockReturnValue('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const cwd of [123, {}, ['/x'], true, '', '   ']) {
+        mocks.loadLexicon.mockClear();
+        for (const event of ['UserPromptSubmit', 'SessionStart']) {
+          const out = await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd }));
+          expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+          expect(context(out)).not.toContain('does not parse');
+        }
+      }
+      expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain("ignoring the payload's cwd \"123\"");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('words a load error that is not a parse error as unreadable and points at lexicon doctor', async () => {
+    mocks.loadLexicon.mockRejectedValue(Object.assign(new Error("EACCES: permission denied, open '/x/lexicon.yaml'"), { code: 'EACCES' }));
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const said = context(await runHook(payload('ping Ashler')));
+    expect(said).toContain('could not be read: EACCES');
+    expect(said).toContain('lexicon doctor');
+    expect(said).not.toContain('does not parse');
+    expect(said).not.toContain('lexicon edit');
   });
 });
 

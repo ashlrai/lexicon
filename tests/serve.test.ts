@@ -765,6 +765,32 @@ describe('limits and errors', () => {
     expect(res.status).toBe(405);
   });
 
+  // Catches: a 405 carried no `Allow` header (RFC 9110 requires one), so a
+  // client could only learn the right method by parsing the message.
+  it('every 405 names the allowed methods in Allow, and the JSON error is unchanged', async () => {
+    const cases: [string, string, string, string][] = [
+      ['GET', '/normalize', 'POST', 'use POST'],
+      ['GET', '/learn', 'POST', 'use POST'],
+      ['GET', '/add', 'POST', 'use POST'],
+      ['POST', '/lexicon', 'GET', 'use GET'],
+      ['POST', '/stats', 'GET', 'use GET'],
+      ['POST', '/packs', 'GET', 'use GET'],
+      ['PUT', '/packs/developer', 'POST, DELETE', 'use POST to install or DELETE to remove'],
+      ['POST', '/aliases', 'GET', 'use GET'],
+      ['POST', '/export/json', 'GET', 'use GET'],
+      ['POST', '/health', 'GET', 'use GET'],
+      ['POST', '/pair', 'GET', 'use GET'],
+    ];
+    for (const [method, route, allow, error] of cases) {
+      const res = await api(method, route, method === 'GET' ? undefined : {});
+      expect(res.status, `${method} ${route}`).toBe(405);
+      expect(res.headers.get('allow'), `${method} ${route}`).toBe(allow);
+      expect(await res.json()).toEqual({ error });
+    }
+    // Other errors carry no Allow.
+    expect((await api('GET', '/nope')).headers.get('allow')).toBeNull();
+  });
+
   it('503 once the concurrency cap is reached', async () => {
     const tiny = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true, maxConcurrent: 0 });
     const t = await tiny.start();
