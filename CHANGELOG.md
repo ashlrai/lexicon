@@ -14,6 +14,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `apply_suggestion` with an `alias` suggestion and no `alias` says `an "alias" suggestion needs an alias`; it read `a "alias" suggestion`. A `never` suggestion without one says which word it needs.
 - `lexicon add --json` pairs `conflicts` with a `note` naming the remove command for each conflicting alias, as MCP `add_term` pairs them with its `remove_term` call; the JSON had the conflicts and no way out. The command, in the note and in the `warn:` line of `add` and `learn`, now ends in `--global` or `--project`, so it edits only the file that holds the alias.
 - MCP `add_term` with `aliases: []` adds the term with no aliases, as the empty list says. It was treated as omitted and generated aliases anyway, so there was no way to add a name with none. Omitting `aliases` still generates them for a new term; `serve` `POST /add` is unchanged.
 - The MCP `onboard` prompt's steps agree with each other and with the tools: the test step asked the agent to "take one of my names" and then write a sentence "containing two of the names", step 5 promised `add_term` without aliases always generates misspellings (it often generates none, so the agent is now told to propose a few or ask), and step 4 passed "my name" to `setup_lexicon` though no step asked for it.

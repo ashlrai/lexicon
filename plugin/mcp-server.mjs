@@ -60800,7 +60800,8 @@ var registerHarvestTools = (server, ctx) => {
         const tail = after.map((h) => `; it is still in the ${h.scope} lexicon (${h.path}): ask the user, then call apply_suggestion again with scope "${h.scope}" to remove that copy too`).join("");
         return textResult({ kind, canonical, removed, ...from ? { path: from.path } : {}, ...stillIn, summary: head + tail });
       }
-      if ((kind === "alias" || kind === "never") && !alias) throw new Error(`a "${kind}" suggestion needs an alias`);
+      if (kind === "alias" && !alias) throw new Error('an "alias" suggestion needs an alias');
+      if (kind === "never" && !alias) throw new Error('a "never" suggestion needs an alias (the word to keep as written)');
       const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
       const aliases = kind === "never" ? [] : kind === "alias" && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
       const term = {

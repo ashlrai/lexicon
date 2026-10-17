@@ -542,6 +542,20 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   });
 });
 
+describe('apply_suggestion without an alias', () => {
+  // Catches: the error read `a "alias" suggestion needs an alias`.
+  it('says what is missing in a sentence that reads', async () => {
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'] })).isError).toBe(false);
+    const alias = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes' } });
+    expect(alias.isError).toBe(true);
+    expect(alias.text).toContain('an "alias" suggestion needs an alias');
+    expect(alias.text).not.toContain('a "alias"');
+    const never = await call('apply_suggestion', { suggestion: { kind: 'never', canonical: 'Kubernetes' } });
+    expect(never.isError).toBe(true);
+    expect(never.text).toContain('a "never" suggestion needs an alias');
+  });
+});
+
 describe('apply_suggestion for a suggestion from another repo', () => {
   // Catches: suggest_terms with `cwd` named the other repo's .lexicon.yaml in
   // each suggestion's `path`, but apply_suggestion wrote this server's own
