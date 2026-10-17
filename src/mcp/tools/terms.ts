@@ -24,6 +24,10 @@ import {
   spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
+  termHolders,
+  untrustedAliasHolder,
+  untrustedTermHolder,
+  isProjectTrustError,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, nonBlank, skippedProjectFields, textResult } from '../shared.js';
@@ -285,6 +289,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for ' +
         "that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. " +
         'WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. ' +
+        'Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` ' +
+        '(each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. ' +
+        'When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: ' +
+        'that file is never edited here, and its copy corrects again once the user trusts it. ' +
         'There is no undo through this server. ' +
         'WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot ' +
         'name exactly -- use list_terms first if you are unsure which canonical the user means. ' +
@@ -308,18 +316,77 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const opts = { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) };
         if (alias !== undefined) {
-          const result = await removeAlias(canonical, alias, opts);
+          let result: Awaited<ReturnType<typeof removeAlias>>;
+          try {
+            result = await removeAlias(canonical, alias, opts);
+          } catch (err) {
+            // Without a scope the untrusted project copy comes first and is
+            // refused; say that the global copy is still editable on its own.
+            const global = termHolders(await load(), canonical).find((h) => h.scope === 'global');
+            if (!isProjectTrustError(err) || !global) throw err;
+            throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+          }
+          // The skipped project file's copy of the term may hold the alias too:
+          // it is never edited, and it corrects again once trusted. Path only.
+          const untrustedProject = untrustedAliasHolder(await load(), canonical, alias);
           return textResult({
             canonical: result.term.canonical,
             alias,
             removed: true,
             aliases: result.term.aliases,
             paths: result.files.map((f) => f.path),
+            ...(untrustedProject
+              ? {
+                  untrustedProject,
+                  note:
+                    `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
+                    'so it was neither loaded nor edited; that copy corrects again once the user runs `lexicon trust`, so tell them to review the file first.',
+                }
+              : {}),
           });
         }
-        const removed = await removeTerm(canonical, opts);
-        if (removed) return textResult({ canonical, removed });
-        return textResult({ canonical, removed, ...(await whereElse(canonical, scope)) });
+        // removeTerm edits one file (the project one first without a scope). A
+        // term with a copy in both files keeps correcting from the other copy,
+        // so name it rather than let `removed: true` read as gone.
+        const before = termHolders(await load(), canonical);
+        let removed: boolean;
+        try {
+          removed = await removeTerm(canonical, opts);
+        } catch (err) {
+          // Without a scope the untrusted project copy comes first and is
+          // refused; say that the global copy is still removable on its own.
+          const global = before.find((h) => h.scope === 'global');
+          if (!isProjectTrustError(err) || !global) throw err;
+          throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with scope "global" to remove only that copy.`);
+        }
+        if (!removed) return textResult({ canonical, removed, ...(await whereElse(canonical, scope)) });
+        const loadedAfter = await load();
+        const after = termHolders(loadedAfter, canonical);
+        const from = before.find((b) => !after.some((a) => a.path === b.path));
+        // A copy in the skipped (untrusted) project file is not loaded and is
+        // never edited, but it wins the merge once the user trusts the file.
+        // Path and trust only: none of that file's contents are reported.
+        const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
+        if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...(from ? { path: from.path } : {}) });
+        const notes = after.map(
+          (h) =>
+            `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; ` +
+            `if the user wants it gone too, call remove_term again with scope "${h.scope}".`,
+        );
+        if (untrustedProject) {
+          notes.push(
+            `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
+              'so it was neither loaded nor edited; that copy corrects again once the user runs `lexicon trust`, so tell them to review the file first.',
+          );
+        }
+        return textResult({
+          canonical,
+          removed,
+          ...(from ? { path: from.path } : {}),
+          ...(after.length > 0 ? { stillIn: after } : {}),
+          ...(untrustedProject ? { untrustedProject } : {}),
+          note: notes.join(' '),
+        });
       }),
   );
 
@@ -463,7 +530,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above ' +
         "about 0.8 use the canonical and mention it in passing, below that ask \"did you mean X?\" and call learn_correction once " +
         'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
-        'offer to add it with add_term.',
+        'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user `lexicon trust` would enable it.',
       inputSchema: {
         heard: nonBlank().describe(
           `The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`,
@@ -486,7 +553,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           aliases: s.term.aliases,
           ...(s.term.category !== undefined ? { category: s.term.category } : {}),
         }));
-        return textResult({ heard, suggestions });
+        // No suggestion in a repo whose project lexicon was skipped may only
+        // mean the name is in that file; say so (path only), as list_terms does.
+        return textResult({ heard, suggestions, ...skippedProjectFields(loaded) });
       }),
   );
 

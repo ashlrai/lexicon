@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { fail, line, renderTable, resolveCwd, safe } from './io.js';
+import { conflictLine, fail, line, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -60,7 +60,18 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   try {
     const result = await learnCorrection(correction, { cwd, ...(scope !== undefined ? { scope } : {}) });
     if (opts.json) {
-      line(io, JSON.stringify({ ...result, heard: correction.heard, meant: correction.meant }, null, 2));
+      // The keys MCP learn_correction returns, plus heard and meant. `file`
+      // keeps only its path and scope: the whole file's terms do not belong
+      // in a one-correction result.
+      const { file, ...rest } = result;
+      line(
+        io,
+        JSON.stringify(
+          { ...rest, path: file.path, file: { path: file.path, scope: file.scope }, heard: correction.heard, meant: correction.meant },
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     const what = result.created
@@ -70,15 +81,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
         : 'already known';
     line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
-    const c = result.conflict;
-    if (c) {
-      line(
-        io,
-        c.as === 'alias'
-          ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
-          : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`,
-      );
-    }
+    if (result.conflict) line(io, conflictLine(result.conflict));
     const u = result.untrustedProject;
     if (u) {
       line(
@@ -144,9 +147,12 @@ export function renderStats(stats: LexiconStats): string {
 export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
-    const stats = computeStats(await loadLexicon({ cwd }));
+    const loaded = await loadLexicon({ cwd });
+    // The counts leave a skipped project file out; say so, as lexicon_stats does.
+    warnSkippedProject(loaded, io);
+    const stats = computeStats(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(stats, null, 2));
+      line(io, JSON.stringify({ ...stats, ...skippedProjectJson(loaded) }, null, 2));
     } else {
       io.stdout(renderStats(stats));
     }

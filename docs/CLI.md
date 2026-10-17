@@ -24,8 +24,8 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
 | [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
-| [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview first) |
-| [`lexicon untrust [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
+| [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal) |
+| [`lexicon untrust [options] [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
 | [`lexicon learn [options] [words...]`](#lexicon-learn) | record a spelling correction: what STT heard and what you meant |
 | [`lexicon stats [options]`](#lexicon-stats) | show term/alias counts, most-used terms and terms that never fired |
 | [`lexicon serve [options]`](#lexicon-serve) | run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps |
@@ -64,8 +64,8 @@ Commands:
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
-  trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview first)
-  untrust [path]                          revoke approval for a project .lexicon.yaml
+  trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)
+  untrust [options] [path]                revoke approval for a project .lexicon.yaml
   learn [options] [words...]              record a spelling correction: what STT heard and what you meant
   stats [options]                         show term/alias counts, most-used terms and terms that never fired
   serve [options]                         run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps
@@ -129,8 +129,11 @@ Options:
   --alias <alias>  remove only this alias from the term and keep the term (exit
                    1 when the term or alias is unknown)
   --project        only look in the project lexicon
-  --json           print { canonical, removed } as JSON (exit 1 when not found);
-                   with --alias also alias, aliases and paths
+  --global         only look in the global lexicon (not with --project)
+  --json           print { canonical, removed } as JSON (exit 1 when not found),
+                   plus stillIn when a copy is left in the other lexicon file
+                   and untrustedProject when the untrusted project lexicon has
+                   one; with --alias also alias, aliases and paths
   -h, --help       display help for command
 ```
 
@@ -142,7 +145,11 @@ Usage: lexicon list|ls [options]
 list terms from the merged global + project lexicon
 
 Options:
-  --json                 print terms as JSON
+  --json                 print terms as JSON (a bare array)
+  --full                 print { terms, counts, paths } as JSON, the object MCP
+                         list_terms returns, plus projectTrust, skippedProject
+                         and note when an untrusted project lexicon was left out
+                         (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
   -h, --help             display help for command
@@ -157,7 +164,10 @@ correct dictated text (from arguments, or stdin when omitted); stdout always
 round-trips the input, exit 1 if the lexicon could not be read
 
 Options:
-  --json                print the full NormalizeResult as JSON
+  --json                print the full NormalizeResult as JSON, plus example:
+                        true when the built-in example terms stood in and
+                        projectTrust, skippedProject and note when an untrusted
+                        project lexicon was left out
   --diff                print a summary of replacements to stderr (with --json
                         too)
   --dry-run             print the replacement summary to stderr and the text
@@ -339,7 +349,8 @@ Options:
 ```text
 Usage: lexicon trust [options] [path]
 
-approve a project .lexicon.yaml so its terms are merged (shows a preview first)
+approve a project .lexicon.yaml so its terms are merged (shows a preview, then
+asks on a terminal)
 
 Arguments:
   path        lexicon file or project directory (default: the project
@@ -347,6 +358,9 @@ Arguments:
 
 Options:
   --list      list trusted project lexicons and whether they still match
+  -y, --yes   trust without asking (off a terminal it never asks)
+  --json      print the result as JSON, as MCP trust_project returns it (with
+              --list: { registry, trustAll, trusted })
   -h, --help  display help for command
 ```
 
@@ -362,6 +376,8 @@ Arguments:
               .lexicon.yaml for the current directory)
 
 Options:
+  --json      print { action, path, removed, registry, summary } as JSON, as MCP
+              trust_project returns it
   -h, --help  display help for command
 ```
 

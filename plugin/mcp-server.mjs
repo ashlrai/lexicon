@@ -53740,6 +53740,17 @@ async function listTrusted(opts = {}) {
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
+var TRUST_PREVIEW_ROWS = 25;
+function trustPreview(file2) {
+  const terms = file2.lexicon.terms;
+  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t) => ({
+    canonical: sanitizeForDisplay(t.canonical),
+    ...t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {},
+    aliasCount: t.aliases.length,
+    hasNotes: typeof t.notes === "string" && t.notes.trim() !== ""
+  }));
+  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
+}
 
 // src/util/xdg.ts
 var import_node_path4 = __toESM(require_node_path());
@@ -54299,6 +54310,22 @@ async function removeTerm(canonical, opts = {}) {
   }
   return false;
 }
+function termHolders(loaded, canonical) {
+  const holds2 = (file2) => file2?.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical)) === true;
+  return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
+}
+function untrustedTermHolder(loaded, canonical) {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !skipped.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical))) return void 0;
+  return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
+}
+function untrustedAliasHolder(loaded, canonical, alias) {
+  const skipped = loaded.skippedProject;
+  const drop = alias.trim().toLowerCase();
+  const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
+  if (!skipped || !drop || !term || !term.aliases.some((a) => a.trim().toLowerCase() === drop)) return void 0;
+  return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
+}
 async function removeAlias(canonical, alias, opts = {}) {
   const wanted = canonical.trim();
   const drop = alias.trim();
@@ -54309,7 +54336,6 @@ async function removeAlias(canonical, alias, opts = {}) {
   }
   let termFound = false;
   let firstTerm;
-  let blocked;
   const files = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
@@ -54320,15 +54346,7 @@ async function removeAlias(canonical, alias, opts = {}) {
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file2.scope === "project") {
-        try {
-          await assertProjectWritable(file2.path, opts);
-        } catch (error62) {
-          if (opts.scope !== void 0 || !isProjectTrustError(error62)) throw error62;
-          blocked = error62;
-          return;
-        }
-      }
+      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
       term.aliases = remaining;
       await writeLexiconFile(file2);
       if (file2.scope === "project") await refreshTrust(file2.path, opts);
@@ -54337,7 +54355,6 @@ async function removeAlias(canonical, alias, opts = {}) {
     });
   }
   if (firstTerm) return { term: firstTerm, files };
-  if (blocked !== void 0) throw blocked;
   const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
   if (!termFound) throw new InputError(`no term "${wanted}" in ${where}`);
   throw new InputError(`"${drop}" is not an alias of "${wanted}" in ${where}`);
@@ -59571,7 +59588,6 @@ var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", 
 var INSTALL_SCOPES = ["user", "project"];
 var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "markdown", "text", "csv", "json"];
 var SUGGESTION_KINDS = ["alias", "term", "never", "stale"];
-var TRUST_PREVIEW_ROWS = 25;
 function log(...args) {
   console.error(`[${SERVER_NAME}]`, ...args);
 }
@@ -59605,28 +59621,19 @@ async function guarded(fn) {
     return errorResult(err);
   }
 }
-function trustPreview(file2) {
-  const terms = file2.lexicon.terms;
-  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t) => ({
-    canonical: sanitizeForDisplay(t.canonical),
-    ...t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {},
-    aliasCount: t.aliases.length,
-    hasNotes: typeof t.notes === "string" && t.notes.trim() !== ""
-  }));
-  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
-}
 function filePathsInUse(loaded) {
   return {
     global: loaded.global.path,
     ...loaded.project ? { project: loaded.project.path } : {}
   };
 }
-function skippedProjectFields(loaded) {
+function skippedProjectFields(loaded, consequence) {
   if (!loaded.skippedProject) return {};
+  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.";
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
-    note: loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it."
+    note: consequence ? `${note} ${consequence}` : note
   };
 }
 
@@ -59776,7 +59783,7 @@ var registerTermTools = (server, ctx) => {
     "remove_term",
     {
       title: "Remove a lexicon term or one of its aliases",
-      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
       inputSchema: {
         canonical: nonBlank(),
         alias: nonBlank().optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
@@ -59788,18 +59795,58 @@ var registerTermTools = (server, ctx) => {
     async ({ canonical, alias, scope }) => guarded(async () => {
       const opts = { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} };
       if (alias !== void 0) {
-        const result = await removeAlias(canonical, alias, opts);
+        let result;
+        try {
+          result = await removeAlias(canonical, alias, opts);
+        } catch (err) {
+          const global = termHolders(await load(), canonical).find((h) => h.scope === "global");
+          if (!isProjectTrustError(err) || !global) throw err;
+          throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+        }
+        const untrustedProject2 = untrustedAliasHolder(await load(), canonical, alias);
         return textResult({
           canonical: result.term.canonical,
           alias,
           removed: true,
           aliases: result.term.aliases,
-          paths: result.files.map((f) => f.path)
+          paths: result.files.map((f) => f.path),
+          ...untrustedProject2 ? {
+            untrustedProject: untrustedProject2,
+            note: `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject2.path}), which is ${untrustedProject2.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+          } : {}
         });
       }
-      const removed = await removeTerm(canonical, opts);
-      if (removed) return textResult({ canonical, removed });
-      return textResult({ canonical, removed, ...await whereElse(canonical, scope) });
+      const before = termHolders(await load(), canonical);
+      let removed;
+      try {
+        removed = await removeTerm(canonical, opts);
+      } catch (err) {
+        const global = before.find((h) => h.scope === "global");
+        if (!isProjectTrustError(err) || !global) throw err;
+        throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with scope "global" to remove only that copy.`);
+      }
+      if (!removed) return textResult({ canonical, removed, ...await whereElse(canonical, scope) });
+      const loadedAfter = await load();
+      const after = termHolders(loadedAfter, canonical);
+      const from = before.find((b) => !after.some((a) => a.path === b.path));
+      const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
+      if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...from ? { path: from.path } : {} });
+      const notes = after.map(
+        (h) => `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
+      );
+      if (untrustedProject) {
+        notes.push(
+          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+        );
+      }
+      return textResult({
+        canonical,
+        removed,
+        ...from ? { path: from.path } : {},
+        ...after.length > 0 ? { stillIn: after } : {},
+        ...untrustedProject ? { untrustedProject } : {},
+        note: notes.join(" ")
+      });
     })
   );
   server.registerTool(
@@ -59888,7 +59935,7 @@ var registerTermTools = (server, ctx) => {
     "suggest_canonical",
     {
       title: "Suggest the canonical form of a garbled word",
-      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term.',
+      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user `lexicon trust` would enable it.',
       inputSchema: {
         heard: nonBlank().describe(
           `The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`
@@ -59908,7 +59955,7 @@ var registerTermTools = (server, ctx) => {
         aliases: s.term.aliases,
         ...s.term.category !== void 0 ? { category: s.term.category } : {}
       }));
-      return textResult({ heard, suggestions });
+      return textResult({ heard, suggestions, ...skippedProjectFields(loaded) });
     })
   );
   server.registerTool(
@@ -59927,11 +59974,6 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path13 = __toESM(require_node_path());
-function holders(loaded, canonical) {
-  const key = canonical.trim().toLowerCase();
-  const holds2 = (file2) => file2?.lexicon.terms.some((t) => t.canonical.trim().toLowerCase() === key) === true;
-  return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
-}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -60035,9 +60077,9 @@ var registerHarvestTools = (server, ctx) => {
       }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
-        const before = holders(await load(), canonical);
+        const before = termHolders(await load(), canonical);
         const removed = await removeTerm(canonical, storeOpts2);
-        const after = holders(await load(), canonical);
+        const after = termHolders(await load(), canonical);
         const from = before.find((b) => !after.some((a) => a.path === b.path));
         const stillIn = after.length > 0 ? { stillIn: after } : {};
         const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ""}` : `"${canonical}" was not in the ${target ?? "global or project"} lexicon`;
@@ -63403,7 +63445,7 @@ var registerPackTools = (server, ctx) => {
     "list_packs",
     {
       title: "List the starter term packs",
-      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
       inputSchema: {
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
       }
@@ -63430,7 +63472,10 @@ var registerPackTools = (server, ctx) => {
           installed: installed.includes(p.ref)
         }));
       }
-      return textResult(result);
+      return textResult({
+        ...result,
+        ...skippedProjectFields(loaded, "A pack recorded only in that file shows as not installed until it is trusted.")
+      });
     })
   );
   server.registerTool(
@@ -63741,15 +63786,16 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; lexicon://me and list_terms name it.",
+      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.",
       mimeType: "application/json"
     },
     async (uri) => {
       const loaded = await load();
+      const skipped = skippedProjectFields(loaded);
+      const text = Object.keys(skipped).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}
+` : exportLexicon(loaded.merged, "json");
       return {
-        contents: [
-          { uri: uri.href, mimeType: "application/json", text: exportLexicon(loaded.merged, "json") }
-        ]
+        contents: [{ uri: uri.href, mimeType: "application/json", text }]
       };
     }
   );

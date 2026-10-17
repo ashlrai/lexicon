@@ -1047,6 +1047,61 @@ export async function removeTerm(
   return false;
 }
 
+/** One loaded lexicon file that holds a term: its scope and path. */
+export interface TermHolder {
+  scope: TermScope;
+  path: string;
+}
+
+/**
+ * Every loaded file (project first, then global) whose terms include
+ * `canonical`, compared case-insensitively as the store does. Only the
+ * trusted, merged files are searched: `skippedProject` is never read here.
+ * removeTerm edits one file, so a caller that removed a term uses this to
+ * name a copy left in the other file instead of reporting it gone.
+ */
+export function termHolders(loaded: Pick<LoadedLexicon, 'global' | 'project'>, canonical: string): TermHolder[] {
+  const holds = (file: LexiconFile | undefined): file is LexiconFile =>
+    file?.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical)) === true;
+  return [loaded.project, loaded.global].filter(holds).map((f) => ({ scope: f.scope, path: f.path }));
+}
+
+/**
+ * The skipped (untrusted or changed) project file, when its terms include
+ * `canonical` (case-insensitive). Only a yes or no comes out of the untrusted
+ * content: the result is the file's path and trust status, never a term.
+ * A removal reports it because that copy wins the merge once the user trusts
+ * the file, and it is never edited here: `removeTerm` refuses the file.
+ */
+export function untrustedTermHolder(
+  loaded: Pick<LoadedLexicon, 'skippedProject' | 'projectTrust'>,
+  canonical: string,
+): { path: string; trust: 'untrusted' | 'changed' } | undefined {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !skipped.lexicon.terms.some((t) => sameCanonical(t.canonical, canonical))) return undefined;
+  return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
+}
+
+/**
+ * The skipped (untrusted or changed) project file, when its copy of
+ * `canonical` holds `alias` (both case-insensitive). The alias counterpart of
+ * `untrustedTermHolder`: path and trust only, never a term. `remove --alias`
+ * and `remove_term` with `alias` report it, because that copy keeps the
+ * correction alive once the user trusts the file, and `removeAlias` never
+ * edits it.
+ */
+export function untrustedAliasHolder(
+  loaded: Pick<LoadedLexicon, 'skippedProject' | 'projectTrust'>,
+  canonical: string,
+  alias: string,
+): { path: string; trust: 'untrusted' | 'changed' } | undefined {
+  const skipped = loaded.skippedProject;
+  const drop = alias.trim().toLowerCase();
+  const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
+  if (!skipped || !drop || !term || !term.aliases.some((a) => a.trim().toLowerCase() === drop)) return undefined;
+  return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
+}
+
 /** What `removeAlias` changed: the term as it now reads, and every file it was dropped from. */
 export interface RemoveAliasResult {
   /** The edited term (from the first file edited: project before global). */
@@ -1063,12 +1118,9 @@ export interface RemoveAliasResult {
  * holds it (project, then global): the merged lexicon unions aliases across
  * both, so removing it from only one would leave the correction in place.
  * With a scope only that file is touched. Each file is edited inside its own
- * lock; a project file must already be trusted and is re-pinned after the
- * edit, as removeTerm does. An untrusted or changed project file is never
- * written: with `scope: 'project'` that is a ProjectTrustError (thrown before
- * anything is written); without a scope the project copy is skipped, since
- * it is not part of the merge, and the ProjectTrustError is thrown only when
- * no other file held the alias.
+ * lock; a project file must already be trusted (ProjectTrustError otherwise,
+ * thrown before anything is written) and is re-pinned after the edit, as
+ * removeTerm does.
  *
  * Throws when the alias is empty or is the canonical spelling itself, when no
  * searched file holds the term, and when the term holds no such alias.
@@ -1088,7 +1140,6 @@ export async function removeAlias(
 
   let termFound = false;
   let firstTerm: Term | undefined;
-  let blocked: unknown;
   const files: LexiconFile[] = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
@@ -1099,19 +1150,7 @@ export async function removeAlias(
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file.scope === 'project') {
-        try {
-          await assertProjectWritable(file.path, opts);
-        } catch (error) {
-          // Without a scope, an untrusted project file is not part of the
-          // merge, so the active correction lives in global: skip the
-          // project copy (never written) and still edit global. The refusal
-          // surfaces only when nothing else held the alias.
-          if (opts.scope !== undefined || !isProjectTrustError(error)) throw error;
-          blocked = error;
-          return;
-        }
-      }
+      if (file.scope === 'project') await assertProjectWritable(file.path, opts);
       term.aliases = remaining;
       await writeLexiconFile(file);
       // The user's own edit must not flip an already-trusted file to 'changed'.
@@ -1121,7 +1160,6 @@ export async function removeAlias(
     });
   }
   if (firstTerm) return { term: firstTerm, files };
-  if (blocked !== undefined) throw blocked;
   const where = opts.scope ? `the ${opts.scope} lexicon` : 'the global or project lexicon';
   if (!termFound) throw new InputError(`no term "${wanted}" in ${where}`);
   throw new InputError(`"${drop}" is not an alias of "${wanted}" in ${where}`);

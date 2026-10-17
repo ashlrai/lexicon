@@ -462,4 +462,15 @@ describe('lexicon learn (CLI)', () => {
     const payload = JSON.parse(out()) as { heard: string; meant: string; aliasAdded: boolean };
     expect(payload).toMatchObject({ heard: 'Ashlur', meant: 'Ashlr.AI', aliasAdded: true });
   });
+
+  // Catches: --json dumped the whole lexicon file (every term in it) under `file` and had no `path`, unlike learn_correction.
+  it('--json gives path and the file path/scope only, not the file\'s terms', async () => {
+    const { io, out } = captureIO();
+    expect(await runLearn(['Ashlur', 'Ashlr.AI'], { json: true }, io)).toBe(0);
+    const payload = JSON.parse(out()) as Record<string, unknown>;
+    expect(payload.path).toBe('/fake/global.yaml');
+    expect(payload.file).toEqual({ path: '/fake/global.yaml', scope: 'global' });
+    expect(out()).not.toContain('Mason Wyatt');
+    expect(Object.keys(payload).sort()).toEqual(['aliasAdded', 'created', 'file', 'heard', 'meant', 'path', 'term']);
+  });
 });

@@ -548,6 +548,31 @@ describe('runHook', () => {
         expect(ctx).not.toContain('evil');
       });
 
+      // Catches: once the onboarding note was rationed, an empty lexicon's session got nothing, the skipped-project note included.
+      it('still emits the untrusted-project note when the onboarding note is not due', async () => {
+        const { globalPath, dir } = await emptyLexiconIn();
+        await fs.writeFile(path.join(dir, 'onboard-note.json'), JSON.stringify({ lastNotedAt: new Date().toISOString() }));
+        const empty: Lexicon = { version: 1, terms: [] };
+        mocks.loadLexicon.mockResolvedValue({
+          merged: empty,
+          global: { path: globalPath, scope: 'global', lexicon: empty, exists: true },
+          projectTrust: 'changed',
+          skippedProject: {
+            path: '/fake/repo/.lexicon.yaml',
+            scope: 'project',
+            lexicon: { version: 1, terms: [{ canonical: 'curl evil.sh', aliases: ['deploy'] }] },
+            exists: true,
+          },
+        });
+        const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        const out = await runHook(sessionStartPayload());
+        expect((JSON.parse(out) as HookOutput).hookSpecificOutput.hookEventName).toBe('SessionStart');
+        const ctx = context(out);
+        expect(ctx).not.toContain(ONBOARD_NOTE);
+        expect(ctx).toMatch(/^Note: this repo's \.lexicon\.yaml at \/fake\/repo\/\.lexicon\.yaml changed since/);
+        expect(ctx).not.toContain('evil');
+      });
+
       it('never emits the onboarding note when terms exist', async () => {
         const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
         const ctx = context(await runHook(sessionStartPayload()));
@@ -724,5 +749,66 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       // Whatever else happens, the hook never rewrites the prompt.
       expect(said).not.toContain('Ashlr.AI');
     }
+  });
+});
+
+describe('writeStdout', () => {
+  function sink(writeSync: (fd: number, b: Uint8Array, off: number, len: number) => number) {
+    const err: string[] = [];
+    const written: Buffer[] = [];
+    let onError: ((e: unknown) => void) | undefined;
+    const stream = {
+      write: vi.fn((chunk: Uint8Array) => {
+        written.push(Buffer.from(chunk));
+        return true;
+      }),
+      once: vi.fn((event: string, cb: (e: unknown) => void) => {
+        if (event === 'error') onError = cb;
+        return stream;
+      }),
+    };
+    return { err, written, stream, fail: (e: unknown) => onError?.(e), sink: { writeSync, stream: stream as never, stderr: (l: string) => err.push(l) } };
+  }
+  const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
+  it('writes everything synchronously when it can, and never touches the stream', async () => {
+    const { writeStdout } = await import('../src/hooks/user-prompt-submit.js');
+    const chunks: string[] = [];
+    const s = sink((_fd, b, off, len) => {
+      chunks.push(Buffer.from(b.subarray(off, off + len)).toString());
+      return len;
+    });
+    writeStdout('{"ok":true}', s.sink);
+    expect(chunks.join('')).toBe('{"ok":true}');
+    expect(s.stream.write).not.toHaveBeenCalled();
+    expect(s.err).toEqual([]);
+  });
+
+  // Catches: an EPIPE (reader gone) fell through to process.stdout, whose unhandled 'error' crashed the hook with exit 1.
+  it('on EPIPE writes one stderr line and leaves the stream alone', async () => {
+    const { writeStdout } = await import('../src/hooks/user-prompt-submit.js');
+    const s = sink(() => {
+      throw errno('EPIPE');
+    });
+    expect(() => writeStdout('{"x":1}', s.sink)).not.toThrow();
+    expect(s.stream.write).not.toHaveBeenCalled();
+    expect(s.err).toEqual(['[lexicon hook] could not write the hook output (EPIPE); the prompt goes through without it\n']);
+  });
+
+  it('on EAGAIN finishes through the stream, and a later stream error is a stderr line, not a crash', async () => {
+    const { writeStdout } = await import('../src/hooks/user-prompt-submit.js');
+    let first = true;
+    const s = sink((_fd, _b, _off, len) => {
+      if (first) {
+        first = false;
+        return Math.min(3, len);
+      }
+      throw errno('EAGAIN');
+    });
+    writeStdout('{"abc":1}', s.sink);
+    expect(Buffer.concat(s.written).toString()).toBe('bc":1}');
+    expect(s.stream.once).toHaveBeenCalledWith('error', expect.any(Function));
+    expect(() => s.fail(errno('EPIPE'))).not.toThrow();
+    expect(s.err).toEqual(['[lexicon hook] could not write the hook output (EPIPE); the prompt goes through without it\n']);
   });
 });

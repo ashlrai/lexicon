@@ -68,7 +68,7 @@ and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses ar
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
 | POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start |
-| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict? }` (`conflict`: another term that also holds `heard`) |
+| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict?, untrustedProject? }` (`conflict`: another term that also holds `heard`; `untrustedProject`: the untrusted project lexicon also claims it, path only) |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
 | GET | `/stats` | | `LexiconStats` |
@@ -78,7 +78,7 @@ and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses ar
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below) |
 
-Status codes: 400 invalid JSON or a bad field, 401 missing or wrong token,
+Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route or export format,

@@ -22,6 +22,7 @@ import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
+import { sanitizeForDisplay } from './schema.js';
 
 export type TrustStatus = 'trusted' | 'untrusted' | 'changed';
 
@@ -247,4 +248,39 @@ export async function listTrusted(opts: StoreOptions = {}): Promise<TrustListEnt
     out.push({ path: filePath, ...entry, status });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Terms listed in a trust preview before "... and N more". */
+export const TRUST_PREVIEW_ROWS = 25;
+
+/** One row of `trustPreview`: display-safe, notes reported as present only. */
+export interface TrustPreviewRow {
+  canonical: string;
+  firstAlias?: string;
+  aliasCount: number;
+  hasNotes: boolean;
+}
+
+/** `trustPreview(file)`: the term count, the first TRUST_PREVIEW_ROWS rows and how many more there are. */
+export interface TrustPreview {
+  termCount: number;
+  preview: TrustPreviewRow[];
+  more: number;
+}
+
+/**
+ * Compact, display-safe view of a project lexicon for the trust dialogue:
+ * canonicals and the first alias only, sanitized, capped. Notes are reported
+ * as present, never quoted: the file is untrusted input until the user says so.
+ * MCP `trust_project` and `lexicon trust --json` both return it.
+ */
+export function trustPreview(file: LexiconFile): TrustPreview {
+  const terms = file.lexicon.terms;
+  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t): TrustPreviewRow => ({
+    canonical: sanitizeForDisplay(t.canonical),
+    ...(t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {}),
+    aliasCount: t.aliases.length,
+    hasNotes: typeof t.notes === 'string' && t.notes.trim() !== '',
+  }));
+  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
 }

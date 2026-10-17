@@ -50,6 +50,9 @@ import {
   removeAlias,
   removeTerm,
   resolvePaths,
+  termHolders,
+  untrustedAliasHolder,
+  untrustedTermHolder,
   writeLexiconFile,
 } from '../src/core/store.js';
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
@@ -695,30 +698,6 @@ describe('removeAlias', () => {
     expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
   });
 
-  it('without a scope, an untrusted project copy does not block removing the active global alias', async () => {
-    // The untrusted file is not part of the merge, so the correction the user
-    // sees comes from global; refusing the whole call left it in place (and
-    // the CLI has no --global flag to get around it).
-    const { root, nested } = await makeRepo();
-    const projectPath = path.join(root, '.lexicon.yaml');
-    await addTerm({ canonical: 'Vercel', aliases: ['Versel', 'Vercell'] }, { cwd: nested, globalPath });
-    await writeLexiconFile({
-      path: projectPath,
-      scope: 'project',
-      lexicon: { version: 1, terms: [{ canonical: 'Vercel', aliases: ['Versel'] }] },
-      exists: false,
-    });
-    const before = await fs.readFile(projectPath);
-    const result = await removeAlias('Vercel', 'Versel', { cwd: nested, globalPath });
-    expect(result.files.map((f) => f.path)).toEqual([globalPath]);
-    expect(result.term.aliases).toEqual(['Vercell']);
-    expect(Buffer.compare(await fs.readFile(projectPath), before)).toBe(0);
-    // An explicit project scope still refuses.
-    await expect(removeAlias('Vercel', 'Versel', { cwd: nested, globalPath, scope: 'project' })).rejects.toThrow(
-      ProjectTrustError,
-    );
-  });
-
   it('says clearly when the term or the alias is unknown, and writes nothing', async () => {
     const { nested } = await makeRepo();
     await addTerm({ canonical: 'Hetzner', aliases: ['Hetsner'] }, { cwd: nested, globalPath });
@@ -1330,5 +1309,64 @@ describe('a write keeps a hand-written file\'s layout', () => {
     expect(text).toContain('# Phantom project vocabulary.');
     expect(text).not.toContain('Ashlr.AI');
     expect(text).toContain('    aliases: [Locas]\n    never: [locust]\n    notes: Identity pins.');
+  });
+});
+
+describe('termHolders', () => {
+  const file = (scope: 'global' | 'project', canonicals: string[]): LexiconFile => ({
+    path: scope === 'global' ? '/g/lexicon.yaml' : '/p/.lexicon.yaml',
+    scope,
+    lexicon: { version: 1, terms: canonicals.map((canonical) => ({ canonical, aliases: [] })) },
+    exists: true,
+  });
+
+  it('lists every loaded file holding the canonical, project first, case-insensitively', () => {
+    const loaded = { global: file('global', ['Kubectl']), project: file('project', [' kubectl ']) };
+    expect(termHolders(loaded, 'KUBECTL')).toEqual([
+      { scope: 'project', path: '/p/.lexicon.yaml' },
+      { scope: 'global', path: '/g/lexicon.yaml' },
+    ]);
+    expect(termHolders(loaded, 'Helm')).toEqual([]);
+    expect(termHolders({ global: file('global', ['Helm']) }, 'helm')).toEqual([{ scope: 'global', path: '/g/lexicon.yaml' }]);
+  });
+});
+
+describe('untrustedTermHolder', () => {
+  const skipped = (canonicals: string[]): LexiconFile => ({
+    path: '/p/.lexicon.yaml',
+    scope: 'project',
+    lexicon: { version: 1, terms: canonicals.map((canonical) => ({ canonical, aliases: ['secret alias'] })) },
+    exists: true,
+  });
+
+  it('names the skipped project file holding the canonical, path and trust only', () => {
+    expect(untrustedTermHolder({ projectTrust: 'untrusted', skippedProject: skipped([' Kubectl ']) }, 'KUBECTL')).toEqual({
+      path: '/p/.lexicon.yaml',
+      trust: 'untrusted',
+    });
+    expect(untrustedTermHolder({ projectTrust: 'changed', skippedProject: skipped(['Kubectl']) }, 'kubectl')).toEqual({
+      path: '/p/.lexicon.yaml',
+      trust: 'changed',
+    });
+    expect(untrustedTermHolder({ projectTrust: 'untrusted', skippedProject: skipped(['Helm']) }, 'kubectl')).toBeUndefined();
+    expect(untrustedTermHolder({ projectTrust: 'trusted' }, 'kubectl')).toBeUndefined();
+  });
+});
+
+describe('untrustedAliasHolder', () => {
+  const skipped: LexiconFile = {
+    path: '/p/.lexicon.yaml',
+    scope: 'project',
+    lexicon: { version: 1, terms: [{ canonical: ' Kubectl ', aliases: [' Cube Cuddle ', 'other'] }] },
+    exists: true,
+  };
+
+  it('names the skipped file when its copy of the term holds the alias (case-insensitive), path and trust only', () => {
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'KUBECTL', 'cube cuddle')).toEqual({ path: '/p/.lexicon.yaml', trust: 'untrusted' });
+    expect(untrustedAliasHolder({ projectTrust: 'changed', skippedProject: skipped }, 'kubectl', 'CUBE CUDDLE ')).toEqual({ path: '/p/.lexicon.yaml', trust: 'changed' });
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'kubectl', 'cube control')).toBeUndefined();
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'helm', 'cube cuddle')).toBeUndefined();
+    expect(untrustedAliasHolder({ projectTrust: 'untrusted', skippedProject: skipped }, 'kubectl', '  ')).toBeUndefined();
+    expect(untrustedAliasHolder({ projectTrust: 'trusted' }, 'kubectl', 'cube cuddle')).toBeUndefined();
   });
 });

@@ -9,6 +9,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
+import { runList } from '../src/cli/commands.js';
+import { makeIO } from './helpers.js';
 
 let repo: string;
 let home: string;
@@ -82,6 +84,89 @@ describe('remove_term', () => {
     expect(gone.note).toMatch(/list_terms/);
   });
 
+  // Catches: without `scope` only the project copy went, and the result said nothing about the global copy.
+  it('names the copy left in the other lexicon file when the term is in both', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube cuddle'], scope: 'project' });
+
+    const first = JSON.parse((await call('remove_term', { canonical: 'kubectl' })).text) as {
+      removed: boolean;
+      path?: string;
+      stillIn?: { scope: string; path: string }[];
+      note?: string;
+    };
+    expect(first.removed).toBe(true);
+    expect(first.path).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(first.stillIn).toEqual([{ scope: 'global', path: path.join(home, 'lexicon.yaml') }]);
+    expect(first.note).toMatch(/still in the global lexicon/);
+    expect(first.note).toMatch(/scope "global"/);
+
+    const second = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
+    expect(second).toEqual({ canonical: 'kubectl', removed: true, path: path.join(home, 'lexicon.yaml') });
+    const listed = JSON.parse((await call('list_terms', { query: 'kubectl' })).text) as { terms: unknown[] };
+    expect(listed.terms).toEqual([]);
+  });
+
+  // Catches: scope "global" removed the global copy with plain `removed: true` while the untrusted project copy waited to win once trusted.
+  it('names a copy in the untrusted project lexicon by path, and never edits that file', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    const projectFile = path.join(repo, '.lexicon.yaml');
+    const text = 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube cuddle]\n';
+    await fs.writeFile(projectFile, text);
+
+    const result = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      canonical: 'kubectl',
+      removed: true,
+      path: path.join(home, 'lexicon.yaml'),
+      untrustedProject: { path: projectFile, trust: 'untrusted' },
+    });
+    expect(result).not.toHaveProperty('stillIn');
+    expect(result.note).toMatch(/not trusted/);
+    expect(result.note).toMatch(/lexicon trust/);
+    expect(JSON.stringify(result)).not.toContain('cube cuddle');
+    expect(await fs.readFile(projectFile, 'utf8')).toBe(text);
+  });
+
+  // Catches: the bare trust error left the agent no way to remove the global copy it could reach.
+  it('a refused untrusted project copy says scope "global" removes the global one', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube cuddle]\n');
+    const refused = await call('remove_term', { canonical: 'Kubectl' });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toMatch(/untrusted/);
+    expect(refused.text).toMatch(/scope "global"/);
+  });
+
+  // Catches: removing an alias from the global copy reported plain success while the untrusted project copy kept that alias.
+  it('with `alias`, names an untrusted project copy that holds the alias; without scope the refusal points at scope "global"', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control', 'cube cuddle'] });
+    const projectFile = path.join(repo, '.lexicon.yaml');
+    const text = 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube cuddle, secret spelling]\n';
+    await fs.writeFile(projectFile, text);
+
+    const refused = await call('remove_term', { canonical: 'kubectl', alias: 'cube cuddle' });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toMatch(/untrusted/);
+    expect(refused.text).toMatch(/alias and scope "global"/);
+
+    const result = JSON.parse((await call('remove_term', { canonical: 'kubectl', alias: 'cube cuddle', scope: 'global' })).text) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      canonical: 'Kubectl',
+      alias: 'cube cuddle',
+      removed: true,
+      aliases: ['cube control'],
+      untrustedProject: { path: projectFile, trust: 'untrusted' },
+    });
+    expect(result.note).toMatch(/lexicon trust/);
+    expect(JSON.stringify(result)).not.toContain('secret spelling');
+    expect(await fs.readFile(projectFile, 'utf8')).toBe(text);
+
+    // An alias the project copy does not hold is not reported.
+    const plain = JSON.parse((await call('remove_term', { canonical: 'kubectl', alias: 'cube control', scope: 'global' })).text) as Record<string, unknown>;
+    expect(plain).not.toHaveProperty('untrustedProject');
+  });
+
   it('removes a single alias with `alias`, and errors on an unknown term or alias', async () => {
     await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner', 'Het zner'] });
     const removed = await call('remove_term', { canonical: 'hetzner', alias: 'het zner' });
@@ -102,6 +187,27 @@ describe('remove_term', () => {
     const unknownTerm = await call('remove_term', { canonical: 'Nope', alias: 'x' });
     expect(unknownTerm.isError).toBe(true);
     expect(unknownTerm.text).toMatch(/no term "Nope"/);
+  });
+});
+
+describe('suggest_canonical with an untrusted project lexicon', () => {
+  // Catches: no suggestions read as "not in the lexicon" while the name sat in the skipped project file.
+  it('reports the skipped project file by path, never its terms', async () => {
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const payload = JSON.parse((await call('suggest_canonical', { heard: 'cube control' })).text) as {
+      suggestions: unknown[];
+      skippedProject?: string;
+      projectTrust?: string;
+    };
+    expect(payload.suggestions).toEqual([]);
+    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.projectTrust).toBe('untrusted');
+    expect(JSON.stringify(payload)).not.toContain('Kubectl');
+  });
+
+  it('carries no skippedProject key when there is no project file', async () => {
+    const payload = JSON.parse((await call('suggest_canonical', { heard: 'cube control' })).text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('skippedProject');
   });
 });
 
@@ -459,7 +565,19 @@ describe('tool and resource descriptions agree with what the code does', () => {
     await client.connect(clientTransport);
     try {
       const read = await client.readResource({ uri: 'lexicon://json' });
-      expect((read.contents[0] as { text: string }).text).not.toContain('Kubectl');
+      const text = (read.contents[0] as { text: string }).text;
+      expect(text).not.toContain('Kubectl');
+      // Additive keys naming the skipped file (path only); the lexicon keys are unchanged.
+      const parsed = JSON.parse(text) as { version: number; terms: unknown[]; skippedProject?: string; projectTrust?: string; note?: string };
+      expect(parsed.terms).toEqual([]);
+      expect(parsed.version).toBe(1);
+      expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+      expect(parsed.projectTrust).toBe('untrusted');
+      expect(parsed.note).toMatch(/lexicon trust/);
+      await fs.rm(path.join(repo, '.lexicon.yaml'));
+      const plain = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as Record<string, unknown>;
+      expect(plain).not.toHaveProperty('skippedProject');
+      expect(plain).not.toHaveProperty('projectTrust');
     } finally {
       await client.close();
       await server.close();
@@ -477,5 +595,57 @@ describe('tool and resource descriptions agree with what the code does', () => {
     const recased = JSON.parse((await call('learn_correction', { heard: 'OpenClaw', meant: 'Openclaw' })).text) as { term: { canonical: string } };
     expect(recased.term.canonical).toBe('Openclaw');
     expect(description).toMatch(/case-only/);
+  });
+});
+
+describe('list_packs with an untrusted project lexicon', () => {
+  // Catches: a pack the skipped project file records read as plain `installed: false`.
+  it('carries projectTrust, skippedProject and a note, path only', async () => {
+    const projectFile = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectFile, 'version: 1\nsettings:\n  packs: [developer]\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const payload = JSON.parse((await call('list_packs', {})).text) as {
+      packs: { name: string; installed: boolean }[];
+      projectTrust?: string;
+      skippedProject?: string;
+      note?: string;
+    };
+    expect(payload.packs.find((p) => p.name === 'developer')?.installed).toBe(false);
+    expect(payload.projectTrust).toBe('untrusted');
+    expect(payload.skippedProject).toBe(projectFile);
+    expect(payload.note).toMatch(/lexicon trust/);
+    expect(payload.note).toMatch(/shows as not installed/);
+    expect(JSON.stringify(payload)).not.toContain('Kubectl');
+  });
+
+  it('carries no skipped-project keys without a project file', async () => {
+    const payload = JSON.parse((await call('list_packs', {})).text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('skippedProject');
+    expect(payload).not.toHaveProperty('note');
+  });
+});
+
+describe('lexicon list --full and MCP list_terms', () => {
+  // Catches: `lexicon list --json` is a bare array, so a script had no counts, paths or skipped-project keys list_terms gives.
+  it('--full prints the list_terms object; plain --json stays a bare array', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    await call('add_term', { canonical: 'Hetzner', aliases: ['het zner'] });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Secret\n    aliases: [secret]\n');
+    const mcp = JSON.parse((await call('list_terms', { query: 'kube' })).text) as Record<string, unknown>;
+
+    const full = makeIO();
+    expect(await runList({ cwd: repo, query: 'kube', full: true }, full)).toBe(0);
+    const cli = JSON.parse(full.out) as Record<string, unknown>;
+    expect(Object.keys(cli).sort()).toEqual(Object.keys(mcp).sort());
+    const { note: cliNote, ...cliRest } = cli;
+    const { note: mcpNote, ...mcpRest } = mcp;
+    expect(cliRest).toEqual(mcpRest);
+    expect(cliRest).toMatchObject({ counts: { matched: 1, total: 2, global: 2, project: 0 }, projectTrust: 'untrusted', skippedProject: path.join(repo, '.lexicon.yaml') });
+    expect(cliNote).toMatch(/lexicon trust/);
+    expect(mcpNote).toMatch(/lexicon trust/);
+    expect(full.out).not.toContain('Secret');
+
+    const bare = makeIO();
+    expect(await runList({ cwd: repo, query: 'kube', json: true }, bare)).toBe(0);
+    expect(JSON.parse(bare.out)).toEqual(mcp.terms);
   });
 });
