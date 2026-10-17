@@ -27,6 +27,7 @@ import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
+import { recalledParsedHash, rememberParsedBytes } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
@@ -128,7 +129,10 @@ export function defaultProjectPath(cwd: string = process.cwd()): string {
 export async function readLexiconFile(filePath: string, scope: TermScope): Promise<LexiconFile> {
   const read = await readLexiconText(filePath);
   if (read === undefined) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
-  return parseLexiconText(read.text, filePath, scope);
+  const file = parseLexiconText(read.text, filePath, scope);
+  // The trust gate checks these bytes, not a second read (see parsed-hash.ts).
+  if (scope === 'project') rememberParsedBytes(file, read.bytes);
+  return file;
 }
 
 /**
@@ -138,10 +142,10 @@ export async function readLexiconFile(filePath: string, scope: TermScope): Promi
  * `/dev/zero` or `/dev/stdin`, which a size check on `stat` cannot see (see
  * util/bounded-read.ts).
  */
-async function readLexiconText(filePath: string): Promise<{ text: string; mode: number } | undefined> {
+async function readLexiconText(filePath: string): Promise<{ text: string; mode: number; bytes: Buffer } | undefined> {
   try {
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
-    return { text: bytes.toString('utf8'), mode };
+    return { text: bytes.toString('utf8'), mode, bytes };
   } catch (err) {
     if (isEnoent(err)) return undefined;
     if (isBoundedReadError(err)) {
@@ -374,6 +378,8 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
       `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
     const readBack = assertReadsBack(text, file.path);
     await writeFileAtomic(file.path, text, { backup: true });
+    // What is on disk now is what this wrote: writeAndTrust pins exactly that.
+    if (file.scope === 'project') rememberParsedBytes(file, text);
     // The next loadLexicon (the prompt hook, usually) would otherwise parse
     // the YAML it just wrote, the slowest thing a hook can do: hand it the
     // parse this write already did.
@@ -1018,7 +1024,9 @@ export async function addTerm(
  */
 async function writeAndTrust(file: LexiconFile, opts: StoreOptions): Promise<void> {
   await writeLexiconFile(file);
-  if (file.scope === 'project') await trustProject(file.path, opts);
+  // Pin the bytes this write produced; a file rewritten by someone else since
+  // is left unpinned (and so untrusted) rather than blessed.
+  if (file.scope === 'project') await trustProject(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
 }
 
 /**

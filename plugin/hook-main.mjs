@@ -7694,9 +7694,9 @@ function assertNever(_x) {
 }
 function assert(_) {
 }
-function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
-  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+function getEnumValues(entries2) {
+  const numericValues = Object.values(entries2).filter((v) => typeof v === "number");
+  const values = Object.entries(entries2).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
   return values;
 }
 function joinValues(array2, separator = "|") {
@@ -13277,10 +13277,10 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   };
 });
 function _enum(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
   return new ZodEnum({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -18831,9 +18831,9 @@ function findBest(view, index, opts) {
     };
     if (isBetter(cand, state.best)) state.best = cand;
   };
-  const tryExact = (entries, viaCollapsed) => {
-    if (!entries) return;
-    for (const e of entries) {
+  const tryExact = (entries2, viaCollapsed) => {
+    if (!entries2) return;
+    for (const e of entries2) {
       if (e.term.caseSensitive) {
         if (viaCollapsed ? e.collapsedRaw !== view.collapsedRaw : e.norm !== view.norm) continue;
       }
@@ -18859,9 +18859,9 @@ function findBest(view, index, opts) {
     const alpha = alphaOnly(view.collapsed);
     if (alpha.length >= 3 && alpha.length * 2 >= index.phoneticMinLen && alpha.length <= index.phoneticMaxLen * 2) {
       const key = doubleMetaphone(alpha)[0];
-      const entries = key.length >= PHONETIC_MIN_KEY ? index.phoneticKeys.get(key) : void 0;
-      if (entries) {
-        for (const e of entries) {
+      const entries2 = key.length >= PHONETIC_MIN_KEY ? index.phoneticKeys.get(key) : void 0;
+      if (entries2) {
+        for (const e of entries2) {
           if (e.term.caseSensitive) continue;
           if (view.edgeNonWordStart && !e.startsNonWord) continue;
           if (view.edgeNonWordEnd && !e.endsNonWord) continue;
@@ -19524,6 +19524,25 @@ async function readBoundedRegularFile(filePath, maxBytes) {
   }
 }
 
+// src/core/parsed-hash.ts
+var entries = /* @__PURE__ */ new WeakMap();
+async function sha256OfBytes(bytes) {
+  const { createHash } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+  return createHash("sha256").update(bytes).digest("hex");
+}
+function rememberParsedBytes(file, bytes) {
+  entries.set(file, { bytes });
+}
+async function recalledParsedHash(file) {
+  const entry = entries.get(file);
+  if (!entry) return void 0;
+  if (entry.sha256 === void 0 && entry.bytes !== void 0) {
+    entry.sha256 = await sha256OfBytes(entry.bytes);
+    delete entry.bytes;
+  }
+  return entry.sha256;
+}
+
 // src/util/json.ts
 var import_node_fs3 = __toESM(require_node_fs());
 var import_node_path2 = __toESM(require_node_path());
@@ -19604,7 +19623,7 @@ async function isTrusted(projectFile, opts = {}) {
   const registry2 = await readTrustRegistry(opts);
   const entry = registry2.trusted[key];
   if (!entry) return "untrusted";
-  const sha = await hashFile(key);
+  const sha = await recalledParsedHash(projectFile) ?? await hashFile(key);
   if (sha === void 0) return "untrusted";
   return sha === entry.sha256 ? "trusted" : "changed";
 }
@@ -19657,12 +19676,14 @@ function resolvePaths(opts = {}) {
 async function readLexiconFile(filePath, scope) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
-  return parseLexiconText(read.text, filePath, scope);
+  const file = parseLexiconText(read.text, filePath, scope);
+  if (scope === "project") rememberParsedBytes(file, read.bytes);
+  return file;
 }
 async function readLexiconText(filePath) {
   try {
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
-    return { text: bytes.toString("utf8"), mode };
+    return { text: bytes.toString("utf8"), mode, bytes };
   } catch (err) {
     if (isEnoent(err)) return void 0;
     if (isBoundedReadError(err)) {
@@ -20158,11 +20179,11 @@ function exportOpenai(lexicon, opts = {}) {
 
 // src/core/exporters/superwhisper.ts
 function exportSuperwhisper(lexicon, _opts = {}) {
-  const entries = aliasPairs(lexicon).map(({ alias, canonical }) => ({
+  const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
-  return JSON.stringify(entries, null, 2) + "\n";
+  return JSON.stringify(entries2, null, 2) + "\n";
 }
 
 // src/core/exporters/text.ts

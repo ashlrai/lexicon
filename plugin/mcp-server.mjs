@@ -18875,9 +18875,9 @@ function assertNever(_x) {
 }
 function assert(_) {
 }
-function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
-  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+function getEnumValues(entries2) {
+  const numericValues = Object.values(entries2).filter((v) => typeof v === "number");
+  const values = Object.entries(entries2).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
   return values;
 }
 function joinValues(array2, separator = "|") {
@@ -20700,16 +20700,16 @@ var $ZodCheckProperties = /* @__PURE__ */ $constructor("$ZodCheckProperties", (i
   hide(inst, Symbol.iterator, function* () {
     yield inst;
   });
-  let entries;
+  let entries2;
   inst._zod.check = (payload) => {
     if (payload.value == null) {
       payload.issues.push({ expected: "object", code: "invalid_type", input: payload.value, inst });
       return void 0;
     }
-    entries ?? (entries = Reflect.ownKeys(def.shape).map((key) => [key, def.shape[key]]));
+    entries2 ?? (entries2 = Reflect.ownKeys(def.shape).map((key) => [key, def.shape[key]]));
     const input2 = payload.value;
     let proms;
-    for (const [key, schema] of entries) {
+    for (const [key, schema] of entries2) {
       const result = schema._zod.run({ value: input2[key], issues: [] }, {});
       if (result instanceof Promise) {
         proms ?? (proms = []);
@@ -33491,18 +33491,18 @@ function _set(Class2, valueType, params) {
 }
 // @__NO_SIDE_EFFECTS__
 function _enum(Class2, values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
   return new Class2({
     type: "enum",
-    entries,
+    entries: entries2,
     ...normalizeParams(params)
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _nativeEnum(Class2, entries, params) {
+function _nativeEnum(Class2, entries2, params) {
   return new Class2({
     type: "enum",
-    entries,
+    entries: entries2,
     ...normalizeParams(params)
   });
 }
@@ -36485,17 +36485,17 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   };
 });
 function _enum2(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
   return new ZodEnum({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports.normalizeParams(params)
   });
 }
-function nativeEnum(entries, params) {
+function nativeEnum(entries2, params) {
   return new ZodEnum({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -52939,9 +52939,9 @@ function findBest(view, index, opts) {
     };
     if (isBetter(cand, state.best)) state.best = cand;
   };
-  const tryExact = (entries, viaCollapsed) => {
-    if (!entries) return;
-    for (const e of entries) {
+  const tryExact = (entries2, viaCollapsed) => {
+    if (!entries2) return;
+    for (const e of entries2) {
       if (e.term.caseSensitive) {
         if (viaCollapsed ? e.collapsedRaw !== view.collapsedRaw : e.norm !== view.norm) continue;
       }
@@ -52967,9 +52967,9 @@ function findBest(view, index, opts) {
     const alpha = alphaOnly(view.collapsed);
     if (alpha.length >= 3 && alpha.length * 2 >= index.phoneticMinLen && alpha.length <= index.phoneticMaxLen * 2) {
       const key = doubleMetaphone(alpha)[0];
-      const entries = key.length >= PHONETIC_MIN_KEY ? index.phoneticKeys.get(key) : void 0;
-      if (entries) {
-        for (const e of entries) {
+      const entries2 = key.length >= PHONETIC_MIN_KEY ? index.phoneticKeys.get(key) : void 0;
+      if (entries2) {
+        for (const e of entries2) {
           if (e.term.caseSensitive) continue;
           if (view.edgeNonWordStart && !e.startsNonWord) continue;
           if (view.edgeNonWordEnd && !e.endsNonWord) continue;
@@ -53638,6 +53638,25 @@ async function readBoundedRegularFile(filePath, maxBytes) {
   }
 }
 
+// src/core/parsed-hash.ts
+var entries = /* @__PURE__ */ new WeakMap();
+async function sha256OfBytes(bytes) {
+  const { createHash: createHash4 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+  return createHash4("sha256").update(bytes).digest("hex");
+}
+function rememberParsedBytes(file2, bytes) {
+  entries.set(file2, { bytes });
+}
+async function recalledParsedHash(file2) {
+  const entry = entries.get(file2);
+  if (!entry) return void 0;
+  if (entry.sha256 === void 0 && entry.bytes !== void 0) {
+    entry.sha256 = await sha256OfBytes(entry.bytes);
+    delete entry.bytes;
+  }
+  return entry.sha256;
+}
+
 // src/util/json.ts
 var import_node_fs3 = __toESM(require_node_fs());
 var import_node_path2 = __toESM(require_node_path());
@@ -53742,14 +53761,29 @@ async function isTrusted(projectFile, opts = {}) {
   const registry2 = await readTrustRegistry(opts);
   const entry = registry2.trusted[key];
   if (!entry) return "untrusted";
-  const sha = await hashFile(key);
+  const sha = await recalledParsedHash(projectFile) ?? await hashFile(key);
   if (sha === void 0) return "untrusted";
   return sha === entry.sha256 ? "trusted" : "changed";
+}
+function parsedContentHash(file2) {
+  return recalledParsedHash(file2);
+}
+var TrustContentChangedError = class extends Error {
+  path;
+  constructor(projectPath) {
+    super(`${projectPath} changed since it was read; nothing was trusted`);
+    this.name = "TrustContentChangedError";
+    this.path = projectPath;
+  }
+};
+function isTrustContentChangedError(err) {
+  return err instanceof Error && err.name === "TrustContentChangedError";
 }
 async function trustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
   if (sha256 === void 0) throw new Error(`cannot read the project lexicon at ${projectPath}`);
+  if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
     const registry2 = await readTrustRegistry(opts);
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -53863,12 +53897,14 @@ function defaultProjectPath(cwd = process.cwd()) {
 async function readLexiconFile(filePath, scope) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope, lexicon: emptyLexicon(), exists: false };
-  return parseLexiconText(read.text, filePath, scope);
+  const file2 = parseLexiconText(read.text, filePath, scope);
+  if (scope === "project") rememberParsedBytes(file2, read.bytes);
+  return file2;
 }
 async function readLexiconText(filePath) {
   try {
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
-    return { text: bytes.toString("utf8"), mode };
+    return { text: bytes.toString("utf8"), mode, bytes };
   } catch (err) {
     if (isEnoent(err)) return void 0;
     if (isBoundedReadError(err)) {
@@ -53980,6 +54016,7 @@ async function writeLexiconFile(file2) {
 ${(0, import_yaml.stringify)(ordered, { lineWidth: 0 })}`;
     const readBack = assertReadsBack(text, file2.path);
     await writeFileAtomic(file2.path, text, { backup: true });
+    if (file2.scope === "project") rememberParsedBytes(file2, text);
     if (file2.scope === "global") {
       const mode = await import_node_fs5.promises.stat(file2.path).then((st) => st.mode & 511, () => void 0);
       if (mode !== void 0) await writeParseCache(file2.path, text, readBack, mode);
@@ -54337,7 +54374,7 @@ async function addTerm(term, opts = {}) {
 }
 async function writeAndTrust(file2, opts) {
   await writeLexiconFile(file2);
-  if (file2.scope === "project") await trustProject(file2.path, opts);
+  if (file2.scope === "project") await trustProject(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
 }
 async function removeTerm(canonical, opts = {}) {
   for (const target of candidatePaths(opts, opts.scope)) {
@@ -56184,14 +56221,14 @@ function walk(root, ignore2) {
   let truncated = false;
   while (stack.length > 0 && !truncated) {
     const dir = stack.pop();
-    let entries;
+    let entries2;
     try {
-      entries = import_node_fs6.default.readdirSync(dir, { withFileTypes: true });
+      entries2 = import_node_fs6.default.readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
+    entries2.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries2) {
       const full = import_node_path6.default.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (ignore2.has(entry.name)) continue;
@@ -56919,13 +56956,13 @@ function icsFiles(deps, dir) {
   const out = [];
   const walk2 = (d) => {
     if (out.length >= MAX_ICS_FILES) return;
-    let entries;
+    let entries2;
     try {
-      entries = deps.readDir(d);
+      entries2 = deps.readDir(d);
     } catch {
       return;
     }
-    for (const entry of entries) {
+    for (const entry of entries2) {
       if (out.length >= MAX_ICS_FILES) return;
       const full = import_node_path7.default.join(d, entry);
       if (entry.endsWith(".ics")) {
@@ -57365,11 +57402,11 @@ function exportOpenai(lexicon, opts = {}) {
 
 // src/core/exporters/superwhisper.ts
 function exportSuperwhisper(lexicon, _opts = {}) {
-  const entries = aliasPairs(lexicon).map(({ alias, canonical }) => ({
+  const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
-  return JSON.stringify(entries, null, 2) + "\n";
+  return JSON.stringify(entries2, null, 2) + "\n";
 }
 
 // src/core/exporters/text.ts
@@ -58594,8 +58631,8 @@ function buildCatalogue(index) {
   const known = /* @__PURE__ */ new Set();
   const canonicalByForm = /* @__PURE__ */ new Map();
   let maxCollapsedLength = 0;
-  for (const entries of index.exact.values()) {
-    for (const entry of entries) {
+  for (const entries2 of index.exact.values()) {
+    for (const entry of entries2) {
       const alpha = alphaOnly2(entry.normLower);
       const key = alpha.length >= 3 ? doubleMetaphone(alpha)[0] : "";
       const item = { entry, alpha, key };
@@ -59057,14 +59094,14 @@ function packsDir(opts = {}) {
   return import_node_path9.default.join(root, PACKS_DIR_NAME);
 }
 async function packNames(dir) {
-  let entries;
+  let entries2;
   try {
-    entries = await import_node_fs9.promises.readdir(dir);
+    entries2 = await import_node_fs9.promises.readdir(dir);
   } catch (err) {
     if (isEnoent(err)) return [];
     throw err;
   }
-  return entries.filter((f) => f.endsWith(".yaml")).map((f) => f.slice(0, -".yaml".length)).filter((n) => PACK_NAME_RE.test(n)).sort();
+  return entries2.filter((f) => f.endsWith(".yaml")).map((f) => f.slice(0, -".yaml".length)).filter((n) => PACK_NAME_RE.test(n)).sort();
 }
 function parsePack(raw, file2, expectedName) {
   const head = PackFileSchema.safeParse(raw);
@@ -60364,7 +60401,6 @@ var registerTrustTools = (server, ctx) => {
           summary: removed ? `untrusted ${safePath}; it will no longer be merged` : `${safePath} was not trusted; nothing to do`
         });
       }
-      const shownSha = await hashFile(filePath);
       let file2;
       try {
         file2 = await readLexiconFile(filePath, "project");
@@ -60372,6 +60408,7 @@ var registerTrustTools = (server, ctx) => {
         throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? "")}`);
       }
       if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
+      const shownSha = await parsedContentHash(file2) ?? await hashFile(filePath);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {
         const answer = await askUserToTrust(server, safePath ?? "", file2);
@@ -60387,7 +60424,17 @@ var registerTrustTools = (server, ctx) => {
           throw new Error(`${safePath} changed while waiting for approval; nothing was trusted`);
         }
       }
-      const entry = await trustProject(filePath, { cwd: ctx.cwd });
+      let entry;
+      try {
+        entry = await trustProject(filePath, {
+          cwd: ctx.cwd,
+          // Always: a re-pin of a trusted file must not pin bytes that replaced it after the check.
+          ...shownSha !== void 0 ? { expectedSha256: shownSha } : {}
+        });
+      } catch (err) {
+        if (!isTrustContentChangedError(err)) throw err;
+        throw new Error(`${safePath} changed while it was being trusted; nothing was trusted`);
+      }
       if (before !== "trusted" && entry.sha256 !== shownSha) {
         await untrustProject(filePath, { cwd: ctx.cwd });
         throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);

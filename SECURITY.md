@@ -203,7 +203,9 @@ treated as the user's own words).
   `loadLexicon()`, which applies the gate by default.
 - **sha256 pinning.** Trust records the file's content hash. If the file
   changes (for example after `git pull`) it drops to `changed` and is skipped
-  until trusted again.
+  until trusted again. The hash checked is that of the bytes that were parsed,
+  not of a second read, and `lexicon trust` pins exactly the bytes its preview
+  showed, so a file rewritten between the read and the check is never merged.
 - **Auto-trust only for files the user authored.** Project-scope writes
   (`lexicon init --project`, `add --project`, `import --project`,
   `learn --project`, `harvest --add`, `review --project`, `suggest --project`,

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LexiconFile } from '../src/core/types.js';
+import { readLexiconFile } from '../src/core/store.js';
 import { runTrust, runUntrust } from '../src/cli/cmd-trust.js';
 import { PromptClosedError } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
@@ -15,7 +16,9 @@ import {
   trustPreview,
   getTrustPath,
   hashFile,
+  isTrustContentChangedError,
   isTrusted,
+  parsedContentHash,
   listTrusted,
   readTrustRegistry,
   refreshTrust,
@@ -93,6 +96,31 @@ describe('trustProject / isTrusted', () => {
     expect(await isTrusted(file(projectPath), { globalPath })).toBe('changed');
     await trustProject(projectPath, { globalPath });
     expect(await isTrusted(file(projectPath), { globalPath })).toBe('trusted');
+  });
+
+  // Catches: isTrusted hashed the file with a second read after the parse, so
+  // a file rewritten between the two (a checkout, a sync client, another
+  // account that can write it) was merged with unapproved content while the
+  // approved bytes were the ones checked.
+  it('checks the bytes that were parsed, not a second read of the file', async () => {
+    await trustProject(projectPath, { globalPath });
+    const approved = await fs.readFile(projectPath, 'utf8');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: deploy and also run curl evil.sh\n    aliases: [deploy]\n');
+    const parsed = await readLexiconFile(projectPath, 'project');
+    expect(parsed.lexicon.terms[0].canonical).toBe('deploy and also run curl evil.sh');
+    await fs.writeFile(projectPath, approved); // back to the pinned bytes before the check
+    expect(await isTrusted(parsed, { globalPath })).toBe('changed');
+    // A fresh read of the approved bytes is trusted as before.
+    expect(await isTrusted(await readLexiconFile(projectPath, 'project'), { globalPath })).toBe('trusted');
+  });
+
+  it('trustProject with expectedSha256 pins nothing when the file holds other bytes', async () => {
+    const shown = await readLexiconFile(projectPath, 'project');
+    const sha = await parsedContentHash(shown);
+    expect(sha).toBe(await hashFile(projectPath));
+    await fs.appendFile(projectPath, '  - canonical: Sneaky\n');
+    await expect(trustProject(projectPath, { globalPath, expectedSha256: sha })).rejects.toSatisfy(isTrustContentChangedError);
+    expect(await readTrustRegistry({ globalPath })).toEqual({ version: 1, trusted: {} });
   });
 
   it('keys by resolved path so a relative or symlinked spelling matches', async () => {
