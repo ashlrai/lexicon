@@ -14,6 +14,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `import_vocabulary` refuses `previewToken` or `approvedCandidateIds` without `apply: true`, before any source is read, and keeps the saved preview so the next call can apply it. They were ignored: the call read the sources again and returned a fresh preview, so a model that left out `apply` was told only by `applied: false` that nothing was imported.
 - MCP `add_pack` with a vendored starter pack name refuses `registry`, `previewDigest` and `confirm: false` and writes nothing, naming the parameters that do not apply. It ignored them and installed the pack, so a call that asked for a preview (`confirm: false`, as for a community pack) or for a registry's pack of that name wrote dozens of terms. `confirm: true` still installs.
 - The `SessionStart` hook keeps its whole context within the documented 4000 characters when a project lexicon was skipped. The table was cut to the cap and the skipped-project note appended after it, so a large lexicon in an untrusted repo ran a few hundred characters over; the table now gives up room for the note.
 - The hook's correction detection keeps the words of "it's X not Y" alone on the right offsets when the prompt holds a letter whose lowercase is longer (`İ` lowercases to two characters). Spans were found in the lowercased prompt, so every span after such a letter was shifted: the correction's own words could be rewritten and an unrelated garble just after them left uncorrected. Matching still ignores case.

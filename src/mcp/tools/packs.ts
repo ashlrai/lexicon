@@ -218,13 +218,25 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           .describe('Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting.'),
         apply: z.boolean().optional().describe('false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview.'),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
-        previewToken: z.string().optional().describe('Token from the approved preview; required to apply. Expires after five minutes or a server restart.'),
-        approvedCandidateIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe('Only candidate ids approved by the user from that preview; required to apply, empty means import nothing.'),
+        previewToken: z.string().optional().describe('Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart.'),
+        approvedCandidateIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe('Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.'),
       },
     },
     async ({ sources, apply, scope, previewToken, approvedCandidateIds }) =>
       guarded(async () => {
         pruneImports();
+        if (apply !== true && (previewToken !== undefined || approvedCandidateIds !== undefined)) {
+          // Without apply this is a preview: a token or approval passed here
+          // would be dropped while the call reads the sources again, and a
+          // model that meant to apply would be told nothing was written only
+          // by `applied: false`. Refuse before probing anything; the saved
+          // preview stays usable.
+          const stray = [...(previewToken !== undefined ? ['previewToken'] : []), ...(approvedCandidateIds !== undefined ? ['approvedCandidateIds'] : [])];
+          throw new Error(
+            `${stray.join(' and ')} ${stray.length === 1 ? 'is' : 'are'} only used with apply: true, so nothing was read or written and the preview is kept. ` +
+              'To import the approved candidates, call again with apply: true, the same sources and scope, previewToken and approvedCandidateIds; to preview again, omit them.',
+          );
+        }
         if (apply === true) {
           if (sources === undefined || previewToken === undefined || approvedCandidateIds === undefined) {
             throw new Error('apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview');

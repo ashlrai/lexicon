@@ -64328,12 +64328,18 @@ var registerPackTools = (server, ctx) => {
         sources: external_exports.array(external_exports.enum(IMPLEMENTED_IMPORT_SOURCES)).optional().describe("Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
-        previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply. Expires after five minutes or a server restart."),
-        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe("Only candidate ids approved by the user from that preview; required to apply, empty means import nothing.")
+        previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart."),
+        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe("Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.")
       }
     },
     async ({ sources, apply, scope, previewToken, approvedCandidateIds }) => guarded(async () => {
       pruneImports();
+      if (apply !== true && (previewToken !== void 0 || approvedCandidateIds !== void 0)) {
+        const stray = [...previewToken !== void 0 ? ["previewToken"] : [], ...approvedCandidateIds !== void 0 ? ["approvedCandidateIds"] : []];
+        throw new Error(
+          `${stray.join(" and ")} ${stray.length === 1 ? "is" : "are"} only used with apply: true, so nothing was read or written and the preview is kept. To import the approved candidates, call again with apply: true, the same sources and scope, previewToken and approvedCandidateIds; to preview again, omit them.`
+        );
+      }
       if (apply === true) {
         if (sources === void 0 || previewToken === void 0 || approvedCandidateIds === void 0) {
           throw new Error("apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview");

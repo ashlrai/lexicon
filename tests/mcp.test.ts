@@ -1062,6 +1062,27 @@ describe('lexicon MCP server', () => {
         } finally { await close(); }
       });
 
+      // Catches: previewToken (or approvedCandidateIds) without apply: true was
+      // ignored: the call re-read the sources and returned a fresh preview, so
+      // a model that forgot apply believed it had imported the terms.
+      it('refuses a previewToken or approvedCandidateIds without apply and keeps the preview', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
+          const ids = [preview.candidates[0].id];
+          for (const extra of [{ previewToken: preview.previewToken }, { approvedCandidateIds: ids }, { previewToken: preview.previewToken, approvedCandidateIds: ids, apply: false }]) {
+            const result = await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'], ...extra } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/only used with apply: true, so nothing was read or written/);
+          }
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+          const applied = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], previewToken: preview.previewToken, approvedCandidateIds: ids } });
+          expect(applied.isError).toBe(false);
+        } finally { await close(); }
+      });
+
       it('rejects ids absent from a preview and changed destination scope', async () => {
         const { client, close } = await connect();
         try {
