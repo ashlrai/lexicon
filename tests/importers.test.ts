@@ -889,3 +889,17 @@ describe('markdown importer', () => {
     expect(IMPORT_FORMAT_INFO.markdown.description).toMatch(/Voice lexicon/);
   });
 });
+
+describe('auto-detection of malformed JSON', () => {
+  it('refuses a Superwhisper export with a trailing comma instead of importing each line as a term', () => {
+    const broken = '[\n  {"original": "ashler", "replacement": "Ashlr.AI"},\n]\n';
+    expect(() => importLexicon(broken, 'auto', { filename: 'replacements.json' })).toThrow(/starts like JSON but does not parse/);
+    expect(() => importLexicon('{"version": 1, "terms": [', 'auto')).toThrow(/starts like JSON but does not parse/);
+  });
+
+  it('still reads a YAML flow-style lexicon and an explicit text format', () => {
+    expect(detectImportFormat('{version: 1, terms: [{canonical: Ashlr.AI, aliases: [Ashler]}]}')).toBe('json');
+    expect(importLexicon('[draft] Ashlr.AI: Ashler', 'text').terms).toHaveLength(1);
+    expect(detectImportFormat('[draft] Ashlr.AI: Ashler', 'notes.txt')).toBe('text');
+  });
+});

@@ -250,6 +250,22 @@ describe('learnCorrection', () => {
     await expect(learnCorrection(correction)).rejects.toThrow(message);
     expect(store.addTerm).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [{ heard: '', meant: 'Ashlr.AI' }],
+    [{ heard: 'Ashler', meant: '' }],
+    [{ heard: 'Ashler', meant: 'Ashler' }],
+    [{ heard: 'Ashler', meant: 'ashler' }],
+    [{ heard: 'x'.repeat(61), meant: 'Ashlr.AI' }],
+  ])('refuses %j without an internal function name or CLI syntax an MCP/HTTP caller cannot run', async (correction) => {
+    const err = await learnCorrection(correction).then(
+      () => new Error('expected a refusal'),
+      (e: unknown) => e as Error,
+    );
+    expect(err.message).not.toBe('expected a refusal');
+    expect(err.message).not.toMatch(/learnCorrection/);
+    expect(err.message).not.toMatch(/\blearn Ashler\b|lexicon remove/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -331,8 +347,9 @@ describe('lexicon learn (CLI)', () => {
     const code = await runLearn([], { from: 'not sure it\'s ready' }, io);
     expect(code).toBe(1);
     expect(err()).toContain('could not find a correction');
-    expect(out()).toContain("it's Ashlr.AI, not Ashler");
-    expect(out()).toContain('Ashler -> Ashlr.AI');
+    expect(err()).toContain("it's Ashlr.AI, not Ashler");
+    expect(err()).toContain('Ashler -> Ashlr.AI');
+    expect(out()).toBe('');
     expect(store.addTerm).not.toHaveBeenCalled();
   });
 
@@ -341,7 +358,15 @@ describe('lexicon learn (CLI)', () => {
     const code = await runLearn([], { from: 'spelled Zoë' }, io);
     expect(code).toBe(1);
     expect(err()).toContain('not what was heard');
-    expect(out()).toContain('lexicon learn <heard> "Zoë"');
+    expect(err()).toContain('lexicon learn <heard> "Zoë"');
+    expect(out()).toBe('');
+  });
+
+  it('--json keeps stdout empty when there is nothing to learn (usage goes to stderr)', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn([], { json: true }, io)).toBe(1);
+    expect(out()).toBe('');
+    expect(err()).toContain('usage: lexicon learn');
   });
 
   it('--json prints the result', async () => {

@@ -43,6 +43,7 @@ import { loadLexicon } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
 import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
+import { isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -469,7 +470,16 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
   const cwd = resolveCwd(opts);
   try {
     const abs = path.resolve(cwd, file);
-    const pack = await loadPackFile(abs);
+    let text: string;
+    try {
+      text = await fs.readFile(abs, 'utf8');
+    } catch (err) {
+      if (isEnoent(err)) throw new Error(`file not found: ${abs}`);
+      throw err;
+    }
+    // A community pack is installed by its index entry's name, never by the
+    // file name, so validate the content as written (my-pack.yaml, foo.yml).
+    const pack = parsePackText(text, abs);
     const { errors, warnings } = validateCommunityPack(pack);
     if (opts.json) {
       line(io, JSON.stringify({ file: abs, pack: pack.name, errors, warnings }, null, 2));

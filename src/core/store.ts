@@ -1,7 +1,7 @@
 /**
  * Lexicon storage: path resolution, YAML read/write, global+project merge and
- * the mutating helpers (addTerm / removeTerm / recordHits) used by the MCP
- * server, CLI and hooks.
+ * the mutating helpers (addTerm / removeTerm / removeAlias / recordHits) used
+ * by the MCP server, CLI and hooks.
  *
  * One rule shapes several functions here and is worth stating once. A global
  * lexicon is one person's file in their own config directory. A project
@@ -746,7 +746,7 @@ export async function addTerm(
   // resolved the file rather than the path.
   const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
-  if (!canonical) throw new Error('addTerm: canonical must not be empty');
+  if (!canonical) throw new Error('canonical must not be empty');
 
   const incoming: Term = {
     ...term,
@@ -849,6 +849,69 @@ export async function removeTerm(
     if (removed) return true;
   }
   return false;
+}
+
+/** What `removeAlias` changed: the term as it now reads, and every file it was dropped from. */
+export interface RemoveAliasResult {
+  /** The edited term (from the first file edited: project before global). */
+  term: Term;
+  /** Each file the alias was removed from, as written. */
+  files: LexiconFile[];
+}
+
+/**
+ * Drop one alias from one term, keeping the term and everything else on it.
+ * Matching is case-insensitive for both the canonical and the alias.
+ *
+ * Without a scope the alias is removed from every file whose copy of the term
+ * holds it (project, then global): the merged lexicon unions aliases across
+ * both, so removing it from only one would leave the correction in place.
+ * With a scope only that file is touched. Each file is edited inside its own
+ * lock; a project file must already be trusted (ProjectTrustError otherwise,
+ * thrown before anything is written) and is re-pinned after the edit, as
+ * removeTerm does.
+ *
+ * Throws when the alias is empty or is the canonical spelling itself, when no
+ * searched file holds the term, and when the term holds no such alias.
+ */
+export async function removeAlias(
+  canonical: string,
+  alias: string,
+  opts: StoreOptions & { scope?: TermScope } = {},
+): Promise<RemoveAliasResult> {
+  const wanted = canonical.trim();
+  const drop = alias.trim();
+  if (!wanted) throw new Error('canonical must not be empty');
+  if (!drop) throw new Error('alias must not be empty');
+  if (sameCanonical(wanted, drop)) {
+    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
+  }
+
+  let termFound = false;
+  let firstTerm: Term | undefined;
+  const files: LexiconFile[] = [];
+  for (const target of candidatePaths(opts, opts.scope)) {
+    await withLexiconLock(target.path, async () => {
+      const file = await readLexiconFile(target.path, target.scope);
+      if (!file.exists) return;
+      const term = findTerm(file.lexicon, wanted);
+      if (!term) return;
+      termFound = true;
+      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
+      if (remaining.length === term.aliases.length) return;
+      if (file.scope === 'project') await assertProjectWritable(file.path, opts);
+      term.aliases = remaining;
+      await writeLexiconFile(file);
+      // The user's own edit must not flip an already-trusted file to 'changed'.
+      if (file.scope === 'project') await refreshTrust(file.path, opts);
+      files.push(file);
+      firstTerm ??= term;
+    });
+  }
+  if (firstTerm) return { term: firstTerm, files };
+  const where = opts.scope ? `the ${opts.scope} lexicon` : 'the global or project lexicon';
+  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
+  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
 }
 
 /**
