@@ -69,6 +69,7 @@ import {
   termHolders,
   untrustedTermHolder,
   resolvePaths,
+  spellingConflicts,
   suggestAliases,
   trustProject,
   withLexiconLock,
@@ -88,6 +89,7 @@ import type {
 } from '../core/index.js';
 import {
   bold,
+  conflictLine,
   dim,
   ensureNewline,
   green,
@@ -360,13 +362,28 @@ export async function runAdd(
     ...(opts.globalPath ? { globalPath: opts.globalPath } : {}),
     ...(fallbackOnly && suggested.length > 0 ? { defaultAliases: suggested } : {}),
   });
+  // An alias another term already holds may keep being corrected to that
+  // term; say so, as MCP add_term does, instead of plain success. Best
+  // effort: a lexicon that will not load just loses the report.
+  const conflicts = await loadLexicon({ cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) }).then(
+    (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
+    () => [],
+  );
   if (opts.json) {
-    line(io, JSON.stringify({ term: result.term, path: result.file.path, created: result.created, scope, suggested }, null, 2));
+    line(
+      io,
+      JSON.stringify(
+        { term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) },
+        null,
+        2,
+      ),
+    );
     return 0;
   }
   line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
   if (suggested.length > 0 && !p && (!fallbackOnly || result.created)) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
+  for (const c of conflicts) line(io, conflictLine(c));
   if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
   return 0;
 }

@@ -12,6 +12,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon add` warns when an alias it saved is already an alias (or the canonical) of another term, with the `lexicon remove --alias` command that lets the new one win, and `--json` adds `conflicts`, as MCP `add_term` does. It printed plain success while the next transcript could still go to the other term.
+- `lexicon learn --json` no longer prints the whole lexicon file: `file` keeps only `path` and `scope`, and a top-level `path` matches MCP `learn_correction`. It dumped every term of the file the correction went to.
 - MCP `list_packs`, `lexicon pack list` and `lexicon pack search` name an untrusted (or changed) project lexicon they left out: the JSON adds `projectTrust`, `skippedProject` (path only) and a `note`, and the tables warn on stderr. They mark packs installed from trusted files only, so a pack that file records read as plain not installed.
 - `lexicon pack search --json` gives each hit `installed`, and `lexicon pack list --registry --json` gives each `registry` entry `installed`, as the tables and MCP `list_packs` already did. `lexicon stats --json` adds `note` next to `skippedProject`, as `lexicon_stats` does.
 - `lexicon remove` and MCP `remove_term` name a copy of the term in the repo's untrusted (or changed) project lexicon: a `warn:` line, and `untrustedProject { path, trust }` under `--json` and in the MCP result, with a `note`. The global copy went and the result said `removed` while that copy waited to win the merge once the file was trusted. The file is still never loaded or edited, and only its path is reported.

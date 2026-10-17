@@ -333,6 +333,23 @@ describe('add / remove / path', () => {
     );
   });
 
+  // Catches: `lexicon add Other Ashler` printed plain success while "Ashler" kept going to Ashlr.AI (MCP add_term said so).
+  it('add warns about an alias another term already holds, and --json carries conflicts', async () => {
+    const io = makeIO();
+    expect(await runAdd('Ashley', ['Ashler'], {}, io)).toBe(0);
+    expect(io.out).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
+    expect(io.out).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+
+    const json = makeIO();
+    expect(await runAdd('Ashley', ['Ashler'], { json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toMatchObject({ conflicts: [{ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' }] });
+
+    // No conflict: no warning, and the JSON keeps its old shape.
+    const plain = makeIO();
+    expect(await runAdd('Hetzner', ['Hetsner'], { json: true }, plain)).toBe(0);
+    expect(JSON.parse(plain.out)).not.toHaveProperty('conflicts');
+  });
+
   it('rejects an unknown category', async () => {
     await expect(runAdd('X', ['y'], { category: 'nope' }, makeIO())).rejects.toThrow(/unknown category/);
   });

@@ -10,7 +10,7 @@
  */
 import path from 'node:path';
 import { sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
-import type { LoadedLexicon, TermHolder } from '../core/index.js';
+import type { LearnConflict, LoadedLexicon, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -240,4 +240,15 @@ export function untrustedLine(canonical: string, holder: { path: string; trust: 
     `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
+}
+
+/**
+ * The `warn:` line for a spelling another term also holds (`learn`, `add`):
+ * the next transcript may still be corrected to that term. For an alias it
+ * names the `lexicon remove --alias` command that lets the new one win.
+ */
+export function conflictLine(c: LearnConflict): string {
+  return c.as === 'alias'
+    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
+    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`;
 }
