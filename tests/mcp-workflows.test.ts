@@ -135,6 +135,40 @@ describe('normalize_transcript with an untrusted project lexicon', () => {
   });
 });
 
+describe('lexicon_stats and voice-context with an untrusted project lexicon', () => {
+  // Both left the repo's terms out with no word why, while list_terms,
+  // normalize_transcript and lexicon://me named the skipped file.
+  it('name the skipped file, path only', async () => {
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
+    const stats = await call('lexicon_stats', {});
+    const payload = JSON.parse(stats.text) as { termCount: number; skippedProject?: string; note?: string };
+    expect(payload.termCount).toBe(0);
+    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.note).toMatch(/lexicon trust/);
+    expect(stats.text).not.toContain('Fantom');
+
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const prompt = await client.getPrompt({ name: 'voice-context' });
+      const text = prompt.messages.map((m) => (m.content.type === 'text' ? m.content.text : '')).join('\n');
+      expect(text).toContain(`untrusted project lexicon at ${path.join(repo, '.lexicon.yaml')} that was not loaded`);
+      expect(text).not.toContain('Fantom');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('add nothing when there is no project file', async () => {
+    const payload = JSON.parse((await call('lexicon_stats', {})).text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('skippedProject');
+  });
+});
+
 describe('normalize_transcript limits', () => {
   async function callWith(opts: { normalizeBudgetMs?: number; normalizeMaxChars?: number }, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const server = createServer({ cwd: repo, ...opts });
