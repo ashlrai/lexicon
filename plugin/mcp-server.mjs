@@ -58088,6 +58088,10 @@ function untrustedClaim(loaded, heard, target) {
 }
 async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
+  const target = byCanonical?.canonical ?? meant;
+  const conflict = conflictFor(loaded.merged, heard, target);
+  const untrusted = untrustedClaim(loaded, heard, target);
+  const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
@@ -58099,12 +58103,12 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
       { canonical: meant, aliases: suggestAliases(meant).filter((a) => !sameText(a, meant)), source: "learned" },
       { ...storeOpts2, scope: scope ?? "global" }
     );
-    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true };
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true, ...withConflict };
   }
   const termScope = byCanonical.scope ?? "global";
   const file2 = termScope === "project" ? loaded.project : loaded.global;
   if (byCanonical.canonical === meant && file2) {
-    return { term: byCanonical, created: false, file: file2, aliasAdded: false };
+    return { term: byCanonical, created: false, file: file2, aliasAdded: false, ...withConflict };
   }
   const onDisk = file2?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));
   const base = onDisk ?? byCanonical;
@@ -58112,7 +58116,7 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
     { ...base, canonical: meant, aliases: base.aliases.filter((a) => !sameText(a, meant)) },
     { ...storeOpts2, scope: termScope, merge: false }
   );
-  return { term: saved.term, created: false, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: false, file: saved.file, aliasAdded: true, ...withConflict };
 }
 function suggestCanonicalFor(heard, lexicon) {
   const needle = heard.trim().toLowerCase();
@@ -59672,7 +59676,7 @@ var registerTermTools = (server, ctx) => {
     "learn_correction",
     {
       title: "Learn from a spelling correction",
-      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
+      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
         heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -59737,6 +59741,11 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path13 = __toESM(require_node_path());
+function holders(loaded, canonical) {
+  const key = canonical.trim().toLowerCase();
+  const holds2 = (file2) => file2?.lexicon.terms.some((t) => t.canonical.trim().toLowerCase() === key) === true;
+  return [loaded.project, loaded.global].filter(holds2).map((f) => ({ scope: f.scope, path: f.path }));
+}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -59812,7 +59821,7 @@ var registerHarvestTools = (server, ctx) => {
     "apply_suggestion",
     {
       title: "Apply one suggestion",
-      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term. Pass the suggestion object back as received.",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received.",
       inputSchema: {
         suggestion: external_exports.object({
           kind: external_exports.enum(SUGGESTION_KINDS),
@@ -59840,8 +59849,14 @@ var registerHarvestTools = (server, ctx) => {
       }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
+        const before = holders(await load(), canonical);
         const removed = await removeTerm(canonical, storeOpts2);
-        return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
+        const after = holders(await load(), canonical);
+        const from = before.find((b) => !after.some((a) => a.path === b.path));
+        const stillIn = after.length > 0 ? { stillIn: after } : {};
+        const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ""}` : `"${canonical}" was not in the ${target ?? "global or project"} lexicon`;
+        const tail = after.map((h) => `; it is still in the ${h.scope} lexicon (${h.path}): ask the user, then call apply_suggestion again with scope "${h.scope}" to remove that copy too`).join("");
+        return textResult({ kind, canonical, removed, ...from ? { path: from.path } : {}, ...stillIn, summary: head + tail });
       }
       if ((kind === "alias" || kind === "never") && !alias) throw new Error(`a "${kind}" suggestion needs an alias`);
       const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
@@ -63226,7 +63241,7 @@ var registerPackTools = (server, ctx) => {
     "add_pack",
     {
       title: "Install a starter term pack",
-      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`. For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.",
+      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack adds dozens of terms (list_packs gives each pack's `terms` count), so name the pack and its size and ask before calling this. Remove one later with `lexicon pack remove <name>`. For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.",
       inputSchema: {
         name: external_exports.string().describe("Pack name from list_packs (e.g. developer) or a community ref like example/cardiology."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
@@ -63451,7 +63466,7 @@ var SERVER_INSTRUCTIONS = [
   'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
   PROACTIVE_OFFER,
   "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.",
-  "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
+  "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
   "When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.",
   "Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
 ].join("\n");
@@ -63524,7 +63539,7 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon (global + project) as raw JSON.",
+      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; lexicon://me and list_terms name it.",
       mimeType: "application/json"
     },
     async (uri) => {

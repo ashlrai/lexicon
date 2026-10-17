@@ -281,6 +281,34 @@ describe('learnCorrection', () => {
       expect(result).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/global.yaml' } });
       expect(result.term.canonical).toBe('Zoë');
     });
+
+    it('reports another term that also holds the spelling as an alias', async () => {
+      const lex: Lexicon = {
+        version: 1,
+        terms: [
+          { canonical: 'ashlr', aliases: [], scope: 'global' },
+          { canonical: 'Ashlr.AI', aliases: ['Ashlr'], scope: 'global' },
+        ],
+      };
+      store.loadLexicon.mockResolvedValueOnce({ merged: lex, global: { path: '/fake/global.yaml', scope: 'global', lexicon: lex, exists: true } });
+      const result = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' });
+      expect(result.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashlr' });
+    });
+
+    it('names an untrusted project lexicon that claims the spelling for another term', async () => {
+      const base = untrustedLoaded();
+      store.loadLexicon.mockResolvedValue({
+        ...base,
+        skippedProject: { ...base.skippedProject!, lexicon: { version: 1, terms: [{ canonical: 'Hostile Name', aliases: ['ashlr', 'zoë'] }] } },
+      });
+      const created = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' }, { cwd: '/fake/repo' });
+      expect(created.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+      expect(JSON.stringify(created)).not.toContain('Hostile Name');
+      // Already spelled that way: nothing is written, the warning still comes back.
+      const known = await learnCorrection({ heard: 'zoë', meant: 'Zoë' }, { cwd: '/fake/repo' });
+      expect(store.addTerm).toHaveBeenCalledTimes(1);
+      expect(known.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+    });
   });
 
   it.each([

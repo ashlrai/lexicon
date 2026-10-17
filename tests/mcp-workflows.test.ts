@@ -282,6 +282,34 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   });
 });
 
+describe('apply_suggestion stale on a term in both lexicon files', () => {
+  // Catches: removeTerm stops at the first file that holds the term, so a
+  // stale term with a project copy and a global copy lost only the project
+  // copy, and the result said "removed" while the global one kept firing.
+  it('removes the copy it targets and names the other one', async () => {
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' })).isError).toBe(false);
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cube netties'], scope: 'global' })).isError).toBe(false);
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const globalPath = process.env.LEXICON_PATH as string;
+
+    const first = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'stale', canonical: 'Kubernetes', scope: 'project', path: projectPath } })).text) as {
+      removed: boolean;
+      path?: string;
+      stillIn?: { scope: string; path: string }[];
+      summary: string;
+    };
+    expect(first).toMatchObject({ removed: true, path: projectPath, stillIn: [{ scope: 'global', path: globalPath }] });
+    expect(first.summary).toContain(globalPath);
+    expect(first.summary).toMatch(/scope "global"/);
+
+    const second = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'stale', canonical: 'Kubernetes' }, scope: 'global' })).text) as Record<string, unknown>;
+    expect(second).toMatchObject({ removed: true, path: globalPath });
+    expect(second.stillIn).toBeUndefined();
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'deploy to cube netties' })).text) as { output: string };
+    expect(normalized.output).toBe('deploy to cube netties');
+  });
+});
+
 describe('learn_correction when another term already claims `heard`', () => {
   // Catches: "it's Vercel not Versel" while Versel is an alias of Verse.
   // The alias was added to Vercel and reported saved, but the next transcript
@@ -318,5 +346,67 @@ describe('learn_correction when another term already claims `heard`', () => {
   it('adds no conflict when nothing else claims it', async () => {
     const payload = JSON.parse((await call('learn_correction', { heard: 'Versel', meant: 'Vercel' })).text) as Record<string, unknown>;
     expect(payload.conflict).toBeUndefined();
+  });
+});
+
+describe('tool and resource descriptions agree with what the code does', () => {
+  async function listed(): Promise<{ tools: { name: string; description?: string }[]; resources: { uri: string; description?: string }[]; instructions: string }> {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      return {
+        tools: (await client.listTools()).tools,
+        resources: (await client.listResources()).resources,
+        instructions: client.getInstructions() ?? '',
+      };
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  }
+
+  // Catches: "a pack is sixty-odd terms" while the shipped packs hold 14 to 82.
+  it('add_pack and the server instructions state no pack size the packs do not have', async () => {
+    const { tools, instructions } = await listed();
+    const addPack = tools.find((t) => t.name === 'add_pack')?.description ?? '';
+    for (const text of [addPack, instructions]) expect(text).not.toMatch(/sixty/i);
+    expect(addPack).toMatch(/list_packs[^.]*`terms`/);
+    const sizes = JSON.parse((await call('list_packs', {})).text) as { packs: { terms: number }[] };
+    expect(new Set(sizes.packs.map((p) => p.terms)).size).toBeGreaterThan(1);
+  });
+
+  // Catches: lexicon://json promised "global + project" but leaves an untrusted project file out.
+  it('lexicon://json says an untrusted project lexicon is left out, and it is', async () => {
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const { resources } = await listed();
+    expect(resources.find((r) => r.uri === 'lexicon://json')?.description).toMatch(/untrusted/);
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const read = await client.readResource({ uri: 'lexicon://json' });
+      expect((read.contents[0] as { text: string }).text).not.toContain('Kubectl');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  // Catches: "adds `heard` as an alias of `meant`" while a new term also gets
+  // generated misspellings, and a case-only correction recases the term instead.
+  it('learn_correction names the generated aliases and the case-only recase', async () => {
+    const { tools } = await listed();
+    const description = tools.find((t) => t.name === 'learn_correction')?.description ?? '';
+    const learned = JSON.parse((await call('learn_correction', { heard: 'open klaw', meant: 'OpenClaw' })).text) as { term: { aliases: string[] } };
+    expect(learned.term.aliases.length).toBeGreaterThan(1);
+    expect(description).toMatch(/generated/);
+    const recased = JSON.parse((await call('learn_correction', { heard: 'OpenClaw', meant: 'Openclaw' })).text) as { term: { canonical: string } };
+    expect(recased.term.canonical).toBe('Openclaw');
+    expect(description).toMatch(/case-only/);
   });
 });

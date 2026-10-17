@@ -190,7 +190,10 @@ returns `TermSuggestion[]`: `{ kind: 'alias'|'term'|'never'|'stale',
 canonical, alias?, reason, confidence, evidence[], count }`.
 `apply_suggestion` takes one back verbatim: `alias` merges the alias into the
 term, `term` adds it (aliases auto-suggested when none given), `never` records
-the word on the term's `never` list, `stale` removes the term.
+the word on the term's `never` list, `stale` removes the term from one
+lexicon file. A term with a copy in both the project and the global file comes
+back with `stillIn` naming the other copy, which keeps correcting until it is
+removed with its own `scope`.
 
 > **User:** how can I make dictation more accurate?
 > **Agent:** *calls `suggest_terms`*

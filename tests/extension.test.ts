@@ -281,6 +281,46 @@ describe('content: send interception', () => {
   });
 });
 
+describe('content: matching that stopped early', () => {
+  const incomplete = { reasons: ['time' as const], totalChars: 40, note: 'Matching stopped at the 25 ms budget; ...' };
+  function stoppedSend(req: Request): Promise<NormalizeReply> {
+    return fakeSend(req).then((r) => (r.ok ? { ...r, incomplete } : r));
+  }
+  function chatgptDom(text: string): HTMLElement {
+    document.body.innerHTML =
+      `<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>${text}</p></div>` +
+      '<button data-testid="send-button" aria-label="Send prompt">send</button>';
+    return document.getElementById('prompt-textarea')!;
+  }
+
+  it('says so in the toast next to the corrections', async () => {
+    const composer = chatgptDom('ping ashler');
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(stoppedSend), settings: { enabled: true, live: false } });
+    composer.addEventListener('keydown', (ev) => ev.preventDefault());
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(readText(composer)).toBe('ping Ashlr.AI');
+    expect(toastText()).toContain('Ashlr.AI');
+    expect(toastText()).toMatch(/stopped early/i);
+  });
+
+  it('shows a notice even when nothing was corrected, and a precheck does not hide it', async () => {
+    const composer = chatgptDom('hello world');
+    const send = vi.fn(stoppedSend);
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5 });
+    const siteEnter = vi.fn((ev: KeyboardEvent) => ev.preventDefault());
+    composer.addEventListener('keydown', siteEnter);
+    composer.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(30);
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(siteEnter).toHaveBeenCalledTimes(1);
+    expect(readText(composer)).toBe('hello world');
+    expect(toastText()).toMatch(/stopped early/i);
+    expect(document.getElementById(TOAST_ID)!.shadowRoot!.querySelector('button.undo')).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 
 describe('toast', () => {
