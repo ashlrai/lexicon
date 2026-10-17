@@ -837,6 +837,21 @@ describe('requests that used to succeed while doing something else', () => {
     expect(((await res.json()) as { error: string }).error).toContain('query string');
     expect((await api('DELETE', '/packs/developer')).status).toBe(200);
   });
+
+  // Catches: DELETE read only scope and cwd from the query and ignored any
+  // other key, so a typo (?scop=project) removed the pack from the global
+  // lexicon and answered 200, the lie the strict body fixed for POST.
+  it('DELETE /packs/:name refuses an unknown or repeated query parameter and removes nothing', async () => {
+    expect((await api('POST', '/packs/developer', {})).status).toBe(200);
+    const before = await fs.readFile(global3, 'utf8');
+    const typo = await api('DELETE', '/packs/developer?scop=project');
+    expect(typo.status).toBe(400);
+    expect(((await typo.json()) as { error: string }).error).toContain('unknown query parameter "scop"');
+    const twice = await api('DELETE', '/packs/developer?scope=project&scope=global');
+    expect(twice.status).toBe(400);
+    expect(await fs.readFile(global3, 'utf8')).toBe(before);
+    expect((await api('DELETE', '/packs/developer?scope=global')).status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------
