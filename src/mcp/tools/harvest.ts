@@ -77,12 +77,19 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             }
           }
         }
-        return textResult({
+        const payload = {
           root,
           candidates,
           count: candidates.length,
           ...(add ? { added, failures } : {}),
-        });
+          ...(failures.length > 0
+            ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }
+            : {}),
+        };
+        // Every write failed: nothing was added, so this is not a success the
+        // agent should report as "added" (the payload still lists the reasons).
+        if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+        return textResult(payload);
       }),
   );
 

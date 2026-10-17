@@ -431,6 +431,34 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: harvest_repo with add: true answered isError: false with
+  // added: 0 when every write failed, so an agent reported the candidates as added.
+  it('harvest_repo with add is an error when no candidate could be written, and notes a partial failure', async () => {
+    const { client, close } = await connect();
+    try {
+      mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      const failed = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(failed.isError).toBe(true);
+      expect(JSON.parse(textOf(failed))).toMatchObject({
+        count: 1,
+        added: 0,
+        failures: [{ canonical: 'FooBar', error: 'EACCES: permission denied' }],
+        note: expect.stringContaining('1 of 1 candidates were not added'),
+      });
+
+      mocks.harvestRepo.mockResolvedValueOnce([
+        { canonical: 'FooBar', category: 'product', count: 2, evidence: [], suggestedAliases: ['foo bar'], source: 'harvest:repo' },
+        { canonical: 'BazQux', category: 'product', count: 2, evidence: [], suggestedAliases: [], source: 'harvest:repo' },
+      ]);
+      mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      const partial = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(partial.isError).toBe(false);
+      expect(JSON.parse(textOf(partial))).toMatchObject({ added: 1, note: expect.stringContaining('1 of 2 candidates were not added') });
+    } finally {
+      await close();
+    }
+  });
+
   it('export_lexicon returns the exported string', async () => {
     const { client, close } = await connect();
     try {

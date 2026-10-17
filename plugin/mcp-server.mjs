@@ -59999,12 +59999,15 @@ var registerHarvestTools = (server, ctx) => {
           }
         }
       }
-      return textResult({
+      const payload = {
         root,
         candidates,
         count: candidates.length,
-        ...add ? { added, failures } : {}
-      });
+        ...add ? { added, failures } : {},
+        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
+      };
+      if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+      return textResult(payload);
     })
   );
   server.registerTool(
