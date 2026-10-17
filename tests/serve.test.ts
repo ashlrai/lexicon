@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/core/index.js';
+import { addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -493,6 +493,34 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(body.paths.global).toBe(env.globalPath);
     expect(body.paths.project).toBeUndefined();
     expect(body.skippedProject).toBeUndefined();
+  });
+
+  // Catches: paths.project named the skipped (untrusted) file while MCP list_terms listed only loaded files.
+  it('/lexicon paths lists the files merged, as MCP list_terms does', async () => {
+    const skipped = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`)).json()) as {
+      paths: { global: string; project?: string };
+      skippedProject?: string;
+    };
+    expect(skipped.paths).toEqual({ global: env.globalPath });
+    expect(skipped.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+
+    const repo = path.join(env.home, 'trusted-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: TrustedCorp\n    aliases: [trustcorp]\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const trusted = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(repo)}`)).json()) as {
+        paths: { global: string; project?: string };
+        projectTrust?: string;
+        skippedProject?: string;
+      };
+      expect(trusted.paths).toEqual({ global: env.globalPath, project: file });
+      expect(trusted.projectTrust).toBe('trusted');
+      expect(trusted.skippedProject).toBeUndefined();
+    } finally {
+      await untrustProject(file, { globalPath: env.globalPath });
+    }
   });
 
   it('/export/<format> serves the exporter content type', async () => {
@@ -1717,10 +1745,14 @@ describe('consumer contract: Phantom desktop voice client', () => {
     }
   });
 
+  // Phantom caches only when `paths` has no project AND `projectTrust` is
+  // absent; `projectTrust` is set whenever a project file exists, so a skipped
+  // file still keeps the response live-only after `paths` dropped it.
   it('GET /lexicon reports project context, which Phantom keeps out of its cache', async () => {
     const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`);
-    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string };
-    expect(body.paths.project).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string; skippedProject?: string };
+    expect(body.paths.project).toBeUndefined();
+    expect(body.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
     expect(body.projectTrust).toBe('untrusted');
   });
 
