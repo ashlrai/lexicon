@@ -477,6 +477,31 @@ describe('POST /learn and POST /add', () => {
     expect(body.term.never).toContain('ashes');
   });
 
+  // Catches: POST /add answered a bare success for an alias another term
+  // already holds, while MCP add_term and `lexicon add --json` report it as
+  // `conflicts`; the alias may keep correcting to the other term.
+  it('add reports an alias another term already holds as conflicts, as MCP add_term does', async () => {
+    // A trusted project file of its own, so the shared global lexicon other cases count stays as it is.
+    const repo = path.join(env.home, 'add-conflict-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const res = await api('POST', '/add', { canonical: 'Ashley', aliases: ['Ashler', 'ashleigh'], scope: 'project', cwd: repo });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { created: boolean; path: string; conflicts?: unknown };
+      expect(body.created).toBe(true);
+      expect(body.path).toBe(file);
+      expect(body.conflicts).toEqual([{ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' }]);
+      // No conflict, no key: the documented shape is unchanged.
+      const clean = (await (await api('POST', '/add', { canonical: 'Zorkmid', aliases: ['zork mid'], scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
+      expect(clean).not.toHaveProperty('conflicts');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('add validates the category', async () => {
     const res = await api('POST', '/add', { canonical: 'X', category: 'nope' });
     expect(res.status).toBe(400);
