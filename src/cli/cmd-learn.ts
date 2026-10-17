@@ -121,8 +121,9 @@ export function renderStats(stats: LexiconStats): string {
   }
   out.push('');
 
-  out.push(`never hit (${stats.neverHit.length}${stats.neverHit.length >= 20 ? '+' : ''})`);
-  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}` : '  (none)');
+  out.push(`never hit (${stats.neverHitCount})`);
+  const more = stats.neverHitCount - stats.neverHit.length;
+  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}${more > 0 ? `, and ${more} more` : ''}` : '  (none)');
   out.push('');
 
   out.push('files');

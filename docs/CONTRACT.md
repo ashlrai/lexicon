@@ -208,7 +208,7 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 
 ## src/core/stats.ts
 - `TOP_TERMS = 10`, `NEVER_HIT_CAP = 20`.
-- `computeStats(loaded: LoadedLexicon): LexiconStats { termCount; aliasCount; totalHits; topTerms: { canonical; hits }[]; neverHit: string[]; byCategory; bySource; files: { path; scope; terms }[] }`.
+- `computeStats(loaded: LoadedLexicon): LexiconStats { termCount; aliasCount; totalHits; topTerms: { canonical; hits }[]; neverHit: string[] (the first `NEVER_HIT_CAP`, 20); neverHitCount (all of them); byCategory; bySource; files: { path; scope; terms }[] }`. `renderStats` prints `never hit (<neverHitCount>)` and `, and N more` after the list when the cap hid some.
 
 ## src/core/suggestTerms.ts
 - `SuggestionKind = 'alias' | 'term' | 'never' | 'stale'`; `TermSuggestion { kind; canonical; alias?; reason; confidence (0..1); evidence: string[] (<= 5, each through sanitizeForDisplay and <= 120 chars); count; aliases?: string[] (for 'term': what to add with it); category? (for a harvest 'term'); scope?: TermScope; path? (the file applying it writes: the file the merged term came from for 'alias' / 'never' / 'stale', `project` only when `loaded.project` is merged, else the global file; always set by `suggestTerms`) }`; `VoiceHistoryEntry { at; raw; output; model?; ms? }` (structurally accepts `voice/history.ts` `HistoryEntry`); `SuggestInput { loaded; history?; cwd?; limit? (default 20); now? (epoch ms for the stale age, tests) }`.

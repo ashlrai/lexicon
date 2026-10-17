@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon_stats` (and `lexicon stats --json`, `GET /stats`) carries `neverHitCount`, the number of terms that never fired. `neverHit` stops at 20 names, so a lexicon with 300 cold terms looked like one with 20; `lexicon stats` printed `never hit (20+)` and now prints the count and `and N more`.
 - `suggest_terms` (and `lexicon suggest --json`) gives each suggestion the `scope` and `path` of the lexicon file accepting it would write: where the term lives, or the global file for a new term. An agent could not tell the user which file a suggestion touches. MCP `apply_suggestion` honours a `scope` passed back on the suggestion.
 - `POST /normalize`, the extension's embedded engine and the Claude Code hook say when matching stopped at their time budget, as MCP `normalize_transcript` already did. Serve and the engine return `incomplete { reasons: ['time'], totalChars, note }` (the extension passes it on in its normalize reply); the hook adds one line telling the agent later parts of the prompt were not checked, even when nothing was corrected. Before, a long prompt cut short looked exactly like one with nothing left to fix.
 

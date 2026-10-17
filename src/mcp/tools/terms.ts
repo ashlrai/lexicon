@@ -470,7 +470,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Lexicon usage statistics',
       description:
-        'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon.',
+        'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. ' +
+        '`neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all.',
       inputSchema: {},
     },
     async () =>

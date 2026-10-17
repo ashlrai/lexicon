@@ -58132,11 +58132,15 @@ function computeStats(loaded) {
   let aliasCount = 0;
   let totalHits = 0;
   const neverHit = [];
+  let neverHitCount = 0;
   for (const term of terms) {
     aliasCount += term.aliases.length;
     const hits = term.hits ?? 0;
     totalHits += hits;
-    if (hits <= 0 && neverHit.length < NEVER_HIT_CAP) neverHit.push(term.canonical);
+    if (hits <= 0) {
+      neverHitCount += 1;
+      if (neverHit.length < NEVER_HIT_CAP) neverHit.push(term.canonical);
+    }
     bump(byCategory, term.category ?? "uncategorized");
     bump(bySource, term.source ?? "unknown");
   }
@@ -58147,7 +58151,7 @@ function computeStats(loaded) {
   if (loaded.project) {
     files.push({ path: loaded.project.path, scope: "project", terms: loaded.project.lexicon.terms.length });
   }
-  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, byCategory, bySource, files };
+  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
 }
 
 // src/core/suggestTerms.ts
@@ -59696,7 +59700,7 @@ var registerTermTools = (server, ctx) => {
     "lexicon_stats",
     {
       title: "Lexicon usage statistics",
-      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon.",
+      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. `neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all.",
       inputSchema: {}
     },
     async () => guarded(async () => {
