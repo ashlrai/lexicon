@@ -408,6 +408,12 @@ async function learnCaseOnly(
   scope: TermScope | undefined,
 ): Promise<LearnResult> {
   const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
+  // The same checks as any other correction: another term (or the skipped
+  // project file) that also claims `heard` keeps rewriting it to that term.
+  const target = byCanonical?.canonical ?? meant;
+  const conflict = conflictFor(loaded.merged, heard, target);
+  const untrusted = untrustedClaim(loaded, heard, target);
+  const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
@@ -420,13 +426,13 @@ async function learnCaseOnly(
       { canonical: meant, aliases: suggestAliases(meant).filter((a) => !sameText(a, meant)), source: 'learned' },
       { ...storeOpts, scope: scope ?? 'global' },
     );
-    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
   }
 
   const termScope: TermScope = byCanonical.scope ?? 'global';
   const file = termScope === 'project' ? loaded.project : loaded.global;
   if (byCanonical.canonical === meant && file) {
-    return { term: byCanonical, created: false, file, aliasAdded: false };
+    return { term: byCanonical, created: false, file, aliasAdded: false, ...withConflict };
   }
   // Recase from the term as it is on disk, not the merged view: that one
   // carries the other file's aliases and this user's hit count.
@@ -436,7 +442,7 @@ async function learnCaseOnly(
     { ...base, canonical: meant, aliases: base.aliases.filter((a) => !sameText(a, meant)) },
     { ...storeOpts, scope: termScope, merge: false },
   );
-  return { term: saved.term, created: false, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: false, file: saved.file, aliasAdded: true, ...withConflict };
 }
 
 // ---------------------------------------------------------------------------

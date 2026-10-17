@@ -399,7 +399,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         "WHEN TO CALL: the moment the user corrects a name -- \"it's Ashlr.AI not Ashler\", \"I said Hetzner\", or they simply " +
         'retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction ' +
         'being written down, and asking every time is the irritating version of this product. ' +
-        'WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. ' +
+        'WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; ' +
+        'the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases ' +
+        'the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. ' +
         'WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- ' +
         'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
         'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',

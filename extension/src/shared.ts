@@ -177,6 +177,14 @@ export function siteEnabled(settings: Pick<Settings, 'sites'>, hostname: string)
   return settings.sites[hostKey(hostname)] !== false;
 }
 
+/** The one line the toast shows when matching stopped before the end of the text. */
+export function incompleteNotice(inc: NormalizeIncomplete): string {
+  if (inc.reasons.includes('length') && inc.checkedChars !== undefined) {
+    return `Stopped early: only the first ${inc.checkedChars} of ${inc.totalChars} characters were checked.`;
+  }
+  return 'Stopped early at the time limit: later text was not checked.';
+}
+
 export function describeCorrection(c: Pick<Correction, 'original' | 'replacement'>): string {
   return `${c.original} → ${c.replacement}`;
 }

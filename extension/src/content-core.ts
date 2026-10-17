@@ -17,7 +17,7 @@ import {
 } from './adapters.js';
 import type { SiteAdapter } from './adapters.js';
 import { applyCorrections, caretOffset, invertCorrections, performEnterDefault, readText, setCaret } from './editable.js';
-import { LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
+import { incompleteNotice, LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
 import type { Correction, NormalizeReply, Request } from './shared.js';
 import { removeToast, showToast } from './toast.js';
 
@@ -87,6 +87,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
     showToast(doc, corrections, {
       mode: reply.mode,
       durationMs: deps.toastMs,
+      ...(reply.incomplete ? { notice: incompleteNotice(reply.incomplete) } : {}),
       onUndo: () => {
         const current = readText(composer);
         if (current === reply.output) {
@@ -118,6 +119,9 @@ export function installContent(deps: ContentDeps): ContentHandle {
       }
     } else if (reply.ok) {
       precheck = { text, changed: false };
+      // Nothing to fix in the part that was checked, but the rest was not
+      // looked at: say so rather than let it pass as clean.
+      if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete) });
     }
     resend();
   }
@@ -223,7 +227,10 @@ export function installContent(deps: ContentDeps): ContentHandle {
       void normalizeText(text, true).then((reply) => {
         // A dry run reports `changed: false` by design (nothing was applied),
         // so the replacements list is what says whether Enter must be intercepted.
-        if (reply.ok && readText(composer) === text) precheck = { text, changed: reply.changed || reply.replacements.length > 0 };
+        // A check that stopped early is intercepted too, so the send can say so.
+        if (reply.ok && readText(composer) === text) {
+          precheck = { text, changed: reply.changed || reply.replacements.length > 0 || reply.incomplete !== undefined };
+        }
       });
     }, precheckMs);
   }
