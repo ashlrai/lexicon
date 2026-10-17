@@ -312,6 +312,47 @@ function wrongMethod(allow: readonly string[], message = `use ${allow.join(' or 
   return new HttpError(405, message, { Allow: allow.join(', ') });
 }
 
+/**
+ * The query string is a GET route's body, so it is strict like the bodies: an
+ * unknown parameter is a 400 naming it and the ones the route takes, and a
+ * parameter given twice is a 400 unless it is listed in `repeatable`. A typo
+ * (`?cdw=`) or an option a route does not have (`/export/csv?limit=10`, which
+ * the CLI and MCP export take) used to be dropped, and the answer came back
+ * 200 as if it had been applied.
+ */
+function strictQuery(url: URL, route: string, allowed: readonly string[], repeatable: readonly string[] = []): void {
+  const takes = allowed.length > 0 ? `takes ${allowed.join(', ')}` : 'takes no query parameters';
+  for (const key of new Set(url.searchParams.keys())) {
+    if (!allowed.includes(key)) throw new HttpError(400, `unknown query parameter "${sanitizeForDisplay(key)}" (${route} ${takes})`);
+    if (!repeatable.includes(key) && url.searchParams.getAll(key).length > 1) throw new HttpError(400, `query parameter "${key}" given more than once`);
+  }
+}
+
+/**
+ * `?category=` (repeated or comma-separated) and `?limit=` of `GET
+ * /export/:format`, the CLI's `--category` and `--limit`. An unknown category
+ * or a limit that is not a positive integer is a 400.
+ */
+function exportQueryOptions(url: URL): { categories?: TermCategory[]; limit?: number } {
+  const categories: TermCategory[] = [];
+  for (const raw of url.searchParams.getAll('category').flatMap((v) => v.split(','))) {
+    const value = raw.trim().toLowerCase();
+    if (value === '') continue;
+    const category = TERM_CATEGORIES.find((c) => c === value);
+    if (category === undefined) {
+      throw new HttpError(400, `unknown category "${sanitizeForDisplay(raw.trim())}" (one of: ${TERM_CATEGORIES.join(', ')})`);
+    }
+    if (!categories.includes(category)) categories.push(category);
+  }
+  const limitParam = url.searchParams.get('limit');
+  let limit: number | undefined;
+  if (limitParam !== null) {
+    limit = /^\d+$/.test(limitParam.trim()) ? Number(limitParam.trim()) : NaN;
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new HttpError(400, `limit must be a positive integer, got "${sanitizeForDisplay(limitParam)}"`);
+  }
+  return { ...(categories.length > 0 ? { categories } : {}), ...(limit !== undefined ? { limit } : {}) };
+}
+
 
 
 function issuesMessage(err: z.ZodError): string {
@@ -743,12 +784,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     // The query string is this route's body, so it is strict too: a typo such
     // as `?scop=project` was ignored and the pack came out of the default
     // (global) lexicon instead, still 200.
-    for (const key of new Set(url.searchParams.keys())) {
-      if (key !== 'cwd' && key !== 'scope') {
-        throw new HttpError(400, `unknown query parameter "${sanitizeForDisplay(key)}" (DELETE /packs/:name takes scope and cwd)`);
-      }
-      if (url.searchParams.getAll(key).length > 1) throw new HttpError(400, `query parameter "${key}" given more than once`);
-    }
+    strictQuery(url, 'DELETE /packs/:name', ['scope', 'cwd']);
     const cwd = await resolveCwd(url.searchParams.get('cwd'));
     const scopeParam = url.searchParams.get('scope');
     const scope = TERM_SCOPES.find((s) => s === scopeParam);
@@ -760,6 +796,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */
   function handleAliases(url: URL): AliasesResponse {
+    strictQuery(url, 'GET /aliases', ['canonical']);
     const canonical = (url.searchParams.get('canonical') ?? '').trim();
     if (!canonical) throw new HttpError(400, 'canonical query parameter is required');
     if (canonical.length > 80) throw new HttpError(400, 'canonical must be at most 80 characters');
@@ -838,14 +875,17 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
     if (pathname === '/lexicon') {
       if (method !== 'GET') throw wrongMethod(['GET']);
+      strictQuery(url, 'GET /lexicon', ['cwd']);
       return json(200, await handleLexicon(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/stats') {
       if (method !== 'GET') throw wrongMethod(['GET']);
+      strictQuery(url, 'GET /stats', ['cwd']);
       return json(200, await handleStats(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/packs') {
       if (method !== 'GET') throw wrongMethod(['GET']);
+      strictQuery(url, 'GET /packs', ['cwd']);
       return json(200, await handlePacks(await resolveCwd(url.searchParams.get('cwd'))));
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
@@ -870,8 +910,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       if (method !== 'GET') throw wrongMethod(['GET']);
       const format = resolveExportFormat(exportMatch[1]);
       if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
+      strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
+      const exportOpts = exportQueryOptions(url);
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
-      return { status: 200, text: exportLexicon(loaded.merged, format), contentType: exportContentType(format) };
+      return { status: 200, text: exportLexicon(loaded.merged, format, exportOpts), contentType: exportContentType(format) };
     }
     throw new HttpError(404, `no route for ${method} ${sanitizeForDisplay(pathname)}`);
   }
