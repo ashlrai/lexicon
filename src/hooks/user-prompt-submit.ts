@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, normalize, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 
 export interface HookOptions {
@@ -431,10 +431,18 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
   const correctionNote = correction ? formatCorrectionNote(correction) : '';
 
+  // The compiled index comes from index-cache.json when the lexicon has not
+  // changed since a previous prompt built it (see loadMatcherIndex). The
+  // match budget starts after it: it bounds the scan, which grows with the
+  // prompt, not the one-off cost of the index.
+  const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : undefined;
   const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
-  const started = performance.now();
-  const shouldStop = (): boolean => performance.now() - started >= budget;
-  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged, { shouldStop }) : undefined;
+  // process.hrtime rather than performance.now: the `performance` global
+  // loads node:perf_hooks on first touch, a few ms of a cold hook.
+  const started = process.hrtime.bigint();
+  const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
+  const shouldStop = (): boolean => process.hrtime.bigint() - started >= limit;
+  let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : undefined;
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   if (result && correction) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.

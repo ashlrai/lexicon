@@ -15,6 +15,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
+import nodeModule from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -1058,6 +1059,37 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: committed plugin import sour
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext)
       .toContain('ask Ada Lovelace about Orion Summit and SignalForge');
+  });
+
+  it('committed hook answers the same from a cold start, from its caches, and from damaged caches', async () => {
+    const h = await freshHome('bundle-hook-cache');
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    const lines = ['version: 1', 'terms:', '  - canonical: Ashlr.AI', '    aliases: [Ashler]'];
+    for (let i = 0; i < 400; i++) lines.push(`  - canonical: Zorblax${i}`, `    aliases: [zorb lax ${i}]`);
+    await fs.writeFile(h.globalPath, `${lines.join('\n')}\n`);
+    const run = async (): Promise<string> => {
+      const r = await runNode(path.join(REPO_ROOT, 'plugin', 'hook.mjs'), [], { env: h.env, stdin: JSON.stringify({
+        cwd: h.repo, hook_event_name: 'UserPromptSubmit', prompt: 'ask ashler about zorb lax 7',
+      }) });
+      expect(r.code, r.stderr).toBe(0);
+      expect(r.stderr).toBe('');
+      return JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string;
+    };
+    const dir = path.dirname(h.globalPath);
+    const cold = await run();
+    expect(cold).toContain('ask Ashlr.AI about Zorblax7');
+    expect((await fs.readdir(dir)).sort()).toEqual(expect.arrayContaining(['index-cache.json', 'parse-cache.json']));
+    // plugin/hook.mjs keeps V8's compiled code for the hook bundle beside the
+    // global lexicon (Node >= 22.1), never in the shared temp directory.
+    if (typeof (nodeModule as { enableCompileCache?: unknown }).enableCompileCache === 'function') {
+      expect((await fs.readdir(path.join(dir, 'node-compile-cache'))).length).toBeGreaterThan(0);
+    }
+    expect(await run()).toBe(cold);
+    for (const file of ['index-cache.json', 'parse-cache.json']) await fs.writeFile(path.join(dir, file), '{"version":');
+    expect(await run()).toBe(cold);
+    expect(await run()).toBe(cold);
+    // Nothing lands in the project.
+    expect(await fs.readdir(h.repo)).toEqual(['.git']);
   });
 
   it('committed MCP bundle exposes20 tools and loads all guided source tags', async () => {

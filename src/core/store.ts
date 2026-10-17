@@ -23,12 +23,15 @@ import path from 'node:path';
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import type { Document, YAMLMap } from 'yaml';
 import { emptyLexicon, parseLexicon } from './schema.js';
+import { buildIndex } from './matcher.js';
+import type { MatcherIndex } from './matcher.js';
+import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
-import { xdgConfigHome } from '../util/xdg.js';
+import { globalLexiconPath } from '../util/xdg.js';
 import type {
   Lexicon,
   LexiconFile,
@@ -107,8 +110,7 @@ function findProjectFile(start: string): string | undefined {
 export function resolvePaths(opts: StoreOptions = {}): { global: string; project?: string } {
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
-  const configHome = xdgConfigHome(env, opts.home ?? os.homedir());
-  const global = opts.globalPath || env.LEXICON_PATH || path.join(configHome, 'lexicon', 'lexicon.yaml');
+  const global = opts.globalPath || globalLexiconPath(env, opts.home ?? os.homedir());
   const project = findProjectFile(cwd);
   return project ? { global, project } : { global };
 }
@@ -180,10 +182,16 @@ function parseLexiconText(text: string, filePath: string, scope: TermScope): Lex
  * (a hand edit, another writer, a corrupt or foreign cache) falls through to
  * the real parse, which then refreshes the entry. Comparing the text instead
  * of a hash of it is exact and keeps `node:crypto`, whose load alone cost the
- * hook about as much as the comparison saves, off the prompt path. The cached
- * value still goes through `parseLexicon`, so it can never hold something the
- * reader would have rejected. It is written with the lexicon's own permission
- * bits, since it holds the same names.
+ * hook about as much as the comparison saves, off the prompt path. It is
+ * written with the lexicon's own permission bits, since it holds the same
+ * names.
+ *
+ * The cached lexicon is stored as the JSON text `parseLexicon` produced,
+ * beside a checksum of that text (`sum`, FNV-1a; see `cacheChecksum`). An
+ * entry whose text does not hash to its `sum` is a damaged or edited file and
+ * is ignored. Version 2 entries re-ran the full schema validator on every
+ * read instead, which cost a 2000-term lexicon about 30 ms per prompt to
+ * re-check a value this module had already validated before writing it.
  *
  * Only `loadLexicon`'s read of the global file uses it, and only once that
  * file reaches PARSE_CACHE_MIN_BYTES: a project file is someone else's,
@@ -196,8 +204,25 @@ export const PARSE_CACHE_FILE_NAME = 'parse-cache.json';
 /** Smallest global lexicon (bytes of YAML) worth caching; one starter pack is past it. */
 export const PARSE_CACHE_MIN_BYTES = 8 * 1024;
 
-/** Entry format; 1 was keyed by a sha256 of the text and is simply reparsed and replaced. */
-const PARSE_CACHE_VERSION = 2;
+/**
+ * Entry format. 1 was keyed by a sha256 of the text, 2 held the lexicon as an
+ * object and re-validated it; both are simply reparsed and replaced.
+ */
+export const PARSE_CACHE_VERSION = 3;
+
+/**
+ * 32-bit FNV-1a of `text`'s UTF-16 code units, as 8 hex digits. A corruption
+ * check for this module's own cache files, not a security boundary: anyone who
+ * can write the cache can write the lexicon beside it.
+ */
+export function cacheChecksum(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 
 async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
   const read = await readLexiconText(filePath);
@@ -207,21 +232,105 @@ async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
   const key = path.resolve(filePath);
   try {
     const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
-    if (isPlainObject(cached) && cached.version === PARSE_CACHE_VERSION && cached.path === key && cached.text === read.text) {
-      return { path: filePath, scope: 'global', lexicon: parseLexicon(cached.lexicon), exists: true };
+    if (
+      isPlainObject(cached) &&
+      cached.version === PARSE_CACHE_VERSION &&
+      cached.path === key &&
+      cached.text === read.text &&
+      typeof cached.lexicon === 'string' &&
+      cached.sum === cacheChecksum(cached.lexicon)
+    ) {
+      const lexicon: unknown = JSON.parse(cached.lexicon);
+      if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
+        return { path: filePath, scope: 'global', lexicon: lexicon as unknown as Lexicon, exists: true };
+      }
     }
   } catch {
     // missing, unreadable or stale: parse for real below
   }
   const file = parseLexiconText(read.text, filePath, 'global');
+  await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  return file;
+}
+
+/**
+ * Record `lexicon` as the parse of `text` for the global file at `filePath`
+ * (see PARSE_CACHE_FILE_NAME). Best effort, never throws. `lexicon` must be
+ * what `parseLexicon` returned for exactly `text`.
+ */
+async function writeParseCache(filePath: string, text: string, lexicon: Lexicon, mode: number): Promise<void> {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
   try {
-    await writeFileAtomic(cachePath, JSON.stringify({ version: PARSE_CACHE_VERSION, path: key, text: read.text, lexicon: file.lexicon }), {
-      mode: read.mode,
-    });
+    const lexiconJson = JSON.stringify(lexicon);
+    await writeFileAtomic(
+      path.join(path.dirname(filePath), PARSE_CACHE_FILE_NAME),
+      JSON.stringify({ version: PARSE_CACHE_VERSION, path: path.resolve(filePath), text, sum: cacheChecksum(lexiconJson), lexicon: lexiconJson }),
+      { mode },
+    );
   } catch {
     // a cache, not state: the next read parses again
   }
-  return file;
+}
+
+/**
+ * The compiled matcher index of the last lexicon the prompt hook matched
+ * against, kept beside the global lexicon (`index-cache.json`) so a fresh
+ * hook process does not rebuild it (about 55 ms for 2000 terms).
+ *
+ * The entry is keyed by `indexKey(lexicon)`: everything `buildIndex` reads
+ * from the lexicon (canonicals, aliases, never-words, caseSensitive, the
+ * matcher settings) and the index format version, compared as a string. So
+ * it is valid for exactly the lexicon in hand, whichever files that lexicon
+ * came from, and the trust gate is untouched: an untrusted project file is
+ * not in `loaded.merged`, so it is not in the key either. A damaged file
+ * fails JSON.parse, the key comparison or `deserializeIndex`'s type and range
+ * checks, and costs a rebuild. The file is only ever written in the global lexicon's
+ * directory, mode 0600, never in a project directory, and only for lexicons
+ * of at least INDEX_CACHE_MIN_TERMS terms: a small index builds faster than
+ * the file reads.
+ */
+export const INDEX_CACHE_FILE_NAME = 'index-cache.json';
+
+/** Smallest merged lexicon (terms) whose index is cached. */
+export const INDEX_CACHE_MIN_TERMS = 150;
+
+/**
+ * The matcher index for `loaded.merged`: from `index-cache.json` when the
+ * entry there was built from the same matcher inputs, else built now (and,
+ * past INDEX_CACHE_MIN_TERMS, written back best-effort). Never throws for a
+ * cache problem; `write: false` skips the write-back.
+ */
+export async function loadMatcherIndex(loaded: Pick<LoadedLexicon, 'merged' | 'global'>, opts: { write?: boolean } = {}): Promise<MatcherIndex> {
+  const lexicon = loaded.merged;
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
+  const cachePath = path.join(path.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
+  const key = indexKey(lexicon);
+  try {
+    const text = await fs.readFile(cachePath, 'utf8');
+    // Cheap rejections first: the key is a prefix of the file (see below), so
+    // a different lexicon is told apart before anything is parsed.
+    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
+    if (text.startsWith(head.slice(0, -1))) {
+      const cached: unknown = JSON.parse(text);
+      if (isPlainObject(cached) && cached.version === INDEX_FORMAT_VERSION && cached.key === key) {
+        const index = deserializeIndex(cached.index, lexicon);
+        if (index) return index;
+      }
+    }
+  } catch {
+    // missing, unreadable or damaged: rebuild below
+  }
+  const index = buildIndex(lexicon);
+  if (opts.write !== false) {
+    try {
+      // `version` and `key` lead the object so the prefix check above works.
+      const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+      await writeFileAtomic(cachePath, out, { mode: 0o600 });
+    } catch {
+      // a cache, not state
+    }
+  }
+  return index;
 }
 
 /**
@@ -254,8 +363,15 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
     const text =
       (existing && updateInPlace(existing.text, ordered)) ??
       `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
-    assertReadsBack(text, file.path);
+    const readBack = assertReadsBack(text, file.path);
     await writeFileAtomic(file.path, text, { backup: true });
+    // The next loadLexicon (the prompt hook, usually) would otherwise parse
+    // the YAML it just wrote, the slowest thing a hook can do: hand it the
+    // parse this write already did.
+    if (file.scope === 'global') {
+      const mode = await fs.stat(file.path).then((st) => st.mode & 0o777, () => undefined);
+      if (mode !== undefined) await writeParseCache(file.path, text, readBack, mode);
+    }
   });
   file.exists = true;
 }
@@ -382,7 +498,7 @@ async function pinCommittedHits(file: LexiconFile): Promise<void> {
  * value that YAML cannot express, or that the schema rejects, actually shows
  * up.
  */
-function assertReadsBack(text: string, filePath: string): void {
+function assertReadsBack(text: string, filePath: string): Lexicon {
   let raw: unknown;
   try {
     raw = parseYaml(text, { prettyErrors: false });
@@ -392,7 +508,7 @@ function assertReadsBack(text: string, filePath: string): void {
     );
   }
   try {
-    parseLexicon(raw ?? emptyLexicon());
+    return parseLexicon(raw ?? emptyLexicon());
   } catch (err) {
     throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
   }

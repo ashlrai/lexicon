@@ -1,13 +1,20 @@
 /**
  * normalize(): run the matcher over a transcript and splice canonical spellings in.
- * Pure; the index is rebuilt per call (cheap, and the lexicon file may change
- * between hook invocations).
+ * Pure; the index is rebuilt per call (the lexicon file may change between
+ * calls). A caller that already holds the index for this lexicon (the prompt
+ * hook keeps one on disk, see loadMatcherIndex) passes it to
+ * normalizeWithIndex instead.
  */
 import { buildIndex, findReplacements } from './matcher.js';
+import type { MatcherIndex } from './matcher.js';
 import type { Lexicon, NormalizeOptions, NormalizeResult } from './types.js';
 
 export function normalize(text: string, lexicon: Lexicon, opts: NormalizeOptions = {}): NormalizeResult {
-  const index = buildIndex(lexicon);
+  return normalizeWithIndex(text, buildIndex(lexicon), opts);
+}
+
+/** normalize() against a prebuilt index; `index.lexicon` is the lexicon it matches. */
+export function normalizeWithIndex(text: string, index: MatcherIndex, opts: NormalizeOptions = {}): NormalizeResult {
   const replacements = findReplacements(text, index, opts);
 
   if (opts.dryRun || replacements.length === 0) {

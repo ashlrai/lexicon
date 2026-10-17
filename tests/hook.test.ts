@@ -14,12 +14,19 @@ const loaded: LoadedLexicon = {
   global: { path: '/fake/global/lexicon.yaml', scope: 'global', lexicon: fixtureLexicon, exists: true },
 };
 
-const mocks = vi.hoisted(() => ({
-  loadLexicon: vi.fn(),
-  normalize: vi.fn(),
-  diffSummary: vi.fn(),
-  recordHits: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const m = {
+    loadLexicon: vi.fn(),
+    normalize: vi.fn(),
+    diffSummary: vi.fn(),
+    recordHits: vi.fn(),
+    // The hook matches through a (cached) index: route that back through the
+    // `normalize` mock so the tests below keep asserting on one function.
+    loadMatcherIndex: vi.fn(async (l: { merged: unknown }) => ({ lexicon: l.merged })),
+    normalizeWithIndex: vi.fn((text: string, index: { lexicon: unknown }, opts?: unknown) => m.normalize(text, index.lexicon, opts)),
+  };
+  return m;
+});
 
 // IO and matching are mocked; exportLexicon and parseCorrection are the real
 // pure functions so the SessionStart table and correction detection are tested
@@ -626,6 +633,20 @@ describe('a long prompt stays inside the hook budget', () => {
     await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 60_000 });
     const roomy = mocks.normalize.mock.calls[0][2] as { shouldStop?: () => boolean };
     expect(roomy.shouldStop!()).toBe(false);
+  });
+
+  it('starts the budget after the index is loaded, so a slow index load cannot cost the corrections', async () => {
+    // The old hook started the clock before normalize built the index; on a
+    // loaded machine a 2000-term build used up the whole budget and the
+    // prompt came back uncorrected.
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    mocks.loadMatcherIndex.mockImplementationOnce(async (l: { merged: unknown }) => {
+      await new Promise((r) => setTimeout(r, 80));
+      return { lexicon: l.merged };
+    });
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 40 });
+    const opts = mocks.normalize.mock.calls[0][2] as { shouldStop: () => boolean };
+    expect(opts.shouldStop()).toBe(false);
   });
 
   it('does not repeat a huge prompt back as the corrected copy', async () => {

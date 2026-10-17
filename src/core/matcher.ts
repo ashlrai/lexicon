@@ -36,7 +36,7 @@ import { alphaOnly, similarity } from './matcher/text.js';
 import { STOPLIST } from './stoplist.js';
 import { tokenize } from './matcher/tokenize.js';
 import type { Token } from './matcher/tokenize.js';
-import { separatorOffsets } from './matcher/build.js';
+import { firstAtLeast, separatorOffsets } from './matcher/build.js';
 import type { AliasEntry, MatcherIndex, PhoneticEntry } from './matcher/build.js';
 import { declineCollapsedMentions } from './matcher/enumeration.js';
 
@@ -344,7 +344,17 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
     const bucket = index.fuzzyBuckets.get(view.tokenCount);
     if (bucket) {
       const wlen = view.normLower.length;
-      for (const e of bucket) {
+      // The bucket is sorted by length (see sortFuzzyBuckets). An entry passes
+      // the length check below only if its length is within
+      // [minConfidence * wlen, wlen / minConfidence]; one character of slack on
+      // each side keeps floating-point rounding on the side of looking, and the
+      // exact check still decides.
+      const m = opts.minConfidence;
+      const lowest = Math.floor(m * wlen) - 1;
+      const highest = m > 0 ? Math.ceil(wlen / m) + 1 : Number.POSITIVE_INFINITY;
+      for (let k = lowest > 0 ? firstAtLeast(bucket, lowest) : 0; k < bucket.length; k++) {
+        const e = bucket[k];
+        if (e.normLower.length > highest) break;
         const max = Math.max(wlen, e.normLower.length);
         // similarity <= 1 - |lenDiff| / max, so prune before running any edit distance.
         if (Math.abs(wlen - e.normLower.length) > (1 - opts.minConfidence) * max) continue;
