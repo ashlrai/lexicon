@@ -164,6 +164,17 @@ export interface LexiconResponse {
   skippedProject?: string;
 }
 
+/**
+ * `GET /stats`: `LexiconStats` plus, as `/lexicon` and `/packs` carry them,
+ * `projectTrust` and the skipped project file's path. The counts leave a
+ * skipped file out, and nothing said so.
+ */
+export interface StatsResponse extends LexiconStats {
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /** Path only: its terms are not in the counts. */
+  skippedProject?: string;
+}
+
 export interface PacksResponse {
   /** Every pack shipped with the package, with whether the loaded lexicon lists it. */
   packs: (PackInfo & { installed: boolean })[];
@@ -763,8 +774,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     };
   }
 
-  async function handleStats(cwd: string): Promise<LexiconStats> {
-    return computeStats(await load(cwd));
+  async function handleStats(cwd: string): Promise<StatsResponse> {
+    const loaded = await load(cwd);
+    return {
+      ...computeStats(loaded),
+      ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
+      ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+    };
   }
 
   async function handlePacks(cwd: string): Promise<PacksResponse> {

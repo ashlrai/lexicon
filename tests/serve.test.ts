@@ -687,6 +687,18 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(body.totalHits).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(body.topTerms)).toBe(true);
     expect(body.files[0]?.scope).toBe('global');
+    expect(body).not.toHaveProperty('skippedProject');
+  });
+
+  // Catches: /stats counted without a skipped (untrusted) project file and
+  // said nothing, while /lexicon, /packs and `stats --json` name it.
+  it('/stats names a skipped project file, path only, as /lexicon does', async () => {
+    const res = await api('GET', `/stats?cwd=${encodeURIComponent(env.untrustedProject)}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as LexiconStats & { projectTrust?: string; skippedProject?: string };
+    expect(body.projectTrust).toBe('untrusted');
+    expect(body.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    expect(body.files.map((f) => f.scope)).toEqual(['global']);
   });
 });
 
