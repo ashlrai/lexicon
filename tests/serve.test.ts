@@ -1046,6 +1046,34 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: any unlink failure (a directory in place, permissions) printed "was not installed" and exited 0.
+  it('--uninstall reports a service file it could not remove, and still says when there was none', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const none = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, none, { platform: 'linux', home, env: {}, exec: fakeExec([]) })).toBe(0);
+      expect(none.out.join('')).toContain('was not installed');
+
+      // A directory where the unit file goes: unlink fails with something other than ENOENT.
+      const unitPath = systemdUnitPath(home, {});
+      await fs.mkdir(unitPath, { recursive: true });
+      const calls: string[][] = [];
+      const linux = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, linux, { platform: 'linux', home, env: {}, exec: fakeExec(calls) })).toBe(1);
+      expect(linux.out.join('')).not.toContain('was not installed');
+      expect(linux.err.join('')).toContain(`could not remove ${unitPath}`);
+      expect(calls.at(-1)).toEqual(['systemctl', '--user', 'daemon-reload']);
+
+      const plistPath = launchAgentPath(home, {});
+      await fs.mkdir(plistPath, { recursive: true });
+      const mac = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, mac, { platform: 'darwin', home, env: {}, exec: fakeExec([]), uid: 501 })).toBe(1);
+      expect(mac.err.join('')).toContain(`could not remove ${plistPath}`);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   it('--install refuses a CLI path that does not exist: nothing written, no bootout, exit 1', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
     try {

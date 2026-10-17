@@ -12,6 +12,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --uninstall` says `was not installed` only when the LaunchAgent plist or systemd unit is missing. Any other failure to remove it (permissions, a directory in its place) was also reported as `was not installed` with exit 0, while the file stayed; it now prints the reason on stderr and exits 1.
 - `lexicon normalize --json` says when the built-in example terms stood in for an empty lexicon (`example: true`) and when an untrusted project lexicon was left out (`projectTrust`, `skippedProject`, `note`, as MCP `normalize_transcript` does). Both were on stderr only, so a script reading stdout took example corrections, or an unchanged result, at face value. The keys are additive and absent otherwise.
 - `lexicon add` warns when an alias it saved is already an alias (or the canonical) of another term, with the `lexicon remove --alias` command that lets the new one win, and `--json` adds `conflicts`, as MCP `add_term` does. It printed plain success while the next transcript could still go to the other term.
 - `lexicon learn --json` no longer prints the whole lexicon file: `file` keeps only `path` and `scope`, and a top-level `path` matches MCP `learn_correction`. It dumped every term of the file the correction went to.
