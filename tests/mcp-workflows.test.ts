@@ -105,6 +105,24 @@ describe('remove_term', () => {
   });
 });
 
+describe('add_term with an alias another term holds', () => {
+  // Reported plain success while the next transcript still went to the other term.
+  it('reports the other term and the remove_term call that lets the new alias win', async () => {
+    await call('add_term', { canonical: 'Verse', aliases: ['Versel'] });
+    const payload = JSON.parse((await call('add_term', { canonical: 'Vercel', aliases: ['versel', 'vercell'] })).text) as {
+      conflicts?: unknown[];
+      note?: string;
+    };
+    expect(payload.conflicts).toEqual([{ canonical: 'Verse', scope: 'global', as: 'alias', spelling: 'Versel' }]);
+    expect(payload.note).toContain('call remove_term with canonical "Verse", alias "Versel", scope "global"');
+  });
+
+  it('adds nothing when no other term holds the aliases', async () => {
+    const payload = JSON.parse((await call('add_term', { canonical: 'Vercel', aliases: ['versel'] })).text) as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(['created', 'path', 'term']);
+  });
+});
+
 describe('add_term errors', () => {
   it('do not leak the internal function name', async () => {
     const res = await call('add_term', { canonical: '   ' });

@@ -21,6 +21,7 @@ import {
   removeAlias,
   removeTerm,
   resolveExportFormat,
+  spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
 } from '../../core/index.js';
@@ -213,7 +214,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling ' +
         'exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats ' +
         'inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, ' +
-        'so passing only never, phonetic, category or notes changes just that.',
+        'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
+        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.',
       inputSchema: {
         canonical: z.string().min(1).describe('The correct spelling, exactly as the user wants it written.'),
         aliases: z
@@ -253,7 +255,23 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(scope !== undefined ? { scope } : {}),
           ...(given ? {} : { defaultAliases: suggestAliases(canonical) }),
         });
-        return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
+        // An alias another term already holds may keep being corrected to that
+        // term; say so, as learn_correction does, instead of reporting success.
+        const conflicts = spellingConflicts((await load()).merged, saved.term.aliases, saved.term.canonical);
+        const note = conflicts
+          .map((c) =>
+            c.as === 'alias'
+              ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
+                `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
+              : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`,
+          )
+          .join(' ');
+        return textResult({
+          term: saved.term,
+          path: saved.file.path,
+          created: saved.created,
+          ...(conflicts.length > 0 ? { conflicts, note } : {}),
+        });
       }),
   );
 

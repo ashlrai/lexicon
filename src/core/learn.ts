@@ -347,6 +347,20 @@ export async function learnCorrection(
 }
 
 /**
+ * Every spelling in `spellings` that a term other than `target` also holds,
+ * as its canonical or an alias: the `conflict` learnCorrection reports, for a
+ * whole alias list (MCP add_term). One entry per spelling, in order.
+ */
+export function spellingConflicts(lexicon: Lexicon, spellings: readonly string[], target: string): LearnConflict[] {
+  const out: LearnConflict[] = [];
+  for (const spelling of spellings) {
+    const c = conflictFor(lexicon, spelling, target);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+/**
  * A term other than `target` that holds `heard` as its canonical or as an
  * alias. learnCorrection never edits that term (one correction touches one
  * term); it reports it so the caller can say why the correction may not win.
