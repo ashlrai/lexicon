@@ -2,7 +2,7 @@
  * `lexicon pack` community commands: search, add (preview + confirm), update,
  * remove, show and validate, against a fixture registry index in a temp dir.
  */
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -578,5 +578,59 @@ describe('pack add with a vendored and a previewed or declined community ref rep
     expect(io.out).toContain('1 pack installed (developer); declined: example/cardiology');
     expect(io.err).toContain('pass --yes');
     expect(readFileSync(globalPath, 'utf8')).not.toContain('Metoprolol');
+  });
+});
+
+// Catches: when `pack add <ref...> --json` failed partway (an unknown ref, a
+// failed install, a community fetch that failed), stdout held only the refs
+// before the failure, so a script could not tell which ref stopped the run.
+describe('pack add --json names the ref it stopped at', () => {
+  type Entry = Record<string, unknown>;
+
+  it('appends { ref, ok: false, error } and leaves out the refs after it', async () => {
+    writeFileSync(globalPath, '');
+    const io = makeIO();
+    expect(await runPackAdd(['developer', 'example/neurology', 'ai'], { ...baseOpts(), cwd: dir, json: true, yes: true }, io)).toBe(1);
+    const doc = JSON.parse(io.out) as Entry[];
+    expect(doc).toHaveLength(2);
+    expect(doc[0]).toMatchObject({ pack: { name: 'developer' } });
+    expect(doc[1]).toEqual({ ref: 'example/neurology', ok: false, error: expect.stringContaining('example/neurology') });
+    expect(Object.keys(doc[1]!)[0]).toBe('ref');
+    expect(io.err).toContain('lexicon: example/neurology: ');
+    expect(io.err).toContain('lexicon: not attempted: ai');
+    expect(readFileSync(globalPath, 'utf8')).not.toContain('ChatGPT');
+  });
+
+  it('reports an unknown vendored pack, a missing --registry and a failed fetch the same way', async () => {
+    const unknown = makeIO();
+    expect(await runPackAdd(['developer', 'nope'], { globalPath, cwd: dir, json: true }, unknown)).toBe(1);
+    expect((JSON.parse(unknown.out) as Entry[])[1]).toEqual({ ref: 'nope', ok: false, error: expect.stringContaining('unknown pack "nope"') });
+    expect(unknown.err).toContain('lexicon: nope: unknown pack "nope"');
+
+    const noRegistry = makeIO();
+    expect(await runPackAdd(['developer', 'example/cardiology'], { globalPath, cwd: dir, json: true }, noRegistry)).toBe(1);
+    const noRegistryDoc = JSON.parse(noRegistry.out) as Entry[];
+    expect(noRegistryDoc).toHaveLength(2);
+    expect(noRegistryDoc[1]).toEqual({ ref: 'example/cardiology', ok: false, error: expect.stringContaining('--registry') });
+
+    rmSync(path.join(dir, 'cardiology.yaml'));
+    const fetchFailed = makeIO();
+    expect(await runPackAdd(['developer', 'example/cardiology'], { ...baseOpts(), cwd: dir, json: true, yes: true }, fetchFailed)).toBe(1);
+    const fetchDoc = JSON.parse(fetchFailed.out) as Entry[];
+    expect(fetchDoc).toHaveLength(2);
+    expect(fetchDoc[1]).toMatchObject({ ref: 'example/cardiology', ok: false, error: expect.any(String) });
+  });
+
+  it('a list whose first ref fails is still an array; a single ref is the object', async () => {
+    const first = makeIO();
+    expect(await runPackAdd(['nope', 'developer'], { globalPath, cwd: dir, json: true }, first)).toBe(1);
+    expect(JSON.parse(first.out)).toEqual([{ ref: 'nope', ok: false, error: expect.stringContaining('unknown pack') }]);
+    expect(first.err).toContain('not attempted: developer');
+    expect(existsSync(globalPath)).toBe(false);
+
+    const single = makeIO();
+    expect(await runPackAdd(['nope'], { globalPath, cwd: dir, json: true }, single)).toBe(1);
+    expect(JSON.parse(single.out)).toEqual({ ok: false, ref: 'nope', error: expect.stringContaining('unknown pack') });
+    expect(single.err).not.toContain('not attempted');
   });
 });

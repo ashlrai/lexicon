@@ -40,9 +40,9 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { bold, dim, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
-import { isEnoent } from '../util/errors.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -311,9 +311,11 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
   }
 }
 
+const NEED_REGISTRY = 'community packs need --registry <index> (a local path, file:// or https:// URL)';
+
 function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   if (!opts.registry) {
-    refuse(io, opts.json, 'community packs need --registry <index> (a local path, file:// or https:// URL)');
+    refuse(io, opts.json, NEED_REGISTRY);
     return false;
   }
   return true;
@@ -427,11 +429,22 @@ interface CommunityInstallJson {
   scope: string;
 }
 
+/** The `--json` entry of the ref a `pack add` run stopped at: `{ ref, ok: false, error, nextStep? }`. */
+interface PackAddFailureJson {
+  ref: string;
+  ok: false;
+  error: string;
+  nextStep?: string;
+}
+
 /**
  * `lexicon pack add <name...>`: install one or more packs. Stops at the first
- * failure and exits 1. A community ref that is only previewed (`--json`
- * without `--yes`) or declined at the question writes nothing and does not
- * stop the refs after it, so every ref's outcome is reported.
+ * failure and exits 1: the failing ref is reported (under `--json` as a
+ * `{ ref, ok: false, error, nextStep? }` entry after the refs before it), the
+ * refs after it are not attempted and not reported. A community ref that is
+ * only previewed (`--json` without `--yes`) or declined at the question writes
+ * nothing and does not stop the refs after it, so every ref's outcome is
+ * reported.
  */
 export async function runPackAdd(names: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
@@ -445,10 +458,10 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   let vendored = 0;
   const installed: string[] = [];
   const declined: string[] = [];
-  for (const name of names) {
+  for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
-        if (!needRegistry(opts, io)) return 1;
+        if (!opts.registry) throw new Error(NEED_REGISTRY);
         const outcome = await runPackAddRegistry(name, opts, io, deps);
         if (outcome.kind === 'preview') {
           results.push(outcome.preview);
@@ -473,10 +486,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         }
       }
     } catch (err) {
-      // Packs already installed are the --json document (the array, as on
-      // success); with none, the failure is: `{ ok: false, error }`.
-      if (opts.json && results.length > 0) line(io, JSON.stringify(results, null, 2));
-      return fail(io, err, opts.json === true && results.length === 0);
+      return failPackAdd(io, opts, names, results, at, err);
     }
   }
   if (opts.json) {
@@ -490,6 +500,39 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
     line(io, `${plural(installed.length, 'pack')} installed${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
   }
   return 0;
+}
+
+/**
+ * Report the ref a `pack add` run stopped at. Under `--json` stdout carries one
+ * document: for a single ref `{ ok: false, ref, error, nextStep? }`, for a list
+ * the array of the refs before it with `{ ref, ok: false, error, nextStep? }`
+ * appended; the refs after it were not attempted and are left out. On stderr
+ * the `lexicon: <ref>: <error>` line (then the hint, and for a list the refs
+ * not attempted). Exit code 1.
+ */
+function failPackAdd(
+  io: IO,
+  opts: PackRegistryCliOptions,
+  names: readonly string[],
+  results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[],
+  at: number,
+  err: unknown,
+): number {
+  const ref = names[at]!;
+  const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (opts.json) {
+    const { ok, ...detail } = jsonError(message, hint);
+    const entry: PackAddFailureJson = { ref, ok, ...detail };
+    // A single ref's object leads with `ok`, as every object-shaped document does.
+    const doc = names.length === 1 ? { ok, ref, ...detail } : [...results, entry];
+    line(io, JSON.stringify(doc, null, 2));
+  }
+  io.stderr(`lexicon: ${safe(ref)}: ${safeLines(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${hint}\n`);
+  const after = names.slice(at + 1);
+  if (after.length > 0) io.stderr(`lexicon: not attempted: ${after.map(safe).join(', ')}\n`);
+  return 1;
 }
 
 /** `lexicon pack update [ref...]`: re-check installed community packs against a fresh index. Never silent: every changed pack is previewed and confirmed. */
