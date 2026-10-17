@@ -543,14 +543,18 @@ export async function runNormalize(
       );
     }
     const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);
-    if (opts.json) {
-      line(io, JSON.stringify(result, null, 2));
-      return 0;
-    }
-    if (opts.diff) {
+    // The summary goes to stderr whatever stdout carries, so `--json --diff`
+    // keeps both. `--dry-run` alone shows it too: it promises to report the
+    // replacements, and stdout (the unchanged input) reports nothing. Before,
+    // `--json` dropped `--diff` and a plain `--dry-run` printed no report at all.
+    if (opts.diff || (opts.dryRun && !opts.json)) {
       const summary = diffSummary(result);
       // stdout must round-trip the user's text byte-exactly; the stderr diff quotes lexicon content, so it is sanitized per line.
       if (summary) io.stderr(ensureNewline(safeLines(summary)));
+    }
+    if (opts.json) {
+      line(io, JSON.stringify(result, null, 2));
+      return 0;
     }
     emit(result.output);
   } catch (err) {
@@ -742,8 +746,17 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 // path
 // ---------------------------------------------------------------------------
 
-export async function runPath(opts: CommonOptions, io: IO): Promise<number> {
+export interface PathOptions extends CommonOptions {
+  /** Print `{ global, project }` as JSON (`project` is null when there is no project lexicon). */
+  json?: boolean;
+}
+
+export async function runPath(opts: PathOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
+  if (opts.json) {
+    line(io, JSON.stringify({ global: paths.global, project: paths.project ?? null }, null, 2));
+    return 0;
+  }
   line(io, `global: ${safe(paths.global)}`);
   line(io, `project: ${paths.project ? safe(paths.project) : '(none)'}`);
   return 0;

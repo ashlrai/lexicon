@@ -52636,6 +52636,25 @@ function leadContrasts(text, blockFrom, first, second) {
   const last = gapWords[gapWords.length - 1];
   return last === void 0 || !DETERMINERS.has(last);
 }
+var PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
+function paragraphHolds(text, start, end, canonical) {
+  let from = 0;
+  let lineEnd2 = text.lastIndexOf("\n", start - 1);
+  while (lineEnd2 > 0) {
+    const prevBreak = text.lastIndexOf("\n", lineEnd2 - 1);
+    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd2))) {
+      from = lineEnd2 + 1;
+      break;
+    }
+    if (prevBreak < 0) break;
+    lineEnd2 = prevBreak;
+  }
+  PARAGRAPH_BREAK.lastIndex = end;
+  const next = PARAGRAPH_BREAK.exec(text);
+  const to = next ? next.index : text.length;
+  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
+  return rest.includes(foldSpelling(canonical));
+}
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
@@ -52674,10 +52693,11 @@ function declineCollapsedMentions(text, spans) {
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
       // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
       previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
-      if (!anchored) continue;
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
       }
+      if (!anchored) continue;
       points.sort((a, b2) => a.start - b2.start);
       const links = [];
       for (let i = 0; i + 1 < points.length; i++) {
@@ -53192,7 +53212,7 @@ async function writeFileAtomic(target, data, opts = {}) {
   }
   try {
     if (opts.backup) await backupExisting(real);
-    await import_node_fs.promises.rename(tmp, real);
+    await renameReplacing(tmp, real);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
@@ -53214,12 +53234,32 @@ async function copyThroughTemp(from, to) {
     throw err;
   }
   try {
-    await import_node_fs.promises.rename(tmp, to);
+    await renameReplacing(tmp, to);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
   return true;
+}
+var WINDOWS_RENAME_RETRY_MS = 1e3;
+function isTransientWindowsError(err, platform = process.platform) {
+  if (platform !== "win32") return false;
+  const code = typeof err === "object" && err !== null ? err.code : void 0;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+async function renameReplacing(from, to) {
+  const deadline = Date.now() + WINDOWS_RENAME_RETRY_MS;
+  let wait = 5;
+  for (; ; ) {
+    try {
+      await import_node_fs.promises.rename(from, to);
+      return;
+    } catch (err) {
+      if (!isTransientWindowsError(err) || Date.now() >= deadline) throw err;
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 100);
+  }
 }
 async function isYoungerThan(file2, ms) {
   try {
@@ -53323,16 +53363,19 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
   for (; ; ) {
+    let transient;
     try {
       await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
       await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
     } catch (err) {
-      if (!isEexist(err)) throw err;
+      if (isTransientWindowsError(err)) transient = err;
+      else if (!isEexist(err)) throw err;
     }
-    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (transient === void 0 && await breakIfStale(lockPath, staleMs)) continue;
     if (Date.now() >= deadline) {
+      if (transient !== void 0) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
     }
     await sleep(wait / 2 + Math.random() * wait);
@@ -63399,8 +63442,8 @@ var registerPackTools = (server, ctx) => {
       title: "Import an existing dictionary",
       description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it.",
       inputSchema: {
-        path: external_exports.string().optional().describe("File to import. Its extension helps auto-detection."),
-        content: external_exports.string().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine."),
+        path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
+        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
         format: external_exports.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")

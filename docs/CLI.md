@@ -17,7 +17,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read |
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
 | [`lexicon export [options] [format]`](#lexicon-export) | export the merged lexicon for another tool (run without a format to list them) |
-| [`lexicon path`](#lexicon-path) | print the resolved global and project lexicon paths |
+| [`lexicon path [options]`](#lexicon-path) | print the resolved global and project lexicon paths |
 | [`lexicon doctor [options]`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
@@ -57,7 +57,7 @@ Commands:
   normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
-  path                                    print the resolved global and project lexicon paths
+  path [options]                          print the resolved global and project lexicon paths
   doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
@@ -158,8 +158,10 @@ round-trips the input, exit 1 if the lexicon could not be read
 
 Options:
   --json                print the full NormalizeResult as JSON
-  --diff                print a summary of replacements to stderr
-  --dry-run             report replacements without applying them
+  --diff                print a summary of replacements to stderr (with --json
+                        too)
+  --dry-run             print the replacement summary to stderr and the text
+                        unchanged to stdout
   --min-confidence <n>  minimum confidence (0..1) for fuzzy/phonetic matches
   --no-phonetic         disable phonetic matching
   --no-fuzzy            disable fuzzy (edit-distance) matching
@@ -214,6 +216,8 @@ Usage: lexicon path [options]
 print the resolved global and project lexicon paths
 
 Options:
+  --json      print { global, project } as JSON (project is null when there is
+              no project lexicon)
   -h, --help  display help for command
 ```
 

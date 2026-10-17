@@ -193,6 +193,25 @@ describe('normalize', () => {
     expect(io.err).toContain('"Ashler" -> "Ashlr.AI"');
   });
 
+  // --json returned before --diff was looked at, so `--json --diff` dropped the
+  // summary; and --dry-run alone printed the unchanged text and nothing else.
+  it('--json --diff prints the JSON on stdout and the summary on stderr', async () => {
+    const io = makeIO();
+    expect(await runNormalize(['meet Ashler'], { json: true, diff: true }, io)).toBe(0);
+    expect((JSON.parse(io.out) as NormalizeResult).output).toBe('meet Ashlr.AI');
+    expect(io.err).toContain('"Ashler" -> "Ashlr.AI"');
+  });
+
+  it('--dry-run reports the replacements on stderr', async () => {
+    const io = makeIO();
+    expect(await runNormalize(['meet Ashler'], { dryRun: true }, io)).toBe(0);
+    expect(io.err).toContain('"Ashler" -> "Ashlr.AI"');
+    // --json --dry-run keeps stderr quiet: the JSON already lists them
+    const json = makeIO();
+    await runNormalize(['meet Ashler'], { dryRun: true, json: true }, json);
+    expect(json.err).toBe('');
+  });
+
   it('forwards only explicit disables and parsed min-confidence to normalize()', async () => {
     const io = makeIO();
     await runNormalize(['x Ashler'], { phonetic: false, fuzzy: true, minConfidence: '0.9', dryRun: true }, io);
@@ -384,6 +403,13 @@ describe('add / remove / path', () => {
     const io = makeIO();
     await runPath({}, io);
     expect(io.out).toBe(`global: ${state.globalPath}\nproject: (none)\n`);
+  });
+
+  // `lexicon path --json` was an unknown option, while every other reporting command has --json.
+  it('path --json prints { global, project }', async () => {
+    const io = makeIO();
+    expect(await runPath({ json: true }, io)).toBe(0);
+    expect(JSON.parse(io.out)).toEqual({ global: state.globalPath, project: null });
   });
 });
 
