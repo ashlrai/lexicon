@@ -10,7 +10,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, serveUrl } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, probeHealth, serveUrl } from '../serve/index.js';
+import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
@@ -143,19 +144,20 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
   const config = await ensureServeConfig(storeOpts(opts));
   const port = opts.port ?? config.port;
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
-  const doFetch = deps.fetch ?? fetch;
-  let health: { ok?: unknown; version?: unknown; terms?: unknown } | undefined;
-  let reason = '';
-  try {
-    const res = await doFetch(`${url}/health`, { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) });
-    if (!res.ok) reason = `HTTP ${res.status}`;
-    else health = (await res.json()) as typeof health;
-  } catch (err) {
-    reason = errorMessage(err);
-  }
+  const probe = await probeHealth(url, {
+    token: config.token,
+    timeoutMs: STATUS_TIMEOUT_MS,
+    ...(deps.fetch ? { fetch: deps.fetch } : {}),
+  });
+  const health =
+    probe.state === 'up' && isRecord(probe.body) ? (probe.body as { ok?: unknown; version?: unknown; terms?: unknown }) : undefined;
   const up = health?.ok === true;
   if (opts.json) {
-    line(io, JSON.stringify({ up, url, ...(up ? { health } : { reason }) }, null, 2));
+    let rest: Record<string, unknown>;
+    if (up) rest = { health };
+    else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error };
+    else rest = { reason: probe.state === 'down' ? probe.error : 'unexpected /health response' };
+    line(io, JSON.stringify({ up, url, ...rest }, null, 2));
     return up ? 0 : 1;
   }
   if (up) {
@@ -164,6 +166,12 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     line(io, `lexicon serve is up at ${url} (version ${safe(version)}, ${terms} term${terms === 1 ? '' : 's'})`);
     return 0;
   }
+  if (probe.state === 'failing') {
+    // Running, so "start it" would be wrong advice: the error is what to fix.
+    line(io, `lexicon serve is running at ${url} but /health failed (HTTP ${probe.status}: ${safe(probe.error)})`);
+    return 1;
+  }
+  const reason = probe.state === 'down' ? probe.error : 'unexpected /health response';
   line(io, `lexicon serve is down at ${url}${reason ? ` (${safe(reason)})` : ''}`);
   line(io, 'start it with: lexicon serve      (or install it: lexicon serve --install)');
   return 1;

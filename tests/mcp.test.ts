@@ -1279,6 +1279,17 @@ describe('lexicon MCP server', () => {
         const custom = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(JSON.parse(textOf(custom))).toMatchObject({ up: true, url: 'http://127.0.0.1:41799/health', port: 41799 });
         expect(fetchSpy).toHaveBeenLastCalledWith('http://127.0.0.1:41799/health', expect.objectContaining({ signal: expect.anything() }));
+
+        // Running but failing (a broken lexicon file): not "down", and the
+        // server's own message, which it gives in full to the token holder.
+        fetchSpy.mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: 'internal error: Failed to parse lexicon YAML at /x/lexicon.yaml: bad' }), { status: 500 }),
+        );
+        const failing = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
+        expect(failing).toMatchObject({ up: false, running: true, status: 500, error: expect.stringContaining('Failed to parse lexicon YAML') });
+        expect(String(failing.hint)).not.toContain('Start it');
+        const init = fetchSpy.mock.lastCall?.[1] as RequestInit | undefined;
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${'a'.repeat(32)}`);
       } finally {
         fetchSpy.mockRestore();
         await close();

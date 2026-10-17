@@ -786,6 +786,33 @@ describe('lexicon serve (CLI)', () => {
     expect(down.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
   });
 
+  /**
+   * Catches: --status treating any non-2xx /health as "down" and telling the
+   * user to start a server that is already running. A broken lexicon file
+   * makes /health answer 500; the useful output is what is broken.
+   */
+  it('--status names the error when the server is running but /health fails', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'status-broken-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+    const broken = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await broken.start();
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port: t.port, globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(out).toContain(`lexicon serve is running at http://127.0.0.1:${t.port} but /health failed (HTTP 500`);
+      expect(out).toContain('Failed to parse lexicon YAML');
+      expect(out).not.toContain('start it with');
+
+      const json = memIO();
+      expect(await runServe({ status: true, json: true, port: t.port, globalPath }, json)).toBe(1);
+      expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, running: true, status: 500, reason: expect.stringContaining('Failed to parse') });
+    } finally {
+      await broken.stop();
+    }
+  });
+
   it('--status --json', async () => {
     const io = memIO();
     expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);

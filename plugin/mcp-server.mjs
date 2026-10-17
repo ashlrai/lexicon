@@ -61645,6 +61645,27 @@ function serveUrl(port, host = DEFAULT_HOST) {
   const h = host.includes(":") ? `[${host}]` : host;
   return `http://${h}:${port}`;
 }
+async function probeHealth(baseUrl, opts = {}) {
+  const doFetch = opts.fetch ?? fetch;
+  let res;
+  try {
+    res = await doFetch(`${baseUrl}/health`, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 1500),
+      ...opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}
+    });
+  } catch (err) {
+    return { state: "down", error: err instanceof Error ? err.message : String(err) };
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    body = void 0;
+  }
+  if (res.ok) return { state: "up", body };
+  const given = typeof body === "object" && body !== null ? body.error : void 0;
+  return { state: "failing", status: res.status, error: typeof given === "string" ? given : `HTTP ${res.status}` };
+}
 
 // src/cli/cmd-serve.ts
 function storeOpts(opts) {
@@ -62589,10 +62610,10 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
-async function serveHealthUrl() {
+async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
-  return `${serveUrl(port)}/health`;
+  return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {} };
 }
 var registerSetupTools = (server, ctx) => {
   const { load } = ctx;
@@ -62691,24 +62712,30 @@ var registerSetupTools = (server, ctx) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); or { up: false, error } when nothing answers. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
-      const url2 = await serveHealthUrl();
-      try {
-        const res = await fetch(url2, { signal: AbortSignal.timeout(1500) });
-        if (!res.ok) return textResult({ up: false, url: url2, status: res.status });
-        const body = await res.json();
-        return textResult({ up: true, url: url2, ...isRecord(body) ? body : { body } });
-      } catch (err) {
+      const { base, token } = await serveTarget();
+      const url2 = `${base}/health`;
+      const probe = await probeHealth(base, token !== void 0 ? { token } : {});
+      if (probe.state === "up") return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : { body: probe.body } });
+      if (probe.state === "failing") {
         return textResult({
           up: false,
+          running: true,
           url: url2,
-          error: errorMessage(err),
-          hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+          status: probe.status,
+          error: probe.error,
+          hint: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and call serve_status again. Starting another server will not help."
         });
       }
+      return textResult({
+        up: false,
+        url: url2,
+        error: probe.error,
+        hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+      });
     })
   );
 };
