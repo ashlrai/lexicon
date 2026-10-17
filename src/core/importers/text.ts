@@ -4,6 +4,7 @@
  *   Canonical
  *   Canonical: alias1, alias2
  *   Canonical = alias1 | alias2
+ *   Canonical =                 (no aliases, canonical with a colon)
  *
  * The `=` form (space-padded) is checked first so canonicals containing a
  * colon (`Ashlr:AI = ...`) and aliases containing commas survive round trips.
@@ -13,6 +14,8 @@ import { rowFor } from './shared.js';
 import type { RawImport } from './shared.js';
 
 const EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
+/** `Canonical =` with nothing after it: how `lexicon export text` writes a canonical with a colon and no aliases. */
+const BARE_EQUALS_FORM = /^(.+?)\s+=$/;
 
 export function parseTextLine(raw: string): { canonical: string; aliases: string[] } | undefined {
   const text = raw.trim();
@@ -21,6 +24,8 @@ export function parseTextLine(raw: string): { canonical: string; aliases: string
   if (eq) {
     return { canonical: eq[1].trim(), aliases: eq[2].split('|').map((a) => a.trim()).filter(Boolean) };
   }
+  const bare = BARE_EQUALS_FORM.exec(text);
+  if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === '=') return { canonical: '', aliases: [] };
   const colon = text.indexOf(':');
   if (colon >= 0) {

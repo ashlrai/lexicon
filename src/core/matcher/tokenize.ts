@@ -32,7 +32,14 @@ export interface Range {
 }
 
 const FENCE_RE = /```[\s\S]*?(?:```|$)/g;
-const INLINE_CODE_RE = /`[^`\n]*`/g;
+/**
+ * The other fenced code block: a line opening with `~~~` (up to three spaces of
+ * indent, as CommonMark allows) runs to a line opening with `~~~`, or to the
+ * end when it never closes, as an unclosed backtick fence does. Held to the
+ * start of a line, unlike the backtick fence, because a tilde run inside a
+ * sentence is prose ("about ~~~ here"), not code.
+ */
+const TILDE_FENCE_RE = /(?:^|\n) {0,3}~~~[\s\S]*?(?:\n {0,3}~~~|$)/g;
 const URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 const WWW_RE = /\bwww\.\S+/gi;
 /**
@@ -220,11 +227,66 @@ export function emailRanges(text: string): Range[] {
   return out;
 }
 
+/**
+ * Inline code spans, CommonMark's way: a run of N backticks opens a span that
+ * the next run of exactly N backticks on the same line closes, so
+ * ``` ``ashler `x` run`` ``` is one span and the single backtick inside it is
+ * text. A run with no partner is literal text. Spans stay on one line, as the
+ * single-backtick pattern this replaces (`` `[^`\n]*` ``) did.
+ *
+ * Linear: one pass collects the runs of each line, and each length keeps a
+ * cursor into its own list of runs that only moves forward, so a line full of
+ * unmatched runs of many lengths is not rescanned once per run.
+ */
+export function codeSpanRanges(text: string): Range[] {
+  const out: Range[] = [];
+  let lineStart = 0;
+  while (lineStart <= text.length) {
+    let lineEnd = text.indexOf('\n', lineStart);
+    if (lineEnd === -1) lineEnd = text.length;
+    let tick = text.indexOf('`', lineStart);
+    if (tick !== -1 && tick < lineEnd) {
+      const runs: { start: number; len: number }[] = [];
+      while (tick !== -1 && tick < lineEnd) {
+        let end = tick;
+        while (end < lineEnd && text.charCodeAt(end) === 96) end++;
+        runs.push({ start: tick, len: end - tick });
+        tick = text.indexOf('`', end);
+      }
+      const byLen = new Map<number, number[]>();
+      runs.forEach((r, i) => {
+        const list = byLen.get(r.len);
+        if (list) list.push(i);
+        else byLen.set(r.len, [i]);
+      });
+      const cursor = new Map<number, number>();
+      let i = 0;
+      while (i < runs.length) {
+        const r = runs[i];
+        const list = byLen.get(r.len) as number[];
+        let k = cursor.get(r.len) ?? 0;
+        while (k < list.length && list[k] <= i) k++;
+        cursor.set(r.len, k);
+        if (k < list.length) {
+          const close = runs[list[k]];
+          out.push({ start: r.start, end: close.start + close.len });
+          i = list[k] + 1;
+        } else {
+          i++;
+        }
+      }
+    }
+    lineStart = lineEnd + 1;
+  }
+  return out;
+}
+
 export function collectRanges(text: string): Range[] {
   const ranges: Range[] = indentedCodeRanges(text);
   // A loop, not push(...): a pasted address list can hold more ranges than a call takes arguments.
   for (const r of emailRanges(text)) ranges.push(r);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
+  for (const r of codeSpanRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, TILDE_FENCE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
