@@ -82,7 +82,7 @@ included, and no body. Errors are
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit` |
 
-Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/health` and `/pair` (query strings are strict the same way: `/lexicon?cdw=` is refused; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
+Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route or export format,

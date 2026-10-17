@@ -856,6 +856,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (pathname === '/health') {
       // Unauthenticated, so a wrong method is answered before the token check.
       if (method !== 'GET') throw notGet();
+      // Strict like every other GET route: `/health?cdw=` used to answer for
+      // the server's own directory as if the typo were not there. Checked
+      // before the token, and it names no directory, so it reveals nothing.
+      strictQuery(url, 'GET /health', ['cwd']);
       // Without the token /health only says the server is up: a `cwd` would
       // let any local caller probe which directories carry a .lexicon.yaml
       // and whether they are trusted.

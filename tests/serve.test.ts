@@ -376,6 +376,18 @@ describe('Host guard (DNS rebinding)', () => {
     expect(authed.status).toBe(200);
     expect(((await authed.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
   });
+
+  // Catches: /health was the one GET route without strictQuery, so a typo
+  // such as `?cdw=` answered 200 for the server's own directory.
+  it('/health refuses an unknown or repeated query parameter, with or without the token', async () => {
+    for (const res of [await fetch(`${info.url}/health?cdw=x`), await api('GET', '/health?cdw=x')]) {
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe('unknown query parameter "cdw" (GET /health takes cwd)');
+    }
+    const twice = await api('GET', `/health?cwd=${encodeURIComponent(env.cwd)}&cwd=${encodeURIComponent(env.cwd)}`);
+    expect(twice.status).toBe(400);
+    expect((await fetch(`${info.url}/health`)).status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------
