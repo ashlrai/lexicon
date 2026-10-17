@@ -1162,19 +1162,40 @@ describe('lexicon voice --json failures', () => {
     expect(h.err.join('')).toContain('lexicon voice: recording failed (the recording is empty)');
   });
 
-  it('a whisper failure and a missing explicit model keep the audio and say so in error', async () => {
+  it('a whisper failure keeps the audio and says so in error', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
     h.whisperExit = 1;
     expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
     expect(String(onlyDocument(h).error)).toMatch(/^whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)$/);
+  });
 
+  // Catches: a --model path that does not exist was found only when whisper
+  // was about to run, after the user had spoken into the recording.
+  it('a missing explicit model is refused with exit 1 before anything is recorded', async () => {
+    const nextStep = 'pass an existing ggml model file, or a model name like base.en to download it, with --model';
     const m = await harness();
     m.deps.waitForStop = async () => 'enter';
-    expect(await runVoice({ ...m.opts, model: path.join(m.dir, 'nope.bin'), json: true }, m.io, m.deps)).toBe(EXIT_ERROR);
-    const doc = onlyDocument(m);
-    expect(doc).toMatchObject({ ok: false, code: EXIT_ERROR });
-    expect(String(doc.error)).toContain('nope.bin');
+    const model = path.join(m.dir, 'nope.bin');
+    expect(await runVoice({ ...m.opts, model, json: true }, m.io, m.deps)).toBe(EXIT_ERROR);
+    expect(onlyDocument(m)).toEqual({ ok: false, error: `whisper model not found: ${model}`, nextStep, code: EXIT_ERROR });
+    expect(m.spawnCalls).toHaveLength(0);
+    expect(m.err.join('')).toContain(`lexicon voice: whisper model not found: ${model}`);
+
+    const t = await harness();
+    expect(await runVoiceToggle({ ...t.opts, model: path.join(t.dir, 'ggml-nope.bin'), json: true }, t.io, t.deps)).toBe(EXIT_ERROR);
+    expect(onlyDocument(t)).toMatchObject({ ok: false, nextStep, code: EXIT_ERROR });
+    expect(t.spawnCalls).toHaveLength(0);
+    expect(await runVoiceStatus(t.opts, { stdout: () => undefined, stderr: () => undefined }, t.deps)).toBe(EXIT_ERROR);
+
+    // A model name that is absent is still downloaded at transcription time.
+    const n = await harness();
+    n.deps.waitForStop = async () => 'enter';
+    n.deps.download = async (_url, dest) => {
+      await fs.writeFile(dest, 'fake');
+    };
+    expect(await runVoice({ ...n.opts, model: 'tiny.en' }, n.io, n.deps)).toBe(EXIT_OK);
+    expect(n.spawnCalls).toHaveLength(1);
   });
 
   it('nothing heard: exit 3, one document with ok: false and code 3 over the empty result', async () => {

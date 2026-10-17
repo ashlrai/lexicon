@@ -65,7 +65,8 @@ also looks in `bench/audio/models/` so the benchmark's download is reused. A mis
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
 progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). `--model /path/to/ggml-x.bin`
-uses a file directly and never downloads.
+uses a file directly and never downloads; a path that does not exist exits `1`
+before anything is recorded.
 
 ### Microphone permission (macOS)
 
