@@ -954,6 +954,33 @@ describe('lexicon serve (CLI)', () => {
     expect(down.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
   });
 
+  // Catches: --status created serve.json (and minted a token) when it was missing; a status query must write nothing.
+  it('--status writes nothing and says serve is not configured when serve.json is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'status-unconfigured-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    const servePath = getServePath({ globalPath });
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+
+    const text = memIO();
+    expect(await runServe({ status: true, port: c.port, globalPath }, text, { home: env.home })).toBe(1);
+    expect(text.out.join('')).toContain('serve is not configured:');
+    expect(text.out.join('')).toContain('does not exist; lexicon serve creates it');
+    expect(text.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+
+    const json = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath }, json)).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, configured: false, configPath: servePath, note: expect.stringContaining('not configured') });
+    await expect(fs.stat(servePath)).rejects.toThrow();
+    expect(await fs.readdir(dir)).toEqual([]);
+
+    // A configured one carries no configured/note keys.
+    const configured = memIO();
+    await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, configured);
+    expect(JSON.parse(configured.out.join(''))).not.toHaveProperty('configured');
+  });
+
   /**
    * Catches: --status treating any non-2xx /health as "down" and telling the
    * user to start a server that is already running. A broken lexicon file

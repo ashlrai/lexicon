@@ -10,7 +10,7 @@ trust gate as every other surface.
 ```bash
 lexicon serve                 # foreground, logs one line per request to stderr (an aborted one too)
 lexicon serve --show          # print the URL and token (manual fallback for the extension options page)
-lexicon serve --status        # is it up?
+lexicon serve --status        # is it up? (read-only: never creates serve.json)
 lexicon serve --pair          # open http://127.0.0.1:41733/pair in the browser; the extension pairs itself
 lexicon serve --install       # start at login: launchd (macOS), systemd --user (Linux), Scheduled Task (Windows)
 lexicon serve --uninstall

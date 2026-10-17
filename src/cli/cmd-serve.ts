@@ -6,11 +6,11 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
 import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
@@ -141,14 +141,20 @@ export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps =
 }
 
 export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
-  const config = await ensureServeConfig(storeOpts(opts));
-  const port = opts.port ?? config.port;
+  // A status query is read-only: it used to create serve.json (and a token)
+  // when none existed. Without one, the default port is probed with no token
+  // and the result says serve is not configured.
+  const config = await readServeConfig(storeOpts(opts));
+  const configPath = getServePath(storeOpts(opts));
+  const port = opts.port ?? config?.port ?? DEFAULT_PORT;
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
   const probe = await probeHealth(url, {
-    token: config.token,
+    ...(config ? { token: config.token } : {}),
     timeoutMs: STATUS_TIMEOUT_MS,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
+  const why = existsSync(configPath) ? 'has no usable token; lexicon serve replaces it' : 'does not exist; lexicon serve creates it';
+  const notConfigured = config ? {} : { configured: false, configPath, note: `serve is not configured: ${configPath} ${why}` };
   const health =
     probe.state === 'up' && isRecord(probe.body) ? (probe.body as { ok?: unknown; version?: unknown; terms?: unknown }) : undefined;
   const up = probe.state === 'up' && isLexiconHealth(probe.body);
@@ -162,9 +168,10 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error, error: probe.error, hint: SERVE_STATUS_HINTS.failing };
     else if (foreign) rest = { reason: 'unexpected /health response', error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign };
     else rest = { reason: downError, error: downError, hint: SERVE_STATUS_HINTS.down };
-    line(io, JSON.stringify({ up, url, ...rest }, null, 2));
+    line(io, JSON.stringify({ up, url, ...rest, ...notConfigured }, null, 2));
     return up ? 0 : 1;
   }
+  if (!config) line(io, `serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}`);
   if (up) {
     const version = typeof health?.version === 'string' ? health.version : '?';
     const terms = typeof health?.terms === 'number' ? health.terms : 0;
