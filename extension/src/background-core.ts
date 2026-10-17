@@ -5,6 +5,7 @@
  */
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
 import { parseLexicon } from './core.js';
+import type { NormalizeIncomplete } from './core.js';
 import {
   coerceSettings,
   errorMessage,
@@ -62,6 +63,14 @@ interface ApiNormalize {
   changed: boolean;
   replacements: Correction[];
   summary?: string;
+  incomplete?: unknown;
+}
+
+/** A well-formed `incomplete` field from the API (src/serve/server.ts), ignoring anything else. */
+function isIncomplete(value: unknown): value is NormalizeIncomplete {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Partial<NormalizeIncomplete>;
+  return Array.isArray(v.reasons) && typeof v.totalChars === 'number' && typeof v.note === 'string';
 }
 
 /** A 401 from the API: the server is up but the stored token is not its token. */
@@ -162,7 +171,16 @@ export function createBackground(deps: BackgroundDeps): Background {
     const err = embedded.load(settings.yaml);
     if (err) return { ok: false, error: `Embedded lexicon does not parse: ${err}` };
     const r = embedded.normalize(text, dryRun);
-    return { ok: true, input: r.input, output: r.output, changed: r.changed, replacements: r.replacements, mode: 'embedded', fallback };
+    return {
+      ok: true,
+      input: r.input,
+      output: r.output,
+      changed: r.changed,
+      replacements: r.replacements,
+      mode: 'embedded',
+      fallback,
+      ...(r.incomplete ? { incomplete: r.incomplete } : {}),
+    };
   }
 
   async function apiNormalize(settings: Settings, text: string, dryRun: boolean): Promise<NormalizeReply> {
@@ -180,6 +198,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       changed: raw.changed === true,
       replacements: raw.replacements,
       mode: 'api',
+      ...(isIncomplete(raw.incomplete) ? { incomplete: raw.incomplete } : {}),
     };
   }
 

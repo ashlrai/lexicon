@@ -446,6 +446,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
             ? [{ start: 5, end: 11, original: 'ashler', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 }]
             : [],
           summary: '',
+          ...(text.includes('long') ? { incomplete: { reasons: ['time'], totalChars: text.length, note: 'Matching stopped at the 1000 ms budget.' } } : {}),
         });
       }
       if (url.endsWith('/learn')) return json({ term: { canonical: 'Ashlr.AI', aliases: ['Ashlur'] }, created: false, aliasAdded: true, path: '/tmp/lexicon.yaml' });
@@ -458,6 +459,10 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply;
     expect(reply.ok && reply.mode).toBe('api');
     expect(reply.ok && reply.output).toBe('ping Ashlr.AI');
+    expect(reply.ok && reply.incomplete).toBeUndefined();
+    // The server's budget signal reaches the content script.
+    const cut = (await bg.handle({ type: 'normalize', text: 'ping ashler long' })) as NormalizeReply;
+    expect(cut.ok && cut.incomplete).toMatchObject({ reasons: ['time'], totalChars: 16 });
     const normalizeCall = calls.find((c) => c.url.endsWith('/normalize'))!;
     expect((normalizeCall.init.headers as Record<string, string>).Authorization).toBe('Bearer secret-token');
     expect(normalizeCall.init.method).toBe('POST');

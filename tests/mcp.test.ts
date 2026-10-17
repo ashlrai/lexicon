@@ -30,7 +30,8 @@ const loaded: LoadedLexicon = {
 
 const mocks = vi.hoisted(() => ({
   loadLexicon: vi.fn(),
-  normalize: vi.fn(),
+  loadMatcherIndex: vi.fn(),
+  normalizeWithIndex: vi.fn(),
   diffSummary: vi.fn(),
   recordHits: vi.fn(),
   addTerm: vi.fn(),
@@ -179,7 +180,10 @@ function fakeNormalize(text: string, _lexicon: Lexicon, opts?: { dryRun?: boolea
 
 beforeEach(() => {
   mocks.loadLexicon.mockResolvedValue(loaded);
-  mocks.normalize.mockImplementation(fakeNormalize);
+  mocks.loadMatcherIndex.mockImplementation(async (l: LoadedLexicon) => ({ lexicon: l.merged }));
+  mocks.normalizeWithIndex.mockImplementation((text: string, index: { lexicon: Lexicon }, opts?: { dryRun?: boolean }) =>
+    fakeNormalize(text, index.lexicon, opts),
+  );
   mocks.diffSummary.mockImplementation(
     (r: NormalizeResult) =>
       r.replacements.map((x) => `"${x.original}" -> "${x.replacement}" (${x.reason}, ${x.confidence.toFixed(2)})`).join('\n'),
@@ -516,6 +520,27 @@ describe('lexicon MCP server', () => {
       expect(payload.aliasAdded).toBe(true);
       expect(payload.summary).toBe('"Ashlur" -> "Ashlr.AI" saved');
       expect(mocks.learnCorrection).toHaveBeenCalledWith({ heard: 'Ashlur', meant: 'Ashlr.AI' }, { cwd: '/fake/repo' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('learn_correction names an untrusted project lexicon that also claims heard, by path only', async () => {
+    mocks.learnCorrection.mockResolvedValue({
+      term: { canonical: 'Vercel', aliases: ['Versel'], scope: 'global' },
+      created: true,
+      aliasAdded: true,
+      file: { path: '/fake/global/lexicon.yaml', scope: 'global', lexicon: fixtureLexicon, exists: true },
+      untrustedProject: { path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' },
+    });
+    const { client, close } = await connect();
+    try {
+      const result = await client.callTool({ name: 'learn_correction', arguments: { heard: 'Versel', meant: 'Vercel' } });
+      const payload = JSON.parse(textOf(result)) as { untrustedProject?: unknown; summary: string };
+      expect(payload.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+      expect(payload.summary).toContain('/fake/repo/.lexicon.yaml is not trusted');
+      expect(payload.summary).toContain('`lexicon trust`');
+      expect(payload.summary).toContain('also claims "Versel"');
     } finally {
       await close();
     }
@@ -1137,7 +1162,13 @@ describe('lexicon MCP server', () => {
         const alias = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
         expect(alias.isError).toBe(false);
         expect(JSON.parse(textOf(alias))).toMatchObject({ kind: 'alias', canonical: 'Ashlr.AI', path: '/fake/global/lexicon.yaml', summary: '"ashlur" -> "Ashlr.AI" saved' });
-        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Ashlr.AI', aliases: ['ashlur'], source: 'user' }, { cwd: '/fake/repo' });
+        // The scope suggest_terms reported is honoured when passed back.
+        mocks.addTerm.mockClear();
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'project', path: '/fake/repo/.lexicon.yaml' } } });
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'project' }), { cwd: '/fake/repo', scope: 'project' });
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
+        // No scope given: written where the term lives (Ashlr.AI is a global term).
+        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Ashlr.AI', aliases: ['ashlur'], source: 'user', scope: 'global' }, { cwd: '/fake/repo', scope: 'global' });
 
         const term = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'term', canonical: 'Supabase' }, scope: 'project' } });
         expect(term.isError).toBe(false);
@@ -1279,6 +1310,17 @@ describe('lexicon MCP server', () => {
         const custom = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(JSON.parse(textOf(custom))).toMatchObject({ up: true, url: 'http://127.0.0.1:41799/health', port: 41799 });
         expect(fetchSpy).toHaveBeenLastCalledWith('http://127.0.0.1:41799/health', expect.objectContaining({ signal: expect.anything() }));
+
+        // Running but failing (a broken lexicon file): not "down", and the
+        // server's own message, which it gives in full to the token holder.
+        fetchSpy.mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: 'internal error: Failed to parse lexicon YAML at /x/lexicon.yaml: bad' }), { status: 500 }),
+        );
+        const failing = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
+        expect(failing).toMatchObject({ up: false, running: true, status: 500, error: expect.stringContaining('Failed to parse lexicon YAML') });
+        expect(String(failing.hint)).not.toContain('Start it');
+        const init = fetchSpy.mock.lastCall?.[1] as RequestInit | undefined;
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${'a'.repeat(32)}`);
       } finally {
         fetchSpy.mockRestore();
         await close();

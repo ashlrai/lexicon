@@ -187,6 +187,26 @@ describe('suggestTerms: kinds', () => {
   });
 });
 
+describe('suggestTerms: the file each suggestion touches', () => {
+  // Without it an agent cannot tell the user which lexicon file accepting a
+  // suggestion would edit.
+  it('names the project file for a project term and the global file otherwise', async () => {
+    const lexicon = makeLexicon();
+    const ashlr = lexicon.terms.find((t) => t.canonical === 'Ashlr.AI')!;
+    ashlr.scope = 'project';
+    const loaded: LoadedLexicon = {
+      ...load(lexicon),
+      project: { path: '/tmp/lexicon-suggest-test/repo/.lexicon.yaml', scope: 'project', lexicon: { version: 1, terms: [ashlr] }, exists: true },
+    };
+    const out = await suggestTerms({ loaded, history: makeHistory(), now: NOW, limit: 100 });
+    expect(find(out, 'alias', 'Ashlr.AI', 'ashlur')).toMatchObject({ scope: 'project', path: '/tmp/lexicon-suggest-test/repo/.lexicon.yaml' });
+    expect(find(out, 'alias', 'Vercel', 'versal')).toMatchObject({ scope: 'global', path: '/tmp/lexicon-suggest-test/lexicon.yaml' });
+    expect(find(out, 'stale', 'Zebrafish Labs')).toMatchObject({ scope: 'global', path: '/tmp/lexicon-suggest-test/lexicon.yaml' });
+    expect(find(out, 'term', 'Siobhan Reilly')).toMatchObject({ scope: 'global', path: '/tmp/lexicon-suggest-test/lexicon.yaml' });
+    for (const s of out) expect(s.path).toBeDefined();
+  });
+});
+
 describe('suggestTerms: dedupe, evidence, limits, empty input', () => {
   it('reports one alias suggestion per (canonical, alias) even when several signals cite it', async () => {
     const history = [

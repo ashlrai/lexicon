@@ -3,9 +3,10 @@
  * cannot run a hook or an MCP server (browser extension, Claude Desktop, the
  * Codex app, macOS Shortcuts, Raycast, the menu bar app).
  *
- * node:http only, no framework. Every request except `GET /health` and
- * `GET /pair` needs `Authorization: Bearer <token>` (token from serve.json,
- * see ./config.ts). `/pair` is the one-click pairing page for the browser
+ * node:http only, no framework. Every request must carry a `Host` that names
+ * this server (isAllowedHost, the DNS rebinding guard). Every request except
+ * `GET /health` (without `?cwd=`) and `GET /pair` needs
+ * `Authorization: Bearer <token>` (token from serve.json, see ./config.ts). `/pair` is the one-click pairing page for the browser
  * extension: it carries the token in a <meta> tag and is served only to a
  * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
@@ -20,6 +21,7 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
@@ -41,14 +43,17 @@ import {
   isProjectTrustError,
   sanitizeForDisplay,
   suggestAliases,
+  timeBudgetIncomplete,
   uninstallPack,
 } from '../core/index.js';
 import type {
   ExportFormat,
   InstallPackResult,
+  LearnConflict,
   LexiconStats,
   LoadedLexicon,
   MatcherIndex,
+  NormalizeIncomplete,
   NormalizeResult,
   PackInfo,
   Term,
@@ -65,7 +70,7 @@ import {
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
-import { errorMessage } from '../util/errors.js';
+import { errorMessage, isInputError } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 
 // ---------------------------------------------------------------------------
@@ -120,6 +125,8 @@ export interface HealthResponse {
 
 export interface NormalizeResponse extends NormalizeResult {
   summary: string;
+  /** Present only when matching stopped at the time budget (`reasons: ['time']`). */
+  incomplete?: NormalizeIncomplete;
 }
 
 export interface LearnResponse {
@@ -128,6 +135,10 @@ export interface LearnResponse {
   aliasAdded: boolean;
   /** Path of the lexicon file written. */
   path: string;
+  /** Another term that also claims `heard` (LearnResult.conflict). */
+  conflict?: LearnConflict;
+  /** The untrusted project lexicon that also claims `heard`, path only (LearnResult.untrustedProject). */
+  untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
 }
 
 export interface AddResponse {
@@ -248,6 +259,22 @@ const PackBody = z.object({
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
 const EXPORT_ROUTE_RE = /^\/export\/([a-z-]+)$/i;
+
+/**
+ * The status for an error thrown while handling a request. 400 is for what
+ * the request got wrong (`HttpError`s raised here, and core's `InputError`:
+ * an empty canonical, heard equal to meant, a term the schema rejects);
+ * anything else (a lexicon file that does not parse, a lock still held after
+ * its timeout, EACCES) is the server's state, so 500, which tells a client to
+ * retry or report rather than to change its input.
+ */
+export function errorStatus(err: unknown): number {
+  if (err instanceof HttpError) return err.status;
+  if (isProjectTrustError(err)) return 403;
+  if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
+  if (isInputError(err)) return 400;
+  return 500;
+}
 
 class HttpError extends Error {
   constructor(
@@ -384,6 +411,28 @@ export function isPairOrigin(origin: string | undefined, hostHeader: string | un
   if (origin === undefined) return true;
   if (!hostHeader) return false;
   return origin.trim().toLowerCase() === `http://${hostHeader.trim().toLowerCase()}`;
+}
+
+/**
+ * True when `hostHeader` names this server: `127.0.0.1:<port>`,
+ * `localhost:<port>` or `[::1]:<port>`, checked on every route. A page that
+ * rebinds its own DNS name to 127.0.0.1 reaches the server with its own name
+ * in `Host`, so it is refused before any route runs. With a non-loopback
+ * `--host`, the bound address itself is accepted too (any IP literal for a
+ * wildcard bind): an IP literal is what a client typed, never a rebound name.
+ */
+export function isAllowedHost(hostHeader: string | undefined, port: number, bindHost: string = DEFAULT_HOST): boolean {
+  if (!hostHeader) return false;
+  const h = hostHeader.trim().toLowerCase();
+  if (h === `127.0.0.1:${port}` || h === `localhost:${port}` || h === `[::1]:${port}`) return true;
+  const suffix = `:${port}`;
+  if (!h.endsWith(suffix)) return false;
+  let name = h.slice(0, -suffix.length);
+  if (name.startsWith('[') && name.endsWith(']')) name = name.slice(1, -1);
+  if (net.isIP(name) === 0) return false;
+  const bind = bindHost.trim().toLowerCase();
+  if (bind === '0.0.0.0' || bind === '::') return true;
+  return name === bind;
 }
 
 /** `127.0.0.1`, `::1` and the IPv4-mapped `::ffff:127.x.x.x` forms. */
@@ -536,8 +585,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     // follows every hit-counting request.
     entry.index ??= await loadMatcherIndex(entry.loaded);
     const started = Date.now();
+    let timedOut = false;
     const result = normalizeWithIndex(body.text, entry.index, {
-      shouldStop: () => Date.now() - started >= normalizeBudgetMs,
+      shouldStop: () => (timedOut ||= Date.now() - started >= normalizeBudgetMs),
       ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
       ...(body.minConfidence !== undefined ? { minConfidence: body.minConfidence } : {}),
     });
@@ -547,7 +597,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       await recordHits(canonicals, { cwd, ...storeOpts }).catch(() => undefined);
       invalidate();
     }
-    return { ...result, summary: result.replacements.length > 0 ? diffSummary(result) : '' };
+    return {
+      ...result,
+      summary: result.replacements.length > 0 ? diffSummary(result) : '',
+      // Without it a body cut short by the budget reads as fully corrected.
+      ...(timedOut ? { incomplete: timeBudgetIncomplete(body.text.length, normalizeBudgetMs) } : {}),
+    };
   }
 
   async function handleLearn(raw: unknown): Promise<LearnResponse> {
@@ -558,7 +613,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
     );
     invalidate();
-    return { term: result.term, created: result.created, aliasAdded: result.aliasAdded, path: result.file.path };
+    return {
+      term: result.term,
+      created: result.created,
+      aliasAdded: result.aliasAdded,
+      path: result.file.path,
+      ...(result.conflict ? { conflict: result.conflict } : {}),
+      ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
+    };
   }
 
   async function handleAdd(raw: unknown): Promise<AddResponse> {
@@ -674,7 +736,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (pathname === '/health') {
       // Unauthenticated, so a wrong method is answered before the token check.
       if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await health(resolveCwd(url.searchParams.get('cwd'))));
+      // Without the token /health only says the server is up: a `cwd` would
+      // let any local caller probe which directories carry a .lexicon.yaml
+      // and whether they are trusted.
+      const cwdParam = url.searchParams.get('cwd');
+      if (cwdParam !== null && (!config || !tokenMatches(req.headers.authorization, config.token))) {
+        throw new HttpError(401, '/health?cwd= needs the bearer token (see: lexicon serve --show); plain /health does not');
+      }
+      return json(200, await health(resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
       if (method !== 'GET') throw new HttpError(405, 'use GET');
@@ -730,14 +799,6 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     throw new HttpError(404, `no route for ${method} ${sanitizeForDisplay(pathname)}`);
   }
 
-  function statusFor(err: unknown): number {
-    if (err instanceof HttpError) return err.status;
-    if (isProjectTrustError(err)) return 403;
-    if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
-    // learnCorrection / addTerm / parseLexicon throw plain Errors on bad input.
-    if (err instanceof Error && !(err instanceof TypeError)) return 400;
-    return 500;
-  }
 
   function send(res: http.ServerResponse, response: Response, extra: Record<string, string>): void {
     const headers: Record<string, string> = { ...extra, ...response.headers, 'Cache-Control': 'no-store' };
@@ -779,6 +840,18 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       cors['Vary'] = 'Origin';
     }
 
+    // Before anything else, OPTIONS included (see isAllowedHost).
+    if (!isAllowedHost(req.headers.host, boundPort, host)) {
+      send(
+        res,
+        json(403, {
+          error: `Host must be 127.0.0.1:${boundPort}, localhost:${boundPort} or [::1]:${boundPort} (DNS rebinding guard)`,
+        }),
+        {},
+      );
+      return;
+    }
+
     if (method === 'OPTIONS') {
       res.writeHead(204, cors);
       res.end();
@@ -797,8 +870,17 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     route(req, url)
       .then((response) => send(res, response, cors))
       .catch((err: unknown) => {
-        const status = statusFor(err);
-        const message = status === 500 ? 'internal error' : errorMessage(err);
+        const status = errorStatus(err);
+        // A 500's detail (a broken file and its path, a held lock) is what the
+        // user needs to fix it, so a client holding the token gets it; an
+        // anonymous caller (plain /health) gets only a pointer to the log.
+        const authed = config !== undefined && tokenMatches(req.headers.authorization, config.token);
+        let message = errorMessage(err);
+        if (status === 500) {
+          message = authed
+            ? `internal error: ${message}`
+            : 'internal error (the lexicon serve log has the detail)';
+        }
         if (status === 500) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
         const extra: Record<string, string> = { ...cors };
         if (status === 413) extra['Connection'] = 'close';

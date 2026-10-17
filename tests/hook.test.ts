@@ -356,6 +356,17 @@ describe('runUserPromptSubmitHook', () => {
       expect(note).not.toContain('\n');
       expect(note).toContain('"Ashler" should be "Ashlr.AI"');
     });
+
+    it('formatCorrectionNote escapes a quote or backslash inside a spelling', async () => {
+      // Unescaped, `heard: "say "Ashler" again"` gives the agent no way to tell where the argument ends.
+      const { formatCorrectionNote } = await import('../src/hooks/user-prompt-submit.js');
+      const note = formatCorrectionNote({ heard: 'Ash"ler', meant: 'Ashlr\\AI' });
+      expect(note).toContain('heard: "Ash\\"ler", meant: "Ashlr\\\\AI".');
+      const args = /heard: ("(?:[^"\\]|\\.)*"), meant: ("(?:[^"\\]|\\.)*")/.exec(note);
+      expect(args && [JSON.parse(args[1]), JSON.parse(args[2])]).toEqual(['Ash"ler', 'Ashlr\\AI']);
+      // Non-ASCII stays readable.
+      expect(formatCorrectionNote({ heard: 'Zoe', meant: 'Zoë' })).toContain('"Zoe" should be "Zoë"');
+    });
   });
 });
 
@@ -633,6 +644,24 @@ describe('a long prompt stays inside the hook budget', () => {
     await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 60_000 });
     const roomy = mocks.normalize.mock.calls[0][2] as { shouldStop?: () => boolean };
     expect(roomy.shouldStop!()).toBe(false);
+  });
+
+  it('says so when matching stopped at the budget, even when nothing was corrected', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      opts?.shouldStop?.();
+      return fakeNormalize(text);
+    });
+    const out = await runUserPromptSubmitHook(payload('a long prompt with no names'), { matchBudgetMs: 0 });
+    expect(out).not.toBe('');
+    expect(context(out)).toMatch(/stopped checking this prompt .* after its 0 ms budget/);
+    expect(context(out)).toContain('normalize_transcript');
+    // Inside the budget: no note, and an unchanged prompt still prints nothing.
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      opts?.shouldStop?.();
+      return fakeNormalize(text);
+    });
+    expect(await runUserPromptSubmitHook(payload('a long prompt with no names'), { matchBudgetMs: 60_000 })).toBe('');
   });
 
   it('starts the budget after the index is loaded, so a slow index load cannot cost the corrections', async () => {

@@ -16,8 +16,10 @@ import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/co
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
+  errorStatus,
   getServePath,
   isLoopbackAddress,
+  isAllowedHost,
   isOriginAllowed,
   isPairHost,
   pairPageHtml,
@@ -51,6 +53,8 @@ import {
 import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
+import { FileLockError } from '../src/util/atomic.js';
+import { InputError } from '../src/util/errors.js';
 
 interface Env {
   home: string;
@@ -295,6 +299,65 @@ describe('auth', () => {
   });
 });
 
+/**
+ * Catches: only /pair checking Host. Through DNS rebinding a page on
+ * evil.example resolves its own name to 127.0.0.1, so its requests reach the
+ * server with `Host: evil.example:<port>`; /health?cwd= then told it whether
+ * any directory has a .lexicon.yaml and whether it is trusted.
+ */
+describe('Host guard (DNS rebinding)', () => {
+  it('refuses a foreign Host on every route, with or without the token', async () => {
+    const routes: [string, string][] = [
+      ['GET', '/health'],
+      ['GET', `/health?cwd=${encodeURIComponent(env.untrustedProject)}`],
+      ['GET', '/stats'],
+      ['GET', '/lexicon'],
+      ['POST', '/normalize'],
+      ['OPTIONS', '/normalize'],
+      ['GET', '/nope'],
+    ];
+    for (const [method, route] of routes) {
+      for (const host of ['evil.example', `evil.example:${info.port}`, `127.0.0.1.evil.example:${info.port}`]) {
+        const res = await rawGet(route, { Host: host, Authorization: `Bearer ${info.token}` }, method);
+        expect(res.status, `${method} ${route} Host ${host}`).toBe(403);
+        expect(res.body).not.toContain('projectTrust');
+        expect((JSON.parse(res.body) as { error: string }).error).toContain('Host');
+      }
+    }
+  });
+
+  it('accepts 127.0.0.1, localhost and [::1] on the bound port only', async () => {
+    for (const host of [`127.0.0.1:${info.port}`, `localhost:${info.port}`, `LocalHost:${info.port}`, `[::1]:${info.port}`]) {
+      const res = await rawGet('/health', { Host: host });
+      expect(res.status, host).toBe(200);
+    }
+    for (const host of ['127.0.0.1', `127.0.0.1:${info.port + 1}`, `[::1]:${info.port + 1}`]) {
+      const res = await rawGet('/health', { Host: host });
+      expect(res.status, host).toBe(403);
+    }
+  });
+
+  it('isAllowedHost accepts the bound IP for a non-loopback --host, never a name', () => {
+    expect(isAllowedHost('192.168.1.5:41733', 41733, '192.168.1.5')).toBe(true);
+    expect(isAllowedHost('192.168.1.6:41733', 41733, '192.168.1.5')).toBe(false);
+    expect(isAllowedHost('192.168.1.6:41733', 41733, '0.0.0.0')).toBe(true);
+    expect(isAllowedHost('[fe80::1]:41733', 41733, '::')).toBe(true);
+    expect(isAllowedHost('evil.example:41733', 41733, '0.0.0.0')).toBe(false);
+    expect(isAllowedHost('192.168.1.5:41733', 41733)).toBe(false);
+    expect(isAllowedHost(undefined, 41733)).toBe(false);
+  });
+
+  it('/health takes ?cwd= only with the bearer token', async () => {
+    const q = `/health?cwd=${encodeURIComponent(env.untrustedProject)}`;
+    const anon = await fetch(`${info.url}${q}`);
+    expect(anon.status).toBe(401);
+    expect(await anon.text()).not.toContain('projectTrust');
+    const authed = await api('GET', q);
+    expect(authed.status).toBe(200);
+    expect(((await authed.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // endpoints
 // ---------------------------------------------------------------------------
@@ -351,7 +414,13 @@ describe('POST /normalize', () => {
         ).json()) as NormalizeResult;
       // The first token is always matched; the budget is checked before each later one.
       expect((await call('ashler hello')).replacements).toHaveLength(1);
-      expect((await call('hello ashler')).replacements).toHaveLength(0);
+      const cut = (await call('hello ashler')) as NormalizeResult & { incomplete?: { reasons: string[]; totalChars: number; note: string } };
+      expect(cut.replacements).toHaveLength(0);
+      // Without this the cut-short body reads as fully checked.
+      expect(cut.incomplete).toMatchObject({ reasons: ['time'], totalChars: 12 });
+      expect(cut.incomplete?.note).toMatch(/0 ms budget/);
+      // A one-token body never polls the budget, so it is complete.
+      expect((await call('ashler')) as object).not.toHaveProperty('incomplete');
     } finally {
       await tight.stop();
     }
@@ -595,6 +664,49 @@ describe('limits and errors', () => {
     expect(list.status).toBe(400);
   });
 
+  /**
+   * Catches: every plain Error mapped to 400. A broken lexicon file or a lock
+   * that never frees is the server's problem, not the request's, and a 400
+   * told clients (the extension, the menu bar app) to stop retrying and blame
+   * their own input.
+   */
+  it('500 with a readable message for a broken lexicon file; 400 stays for bad input', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'broken-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+    const broken = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await broken.start();
+    try {
+      const auth = { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' };
+      const stats = await fetch(`${t.url}/stats`, { headers: auth });
+      expect(stats.status).toBe(500);
+      const msg = ((await stats.json()) as { error: string }).error;
+      expect(msg).toContain('Failed to parse lexicon YAML');
+      expect(msg).toContain(globalPath);
+      const norm = await fetch(`${t.url}/normalize`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'x' }) });
+      expect(norm.status).toBe(500);
+      // Without the token the detail (a file path) stays in the server log.
+      const health = await fetch(`${t.url}/health`);
+      expect(health.status).toBe(500);
+      expect(await health.text()).not.toContain(globalPath);
+    } finally {
+      await broken.stop();
+    }
+    for (const body of [{ heard: 'same', meant: 'same' }, { heard: '', meant: 'Foo' }]) {
+      const res = await api('POST', '/learn', body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect((await api('POST', '/add', { canonical: '   ' })).status).toBe(400);
+  });
+
+  it('errorStatus: lock timeouts and fs errors are 500, input errors 400', () => {
+    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', 'still held after 5000ms'))).toBe(500);
+    expect(errorStatus(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }))).toBe(500);
+    expect(errorStatus(new Error('Invalid lexicon at /x: bad'))).toBe(500);
+    expect(errorStatus(new TypeError('x is undefined'))).toBe(500);
+    expect(errorStatus(new InputError('canonical must not be empty'))).toBe(400);
+  });
+
   it('405 on the wrong method', async () => {
     const res = await api('GET', '/normalize');
     expect(res.status).toBe(405);
@@ -625,7 +737,7 @@ describe('trust gate', () => {
     expect(body.output).toBe('ping hostyle');
     expect(body.changed).toBe(false);
 
-    const health = await fetch(`${info.url}/health?cwd=${encodeURIComponent(cwd)}`);
+    const health = await api('GET', `/health?cwd=${encodeURIComponent(cwd)}`);
     expect(((await health.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
 
     const lex = await api('GET', `/lexicon?cwd=${encodeURIComponent(cwd)}`);
@@ -678,6 +790,55 @@ describe('lexicon serve (CLI)', () => {
     const down = memIO();
     expect(await runServe({ status: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
     expect(down.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+  });
+
+  /**
+   * Catches: --status treating any non-2xx /health as "down" and telling the
+   * user to start a server that is already running. A broken lexicon file
+   * makes /health answer 500; the useful output is what is broken.
+   */
+  it('--status names the error when the server is running but /health fails', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'status-broken-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+    const broken = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await broken.start();
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port: t.port, globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(out).toContain(`lexicon serve is running at http://127.0.0.1:${t.port} but /health failed (HTTP 500`);
+      expect(out).toContain('Failed to parse lexicon YAML');
+      expect(out).not.toContain('start it with');
+
+      const json = memIO();
+      expect(await runServe({ status: true, json: true, port: t.port, globalPath }, json)).toBe(1);
+      expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, running: true, status: 500, reason: expect.stringContaining('Failed to parse') });
+    } finally {
+      await broken.stop();
+    }
+  });
+
+  // Catches: the error going through `safe`, which caps at 200 characters,
+  // so a long lexicon path was cut off before the part that names the file.
+  it('--status keeps the whole path of a broken lexicon file, and every line of the error', async () => {
+    const dir = path.join(await fs.mkdtemp(path.join(env.home, 'status-long-')), 'a-rather-long-directory-name-'.repeat(6));
+    await fs.mkdir(dir, { recursive: true });
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - aliases: [x]\n  - canonical: B\n    aliases: 7\n', 'utf8');
+    const broken = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await broken.start();
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port: t.port, globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(globalPath.length).toBeGreaterThan(200);
+      expect(out).toContain(`/health failed (HTTP 500): internal error: Invalid lexicon at ${globalPath}:`);
+      expect(out).toContain('terms[0].canonical');
+      expect(out).toContain('terms[1].aliases');
+    } finally {
+      await broken.stop();
+    }
   });
 
   it('--status --json', async () => {

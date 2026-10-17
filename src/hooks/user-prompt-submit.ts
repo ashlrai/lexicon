@@ -185,12 +185,14 @@ export function formatSkippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTru
  * unpunctuated tail ("versel please fix it").
  */
 export function formatCorrectionNote(correction: Correction): string {
-  const heard = stripControlChars(correction.heard).trim();
-  const meant = stripControlChars(correction.meant).trim();
+  // JSON string literals: a spelling holding `"` or `\` must not read as the
+  // end of the argument. A plain spelling comes out as "Ashler", as before.
+  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
+  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
   return (
-    `The user is correcting a spelling: "${heard}" should be "${meant}". ` +
-    `Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". ` +
-    `If "${heard}" contains words that are not part of the misspelled name, pass only the name. ` +
+    `The user is correcting a spelling: ${heard} should be ${meant}. ` +
+    `Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. ` +
+    `If ${heard} contains words that are not part of the misspelled name, pass only the name. ` +
     'Then continue with the rest of the message.'
   );
 }
@@ -441,8 +443,10 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   // loads node:perf_hooks on first touch, a few ms of a cold hook.
   const started = process.hrtime.bigint();
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
-  const shouldStop = (): boolean => process.hrtime.bigint() - started >= limit;
+  let timedOut = false;
+  const shouldStop = (): boolean => (timedOut ||= process.hrtime.bigint() - started >= limit);
   let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : undefined;
+  const budgetNote = timedOut ? formatBudgetNote(budget) : '';
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   if (result && correction) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
@@ -450,13 +454,26 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
 
-  if (!changed && !skippedNote && !correctionNote) return '';
+  if (!changed && !skippedNote && !correctionNote && !budgetNote) return '';
 
   const parts: string[] = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
+  if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
   return emit('UserPromptSubmit', parts);
+}
+
+/**
+ * One line for a prompt whose matching stopped at the hook budget. Without it
+ * a long prompt cut short reads exactly like one that held no misspelled
+ * names past its start.
+ */
+export function formatBudgetNote(budgetMs: number): string {
+  return (
+    `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. ` +
+    'If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.'
+  );
 }
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {

@@ -25,6 +25,7 @@ import type { LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
+import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
 
 export interface ServerOptions {
   /**
@@ -35,6 +36,10 @@ export interface ServerOptions {
   cwd?: string;
   /** How long to wait for the client's `roots/list` answer. Default ROOTS_TIMEOUT_MS. */
   rootsTimeoutMs?: number;
+  /** normalize_transcript's matching budget per call. Default MCP_NORMALIZE_BUDGET_MS. */
+  normalizeBudgetMs?: number;
+  /** Characters of `text` normalize_transcript matches. Default MCP_NORMALIZE_MAX_CHARS. */
+  normalizeMaxChars?: number;
 }
 
 /** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
@@ -176,6 +181,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       return cwd;
     },
     load,
+    normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,
+    normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS,
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
 
@@ -190,11 +197,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
     async (uri) => {
       const loaded = await load();
-      let text = exportLexicon(loaded.merged, 'claude-md');
-      if (loaded.skippedProject) {
-        // Surface only the path, never the untrusted file's contents.
-        text += `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
-      }
+      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -230,12 +233,14 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
     async () => {
       const loaded = await load();
-      const snippet = exportLexicon(loaded.merged, 'claude-md');
+      // The same path-only note lexicon://me carries, so the session knows the
+      // repo's own spellings are missing and why.
+      const snippet = exportLexicon(loaded.merged, 'claude-md').trimEnd() + skippedProjectSuffix(loaded);
       return {
         messages: [
           {
             role: 'user',
-            content: { type: 'text', text: `${snippet.trimEnd()}\n\n${VOICE_CONTEXT_INSTRUCTION}` },
+            content: { type: 'text', text: `${snippet}\n\n${VOICE_CONTEXT_INSTRUCTION}` },
           },
         ],
       };
@@ -255,6 +260,12 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   );
 
   return server;
+}
+
+/** A path-only note on a skipped project lexicon, never its contents; '' when none was skipped. */
+function skippedProjectSuffix(loaded: LoadedLexicon): string {
+  if (!loaded.skippedProject) return '';
+  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
 }
 
 export async function main(): Promise<void> {

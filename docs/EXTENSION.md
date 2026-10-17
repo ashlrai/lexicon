@@ -138,7 +138,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 - **Voice modes are out of reach.** ChatGPT Voice, Claude voice mode and Gemini Live send audio straight to the server; no text passes through the composer, so there is nothing to rewrite. The extension covers dictation that lands in the text box: Wispr Flow, Superwhisper, macOS/Windows dictation, the browser's own mic button on Grok and others, or the "dictate" mic on ChatGPT that fills the composer before sending.
 - The extension cannot fix a transcript the site produced server-side after you sent audio. For those, give the model the vocabulary instead: `lexicon export claude-md` into custom instructions or memory.
 - Sites re-render the composer often. The guard listens at the document level and re-finds the composer per event, but a redesign can still move the send button; then Enter still works (it is re-dispatched to the composer) and only the button path needs a new selector.
-- Corrections run on the whole box at send time. Very long messages (many thousands of characters) add a few milliseconds through the API and a few more embedded.
+- Corrections run on the whole box at send time. Very long messages (many thousands of characters) add a few milliseconds through the API and a few more embedded. Either engine stops matching after a fixed budget (1 s for the API, 250 ms embedded) and applies what it found up to that point, so a huge paste never holds the send.
 - The synthetic Enter is not "trusted" (`isTrusted: false`). Every supported site handles it today; a site that filters on `isTrusted` would need the send-button path, which is why each adapter carries both.
 
 ## Privacy

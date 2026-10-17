@@ -234,8 +234,12 @@ LaunchAgent with one that crash-loops.
 
 `GET http://127.0.0.1:<port>/health` with a 1.5 s timeout, where `<port>` is
 the one recorded in `serve.json` (as `lexicon serve --status` uses), else
-41733. It only reads `serve.json`, never creates it: `{ up: true, url,
-version, terms, port, ... }` or `{ up: false, url, error, hint }`.
+41733. It only reads `serve.json`, never creates it, and sends its token so a
+failing server returns its full error: `{ up: true, url, version, terms,
+port, ... }`; `{ up: false, running: true, url, status, error, hint }` when
+the server answers with an error (a lexicon file that does not parse, say),
+so the agent fixes `error` instead of starting a second server; or
+`{ up: false, url, error, hint }` when nothing answers.
 
 ## Safety rules
 
