@@ -190,3 +190,19 @@ describe('normalize_transcript limits', () => {
     expect((payload.incomplete as { reasons: string[] }).reasons).toContain('length');
   });
 });
+
+describe('suggest_canonical length', () => {
+  // Scoring is linear in the length of `heard` for every alias: a pasted
+  // paragraph took seconds (100k characters, 4.5 s against 2000 terms).
+  it('refuses a `heard` longer than a correction can be, before scoring it', async () => {
+    await fs.writeFile(process.env.LEXICON_PATH as string, 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [Hetsner]\n');
+    const long = await call('suggest_canonical', { heard: 'the hetsner box is down again '.repeat(400) });
+    expect(long.isError).toBe(true);
+    expect(long.text).toMatch(/at most 60 characters/);
+    expect(long.text).toMatch(/only the garbled word/);
+
+    const ok = await call('suggest_canonical', { heard: '  hetsnr  ' });
+    expect(ok.isError).toBe(false);
+    expect(JSON.parse(ok.text)).toMatchObject({ suggestions: [{ canonical: 'Hetzner' }] });
+  });
+});

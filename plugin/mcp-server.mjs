@@ -59648,10 +59648,15 @@ var registerTermTools = (server, ctx) => {
       title: "Suggest the canonical form of a garbled word",
       description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term.',
       inputSchema: {
-        heard: external_exports.string().min(1).describe("The suspicious word or phrase as it appeared in the transcript.")
+        heard: external_exports.string().min(1).describe(`The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`)
       }
     },
     async ({ heard }) => guarded(async () => {
+      if (heard.trim().replace(/\s+/g, " ").length > MAX_CORRECTION_LENGTH) {
+        throw new Error(
+          `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`
+        );
+      }
       const loaded = await load();
       const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
         canonical: s.term.canonical,

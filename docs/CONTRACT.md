@@ -486,7 +486,7 @@ Claude Code hook entry for two events, dispatched on the payload's `hook_event_n
   - `harvest_repo({ path?, limit?, minCount?, add? })` -> `{ root, candidates, count, added?, failures? }`; with `add: true` writes to the harvested repo's own project lexicon (`cwd: root`); a `ProjectTrustError` is surfaced once as the tool error instead of per candidate.
   - `export_lexicon({ format, categories?, limit? })` -> the export as text.
   - `learn_correction({ heard, meant, scope? })` -> `{ term, path, created, aliasAdded, summary }`.
-  - `suggest_canonical({ heard })` -> `{ heard, suggestions: { canonical, confidence, aliases, category? }[] }`.
+  - `suggest_canonical({ heard })` -> `{ heard, suggestions: { canonical, confidence, aliases, category? }[] }`. A `heard` longer than `MAX_CORRECTION_LENGTH` (60) after whitespace is squashed is an error, before the lexicon is read: scoring is linear in its length for every alias, and `learn_correction` would refuse it.
   - `lexicon_stats({})` -> `LexiconStats`.
   - Agent-native (see `docs/AGENT-NATIVE.md`):
   - `lexicon_doctor({})` -> `DoctorReport` from `runDoctorReport({ cwd })` (src/cli/commands.ts).

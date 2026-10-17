@@ -7,6 +7,7 @@ import { z } from 'zod';
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_ALIASES,
+  MAX_CORRECTION_LENGTH,
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
@@ -432,11 +433,21 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
         'offer to add it with add_term.',
       inputSchema: {
-        heard: z.string().min(1).describe('The suspicious word or phrase as it appeared in the transcript.'),
+        heard: z
+          .string()
+          .min(1)
+          .describe(`The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`),
       },
     },
     async ({ heard }) =>
       guarded(async () => {
+        // Scoring is linear in this length for every alias, and learn_correction
+        // could not save a longer `heard` anyway.
+        if (heard.trim().replace(/\s+/g, ' ').length > MAX_CORRECTION_LENGTH) {
+          throw new Error(
+            `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`,
+          );
+        }
         const loaded = await load();
         const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
           canonical: s.term.canonical,
