@@ -12,6 +12,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The Claude Code plugin's MCP server now connects after `claude plugin install`. The plugin entry used `${CLAUDE_PLUGIN_ROOT:-.}`, which Claude Code does not expand, so it ran `./plugin/mcp-server.mjs` from the user's directory and failed. `.claude-plugin/plugin.json` now declares the server with the bare `${CLAUDE_PLUGIN_ROOT}`; the repo's own `.mcp.json` uses a relative path.
 - `lexicon-mcp --version` prints the package version and `lexicon-mcp --help` a one-line usage, both exiting 0, instead of starting the stdio server.
+- `lexicon setup --company X --person Y` (and MCP `setup_lexicon` with `company`/`person`) seeds those names even when the lexicon already has 3 or more terms, for example after a starter pack. Before, an explicit name was dropped with "skipping the seed" and the plan showed `wouldSeed: []`. The guessed defaults (git user.name, the package scope) still wait for `--reseed`.
+- `lexicon add X --never w` (also `--phonetic`, `--category`, `--notes`), MCP `add_term` and `POST /add` on an existing term with no aliases no longer append generated aliases. Before, adding a never word to `Ashlr.AI` also added "Ashlr AI", "Ashlr", "Ashlar" and three more. A new term still gets the suggestions.
 
 ## 0.5.6 (2026-10-16)
 

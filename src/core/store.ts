@@ -730,7 +730,16 @@ async function assertProjectWritable(projectPath: string, opts: StoreOptions): P
 
 export async function addTerm(
   term: Term,
-  opts: StoreOptions & { scope?: TermScope; merge?: boolean } = {},
+  opts: StoreOptions & {
+    scope?: TermScope;
+    merge?: boolean;
+    /**
+     * Aliases for a term this call creates with none of its own (the callers'
+     * `suggestAliases` fallback). Ignored when the term already exists, so
+     * adding a never word, phonetic, category or notes appends nothing.
+     */
+    defaultAliases?: readonly string[];
+  } = {},
 ): Promise<{ file: LexiconFile; term: Term; created: boolean }> {
   const scope: TermScope = opts.scope ?? 'global';
   // The trust gate stays ahead of every other check, as it was when this
@@ -781,6 +790,9 @@ export async function addTerm(
 
     const created: Term = {
       ...incoming,
+      ...(incoming.aliases.length === 0 && opts.defaultAliases?.length
+        ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) }
+        : {}),
       scope,
       source: incoming.source ?? 'user',
       createdAt: incoming.createdAt ?? new Date().toISOString(),

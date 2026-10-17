@@ -238,6 +238,21 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: init, add, list', () => {
     expect(terms[0].aliases).toEqual(expect.arrayContaining([...suggested, 'cooper netties']));
   });
 
+  it('add with only --never or --phonetic on an existing term appends no generated aliases', async () => {
+    const h = await freshHome('add-never');
+    expect((await runCli(['add', 'Ashlr.AI', 'Ashler'], { env: h.env })).code).toBe(0);
+    const never = await runCli(['add', 'Ashlr.AI', '--never', 'ashes'], { env: h.env });
+    expect(never.code, never.stderr).toBe(0);
+    expect(never.stdout).toContain('merged Ashlr.AI (global)');
+    expect(never.stdout).not.toContain('suggested aliases');
+    const phonetic = await runCli(['add', 'Ashlr.AI', '--phonetic', 'ASH-ler'], { env: h.env });
+    expect(phonetic.code, phonetic.stderr).toBe(0);
+    const listed = await runCli(['list', '--json'], { env: h.env });
+    const terms = JSON.parse(listed.stdout) as { canonical: string; aliases: string[]; never?: string[]; phonetic?: string }[];
+    expect(terms).toHaveLength(1);
+    expect(terms[0]).toMatchObject({ aliases: ['Ashler'], never: ['ashes'], phonetic: 'ASH-ler' });
+  });
+
   it('list prints an aligned table with the path footer', async () => {
     const r = await runCli(['list'], { env: shared.env });
     expect(r.code).toBe(0);

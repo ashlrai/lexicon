@@ -521,6 +521,18 @@ describe('project-scope writes never launder an unreviewed file', () => {
 });
 
 describe('addTerm', () => {
+  it('uses defaultAliases only when it creates the term and was given none', async () => {
+    const created = await addTerm({ canonical: 'Ashlr.AI', aliases: [] }, { cwd: tmp, globalPath, defaultAliases: ['Ashler', 'ashlr.ai'] });
+    expect(created.created).toBe(true);
+    expect(created.term.aliases).toEqual(['Ashler']);
+    const merged = await addTerm({ canonical: 'Ashlr.AI', aliases: [], never: ['ashes'] }, { cwd: tmp, globalPath, defaultAliases: ['Ashlar'] });
+    expect(merged.created).toBe(false);
+    expect(merged.term.aliases).toEqual(['Ashler']);
+    expect(merged.term.never).toEqual(['ashes']);
+    const explicit = await addTerm({ canonical: 'Vercel', aliases: ['Versal'] }, { cwd: tmp, globalPath, defaultAliases: ['Vercell'] });
+    expect(explicit.term.aliases).toEqual(['Versal']);
+  });
+
   it('creates a new term in the global file with defaults', async () => {
     const term: Term = { canonical: ' Ashlr.AI ', aliases: [' Ashler ', 'ashler', '', 'ASHLR.AI', 'Ashlar'] };
     const result = await addTerm(term, { cwd: tmp, globalPath });
