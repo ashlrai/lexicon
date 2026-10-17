@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The hook's correction note writes `heard` and `meant` as JSON string literals. A spelling holding a double quote was wrapped in quotes unescaped, so the `learn_correction` arguments it told the agent to pass had no clear end. A plain spelling reads the same as before.
 - `learn_correction` (MCP, `lexicon learn`, `POST /learn`) says when the misheard spelling also belongs to a term in the repo's untrusted (or changed) project lexicon. The correction was written globally with no conflict reported, and once the user trusted the file its term won the merge. The result now carries `untrustedProject { path, trust }`, the MCP summary points at `lexicon trust`, and the CLI prints a `warn:` line. The file is still never merged, and none of its terms are reported.
 - `lexicon_stats` (and `lexicon stats --json`, `GET /stats`) carries `neverHitCount`, the number of terms that never fired. `neverHit` stops at 20 names, so a lexicon with 300 cold terms looked like one with 20; `lexicon stats` printed `never hit (20+)` and now prints the count and `and N more`.
 - `suggest_terms` (and `lexicon suggest --json`) gives each suggestion the `scope` and `path` of the lexicon file accepting it would write: where the term lives, or the global file for a new term. An agent could not tell the user which file a suggestion touches. MCP `apply_suggestion` honours a `scope` passed back on the suggestion.

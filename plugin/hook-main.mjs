@@ -20139,9 +20139,9 @@ function formatSkippedProjectNote(loaded) {
   return `Note: this repo has an untrusted .lexicon.yaml at ${safePath} that was not applied. ${SKIPPED_PROJECT_REVIEW} Trust it only if the user says yes after seeing the preview.`;
 }
 function formatCorrectionNote(correction) {
-  const heard = stripControlChars(correction.heard).trim();
-  const meant = stripControlChars(correction.meant).trim();
-  return `The user is correcting a spelling: "${heard}" should be "${meant}". Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". If "${heard}" contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
+  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
+  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
+  return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
 function spansOf(haystack, needle) {
   const spans = [];

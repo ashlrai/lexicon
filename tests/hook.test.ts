@@ -356,6 +356,17 @@ describe('runUserPromptSubmitHook', () => {
       expect(note).not.toContain('\n');
       expect(note).toContain('"Ashler" should be "Ashlr.AI"');
     });
+
+    it('formatCorrectionNote escapes a quote or backslash inside a spelling', async () => {
+      // Unescaped, `heard: "say "Ashler" again"` gives the agent no way to tell where the argument ends.
+      const { formatCorrectionNote } = await import('../src/hooks/user-prompt-submit.js');
+      const note = formatCorrectionNote({ heard: 'Ash"ler', meant: 'Ashlr\\AI' });
+      expect(note).toContain('heard: "Ash\\"ler", meant: "Ashlr\\\\AI".');
+      const args = /heard: ("(?:[^"\\]|\\.)*"), meant: ("(?:[^"\\]|\\.)*")/.exec(note);
+      expect(args && [JSON.parse(args[1]), JSON.parse(args[2])]).toEqual(['Ash"ler', 'Ashlr\\AI']);
+      // Non-ASCII stays readable.
+      expect(formatCorrectionNote({ heard: 'Zoe', meant: 'Zoë' })).toContain('"Zoe" should be "Zoë"');
+    });
   });
 });
 

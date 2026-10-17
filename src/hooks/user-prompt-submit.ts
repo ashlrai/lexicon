@@ -185,12 +185,14 @@ export function formatSkippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTru
  * unpunctuated tail ("versel please fix it").
  */
 export function formatCorrectionNote(correction: Correction): string {
-  const heard = stripControlChars(correction.heard).trim();
-  const meant = stripControlChars(correction.meant).trim();
+  // JSON string literals: a spelling holding `"` or `\` must not read as the
+  // end of the argument. A plain spelling comes out as "Ashler", as before.
+  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
+  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
   return (
-    `The user is correcting a spelling: "${heard}" should be "${meant}". ` +
-    `Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". ` +
-    `If "${heard}" contains words that are not part of the misspelled name, pass only the name. ` +
+    `The user is correcting a spelling: ${heard} should be ${meant}. ` +
+    `Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. ` +
+    `If ${heard} contains words that are not part of the misspelled name, pass only the name. ` +
     'Then continue with the rest of the message.'
   );
 }
