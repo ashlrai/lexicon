@@ -43,6 +43,7 @@ import {
   recordHits,
   isProjectTrustError,
   sanitizeForDisplay,
+  spellingConflicts,
   suggestAliases,
   timeBudgetIncomplete,
   uninstallPack,
@@ -147,6 +148,8 @@ export interface AddResponse {
   term: Term;
   path: string;
   created: boolean;
+  /** Aliases another term also holds, so they may still be corrected to it (MCP add_term `conflicts`). Only when there is one. */
+  conflicts?: LearnConflict[];
 }
 
 export interface LexiconResponse {
@@ -675,7 +678,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       ...(given ? {} : { defaultAliases: suggestAliases(body.canonical) }),
     });
     invalidate();
-    return { term: saved.term, path: saved.file.path, created: saved.created };
+    // An alias another term already holds may keep being corrected to that
+    // term: report it, as MCP add_term and `lexicon add --json` do, instead
+    // of a bare success. Best effort: a reload that fails loses the report.
+    const conflicts = await load(cwd).then(
+      (loaded) => spellingConflicts(loaded.merged, saved.term.aliases, saved.term.canonical),
+      () => [],
+    );
+    return { term: saved.term, path: saved.file.path, created: saved.created, ...(conflicts.length > 0 ? { conflicts } : {}) };
   }
 
   async function handleLexicon(cwd: string): Promise<LexiconResponse> {

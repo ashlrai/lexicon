@@ -16,7 +16,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { fail, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
+import { fail, jsonError, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -226,7 +226,20 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   const platform = deps.platform ?? process.platform;
   const exec = deps.exec ?? defaultServeExec;
   const doFetch = deps.fetch ?? fetch;
-  const config = await ensureServeConfig(storeOpts(opts));
+  // Read-only, like --status: pairing used to create serve.json (and mint a
+  // token) when none existed, which configured serve as a side effect of
+  // asking to pair with it. Without one there is no server to pair with.
+  const config = await readServeConfig(storeOpts(opts));
+  if (!config) {
+    const configPath = getServePath(storeOpts(opts));
+    const why = existsSync(configPath) ? 'has no usable token; lexicon serve replaces it' : 'does not exist; lexicon serve creates it';
+    const error = `serve is not configured: ${configPath} ${why}`;
+    const nextStep = 'run `lexicon serve --install` (or `lexicon serve` in the foreground) first, then run `lexicon serve --pair` again';
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(error, nextStep), up: false, configured: false, configPath }, null, 2));
+    io.stderr(`lexicon: serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}\n`);
+    io.stderr(`lexicon: ${nextStep}\n`);
+    return 1;
+  }
   const port = opts.port ?? config.port;
   const url = pairUrl(port);
   const healthUrl = `${serveUrl(port, DEFAULT_HOST)}/health`;
@@ -242,7 +255,9 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   }
   if (!up) {
     if (opts.json) {
-      line(io, JSON.stringify({ up: false, url, reason }, null, 2));
+      const error = `lexicon serve is down at ${serveUrl(port, DEFAULT_HOST)}${reason ? ` (${reason})` : ''}`;
+      const nextStep = 'start it with `lexicon serve` or `lexicon serve --install` first, then run `lexicon serve --pair` again';
+      line(io, JSON.stringify({ ...jsonError(error, nextStep), up: false, url, reason }, null, 2));
     } else {
       io.stderr(`lexicon: lexicon serve is down at ${serveUrl(port, DEFAULT_HOST)}${reason ? ` (${safe(reason)})` : ''}\n`);
       io.stderr('lexicon: start it with `lexicon serve` or `lexicon serve --install` first, then run `lexicon serve --pair` again\n');
@@ -262,7 +277,7 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   }
 
   if (opts.json) {
-    line(io, JSON.stringify({ up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
+    line(io, JSON.stringify({ ...(opened ? {} : { ok: false }), up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
     return opened ? 0 : 1;
   }
   if (opened) {

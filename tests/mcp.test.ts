@@ -431,6 +431,34 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: harvest_repo with add: true answered isError: false with
+  // added: 0 when every write failed, so an agent reported the candidates as added.
+  it('harvest_repo with add is an error when no candidate could be written, and notes a partial failure', async () => {
+    const { client, close } = await connect();
+    try {
+      mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      const failed = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(failed.isError).toBe(true);
+      expect(JSON.parse(textOf(failed))).toMatchObject({
+        count: 1,
+        added: 0,
+        failures: [{ canonical: 'FooBar', error: 'EACCES: permission denied' }],
+        note: expect.stringContaining('1 of 1 candidates were not added'),
+      });
+
+      mocks.harvestRepo.mockResolvedValueOnce([
+        { canonical: 'FooBar', category: 'product', count: 2, evidence: [], suggestedAliases: ['foo bar'], source: 'harvest:repo' },
+        { canonical: 'BazQux', category: 'product', count: 2, evidence: [], suggestedAliases: [], source: 'harvest:repo' },
+      ]);
+      mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      const partial = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(partial.isError).toBe(false);
+      expect(JSON.parse(textOf(partial))).toMatchObject({ added: 1, note: expect.stringContaining('1 of 2 candidates were not added') });
+    } finally {
+      await close();
+    }
+  });
+
   it('export_lexicon returns the exported string', async () => {
     const { client, close } = await connect();
     try {
@@ -1183,10 +1211,25 @@ describe('lexicon MCP server', () => {
         expect(harvested.isError).toBe(false);
         expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'tRPC', aliases: ['t r p c', 'trpc'], source: 'user', category: 'product' }, { cwd: '/fake/repo' });
 
-        const never = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'never', canonical: 'SaaS', alias: 'sauce' } } });
+        const never = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'never', canonical: 'Kubernetes', alias: 'cuber' } } });
         expect(never.isError).toBe(false);
-        expect(JSON.parse(textOf(never))).toMatchObject({ summary: '"sauce" will never be rewritten to "SaaS"' });
-        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'SaaS', aliases: [], source: 'user', never: ['sauce'] }, { cwd: '/fake/repo' });
+        expect(JSON.parse(textOf(never))).toMatchObject({ summary: '"cuber" will never be rewritten to "Kubernetes"' });
+        // Written where the term lives (Kubernetes is a project term).
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(
+          { canonical: 'Kubernetes', aliases: [], source: 'user', never: ['cuber'], scope: 'project' },
+          { cwd: '/fake/repo', scope: 'project' },
+        );
+
+        // Catches: an alias or never word for a term no longer in the lexicon
+        // created a new term holding only that word, reported as "saved".
+        mocks.addTerm.mockClear();
+        for (const gone of [{ kind: 'never', canonical: 'SaaS', alias: 'sauce' }, { kind: 'alias', canonical: 'Gone.io', alias: 'gone eye oh' }]) {
+          const res = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: gone } });
+          expect(res.isError).toBe(true);
+          expect(textOf(res)).toContain(`no term "${gone.canonical}" in the lexicon`);
+          expect(textOf(res)).toContain('nothing was written');
+        }
+        expect(mocks.addTerm).not.toHaveBeenCalled();
 
         const stale = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'stale', canonical: 'Kubernetes' } } });
         expect(JSON.parse(textOf(stale))).toMatchObject({ kind: 'stale', removed: true });

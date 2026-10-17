@@ -130,10 +130,11 @@ Options:
                    1 when the term or alias is unknown)
   --project        only look in the project lexicon
   --global         only look in the global lexicon (not with --project)
-  --json           print { canonical, removed } as JSON (exit 1 when not found),
-                   plus stillIn when a copy is left in the other lexicon file
-                   and untrustedProject when the untrusted project lexicon has
-                   one; with --alias also alias, aliases and paths
+  --json           print { canonical, removed } as JSON (exit 1 when not found,
+                   with ok: false and error), plus stillIn when a copy is left
+                   in the other lexicon file and untrustedProject when the
+                   untrusted project lexicon has one; with --alias also alias,
+                   aliases and paths
   -h, --help       display help for command
 ```
 
@@ -200,8 +201,10 @@ Options:
   --yes              with --add: add every candidate without prompting
   --symbols          also propose names seen only as a code symbol (off: they
                      are what you type, not what you say)
-  --json             print candidates as JSON (a bare array; with --add the add
-                     summary goes to stderr)
+  --json             print candidates as JSON (a bare array; with --add it is
+                     printed after the writes, the add summary goes to stderr,
+                     and a failed write prints only { ok: false, error, added,
+                     created, merged, path })
   --full             print { root, candidates, count } as JSON, the object MCP
                      harvest_repo returns, plus added, created, merged and path
                      with --add (implies --json)

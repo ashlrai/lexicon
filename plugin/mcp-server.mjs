@@ -59999,12 +59999,15 @@ var registerHarvestTools = (server, ctx) => {
           }
         }
       }
-      return textResult({
+      const payload = {
         root,
         candidates,
         count: candidates.length,
-        ...add ? { added, failures } : {}
-      });
+        ...add ? { added, failures } : {},
+        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
+      };
+      if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+      return textResult(payload);
     })
   );
   server.registerTool(
@@ -60054,9 +60057,15 @@ var registerHarvestTools = (server, ctx) => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
       let target = scope ?? suggestion.scope;
-      if (target === void 0 && (kind === "alias" || kind === "never")) {
+      if (kind === "alias" || kind === "never") {
         const key = canonical.trim().toLowerCase();
-        target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+        const existing = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+        if (!existing) {
+          throw new Error(
+            `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
+          );
+        }
+        target ??= existing.scope;
       }
       const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {

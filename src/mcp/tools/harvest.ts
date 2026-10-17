@@ -77,12 +77,19 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             }
           }
         }
-        return textResult({
+        const payload = {
           root,
           candidates,
           count: candidates.length,
           ...(add ? { added, failures } : {}),
-        });
+          ...(failures.length > 0
+            ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }
+            : {}),
+        };
+        // Every write failed: nothing was added, so this is not a success the
+        // agent should report as "added" (the payload still lists the reasons).
+        if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+        return textResult(payload);
       }),
   );
 
@@ -150,9 +157,20 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         // does: a global copy of a project term loses the merge, so it would
         // never fire. Suggestions do not carry a scope for the agent to pass.
         let target = scope ?? suggestion.scope;
-        if (target === undefined && (kind === 'alias' || kind === 'never')) {
+        if (kind === 'alias' || kind === 'never') {
+          // Both edit an existing term. When it is gone (removed since
+          // suggest_terms ran, or only in a skipped project file) addTerm
+          // used to create a new term holding just this word, reported as
+          // "saved": a term the user never asked for.
           const key = canonical.trim().toLowerCase();
-          target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+          const existing = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+          if (!existing) {
+            throw new Error(
+              `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === 'alias' ? 'alias' : 'never word'} to (it may have been removed since suggest_terms ran); ` +
+                'nothing was written. Call suggest_terms again, or add_term if the user wants the term created.',
+            );
+          }
+          target ??= existing.scope;
         }
         const storeOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
         if (kind === 'stale') {

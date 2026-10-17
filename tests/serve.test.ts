@@ -477,6 +477,31 @@ describe('POST /learn and POST /add', () => {
     expect(body.term.never).toContain('ashes');
   });
 
+  // Catches: POST /add answered a bare success for an alias another term
+  // already holds, while MCP add_term and `lexicon add --json` report it as
+  // `conflicts`; the alias may keep correcting to the other term.
+  it('add reports an alias another term already holds as conflicts, as MCP add_term does', async () => {
+    // A trusted project file of its own, so the shared global lexicon other cases count stays as it is.
+    const repo = path.join(env.home, 'add-conflict-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const res = await api('POST', '/add', { canonical: 'Ashley', aliases: ['Ashler', 'ashleigh'], scope: 'project', cwd: repo });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { created: boolean; path: string; conflicts?: unknown };
+      expect(body.created).toBe(true);
+      expect(body.path).toBe(file);
+      expect(body.conflicts).toEqual([{ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' }]);
+      // No conflict, no key: the documented shape is unchanged.
+      const clean = (await (await api('POST', '/add', { canonical: 'Zorkmid', aliases: ['zork mid'], scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
+      expect(clean).not.toHaveProperty('conflicts');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('add validates the category', async () => {
     const res = await api('POST', '/add', { canonical: 'X', category: 'nope' });
     expect(res.status).toBe(400);
@@ -1124,6 +1149,35 @@ describe('lexicon serve (CLI)', () => {
     expect(JSON.parse(json.out.join(''))).toEqual({ up: true, url, opened: true });
   });
 
+  // Catches: --pair created serve.json (and minted a token) when it was
+  // missing, so asking to pair configured serve as a side effect.
+  it('--pair writes nothing and says serve is not configured when serve.json is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'pair-unconfigured-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    const servePath = getServePath({ globalPath });
+    const calls: string[][] = [];
+    const text = memIO();
+    expect(await runServe({ pair: true, port: info.port, globalPath }, text, { home: env.home, platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(text.err.join('')).toContain('lexicon: serve is not configured:');
+    expect(text.err.join('')).toContain('does not exist; lexicon serve creates it');
+    expect(text.err.join('')).toContain('lexicon serve --install');
+    expect(text.out.join('')).toBe('');
+
+    const json = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath }, json, { platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toEqual({
+      ok: false,
+      error: `serve is not configured: ${servePath} does not exist; lexicon serve creates it`,
+      nextStep: expect.stringContaining('lexicon serve --install'),
+      up: false,
+      configured: false,
+      configPath: servePath,
+    });
+    expect(calls).toEqual([]);
+    await expect(fs.stat(servePath)).rejects.toThrow();
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
   it('--pair exits 1 with a start hint when the server is down, and when no browser opens', async () => {
     const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
     const c = await closed.start();
@@ -1134,11 +1188,17 @@ describe('lexicon serve (CLI)', () => {
     expect(calls).toEqual([]);
     expect(down.err.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
     expect(down.err.join('')).toContain('lexicon serve --install');
+    const downJson = memIO();
+    expect(await runServe({ pair: true, json: true, port: c.port, globalPath: env.globalPath }, downJson, { platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(JSON.parse(downJson.out.join(''))).toMatchObject({ ok: false, error: expect.stringContaining('lexicon serve is down'), nextStep: expect.stringContaining('lexicon serve'), up: false, url: `http://127.0.0.1:${c.port}/pair` });
 
     const failed = memIO();
     expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, failed, { platform: 'darwin', exec: fakeExec([], 1) })).toBe(1);
     expect(failed.err.join('')).toContain('could not open a browser');
     expect(failed.out.join('')).toContain(`http://127.0.0.1:${info.port}/pair`);
+    const failedJson = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, failedJson, { platform: 'darwin', exec: fakeExec([], 1) })).toBe(1);
+    expect(JSON.parse(failedJson.out.join(''))).toMatchObject({ ok: false, up: true, opened: false, error: expect.any(String) });
   });
 
   it('runs in the foreground until the signal fires and prints the listening line', async () => {
