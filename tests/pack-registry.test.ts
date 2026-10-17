@@ -506,3 +506,34 @@ describe('pack add --json --yes prints one JSON document', () => {
     expect(doc).toMatchObject({ ok: true, preview: false, ref: 'example/cardiology', added: 1, merged: 0 });
   });
 });
+
+// Catches: a vendored `pack add` (and `pack remove`) ignored `globalPath`,
+// which the community path honours, so it wrote to LEXICON_PATH (or the real
+// global lexicon) instead of the file the caller named.
+describe('vendored pack add / remove honour globalPath', () => {
+  it('writes and removes only the globalPath file', async () => {
+    const decoy = path.join(dir, 'decoy', 'lexicon.yaml');
+    const saved = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = decoy;
+    try {
+      const io = makeIO();
+      expect(await runPackAdd(['developer'], { globalPath, cwd: dir }, io), io.err).toBe(0);
+      expect(io.out).toContain(`merged into ${globalPath}`);
+      expect(readFileSync(globalPath, 'utf8')).toContain('source: pack');
+      expect(existsSync(decoy)).toBe(false);
+
+      const json = makeIO();
+      expect(await runPackAdd(['ai'], { globalPath, cwd: dir, json: true }, json), json.err).toBe(0);
+      expect(JSON.parse(json.out)).toMatchObject([{ path: globalPath, scope: 'global' }]);
+      expect(existsSync(decoy)).toBe(false);
+
+      const removed = makeIO();
+      expect(await runPackRemove('developer', { globalPath, cwd: dir }, removed), removed.err).toBe(0);
+      expect(readFileSync(globalPath, 'utf8')).not.toMatch(/- developer\b/);
+      expect(existsSync(decoy)).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.LEXICON_PATH;
+      else process.env.LEXICON_PATH = saved;
+    }
+  });
+});

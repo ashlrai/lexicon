@@ -194,7 +194,7 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
       const ref = parseRegistryRef(name).ref;
       result = await uninstallRegistryPack(ref, opts.registry, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}) }, deps.registry);
     } else {
-      result = await uninstallPack(name, { cwd, ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
+      result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
     }
     if (opts.json) {
       line(io, JSON.stringify(jsonOk(result), null, 2));
@@ -432,7 +432,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         const result = await runPackAddRegistry(name, opts, io, deps);
         results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
       } else {
-        const result = await installPack(name, { cwd, scope, ...deps });
+        const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...deps });
         results.push(result);
         vendored += 1;
         if (!opts.json) {
