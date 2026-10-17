@@ -360,6 +360,39 @@ describe('runUserPromptSubmitHook', () => {
       expect(dropCorrectionSpans(none, { heard: 'Ashlur', meant: 'Ashlr.AI' })).toBe(none);
     });
 
+    // Catches: spans were found in input.toLowerCase(), which is longer than
+    // the input when it holds `İ` (one unit lowercases to two), so every span
+    // after it was shifted: the correction's own words were rewritten and an
+    // unrelated garble just after them was dropped instead.
+    it('dropCorrectionSpans finds spans on the original offsets when lowercasing changes length', async () => {
+      const { dropCorrectionSpans } = await import('../src/hooks/user-prompt-submit.js');
+      const input = `${'İ'.repeat(8)} it is Ashlr.AI not Ash Lur mason white`;
+      const lur = input.indexOf('Lur');
+      const mason = input.indexOf('mason white');
+      const r: NormalizeResult = {
+        input,
+        output: input.replace('Lur', 'Ashlr.AI').replace('mason white', 'Mason Wyatt'),
+        changed: true,
+        replacements: [
+          { start: lur, end: lur + 3, original: 'Lur', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'phonetic', confidence: 0.8 },
+          { start: mason, end: mason + 11, original: 'mason white', replacement: 'Mason Wyatt', canonical: 'Mason Wyatt', reason: 'alias', confidence: 1 },
+        ],
+      };
+      const dropped = dropCorrectionSpans(r, { heard: 'ash lur', meant: 'Ashlr.AI' });
+      expect(dropped.replacements.map((x) => x.canonical)).toEqual(['Mason Wyatt']);
+      expect(dropped.output).toBe(`${'İ'.repeat(8)} it is Ashlr.AI not Ash Lur Mason Wyatt`);
+      // The heard side may itself hold a length-changing letter.
+      const tr = `x İstanbul y`;
+      const at = tr.indexOf('İstanbul');
+      const r2: NormalizeResult = {
+        input: tr,
+        output: tr.replace('stanbul', 'Stanbul'),
+        changed: true,
+        replacements: [{ start: at + 1, end: at + 8, original: 'stanbul', replacement: 'Stanbul', canonical: 'Stanbul', reason: 'fuzzy', confidence: 0.7 }],
+      };
+      expect(dropCorrectionSpans(r2, { heard: 'İSTANBUL', meant: 'Istanbul' }).replacements).toEqual([]);
+    });
+
     it('does not add a note for ordinary prompts or one-sided corrections', async () => {
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
       expect(await runUserPromptSubmitHook(payload('ship it tonight, not tomorrow please'))).toBe('');
@@ -693,6 +726,23 @@ describe('runHook', () => {
       const shown = (ctx.match(/^\| Term\d+ \|/gm) ?? []).length;
       expect(shown).toBeGreaterThan(10);
       expect(shown + Number(more![1])).toBe(300);
+    });
+
+    // Catches: the table was cut to the cap and the skipped-project note was
+    // appended after it, so the context ran past SESSION_CONTEXT_MAX_CHARS.
+    it('keeps the table plus the skipped-project note within the cap', async () => {
+      const terms: Term[] = Array.from({ length: 300 }, (_, i) => ({ canonical: `Term${i}`, aliases: [`turm${i}`], category: 'product' }));
+      mocks.loadLexicon.mockResolvedValue({
+        ...loaded,
+        merged: { version: 1, terms },
+        projectTrust: 'changed',
+        skippedProject: { path: `/${'deep/'.repeat(40)}repo/.lexicon.yaml`, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
+      });
+      const { runHook, SESSION_CONTEXT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runHook(sessionStartPayload()));
+      expect(ctx.length).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+      expect(ctx).toMatch(/more terms; read the lexicon:\/\/me resource for the full list\./);
+      expect(ctx.split('\n').at(-1)).toMatch(/^Note: this repo's \.lexicon\.yaml at .* changed since/);
     });
 
     it('truncateSessionContext leaves short text alone and hard-cuts text without a table', async () => {

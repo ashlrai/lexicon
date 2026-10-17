@@ -1062,6 +1062,27 @@ describe('lexicon MCP server', () => {
         } finally { await close(); }
       });
 
+      // Catches: previewToken (or approvedCandidateIds) without apply: true was
+      // ignored: the call re-read the sources and returned a fresh preview, so
+      // a model that forgot apply believed it had imported the terms.
+      it('refuses a previewToken or approvedCandidateIds without apply and keeps the preview', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
+          const ids = [preview.candidates[0].id];
+          for (const extra of [{ previewToken: preview.previewToken }, { approvedCandidateIds: ids }, { previewToken: preview.previewToken, approvedCandidateIds: ids, apply: false }]) {
+            const result = await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'], ...extra } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/only used with apply: true, so nothing was read or written/);
+          }
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+          const applied = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], previewToken: preview.previewToken, approvedCandidateIds: ids } });
+          expect(applied.isError).toBe(false);
+        } finally { await close(); }
+      });
+
       it('rejects ids absent from a preview and changed destination scope', async () => {
         const { client, close } = await connect();
         try {
@@ -1215,6 +1236,30 @@ describe('lexicon MCP server', () => {
           expect(result.isError).toBe(false);
           const payload = JSON.parse(textOf(result)) as { name: string };
           expect(payload.name).toBe('developer');
+          expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
+      // Catches: a vendored name with registry, previewDigest or confirm: false
+      // (the community preview flow) was installed anyway, so a call asking
+      // for a preview wrote dozens of terms.
+      it('add_pack refuses community-only parameters with a vendored pack and writes nothing', async () => {
+        const { client, close } = await connect();
+        try {
+          for (const extra of [{ confirm: false }, { registry: '/fake/index.yaml' }, { previewDigest: 'a'.repeat(64) }, { registry: '/fake/index.yaml', confirm: false }]) {
+            const result = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', ...extra } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/"developer" is a vendored starter pack/);
+            expect(textOf(result)).toMatch(/Nothing was installed/);
+          }
+          expect(textOf(await client.callTool({ name: 'add_pack', arguments: { name: 'developer', registry: '/fake/index.yaml', confirm: false } }))).toMatch(/registry, confirm: false do not apply/);
+          expect(mocks.installPack).not.toHaveBeenCalled();
+          expect(mocks.loadRegistryIndex).not.toHaveBeenCalled();
+          // confirm: true is what the description asks for after a yes, so it still installs.
+          const ok = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', confirm: true } });
+          expect(ok.isError).toBe(false);
           expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
         } finally {
           await close();

@@ -20633,26 +20633,52 @@ function formatCorrectionNote(correction) {
   const meant = JSON.stringify(neutralizeForModel(correction.meant).trim());
   return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
+function foldWithOffsets(text) {
+  let folded = "";
+  const starts = [];
+  const ends = [];
+  let at = 0;
+  for (const ch of text) {
+    const lower = ch.toLowerCase();
+    for (let k = 0; k < lower.length; k += 1) {
+      starts.push(at);
+      ends.push(at + ch.length);
+    }
+    folded += lower;
+    at += ch.length;
+  }
+  return { folded, starts, ends };
+}
+function foldPerCodePoint2(text) {
+  let folded = "";
+  for (const ch of text) folded += ch.toLowerCase();
+  return folded;
+}
 function spansOf(haystack, needle) {
   const spans = [];
-  if (!needle) return spans;
+  const folded = foldPerCodePoint2(needle);
+  if (!folded) return spans;
   let from = 0;
   for (; ; ) {
-    const at = haystack.indexOf(needle, from);
+    const at = haystack.folded.indexOf(folded, from);
     if (at === -1) return spans;
-    spans.push([at, at + needle.length]);
-    from = at + needle.length;
+    spans.push([haystack.starts[at], haystack.ends[at + folded.length - 1]]);
+    from = at + folded.length;
   }
 }
+function squash2(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
 function collapse2(text) {
-  return text.replace(/\s+/g, " ").trim().toLowerCase();
+  return squash2(text).toLowerCase();
 }
 function dropCorrectionSpans(result, correction) {
   const input = result.input;
-  const lower = input.toLowerCase();
-  const sides = [collapse2(correction.heard), collapse2(correction.meant)].filter((s) => s !== "");
+  const raw = [squash2(correction.heard), squash2(correction.meant)].filter((s) => s !== "");
+  const sides = raw.map((s) => s.toLowerCase());
   if (sides.length === 0 || result.replacements.length === 0) return result;
-  const protectedSpans = sides.flatMap((side) => spansOf(lower, side));
+  const haystack = foldWithOffsets(input);
+  const protectedSpans = raw.flatMap((side) => spansOf(haystack, side));
   return dropReplacements(result, (r) => sides.includes(collapse2(input.slice(r.start, r.end))) || overlapsAny(r, protectedSpans));
 }
 function overlapsAny(r, spans) {
@@ -20843,7 +20869,8 @@ async function sessionStart(payload, opts) {
     if (!await shouldEmitOnboardNote(loaded.global.path)) return skippedNote ? emit("SessionStart", [skippedNote]) : "";
     return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
-  const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd())];
+  const room = SESSION_CONTEXT_MAX_CHARS - (skippedNote ? skippedNote.length + 1 : 0);
+  const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd(), room)];
   if (skippedNote) parts.push(skippedNote);
   return emit("SessionStart", parts);
 }
