@@ -530,7 +530,17 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
 function parseInput(raw: string): HookInput {
   const trimmed = raw.trim();
   if (!trimmed) return {};
-  const parsed: unknown = JSON.parse(trimmed);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    // JSON.parse's message quotes the start of the input, which is the
+    // user's prompt when a caller pipes raw text, control characters and
+    // all; it reached stderr verbatim as `[lexicon hook] Unexpected token
+    // 'h', "hi Ashler ..." is not valid JSON`. Say what was wrong instead.
+    process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, 'utf8')} bytes); expected the Claude Code hook payload object, nothing to do\n`);
+    return {};
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     // Valid JSON that is not a payload: nothing to read, and saying so is the
     // only clue a person has that the caller sent the wrong thing.

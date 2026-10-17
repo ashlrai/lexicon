@@ -20809,7 +20809,14 @@ function recordHitsInBackground(result, cwd, loaded) {
 function parseInput(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return {};
-  const parsed = JSON.parse(trimmed);
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, "utf8")} bytes); expected the Claude Code hook payload object, nothing to do
+`);
+    return {};
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     const kind = parsed === null ? "null" : Array.isArray(parsed) ? "an array" : `a ${typeof parsed}`;
     process.stderr.write(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do

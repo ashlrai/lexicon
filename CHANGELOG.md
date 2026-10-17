@@ -16,6 +16,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The Claude Code hook given stdin that is not JSON writes one line, `[lexicon hook] stdin is not valid JSON (<n> bytes); expected the Claude Code hook payload object, nothing to do`, and prints nothing. It wrote JSON.parse's message, which quotes the start of the input, so raw prompt text (escape codes included) reached stderr, and `runHook` threw.
 - An unknown route of `lexicon serve` answers 404 with every route to choose from, `no route for POST /normalise (routes: GET /health, GET /pair, POST /normalize, ...)`, as an unknown export format names the formats. It named only the path that was not found.
 - `GET /export/<format>` of `lexicon serve` with an unknown format answers 404 with the formats to choose from, `unknown export format "nope" (one of: wispr, ...)`, as MCP `export_lexicon` does. It named only the bad format.
 - `GET /stats` of `lexicon serve` carries `projectTrust` and `skippedProject` (path only), as `GET /lexicon`, `GET /packs` and `lexicon stats --json` do. Its counts left an untrusted project lexicon out without saying so.

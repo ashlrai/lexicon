@@ -560,6 +560,26 @@ describe('runHook', () => {
     }
   });
 
+  // Catches: malformed stdin threw out of runHook, and main echoed JSON.parse's
+  // message, which quotes the user's raw prompt (escape codes included), to stderr.
+  it('says one stderr line for stdin that is not JSON, without quoting it, and prints nothing', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const raw of ['hi Ashler\u001b[31m please', '{"prompt": "hi Ashler",}', '{bad']) {
+        stderr.mockClear();
+        await expect(runHook(raw)).resolves.toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        const line = String(stderr.mock.calls[0]?.[0]);
+        expect(line).toBe(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(raw, 'utf8')} bytes); expected the Claude Code hook payload object, nothing to do\n`);
+        expect(line).not.toContain('Ashler');
+      }
+      expect(mocks.loadLexicon).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it('says one stderr line for valid JSON that is not an object, prints nothing and does not throw', async () => {
     const { runHook } = await import('../src/hooks/user-prompt-submit.js');
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
