@@ -261,7 +261,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). ' +
         `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. ` +
         'Use dryRun: true first to show the user what would be added, then run again without it. ' +
-        'With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.',
+        'With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`. ' +
+        'A dry run against such a file does not read it, so its rows carry no `created` (the report has `untrustedTarget: true`).',
       inputSchema: {
         path: nonBlank().optional().describe('File to import. Its extension helps auto-detection.'),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine. Must not be blank.'),
@@ -278,7 +279,9 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         // named into the conversation. With `content` the path is never read.
         const file = content === undefined && path !== undefined ? containedPath(ctx, path, (f) => `import ${shellWord(f)}`) : path ?? '-';
         const io = bufferIO();
-        const writeOpts = scope === 'project' && dryRun !== true ? await mcpWriteOpts(ctx) : {};
+        // A dry run passes it too: runImport then does not read an untrusted
+        // project file to label each term new or merged.
+        const writeOpts = scope === 'project' ? await mcpWriteOpts(ctx) : {};
         const code = await runImport(
           file,
           { cwd: ctx.cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true, ...writeOpts },
@@ -296,8 +299,18 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         const stderr = io.err().trim();
         // `import --json` leads with the CLI's `ok: true`; the tool result keeps its own shape.
         if (isRecord(report) && report.ok === true) delete report.ok;
-        const written = isRecord(report) && typeof report.path === 'string' && writeOpts.leaveUntrusted === true ? report.path : undefined;
-        const pending = written !== undefined ? untrustedWriteFields(written, 'The imported terms', true) : {};
+        const target = isRecord(report) && typeof report.path === 'string' && writeOpts.leaveUntrusted === true ? report.path : undefined;
+        const pending =
+          target === undefined
+            ? {}
+            : dryRun !== true
+              ? untrustedWriteFields(target, 'The imported terms', true)
+              : {
+                  trusted: false,
+                  note:
+                    `A run without dryRun would write to ${target}, which is not trusted, so the terms would not apply until the user trusts it` +
+                    (isRecord(report) && report.untrustedTarget === true ? '; its terms were not read, so no row says whether it is new or merged.' : '.'),
+                };
         return textResult(isRecord(report) ? { ...report, ...pending, ...(stderr ? { stderr } : {}) } : report);
       }),
   );

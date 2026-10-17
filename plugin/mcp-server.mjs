@@ -60514,8 +60514,11 @@ var registerTermTools = (server, ctx) => {
       const writeOpts = await mcpWriteOpts(ctx);
       const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {}, ...writeOpts });
       const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === "project";
-      const term = untrusted && !learned.created ? { canonical: learned.term.canonical, aliases: learned.aliasAdded ? [heard.trim().replace(/\s+/g, " ")] : [] } : learned.term;
-      const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+      const heardText = heard.trim().replace(/\s+/g, " ");
+      const meantText = meant.trim().replace(/\s+/g, " ");
+      const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
+      const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
+      const saved = learned.aliasAdded ? `"${heard}" -> "${term.canonical}" saved` : heard.trim().toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
@@ -64066,9 +64069,15 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (dryRun) {
     const paths = resolvePaths({ cwd });
     const target = scope === "project" ? paths.project : paths.global;
-    const existing = target ? (await readLexiconFile(target, scope)).lexicon : void 0;
+    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs28.existsSync)(target);
+    const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : void 0;
     if (target) report.path = target;
+    if (blind) report.untrustedTarget = true;
     for (const term of result.terms) {
+      if (blind) {
+        report.terms.push({ canonical: term.canonical, aliases: term.aliases });
+        continue;
+      }
       const created = !existing || findTerm(existing, term.canonical) === void 0;
       report.terms.push({ canonical: term.canonical, aliases: term.aliases, created });
     }
@@ -64080,8 +64089,8 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
       report.terms.push({ canonical: shown.canonical, aliases: shown.aliases, created: added.created });
     }
   }
-  report.counts.created = report.terms.filter((t) => t.created).length;
-  report.counts.merged = report.terms.length - report.counts.created;
+  report.counts.created = report.terms.filter((t) => t.created === true).length;
+  report.counts.merged = report.terms.filter((t) => t.created === false).length;
   if (opts.json) {
     io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}
 `);
@@ -64096,7 +64105,7 @@ function printReport(report, io) {
     const rows = report.terms.map((t) => [
       t.canonical,
       t.aliases.length > 0 ? t.aliases.join(", ") : "(none)",
-      t.created ? "new" : "merged"
+      t.created === void 0 ? "untrusted file" : t.created ? "new" : "merged"
     ]);
     io.stdout(renderTable(rows, ["canonical", "aliases", "status"]));
   }
@@ -64320,7 +64329,7 @@ var registerPackTools = (server, ctx) => {
     "import_dictionary",
     {
       title: "Import an existing dictionary",
-      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`.`,
+      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`. A dry run against such a file does not read it, so its rows carry no \`created\` (the report has \`untrustedTarget: true\`).`,
       inputSchema: {
         path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
@@ -64333,7 +64342,7 @@ var registerPackTools = (server, ctx) => {
       if (path27 === void 0 && content === void 0) throw new Error("pass path or content");
       const file2 = content === void 0 && path27 !== void 0 ? containedPath(ctx, path27, (f) => `import ${shellWord(f)}`) : path27 ?? "-";
       const io = bufferIO();
-      const writeOpts = scope === "project" && dryRun !== true ? await mcpWriteOpts(ctx) : {};
+      const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(
         file2,
         { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true, ...writeOpts },
@@ -64350,8 +64359,11 @@ var registerPackTools = (server, ctx) => {
       }
       const stderr = io.err().trim();
       if (isRecord(report) && report.ok === true) delete report.ok;
-      const written = isRecord(report) && typeof report.path === "string" && writeOpts.leaveUntrusted === true ? report.path : void 0;
-      const pending = written !== void 0 ? untrustedWriteFields(written, "The imported terms", true) : {};
+      const target = isRecord(report) && typeof report.path === "string" && writeOpts.leaveUntrusted === true ? report.path : void 0;
+      const pending = target === void 0 ? {} : dryRun !== true ? untrustedWriteFields(target, "The imported terms", true) : {
+        trusted: false,
+        note: `A run without dryRun would write to ${target}, which is not trusted, so the terms would not apply until the user trusts it` + (isRecord(report) && report.untrustedTarget === true ? "; its terms were not read, so no row says whether it is new or merged." : ".")
+      };
       return textResult(isRecord(report) ? { ...report, ...pending, ...stderr ? { stderr } : {} } : report);
     })
   );

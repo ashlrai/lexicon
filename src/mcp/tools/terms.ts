@@ -496,13 +496,20 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const writeOpts = await mcpWriteOpts(ctx);
         const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}), ...writeOpts });
         const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === 'project';
-        // Merged into a term an untrusted file already had: show only what this call wrote.
-        const term = untrusted && !learned.created ? { canonical: learned.term.canonical, aliases: learned.aliasAdded ? [heard.trim().replace(/\s+/g, ' ')] : [] } : learned.term;
+        // Merged into a term an untrusted file already had: show only what this
+        // call supplied or wrote. Not even the file's canonical: it matched
+        // `meant` ignoring case, so its own capitalisation would be a read of
+        // the untrusted file.
+        const heardText = heard.trim().replace(/\s+/g, ' ');
+        const meantText = meant.trim().replace(/\s+/g, ' ');
+        const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
+        const term =
+          untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
         const saved = learned.aliasAdded
-          ? `"${heard}" -> "${learned.term.canonical}" saved`
-          : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
-            ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
-            : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+          ? `"${heard}" -> "${term.canonical}" saved`
+          : heard.trim().toLowerCase() === term.canonical.toLowerCase()
+            ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
+            : `"${heard}" was already an alias of "${term.canonical}"`;
         const { conflict, untrustedProject } = learned;
         // The other term is never edited here; the agent gets what it needs to
         // ask the user and fix it with remove_term.
