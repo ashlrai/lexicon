@@ -62091,6 +62091,15 @@ function serveUrl(port, host = DEFAULT_HOST) {
   const h = host.includes(":") ? `[${host}]` : host;
   return `http://${h}:${port}`;
 }
+function isLexiconHealth(body) {
+  return typeof body === "object" && body !== null && !Array.isArray(body) && body.ok === true;
+}
+var SERVE_STATUS_HINTS = {
+  failing: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.",
+  down: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.",
+  foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
+};
+var FOREIGN_HEALTH_ERROR = "unexpected /health response (not lexicon serve)";
 async function probeHealth(baseUrl, opts = {}) {
   const doFetch = opts.fetch ?? fetch;
   let res;
@@ -63158,14 +63167,15 @@ var registerSetupTools = (server, ctx) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); or { up: false, error } when nothing answers. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
       const { base, token } = await serveTarget();
       const url2 = `${base}/health`;
       const probe = await probeHealth(base, token !== void 0 ? { token } : {});
-      if (probe.state === "up") return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : { body: probe.body } });
+      if (probe.state === "up" && isLexiconHealth(probe.body)) return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : {} });
+      if (probe.state === "up") return textResult({ up: false, url: url2, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign });
       if (probe.state === "failing") {
         return textResult({
           up: false,
@@ -63173,14 +63183,14 @@ var registerSetupTools = (server, ctx) => {
           url: url2,
           status: probe.status,
           error: probe.error,
-          hint: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and call serve_status again. Starting another server will not help."
+          hint: SERVE_STATUS_HINTS.failing
         });
       }
       return textResult({
         up: false,
         url: url2,
         error: probe.error,
-        hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+        hint: `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
       });
     })
   );

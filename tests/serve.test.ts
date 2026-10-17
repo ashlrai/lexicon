@@ -964,7 +964,14 @@ describe('lexicon serve (CLI)', () => {
 
       const json = memIO();
       expect(await runServe({ status: true, json: true, port: t.port, globalPath }, json)).toBe(1);
-      expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, running: true, status: 500, reason: expect.stringContaining('Failed to parse') });
+      expect(JSON.parse(json.out.join(''))).toMatchObject({
+        up: false,
+        running: true,
+        status: 500,
+        reason: expect.stringContaining('Failed to parse'),
+        error: expect.stringContaining('Failed to parse'),
+        hint: expect.stringContaining('Starting another server will not help'),
+      });
     } finally {
       await broken.stop();
     }
@@ -990,6 +997,47 @@ describe('lexicon serve (CLI)', () => {
     } finally {
       await broken.stop();
     }
+  });
+
+  // Catches: a 200 from another program on the port read as "down" with
+  // "start it" advice that fails with EADDRINUSE, and the JSON lacked the
+  // `error` and `hint` keys MCP serve_status returns.
+  it('--status names another program on the port, and --json carries error and hint', async () => {
+    const other = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"status":"fine"}');
+    });
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const port = (other.address() as net.AddressInfo).port;
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port, globalPath: env.globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(out).toContain(`something answered at http://127.0.0.1:${port}, but it is not lexicon serve`);
+      expect(out).toContain('lexicon serve --port <n>');
+      expect(out).not.toContain('start it with');
+
+      const json = memIO();
+      expect(await runServe({ status: true, json: true, port, globalPath: env.globalPath }, json)).toBe(1);
+      expect(JSON.parse(json.out.join(''))).toEqual({
+        up: false,
+        url: `http://127.0.0.1:${port}`,
+        reason: 'unexpected /health response',
+        error: 'unexpected /health response (not lexicon serve)',
+        hint: expect.stringContaining('lexicon serve --port <n>'),
+      });
+    } finally {
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
+
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    const d = JSON.parse(down.out.join('')) as Record<string, unknown>;
+    expect(d).toMatchObject({ up: false, hint: expect.stringContaining('lexicon serve') });
+    expect(d.error).toBe(d.reason);
   });
 
   it('--status --json', async () => {

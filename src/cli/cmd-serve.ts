@@ -10,7 +10,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, probeHealth, serveUrl } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
 import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
@@ -151,12 +151,17 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
   });
   const health =
     probe.state === 'up' && isRecord(probe.body) ? (probe.body as { ok?: unknown; version?: unknown; terms?: unknown }) : undefined;
-  const up = health?.ok === true;
+  const up = probe.state === 'up' && isLexiconHealth(probe.body);
+  // A 200 that is not lexicon serve's /health: another program holds the port.
+  const foreign = probe.state === 'up' && !up;
+  const downError = probe.state === 'down' ? probe.error : '';
   if (opts.json) {
+    // `error` and `hint` are the keys MCP serve_status returns; `reason` stays for existing scripts.
     let rest: Record<string, unknown>;
     if (up) rest = { health };
-    else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error };
-    else rest = { reason: probe.state === 'down' ? probe.error : 'unexpected /health response' };
+    else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error, error: probe.error, hint: SERVE_STATUS_HINTS.failing };
+    else if (foreign) rest = { reason: 'unexpected /health response', error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign };
+    else rest = { reason: downError, error: downError, hint: SERVE_STATUS_HINTS.down };
     line(io, JSON.stringify({ up, url, ...rest }, null, 2));
     return up ? 0 : 1;
   }
@@ -172,8 +177,13 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     line(io, `lexicon serve is running at ${url} but /health failed (HTTP ${probe.status}): ${safeError(probe.error)}`);
     return 1;
   }
-  const reason = probe.state === 'down' ? probe.error : 'unexpected /health response';
-  line(io, `lexicon serve is down at ${url}${reason ? ` (${safe(reason)})` : ''}`);
+  if (foreign) {
+    // "Start it" would fail with EADDRINUSE: the port is taken by something else.
+    line(io, `something answered at ${url}, but it is not lexicon serve (unexpected /health response)`);
+    line(io, 'another program holds the port: stop it, or run the local API on another port with: lexicon serve --port <n>');
+    return 1;
+  }
+  line(io, `lexicon serve is down at ${url}${downError ? ` (${safe(downError)})` : ''}`);
   line(io, 'start it with: lexicon serve      (or install it: lexicon serve --install)');
   return 1;
 }

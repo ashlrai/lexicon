@@ -1303,6 +1303,12 @@ describe('lexicon MCP server', () => {
         const up = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(JSON.parse(textOf(up))).toEqual({ up: true, url: 'http://127.0.0.1:41733/health', ok: true, version: '0.3.0', terms: 36, port: 41733 });
 
+        // Catches: any 200 on the port read as up, though it was not lexicon serve.
+        fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'fine' }), { status: 200 }));
+        const foreign = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
+        expect(foreign).toMatchObject({ up: false, error: 'unexpected /health response (not lexicon serve)' });
+        expect(String(foreign.hint)).toContain('lexicon serve --port <n>');
+
         // `lexicon serve --port 41799` records its port in serve.json; status
         // must probe that port, as `serve --status` and desktop clients do.
         await writeFile(path.join(dir, 'serve.json'), JSON.stringify({ port: 41799, token: 'a'.repeat(32), createdAt: 'x' }));
