@@ -22,6 +22,7 @@ import {
   removeTerm,
   resolveExportFormat,
   selectExportTerms,
+  conflictNote,
   spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
@@ -281,14 +282,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // An alias another term already holds may keep being corrected to that
         // term; say so, as learn_correction does, instead of reporting success.
         const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
-        const note = conflicts
-          .map((c) =>
-            c.as === 'alias'
-              ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
-                `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
-              : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`,
-          )
-          .join(' ');
+        const note = conflictNote(conflicts, 'mcp');
         return textResult({
           term: shown,
           path: saved.file.path,
@@ -556,7 +550,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const { conflict, untrustedProject } = learned;
         // The other term is never edited here; the agent gets what it needs to
         // ask the user and fix it with remove_term.
-        const conflictNote = !conflict
+        const conflictText = !conflict
           ? ''
           : conflict.as === 'alias'
             ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. ` +
@@ -581,7 +575,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(pending ?? {}),
           // `saved` has no full stop of its own (the conflict note continues
           // its sentence), so one is added before any note that starts a new one.
-          summary: saved + (conflictNote || (untrustedNote || pending ? '.' : '')) + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
+          summary: saved + (conflictText || (untrustedNote || pending ? '.' : '')) + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
         });
       }),
   );

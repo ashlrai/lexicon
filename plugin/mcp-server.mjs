@@ -58632,6 +58632,14 @@ function spellingConflicts(lexicon, spellings, target) {
   }
   return out;
 }
+function conflictRemoveCommand(c, show = (s) => s) {
+  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+}
+function conflictNote(conflicts, audience = "cli") {
+  return conflicts.map(
+    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`
+  ).join(" ");
+}
 function conflictFor(lexicon, heard, target) {
   for (const t of lexicon.terms) {
     if (sameText(t.canonical, target)) continue;
@@ -60431,9 +60439,7 @@ var registerTermTools = (server, ctx) => {
       const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
       const shown = untrusted && !saved.created ? term : saved.term;
       const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
-      const note = conflicts.map(
-        (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`
-      ).join(" ");
+      const note = conflictNote(conflicts, "mcp");
       return textResult({
         term: shown,
         path: saved.file.path,
@@ -60610,7 +60616,7 @@ var registerTermTools = (server, ctx) => {
       const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
       const saved = learned.aliasAdded ? `"${heard}" -> "${term.canonical}" saved` : heard.trim().toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
-      const conflictNote2 = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
+      const conflictText = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
       const pending = untrusted ? untrustedWriteFields(learned.file.path, "It") : void 0;
       return textResult({
@@ -60623,7 +60629,7 @@ var registerTermTools = (server, ctx) => {
         ...pending ?? {},
         // `saved` has no full stop of its own (the conflict note continues
         // its sentence), so one is added before any note that starts a new one.
-        summary: saved + (conflictNote2 || (untrustedNote || pending ? "." : "")) + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
+        summary: saved + (conflictText || (untrustedNote || pending ? "." : "")) + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
       });
     })
   );

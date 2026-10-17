@@ -29,6 +29,7 @@ import {
   EXPORT_FORMAT_INFO,
   addTerm,
   computeStats,
+  conflictNote,
   diffSummary,
   exportLexicon,
   findRegistryRecordMismatch,
@@ -140,6 +141,8 @@ export interface LearnResponse {
   path: string;
   /** Another term that also claims `heard` (LearnResult.conflict). */
   conflict?: LearnConflict;
+  /** With `conflict` only: `conflictNote([conflict])`, naming the scoped `lexicon remove --alias` command, as `learn --json` gives it. */
+  note?: string;
   /** The untrusted project lexicon that also claims `heard`, path only (LearnResult.untrustedProject). */
   untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
 }
@@ -701,7 +704,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       created: result.created,
       aliasAdded: result.aliasAdded,
       path: result.file.path,
-      ...(result.conflict ? { conflict: result.conflict } : {}),
+      ...(result.conflict ? { conflict: result.conflict, note: conflictNote([result.conflict]) } : {}),
       ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
     };
   }

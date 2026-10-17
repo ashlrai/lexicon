@@ -522,6 +522,30 @@ describe('POST /learn and POST /add', () => {
     }
   });
 
+  // Catches: POST /learn answered `conflict` alone while `lexicon learn
+  // --json` pairs it with a `note` naming the scoped remove command, so a
+  // serve client had to build that command itself.
+  it('learn pairs a conflict with the note naming the scoped lexicon remove command', async () => {
+    const repo = path.join(env.home, 'learn-conflict-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const res = await api('POST', '/learn', { heard: 'Ashler', meant: 'Ashley', scope: 'project', cwd: repo });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { conflict?: unknown; note?: string };
+      expect(body.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' });
+      expect(body.note).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      // No conflict, no note.
+      const clean = (await (await api('POST', '/learn', { heard: 'zork mid', meant: 'Zorkmid', scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
+      expect(clean).not.toHaveProperty('conflict');
+      expect(clean).not.toHaveProperty('note');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('add validates the category', async () => {
     const res = await api('POST', '/add', { canonical: 'X', category: 'nope' });
     expect(res.status).toBe(400);

@@ -365,6 +365,39 @@ export function spellingConflicts(lexicon: Lexicon, spellings: readonly string[]
   return out;
 }
 
+/** Who reads a `conflictNote`: `'cli'` names the `lexicon remove` command, `'mcp'` the `remove_term` call. */
+export type ConflictNoteAudience = 'cli' | 'mcp';
+
+/**
+ * The `lexicon remove --alias` command that drops a conflicting alias from the
+ * other term, limited to the file that holds it (`--<scope>`). `show` is
+ * applied to each spelling first (a terminal sanitizer); JSON string literals
+ * keep a `"` in a spelling from blurring where an argument ends.
+ */
+export function conflictRemoveCommand(c: LearnConflict, show: (s: string) => string = (s) => s): string {
+  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+}
+
+/**
+ * The `note` that goes with `conflict`/`conflicts` in a JSON answer (CLI
+ * `learn --json` and `add --json`, MCP `add_term`, serve `POST /learn`): one
+ * sentence per conflict, naming how to drop an alias from the other term if
+ * the user agrees, as the `lexicon remove` command (`'cli'`, the default) or
+ * the `remove_term` call (`'mcp'`). Unsanitized, like every JSON field.
+ */
+export function conflictNote(conflicts: readonly LearnConflict[], audience: ConflictNoteAudience = 'cli'): string {
+  return conflicts
+    .map((c) =>
+      c.as === 'alias'
+        ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
+          (audience === 'mcp'
+            ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
+            : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`)
+        : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`,
+    )
+    .join(' ');
+}
+
 /**
  * A term other than `target` that holds `heard` as its canonical or as an
  * alias. learnCorrection never edits that term (one correction touches one
