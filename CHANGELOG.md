@@ -16,6 +16,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `GET /export/<format>` of `lexicon serve` with an unknown format answers 404 with the formats to choose from, `unknown export format "nope" (one of: wispr, ...)`, as MCP `export_lexicon` does. It named only the bad format.
 - `GET /stats` of `lexicon serve` carries `projectTrust` and `skippedProject` (path only), as `GET /lexicon`, `GET /packs` and `lexicon stats --json` do. Its counts left an untrusted project lexicon out without saying so.
 - `lexicon export --out lex.md` (or `--category`, `--limit`) with no format exits 1, `--out needs a format; nothing was exported`, with the format list on stderr. It printed the format list and exited 0, so a script believed the file was written.
 - The MCP `remove_term` description and docs/MCP.md say that a term it cannot find is not an error (`isError` stays false, with `removed: false` and a `note`), unlike `lexicon remove`, which exits 1, so an agent checks `removed`. The behavior is unchanged.

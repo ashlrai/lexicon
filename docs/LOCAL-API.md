@@ -80,7 +80,7 @@ included, and no body. Errors are
 | POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope }`; an unknown pack is 404 |
 | DELETE | `/packs/:name` | | `{ pack, removed, kept, files }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone |
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form |
-| GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit` |
+| GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit`; an unknown format is a 404 whose `error` lists the formats |
 
 Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
 403 a `Host` that does not name this server (any route), a project-scope

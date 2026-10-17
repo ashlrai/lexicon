@@ -26,6 +26,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
+  EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
   addTerm,
   computeStats,
@@ -942,7 +943,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (exportMatch) {
       if (method !== 'GET') throw notGet();
       const format = resolveExportFormat(exportMatch[1]);
-      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
+      // The formats to choose from, as MCP export_lexicon and `lexicon export` give them.
+      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}" (one of: ${EXPORT_FORMATS.join(', ')})`);
       strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
       const exportOpts = exportQueryOptions(url);
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
