@@ -99,6 +99,7 @@ import {
   resolveCwd,
   safe,
   safeLines,
+  skippedProjectJson,
   stillInLine,
   untrustedLine,
   warnSkippedProject,
@@ -617,7 +618,10 @@ export async function runNormalize(
     }
     const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);
     if (opts.json) {
-      line(io, JSON.stringify(result, null, 2));
+      // Additive keys, as MCP normalize_transcript carries the skipped-project
+      // ones: otherwise a script reading only stdout cannot tell corrections
+      // from the built-in example, or an unchanged result from a skipped file.
+      line(io, JSON.stringify({ ...result, ...(useExample ? { example: true } : {}), ...skippedProjectJson(loaded) }, null, 2));
       return 0;
     }
     if (opts.diff) {

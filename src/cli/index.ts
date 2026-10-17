@@ -129,7 +129,7 @@ program
   .command('normalize')
   .description('correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read')
   .argument('[text...]')
-  .option('--json', 'print the full NormalizeResult as JSON')
+  .option('--json', 'print the full NormalizeResult as JSON, plus example: true when the built-in example terms stood in and projectTrust, skippedProject and note when an untrusted project lexicon was left out')
   .option('--diff', 'print a summary of replacements to stderr')
   .option('--dry-run', 'report replacements without applying them')
   .option('--min-confidence <n>', 'minimum confidence (0..1) for fuzzy/phonetic matches')

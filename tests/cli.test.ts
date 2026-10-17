@@ -186,6 +186,31 @@ describe('normalize', () => {
     expect(parsed.replacements[0]).toMatchObject({ original: 'Ashler', canonical: 'Ashlr.AI', reason: 'alias' });
   });
 
+  // Catches: under --json only stderr said the example terms stood in or an untrusted project file was skipped.
+  it('--json marks the built-in example and a skipped project lexicon with additive keys', async () => {
+    const plain = makeIO();
+    await runNormalize(['meet Ashler'], { json: true }, plain);
+    const parsed = JSON.parse(plain.out) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('example');
+    expect(parsed).not.toHaveProperty('skippedProject');
+
+    const empty: Lexicon = { version: 1, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: empty,
+      global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: true },
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project', lexicon: empty, exists: true },
+    });
+    const io = makeIO();
+    await runNormalize(['meet Ashler'], { json: true }, io);
+    expect(JSON.parse(io.out)).toMatchObject({
+      example: true,
+      projectTrust: 'untrusted',
+      skippedProject: '/tmp/proj/.lexicon.yaml',
+      note: expect.stringContaining('lexicon trust'),
+    });
+  });
+
   it('--diff prints the summary on stderr and the text on stdout', async () => {
     const io = makeIO();
     await runNormalize(['meet Ashler'], { diff: true }, io);
