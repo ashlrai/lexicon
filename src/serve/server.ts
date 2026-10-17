@@ -730,6 +730,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {
+    // The query string is this route's body, so it is strict too: a typo such
+    // as `?scop=project` was ignored and the pack came out of the default
+    // (global) lexicon instead, still 200.
+    for (const key of new Set(url.searchParams.keys())) {
+      if (key !== 'cwd' && key !== 'scope') {
+        throw new HttpError(400, `unknown query parameter "${sanitizeForDisplay(key)}" (DELETE /packs/:name takes scope and cwd)`);
+      }
+      if (url.searchParams.getAll(key).length > 1) throw new HttpError(400, `query parameter "${key}" given more than once`);
+    }
     const cwd = await resolveCwd(url.searchParams.get('cwd'));
     const scopeParam = url.searchParams.get('scope');
     const scope = TERM_SCOPES.find((s) => s === scopeParam);

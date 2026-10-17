@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -332,6 +332,24 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     const io = makeIO();
     expect(await runTrust(undefined, { cwd: cwd() }, io, { isInteractive: () => true, createPrompter: () => p })).toBe(1);
     expect(io.err).toContain('changed while waiting for confirmation');
+    expect(await listTrusted({ globalPath })).toEqual([]);
+  });
+
+  // Catches: without a question (off a terminal, or --yes) trust pinned
+  // whatever was on disk when trustProject re-hashed it, not the file it had
+  // parsed and previewed, so a file swapped in meanwhile (even one that does
+  // not parse) was trusted unseen.
+  it('off a terminal, a file swapped after the preview is not trusted', async () => {
+    const io = makeIO();
+    const deps = {
+      isInteractive: () => {
+        // Runs after the hash, parse and preview, before trustProject.
+        writeFileSync(projectPath, 'version: 1\nterms: [unparseable\n');
+        return false;
+      },
+    };
+    expect(await runTrust(undefined, { cwd: cwd() }, io, deps)).toBe(1);
+    expect(io.err).toContain('changed while it was being trusted');
     expect(await listTrusted({ globalPath })).toEqual([]);
   });
 

@@ -17753,13 +17753,14 @@ function similarity(a, b) {
 
 // src/core/matcher/tokenize.ts
 var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-var TRAILING_PUNCT_RE = /[.'’\-]+$/u;
+var TRAILING_PUNCT = /* @__PURE__ */ new Set([".", "'", "\u2019", "-"]);
 var POSSESSIVE_RE = /['’][sS]$/u;
 var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
-var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+var EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
+var EMAIL_LOCAL_CHAR_RE = /[\w.+-]/;
 var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
 var INDENT_UNIT = 4;
 var QUOTE_PREFIX_RE = /^ {0,3}(?:>[ \t]?)+/;
@@ -17834,9 +17835,32 @@ function indentedCodeRanges(text) {
   }
   return out;
 }
+function emailRanges(text) {
+  const out = [];
+  let floor = 0;
+  let at = text.indexOf("@");
+  while (at !== -1) {
+    let start = at;
+    while (start > floor && EMAIL_LOCAL_CHAR_RE.test(text.charAt(start - 1))) start--;
+    if (start < at) {
+      EMAIL_DOMAIN_RE.lastIndex = at;
+      const m = EMAIL_DOMAIN_RE.exec(text);
+      if (m) {
+        const end = at + m[0].length;
+        out.push({ start, end });
+        floor = end;
+        at = text.indexOf("@", end);
+        continue;
+      }
+    }
+    at = text.indexOf("@", at + 1);
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
+  for (const r of emailRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -17850,6 +17874,11 @@ function collectRanges(text) {
   ranges.sort((a, b) => a.start - b.start);
   return ranges;
 }
+function trimTrailingPunct(raw) {
+  let end = raw.length;
+  while (end > 0 && TRAILING_PUNCT.has(raw.charAt(end - 1))) end--;
+  return end === raw.length ? raw : raw.slice(0, end);
+}
 function tokenize(text, skipCode) {
   const ranges = skipCode ? collectRanges(text) : [];
   const tokens = [];
@@ -17860,7 +17889,7 @@ function tokenize(text, skipCode) {
   while ((m = TOKEN_RE.exec(text)) !== null) {
     let raw = m[0];
     const start = m.index;
-    const trimmed = raw.replace(TRAILING_PUNCT_RE, "");
+    const trimmed = trimTrailingPunct(raw);
     if (trimmed.length === 0) continue;
     raw = trimmed;
     const end = start + raw.length;
@@ -18528,29 +18557,117 @@ function leadContrasts(text, blockFrom, first, second) {
   const last = gapWords[gapWords.length - 1];
   return last === void 0 || !DETERMINERS.has(last);
 }
-var PARAGRAPH_BREAK = /\n[ \t\r]*\n/gu;
-function paragraphHolds(text, start, end, canonical) {
-  let from = 0;
-  let lineEnd2 = text.lastIndexOf("\n", start - 1);
-  while (lineEnd2 > 0) {
-    const prevBreak = text.lastIndexOf("\n", lineEnd2 - 1);
-    if (/^[ \t\r]*$/u.test(text.slice(prevBreak + 1, lineEnd2))) {
-      from = lineEnd2 + 1;
-      break;
-    }
-    if (prevBreak < 0) break;
-    lineEnd2 = prevBreak;
+function isBlankLine(text, from, to) {
+  for (let i = from; i < to; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== 32 && c !== 9 && c !== 13) return false;
   }
-  PARAGRAPH_BREAK.lastIndex = end;
-  const next = PARAGRAPH_BREAK.exec(text);
-  const to = next ? next.index : text.length;
-  const rest = foldSpelling(`${text.slice(from, start)} ${text.slice(end, to)}`);
-  return rest.includes(foldSpelling(canonical));
+  return true;
+}
+function lastAtMost(xs, x) {
+  let lo = 0;
+  let hi = xs.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    if (xs[mid] <= x) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
+function firstAtOrAfter(sorted, min) {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = lo + hi >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+var ParagraphIndex = class {
+  constructor(text) {
+    this.text = text;
+    let lineStart2 = 0;
+    let prevNewline = -1;
+    for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) {
+      if (isBlankLine(text, lineStart2, i)) {
+        if (i > 0) this.blankEnds.push(i);
+        if (prevNewline >= 0) this.breaks.push(prevNewline);
+      }
+      prevNewline = i;
+      lineStart2 = i + 1;
+    }
+  }
+  text;
+  /** Newline offsets that end a blank line (a paragraph starts after one). */
+  blankEnds = [];
+  /** Newline offsets followed by a blank line that is itself newline-terminated. */
+  breaks = [];
+  cache = /* @__PURE__ */ new Map();
+  /**
+   * True when the canonical stands (in any folded spelling) somewhere in the
+   * paragraph around `start..end`, outside the span itself. A paragraph runs
+   * from just after the nearest blank line above to the nearest blank line
+   * below.
+   */
+  holds(start, end, canonical) {
+    const above = lastAtMost(this.blankEnds, start - 1);
+    const from = above < 0 ? 0 : this.blankEnds[above] + 1;
+    const belowAt = lastAtMost(this.breaks, end - 1) + 1;
+    const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
+    const para = this.paragraph(from, to);
+    const needle = foldPerCodePoint(canonical);
+    if (needle.length === 0) return false;
+    let found = para.matches.get(needle);
+    if (!found) {
+      found = [];
+      for (let at = para.folded.indexOf(needle); at >= 0; at = para.folded.indexOf(needle, at + 1)) found.push(at);
+      para.matches.set(needle, found);
+    }
+    const k1 = para.before[start - from];
+    const k2 = para.before[end - from];
+    if (found.length > 0 && found[0] + needle.length <= k1) return true;
+    if (found.length > 0 && found[found.length - 1] >= k2) return true;
+    const n = needle.length - 1;
+    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined.includes(needle);
+  }
+  paragraph(from, to) {
+    const cached2 = this.cache.get(from);
+    if (cached2) return cached2;
+    const before = new Uint32Array(to - from + 1);
+    const parts = [];
+    let length = 0;
+    let i = from;
+    while (i < to) {
+      const cp = this.text.codePointAt(i);
+      const width = cp > 65535 ? 2 : 1;
+      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      before[i - from] = length;
+      if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
+      parts.push(piece);
+      length += piece.length;
+      i += width;
+    }
+    before[to - from] = length;
+    const para = { folded: parts.join(""), before, matches: /* @__PURE__ */ new Map() };
+    this.cache.set(from, para);
+    return para;
+  }
+};
+function foldPerCodePoint(value) {
+  let out = "";
+  for (const ch of value) out += foldSpelling(ch);
+  return out;
 }
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
   const occurrences = /* @__PURE__ */ new Map();
+  let paragraphs = null;
   let cursor = 0;
   const bounds = blockBounds(text);
   for (let b = 0; b < bounds.length; b++) {
@@ -18577,9 +18694,12 @@ function declineCollapsedMentions(text, spans) {
         bare = wordOccurrences(text, result);
         occurrences.set(result, bare);
       }
-      for (const at of bare) {
-        if (at < from || at + result.length > to) continue;
-        if (here.some(({ span }) => at < span.end && span.start < at + result.length)) continue;
+      let span = 0;
+      for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
+        const at = bare[o];
+        if (at + result.length > to) break;
+        while (span < here.length && here[span].span.end <= at) span++;
+        if (span < here.length && here[span].span.start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
@@ -18587,7 +18707,9 @@ function declineCollapsedMentions(text, spans) {
       previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
       for (const p of points) {
         if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
-        if (anchored || paragraphHolds(text, p.start, p.end, result)) declined.add(p.index);
+        if (anchored || (paragraphs ??= new ParagraphIndex(text)).holds(p.start, p.end, result)) {
+          declined.add(p.index);
+        }
       }
       if (!anchored) continue;
       points.sort((a, b2) => a.start - b2.start);
@@ -18838,16 +18960,19 @@ function findReplacements(text, index, opts = {}) {
     if (a.confidence !== b.confidence) return b.confidence - a.confidence;
     return REASON_RANK[a.reason] - REASON_RANK[b.reason];
   });
+  const claimed = new Uint8Array(text.length);
   const accepted = [];
   for (const c of candidates) {
     let overlaps = false;
-    for (const a of accepted) {
-      if (c.start < a.end && a.start < c.end) {
+    for (let k = c.start; k < c.end; k++) {
+      if (claimed[k] === 1) {
         overlaps = true;
         break;
       }
     }
-    if (!overlaps) accepted.push(c);
+    if (overlaps) continue;
+    claimed.fill(1, c.start, c.end);
+    accepted.push(c);
   }
   accepted.sort((a, b) => a.start - b.start);
   const surviving = declineCollapsedMentions(
@@ -19784,11 +19909,14 @@ function normalizeWithIndex(text, index, opts = {}) {
   if (opts.dryRun || replacements.length === 0) {
     return { input: text, output: text, replacements, changed: false };
   }
-  let output = text;
-  for (let i = replacements.length - 1; i >= 0; i--) {
-    const r = replacements[i];
-    output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+  const parts = [];
+  let at = 0;
+  for (const r of replacements) {
+    parts.push(text.slice(at, r.start), r.replacement);
+    at = r.end;
   }
+  parts.push(text.slice(at));
+  const output = parts.join("");
   return { input: text, output, replacements, changed: output !== text };
 }
 function diffSummary(result) {

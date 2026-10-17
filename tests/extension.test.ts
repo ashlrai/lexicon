@@ -817,6 +817,37 @@ describe('content: generic sites keep the Enter key working', () => {
     expect(submitted).toHaveBeenCalledTimes(1);
   });
 
+  it('a form without a submit button and several text fields is not submitted, as a real Enter would not', async () => {
+    document.body.innerHTML =
+      '<form id="f"><input id="u" type="text"><input id="p" type="password"><button type="button">log in</button></form>';
+    const u = document.getElementById('u') as HTMLInputElement;
+    const form = document.getElementById('f') as HTMLFormElement;
+    const submitted = vi.fn((e: Event) => e.preventDefault());
+    form.addEventListener('submit', submitted);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    u.value = 'ping ashler';
+    u.focus();
+    u.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(u.value).toBe('ping Ashlr.AI');
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it('a form without a submit button and one text field is still submitted', async () => {
+    document.body.innerHTML = '<form id="f"><input id="q" type="search"><input type="checkbox"></form>';
+    const q = document.getElementById('q') as HTMLInputElement;
+    const form = document.getElementById('f') as HTMLFormElement;
+    const submitted = vi.fn((e: Event) => e.preventDefault());
+    form.addEventListener('submit', submitted);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    q.value = 'ping ashler';
+    q.focus();
+    q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(q.value).toBe('ping Ashlr.AI');
+    expect(submitted).toHaveBeenCalledTimes(1);
+  });
+
   it('a site that handles Enter itself (keydown or keypress) gets the event and no extra newline', async () => {
     document.body.innerHTML = '<textarea id="t"></textarea>';
     const t = document.getElementById('t') as HTMLTextAreaElement;
