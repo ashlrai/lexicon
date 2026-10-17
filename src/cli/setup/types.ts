@@ -69,6 +69,14 @@ export interface SetupOptions extends CommonOptions {
    */
   harvest?: boolean;
   /**
+   * Write the harvest without trusting the project file (MCP setup_lexicon:
+   * a model must not be the one that trusts it). The file then applies only
+   * after the user runs `lexicon trust`, and the summary names it in
+   * `untrustedProject`. Not a CLI flag: a human running setup trusts the
+   * file by asking for the harvest.
+   */
+  harvestUntrusted?: boolean;
+  /**
    * `--serve` / `--no-serve`: install the local API login service. With a
    * prompter, undefined asks (default yes); without one (`--yes`, no TTY,
    * MCP) undefined skips it: a login service is never created silently.
@@ -138,6 +146,8 @@ export interface SetupSummary {
   exports: { format: string; path: string }[];
   /** The correction the run ended by demonstrating. Absent only if the step threw. */
   demo?: SetupDemo;
+  /** The project lexicon a `harvestUntrusted` harvest wrote; untrusted until the user runs `lexicon trust`. */
+  untrustedProject?: string;
 }
 
 /**

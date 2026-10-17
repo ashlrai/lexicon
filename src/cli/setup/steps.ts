@@ -416,7 +416,7 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   try {
     for (const c of candidates) {
       const term: Term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: 'project', cwd: root });
+      const result = await addTerm(term, { scope: 'project', cwd: root, ...(ctx.opts.harvestUntrusted ? { leaveUntrusted: true } : {}) });
       file = result.file.path;
       if (result.created) {
         created += 1;
@@ -429,6 +429,11 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
       return;
     }
     throw err;
+  }
+  if (ctx.opts.harvestUntrusted && file !== undefined) {
+    ctx.summary.untrustedProject = file;
+    ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file, ctx.home))} (not trusted: review it and run lexicon trust)`);
+    return;
   }
   ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file ?? root, ctx.home))} (trusted)`);
 }

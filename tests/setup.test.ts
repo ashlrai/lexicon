@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readLexiconFile } from '../src/core/index.js';
+import { loadLexicon, readLexiconFile, readTrustRegistry } from '../src/core/index.js';
 import type { HarvestCandidate } from '../src/core/index.js';
 import {
   SETUP_CLIENTS,
@@ -320,6 +320,26 @@ describe('runSetup --yes', () => {
     const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true }, f);
     expect(again.summary.termsAdded).toEqual([]);
     expect((await readLexiconFile(path.join(cwd, '.lexicon.yaml'), 'project')).lexicon.terms).toHaveLength(2);
+  });
+
+  // Catches: MCP setup_lexicon with harvest: true wrote the repo names and
+  // trusted the project file, so a model relaying a yes decided what every
+  // later prompt in the repo is rewritten with.
+  it('with harvestUntrusted writes the harvest but leaves the project file untrusted, and names it', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: ['package.json'], count: 9, suggestedAliases: ['play right'] },
+        { canonical: 'Kubernetes', category: 'product', source: 'harvest:repo', evidence: ['README.md'], count: 6, suggestedAliases: [] },
+      ],
+    });
+    const projectPath = path.join(cwd, '.lexicon.yaml');
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true, harvestUntrusted: true }, f);
+    expect((await readLexiconFile(projectPath, 'project')).lexicon.terms.map((t) => t.canonical)).toEqual(['Playwright', 'Kubernetes']);
+    expect(summary.untrustedProject).toBe(projectPath);
+    expect(io.out).toContain('(not trusted: review it and run lexicon trust)');
+    expect((await readTrustRegistry({ globalPath })).trusted).toEqual({});
+    expect((await loadLexicon({ cwd, globalPath })).projectTrust).toBe('untrusted');
   });
 
   it('never seeds a person or company that is already in the global lexicon, and the harvest skips names the global lexicon covers', async () => {

@@ -113,7 +113,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
-        'Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.',
+        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file is left untrusted for the user to review).',
       inputSchema: {
         company: z.string().optional().describe('Company or product name, spelled exactly as it should appear.'),
         person: z.string().optional().describe("The user's own name as they write it."),
@@ -128,7 +128,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         harvest: z
           .boolean()
           .optional()
-          .describe('true = also add the repo names in wouldHarvest to the project .lexicon.yaml (and trust it). Only after the user agreed; omitted = not harvested.'),
+          .describe('true = also add the repo names in wouldHarvest to the project .lexicon.yaml, left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested.'),
         serve: z.boolean().optional().describe('true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed.'),
         apply: z
           .boolean()
@@ -155,9 +155,12 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           ...(packs !== undefined ? { packs: packs.length > 0 ? packs.join(',') : 'none' } : {}),
           // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
           serve: serve === true,
-          // So is the harvest (a project write plus a trust decision). The plan lists the
+          // So is the harvest (a write inside the user's repo). The plan lists the
           // candidates regardless, so the model can offer them; only an apply needs the flag.
           ...(applied || harvest === false ? { harvest: harvest === true } : {}),
+          // ...and the file it writes is left for the user to trust: the model
+          // relaying a yes is not the user reviewing the names.
+          harvestUntrusted: true,
           ...(applied ? {} : { dryRun: true }),
         };
         const { code, summary, plan } = await runSetup(options, io, cliDir !== undefined ? { cliDir } : {});
@@ -169,7 +172,21 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
             next: (plan?.serveBlocked !== undefined ? 'The login service cannot be installed from this copy (serveBlocked says why and how to fix it); do not offer serve: true until that is fixed. ' : '') + 'Nothing was written. Show this plan to the user; call again with apply: true, clients: [...] for the clients they agreed to, harvest: true only if they agreed to the repo names in wouldHarvest, and serve: true only if they agreed to the login service.',
           });
         }
-        return textResult({ ok: code === 0, applied: true, summary, ...(stderr ? { stderr } : {}) });
+        const untrusted = summary.untrustedProject;
+        return textResult({
+          ok: code === 0,
+          applied: true,
+          summary,
+          ...(stderr ? { stderr } : {}),
+          ...(untrusted !== undefined
+            ? {
+                nextStep:
+                  `The repo names were written to ${untrusted}, which is not trusted, so they do not apply yet. ` +
+                  `Ask the user to review the file and run ${cliCommand('trust')} in a terminal in that repo (it previews the file first), ` +
+                  'or call trust_project with action "trust", which asks them directly.',
+              }
+            : {}),
+        });
       }),
   );
 

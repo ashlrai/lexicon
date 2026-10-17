@@ -225,8 +225,8 @@ relay it instead of offering the service. Show it to the user, then call
 again with `apply: true`, `clients` set to exactly the ones they agreed to
 (omitted means none; `detectedClients` is what to offer), `harvest: true` only
 if they want the repo names in `wouldHarvest` added to the project
-`.lexicon.yaml` (a write plus a trust decision; `harvest_repo` previews the
-same names), and `serve: true` only if they want the local API installed as a
+`.lexicon.yaml` (a write the user must still trust: the result's `nextStep`
+asks them to run `lexicon trust`; `harvest_repo` previews the same names), and `serve: true` only if they want the local API installed as a
 login service. The apply call runs `lexicon setup` non-interactively (`yes`,
 `json`) and returns `{ ok, applied: true, summary: { lexiconPath, termsAdded,
 clients: [{ name, status, detail? }], serve, exports } }`; `detail` is the

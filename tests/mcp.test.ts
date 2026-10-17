@@ -1295,7 +1295,7 @@ describe('lexicon MCP server', () => {
         expect(body).toEqual({ ...setupPlan, next: expect.stringMatching(/Nothing was written.*apply: true/) });
         expect(body).not.toHaveProperty('summary');
         expect(cli.runSetup).toHaveBeenCalledWith(
-          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, dryRun: true },
+          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, harvestUntrusted: true, dryRun: true },
           expect.objectContaining({ stdout: expect.any(Function) }),
           expect.objectContaining({ cliDir: expect.any(String) }),
         );
@@ -1303,11 +1303,11 @@ describe('lexicon MCP server', () => {
         // apply: false is the same preview; omitted clients preview "none", never "all detected".
         // The plan lists wouldHarvest whether or not harvest is passed (only an apply needs it).
         await client.callTool({ name: 'setup_lexicon', arguments: { apply: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
         await client.callTool({ name: 'setup_lexicon', arguments: { harvest: true } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
         await client.callTool({ name: 'setup_lexicon', arguments: { harvest: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
       } finally {
         await close();
       }
@@ -1337,20 +1337,25 @@ describe('lexicon MCP server', () => {
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual({ ok: true, applied: true, summary: setupSummary });
         const [opts] = cli.runSetup.mock.calls.at(-1) as [SetupOptions];
-        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false });
+        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false, harvestUntrusted: true });
         expect(opts).not.toHaveProperty('dryRun');
 
         // apply without clients installs none; serve and harvest are off unless explicitly true.
         const bare = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true } });
         expect(bare.isError).toBe(false);
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true }, expect.anything(), expect.anything());
 
         await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: [], serve: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true }, expect.anything(), expect.anything());
 
         // harvest: true is the only way the apply writes the project lexicon.
-        await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'], harvest: true } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true }, expect.anything(), expect.anything());
+        // It is left untrusted: the result relays the trust step, with the npx form.
+        cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { ...setupSummary, untrustedProject: '/fake/repo/.lexicon.yaml' } });
+        const harvested = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'], harvest: true } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true, harvestUntrusted: true }, expect.anything(), expect.anything());
+        const body = JSON.parse(textOf(harvested)) as { nextStep?: string };
+        expect(body.nextStep).toContain('/fake/repo/.lexicon.yaml, which is not trusted');
+        expect(body.nextStep).toContain('`npx @ashlr/lexicon trust`');
       } finally {
         await close();
       }

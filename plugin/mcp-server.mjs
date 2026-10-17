@@ -63352,7 +63352,7 @@ async function stepHarvest(ctx) {
   try {
     for (const c of candidates) {
       const term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: "project", cwd: root });
+      const result = await addTerm(term, { scope: "project", cwd: root, ...ctx.opts.harvestUntrusted ? { leaveUntrusted: true } : {} });
       file2 = result.file.path;
       if (result.created) {
         created += 1;
@@ -63365,6 +63365,11 @@ async function stepHarvest(ctx) {
       return;
     }
     throw err;
+  }
+  if (ctx.opts.harvestUntrusted && file2 !== void 0) {
+    ctx.summary.untrustedProject = file2;
+    ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2, ctx.home))} (not trusted: review it and run lexicon trust)`);
+    return;
   }
   ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2 ?? root, ctx.home))} (trusted)`);
 }
@@ -63778,13 +63783,13 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file is left untrusted for the user to review).",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
         clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
         packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in wouldInstallPacks so you can ask)."),
-        harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml (and trust it). Only after the user agreed; omitted = not harvested."),
+        harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml, left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
         serve: external_exports.boolean().optional().describe("true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.")
       }
@@ -63807,9 +63812,12 @@ var registerSetupTools = (server, ctx) => {
         ...packs !== void 0 ? { packs: packs.length > 0 ? packs.join(",") : "none" } : {},
         // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
         serve: serve === true,
-        // So is the harvest (a project write plus a trust decision). The plan lists the
+        // So is the harvest (a write inside the user's repo). The plan lists the
         // candidates regardless, so the model can offer them; only an apply needs the flag.
         ...applied || harvest === false ? { harvest: harvest === true } : {},
+        // ...and the file it writes is left for the user to trust: the model
+        // relaying a yes is not the user reviewing the names.
+        harvestUntrusted: true,
         ...applied ? {} : { dryRun: true }
       };
       const { code, summary, plan } = await runSetup(options, io, cliDir !== void 0 ? { cliDir } : {});
@@ -63821,7 +63829,16 @@ var registerSetupTools = (server, ctx) => {
           next: (plan?.serveBlocked !== void 0 ? "The login service cannot be installed from this copy (serveBlocked says why and how to fix it); do not offer serve: true until that is fixed. " : "") + "Nothing was written. Show this plan to the user; call again with apply: true, clients: [...] for the clients they agreed to, harvest: true only if they agreed to the repo names in wouldHarvest, and serve: true only if they agreed to the login service."
         });
       }
-      return textResult({ ok: code === 0, applied: true, summary, ...stderr ? { stderr } : {} });
+      const untrusted = summary.untrustedProject;
+      return textResult({
+        ok: code === 0,
+        applied: true,
+        summary,
+        ...stderr ? { stderr } : {},
+        ...untrusted !== void 0 ? {
+          nextStep: `The repo names were written to ${untrusted}, which is not trusted, so they do not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
+        } : {}
+      });
     })
   );
   server.registerTool(
