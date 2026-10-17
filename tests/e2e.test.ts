@@ -33,7 +33,9 @@ const TIMEOUT_MS = 20_000;
 // Every test owns its HOME or only reads `shared`, so tests run concurrently: the
 // file is subprocess-bound and was the slowest single file in CI when run serially.
 // One core stays free so a spawn-heavy journey does not starve on a small runner.
-const PARALLEL = Math.max(1, os.availableParallelism() - 1);
+// Windows stays serial: process spawns cost far more there, and concurrent
+// journeys starved the other vitest workers (serve.test.ts pack routes hit 30s).
+const PARALLEL = process.platform === 'win32' ? 1 : Math.max(1, os.availableParallelism() - 1);
 vi.setConfig({ testTimeout: 30_000, maxConcurrency: PARALLEL });
 
 // ---------------------------------------------------------------------------
