@@ -16,6 +16,7 @@ import { addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, un
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
+  ensureServeConfig,
   errorStatus,
   getServePath,
   isLoopbackAddress,
@@ -178,6 +179,25 @@ describe('serve.json', () => {
     // The live port is recorded so --show/--status find a --port 0 server.
     expect(config?.port).toBe(info.port);
     expect(info.port).toBeGreaterThan(0);
+  });
+
+  // Catches: an existing serve.json was reused with whatever mode it had
+  // (restored from a backup, synced, copied, hand-written: usually 0644), and
+  // only a port change rewrote it, so the token stayed readable by any local
+  // account for as long as the server ran.
+  it.skipIf(process.platform === 'win32')('an existing serve.json readable by others is put back to 0600 when it is reused', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-mode-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      const token = 'ab'.repeat(16);
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token, createdAt: '2026-01-01T00:00:00.000Z' }), { mode: 0o644 });
+      await fs.chmod(servePath, 0o644);
+      expect((await ensureServeConfig({ globalPath: gp })).token).toBe(token);
+      expect((await fs.stat(servePath)).mode & 0o777).toBe(0o600);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('is reused on a second start', async () => {

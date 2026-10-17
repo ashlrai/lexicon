@@ -95,6 +95,34 @@ export async function writeServeConfig(config: ServeConfig, opts: StoreOptions =
   return target;
 }
 
+/**
+ * Put an existing serve.json back to 0600 when group or other can read it.
+ *
+ * The file is created 0600, but one that already exists is reused as found:
+ * restored from a backup, synced from another machine, copied with `cp`, or
+ * written by hand following the docs, it came back 0644, and the server (and
+ * `--show`, `--install`) went on serving a token any local account could read.
+ * Rewriting it only happened when the port changed. Not on Windows, where the
+ * mode bits do not describe access.
+ */
+async function keepOwnerOnly(file: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  let mode: number;
+  try {
+    mode = (await fs.stat(file)).mode & 0o777;
+  } catch {
+    return;
+  }
+  if ((mode & 0o077) === 0) return;
+  try {
+    await fs.chmod(file, SERVE_FILE_MODE);
+  } catch (err) {
+    throw new Error(
+      `${file} holds the local API token and is readable by other users (mode ${mode.toString(8)}), and it could not be made private: ${err instanceof Error ? err.message : String(err)}; run: chmod 600 ${file}`,
+    );
+  }
+}
+
 export function generateToken(): string {
   return randomBytes(16).toString('hex');
 }
@@ -110,7 +138,10 @@ export function generateToken(): string {
 export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeConfig> {
   return withServeConfigLock(async () => {
     const existing = await readServeConfig(opts);
-    if (existing) return existing;
+    if (existing) {
+      await keepOwnerOnly(getServePath(opts));
+      return existing;
+    }
     const config: ServeConfig = { port: DEFAULT_PORT, token: generateToken(), createdAt: new Date().toISOString() };
     await writeServeConfig(config, opts);
     return config;

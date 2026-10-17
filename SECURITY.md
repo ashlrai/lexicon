@@ -32,7 +32,8 @@ rewrite anything they copy. Payloads over 20,000 characters are skipped.
 **Local HTTP API (`lexicon serve`).** The server binds `127.0.0.1` only (a
 non-loopback `--host` is possible but prints a warning) and every request
 except `GET /health` needs the bearer token from `<config dir>/serve.json`,
-which is created with mode 0600 and compared in constant time. CORS headers are
+which is created with mode 0600 (an existing one that others can read is put
+back to 0600 when it is reused) and compared in constant time. CORS headers are
 sent only to browser-extension origins (`chrome-extension://`,
 `moz-extension://`, `safari-web-extension://`) or exact origins the user lists
 in `serve.json.allowedOrigins`, never `*`, so a web page cannot read responses

@@ -62415,13 +62415,33 @@ async function writeServeConfig(config2, opts = {}) {
   await withServeConfigLock(() => writeFileAtomic(target, formatJson(config2), { mode: SERVE_FILE_MODE }), opts);
   return target;
 }
+async function keepOwnerOnly(file2) {
+  if (process.platform === "win32") return;
+  let mode;
+  try {
+    mode = (await import_node_fs23.promises.stat(file2)).mode & 511;
+  } catch {
+    return;
+  }
+  if ((mode & 63) === 0) return;
+  try {
+    await import_node_fs23.promises.chmod(file2, SERVE_FILE_MODE);
+  } catch (err) {
+    throw new Error(
+      `${file2} holds the local API token and is readable by other users (mode ${mode.toString(8)}), and it could not be made private: ${err instanceof Error ? err.message : String(err)}; run: chmod 600 ${file2}`
+    );
+  }
+}
 function generateToken() {
   return (0, import_node_crypto3.randomBytes)(16).toString("hex");
 }
 async function ensureServeConfig(opts = {}) {
   return withServeConfigLock(async () => {
     const existing = await readServeConfig(opts);
-    if (existing) return existing;
+    if (existing) {
+      await keepOwnerOnly(getServePath(opts));
+      return existing;
+    }
     const config2 = { port: DEFAULT_PORT, token: generateToken(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
     await writeServeConfig(config2, opts);
     return config2;
