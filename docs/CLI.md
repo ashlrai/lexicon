@@ -464,7 +464,8 @@ Options:
   --paste                copy and paste into the frontmost app (macOS; needs
                          Accessibility permission)
   --json                 print { raw, output, replacements, summary, model,
-                         seconds, ms } as JSON
+                         seconds, ms } as JSON (with --toggle, a press that
+                         starts prints {"status":"recording"})
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```
