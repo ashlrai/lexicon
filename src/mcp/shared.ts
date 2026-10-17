@@ -13,6 +13,7 @@ import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
 import { errorMessage } from '../util/errors.js';
 import { findPackageRoot, packageVersion } from '../util/package.js';
+import { cliCommand } from '../util/cli-hint.js';
 
 /**
  * Everything a tool handler needs from the server it is registered on. `load`
@@ -137,7 +138,7 @@ function errorResult(err: unknown): CallToolResult {
 export function withLexiconFix(message: string): string {
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
-  return `${message}\nNothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
+  return `${message}\nNothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ''))}, then check it with lexicon_doctor.`;
 }
 
 
@@ -175,8 +176,8 @@ export function skippedProjectFields(
   if (!loaded.skippedProject) return {};
   const note =
     loaded.projectTrust === 'changed'
-      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
-      : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.';
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run ' + cliCommand('trust') + ' again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run ' + cliCommand('trust') + ' to enable it.';
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,

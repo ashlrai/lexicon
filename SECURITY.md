@@ -298,7 +298,10 @@ treated as the user's own words).
   request beyond loopback, except when the user asks for one by name:
   `lexicon voice` fetching a whisper model on first use (see above), and
   `lexicon pack` fetching a community pack index and pack files from the
-  `--registry` URL the user passed. Every pack download is sha256-verified
+  `--registry` URL the user passed (MCP `list_packs` and `add_pack` read
+  only a registry the user registered: one they installed a pack from, or
+  one in `LEXICON_REGISTRIES`; a model-chosen path or host is refused before
+  it is read). Every pack download is sha256-verified
   against the index before it is read, and a checksum mismatch refuses the
   install; an index or pack file over 2 MB is refused (the download stops at
   the cap), a remote index may name only `https://` URLs or paths relative to

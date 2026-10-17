@@ -18197,7 +18197,7 @@ var require_commander = __commonJS({
 
 // src/mcp/server.ts
 var import_node_fs28 = __toESM(require_node_fs(), 1);
-var import_node_path30 = __toESM(require_node_path(), 1);
+var import_node_path31 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 
 // node_modules/zod/v4/classic/external.js
@@ -59596,6 +59596,50 @@ async function writeRegistryState(state, opts = {}) {
 async function installedRegistryPacks(opts = {}) {
   return Object.keys((await readRegistryState(opts)).packs).sort();
 }
+var REGISTRIES_ENV = "LEXICON_REGISTRIES";
+function canonicalRegistrySource(source) {
+  const s = source.trim();
+  if (!s) return void 0;
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      return new URL(s).href;
+    } catch {
+      return void 0;
+    }
+  }
+  const file2 = s.startsWith("file://") ? s.slice("file://".length) : s;
+  return import_node_path10.default.isAbsolute(file2) ? import_node_path10.default.resolve(file2) : void 0;
+}
+async function userRegistrySources(opts = {}) {
+  const out = /* @__PURE__ */ new Set();
+  const env = opts.env ?? process.env;
+  for (const raw of (env[REGISTRIES_ENV] ?? "").split(/[,\n]/)) {
+    const c = canonicalRegistrySource(raw);
+    if (c) out.add(c);
+  }
+  for (const scope of ["global", "project"]) {
+    let state;
+    try {
+      state = await readRegistryState({ ...opts, scope });
+    } catch {
+      continue;
+    }
+    for (const p of Object.values(state.packs)) {
+      const c = typeof p?.indexSource === "string" ? canonicalRegistrySource(p.indexSource) : void 0;
+      if (c) out.add(c);
+    }
+  }
+  return [...out].sort();
+}
+async function assertUserRegistry(source, opts = {}) {
+  const allowed = await userRegistrySources(opts);
+  const c = canonicalRegistrySource(source);
+  if (c && allowed.includes(c)) return;
+  const shown = JSON.stringify(source.length > 200 ? `${source.slice(0, 200)}...` : source);
+  throw new Error(
+    `registry ${shown} is not one the user registered, so it was not read. ` + (allowed.length > 0 ? `Registered: ${allowed.join(", ")}. ` : "No registry is registered. ") + `A registry counts once the user installs a pack from it themselves (lexicon pack add <author>/<name> --registry <index>, or npx @ashlr/lexicon pack add ...) or lists it in ${REGISTRIES_ENV} in the MCP server's environment.`
+  );
+}
 function registryRecordMismatch(loaded, scope, recorded) {
   const file2 = scope === "project" ? loaded.project : loaded.global;
   if (!file2) return void 0;
@@ -59929,6 +59973,11 @@ function readPackageJson(file2) {
   return void 0;
 }
 
+// src/util/cli-hint.ts
+function cliCommand(args) {
+  return `\`lexicon ${args}\` (or \`npx @ashlr/lexicon ${args}\`)`;
+}
+
 // src/mcp/shared.ts
 var SERVER_NAME = "lexicon";
 function bufferIO() {
@@ -59982,7 +60031,7 @@ function withLexiconFix(message) {
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}
-Nothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
+Nothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ""))}, then check it with lexicon_doctor.`;
 }
 async function guarded(fn) {
   try {
@@ -59999,7 +60048,7 @@ function filePathsInUse(loaded) {
 }
 function skippedProjectFields(loaded, consequence) {
   if (!loaded.skippedProject) return {};
-  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.";
+  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run " + cliCommand("trust") + " again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run " + cliCommand("trust") + " to enable it.";
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
@@ -60040,7 +60089,7 @@ var registerTermTools = (server, ctx) => {
     if (scope === "global" && loaded.skippedProject && holds(loaded.skippedProject.lexicon.terms, canonical)) {
       return {
         foundIn: "project",
-        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run \`lexicon trust\` before it can be edited`
+        note: `"${canonical}" is in the project lexicon (${loaded.skippedProject.path}), which is not trusted; the user must review it and run ${cliCommand("trust")} before it can be edited`
       };
     }
     if (scope === "project" && holds(loaded.global.lexicon.terms, canonical)) {
@@ -60182,7 +60231,7 @@ var registerTermTools = (server, ctx) => {
           paths: result.files.map((f) => f.path),
           ...untrustedProject2 ? {
             untrustedProject: untrustedProject2,
-            note: `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject2.path}), which is ${untrustedProject2.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+            note: `"${alias}" is also an alias of "${result.term.canonical}" in the project lexicon (${untrustedProject2.path}), which is ${untrustedProject2.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
           } : {}
         });
       }
@@ -60206,7 +60255,7 @@ var registerTermTools = (server, ctx) => {
       );
       if (untrustedProject) {
         notes.push(
-          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs \`lexicon trust\`, so tell them to review the file first.`
+          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
         );
       }
       return textResult({
@@ -60289,7 +60338,7 @@ var registerTermTools = (server, ctx) => {
       const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
-      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with \`lexicon trust\` (or trust_project status), which previews it first. Do not open it with Read or cat.`;
+      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
       return textResult({
         term: learned.term,
         path: learned.file.path,
@@ -60520,8 +60569,8 @@ async function askUserToTrust(server, safePath, file2) {
 }
 function invalidFileNextStep(safePath) {
   const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
-  const fix = isProjectFile ? "run: lexicon edit --project, in that repo" : `open ${safePath} in an editor`;
-  return `Ask the user to fix the file (${fix}), check it with: lexicon doctor, then call trust_project again. Do not open it yourself.`;
+  const fix = isProjectFile ? `by running ${cliCommand("edit --project")} in that repo` : `by opening ${safePath} in an editor`;
+  return `Ask the user to fix the file ${fix}, check it with lexicon_doctor, then call trust_project again. Do not open it yourself.`;
 }
 var registerTrustTools = (server, ctx) => {
   const { load } = ctx;
@@ -60582,7 +60631,7 @@ var registerTrustTools = (server, ctx) => {
         const answer = await askUserToTrust(server, safePath ?? "", file2);
         if (answer === "unsupported") {
           throw new Error(
-            `trusting ${safePath} needs the user's approval and this client cannot ask them; ask the user to review it and run \`lexicon trust\` in a terminal in that repo`
+            `trusting ${safePath} needs the user's approval and this client cannot ask them; ask the user to review it and run ${cliCommand("trust")} in a terminal in that repo`
           );
         }
         if (answer === "decline") {
@@ -62775,6 +62824,31 @@ async function runAndReport(exec, io, cmd, args) {
   }
   return result;
 }
+async function cliEntryBlocker(cliPath, platform) {
+  if (isVolatileEntry(cliPath)) {
+    return {
+      volatile: true,
+      reason: `this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install`
+    };
+  }
+  if (platform === "darwin" || platform === "linux" || platform === "win32") {
+    try {
+      await import_node_fs24.promises.access(cliPath);
+    } catch {
+      return { volatile: false, reason: `${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js)` };
+    }
+  }
+  return void 0;
+}
+async function serveInstallBlocker(deps = {}) {
+  let cliPath;
+  try {
+    cliPath = resolveCliEntry({ env: deps.env ?? process.env, ...deps.cliPath !== void 0 ? { cliPath: deps.cliPath } : {} });
+  } catch (err) {
+    return errorMessage(err);
+  }
+  return (await cliEntryBlocker(cliPath, deps.platform ?? process.platform))?.reason;
+}
 async function runServeInstall(opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? import_node_os10.default.homedir();
@@ -62787,23 +62861,11 @@ async function runServeInstall(opts, io, deps = {}) {
   } catch (err) {
     return fail(io, err);
   }
-  if (isVolatileEntry(cliPath)) {
-    io.stderr(
-      `lexicon: refusing to install the login service: this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written
-`
-    );
+  const blocked = await cliEntryBlocker(cliPath, platform);
+  if (blocked) {
+    io.stderr(`lexicon: refusing to install the login service: ${blocked.reason}${blocked.volatile ? ". Nothing was written" : "; nothing was written"}
+`);
     return 1;
-  }
-  if (platform === "darwin" || platform === "linux" || platform === "win32") {
-    try {
-      await import_node_fs24.promises.access(cliPath);
-    } catch {
-      io.stderr(
-        `lexicon: refusing to install the login service: ${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js); nothing was written
-`
-      );
-      return 1;
-    }
   }
   await ensureServeConfig(storeOpts(opts));
   const serviceEnv = lexiconServerEnv(env, import_node_path26.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
@@ -63271,6 +63333,12 @@ async function stepClients(ctx) {
     }
   }
 }
+function serveDepsFor(ctx) {
+  const serveDeps = { platform: ctx.platform, env: ctx.env };
+  if (ctx.homeOverridden) serveDeps.home = ctx.home;
+  if (ctx.deps.cliDir) serveDeps.cliPath = import_node_path27.default.join(ctx.deps.cliDir, "index.js");
+  return serveDeps;
+}
 async function stepServe(ctx) {
   stepHeading(ctx, 5, "Local API (lexicon serve)");
   if (ctx.opts.serve === false) {
@@ -63283,6 +63351,14 @@ async function stepServe(ctx) {
     return;
   }
   if (ctx.plan) {
+    if (ctx.opts.serve === true || ctx.plan.interactive) {
+      const blocked = await (ctx.deps.serveBlocker ?? serveInstallBlocker)(serveDepsFor(ctx));
+      if (blocked) {
+        ctx.plan.serveBlocked = blocked;
+        ctx.say(`   would not install the login service: ${safe(blocked)}`);
+        return;
+      }
+    }
     if (ctx.opts.serve === true) {
       ctx.plan.wouldInstallServe = true;
       ctx.say("   would install the login service (lexicon serve --install)");
@@ -63309,9 +63385,7 @@ async function stepServe(ctx) {
     return;
   }
   const install = ctx.deps.installServe ?? runServeInstall;
-  const serveDeps = { platform: ctx.platform, env: ctx.env };
-  if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  if (ctx.deps.cliDir) serveDeps.cliPath = import_node_path27.default.join(ctx.deps.cliDir, "index.js");
+  const serveDeps = serveDepsFor(ctx);
   const captured = captureIO();
   let code;
   try {
@@ -63421,7 +63495,7 @@ function printPlan(ctx, p) {
     asks("clients") ? `   would install into: ${dim("asks")} (checked: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(", ") : dim("none")})` : `   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(", ") : dim("none")}`
   );
   ctx.say(
-    asks("serve") ? `   login service: ${dim("asks")} (default yes) would install a login service that runs the local API` : `   login service: ${p.wouldInstallServe ? "would install" : dim("skipped (--serve installs it)")}`
+    p.serveBlocked !== void 0 ? `   login service: would not install (${safe(p.serveBlocked)})` : asks("serve") ? `   login service: ${dim("asks")} (default yes) would install a login service that runs the local API` : `   login service: ${p.wouldInstallServe ? "would install" : dim("skipped (--serve installs it)")}`
   );
   const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("nothing");
   ctx.say(
@@ -63540,6 +63614,7 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
+var import_node_path29 = __toESM(require_node_path());
 async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
@@ -63592,7 +63667,7 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, wouldExport } and is computed without writing anything. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary }; tell the user what was installed and where the lexicon lives.",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
@@ -63632,7 +63707,7 @@ var registerSetupTools = (server, ctx) => {
         return textResult({
           ...plan,
           ...stderr ? { stderr } : {},
-          next: "Nothing was written. Show this plan to the user; call again with apply: true, clients: [...] for the clients they agreed to, harvest: true only if they agreed to the repo names in wouldHarvest, and serve: true only if they agreed to the login service."
+          next: (plan?.serveBlocked !== void 0 ? "The login service cannot be installed from this copy (serveBlocked says why and how to fix it); do not offer serve: true until that is fixed. " : "") + "Nothing was written. Show this plan to the user; call again with apply: true, clients: [...] for the clients they agreed to, harvest: true only if they agreed to the repo names in wouldHarvest, and serve: true only if they agreed to the login service."
         });
       }
       return textResult({ ok: code === 0, applied: true, summary, ...stderr ? { stderr } : {} });
@@ -63661,11 +63736,13 @@ var registerSetupTools = (server, ctx) => {
           hint: SERVE_STATUS_HINTS.failing
         });
       }
+      const cliDir = cliDirForInstall();
+      const blocked = await serveInstallBlocker(cliDir !== void 0 ? { cliPath: (0, import_node_path29.join)(cliDir, "index.js") } : {});
       return textResult({
         up: false,
         url: url2,
         error: probe.error,
-        hint: `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
+        hint: blocked ? `Start it with ${cliCommand("serve")}. A login service that keeps it running cannot be installed from this copy: ${blocked}.` : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
       });
     })
   );
@@ -63676,7 +63753,7 @@ var import_node_crypto4 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
 var import_node_fs27 = __toESM(require_node_fs());
-var import_node_path29 = __toESM(require_node_path());
+var import_node_path30 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
 function parseSource(value) {
@@ -63721,7 +63798,7 @@ async function readStdinBytes(maxBytes) {
 }
 async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
-  const resolved2 = import_node_path29.default.resolve(cwd, file2);
+  const resolved2 = import_node_path30.default.resolve(cwd, file2);
   try {
     const stat = await import_node_fs27.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
@@ -63748,7 +63825,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   }
   const source = parseSource(opts.source);
   const category = parseCategory(opts.category);
-  const cwd = import_node_path29.default.resolve(opts.cwd ?? process.cwd());
+  const cwd = import_node_path30.default.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
   const content = await readInput(file2, cwd);
@@ -63756,7 +63833,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
   const result = importLexicon(content, format, {
     ...source ? { source } : {},
-    ...file2 !== "-" ? { filename: import_node_path29.default.basename(file2) } : {}
+    ...file2 !== "-" ? { filename: import_node_path30.default.basename(file2) } : {}
   });
   if (category) {
     for (const term of result.terms) term.category ??= category;
@@ -63824,7 +63901,7 @@ function printReport(report, io) {
 }
 
 // src/mcp/tools/packs.ts
-var REGISTRY_SOURCE_DESC = "Registry index for community packs: a local path, file:// URL or https:// URL. Omit for the vendored starter packs only.";
+var REGISTRY_SOURCE_DESC = "Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.";
 var registerPackTools = (server, ctx) => {
   const { load } = ctx;
   const imports = /* @__PURE__ */ new Map();
@@ -63836,7 +63913,7 @@ var registerPackTools = (server, ctx) => {
     "list_packs",
     {
       title: "List the starter term packs",
-      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (a local path, file:// or https:// URL) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+      description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (an index the user registered; others are refused) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
       inputSchema: {
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
       }
@@ -63851,6 +63928,7 @@ var registerPackTools = (server, ctx) => {
         ...mismatch ? { registryMismatch: mismatch } : {}
       };
       if (registry2) {
+        await assertUserRegistry(registry2, { cwd: ctx.cwd });
         const { index } = await loadRegistryIndex(registry2);
         result.community = index.packs.map((p) => ({
           ref: p.ref,
@@ -63888,6 +63966,7 @@ var registerPackTools = (server, ctx) => {
       if (isRegistryRef(name)) {
         if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
         const parsed = parseRegistryRef(name);
+        await assertUserRegistry(registry2, { cwd: ctx.cwd });
         const { index, base } = await loadRegistryIndex(registry2);
         const entry = findRegistryEntry(index, parsed.ref);
         const bytes = await downloadPack(entry, base);
@@ -64244,7 +64323,7 @@ function skippedProjectSuffix(loaded) {
   const where = pathForModel(loaded.skippedProject.path);
   return `
 
-Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run ${cliCommand("trust")}.`;
 }
 function emptyLexiconSuffix(loaded) {
   return loaded.merged.terms.length === 0 ? `
@@ -64266,7 +64345,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs28.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs28.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs28.realpathSync)((0, import_node_path31.resolve)(entry)) === (0, import_node_fs28.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

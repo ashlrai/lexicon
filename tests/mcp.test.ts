@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => ({
   verifyPackChecksum: vi.fn(),
   parsePackText: vi.fn(),
   installRegistryPack: vi.fn(),
+  assertUserRegistry: vi.fn(),
   // import_vocabulary
   listImportSources: vi.fn(),
   getImportSource: vi.fn(),
@@ -79,6 +80,7 @@ const cli = vi.hoisted(() => ({
   runImport: vi.fn(),
   runInstall: vi.fn(),
   runSetup: vi.fn(),
+  serveInstallBlocker: vi.fn(),
 }));
 
 // The functions are faked; the core's plain data (the TERM_CATEGORIES /
@@ -93,6 +95,7 @@ vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport 
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
 vi.mock('../src/cli/cmd-install.js', () => ({ runInstall: cli.runInstall }));
 vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
+vi.mock('../src/cli/cmd-serve.js', () => ({ serveInstallBlocker: cli.serveInstallBlocker }));
 
 const doctorReport: DoctorReport = {
   ok: false,
@@ -1060,6 +1063,7 @@ describe('lexicon MCP server', () => {
           { name: 'developer', title: 'Dev', description: 'd', version: 1, author: '', homepage: '', terms: 2, aliases: 3, path: '/fake/developer.yaml' },
         ]);
         mocks.loadLexicon.mockResolvedValue({ ...loaded, global: { ...loaded.global, lexicon: { version: 1, terms: [] } } });
+        mocks.assertUserRegistry.mockResolvedValue(undefined);
         mocks.loadRegistryIndex.mockResolvedValue({ index: { packs: [entry] }, base: '/fake' });
         mocks.findRegistryEntry.mockReturnValue(entry);
         mocks.downloadPack.mockResolvedValue(Buffer.from('pack-bytes'));
@@ -1154,6 +1158,24 @@ describe('lexicon MCP server', () => {
           const payload = JSON.parse(textOf(result)) as { name: string };
           expect(payload.name).toBe('developer');
           expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
+      it('refuses a registry the user did not register before reading it', async () => {
+        mocks.assertUserRegistry.mockRejectedValue(new Error('registry "/etc/passwd" is not one the user registered, so it was not read.'));
+        const { client, close } = await connect();
+        try {
+          const listed = await client.callTool({ name: 'list_packs', arguments: { registry: '/etc/passwd' } });
+          expect(listed.isError).toBe(true);
+          expect(textOf(listed)).toMatch(/not one the user registered/);
+          const added = await client.callTool({ name: 'add_pack', arguments: { name: 'example/cardiology', registry: 'https://evil.example/index.yaml' } });
+          expect(added.isError).toBe(true);
+          expect(mocks.assertUserRegistry).toHaveBeenCalledWith('/etc/passwd', { cwd: '/fake/repo' });
+          expect(mocks.assertUserRegistry).toHaveBeenCalledWith('https://evil.example/index.yaml', { cwd: '/fake/repo' });
+          expect(mocks.loadRegistryIndex).not.toHaveBeenCalled();
+          expect(mocks.downloadPack).not.toHaveBeenCalled();
         } finally {
           await close();
         }
@@ -1291,6 +1313,20 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: a plugin install's plan promised a login service the apply then refused.
+    it('setup_lexicon relays serveBlocked and tells the agent not to offer serve: true', async () => {
+      const blocked = 'this copy is running from an npx or Claude Code plugin cache (/x), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install';
+      cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] }, plan: { ...setupPlan, serveBlocked: blocked } });
+      const { client, close } = await connect();
+      try {
+        const body = JSON.parse(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { serve: true } }))) as { serveBlocked?: string; next: string };
+        expect(body.serveBlocked).toBe(blocked);
+        expect(body.next).toMatch(/^The login service cannot be installed from this copy \(serveBlocked says why and how to fix it\); do not offer serve: true/);
+      } finally {
+        await close();
+      }
+    });
+
     it('setup_lexicon apply: true installs only the listed clients and the login service only with serve: true', async () => {
       const { client, close } = await connect();
       try {
@@ -1347,6 +1383,17 @@ describe('lexicon MCP server', () => {
         const down = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(down.isError).toBe(false);
         expect(JSON.parse(textOf(down))).toMatchObject({ up: false, error: 'ECONNREFUSED' });
+        expect(String(JSON.parse(textOf(down)).hint)).toContain('setup_lexicon with serve: true does the same');
+        expect(cli.serveInstallBlocker).toHaveBeenCalledWith({ cliPath: expect.stringMatching(/index\.js$/) });
+
+        // Catches: from a plugin copy the hint named `lexicon serve` (not installed) and
+        // setup_lexicon serve: true (refused there).
+        cli.serveInstallBlocker.mockResolvedValueOnce('this copy is running from an npx or Claude Code plugin cache (/p), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install');
+        fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+        const plugin = String(JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))).hint);
+        expect(plugin).toContain('Start it with `lexicon serve` (or `npx @ashlr/lexicon serve`)');
+        expect(plugin).toContain('npm i -g @ashlr/lexicon');
+        expect(plugin).not.toContain('setup_lexicon');
         expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:41733/health', expect.objectContaining({ signal: expect.anything() }));
         await expect(readFile(path.join(dir, 'serve.json'), 'utf8')).rejects.toThrow();
 

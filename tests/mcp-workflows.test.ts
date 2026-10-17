@@ -745,8 +745,8 @@ describe('a lexicon file that does not parse', () => {
       failures.push((tool.content ?? []).map((c) => c.text ?? '').join('\n'));
       for (const message of failures) {
         expect(message).toContain(`Failed to parse lexicon YAML at ${globalPath}`);
-        expect(message).toContain('run: lexicon edit)');
-        expect(message).toContain('lexicon doctor');
+        // Catches: plugin-only users were told to run a `lexicon` they may not have installed.
+        expect(message).toContain('by running `lexicon edit` (or `npx @ashlr/lexicon edit`), then check it with lexicon_doctor');
       }
       // The onboard prompt reads no lexicon and still works.
       expect((await client.getPrompt({ name: 'onboard' })).messages.length).toBe(1);
@@ -769,7 +769,7 @@ describe('a lexicon file that does not parse', () => {
     try {
       const message = await client.readResource({ uri: 'lexicon://me' }).then(() => 'resolved', (e: unknown) => (e as Error).message);
       expect(message).toContain(projectPath);
-      expect(message).toContain('run: lexicon edit --project');
+      expect(message).toContain('`lexicon edit --project` (or `npx @ashlr/lexicon edit --project`)');
     } finally {
       if (prev === undefined) delete process.env.LEXICON_TRUST_ALL;
       else process.env.LEXICON_TRUST_ALL = prev;

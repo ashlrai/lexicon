@@ -218,7 +218,10 @@ with that `scope` for a deliberate copy).
 Preview by default. Without `apply` it runs `lexicon setup --dry-run` and
 returns the plan, `{ plan: true, lexiconPath, lexiconExists, wouldSeed,
 wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe,
-wouldExport, next }`, having written nothing. Show it to the user, then call
+serveBlocked?, wouldExport, next }`, having written nothing. `serveBlocked`
+(with `serve: true`) says why the login service would be refused, for example
+from a plugin or npx copy, and names the fix (`npm i -g @ashlr/lexicon`);
+relay it instead of offering the service. Show it to the user, then call
 again with `apply: true`, `clients` set to exactly the ones they agreed to
 (omitted means none; `detectedClients` is what to offer), `harvest: true` only
 if they want the repo names in `wouldHarvest` added to the project
@@ -251,7 +254,9 @@ failing server returns its full error: `{ up: true, url, version, terms,
 port, ... }`; `{ up: false, running: true, url, status, error, hint }` when
 the server answers with an error (a lexicon file that does not parse, say),
 so the agent fixes `error` instead of starting a second server; or
-`{ up: false, url, error, hint }` when nothing answers.
+`{ up: false, url, error, hint }` when nothing answers. From a plugin or npx
+copy that hint names `npx @ashlr/lexicon serve` and why a login service needs
+a permanent install, instead of `setup_lexicon` with `serve: true`.
 
 ## Safety rules
 

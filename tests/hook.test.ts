@@ -207,7 +207,8 @@ describe('runUserPromptSubmitHook', () => {
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
       const ctx = context(await runUserPromptSubmitHook(payload('plain prompt')));
       expect(ctx).toContain('changed since the user trusted it');
-      expect(ctx).toContain('run `lexicon trust` again');
+      // Catches: plugin-only users were told to run a `lexicon` they may not have installed.
+      expect(ctx).toContain('`lexicon trust` (or `npx @ashlr/lexicon trust`)');
       expect(ctx).toContain('trust_project tool with action "status"');
       expect(ctx).toContain('Do not open the file with Read or cat');
       expect(ctx).not.toContain('\n');
@@ -876,7 +877,7 @@ describe('a payload cwd that is not a path, and a load error that is not a parse
     const { runHook } = await import('../src/hooks/user-prompt-submit.js');
     const said = context(await runHook(payload('ping Ashler')));
     expect(said).toContain('could not be read: EACCES');
-    expect(said).toContain('lexicon doctor');
+    expect(said).toContain('lexicon_doctor tool, or tell the user to run `lexicon doctor` (or `npx @ashlr/lexicon doctor`),');
     expect(said).not.toContain('does not parse');
     expect(said).not.toContain('lexicon edit');
   });

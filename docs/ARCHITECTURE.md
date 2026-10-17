@@ -15,6 +15,7 @@ src/
     atomic.ts               write a temp sibling, then rename over the target
     package.ts              findPackageRoot(), readPackageVersion()
     xdg.ts                  XDG Base Directory resolution, in one place
+    cli-hint.ts             cliCommand(): a `lexicon` command named with its `npx @ashlr/lexicon` form, for text an agent relays
   core/                     pure library, no CLI or MCP concerns
     types.ts                shared types; dependency-free
     schema.ts               zod schemas, parseLexicon(), LIMITS, invisible-character stripping

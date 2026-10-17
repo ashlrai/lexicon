@@ -12,6 +12,9 @@ import {
   MAX_REGISTRY_FILE_BYTES,
   applyRegistryUpdate,
   assertSecureRegistryUrl,
+  assertUserRegistry,
+  canonicalRegistrySource,
+  userRegistrySources,
   cachedPackPath,
   downloadPack,
   findRegistryEntry,
@@ -585,5 +588,33 @@ describe('install / update / remove round trip', () => {
     const removed = await uninstallRegistryPack('example/cardiology', undefined, { globalPath });
     expect(removed.kept).toContain('Metoprolol');
     expect(removed.removed).toContain('Echocardiogram');
+  });
+});
+
+describe('user-registered registries (the agent-surface gate)', () => {
+  it('canonicalizes urls and absolute paths, and never matches a relative path', () => {
+    expect(canonicalRegistrySource('HTTPS://Example.COM/packs/index.yaml')).toBe('https://example.com/packs/index.yaml');
+    expect(canonicalRegistrySource(`file://${path.join(dir, 'a', '..', 'index.yaml')}`)).toBe(path.join(dir, 'index.yaml'));
+    expect(canonicalRegistrySource('./index.yaml')).toBeUndefined();
+    expect(canonicalRegistrySource('   ')).toBeUndefined();
+  });
+
+  it('refuses every index until the user installs from it or lists it in LEXICON_REGISTRIES', async () => {
+    const env = {};
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    await expect(assertUserRegistry(indexPath, { globalPath, env })).rejects.toThrow(/not one the user registered.*No registry is registered.*lexicon pack add/s);
+    await expect(assertUserRegistry('https://evil.example/index.yaml', { globalPath, env })).rejects.toThrow(/not one the user registered/);
+    await expect(assertUserRegistry('/etc/passwd', { globalPath, env })).rejects.toThrow(/not one the user registered/);
+
+    const { index, base } = await loadRegistryIndex(indexPath);
+    await installRegistryPack(entryFor(index), base, indexPath, { globalPath });
+    await expect(assertUserRegistry(indexPath, { globalPath, env })).resolves.toBeUndefined();
+    await expect(assertUserRegistry(`file://${indexPath}`, { globalPath, env })).resolves.toBeUndefined();
+    await expect(assertUserRegistry('/etc/passwd', { globalPath, env })).rejects.toThrow(`Registered: ${indexPath}`);
+
+    const listed = { LEXICON_REGISTRIES: 'https://packs.example.com/index.yaml, ./relative.yaml' };
+    expect(await userRegistrySources({ globalPath, env: listed })).toEqual([indexPath, 'https://packs.example.com/index.yaml'].sort());
+    await expect(assertUserRegistry('https://PACKS.example.com/index.yaml', { globalPath, env: listed })).resolves.toBeUndefined();
+    await expect(assertUserRegistry('./relative.yaml', { globalPath, env: listed })).rejects.toThrow(/not one the user registered/);
   });
 });

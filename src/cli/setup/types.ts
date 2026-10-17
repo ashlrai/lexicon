@@ -191,6 +191,12 @@ export interface SetupPlan {
   wouldInstallClients: string[];
   /** True when the login service would be installed, including by a yes at the prompt (its default). */
   wouldInstallServe: boolean;
+  /**
+   * Why the login service would be refused if it were asked for (this copy runs
+   * from an npx or plugin cache, or its CLI entry is missing), with the fix;
+   * `wouldInstallServe` is false then. Absent when it would install or was not asked for.
+   */
+  serveBlocked?: string;
   /** Files a real run would write for the dictation app, including the one the prompt defaults to. */
   wouldExport: { format: string; path: string }[];
   /** The correction a real run would end by demonstrating (computed, never written). */
@@ -226,6 +232,11 @@ export interface SetupDeps {
    * otherwise and refuses a path that does not exist).
    */
   installServe?: (opts: ServeOptions, io: IO, deps: ServeDeps) => Promise<number>;
+  /**
+   * Why the login service install would be refused, checked by the plan with the
+   * same `deps` installServe gets. Default serveInstallBlocker.
+   */
+  serveBlocker?: (deps: ServeDeps) => Promise<string | undefined>;
   /** Repo scanner. Default harvestRepo. */
   harvest?: (root: string, opts: HarvestOptions) => Promise<HarvestCandidate[]>;
   /** The starter packs on offer. Default listPacks (the package's packs/). */

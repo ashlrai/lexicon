@@ -137,9 +137,11 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
       : `   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')}`,
   );
   ctx.say(
-    asks('serve')
-      ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
-      : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
+    p.serveBlocked !== undefined
+      ? `   login service: would not install (${safe(p.serveBlocked)})`
+      : asks('serve')
+        ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
+        : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
   );
   const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
   ctx.say(

@@ -346,7 +346,11 @@ describe('installed flags: one source of truth across pack list, pack search and
   it('all three read settings.packs; pack list reports the record that disagrees', async () => {
     const cwd = path.join(dir, 'plain'); mkdirSync(cwd, { recursive: true });
     const saved = process.env.LEXICON_PATH;
+    const savedRegistries = process.env.LEXICON_REGISTRIES;
     process.env.LEXICON_PATH = globalPath;
+    // Step 2 deletes the registry record, which is also what registers the
+    // index for MCP; the user's own allowlist keeps list_packs reading it.
+    process.env.LEXICON_REGISTRIES = indexPath;
     const { createServer } = await import('../src/mcp/server.js');
     const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
     const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
@@ -436,6 +440,8 @@ describe('installed flags: one source of truth across pack list, pack search and
     } finally {
       if (saved === undefined) delete process.env.LEXICON_PATH;
       else process.env.LEXICON_PATH = saved;
+      if (savedRegistries === undefined) delete process.env.LEXICON_REGISTRIES;
+      else process.env.LEXICON_REGISTRIES = savedRegistries;
     }
   });
 });
