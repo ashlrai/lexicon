@@ -973,7 +973,10 @@ describe('lexicon serve (CLI)', () => {
 
     const json = memIO();
     await runServe({ show: true, json: true, port: info.port, globalPath: env.globalPath }, json);
+    // Catches: the --show success object had no `ok`, though a failure leads with `ok: false`.
+    expect(Object.keys(JSON.parse(json.out.join('')))[0]).toBe('ok');
     expect(JSON.parse(json.out.join(''))).toEqual({
+      ok: true,
       url: `http://127.0.0.1:${info.port}`,
       port: info.port,
       token: info.token,
@@ -1161,7 +1164,9 @@ describe('lexicon serve (CLI)', () => {
     // --json reports the URL and whether the opener ran.
     const json = memIO();
     expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec([]) })).toBe(0);
-    expect(JSON.parse(json.out.join(''))).toEqual({ up: true, url, opened: true });
+    // Catches: a pair that opened the browser had no `ok`, though one that did not leads with `ok: false`.
+    expect(JSON.parse(json.out.join(''))).toEqual({ ok: true, up: true, url, opened: true });
+    expect(Object.keys(JSON.parse(json.out.join('')))[0]).toBe('ok');
   });
 
   // Catches: --pair created serve.json (and minted a token) when it was
@@ -1236,6 +1241,26 @@ describe('lexicon serve (CLI)', () => {
     expect(await run).toBe(0);
     expect(io.out.join('')).toContain(`lexicon serve listening on ${seen!.url} (token in ~/.config/lexicon/serve.json)`);
     expect(io.err.join('')).not.toContain('warning');
+  });
+
+  // Catches: the --json listening line had no `ok`, though a failed start prints `{ ok: false, error }`.
+  it('--json prints one listening document that leads with ok: true', async () => {
+    const io = memIO();
+    const controller = new AbortController();
+    let seen: { port: number; url: string; token: string } | undefined;
+    const run = runServe({ port: 0, quiet: true, json: true, cwd: env.cwd, globalPath: env.globalPath }, io, {
+      home: env.home,
+      signal: controller.signal,
+      onListening: (i) => {
+        seen = i;
+      },
+    });
+    for (let i = 0; i < 200 && !seen; i += 1) await new Promise((r) => setTimeout(r, 10));
+    controller.abort();
+    expect(await run).toBe(0);
+    const doc = JSON.parse(io.out.join('')) as Record<string, unknown>;
+    expect(Object.keys(doc)[0]).toBe('ok');
+    expect(doc).toMatchObject({ ok: true, url: seen!.url, port: seen!.port, token: seen!.token });
   });
 
   it('warns in red-or-plain when --host is not loopback, and reports a busy port', async () => {
