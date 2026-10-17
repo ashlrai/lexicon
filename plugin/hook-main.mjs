@@ -20139,9 +20139,9 @@ function formatSkippedProjectNote(loaded) {
   return `Note: this repo has an untrusted .lexicon.yaml at ${safePath} that was not applied. ${SKIPPED_PROJECT_REVIEW} Trust it only if the user says yes after seeing the preview.`;
 }
 function formatCorrectionNote(correction) {
-  const heard = stripControlChars(correction.heard).trim();
-  const meant = stripControlChars(correction.meant).trim();
-  return `The user is correcting a spelling: "${heard}" should be "${meant}". Call the lexicon learn_correction tool with heard: "${heard}", meant: "${meant}". If "${heard}" contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
+  const heard = JSON.stringify(stripControlChars(correction.heard).trim());
+  const meant = JSON.stringify(stripControlChars(correction.meant).trim());
+  return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
 function spansOf(haystack, needle) {
   const spans = [];
@@ -20299,18 +20299,24 @@ async function userPromptSubmit(payload, opts) {
   const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
   const started = process.hrtime.bigint();
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
-  const shouldStop = () => process.hrtime.bigint() - started >= limit;
+  let timedOut = false;
+  const shouldStop = () => timedOut ||= process.hrtime.bigint() - started >= limit;
   let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : void 0;
+  const budgetNote = timedOut ? formatBudgetNote(budget) : "";
   if (result && correction) result = dropCorrectionSpans(result, correction);
   if (result) result = dropDataBlockSpans(result);
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
-  if (!changed && !skippedNote && !correctionNote) return "";
+  if (!changed && !skippedNote && !correctionNote && !budgetNote) return "";
   const parts = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
+  if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
   return emit("UserPromptSubmit", parts);
+}
+function formatBudgetNote(budgetMs) {
+  return `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.`;
 }
 async function sessionStart(payload, opts) {
   const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
@@ -20400,6 +20406,7 @@ export {
   dropCorrectionSpans,
   dropDataBlockSpans,
   formatAdditionalContext,
+  formatBudgetNote,
   formatCorrectionNote,
   formatSkippedProjectNote,
   main,

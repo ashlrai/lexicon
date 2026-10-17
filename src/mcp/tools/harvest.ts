@@ -92,7 +92,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       description:
         "Propose new aliases, terms and never-words from the user's voice history, usage and repo. " +
         'Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). ' +
-        "Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence.",
+        "Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, " +
+        "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
         cwd: z.string().optional().describe('Repository to scan for evidence. Defaults to the server working directory.'),
         limit: z.number().int().positive().optional().describe('Max suggestions to return.'),
@@ -129,15 +130,28 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           confidence: z.number().optional(),
           evidence: z.array(z.string()).optional(),
           count: z.number().optional(),
+          scope: z.enum(TERM_SCOPES).optional(),
+          path: z.string().optional(),
         }),
-        scope: z.enum(TERM_SCOPES).optional().describe("Where to write: 'global' (default) or 'project'."),
+        scope: z
+          .enum(TERM_SCOPES)
+          .optional()
+          .describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'."),
       },
     },
     async ({ suggestion, scope }) =>
       guarded(async () => {
         const { kind, canonical } = suggestion;
         const alias = suggestion.alias?.trim();
-        const storeOpts = { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) };
+        // An alias or never word goes where the term lives, as `lexicon suggest`
+        // does: a global copy of a project term loses the merge, so it would
+        // never fire. Suggestions do not carry a scope for the agent to pass.
+        let target = scope ?? suggestion.scope;
+        if (target === undefined && (kind === 'alias' || kind === 'never')) {
+          const key = canonical.trim().toLowerCase();
+          target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+        }
+        const storeOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
         if (kind === 'stale') {
           const removed = await removeTerm(canonical, storeOpts);
           return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
@@ -151,7 +165,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           source: 'user',
           ...(kind === 'term' && suggestion.category !== undefined ? { category: suggestion.category } : {}),
           ...(kind === 'never' && alias ? { never: [alias] } : {}),
-          ...(scope !== undefined ? { scope } : {}),
+          ...(target !== undefined ? { scope: target } : {}),
         };
         const saved = await addTerm(term, storeOpts);
         const summary =

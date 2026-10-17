@@ -49,6 +49,14 @@ which `.lexicon.yaml` to consider, subject to trust) or bind other ports. A
 different user on the same machine cannot read the token (0600) and cannot use
 the API without it.
 
+**Host guard.** Every route, not only `/pair`, answers 403 unless the `Host`
+header is `127.0.0.1:<port>`, `localhost:<port>` or `[::1]:<port>` (or the
+bound IP address under a non-loopback `--host`). A web page that rebinds its
+own DNS name to 127.0.0.1 arrives with its own name in `Host`, so it cannot
+use the unauthenticated `/health` to learn anything; `/health` also refuses
+`?cwd=` without the bearer token, so no caller without the token can probe
+which directories carry a `.lexicon.yaml` or whether they are trusted.
+
 **Pairing page (`GET /pair`, `lexicon serve --pair`).** This is the one route
 that returns the token without a bearer, so the extension can pair itself
 instead of a human pasting it. It stays inside the boundary above: the page is

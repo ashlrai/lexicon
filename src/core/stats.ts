@@ -20,6 +20,8 @@ export interface LexiconStats {
   topTerms: { canonical: string; hits: number }[];
   /** Canonicals with zero/undefined hits, in lexicon order, capped at NEVER_HIT_CAP. */
   neverHit: string[];
+  /** How many terms have zero/undefined hits in all, past the NEVER_HIT_CAP shown in `neverHit`. */
+  neverHitCount: number;
   /** Term count per category ("uncategorized" when unset). */
   byCategory: Record<string, number>;
   /** Term count per source ("unknown" when unset). */
@@ -41,12 +43,16 @@ export function computeStats(loaded: LoadedLexicon): LexiconStats {
   let aliasCount = 0;
   let totalHits = 0;
   const neverHit: string[] = [];
+  let neverHitCount = 0;
 
   for (const term of terms) {
     aliasCount += term.aliases.length;
     const hits = term.hits ?? 0;
     totalHits += hits;
-    if (hits <= 0 && neverHit.length < NEVER_HIT_CAP) neverHit.push(term.canonical);
+    if (hits <= 0) {
+      neverHitCount += 1;
+      if (neverHit.length < NEVER_HIT_CAP) neverHit.push(term.canonical);
+    }
     bump(byCategory, term.category ?? 'uncategorized');
     bump(bySource, term.source ?? 'unknown');
   }
@@ -64,5 +70,5 @@ export function computeStats(loaded: LoadedLexicon): LexiconStats {
     files.push({ path: loaded.project.path, scope: 'project', terms: loaded.project.lexicon.terms.length });
   }
 
-  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, byCategory, bySource, files };
+  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
 }

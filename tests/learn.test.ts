@@ -153,6 +153,51 @@ describe('parseCorrection', () => {
 // learnCorrection
 // ---------------------------------------------------------------------------
 
+const untrustedLoaded = (trust: 'untrusted' | 'changed' = 'untrusted'): LoadedLexicon => {
+  const globalOnly: Lexicon = { version: 1, terms: lexicon.terms.filter((t) => t.scope === 'global') };
+  return {
+    merged: globalOnly,
+    global: { path: '/fake/global.yaml', scope: 'global', lexicon: globalOnly, exists: true },
+    projectTrust: trust,
+    skippedProject: {
+      path: '/fake/repo/.lexicon.yaml',
+      scope: 'project',
+      lexicon: { version: 1, terms: [{ canonical: 'Hostile Name', aliases: ['Versel'] }, { canonical: 'Vercel', aliases: ['Versal'] }] },
+      exists: true,
+    },
+  };
+};
+
+describe('learnCorrection: an untrusted project lexicon that claims heard', () => {
+  it('names the skipped file and its trust state, never its terms', async () => {
+    store.loadLexicon.mockResolvedValue(untrustedLoaded());
+    const result = await learnCorrection({ heard: 'Versel', meant: 'Vercel' }, { cwd: '/fake/repo' });
+    // Still written globally, and the untrusted term is not merged or reported as a conflict.
+    expect(store.addTerm).toHaveBeenCalledWith(expect.objectContaining({ canonical: 'Vercel' }), { cwd: '/fake/repo', scope: 'global' });
+    expect(result.conflict).toBeUndefined();
+    expect(result.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+    expect(JSON.stringify(result)).not.toContain('Hostile Name');
+
+    store.loadLexicon.mockResolvedValue(untrustedLoaded('changed'));
+    expect((await learnCorrection({ heard: 'Versel', meant: 'Vercel' }, { cwd: '/fake/repo' })).untrustedProject?.trust).toBe('changed');
+  });
+
+  it('says nothing when the skipped file does not claim heard, or claims it for the same term', async () => {
+    store.loadLexicon.mockResolvedValue(untrustedLoaded());
+    expect((await learnCorrection({ heard: 'Verzel', meant: 'Vercel' }, { cwd: '/fake/repo' })).untrustedProject).toBeUndefined();
+    expect((await learnCorrection({ heard: 'Versal', meant: 'Vercel' }, { cwd: '/fake/repo' })).untrustedProject).toBeUndefined();
+  });
+
+  it('the CLI prints a warn line that names the file and lexicon trust', async () => {
+    store.loadLexicon.mockResolvedValue(untrustedLoaded());
+    const { io, out } = captureIO();
+    expect(await runLearn(['Versel', 'Vercel'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain('warn: the untrusted project lexicon /fake/repo/.lexicon.yaml also claims Versel for another term');
+    expect(out()).toContain('lexicon trust');
+    expect(out()).not.toContain('Hostile Name');
+  });
+});
+
 describe('learnCorrection', () => {
   it('adds heard as an alias of an existing canonical (in its own scope)', async () => {
     const result = await learnCorrection({ heard: 'Ashlur', meant: 'ashlr.ai' }, { cwd: '/fake/repo' });
@@ -334,6 +379,19 @@ describe('lexicon learn (CLI)', () => {
       { cwd: path.resolve('/fake/repo'), scope: 'global' },
     );
     expect(out()).toContain('learned Ashlur -> Ashlr.AI (alias added)');
+  });
+
+  it('warns when another term already claims the heard spelling', async () => {
+    // "Ashler" is an alias of Ashlr.AI in the fixture, so learning it for
+    // another name leaves two terms claiming it.
+    const { io, out } = captureIO();
+    expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
+    expect(out()).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+
+    const json = captureIO();
+    await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
+    expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
   });
 
   it('--project writes to the project lexicon', async () => {

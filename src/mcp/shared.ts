@@ -27,6 +27,10 @@ export interface ToolContext {
    */
   readonly cwd: string;
   load(): Promise<LoadedLexicon>;
+  /** normalize_transcript's matching budget in ms (MCP_NORMALIZE_BUDGET_MS unless overridden). */
+  readonly normalizeBudgetMs: number;
+  /** Characters of `text` normalize_transcript matches (MCP_NORMALIZE_MAX_CHARS unless overridden). */
+  readonly normalizeMaxChars: number;
 }
 
 /** What each `tools/*.ts` module exports: it registers a group of tools on the server. */

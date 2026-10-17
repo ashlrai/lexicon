@@ -169,6 +169,20 @@ export interface NormalizeOptions {
   shouldStop?: () => boolean;
 }
 
+/**
+ * Set on a normalize response when matching did not cover the whole text:
+ * `length` when only the first `checkedChars` characters were matched,
+ * `time` when the `shouldStop` budget ran out first. The unchecked text is
+ * returned unchanged. Shared by MCP normalize_transcript, serve /normalize
+ * and the extension's embedded engine.
+ */
+export interface NormalizeIncomplete {
+  reasons: ('length' | 'time')[];
+  checkedChars?: number;
+  totalChars: number;
+  note: string;
+}
+
 /** A term proposed by a harvester, before the user accepts it. */
 export interface HarvestCandidate {
   canonical: string;

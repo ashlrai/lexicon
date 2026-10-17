@@ -55,17 +55,20 @@ always allowed; `*` is never honoured.
 ## Endpoints
 
 Eleven routes, twelve rows below: `/packs/:name` takes both a POST and a DELETE.
-Every request except `GET /health` and `GET /pair` needs
-`Authorization: Bearer <token>`. Requests and responses are JSON
+Every request must carry a `Host` header of `127.0.0.1:<port>`,
+`localhost:<port>` or `[::1]:<port>` (with a non-loopback `--host`, the bound
+IP address as well); anything else is 403 on every route, which is what stops
+a DNS rebinding page. Every request except `GET /health` (without `?cwd=`)
+and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses are JSON
 (`Content-Type: application/json`) unless noted. Errors are
 `{ "error": "<message>" }`.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth) |
+| GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
 | POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start |
-| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path }` |
+| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict? }` (`conflict`: another term that also holds `heard`) |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
 | GET | `/stats` | | `LexiconStats` |
@@ -76,9 +79,20 @@ Every request except `GET /health` and `GET /pair` needs
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below) |
 
 Status codes: 400 invalid JSON or a bad field, 401 missing or wrong token,
-403 a project-scope write into an untrusted `.lexicon.yaml` or `/pair` with
-the wrong `Host` / a non-loopback client / a cross-origin `Origin`, 404 unknown route or export format,
-405 wrong method, 413 body over 1 MB, 503 more than 64 requests in flight.
+403 a `Host` that does not name this server (any route), a project-scope
+write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
+/ a cross-origin `Origin`, 404 unknown route or export format,
+405 wrong method, 413 body over 1 MB, 500 a problem on the server's side,
+503 more than 64 requests in flight.
+
+400 always means the request itself is wrong: fix the input and do not retry
+as is. 500 means the request was fine and the server could not serve it: the
+lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
+<path>: ...`), a lock on it is still held after its timeout, or the file
+cannot be read or written. The message names the cause and the file, so fix
+that and retry. An unauthenticated `/health` that hits the same problem gets
+only `internal error (the lexicon serve log has the detail)`; the detail is
+on the server's stderr either way.
 
 `/pair` is for `lexicon serve --pair`: the CLI confirms `/health`, opens the
 URL in the default browser, and the extension's content script on that page
@@ -90,7 +104,7 @@ no-referrer`. Nothing else consumes it.
 
 `cwd` picks which project `.lexicon.yaml` is considered (body field on POST,
 `?cwd=` on GET). It defaults to the directory the server was started in. An
-untrusted project file is never merged; `/health` and `/lexicon` report
+untrusted project file is never merged; `/health` (with the token) and `/lexicon` report
 `projectTrust: "untrusted"` and `/lexicon` names the skipped file by path.
 
 Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,

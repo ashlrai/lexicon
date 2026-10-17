@@ -9,7 +9,7 @@
  * used to carry its own copy of `line`, `safe` and `resolveCwd`.
  */
 import path from 'node:path';
-import { sanitizeForDisplay } from '../core/index.js';
+import { sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -96,6 +96,24 @@ export const safe: (s: string) => string = sanitizeForDisplay;
 /** `safe` per line, for text whose line breaks are the point (diff summaries, multi-line errors). */
 export function safeLines(s: string): string {
   return s.split('\n').map(safe).join('\n');
+}
+
+/** Longest line `safeError` prints: PATH_MAX, so a file path in an error is never cut. */
+export const ERROR_LINE_MAX_CHARS = 4096;
+/** Lines of an error `safeError` prints before "... and N more lines". */
+export const ERROR_MAX_LINES = 12;
+
+/**
+ * An error message from another process (a server's response) made safe to
+ * print: each line sanitized like `safe` but capped at ERROR_LINE_MAX_CHARS
+ * rather than 200, since the path a parse error names is the part to keep,
+ * and at most ERROR_MAX_LINES lines. Blank lines are dropped.
+ */
+export function safeError(s: string): string {
+  const lines = s.split(/\r?\n/).filter((l) => l.trim() !== '');
+  const shown = lines.slice(0, ERROR_MAX_LINES).map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS));
+  if (lines.length > ERROR_MAX_LINES) shown.push(`  ... and ${lines.length - ERROR_MAX_LINES} more lines`);
+  return shown.join('\n');
 }
 
 // ---------------------------------------------------------------------------
