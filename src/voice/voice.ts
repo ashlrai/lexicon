@@ -278,20 +278,35 @@ async function requireTools(r: Resolved, io: VoiceIO, deps: VoiceDeps, need: { f
   const locate = { env: r.env, platform: r.platform, ...(deps.exists ? { exists: deps.exists } : {}), ...(deps.extraBinDirs ? { extraDirs: deps.extraBinDirs } : {}) };
   const ffmpeg = need.ffmpeg ? await locateFfmpeg(locate) : 'ffmpeg';
   const whisperCli = need.whisper ? await locateWhisperCli(locate) : 'whisper-cli';
-  const missing: string[] = [];
-  // A set override that points nowhere is a typo to fix, not a missing install.
-  if (!ffmpeg) missing.push(r.env.LEXICON_FFMPEG_BIN ? `ffmpeg (LEXICON_FFMPEG_BIN=${r.env.LEXICON_FFMPEG_BIN} does not exist)` : 'ffmpeg');
-  if (!whisperCli) missing.push(r.env.LEXICON_WHISPER_BIN ? `whisper-cli (LEXICON_WHISPER_BIN=${r.env.LEXICON_WHISPER_BIN} does not exist)` : 'whisper-cli');
-  if (missing.length > 0 || !ffmpeg || !whisperCli) {
-    const which = { ffmpeg: !ffmpeg, whisper: !whisperCli };
-    const vars = [...(which.whisper ? ['LEXICON_WHISPER_BIN'] : []), ...(which.ffmpeg ? ['LEXICON_FFMPEG_BIN'] : [])].join(' / ');
-    io.stderr(
-      `lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform, which)}\n  (or set ${vars} to the binary)\n`,
-    );
-    failed(r, EXIT_MISSING_TOOL, `${missing.join(' and ')} not found on PATH`, `install: ${installHint(r.platform, which)} (or set ${vars} to the binary)`);
-    return undefined;
-  }
-  return { ffmpeg, whisperCli };
+  if (ffmpeg && whisperCli) return { ffmpeg, whisperCli };
+  // A set override that points nowhere is a typo to fix, not a missing
+  // install: it is named on its own, and PATH (never searched for it) is not.
+  const overrides = [
+    ...(!whisperCli && r.env.LEXICON_WHISPER_BIN ? [{ tool: 'whisper-cli', name: 'LEXICON_WHISPER_BIN', value: r.env.LEXICON_WHISPER_BIN }] : []),
+    ...(!ffmpeg && r.env.LEXICON_FFMPEG_BIN ? [{ tool: 'ffmpeg', name: 'LEXICON_FFMPEG_BIN', value: r.env.LEXICON_FFMPEG_BIN }] : []),
+  ];
+  const which = { ffmpeg: !ffmpeg && !r.env.LEXICON_FFMPEG_BIN, whisper: !whisperCli && !r.env.LEXICON_WHISPER_BIN };
+  const onPath = [...(which.ffmpeg ? ['ffmpeg'] : []), ...(which.whisper ? ['whisper-cli'] : [])];
+  const errors = [
+    ...(onPath.length > 0 ? [`${onPath.join(' and ')} not found on PATH`] : []),
+    ...overrides.map((o) => `${o.name}=${o.value} does not exist`),
+  ];
+  const install = onPath.length > 0 ? installSteps(r.platform, which) : [];
+  const repoint = overrides.map((o) => `point ${o.name} at the ${o.tool} binary, or unset it to look on PATH`);
+  io.stderr(`lexicon voice: ${errors.join('; ')}.\n${[...install, ...repoint].map((step) => `  ${step}\n`).join('')}`);
+  failed(r, EXIT_MISSING_TOOL, errors.join('; '), [...(install.length > 0 ? [install.join(' ')] : []), ...repoint].join('; '));
+  return undefined;
+}
+
+/**
+ * `install: <hint>` and, for each override the hint does not already name,
+ * `(or set <VAR> to the binary)`: the Linux whisper hint already says to set
+ * LEXICON_WHISPER_BIN, so it is not said twice.
+ */
+function installSteps(platform: NodeJS.Platform, which: { ffmpeg: boolean; whisper: boolean }): string[] {
+  const hint = installHint(platform, which);
+  const vars = [...(which.whisper ? ['LEXICON_WHISPER_BIN'] : []), ...(which.ffmpeg ? ['LEXICON_FFMPEG_BIN'] : [])].filter((v) => !hint.includes(`${v}=`));
+  return [`install: ${hint}`, ...(vars.length > 0 ? [`(or set ${vars.join(' / ')} to the binary)`] : [])];
 }
 
 async function loadMerged(r: Resolved, opts: VoiceOptions): Promise<Lexicon> {
@@ -644,7 +659,7 @@ function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string): nu
     r,
     missing ? EXIT_MISSING_TOOL : EXIT_ERROR,
     `${message(e)} (audio kept at ${wav})`,
-    missing ? `install: ${installHint(r.platform, { ffmpeg: false, whisper: true })} (or set LEXICON_WHISPER_BIN to the binary)` : undefined,
+    missing ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ') : undefined,
   );
 }
 
