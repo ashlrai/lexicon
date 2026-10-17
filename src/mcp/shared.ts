@@ -10,6 +10,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
+import { unreadableLexiconEdit } from '../cli/io.js';
 import { errorMessage } from '../util/errors.js';
 import { findPackageRoot, packageVersion } from '../util/package.js';
 
@@ -121,9 +122,22 @@ export function textResult(payload: unknown): CallToolResult {
 }
 
 function errorResult(err: unknown): CallToolResult {
-  const message = errorMessage(err);
+  const message = withLexiconFix(errorMessage(err));
   log('tool error:', message);
   return { isError: true, content: [{ type: 'text', text: message }] };
+}
+
+/**
+ * A store error for a lexicon file that does not parse or validate, which
+ * already names the file, with the fix appended on a second line: the
+ * `lexicon edit` command that opens it and `lexicon doctor` to check it.
+ * Any other message is returned unchanged. Tools, resources and prompts all
+ * report a broken file this way, so a model reading any of them can relay it.
+ */
+export function withLexiconFix(message: string): string {
+  const edit = unreadableLexiconEdit(message);
+  if (!edit) return message;
+  return `${message}\nNothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
 }
 
 

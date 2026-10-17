@@ -26,6 +26,9 @@
  *    A user-facing failure is one stderr line and code 1: `return fail(io, err)`
  *    (io.ts). Throw an `Error` only for a programming/usage error the top-level
  *    wiring should report -- and never print and exit from inside a handler.
+ *    Under `--json` a failure also prints `{ ok: false, error, nextStep? }` on
+ *    stdout: `fail(io, err, opts.json)`, `refuse(io, opts.json, message)` for
+ *    one that is not an exception, and index.ts does it for a thrown error.
  *
  * 4. SUCCESS. Human output goes to stdout via `line(io, ...)`; `--json` prints
  *    `JSON.stringify(value, null, 2)` and nothing else. Warnings that do not
@@ -98,6 +101,7 @@ import {
   green,
   line,
   plural,
+  refuse,
   renderTable,
   resolveCwd,
   safe,
@@ -406,8 +410,7 @@ export interface RemoveOptions extends CommonOptions {
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   if (opts.project && opts.global) {
-    io.stderr('lexicon: --project and --global cannot be combined (omit both to try the project lexicon, then the global one)\n');
-    return 1;
+    return refuse(io, opts.json, '--project and --global cannot be combined (omit both to try the project lexicon, then the global one)');
   }
   const scope: TermScope | undefined = opts.project ? 'project' : opts.global ? 'global' : undefined;
   if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, scope, cwd, io);
@@ -708,6 +711,13 @@ export interface HarvestCliOptions extends CommonOptions {
   minCount?: string | number;
   add?: boolean;
   json?: boolean;
+  /**
+   * Print one object instead of the bare candidate array `--json` prints: the
+   * keys MCP `harvest_repo` returns (`root`, `candidates`, `count`, and with
+   * `--add` the number `added`) plus `created`, `merged` and `path` for an add.
+   * Implies `json`. Printed after the add, so it reports what was written.
+   */
+  full?: boolean;
   /** `-i`: walk candidates one by one. Implied by `--add` on a terminal unless `--yes`. */
   interactive?: boolean;
   /** With `--add`: add every candidate without prompting even on a terminal. */
@@ -732,6 +742,8 @@ export async function runHarvest(
 ): Promise<number> {
   const cwd = resolveCwd(opts);
   const target = path.resolve(cwd, root ?? '.');
+  // --full is --json with one object on stdout instead of the bare array.
+  const json = opts.json === true || opts.full === true;
   if (!existsSync(target)) throw new Error(`harvest: path does not exist: ${safe(target)}`);
 
   const tty = (deps.isInteractive ?? isInteractive)();
@@ -740,8 +752,8 @@ export async function runHarvest(
       'harvest --interactive needs a terminal (stdin and stdout must be a TTY); use --add --yes to add every candidate without prompts',
     );
   }
-  if (opts.interactive && opts.json) throw new Error('harvest: --interactive and --json cannot be combined');
-  const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !opts.json && tty);
+  if (opts.interactive && json) throw new Error('harvest: --interactive and --json cannot be combined');
+  const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !json && tty);
 
   // `--add` writes to the project file, which refuses an untrusted one. Check
   // up front, as the interactive walk does: the table (or the --json array)
@@ -753,7 +765,7 @@ export async function runHarvest(
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (opts.json) line(io, JSON.stringify({ added: false, path: projectPath, projectTrust: status, error: message }, null, 2));
+        if (json) line(io, JSON.stringify({ added: false, path: projectPath, projectTrust: status, error: message }, null, 2));
         io.stderr(`lexicon: ${safeLines(message)}\n`);
         return 1;
       }
@@ -784,7 +796,9 @@ export async function runHarvest(
     }
   }
 
-  if (opts.json) {
+  if (opts.full) {
+    // Printed once the add (if any) is done, below.
+  } else if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
   } else if (candidates.length === 0) {
     line(io, dim(`no candidates found in ${safe(target)}`));
@@ -799,10 +813,10 @@ export async function runHarvest(
     io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence']));
   }
 
+  let created = 0;
+  let merged = 0;
+  let filePath: string | undefined;
   if (opts.add && candidates.length > 0) {
-    let created = 0;
-    let merged = 0;
-    let filePath: string | undefined;
     for (const c of candidates) {
       const term: Term = {
         canonical: c.canonical,
@@ -817,10 +831,14 @@ export async function runHarvest(
     }
     const where = filePath ? ` in ${safe(filePath)}` : '';
     const summary = `added ${created} new term${created === 1 ? '' : 's'}, merged ${merged}${where}`;
-    if (opts.json) io.stderr(`${summary}\n`);
+    if (json) io.stderr(`${summary}\n`);
     else line(io, green(summary));
     // addTerm(scope: 'project') registers the file as trusted at its new content.
-    if (filePath && !opts.json) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
+    if (filePath && !json) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
+  }
+  if (opts.full) {
+    const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
+    line(io, JSON.stringify({ root: target, candidates, count: candidates.length, ...addResult }, null, 2));
   }
   return 0;
 }

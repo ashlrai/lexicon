@@ -911,6 +911,17 @@ describe('requests that used to succeed while doing something else', () => {
 // ---------------------------------------------------------------------------
 
 describe('lexicon serve (CLI)', () => {
+  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty.
+  it('--json prints { ok: false, error } when two modes are combined', async () => {
+    const io = memIO();
+    expect(await runServe({ show: true, status: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
+    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    // --install prints a transcript, not JSON, so its refusal stays on stderr.
+    const install = memIO();
+    expect(await runServe({ install: true, uninstall: true, json: true, globalPath: env.globalPath }, install)).toBe(1);
+    expect(install.out.join('')).toBe('');
+  });
+
   it('--show prints the URL and token', async () => {
     const io = memIO();
     const code = await runServe({ show: true, port: info.port, globalPath: env.globalPath }, io, { home: env.home });
@@ -941,6 +952,33 @@ describe('lexicon serve (CLI)', () => {
     const down = memIO();
     expect(await runServe({ status: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
     expect(down.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+  });
+
+  // Catches: --status created serve.json (and minted a token) when it was missing; a status query must write nothing.
+  it('--status writes nothing and says serve is not configured when serve.json is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'status-unconfigured-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    const servePath = getServePath({ globalPath });
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+
+    const text = memIO();
+    expect(await runServe({ status: true, port: c.port, globalPath }, text, { home: env.home })).toBe(1);
+    expect(text.out.join('')).toContain('serve is not configured:');
+    expect(text.out.join('')).toContain('does not exist; lexicon serve creates it');
+    expect(text.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+
+    const json = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath }, json)).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, configured: false, configPath: servePath, note: expect.stringContaining('not configured') });
+    await expect(fs.stat(servePath)).rejects.toThrow();
+    expect(await fs.readdir(dir)).toEqual([]);
+
+    // A configured one carries no configured/note keys.
+    const configured = memIO();
+    await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, configured);
+    expect(JSON.parse(configured.out.join(''))).not.toHaveProperty('configured');
   });
 
   /**
@@ -1663,6 +1701,35 @@ describe('packs and aliases routes', () => {
     expect(body.packs.every((p) => p.installed === false && p.terms > 0 && p.aliases > 0 && p.path.endsWith('.yaml'))).toBe(true);
     expect(body.installed).toEqual([]);
     expect((await api2('POST', '/packs', {})).status).toBe(405);
+  });
+
+  // Catches: GET /packs left out what MCP list_packs and `pack list --json` report:
+  // a community pack the lexicon lists with no registry record, and a skipped project file.
+  it('GET /packs lists community refs and carries registryMismatch, projectTrust and skippedProject', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-packs-community-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repo = path.join(dir, 'repo');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nsettings:\n  packs: [developer, example/cardiology]\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nsettings:\n  packs: [ai]\nterms: []\n');
+    const srv = createServer({ port: 0, cwd: repo, globalPath, quiet: true, reloadMs: 0 });
+    const started = await srv.start();
+    try {
+      const res = await fetch(`${started.url}/packs`, { headers: { Authorization: `Bearer ${started.token}` } });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { packs: { name: string; installed: boolean }[]; installed: string[]; registryMismatch?: unknown; projectTrust?: string; skippedProject?: string };
+      expect(body.installed).toEqual(['developer', 'example/cardiology']);
+      expect(body.packs.find((p) => p.name === 'developer')?.installed).toBe(true);
+      // The untrusted project file records `ai`; it is not read, so `ai` is not installed.
+      expect(body.packs.find((p) => p.name === 'ai')?.installed).toBe(false);
+      expect(body.registryMismatch).toEqual({ fileOnly: ['example/cardiology'], recordOnly: [] });
+      expect(body.projectTrust).toBe('untrusted');
+      expect(body.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {

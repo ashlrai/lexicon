@@ -9779,7 +9779,7 @@ var require_schema2 = __commonJS({
         stringify: stringifyJSON
       }
     ];
-    var jsonError = {
+    var jsonError2 = {
       default: true,
       tag: "",
       test: /^/,
@@ -9788,7 +9788,7 @@ var require_schema2 = __commonJS({
         return str;
       }
     };
-    var schema = [map2.map, seq.seq].concat(jsonScalars, jsonError);
+    var schema = [map2.map, seq.seq].concat(jsonScalars, jsonError2);
     exports.schema = schema;
   }
 });
@@ -51731,12 +51731,12 @@ zones
 zoo
 `;
 function freeze(set2) {
-  const refuse = () => {
+  const refuse2 = () => {
     throw new TypeError("STOPLIST is read-only");
   };
-  set2.add = refuse;
-  set2.delete = refuse;
-  set2.clear = refuse;
+  set2.add = refuse2;
+  set2.delete = refuse2;
+  set2.clear = refuse2;
   return Object.freeze(set2);
 }
 var STOPLIST = freeze(new Set(WORDS.split("\n").filter((w) => w.length > 0)));
@@ -57940,13 +57940,13 @@ function detectImportFormat(content, filename) {
   const text = content.replace(/^﻿/, "");
   const trimmed = text.trimStart();
   if (looksLikePlist(trimmed)) return "macos";
-  let jsonError;
+  let jsonError2;
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     let parsed;
     try {
       parsed = JSON.parse(trimmed);
     } catch (err) {
-      jsonError = err instanceof Error ? err.message : String(err);
+      jsonError2 = err instanceof Error ? err.message : String(err);
       try {
         const yaml = (0, import_yaml5.parse)(trimmed, { prettyErrors: false });
         if (looksLikeLexiconJson(yaml)) return "json";
@@ -57974,9 +57974,9 @@ function detectImportFormat(content, filename) {
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "csv") return "wispr";
   if (ext === "yml" || ext === "yaml") return "espanso";
-  if (jsonError !== void 0 && ext !== "txt") {
+  if (jsonError2 !== void 0 && ext !== "txt") {
     throw new Error(
-      `could not detect the import format: the content starts like JSON but does not parse (${jsonError}); fix the file or pass the format explicitly`
+      `could not detect the import format: the content starts like JSON but does not parse (${jsonError2}); fix the file or pass the format explicitly`
     );
   }
   return "text";
@@ -59433,26 +59433,102 @@ function demonstrate(lexicon, prefer = []) {
 }
 
 // src/mcp/shared.ts
-var import_node_path12 = __toESM(require_node_path());
+var import_node_path13 = __toESM(require_node_path());
+
+// src/cli/io.ts
+var import_node_path11 = __toESM(require_node_path());
+function line(io, s = "") {
+  io.stdout(`${s}
+`);
+}
+function resolveCwd(opts) {
+  return import_node_path11.default.resolve(opts.cwd ?? process.cwd());
+}
+function styler(output2 = process.stdout, env = process.env) {
+  const on = () => Boolean(output2?.isTTY) && !env.NO_COLOR;
+  const paint = (code) => (s) => on() ? `\x1B[${code}m${s}\x1B[0m` : s;
+  return { bold: paint("1"), dim: paint("2"), red: paint("31"), green: paint("32"), yellow: paint("33") };
+}
+var { bold, dim, red, green, yellow } = styler(process.stdout);
+var safe = sanitizeForDisplay;
+function safeLines(s) {
+  return s.split("\n").map(safe).join("\n");
+}
+function plural2(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+function indent(s, prefix) {
+  return s.split("\n").map((l) => prefix + l).join("\n");
+}
+function tildify(p, home) {
+  const rel = import_node_path11.default.relative(home, p);
+  return rel && !rel.startsWith("..") && !import_node_path11.default.isAbsolute(rel) ? `~/${rel.split(import_node_path11.default.sep).join("/")}` : p;
+}
+function renderTable(rows, header) {
+  const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
+  if (all.length === 0) return "";
+  const cols = Math.max(...all.map((r) => r.length));
+  const widths = new Array(cols).fill(0);
+  for (const row of all) {
+    row.forEach((cell, i) => {
+      widths[i] = Math.max(widths[i], cell.length);
+    });
+  }
+  const fmt = (row) => widths.map((w, i) => (row[i] ?? "").padEnd(w)).join("  ").trimEnd();
+  const out = [];
+  if (header) {
+    out.push(fmt(all[0]));
+    out.push(fmt(widths.map((w) => "-".repeat(w))));
+  }
+  for (const row of header ? all.slice(1) : all) out.push(fmt(row));
+  return `${out.join("\n")}
+`;
+}
+function fail(io, err, json2) {
+  const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (json2) printJsonError(io, message, hint);
+  io.stderr(`lexicon: ${safeLines(message)}
+`);
+  if (hint) io.stderr(`lexicon: ${hint}
+`);
+  return 1;
+}
+function jsonError(error62, nextStep) {
+  return { ok: false, error: error62, ...nextStep ? { nextStep } : {} };
+}
+function printJsonError(io, error62, nextStep) {
+  io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
+`);
+}
+function unreadableLexiconHint(message) {
+  const edit = unreadableLexiconEdit(message);
+  return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : void 0;
+}
+function unreadableLexiconEdit(message) {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  if (!m) return void 0;
+  return import_node_path11.default.basename(m[1] ?? "") === ".lexicon.yaml" ? "lexicon edit --project" : "lexicon edit";
+}
 
 // src/util/package.ts
 var import_node_fs10 = __toESM(require_node_fs());
-var import_node_path11 = __toESM(require_node_path());
+var import_node_path12 = __toESM(require_node_path());
 var import_node_url2 = __toESM(require_node_url());
 var PACKAGE_NAME2 = "@ashlr/lexicon";
 var UNKNOWN_VERSION = "0.0.0";
 function findPackageRoot2(from) {
-  let dir = from.startsWith("file:") ? import_node_path11.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path11.default.resolve(from);
+  let dir = from.startsWith("file:") ? import_node_path12.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path12.default.resolve(from);
   for (; ; ) {
-    if (readPackageJson(import_node_path11.default.join(dir, "package.json"))) return dir;
-    const parent = import_node_path11.default.dirname(dir);
+    if (readPackageJson(import_node_path12.default.join(dir, "package.json"))) return dir;
+    const parent = import_node_path12.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packageVersion(moduleUrl) {
   const root = findPackageRoot2(moduleUrl);
-  const pkg = root ? readPackageJson(import_node_path11.default.join(root, "package.json")) : void 0;
+  const pkg = root ? readPackageJson(import_node_path12.default.join(root, "package.json")) : void 0;
   return pkg?.version ?? UNKNOWN_VERSION;
 }
 function readPackageJson(file2) {
@@ -59504,16 +59580,22 @@ function readPackageVersion() {
 }
 function cliDirForInstall() {
   const pkg = findPackage();
-  return pkg ? (0, import_node_path12.join)(pkg.root, "dist", "cli") : void 0;
+  return pkg ? (0, import_node_path13.join)(pkg.root, "dist", "cli") : void 0;
 }
 function textResult(payload) {
   const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   return { isError: false, content: [{ type: "text", text }] };
 }
 function errorResult(err) {
-  const message = errorMessage(err);
+  const message = withLexiconFix(errorMessage(err));
   log("tool error:", message);
   return { isError: true, content: [{ type: "text", text: message }] };
+}
+function withLexiconFix(message) {
+  const edit = unreadableLexiconEdit(message);
+  if (!edit) return message;
+  return `${message}
+Nothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
 }
 async function guarded(fn) {
   try {
@@ -59874,7 +59956,7 @@ var registerTermTools = (server, ctx) => {
 };
 
 // src/mcp/tools/harvest.ts
-var import_node_path13 = __toESM(require_node_path());
+var import_node_path14 = __toESM(require_node_path());
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -59890,7 +59972,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ path: path27, limit, minCount, add }) => guarded(async () => {
-      const root = path27 ? (0, import_node_path13.resolve)(ctx.cwd, path27) : ctx.cwd;
+      const root = path27 ? (0, import_node_path14.resolve)(ctx.cwd, path27) : ctx.cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -59936,7 +60018,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
-      const root = cwdArg ? (0, import_node_path13.resolve)(ctx.cwd, cwdArg) : ctx.cwd;
+      const root = cwdArg ? (0, import_node_path14.resolve)(ctx.cwd, cwdArg) : ctx.cwd;
       const loaded = await loadLexicon({ cwd: root });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
@@ -60007,11 +60089,11 @@ var registerHarvestTools = (server, ctx) => {
 
 // src/mcp/tools/trust.ts
 var import_node_fs11 = __toESM(require_node_fs());
-var import_node_path14 = __toESM(require_node_path());
+var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(cwd, path27) {
-  const resolved2 = (0, import_node_path14.resolve)(cwd, path27);
+  const resolved2 = (0, import_node_path15.resolve)(cwd, path27);
   try {
-    if ((0, import_node_fs11.statSync)(resolved2).isDirectory()) return (0, import_node_path14.join)(resolved2, PROJECT_FILE_NAME);
+    if ((0, import_node_fs11.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
   } catch {
   }
   return resolved2;
@@ -60129,71 +60211,6 @@ var registerTrustTools = (server, ctx) => {
 // src/cli/commands.ts
 var import_node_fs20 = __toESM(require_node_fs());
 var import_node_path23 = __toESM(require_node_path());
-
-// src/cli/io.ts
-var import_node_path15 = __toESM(require_node_path());
-function line(io, s = "") {
-  io.stdout(`${s}
-`);
-}
-function resolveCwd(opts) {
-  return import_node_path15.default.resolve(opts.cwd ?? process.cwd());
-}
-function styler(output2 = process.stdout, env = process.env) {
-  const on = () => Boolean(output2?.isTTY) && !env.NO_COLOR;
-  const paint = (code) => (s) => on() ? `\x1B[${code}m${s}\x1B[0m` : s;
-  return { bold: paint("1"), dim: paint("2"), red: paint("31"), green: paint("32"), yellow: paint("33") };
-}
-var { bold, dim, red, green, yellow } = styler(process.stdout);
-var safe = sanitizeForDisplay;
-function safeLines(s) {
-  return s.split("\n").map(safe).join("\n");
-}
-function plural2(n, word) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-function indent(s, prefix) {
-  return s.split("\n").map((l) => prefix + l).join("\n");
-}
-function tildify(p, home) {
-  const rel = import_node_path15.default.relative(home, p);
-  return rel && !rel.startsWith("..") && !import_node_path15.default.isAbsolute(rel) ? `~/${rel.split(import_node_path15.default.sep).join("/")}` : p;
-}
-function renderTable(rows, header) {
-  const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
-  if (all.length === 0) return "";
-  const cols = Math.max(...all.map((r) => r.length));
-  const widths = new Array(cols).fill(0);
-  for (const row of all) {
-    row.forEach((cell, i) => {
-      widths[i] = Math.max(widths[i], cell.length);
-    });
-  }
-  const fmt = (row) => widths.map((w, i) => (row[i] ?? "").padEnd(w)).join("  ").trimEnd();
-  const out = [];
-  if (header) {
-    out.push(fmt(all[0]));
-    out.push(fmt(widths.map((w) => "-".repeat(w))));
-  }
-  for (const row of header ? all.slice(1) : all) out.push(fmt(row));
-  return `${out.join("\n")}
-`;
-}
-function fail(io, err) {
-  const message = errorMessage(err);
-  io.stderr(`lexicon: ${safeLines(message)}
-`);
-  const hint = unreadableLexiconHint(message);
-  if (hint) io.stderr(`lexicon: ${hint}
-`);
-  return 1;
-}
-function unreadableLexiconHint(message) {
-  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
-  if (!m) return void 0;
-  const edit = import_node_path15.default.basename(m[1] ?? "") === ".lexicon.yaml" ? "lexicon edit --project" : "lexicon edit";
-  return `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor`;
-}
 
 // src/cli/claude-settings.ts
 var import_node_fs14 = __toESM(require_node_fs());
@@ -63058,9 +63075,9 @@ async function runSetup(opts, io, deps = {}) {
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  if (opts.json) io.stdout(`${JSON.stringify(ctx.plan ?? ctx.summary, null, 2)}
-`);
   const failed = ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...ctx.plan ?? ctx.summary }, null, 2)}
+`);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...ctx.plan ? { plan: ctx.plan } : {} };
 }
 
@@ -63684,6 +63701,17 @@ function createServer2(opts = {}) {
     normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
+  const loadForContext = async () => {
+    try {
+      return await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      const fixed = withLexiconFix(message);
+      if (fixed === message) throw err;
+      log("lexicon unreadable:", message);
+      throw new Error(fixed);
+    }
+  };
   server.registerResource(
     "Personal voice lexicon",
     "lexicon://me",
@@ -63693,7 +63721,7 @@ function createServer2(opts = {}) {
       mimeType: "text/markdown"
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text }]
@@ -63709,7 +63737,7 @@ function createServer2(opts = {}) {
       mimeType: "application/json"
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       const skipped = skippedProjectFields(loaded);
       const text = Object.keys(skipped).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}
 ` : exportLexicon(loaded.merged, "json");
@@ -63725,7 +63753,7 @@ function createServer2(opts = {}) {
       description: "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session."
     },
     async () => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       const snippet2 = exportLexicon(loaded.merged, "claude-md").trimEnd() + skippedProjectSuffix(loaded);
       const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {

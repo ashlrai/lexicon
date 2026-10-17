@@ -36,7 +36,7 @@ import type {
   TermCategory,
 } from '../core/index.js';
 import { ProjectTrustError } from '../core/index.js';
-import { bold, dim, fail, line, plural, resolveCwd, safe, safeLines } from './io.js';
+import { bold, dim, fail, line, plural, refuse, resolveCwd, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
@@ -125,27 +125,23 @@ export async function runImportGuided(
   try {
     wanted = parseSourceList(opts.sources);
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
   const limit = opts.limit !== undefined ? Number(opts.limit) : 50;
   if (!Number.isInteger(limit) || limit < 0) {
-    io.stderr(`lexicon: --limit must be a non-negative integer, got "${safe(opts.limit ?? '')}"\n`);
-    return 1;
+    return refuse(io, opts.json, `--limit must be a non-negative integer, got "${opts.limit ?? ''}"`);
   }
 
   const interactive = !opts.yes && !opts.json && (deps.isInteractive ?? isInteractive)();
   // JSON and dry-run still read source data: neither authorizes default sources.
   if (!interactive && opts.sources === undefined) {
-    io.stderr('lexicon: --yes needs --sources <list>; all non-interactive previews and imports must name their sources.\n');
-    return 1;
+    return refuse(io, opts.json, '--yes needs --sources <list>; all non-interactive previews and imports must name their sources.');
   }
   if (opts.yes && !opts.dryRun && (opts.previewId === undefined || opts.accept === undefined)) {
-    io.stderr('lexicon: preview with --json --sources first, then pass --preview-id and --accept candidate ids with --yes.\n');
-    return 1;
+    return refuse(io, opts.json, 'preview with --json --sources first, then pass --preview-id and --accept candidate ids with --yes.');
   }
   if (opts.previewId !== undefined && !/^[a-f0-9]{64}$/.test(opts.previewId)) {
-    io.stderr('lexicon: --preview-id must be the digest from the candidate preview.\n');
-    return 1;
+    return refuse(io, opts.json, '--preview-id must be the digest from the candidate preview.');
   }
   const dryRun = (opts.dryRun ?? false) || Boolean(opts.json && !opts.yes);
 
@@ -159,8 +155,7 @@ export async function runImportGuided(
   };
 
   if (!interactive && !opts.yes && !opts.dryRun && !opts.json) {
-    io.stderr('lexicon: not a terminal. Preview with --sources <list> --json, then approve candidate ids with --yes.\n');
-    return 1;
+    return refuse(io, opts.json, 'not a terminal. Preview with --sources <list> --json, then approve candidate ids with --yes.');
   }
 
   let chosen = wanted;
@@ -170,8 +165,7 @@ export async function runImportGuided(
     }
     const offer = implemented.filter((s) => opts.sources === undefined || wanted.includes(s.id));
     if (offer.length === 0) {
-      io.stderr('lexicon: no implemented import source selected.\n');
-      return 1;
+      return refuse(io, opts.json, 'no implemented import source selected.');
     }
     const prompter = deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout }));
     const p = prompter();
@@ -224,8 +218,7 @@ export async function runImportGuided(
     if (projectPath && existsSync(projectPath)) {
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, { cwd });
       if (status !== 'trusted') {
-        io.stderr(`lexicon: ${safeLines(new ProjectTrustError(projectPath, status).message)}\n`);
-        return 1;
+        return refuse(io, opts.json, new ProjectTrustError(projectPath, status).message);
       }
     }
   }
@@ -244,8 +237,7 @@ export async function runImportGuided(
   const paths = resolvePaths(storeOpts);
   report.previewId = importPreviewDigest(chosen, candidates, JSON.stringify({ scope, cwd, ...paths }));
   if (!interactive && !dryRun && report.previewId !== opts.previewId) {
-    io.stderr('lexicon: source contents or destination changed since preview; preview again before importing.\n');
-    return 1;
+    return refuse(io, opts.json, 'source contents or destination changed since preview; preview again before importing.');
   }
   if (candidates.length === 0) {
     if (opts.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
@@ -329,7 +321,7 @@ export async function runImportGuided(
       accepted.push(...selectImportCandidates(work, splitList(opts.accept ?? '')));
       skipped = work.length - accepted.length;
     } catch (err) {
-      return fail(io, err);
+      return fail(io, err, opts.json);
     }
   }
 
@@ -337,7 +329,7 @@ export async function runImportGuided(
   try {
     result = await applyImportCandidates(accepted, { ...storeOpts, scope });
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
   report.added = result.added;
   report.merged = result.merged;

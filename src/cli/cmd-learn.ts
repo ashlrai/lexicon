@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, fail, line, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -44,11 +44,21 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   const correction = correctionFromArgs(words, opts.from);
   if (!correction) {
     const source = opts.from ?? words.join(' ');
+    if (opts.json) {
+      printJsonError(io, source ? `could not find a correction in "${source}"` : 'nothing to learn', 'run: lexicon learn <heard> <meant>, or lexicon learn --from "<sentence>"');
+    }
     io.stderr(source ? `lexicon: could not find a correction in "${safe(source)}"\n` : 'lexicon: nothing to learn\n');
     usageHint(io);
     return 1;
   }
   if (!correction.heard) {
+    if (opts.json) {
+      printJsonError(
+        io,
+        `"${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard`,
+        `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`,
+      );
+    }
     io.stderr(
       `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
@@ -92,7 +102,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -158,7 +168,7 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 

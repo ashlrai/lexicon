@@ -182,14 +182,51 @@ export function renderTable(rows: readonly (readonly string[])[], header?: reado
 
 /**
  * The house style for a failed command: one `lexicon: <message>` line on
- * stderr, exit code 1. Handlers `return fail(io, err)` rather than throwing, so
+ * stderr, exit code 1. With `json` true (the command's `--json`) the
+ * `{ ok: false, error, nextStep? }` document goes to stdout as well, `nextStep`
+ * being the unreadable-lexicon hint when there is one. Handlers `return fail(io, err)` rather than throwing, so
  * the commander wiring in index.ts stays a thin pass-through of exit codes.
  */
-export function fail(io: IO, err: unknown): number {
+export function fail(io: IO, err: unknown, json?: boolean): number {
   const message = errorMessage(err);
-  io.stderr(`lexicon: ${safeLines(message)}\n`);
   const hint = unreadableLexiconHint(message);
+  if (json) printJsonError(io, message, hint);
+  io.stderr(`lexicon: ${safeLines(message)}\n`);
   if (hint) io.stderr(`lexicon: ${hint}\n`);
+  return 1;
+}
+
+/**
+ * The stdout document of a `--json` command that failed: `{ ok: false, error,
+ * nextStep? }`, as `setup --json` prints it. Under --json stdout is the one
+ * thing a script reads, so a refusal that only went to stderr left it with an
+ * empty document to parse. The text is unsanitized (it is JSON, not a
+ * terminal line), like every other `--json` field.
+ */
+export interface JsonError {
+  ok: false;
+  error: string;
+  nextStep?: string;
+}
+
+export function jsonError(error: string, nextStep?: string): JsonError {
+  return { ok: false, error, ...(nextStep ? { nextStep } : {}) };
+}
+
+/** Print `jsonError(error, nextStep)` on stdout. */
+export function printJsonError(io: IO, error: string, nextStep?: string): void {
+  io.stdout(`${JSON.stringify(jsonError(error, nextStep), null, 2)}\n`);
+}
+
+/**
+ * A refusal that is not an exception: the `lexicon: <error>` line (and a
+ * `lexicon: <nextStep>` line) on stderr and, under --json, the `JsonError`
+ * document on stdout. Exit code 1.
+ */
+export function refuse(io: IO, json: boolean | undefined, error: string, nextStep?: string): number {
+  if (json) printJsonError(io, error, nextStep);
+  io.stderr(`lexicon: ${safeLines(error)}\n`);
+  if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
   return 1;
 }
 
@@ -201,10 +238,19 @@ export function fail(io: IO, err: unknown): number {
  * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
  */
 export function unreadableLexiconHint(message: string): string | undefined {
+  const edit = unreadableLexiconEdit(message);
+  return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
+}
+
+/**
+ * The `lexicon edit` command that opens the file a store parse/validation
+ * error names (`--project` for a `.lexicon.yaml`), or undefined when the
+ * message is not one. The MCP server words its own next step around it.
+ */
+export function unreadableLexiconEdit(message: string): string | undefined {
   const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
   if (!m) return undefined;
-  const edit = path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
-  return `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor`;
+  return path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
 }
 
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */

@@ -22,7 +22,7 @@ import {
 import type { LoadedLexicon, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
 import { askKey, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
-import { bold, dim, fail, line, plural, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
+import { bold, dim, fail, line, plural, refuse, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 export interface SuggestCliOptions extends CommonOptions {
@@ -151,10 +151,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   if (typeof opts.harvest === 'string') harvestDir = path.resolve(opts.harvest);
   else if (opts.harvest === true || opts.cwd) harvestDir = cwd;
 
-  if (opts.apply && opts.yes) {
-    io.stderr('lexicon: --apply and --yes are mutually exclusive\n');
-    return 1;
-  }
+  if (opts.apply && opts.yes) return refuse(io, opts.json, '--apply and --yes are mutually exclusive');
   if (opts.apply && !opts.json && !deps.prompter && !isInteractive()) {
     io.stderr(
       `lexicon: suggest --apply needs a terminal (stdin and stdout must be a TTY); use --yes to apply everything at or above ${AUTO_APPLY_CONFIDENCE.toFixed(2)} confidence\n`,
@@ -173,7 +170,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     if (deps.now !== undefined) input.now = deps.now;
     suggestions = await suggest(input);
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 
   if (opts.json) {
