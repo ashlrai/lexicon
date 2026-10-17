@@ -29,6 +29,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, sanitizeForDisplayMax, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
+import { packageVersion } from '../util/package.js';
 
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
@@ -684,7 +685,27 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export async function main(): Promise<void> {
+/**
+ * What `--version` / `-v` and `--help` / `-h` print, or undefined for any other
+ * argv. Claude Code runs the hook with no arguments; the flags are for a person
+ * checking an install (`node plugin/hook.mjs --version`), who would otherwise
+ * be left waiting on a stdin that never ends. Same flags as `lexicon-mcp`.
+ */
+export function hookFlagOutput(argv: readonly string[]): string | undefined {
+  if (argv.includes('--version') || argv.includes('-v')) return packageVersion(import.meta.url);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    return 'Usage: hook.mjs [--version] [--help]  (Claude Code UserPromptSubmit and SessionStart hook for the personal lexicon; reads the hook JSON on stdin)';
+  }
+  return undefined;
+}
+
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const flagOutput = hookFlagOutput(argv);
+  if (flagOutput !== undefined) {
+    writeStdout(`${flagOutput}\n`);
+    process.exitCode = 0;
+    return;
+  }
   try {
     const raw = await readStdin();
     const out = await runHook(raw);

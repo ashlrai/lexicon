@@ -194,3 +194,43 @@ describe('plugin bundles find package files from where they are installed', () =
     expect(model?.message).not.toContain(outside);
   });
 });
+
+/** Runs `node <script> ...args` with stdin left open (as on a terminal) and resolves on exit or after `ms`. */
+function runWithOpenStdin(script: string, args: string[], ms: number): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, ...args], { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let timedOut = false;
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, ms);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, timedOut });
+    });
+  });
+}
+
+describe('hook.mjs flags (plugin bundle)', () => {
+  const HOOK = path.join(REPO_ROOT, 'plugin', 'hook.mjs');
+  const version = readJson<{ version: string }>('package.json').version;
+
+  // Without these the hook waited for EOF on stdin, so `node plugin/hook.mjs
+  // --version` (the obvious install check) hung on a terminal.
+  it('--version prints the package version and exits 0 without reading stdin', async () => {
+    const r = await runWithOpenStdin(HOOK, ['--version'], 10_000);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim()).toBe(version);
+  });
+
+  it('--help prints a one-line usage and exits 0 without reading stdin', async () => {
+    const r = await runWithOpenStdin(HOOK, ['--help'], 10_000);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim().split('\n')).toHaveLength(1);
+    expect(r.stdout).toMatch(/^Usage: .*UserPromptSubmit and SessionStart/);
+  });
+});
