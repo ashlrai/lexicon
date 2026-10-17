@@ -67,7 +67,7 @@ import {
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
-import { errorMessage } from '../util/errors.js';
+import { errorMessage, isInputError } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 
 // ---------------------------------------------------------------------------
@@ -250,6 +250,22 @@ const PackBody = z.object({
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
 const EXPORT_ROUTE_RE = /^\/export\/([a-z-]+)$/i;
+
+/**
+ * The status for an error thrown while handling a request. 400 is for what
+ * the request got wrong (`HttpError`s raised here, and core's `InputError`:
+ * an empty canonical, heard equal to meant, a term the schema rejects);
+ * anything else (a lexicon file that does not parse, a lock still held after
+ * its timeout, EACCES) is the server's state, so 500, which tells a client to
+ * retry or report rather than to change its input.
+ */
+export function errorStatus(err: unknown): number {
+  if (err instanceof HttpError) return err.status;
+  if (isProjectTrustError(err)) return 403;
+  if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
+  if (isInputError(err)) return 400;
+  return 500;
+}
 
 class HttpError extends Error {
   constructor(
@@ -761,14 +777,6 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     throw new HttpError(404, `no route for ${method} ${sanitizeForDisplay(pathname)}`);
   }
 
-  function statusFor(err: unknown): number {
-    if (err instanceof HttpError) return err.status;
-    if (isProjectTrustError(err)) return 403;
-    if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
-    // learnCorrection / addTerm / parseLexicon throw plain Errors on bad input.
-    if (err instanceof Error && !(err instanceof TypeError)) return 400;
-    return 500;
-  }
 
   function send(res: http.ServerResponse, response: Response, extra: Record<string, string>): void {
     const headers: Record<string, string> = { ...extra, ...response.headers, 'Cache-Control': 'no-store' };
@@ -840,8 +848,17 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     route(req, url)
       .then((response) => send(res, response, cors))
       .catch((err: unknown) => {
-        const status = statusFor(err);
-        const message = status === 500 ? 'internal error' : errorMessage(err);
+        const status = errorStatus(err);
+        // A 500's detail (a broken file and its path, a held lock) is what the
+        // user needs to fix it, so a client holding the token gets it; an
+        // anonymous caller (plain /health) gets only a pointer to the log.
+        const authed = config !== undefined && tokenMatches(req.headers.authorization, config.token);
+        let message = errorMessage(err);
+        if (status === 500) {
+          message = authed
+            ? `internal error: ${message}`
+            : 'internal error (the lexicon serve log has the detail)';
+        }
         if (status === 500) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
         const extra: Record<string, string> = { ...cors };
         if (status === 413) extra['Connection'] = 'close';

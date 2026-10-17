@@ -52971,6 +52971,12 @@ function errorMessage(err) {
 function isEnoent(err) {
   return typeof err === "object" && err !== null && err.code === "ENOENT";
 }
+var InputError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "InputError";
+  }
+};
 
 // src/util/atomic.ts
 var BACKUP_SUFFIX = ".bak";
@@ -53638,14 +53644,14 @@ function assertReadsBack(text, filePath) {
   try {
     raw = (0, import_yaml.parse)(text, { prettyErrors: false });
   } catch (err) {
-    throw new Error(
+    throw new InputError(
       `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`
     );
   }
   try {
     return parseLexicon(raw ?? emptyLexicon());
   } catch (err) {
-    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+    throw new InputError(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
   }
 }
 function withLexiconLock(filePath, fn) {
@@ -53863,7 +53869,7 @@ async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
-  if (!canonical) throw new Error("canonical must not be empty");
+  if (!canonical) throw new InputError("canonical must not be empty");
   const incoming = {
     ...term,
     canonical,
@@ -53937,10 +53943,10 @@ async function removeTerm(canonical, opts = {}) {
 async function removeAlias(canonical, alias, opts = {}) {
   const wanted = canonical.trim();
   const drop = alias.trim();
-  if (!wanted) throw new Error("canonical must not be empty");
-  if (!drop) throw new Error("alias must not be empty");
+  if (!wanted) throw new InputError("canonical must not be empty");
+  if (!drop) throw new InputError("alias must not be empty");
   if (sameCanonical(wanted, drop)) {
-    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
+    throw new InputError(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
   }
   let termFound = false;
   let firstTerm;
@@ -53964,8 +53970,8 @@ async function removeAlias(canonical, alias, opts = {}) {
   }
   if (firstTerm) return { term: firstTerm, files };
   const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
-  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
-  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
+  if (!termFound) throw new InputError(`no term "${wanted}" in ${where}`);
+  throw new InputError(`"${drop}" is not an alias of "${wanted}" in ${where}`);
 }
 async function recordHits(canonicals, opts = {}) {
   try {
@@ -57831,17 +57837,17 @@ function dedupeCaseInsensitive2(values) {
 async function learnCorrection(c, opts = {}) {
   const heard = c.heard.trim().replace(/\s+/g, " ");
   const meant = c.meant.trim().replace(/\s+/g, " ");
-  if (!meant) throw new Error("the intended spelling (meant) must not be empty");
+  if (!meant) throw new InputError("the intended spelling (meant) must not be empty");
   if (!heard) {
-    throw new Error(
+    throw new InputError(
       `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`
     );
   }
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new Error(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
+    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
   if (heard === meant) {
-    throw new Error(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
+    throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
   const { scope, ...storeOpts2 } = opts;
   const loaded = await loadLexicon(storeOpts2);
@@ -57868,7 +57874,7 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
-      throw new Error(
+      throw new InputError(
         `"${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; if "${meant}" is its own name, first drop that alias from "${viaAlias.canonical}" (lexicon review or lexicon edit; removing the term would delete it)`
       );
     }

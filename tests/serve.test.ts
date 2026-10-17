@@ -16,6 +16,7 @@ import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/co
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
+  errorStatus,
   getServePath,
   isLoopbackAddress,
   isAllowedHost,
@@ -52,6 +53,8 @@ import {
 import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
+import { FileLockError } from '../src/util/atomic.js';
+import { InputError } from '../src/util/errors.js';
 
 interface Env {
   home: string;
@@ -653,6 +656,49 @@ describe('limits and errors', () => {
     expect(((await bad.json()) as { error: string }).error).toContain('not valid JSON');
     const list = await api('POST', '/normalize', '[1]');
     expect(list.status).toBe(400);
+  });
+
+  /**
+   * Catches: every plain Error mapped to 400. A broken lexicon file or a lock
+   * that never frees is the server's problem, not the request's, and a 400
+   * told clients (the extension, the menu bar app) to stop retrying and blame
+   * their own input.
+   */
+  it('500 with a readable message for a broken lexicon file; 400 stays for bad input', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'broken-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+    const broken = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await broken.start();
+    try {
+      const auth = { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' };
+      const stats = await fetch(`${t.url}/stats`, { headers: auth });
+      expect(stats.status).toBe(500);
+      const msg = ((await stats.json()) as { error: string }).error;
+      expect(msg).toContain('Failed to parse lexicon YAML');
+      expect(msg).toContain(globalPath);
+      const norm = await fetch(`${t.url}/normalize`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'x' }) });
+      expect(norm.status).toBe(500);
+      // Without the token the detail (a file path) stays in the server log.
+      const health = await fetch(`${t.url}/health`);
+      expect(health.status).toBe(500);
+      expect(await health.text()).not.toContain(globalPath);
+    } finally {
+      await broken.stop();
+    }
+    for (const body of [{ heard: 'same', meant: 'same' }, { heard: '', meant: 'Foo' }]) {
+      const res = await api('POST', '/learn', body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect((await api('POST', '/add', { canonical: '   ' })).status).toBe(400);
+  });
+
+  it('errorStatus: lock timeouts and fs errors are 500, input errors 400', () => {
+    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', 'still held after 5000ms'))).toBe(500);
+    expect(errorStatus(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }))).toBe(500);
+    expect(errorStatus(new Error('Invalid lexicon at /x: bad'))).toBe(500);
+    expect(errorStatus(new TypeError('x is undefined'))).toBe(500);
+    expect(errorStatus(new InputError('canonical must not be empty'))).toBe(400);
   });
 
   it('405 on the wrong method', async () => {

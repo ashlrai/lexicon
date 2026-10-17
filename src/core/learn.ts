@@ -9,6 +9,7 @@
  */
 import { STOPLIST, phoneticKey, similarity } from './matcher.js';
 import { addTerm, loadLexicon } from './store.js';
+import { InputError } from '../util/errors.js';
 import type { StoreOptions } from './store.js';
 import { suggestAliases } from './suggest.js';
 import type { Lexicon, LexiconFile, Term, TermScope } from './types.js';
@@ -280,17 +281,17 @@ export async function learnCorrection(
 ): Promise<LearnResult> {
   const heard = c.heard.trim().replace(/\s+/g, ' ');
   const meant = c.meant.trim().replace(/\s+/g, ' ');
-  if (!meant) throw new Error('the intended spelling (meant) must not be empty');
+  if (!meant) throw new InputError('the intended spelling (meant) must not be empty');
   if (!heard) {
-    throw new Error(
+    throw new InputError(
       `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`,
     );
   }
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new Error(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
+    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
   if (heard === meant) {
-    throw new Error(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
+    throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
 
   const { scope, ...storeOpts } = opts;
@@ -341,7 +342,7 @@ async function learnCaseOnly(
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
-      throw new Error(
+      throw new InputError(
         `"${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; ` +
           `if "${meant}" is its own name, first drop that alias from "${viaAlias.canonical}" (lexicon review or lexicon edit; removing the term would delete it)`,
       );

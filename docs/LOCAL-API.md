@@ -82,7 +82,17 @@ Status codes: 400 invalid JSON or a bad field, 401 missing or wrong token,
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route or export format,
-405 wrong method, 413 body over 1 MB, 503 more than 64 requests in flight.
+405 wrong method, 413 body over 1 MB, 500 a problem on the server's side,
+503 more than 64 requests in flight.
+
+400 always means the request itself is wrong: fix the input and do not retry
+as is. 500 means the request was fine and the server could not serve it: the
+lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
+<path>: ...`), a lock on it is still held after its timeout, or the file
+cannot be read or written. The message names the cause and the file, so fix
+that and retry. An unauthenticated `/health` that hits the same problem gets
+only `internal error (the lexicon serve log has the detail)`; the detail is
+on the server's stderr either way.
 
 `/pair` is for `lexicon serve --pair`: the CLI confirms `/health`, opens the
 URL in the default browser, and the extension's content script on that page
