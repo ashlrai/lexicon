@@ -146,13 +146,13 @@ async function packNames(dir: string): Promise<string[]> {
     .sort();
 }
 
-function parsePack(raw: unknown, file: string, expectedName: string): Pack {
+function parsePack(raw: unknown, file: string, expectedName?: string): Pack {
   const head = PackFileSchema.safeParse(raw);
   if (!head.success) {
     const lines = head.error.issues.map((i) => `  - ${i.path.length > 0 ? i.path.join('.') : '(root)'}: ${i.message}`);
     throw new Error(`Invalid pack at ${file}:\n${lines.join('\n')}`);
   }
-  if (head.data.name !== expectedName) {
+  if (expectedName !== undefined && head.data.name !== expectedName) {
     throw new Error(`Invalid pack at ${file}: name "${head.data.name}" does not match the file name "${expectedName}"`);
   }
   let lexicon: Lexicon;
@@ -197,10 +197,11 @@ export async function loadPackFile(file: string, expectedName?: string): Promise
 
 /**
  * Parse and validate pack text that is already in hand (a downloaded file,
- * an editor buffer). `file` names the source in errors; `expectedName` must
- * match the pack's `name`.
+ * an editor buffer). `file` names the source in errors; `expectedName`, when
+ * given, must match the pack's `name` (omit it to validate a pack file under
+ * any file name, as `lexicon pack validate` does).
  */
-export function parsePackText(text: string, file: string, expectedName: string): Pack {
+export function parsePackText(text: string, file: string, expectedName?: string): Pack {
   let raw: unknown;
   try {
     raw = parseYaml(text, { prettyErrors: false }); // see readLexiconFile: never quote the source line back
