@@ -364,10 +364,11 @@ export function untrustedAliasLine(canonical: string, alias: string, holder: { p
 /**
  * The `warn:` line for a spelling another term also holds (`learn`, `add`):
  * the next transcript may still be corrected to that term. For an alias it
- * names the `lexicon remove --alias` command that lets the new one win.
+ * names the `lexicon remove --alias` command that lets the new one win, for
+ * another term's canonical the `lexicon remove` that drops that term.
  */
 export function conflictLine(c: LearnConflict): string {
   return c.as === 'alias'
     ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: ${conflictRemoveCommand(c, safe)}`
-    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`;
+    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; to drop that term: lexicon remove ${JSON.stringify(safe(c.canonical))} --${c.scope}`;
 }

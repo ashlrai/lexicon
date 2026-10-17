@@ -655,7 +655,10 @@ describe('learn_correction when another term already claims `heard`', () => {
     expect(alias.summary).toBe(`"versel" -> "Vercel" saved. ${conflictNote([alias.conflict], 'mcp')}`);
     const own = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercell' })).text) as { conflict: Parameters<typeof conflictNote>[0][number]; summary: string };
     expect(own.summary).toBe(`"Verse" -> "Vercell" saved. ${conflictNote([own.conflict], 'mcp')}`);
-    expect(own.summary).toBe('"Verse" -> "Vercell" saved. "Verse" is its own term (global), so it may still be kept as written.');
+    expect(own.summary).toBe(
+      '"Verse" -> "Vercell" saved. "Verse" is its own term (global), so it may still be kept as written; ' +
+        'if the user never means it as its own term, call remove_term with canonical "Verse", scope "global".',
+    );
   });
 
   it('adds no conflict when nothing else claims it', async () => {

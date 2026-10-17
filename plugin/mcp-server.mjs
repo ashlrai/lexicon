@@ -58637,7 +58637,7 @@ function conflictRemoveCommand(c, show = (s) => s) {
 }
 function conflictNote(conflicts, audience = "cli") {
   return conflicts.map(
-    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`
+    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
   ).join(" ");
 }
 function conflictFor(lexicon, heard, target) {

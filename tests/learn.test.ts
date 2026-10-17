@@ -364,8 +364,15 @@ describe('conflictNote', () => {
     );
   });
 
-  it('says a canonical conflict keeps the spelling as written, one sentence per conflict', () => {
-    expect(conflictNote([own, alias])).toMatch(/^"Ashley" is its own term \(project\), so it may still be kept as written\. "Ashler" is also/);
+  // Catches: a canonical conflict said the spelling may be kept as written and
+  // stopped there, with no way out, while an alias conflict names the remove.
+  it('says a canonical conflict keeps the spelling as written and how to remove that term, one sentence per conflict', () => {
+    expect(conflictNote([own, alias])).toMatch(
+      /^"Ashley" is its own term \(project\), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Ashley" --project "Ashler" is also/,
+    );
+    expect(conflictNote([own], 'mcp')).toBe(
+      '"Ashley" is its own term (project), so it may still be kept as written; if the user never means it as its own term, call remove_term with canonical "Ashley", scope "project".',
+    );
   });
 });
 
@@ -480,10 +487,16 @@ describe('lexicon learn (CLI)', () => {
     expect(out()).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
     expect(out()).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
 
+    const ownTerm = captureIO();
+    await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo' }, ownTerm.io);
+    expect(ownTerm.out()).toContain('warn: Kubernetes is its own term (project), so it may still be kept as written; to drop that term: lexicon remove "Kubernetes" --project');
+
     const json = captureIO();
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
     expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
-    expect(JSON.parse(json.out()).note).toBe('"Kubernetes" is its own term (project), so it may still be kept as written.');
+    expect(JSON.parse(json.out()).note).toBe(
+      '"Kubernetes" is its own term (project), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Kubernetes" --project',
+    );
 
     // Regression: `learn --json` had the conflict and no remove command, while
     // `add --json` pairs its conflicts with a `note` naming the scoped one.
