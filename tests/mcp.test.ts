@@ -402,6 +402,22 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  it('add_term with aliases: [] generates none (an explicit empty list is not an omission)', async () => {
+    const { client, close } = await connect();
+    try {
+      const tool = (await client.listTools()).tools.find((t) => t.name === 'add_term');
+      expect(JSON.stringify(tool?.inputSchema)).toMatch(/\[\] adds none/);
+      const result = await client.callTool({ name: 'add_term', arguments: { canonical: 'Zoë', aliases: [] } });
+      expect(result.isError).toBe(false);
+      const payload = JSON.parse(textOf(result)) as { term: Term };
+      expect(payload.term.aliases).toEqual([]);
+      expect(mocks.suggestAliases).not.toHaveBeenCalled();
+      expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Zoë', aliases: [], source: 'user' }, { cwd: '/fake/repo' });
+    } finally {
+      await close();
+    }
+  });
+
   it('list_terms filters case-insensitively over canonical and aliases', async () => {
     const { client, close } = await connect();
     try {

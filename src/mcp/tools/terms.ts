@@ -226,8 +226,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): ' +
         'relay `nextStep`, since the term applies only after the user runs ' + cliCommand('trust') + '. ' +
         'WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling ' +
-        'exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats ' +
-        'inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, ' +
+        'exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be ' +
+        'found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases ' +
+        'propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, ' +
         'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
         'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.',
       inputSchema: {
@@ -235,7 +236,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         aliases: z
           .array(z.string())
           .optional()
-          .describe('Spellings STT actually produces for this term. Omit to auto-suggest (new terms only).'),
+          .describe('Spellings STT actually produces for this term. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.'),
         phonetic: z.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
         category: z.enum(TERM_CATEGORIES).optional(),
         notes: z.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
@@ -253,7 +254,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         // Generated aliases only for a term this call creates: adding a never word,
         // phonetic, category or notes to an existing term must not append any.
-        const given = (aliases ?? []).length > 0;
+        // An explicit `aliases: []` means "none", not "omitted": only a missing
+        // field asks for generated ones.
+        const given = aliases !== undefined;
         const term: Term = {
           canonical,
           aliases: aliases ?? [],
