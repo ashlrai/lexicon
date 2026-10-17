@@ -250,6 +250,19 @@ describe('learnCorrection', () => {
     await expect(learnCorrection(correction)).rejects.toThrow(message);
     expect(store.addTerm).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [{ heard: '', meant: 'Ashlr.AI' }],
+    [{ heard: 'Ashler', meant: '' }],
+    [{ heard: 'Ashler', meant: 'Ashler' }],
+    [{ heard: 'Ashler', meant: 'ashler' }],
+    [{ heard: 'x'.repeat(61), meant: 'Ashlr.AI' }],
+  ])('refuses %j without an internal function name or CLI syntax an MCP/HTTP caller cannot run', async (correction) => {
+    const err = await learnCorrection(correction).catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).not.toMatch(/learnCorrection/);
+    expect(err.message).not.toMatch(/\blearn Ashler\b|lexicon remove/);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -280,17 +280,17 @@ export async function learnCorrection(
 ): Promise<LearnResult> {
   const heard = c.heard.trim().replace(/\s+/g, ' ');
   const meant = c.meant.trim().replace(/\s+/g, ' ');
-  if (!meant) throw new Error('learnCorrection: the intended spelling (meant) must not be empty');
+  if (!meant) throw new Error('the intended spelling (meant) must not be empty');
   if (!heard) {
     throw new Error(
-      `learnCorrection: nothing to learn - say what was heard for "${meant}" (e.g. learn Ashler ${meant})`,
+      `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`,
     );
   }
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new Error(`learnCorrection: each side must be at most ${MAX_CORRECTION_LENGTH} characters`);
+    throw new Error(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
   if (heard === meant) {
-    throw new Error(`learnCorrection: "${heard}" and "${meant}" are the same spelling; nothing to learn`);
+    throw new Error(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
 
   const { scope, ...storeOpts } = opts;
@@ -342,8 +342,8 @@ async function learnCaseOnly(
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
       throw new Error(
-        `learnCorrection: "${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; ` +
-          `remove the alias first (lexicon remove, or edit the term) if "${meant}" is its own name`,
+        `"${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; ` +
+          `if "${meant}" is its own name, first drop that alias from "${viaAlias.canonical}" (lexicon review or lexicon edit; removing the term would delete it)`,
       );
     }
     const saved = await addTerm(
