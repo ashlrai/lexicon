@@ -228,7 +228,8 @@ treated as the user's own words).
   and the local API with `scope: 'project'`) pin the file they wrote as
   trusted, because the user explicitly asked for that write. MCP tools do not:
   a model relaying a request is not the user reviewing a file, so `add_term`,
-  `learn_correction`, `import_dictionary` and `apply_suggestion` re-pin only a
+  `learn_correction`, `import_dictionary`, `apply_suggestion`,
+  `import_vocabulary` and `add_pack` re-pin only a
   file that is already trusted and write anything else unpinned, and
   `harvest_repo {add: true}` and `setup_lexicon {harvest: true}` never pin. The rule is
   precise: a project file is written and pinned only when it **does not exist

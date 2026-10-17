@@ -28,6 +28,8 @@ import {
   readGlobalHits,
   readLexiconFile,
   recordHits,
+  isTrusted,
+  trustProject,
   uninstallPack,
 } from '../src/core/index.js';
 import { STOPLIST } from '../src/core/stoplist.js';
@@ -422,6 +424,27 @@ describe('installPack / uninstallPack', () => {
     expect(removed.removed).not.toContain('Superwhisper');
     const after = await readLexiconFile(projectPath, 'project');
     expect(after.lexicon.terms.map((t) => t.canonical)).toEqual(['Superwhisper']);
+  });
+
+  // Catches: with leaveUntrusted the terms were written unpinned, but the
+  // settings.packs rewrite then ran refreshTrust, which re-pinned a file
+  // that had changed since it was trusted: the side door the flag closes.
+  it('with leaveUntrusted creates a new project file untrusted and leaves a changed one changed', async () => {
+    const repo = path.join(home, 'repo-unpinned');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const opts = { cwd: repo, globalPath, scope: 'project' as const, leaveUntrusted: true };
+    const status = async () => isTrusted(await readLexiconFile(projectPath, 'project'), { cwd: repo, globalPath });
+
+    await installPack('voice-tools', opts);
+    expect(await status()).toBe('untrusted');
+
+    await trustProject(projectPath, { cwd: repo, globalPath });
+    await fs.appendFile(projectPath, '# edited after trust\n');
+    expect(await status()).toBe('changed');
+    await installPack('developer', opts);
+    expect(await status()).toBe('changed');
+    expect((await readLexiconFile(projectPath, 'project')).lexicon.settings?.packs).toEqual(['voice-tools', 'developer']);
   });
 
   it('installs into a project lexicon (created and trusted) and removes from it under the trust gate', async () => {

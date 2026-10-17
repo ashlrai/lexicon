@@ -106,7 +106,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Install a starter term pack',
       description:
-        'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). ' +
+        'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project; a project file that is not trusted yet is left untrusted, `trusted: false`: relay `nextStep`). ' +
         'Adds the pack\'s terms with source "pack"; a term the user already has keeps its own spelling and aliases and only gains the pack\'s. Idempotent. ' +
         'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with ' + cliCommand('pack remove <name>') + '. ' +
         'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so ' + cliCommand('pack update') + ' re-checks it later.',
@@ -151,8 +151,10 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
             });
           }
           if (previewDigest !== digest) throw new Error('community pack contents or destination changed, or preview digest is missing; preview again before installing');
+          const writeOpts = scope === 'project' ? await mcpWriteOpts(ctx) : {};
           const result = await installRegistryPack(entry, base, registry, {
             cwd: ctx.cwd,
+            ...writeOpts,
             approvedBytes: bytes,
             ...(scope !== undefined ? { scope } : {}),
             ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
@@ -165,10 +167,12 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
             path: result.path,
             scope: result.scope,
             summary: `installed community pack ${result.ref}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
+            ...(writeOpts.leaveUntrusted ? untrustedWriteFields(result.path, `The ${result.ref} terms`, true) : {}),
           });
         }
         if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
-        const result = await installPack(name, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
+        const writeOpts = scope === 'project' ? await mcpWriteOpts(ctx) : {};
+        const result = await installPack(name, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}), ...writeOpts });
         return textResult({
           name: result.pack.name,
           title: result.pack.title,
@@ -177,6 +181,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           path: result.path,
           scope: result.scope,
           summary: `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
+          ...(writeOpts.leaveUntrusted ? untrustedWriteFields(result.path, `The ${result.pack.name} pack's terms`, true) : {}),
         });
       }),
   );
@@ -189,7 +194,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'Guided vocabulary import: harvest candidate terms from where the user\'s proper nouns live (contacts: macOS Contacts names; calendar: macOS Calendar event titles and attendee names; github: the gh CLI\'s username, org members and repo names). ' +
         'Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email/Slack are not implemented (reading mail needs new OAuth scopes, which is a conversation, not a default). ' +
         'Ask which sources to read first, then pass explicit sources without apply to preview candidates. Show the candidate contents and ids; apply requires the returned previewToken and only approvedCandidateIds. Applying consumes the same snapshot without reading the sources again. ' +
-        'Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible.',
+        'Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible. ' +
+        'With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.',
       inputSchema: {
         sources: z
           .array(z.enum(IMPLEMENTED_IMPORT_SOURCES))
@@ -215,11 +221,13 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           }
           const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
           imports.delete(previewToken);
-          const result = await applyImportCandidates(accepted, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
+          const writeOpts = scope === 'project' ? await mcpWriteOpts(ctx) : {};
+          const result = await applyImportCandidates(accepted, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}), ...writeOpts });
           return textResult({
             applied: true, candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
             added: result.added, merged: result.merged, path: result.path,
             summary: `imported ${result.added + result.merged} terms (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ''}`,
+            ...(writeOpts.leaveUntrusted && result.path !== undefined ? untrustedWriteFields(result.path, 'The imported terms', true) : {}),
           });
         }
         const wanted = [...new Set(sources ?? [])];

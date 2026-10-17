@@ -27,7 +27,7 @@ A pack is a plain lexicon file plus `name`, `title` and `description`. Its terms
 
 `lexicon pack remove <name>` removes that pack's terms from the file, except the ones you have edited since: a term with recorded hits, extra aliases or its own [`never`](LEXICON-FILE.md#never) list stays and is reported as `kept`. For a project file the hit count comes from your own `hits.json` rather than from the committed file, so a pack term you use every day is kept even though the file shows no hits for it.
 
-Project-scope installs go through the [trust gate](TRUST.md) like every other write.
+Project-scope installs go through the [trust gate](TRUST.md) like every other write. From MCP (`add_pack` with `scope: 'project'`) a project file that is not trusted yet is written but left untrusted, and the result's `nextStep` asks you to review it and run `lexicon trust`.
 
 ## How the aliases were chosen
 

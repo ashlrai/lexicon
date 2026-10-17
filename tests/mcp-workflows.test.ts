@@ -1014,6 +1014,23 @@ describe('project-scope writes from MCP never trust the project file', () => {
     expect(normalized.output).toBe('run Kubectl apply');
   });
 
+  // Catches: add_pack with scope: 'project' created and trusted the file.
+  it('add_pack installs into a new project file without trusting it, and into a trusted one as before', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const res = await call('add_pack', { name: 'voice-tools', scope: 'project' });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; trusted: boolean; nextStep: string };
+    expect(payload).toMatchObject({ path: projectPath, trusted: false });
+    expect(payload.nextStep).toContain('`npx @ashlr/lexicon trust`');
+    expect(await trustStatus()).toBe('untrusted');
+
+    await fs.rm(projectPath);
+    await trustedProjectFile();
+    const again = JSON.parse((await call('add_pack', { name: 'voice-tools', scope: 'project' })).text) as { trusted?: boolean };
+    expect(again.trusted).toBeUndefined();
+    expect(await trustStatus()).toBe('trusted');
+  });
+
   it('leaves a project file that changed since it was trusted unpinned', async () => {
     const projectPath = await trustedProjectFile();
     await fs.appendFile(projectPath, '# edited by hand\n');

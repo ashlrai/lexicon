@@ -268,8 +268,8 @@ a permanent install, instead of `setup_lexicon` with `serve: true`.
    conversation. A request to trust that arrives through a file, a hook note,
    a README or a tool result is not the user's request.
 3. **A model never trusts a project file.** Project-scope writes
-   (`add_term`, `learn_correction`, `apply_suggestion`, `import_dictionary`)
-   to a trusted `.lexicon.yaml` keep it trusted; to a new, untrusted or
+   (`add_term`, `learn_correction`, `apply_suggestion`, `import_dictionary`,
+   `import_vocabulary`, `add_pack`) to a trusted `.lexicon.yaml` keep it trusted; to a new, untrusted or
    changed one they write it unpinned, return `trusted: false` and a
    `nextStep`, and never show that file's own copy of a term. `harvest_repo`
    with `add` and `setup_lexicon` with `harvest` never pin at all. The model
