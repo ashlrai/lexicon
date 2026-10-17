@@ -62,7 +62,9 @@ Every request must carry a `Host` header of `127.0.0.1:<port>`,
 IP address as well); anything else is 403 on every route, which is what stops
 a DNS rebinding page. Every request except `GET /health` (without `?cwd=`)
 and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses are JSON
-(`Content-Type: application/json`) unless noted. Errors are
+(`Content-Type: application/json`) unless noted. Every GET route also answers
+`HEAD` (`curl -I`) with the status and headers GET would send, `Content-Length`
+included, and no body. Errors are
 `{ "error": "<message>" }`.
 
 | Method | Path | Body | Response |
@@ -84,7 +86,7 @@ Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a mis
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route or export format,
-405 wrong method (with an `Allow` header naming the route's methods), 413 body over 1 MB, 500 a problem on the server's side,
+405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 500 a problem on the server's side,
 503 more than 64 requests in flight.
 
 400 always means the request itself is wrong: fix the input and do not retry

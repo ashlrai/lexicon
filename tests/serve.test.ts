@@ -868,14 +868,14 @@ describe('limits and errors', () => {
       ['GET', '/normalize', 'POST', 'use POST'],
       ['GET', '/learn', 'POST', 'use POST'],
       ['GET', '/add', 'POST', 'use POST'],
-      ['POST', '/lexicon', 'GET', 'use GET'],
-      ['POST', '/stats', 'GET', 'use GET'],
-      ['POST', '/packs', 'GET', 'use GET'],
+      ['POST', '/lexicon', 'GET, HEAD', 'use GET'],
+      ['POST', '/stats', 'GET, HEAD', 'use GET'],
+      ['POST', '/packs', 'GET, HEAD', 'use GET'],
       ['PUT', '/packs/developer', 'POST, DELETE', 'use POST to install or DELETE to remove'],
-      ['POST', '/aliases', 'GET', 'use GET'],
-      ['POST', '/export/json', 'GET', 'use GET'],
-      ['POST', '/health', 'GET', 'use GET'],
-      ['POST', '/pair', 'GET', 'use GET'],
+      ['POST', '/aliases', 'GET, HEAD', 'use GET'],
+      ['POST', '/export/json', 'GET, HEAD', 'use GET'],
+      ['POST', '/health', 'GET, HEAD', 'use GET'],
+      ['POST', '/pair', 'GET, HEAD', 'use GET'],
     ];
     for (const [method, route, allow, error] of cases) {
       const res = await api(method, route, method === 'GET' ? undefined : {});
@@ -885,6 +885,33 @@ describe('limits and errors', () => {
     }
     // Other errors carry no Allow.
     expect((await api('GET', '/nope')).headers.get('allow')).toBeNull();
+  });
+
+  // Catches: HEAD on a GET route (`curl -I /health`) answered 405, so a
+  // probe that checks liveness with HEAD read the server as broken.
+  it('HEAD answers a GET route like GET, with its headers and no body', async () => {
+    const auth = { Authorization: `Bearer ${info.token}` };
+    const getHealth = await rawGet('/health', {});
+    const headHealth = await rawGet('/health', {}, 'HEAD');
+    expect(headHealth.status).toBe(200);
+    expect(headHealth.body).toBe('');
+    expect(headHealth.headers['content-type']).toBe('application/json; charset=utf-8');
+    expect(headHealth.headers['content-length']).toBe(String(Buffer.byteLength(getHealth.body)));
+    expect(headHealth.headers['cache-control']).toBe('no-store');
+    const csv = await rawGet('/export/csv', auth, 'HEAD');
+    expect(csv.status).toBe(200);
+    expect(csv.body).toBe('');
+    expect(csv.headers['content-type']).toBe('text/csv; charset=utf-8');
+    // The same gates as GET: the token, strict query strings.
+    const anon = await rawGet('/lexicon', {}, 'HEAD');
+    expect(anon.status).toBe(401);
+    expect(anon.headers['www-authenticate']).toBe('Bearer');
+    expect(anon.body).toBe('');
+    expect((await rawGet('/stats?cdw=x', auth, 'HEAD')).status).toBe(400);
+    // A POST route still refuses HEAD, naming POST.
+    const post = await rawGet('/normalize', auth, 'HEAD');
+    expect(post.status).toBe(405);
+    expect(post.headers.allow).toBe('POST');
   });
 
   it('503 once the concurrency cap is reached', async () => {

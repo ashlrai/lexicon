@@ -316,6 +316,14 @@ function wrongMethod(allow: readonly string[], message = `use ${allow.join(' or 
 }
 
 /**
+ * The 405 of a GET route. HEAD is answered like GET without a body (RFC 9110
+ * 9.3.2), so `Allow` names both; the message still says `use GET`.
+ */
+function notGet(): HttpError {
+  return wrongMethod(['GET', 'HEAD'], 'use GET');
+}
+
+/**
  * The query string is a GET route's body, so it is strict like the bodies: an
  * unknown parameter is a 400 naming it and the ones the route takes, and a
  * parameter given twice is a 400 unless it is listed in `repeatable`. A typo
@@ -840,12 +848,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function route(req: http.IncomingMessage, url: URL): Promise<Response> {
-    const method = req.method ?? 'GET';
+    // HEAD runs the GET route (same status and headers); send() drops the
+    // body. `curl -I /health` used to answer 405.
+    const method = req.method === 'HEAD' ? 'GET' : (req.method ?? 'GET');
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
     if (pathname === '/health') {
       // Unauthenticated, so a wrong method is answered before the token check.
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       // Without the token /health only says the server is up: a `cwd` would
       // let any local caller probe which directories carry a .lexicon.yaml
       // and whether they are trusted.
@@ -856,7 +866,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       return json(200, await health(await resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       return pairPage(req);
     }
 
@@ -877,17 +887,17 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/lexicon') {
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       strictQuery(url, 'GET /lexicon', ['cwd']);
       return json(200, await handleLexicon(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/stats') {
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       strictQuery(url, 'GET /stats', ['cwd']);
       return json(200, await handleStats(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/packs') {
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       strictQuery(url, 'GET /packs', ['cwd']);
       return json(200, await handlePacks(await resolveCwd(url.searchParams.get('cwd'))));
     }
@@ -905,12 +915,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       throw wrongMethod(['POST', 'DELETE'], 'use POST to install or DELETE to remove');
     }
     if (pathname === '/aliases') {
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       return json(200, handleAliases(url));
     }
     const exportMatch = EXPORT_ROUTE_RE.exec(pathname);
     if (exportMatch) {
-      if (method !== 'GET') throw wrongMethod(['GET']);
+      if (method !== 'GET') throw notGet();
       const format = resolveExportFormat(exportMatch[1]);
       if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
       strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
@@ -918,26 +928,28 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
       return { status: 200, text: exportLexicon(loaded.merged, format, exportOpts), contentType: exportContentType(format) };
     }
-    throw new HttpError(404, `no route for ${method} ${sanitizeForDisplay(pathname)}`);
+    throw new HttpError(404, `no route for ${req.method ?? 'GET'} ${sanitizeForDisplay(pathname)}`);
   }
 
 
-  function send(res: http.ServerResponse, response: Response, extra: Record<string, string>): void {
+  /**
+   * Write `response`. `Content-Length` is always set from the body, so a HEAD
+   * answer (`head`) carries the length the GET would have, and no body.
+   */
+  function send(res: http.ServerResponse, response: Response, extra: Record<string, string>, head = false): void {
     const headers: Record<string, string> = { ...extra, ...response.headers, 'Cache-Control': 'no-store' };
-    if ('json' in response) {
-      headers['Content-Type'] = 'application/json; charset=utf-8';
-      res.writeHead(response.status, headers);
-      res.end(JSON.stringify(response.json));
-    } else {
-      headers['Content-Type'] = response.contentType;
-      res.writeHead(response.status, headers);
-      res.end(response.text);
-    }
+    const body = 'json' in response ? JSON.stringify(response.json) : response.text;
+    headers['Content-Type'] = 'json' in response ? 'application/json; charset=utf-8' : response.contentType;
+    headers['Content-Length'] = String(Buffer.byteLength(body, 'utf8'));
+    res.writeHead(response.status, headers);
+    if (head) res.end();
+    else res.end(body);
   }
 
   const server = http.createServer((req, res) => {
     const started = Date.now();
     const method = req.method ?? 'GET';
+    const head = method === 'HEAD';
     let url: URL;
     try {
       url = new URL(req.url ?? '/', 'http://localhost');
@@ -977,6 +989,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
           error: `Host must be 127.0.0.1:${boundPort}, localhost:${boundPort} or [::1]:${boundPort} (DNS rebinding guard)`,
         }),
         {},
+        head,
       );
       return;
     }
@@ -988,7 +1001,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (inFlight >= maxConcurrent) {
-      send(res, json(503, { error: 'too many concurrent requests' }), { ...cors, 'Retry-After': '1' });
+      send(res, json(503, { error: 'too many concurrent requests' }), { ...cors, 'Retry-After': '1' }, head);
       return;
     }
     inFlight += 1;
@@ -997,7 +1010,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     });
 
     route(req, url)
-      .then((response) => send(res, response, cors))
+      .then((response) => send(res, response, cors, head))
       .catch((err: unknown) => {
         const status = errorStatus(err);
         // A 500's detail (a broken file and its path, a held lock) is what the
@@ -1014,7 +1027,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         const extra: Record<string, string> = { ...cors, ...(err instanceof HttpError ? err.headers : {}) };
         if (status === 413) extra['Connection'] = 'close';
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
-        send(res, json(status, { error: message }), extra);
+        send(res, json(status, { error: message }), extra, head);
       });
   });
 
