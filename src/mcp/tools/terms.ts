@@ -392,7 +392,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'being written down, and asking every time is the irritating version of this product. ' +
         'WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. ' +
         'WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- ' +
-        'pass only the misspelled name as `heard`, not the sentence around it. Then get on with what the user actually asked for.',
+        'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
+        'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call. Then get on with what the user actually asked for.',
       inputSchema: {
         heard: z.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: z.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -405,16 +406,28 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     async ({ heard, meant, scope }) =>
       guarded(async () => {
         const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
+        const saved = learned.aliasAdded
+          ? `"${heard}" -> "${learned.term.canonical}" saved`
+          : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
+            ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
+            : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+        const { conflict } = learned;
+        // The other term is never edited here; the agent gets what it needs to
+        // ask the user and fix it with remove_term.
+        const conflictNote = !conflict
+          ? ''
+          : conflict.as === 'alias'
+            ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. ` +
+              `If the user agrees, call remove_term with canonical "${conflict.canonical}", alias "${conflict.spelling}", scope "${conflict.scope}".`
+            : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. ` +
+              `If the user never means "${conflict.canonical}", remove that term with remove_term.`;
         return textResult({
           term: learned.term,
           path: learned.file.path,
           created: learned.created,
           aliasAdded: learned.aliasAdded,
-          summary: learned.aliasAdded
-            ? `"${heard}" -> "${learned.term.canonical}" saved`
-            : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
-              ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
-              : `"${heard}" was already an alias of "${learned.term.canonical}"`,
+          ...(conflict ? { conflict } : {}),
+          summary: saved + conflictNote,
         });
       }),
   );

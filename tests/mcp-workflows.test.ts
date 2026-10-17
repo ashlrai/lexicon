@@ -229,3 +229,36 @@ describe('apply_suggestion on a term in the project lexicon', () => {
     await expect(fs.stat(process.env.LEXICON_PATH as string)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
+
+describe('learn_correction when another term already claims `heard`', () => {
+  // Catches: "it's Vercel not Versel" while Versel is an alias of Verse.
+  // The alias was added to Vercel and reported saved, but the next transcript
+  // still came out as "Verse", and nothing told the agent why or what to do.
+  it('reports the other term and how to drop the alias from it', async () => {
+    await call('add_term', { canonical: 'Verse', aliases: ['Versel'] });
+    const res = await call('learn_correction', { heard: 'versel', meant: 'Vercel' });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { aliasAdded: boolean; conflict?: { canonical: string; scope: string; as: string }; summary: string };
+    expect(payload.aliasAdded).toBe(true);
+    expect(payload.conflict).toEqual({ canonical: 'Verse', scope: 'global', as: 'alias', spelling: 'Versel' });
+    expect(payload.summary).toMatch(/also an alias of "Verse"/);
+    expect(payload.summary).toMatch(/remove_term with canonical "Verse", alias "Versel"/);
+
+    // Following the note makes the correction take effect.
+    await call('remove_term', { canonical: 'Verse', alias: 'Versel' });
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'deploy to versel' })).text) as { output: string };
+    expect(normalized.output).toBe('deploy to Vercel');
+  });
+
+  it('names a term whose canonical is the heard spelling, which no alias can override', async () => {
+    await call('add_term', { canonical: 'Verse', aliases: ['vurse'] });
+    const payload = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercel' })).text) as { conflict?: { canonical: string; as: string }; summary: string };
+    expect(payload.conflict).toMatchObject({ canonical: 'Verse', as: 'canonical' });
+    expect(payload.summary).toMatch(/"Verse" is its own term/);
+  });
+
+  it('adds no conflict when nothing else claims it', async () => {
+    const payload = JSON.parse((await call('learn_correction', { heard: 'Versel', meant: 'Vercel' })).text) as Record<string, unknown>;
+    expect(payload.conflict).toBeUndefined();
+  });
+});

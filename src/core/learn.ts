@@ -33,6 +33,22 @@ export interface LearnResult {
   file: LexiconFile;
   /** False when `heard` was already an alias (or the canonical) of the term. */
   aliasAdded: boolean;
+  /**
+   * Another term that also claims `heard` (as an alias, or as its own
+   * canonical), so a transcript can still be corrected to that term instead.
+   * Absent when nothing else claims it.
+   */
+  conflict?: LearnConflict;
+}
+
+/** The term `LearnResult.conflict` names, and the spelling of `heard` it holds. */
+export interface LearnConflict {
+  canonical: string;
+  scope: TermScope;
+  /** 'alias': drop `spelling` from that term to let the correction win; 'canonical': `heard` is that term's own name. */
+  as: 'alias' | 'canonical';
+  /** `heard` as that term spells it. */
+  spelling: string;
 }
 
 export interface CanonicalSuggestion {
@@ -299,6 +315,9 @@ export async function learnCorrection(
   if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts, scope);
   const existing = termFor(loaded.merged, meant);
 
+  const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
+  const withConflict = conflict ? { conflict } : {};
+
   if (existing) {
     const alreadyKnown =
       sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
@@ -307,7 +326,7 @@ export async function learnCorrection(
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: 'learned' },
       { ...storeOpts, scope: targetScope },
     );
-    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown };
+    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown, ...withConflict };
   }
 
   const aliases = dedupeCaseInsensitive([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
@@ -315,7 +334,23 @@ export async function learnCorrection(
     { canonical: meant, aliases, source: 'learned' },
     { ...storeOpts, scope: scope ?? 'global' },
   );
-  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
+}
+
+/**
+ * A term other than `target` that holds `heard` as its canonical or as an
+ * alias. learnCorrection never edits that term (one correction touches one
+ * term); it reports it so the caller can say why the correction may not win.
+ */
+function conflictFor(lexicon: Lexicon, heard: string, target: string): LearnConflict | undefined {
+  for (const t of lexicon.terms) {
+    if (sameText(t.canonical, target)) continue;
+    const scope: TermScope = t.scope ?? 'global';
+    if (sameText(t.canonical, heard)) return { canonical: t.canonical, scope, as: 'canonical', spelling: t.canonical };
+    const alias = t.aliases.find((a) => sameText(a, heard));
+    if (alias !== undefined) return { canonical: t.canonical, scope, as: 'alias', spelling: alias };
+  }
+  return undefined;
 }
 
 /**

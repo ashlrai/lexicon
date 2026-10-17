@@ -68,7 +68,7 @@ and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses ar
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
 | POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start |
-| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path }` |
+| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict? }` (`conflict`: another term that also holds `heard`) |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created }` |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
 | GET | `/stats` | | `LexiconStats` |

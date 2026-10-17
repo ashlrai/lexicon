@@ -58044,6 +58044,8 @@ async function learnCorrection(c, opts = {}) {
   const loaded = await loadLexicon(storeOpts2);
   if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts2, scope);
   const existing = termFor(loaded.merged, meant);
+  const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
+  const withConflict = conflict ? { conflict } : {};
   if (existing) {
     const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope = scope ?? existing.scope ?? "global";
@@ -58051,14 +58053,24 @@ async function learnCorrection(c, opts = {}) {
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: "learned" },
       { ...storeOpts2, scope: targetScope }
     );
-    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown };
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown, ...withConflict };
   }
   const aliases = dedupeCaseInsensitive2([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
     { canonical: meant, aliases, source: "learned" },
     { ...storeOpts2, scope: scope ?? "global" }
   );
-  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
+}
+function conflictFor(lexicon, heard, target) {
+  for (const t of lexicon.terms) {
+    if (sameText(t.canonical, target)) continue;
+    const scope = t.scope ?? "global";
+    if (sameText(t.canonical, heard)) return { canonical: t.canonical, scope, as: "canonical", spelling: t.canonical };
+    const alias = t.aliases.find((a) => sameText(a, heard));
+    if (alias !== void 0) return { canonical: t.canonical, scope, as: "alias", spelling: alias };
+  }
+  return void 0;
 }
 async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
@@ -59627,7 +59639,7 @@ var registerTermTools = (server, ctx) => {
     "learn_correction",
     {
       title: "Learn from a spelling correction",
-      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it. Then get on with what the user actually asked for.',
+      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call. Then get on with what the user actually asked for.',
       inputSchema: {
         heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -59636,12 +59648,16 @@ var registerTermTools = (server, ctx) => {
     },
     async ({ heard, meant, scope }) => guarded(async () => {
       const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
+      const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+      const { conflict } = learned;
+      const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical "${conflict.canonical}", alias "${conflict.spelling}", scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
       return textResult({
         term: learned.term,
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
-        summary: learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`
+        ...conflict ? { conflict } : {},
+        summary: saved + conflictNote
       });
     })
   );

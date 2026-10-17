@@ -70,6 +70,15 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
         : 'already known';
     line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
+    const c = result.conflict;
+    if (c) {
+      line(
+        io,
+        c.as === 'alias'
+          ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
+          : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`,
+      );
+    }
     return 0;
   } catch (err) {
     return fail(io, err);

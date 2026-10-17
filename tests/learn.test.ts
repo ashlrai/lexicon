@@ -336,6 +336,19 @@ describe('lexicon learn (CLI)', () => {
     expect(out()).toContain('learned Ashlur -> Ashlr.AI (alias added)');
   });
 
+  it('warns when another term already claims the heard spelling', async () => {
+    // "Ashler" is an alias of Ashlr.AI in the fixture, so learning it for
+    // another name leaves two terms claiming it.
+    const { io, out } = captureIO();
+    expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
+    expect(out()).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+
+    const json = captureIO();
+    await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
+    expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
+  });
+
   it('--project writes to the project lexicon', async () => {
     const { io } = captureIO();
     await runLearn(['Ashlur', 'Ashlr.AI'], { project: true, cwd: '/fake/repo' }, io);

@@ -48,6 +48,7 @@ import {
 import type {
   ExportFormat,
   InstallPackResult,
+  LearnConflict,
   LexiconStats,
   LoadedLexicon,
   MatcherIndex,
@@ -130,6 +131,8 @@ export interface LearnResponse {
   aliasAdded: boolean;
   /** Path of the lexicon file written. */
   path: string;
+  /** Another term that also claims `heard` (LearnResult.conflict). */
+  conflict?: LearnConflict;
 }
 
 export interface AddResponse {
@@ -598,7 +601,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
     );
     invalidate();
-    return { term: result.term, created: result.created, aliasAdded: result.aliasAdded, path: result.file.path };
+    return {
+      term: result.term,
+      created: result.created,
+      aliasAdded: result.aliasAdded,
+      path: result.file.path,
+      ...(result.conflict ? { conflict: result.conflict } : {}),
+    };
   }
 
   async function handleAdd(raw: unknown): Promise<AddResponse> {
