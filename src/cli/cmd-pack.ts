@@ -387,14 +387,23 @@ async function runPackAddRegistry(
     ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
     ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
   }, deps.registry);
-  if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope }), null, 2));
-  } else {
+  // Under --json runPackAdd prints the result, so stdout carries one document.
+  if (!opts.json) {
     line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
     line(io, dim('  the terms are live: normalize_transcript, the hook and the local API pick them up on the next call'));
   }
   return result;
+}
+
+/** The `--json` record of one community install. */
+interface CommunityInstallJson {
+  preview: false;
+  ref: string;
+  added: number;
+  merged: number;
+  path: string;
+  scope: string;
 }
 
 /** Thrown to unwind a preview-only run without an error message. */
@@ -410,17 +419,22 @@ class Declined extends Error {
 export async function runPackAdd(names: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
   const scope = opts.project ? 'project' : 'global';
-  // Registry installs print their own output (preview or result) inside
-  // runPackAddRegistry; only vendored installs accumulate here.
-  const results: InstallPackResult[] = [];
+  // Registry installs print their preview (and, without --json, their
+  // result) inside runPackAddRegistry. Under --json every install's result
+  // accumulates here and is printed once: a single community ref as its
+  // object, anything else as one array in argument order.
+  const results: (InstallPackResult | CommunityInstallJson)[] = [];
+  let vendored = 0;
   for (const name of names) {
     try {
       if (isRegistryRef(name)) {
         if (!needRegistry(opts, io)) return 1;
-        await runPackAddRegistry(name, opts, io, deps);
+        const result = await runPackAddRegistry(name, opts, io, deps);
+        results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
       } else {
         const result = await installPack(name, { cwd, scope, ...deps });
         results.push(result);
+        vendored += 1;
         if (!opts.json) {
           line(
             io,
@@ -440,8 +454,10 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
       return fail(io, err, opts.json === true && results.length === 0);
     }
   }
-  if (opts.json) line(io, JSON.stringify(results, null, 2));
-  else if (results.length > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  if (opts.json) {
+    const single = names.length === 1 && isRegistryRef(names[0]!) && results.length === 1;
+    line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson) : results, null, 2));
+  } else if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
   return 0;
 }
 

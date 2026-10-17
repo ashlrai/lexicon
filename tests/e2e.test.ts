@@ -1500,3 +1500,20 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: --json object successes lead
     leadsWithOk(imp.stdout);
   });
 });
+
+// Catches: `pack add` with a community ref under `--json --yes` printed the
+// community install object and then the vendored results array: two JSON
+// documents, which no parser reads. A mix prints one array in argument order.
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: pack add --json with community refs', () => {
+  it('prints one array for a vendored and a community pack together', async () => {
+    const h = await freshHome('pack-mix');
+    const index = path.join(REPO_ROOT, 'registry', 'index.example.yaml');
+    const mixed = await runCli(['pack', 'add', 'developer', 'example/cardiology', '--registry', index, '--json', '--yes'], { env: h.env });
+    expect(mixed.code, mixed.stderr).toBe(0);
+    const docs = JSON.parse(mixed.stdout) as Record<string, unknown>[];
+    expect(Array.isArray(docs)).toBe(true);
+    expect(docs).toHaveLength(2);
+    expect(docs[0]).toMatchObject({ pack: { name: 'developer' } });
+    expect(docs[1]).toMatchObject({ preview: false, ref: 'example/cardiology' });
+  });
+});

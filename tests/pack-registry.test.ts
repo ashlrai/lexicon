@@ -494,3 +494,15 @@ describe('pack --json documents lead with ok', () => {
     expect(doc(invalid.out)).toMatchObject({ ok: false, errors: expect.arrayContaining([expect.stringContaining('ordinary English word')]) });
   });
 });
+
+// Catches: `pack add <community ref> --json --yes` printed the install object
+// and then the (empty) vendored results array, two JSON documents on stdout.
+describe('pack add --json --yes prints one JSON document', () => {
+  it('a single community ref prints only its install object', async () => {
+    const io = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true, yes: true }, io)).toBe(0);
+    const doc = JSON.parse(io.out) as Record<string, unknown>;
+    expect(Object.keys(doc)[0]).toBe('ok');
+    expect(doc).toMatchObject({ ok: true, preview: false, ref: 'example/cardiology', added: 1, merged: 0 });
+  });
+});
