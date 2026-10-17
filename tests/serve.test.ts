@@ -376,6 +376,18 @@ describe('Host guard (DNS rebinding)', () => {
     expect(authed.status).toBe(200);
     expect(((await authed.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
   });
+
+  // Catches: /health was the one GET route without strictQuery, so a typo
+  // such as `?cdw=` answered 200 for the server's own directory.
+  it('/health refuses an unknown or repeated query parameter, with or without the token', async () => {
+    for (const res of [await fetch(`${info.url}/health?cdw=x`), await api('GET', '/health?cdw=x')]) {
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe('unknown query parameter "cdw" (GET /health takes cwd)');
+    }
+    const twice = await api('GET', `/health?cwd=${encodeURIComponent(env.cwd)}&cwd=${encodeURIComponent(env.cwd)}`);
+    expect(twice.status).toBe(400);
+    expect((await fetch(`${info.url}/health`)).status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -517,6 +529,30 @@ describe('POST /learn and POST /add', () => {
       // No conflict, no key: the documented shape is unchanged.
       const clean = (await (await api('POST', '/add', { canonical: 'Zorkmid', aliases: ['zork mid'], scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
       expect(clean).not.toHaveProperty('conflicts');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: POST /learn answered `conflict` alone while `lexicon learn
+  // --json` pairs it with a `note` naming the scoped remove command, so a
+  // serve client had to build that command itself.
+  it('learn pairs a conflict with the note naming the scoped lexicon remove command', async () => {
+    const repo = path.join(env.home, 'learn-conflict-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const res = await api('POST', '/learn', { heard: 'Ashler', meant: 'Ashley', scope: 'project', cwd: repo });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { conflict?: unknown; note?: string };
+      expect(body.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' });
+      expect(body.note).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      // No conflict, no note.
+      const clean = (await (await api('POST', '/learn', { heard: 'zork mid', meant: 'Zorkmid', scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
+      expect(clean).not.toHaveProperty('conflict');
+      expect(clean).not.toHaveProperty('note');
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }
@@ -844,14 +880,14 @@ describe('limits and errors', () => {
       ['GET', '/normalize', 'POST', 'use POST'],
       ['GET', '/learn', 'POST', 'use POST'],
       ['GET', '/add', 'POST', 'use POST'],
-      ['POST', '/lexicon', 'GET', 'use GET'],
-      ['POST', '/stats', 'GET', 'use GET'],
-      ['POST', '/packs', 'GET', 'use GET'],
+      ['POST', '/lexicon', 'GET, HEAD', 'use GET'],
+      ['POST', '/stats', 'GET, HEAD', 'use GET'],
+      ['POST', '/packs', 'GET, HEAD', 'use GET'],
       ['PUT', '/packs/developer', 'POST, DELETE', 'use POST to install or DELETE to remove'],
-      ['POST', '/aliases', 'GET', 'use GET'],
-      ['POST', '/export/json', 'GET', 'use GET'],
-      ['POST', '/health', 'GET', 'use GET'],
-      ['POST', '/pair', 'GET', 'use GET'],
+      ['POST', '/aliases', 'GET, HEAD', 'use GET'],
+      ['POST', '/export/json', 'GET, HEAD', 'use GET'],
+      ['POST', '/health', 'GET, HEAD', 'use GET'],
+      ['POST', '/pair', 'GET, HEAD', 'use GET'],
     ];
     for (const [method, route, allow, error] of cases) {
       const res = await api(method, route, method === 'GET' ? undefined : {});
@@ -861,6 +897,33 @@ describe('limits and errors', () => {
     }
     // Other errors carry no Allow.
     expect((await api('GET', '/nope')).headers.get('allow')).toBeNull();
+  });
+
+  // Catches: HEAD on a GET route (`curl -I /health`) answered 405, so a
+  // probe that checks liveness with HEAD read the server as broken.
+  it('HEAD answers a GET route like GET, with its headers and no body', async () => {
+    const auth = { Authorization: `Bearer ${info.token}` };
+    const getHealth = await rawGet('/health', {});
+    const headHealth = await rawGet('/health', {}, 'HEAD');
+    expect(headHealth.status).toBe(200);
+    expect(headHealth.body).toBe('');
+    expect(headHealth.headers['content-type']).toBe('application/json; charset=utf-8');
+    expect(headHealth.headers['content-length']).toBe(String(Buffer.byteLength(getHealth.body)));
+    expect(headHealth.headers['cache-control']).toBe('no-store');
+    const csv = await rawGet('/export/csv', auth, 'HEAD');
+    expect(csv.status).toBe(200);
+    expect(csv.body).toBe('');
+    expect(csv.headers['content-type']).toBe('text/csv; charset=utf-8');
+    // The same gates as GET: the token, strict query strings.
+    const anon = await rawGet('/lexicon', {}, 'HEAD');
+    expect(anon.status).toBe(401);
+    expect(anon.headers['www-authenticate']).toBe('Bearer');
+    expect(anon.body).toBe('');
+    expect((await rawGet('/stats?cdw=x', auth, 'HEAD')).status).toBe(400);
+    // A POST route still refuses HEAD, naming POST.
+    const post = await rawGet('/normalize', auth, 'HEAD');
+    expect(post.status).toBe(405);
+    expect(post.headers.allow).toBe('POST');
   });
 
   it('503 once the concurrency cap is reached', async () => {

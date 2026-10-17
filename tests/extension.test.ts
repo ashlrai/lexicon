@@ -561,6 +561,36 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(good.tokenError).toBeUndefined();
   });
 
+  // Catches: a /learn whose `conflict` says another term also holds the
+  // spelling (or whose `untrustedProject` claims it) showed a bare "Added ..."
+  // in the popup, so the user trusted a correction that may not win.
+  it('a learn that conflicts with another term says so, with the remove command', async () => {
+    const json = (body: unknown): Response => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+    let body: Record<string, unknown> = {};
+    const fetchMock = vi.fn(async (url: string) => (url.endsWith('/health') ? json({ ok: true, version: '1', terms: 1 }) : json(body)));
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'secret-token' } }), defaultYaml: EXAMPLE_YAML });
+    body = {
+      term: { canonical: 'Ashley', aliases: ['Ashler'] },
+      created: true,
+      aliasAdded: true,
+      path: '/tmp/lexicon.yaml',
+      conflict: { canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' },
+      untrustedProject: { path: '/repo/.lexicon.yaml', trust: 'untrusted' },
+    };
+    const learn = (await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { ok: true; message: string };
+    expect(learn.message).toBe(
+      'Added new term Ashley with alias "Ashler". But "Ashler" is also an alias of Ashlr.AI (global lexicon), so it may still be corrected to that ' +
+        '(to drop it, run: lexicon remove "Ashlr.AI" --alias "Ashler" --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
+        'once it is trusted its term wins (review it with: lexicon trust).',
+    );
+    body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: { canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' } };
+    const own = (await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { ok: true; message: string };
+    expect(own.message).toBe('Added "Ashler" as an alias of Ashley. But "Ashler" is its own term (project lexicon), so it may still be kept as written.');
+    // No conflict, or one of an unexpected shape: the plain message.
+    body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: 'odd' };
+    expect(((await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { message: string }).message).toBe('Added "Ashler" as an alias of Ashley.');
+  });
+
   it("a refused learn shows the server's reason, and a 403 is not reported as a bad token", async () => {
     const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
     let learnStatus = 400;

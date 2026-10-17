@@ -131,7 +131,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 - Engine and server status ("Local API, lexicon 0.5.2, 42 terms" or "Embedded (fallback), server: connection refused").
 - On/off for this site.
 - The last five corrections.
-- **Learn a word**: "It's `Ashlr.AI` not `Ashler`". Posts to `/learn` when the API is up, otherwise adds the alias to the embedded YAML (comments in the YAML are preserved).
+- **Learn a word**: "It's `Ashlr.AI` not `Ashler`". Posts to `/learn` when the API is up, otherwise adds the alias to the embedded YAML (comments in the YAML are preserved). When the server reports that another term also holds the spelling, the message says so and names the `lexicon remove ... --alias ... --global` (or `--project`) command that drops it; an untrusted project lexicon that claims it too is named by path.
 
 ## Limitations
 

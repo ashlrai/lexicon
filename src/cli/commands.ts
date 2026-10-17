@@ -58,6 +58,7 @@ import {
   TERM_CATEGORIES,
   EXPORT_FORMAT_INFO,
   addTerm,
+  conflictNote,
   diffSummary,
   emptyLexicon,
   isEmptyLexicon,
@@ -97,7 +98,6 @@ import type {
 import {
   bold,
   conflictLine,
-  conflictNote,
   dim,
   ensureNewline,
   green,

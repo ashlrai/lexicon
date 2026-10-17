@@ -12,6 +12,7 @@ vi.mock('../src/core/store.js', () => store);
 
 import {
   CORRECTION_EXAMPLES,
+  conflictNote,
   learnCorrection,
   parseCorrection,
   suggestCanonicalFor,
@@ -344,6 +345,29 @@ describe('learnCorrection', () => {
 // ---------------------------------------------------------------------------
 // suggestCanonicalFor
 // ---------------------------------------------------------------------------
+
+// The one note builder CLI `learn --json`/`add --json`, MCP `add_term` and
+// serve `POST /learn` share, so the three cannot drift apart.
+describe('conflictNote', () => {
+  const alias = { canonical: 'Ashlr.AI', scope: 'global' as const, as: 'alias' as const, spelling: 'Ashler' };
+  const own = { canonical: 'Ashley', scope: 'project' as const, as: 'canonical' as const, spelling: 'Ashley' };
+
+  it('names the scoped lexicon remove command for an alias by default', () => {
+    expect(conflictNote([alias])).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+    );
+  });
+
+  it('names the remove_term call for the mcp audience', () => {
+    expect(conflictNote([alias], 'mcp')).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, call remove_term with canonical "Ashlr.AI", alias "Ashler", scope "global".',
+    );
+  });
+
+  it('says a canonical conflict keeps the spelling as written, one sentence per conflict', () => {
+    expect(conflictNote([own, alias])).toMatch(/^"Ashley" is its own term \(project\), so it may still be kept as written\. "Ashler" is also/);
+  });
+});
 
 describe('suggestCanonicalFor', () => {
   it('ranks phonetic and near-spelling matches, best first', () => {

@@ -4,9 +4,9 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
+import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, conflictNote, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */

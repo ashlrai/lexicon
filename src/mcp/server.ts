@@ -56,6 +56,28 @@ export function strictInput(config: unknown): unknown {
   return { ...config, inputSchema: z.object(shape as z.ZodRawShape).strict() };
 }
 
+/**
+ * A prompt's `argsSchema`: strict, so an undeclared argument is refused with
+ * -32602 (the SDK's InvalidParams) and a message naming it and the arguments
+ * the prompt does take, the way a tool refuses an unknown key. Without one the
+ * SDK passed nothing through and never looked, so `voice-context` with
+ * `{ "scope": "project" }` answered as if the argument had been applied.
+ * Omitted arguments and `{}` still pass.
+ */
+export function strictPromptArgs(name: string, shape: z.ZodRawShape = {}): z.ZodObject {
+  const declared = Object.keys(shape);
+  const takes =
+    declared.length > 0
+      ? `it takes only ${declared.map((k) => JSON.stringify(k)).join(', ')}`
+      : 'it takes no arguments; omit arguments or pass {}';
+  return z.strictObject(shape, {
+    error: (iss) =>
+      iss.code === 'unrecognized_keys'
+        ? `unknown argument${iss.keys.length === 1 ? '' : 's'} ${iss.keys.map((k) => JSON.stringify(k)).join(', ')} for prompt ${name}: ${takes}`
+        : undefined,
+  });
+}
+
 /** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
 export const ROOTS_TIMEOUT_MS = 2000;
 
@@ -291,6 +313,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
 
   // -------------------------------------------------------------- prompts
 
+  // registerPrompt takes a raw shape and wraps it in a stripping z.object, so
+  // the strict schema goes on the registered prompt itself (as the SDK stores
+  // it). With a schema the callback gets (args, extra); both ignore them.
   server.registerPrompt(
     'voice-context',
     {
@@ -314,7 +339,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
         ],
       };
     },
-  );
+  ).argsSchema = strictPromptArgs('voice-context');
 
   server.registerPrompt(
     'onboard',
@@ -326,7 +351,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     async () => ({
       messages: [{ role: 'user', content: { type: 'text', text: ONBOARD_PROMPT } }],
     }),
-  );
+  ).argsSchema = strictPromptArgs('onboard');
 
   return server;
 }
