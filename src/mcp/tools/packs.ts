@@ -33,7 +33,7 @@ import {
   assertUserRegistry,
 } from '../../core/index.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
-import { IMPORT_FORMAT_VALUES, bufferIO, guarded, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
+import { HARVEST_ROOTS_ENV, IMPORT_FORMAT_VALUES, bufferIO, containedPath, guarded, mcpWriteOpts, nonBlank, shellWord, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 import { cliCommand } from '../../util/cli-hint.js';
@@ -259,6 +259,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. " +
         'Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). ' +
+        `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. ` +
         'Use dryRun: true first to show the user what would be added, then run again without it. ' +
         'With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.',
       inputSchema: {
@@ -272,10 +273,14 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
     async ({ path, content, format, scope, dryRun }) =>
       guarded(async () => {
         if (path === undefined && content === undefined) throw new Error('pass path or content');
+        // A model picks `path`, and the report echoes every line that parses
+        // as a term (a dry run too), so an unchecked path read any file it
+        // named into the conversation. With `content` the path is never read.
+        const file = content === undefined && path !== undefined ? containedPath(ctx, path, (f) => `import ${shellWord(f)}`) : path ?? '-';
         const io = bufferIO();
         const writeOpts = scope === 'project' && dryRun !== true ? await mcpWriteOpts(ctx) : {};
         const code = await runImport(
-          path ?? '-',
+          file,
           { cwd: ctx.cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true, ...writeOpts },
           io,
           content !== undefined ? async () => content : undefined,

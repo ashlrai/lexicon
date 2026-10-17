@@ -64267,7 +64267,7 @@ var registerPackTools = (server, ctx) => {
     "import_dictionary",
     {
       title: "Import an existing dictionary",
-      description: "Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.",
+      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`.`,
       inputSchema: {
         path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
@@ -64278,10 +64278,11 @@ var registerPackTools = (server, ctx) => {
     },
     async ({ path: path27, content, format, scope, dryRun }) => guarded(async () => {
       if (path27 === void 0 && content === void 0) throw new Error("pass path or content");
+      const file2 = content === void 0 && path27 !== void 0 ? containedPath(ctx, path27, (f) => `import ${shellWord(f)}`) : path27 ?? "-";
       const io = bufferIO();
       const writeOpts = scope === "project" && dryRun !== true ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(
-        path27 ?? "-",
+        file2,
         { cwd: ctx.cwd, format: format ?? "auto", project: scope === "project", dryRun: dryRun === true, json: true, ...writeOpts },
         io,
         content !== void 0 ? async () => content : void 0

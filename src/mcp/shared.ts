@@ -151,8 +151,9 @@ export function withLexiconFix(message: string): string {
 
 
 /**
- * Environment variable a human sets in the MCP server's env to let the
- * repo-reading tools (harvest_repo, suggest_terms) read more directories,
+ * Environment variable a human sets in the MCP server's env to let the tools
+ * that read a model-chosen path (harvest_repo, suggest_terms, trust_project,
+ * import_dictionary) read more directories,
  * separated by the platform path delimiter (`:`, or `;` on Windows).
  */
 export const HARVEST_ROOTS_ENV = 'LEXICON_HARVEST_ROOTS';

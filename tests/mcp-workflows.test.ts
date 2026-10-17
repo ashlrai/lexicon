@@ -1171,6 +1171,30 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect(listed.status).toBe('untrusted');
   });
 
+  // Catches: import_dictionary read whatever file `path` named and echoed
+  // every line that parsed as a term, so a dry run on a file outside the
+  // project put its contents into the conversation.
+  it('import_dictionary reads a path only inside the allowed roots', async () => {
+    const secret = path.join(outside, 'notes.txt');
+    await fs.writeFile(secret, 'PlantedSecret: hunter2\n');
+    for (const target of [secret, path.relative(repo, secret)]) {
+      const res = await call('import_dictionary', { path: target, format: 'text', dryRun: true });
+      expect(res.isError, target).toBe(true);
+      expect(res.text).toContain('outside the directories this server may read');
+      expect(res.text).toContain('npx @ashlr/lexicon import');
+      expect(res.text).not.toContain('PlantedSecret');
+    }
+    await fs.symlink(secret, path.join(repo, 'linked.txt'));
+    expect((await call('import_dictionary', { path: 'linked.txt', format: 'text', dryRun: true })).isError).toBe(true);
+
+    await fs.writeFile(path.join(repo, 'dict.txt'), 'Kubectl: cube control\n');
+    const inside = await call('import_dictionary', { path: 'dict.txt', format: 'text', dryRun: true });
+    expect(inside.isError).toBe(false);
+    expect(JSON.parse(inside.text)).toMatchObject({ terms: [{ canonical: 'Kubectl' }] });
+    process.env.LEXICON_HARVEST_ROOTS = outside;
+    expect((await call('import_dictionary', { path: secret, format: 'text', dryRun: true })).isError).toBe(false);
+  });
+
   it('reads any directory the client named as an MCP root', async () => {
     const { pathToFileURL } = await import('node:url');
     const { ListRootsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');

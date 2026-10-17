@@ -900,9 +900,11 @@ describe('lexicon MCP server', () => {
           expect.anything(),
           expect.any(Function),
         );
-        const withPath = await client.callTool({ name: 'import_dictionary', arguments: { path: 'dict.csv', format: 'wispr', scope: 'project' } });
+        // With content, path only names the file for format detection and is never read
+        // (a path that is read is held to the allowed roots: tests/mcp-workflows.test.ts).
+        const withPath = await client.callTool({ name: 'import_dictionary', arguments: { path: 'dict.csv', content: 'Ashlr.AI,Ashler\n', format: 'wispr', scope: 'project' } });
         expect(withPath.isError).toBe(false);
-        expect(cli.runImport).toHaveBeenLastCalledWith('dict.csv', { cwd: '/fake/repo', format: 'wispr', project: true, dryRun: false, json: true }, expect.anything(), undefined);
+        expect(cli.runImport).toHaveBeenLastCalledWith('dict.csv', { cwd: '/fake/repo', format: 'wispr', project: true, dryRun: false, json: true }, expect.anything(), expect.any(Function));
       } finally {
         await close();
       }
