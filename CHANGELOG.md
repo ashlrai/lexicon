@@ -13,6 +13,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon trust --json` and `lexicon untrust --json` print `{ action, path, error, nextStep? }` on stdout when they refuse (no project file, a missing or invalid file, a file that changed while it was being trusted), with the same stderr lines and exit 1. Under `--json` a refusal went to stderr only, so a script reading stdout got an empty document.
+- MCP `trust_project` names the fix for a project file that does not parse or validate: `status` adds `nextStep` next to `status: 'invalid'`, and the `trust` error ends with it (`lexicon edit --project`, then `lexicon doctor`, and do not open the file yourself), as `lexicon trust` does since #82. It stopped at the parser's reason.
 - The local API refuses a request body key it does not know with 400 `invalid request body: Unrecognized key ...`. Unknown keys were dropped, so `{ "dry_run": true }` on `POST /normalize` recorded hits as a real run, and `{ "alias": [...] }` on `POST /add` added generated aliases instead, both with 200.
 - The local API answers 400 when `cwd` (body field or `?cwd=`) is empty or is not an existing directory. A typo fell back to the server's directory, so the reply came back 200 with the global lexicon alone and no word that the project was never looked at.
 - `DELETE /packs/:name` with a body is a 400 that points at the query string. The body was ignored, so `{ "scope": "project" }` removed the pack from the global lexicon instead.

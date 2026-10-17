@@ -60001,6 +60001,11 @@ async function askUserToTrust(server, safePath, file2) {
   });
   return answer.action === "accept" && answer.content?.trust === true ? "accept" : "decline";
 }
+function invalidFileNextStep(safePath) {
+  const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
+  const fix = isProjectFile ? "run: lexicon edit --project, in that repo" : `open ${safePath} in an editor`;
+  return `Ask the user to fix the file (${fix}), check it with: lexicon doctor, then call trust_project again. Do not open it yourself.`;
+}
 var registerTrustTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -60030,7 +60035,7 @@ var registerTrustTools = (server, ctx) => {
         try {
           file3 = await readLexiconFile(filePath, "project");
         } catch (err) {
-          return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)) });
+          return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)), nextStep: invalidFileNextStep(safePath ?? "") });
         }
         if (!file3.exists) return textResult({ ...base, path: safePath, status: "missing" });
         const status = await isTrusted(file3, { cwd: ctx.cwd });
@@ -60052,7 +60057,7 @@ var registerTrustTools = (server, ctx) => {
       try {
         file2 = await readLexiconFile(filePath, "project");
       } catch (err) {
-        throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}`);
+        throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? "")}`);
       }
       if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
