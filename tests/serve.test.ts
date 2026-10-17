@@ -831,6 +831,20 @@ describe('limits and errors', () => {
     expect(await res.json()).toEqual({ error: expect.stringContaining('no route') });
   });
 
+  it('the unknown-route 404 lists every route, method and path', async () => {
+    const res = await api('POST', '/normalise');
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    // Same shape as every other error: one `error` string.
+    expect(Object.keys(body)).toEqual(['error']);
+    // Catches: the 404 said only "no route for POST /normalise", so a client
+    // that guessed a path had to go read the docs for the real ones.
+    expect(body.error).toBe(
+      'no route for POST /normalise (routes: GET /health, GET /pair, POST /normalize, POST /learn, POST /add, ' +
+        'GET /lexicon, GET /stats, GET /packs, POST /packs/:name, DELETE /packs/:name, GET /aliases, GET /export/:format)',
+    );
+  });
+
   it('400 on bad JSON and on a non-object body', async () => {
     const bad = await api('POST', '/normalize', '{"text": ');
     expect(bad.status).toBe(400);

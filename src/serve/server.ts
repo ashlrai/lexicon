@@ -286,6 +286,27 @@ const PackBody = z.object({
   cwd: CwdField,
 }).strict();
 
+/**
+ * Every route as `METHOD /path`, in the order the Endpoints table of
+ * docs/LOCAL-API.md lists them. The unknown-route 404 names them, as the
+ * unknown export format 404 names the formats, so a client that guessed a
+ * path learns the real ones from the answer.
+ */
+const ROUTES: readonly string[] = [
+  'GET /health',
+  'GET /pair',
+  'POST /normalize',
+  'POST /learn',
+  'POST /add',
+  'GET /lexicon',
+  'GET /stats',
+  'GET /packs',
+  'POST /packs/:name',
+  'DELETE /packs/:name',
+  'GET /aliases',
+  'GET /export/:format',
+];
+
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
@@ -950,7 +971,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
       return { status: 200, text: exportLexicon(loaded.merged, format, exportOpts), contentType: exportContentType(format) };
     }
-    throw new HttpError(404, `no route for ${req.method ?? 'GET'} ${sanitizeForDisplay(pathname)}`);
+    throw new HttpError(404, `no route for ${req.method ?? 'GET'} ${sanitizeForDisplay(pathname)} (routes: ${ROUTES.join(', ')})`);
   }
 
 
