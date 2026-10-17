@@ -326,6 +326,15 @@ describe('blank required strings', () => {
     expect(res.isError).toBe(true);
     expect(res.text).toMatch(/must not be blank at path/);
   });
+
+  // Catches: the tool parses `lexicon import --json`, whose success now leads with the CLI's `ok: true`; the tool result keeps its shape.
+  it('import_dictionary returns the import report without the CLI ok key', async () => {
+    const res = await call('import_dictionary', { content: 'word,replacement\nhead sner,Hetzner\n', dryRun: true });
+    expect(res.isError).toBe(false);
+    const report = JSON.parse(res.text) as Record<string, unknown>;
+    expect(report).not.toHaveProperty('ok');
+    expect(report).toHaveProperty('terms');
+  });
 });
 
 describe('lexicon_stats and voice-context with an untrusted project lexicon', () => {
@@ -634,7 +643,10 @@ describe('lexicon list --full and MCP list_terms', () => {
 
     const full = makeIO();
     expect(await runList({ cwd: repo, query: 'kube', full: true }, full)).toBe(0);
-    const cli = JSON.parse(full.out) as Record<string, unknown>;
+    // The CLI leads with `ok: true` (a --json success); the rest is the list_terms object.
+    const { ok, ...cli } = JSON.parse(full.out) as Record<string, unknown>;
+    expect(ok).toBe(true);
+    expect(Object.keys(JSON.parse(full.out) as object)[0]).toBe('ok');
     expect(Object.keys(cli).sort()).toEqual(Object.keys(mcp).sort());
     const { note: cliNote, ...cliRest } = cli;
     const { note: mcpNote, ...mcpRest } = mcp;

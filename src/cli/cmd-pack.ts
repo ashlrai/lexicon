@@ -40,7 +40,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, line, plural, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { bold, dim, fail, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -127,14 +127,14 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
       line(
         io,
         JSON.stringify(
-          {
+          jsonOk({
             packs: rows,
             installed,
             communityInstalled,
             ...(mismatch ? { registryMismatch: mismatch } : {}),
             ...(registryPacks ? { registry: registryPacks } : {}),
             ...skippedProjectJson(loaded, PACKS_SKIPPED),
-          },
+          }),
           null,
           2,
         ),
@@ -197,7 +197,7 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
       result = await uninstallPack(name, { cwd, ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
     }
     if (opts.json) {
-      line(io, JSON.stringify(result, null, 2));
+      line(io, JSON.stringify(jsonOk(result), null, 2));
       return 0;
     }
     if (result.files.length === 0) {
@@ -230,7 +230,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
         await fs.writeFile(file, bytes);
         const pack = await loadPackFile(file, entry.name);
         if (opts.json) {
-          line(io, JSON.stringify({ ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, pack }, null, 2));
+          line(io, JSON.stringify(jsonOk({ ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, pack }), null, 2));
           return 0;
         }
         line(io, `${safe(entry.ref)} ${dim(`(community pack${entry.author ? ` by ${entry.author}` : ''}, version ${entry.version || 'unversioned'}, checksum ${entry.checksum.slice(0, 12)}...)`)}`);
@@ -242,7 +242,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
     }
     const pack = await loadPack(name, deps);
     if (opts.json) {
-      line(io, JSON.stringify(pack, null, 2));
+      line(io, JSON.stringify(jsonOk(pack), null, 2));
       return 0;
     }
     printPackTerms(io, pack);
@@ -279,7 +279,7 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
       line(
         io,
         JSON.stringify(
-          { query, registry: opts.registry, packs, ...(mismatch ? { registryMismatch: mismatch } : {}), ...skippedProjectJson(loaded, PACKS_SKIPPED) },
+          jsonOk({ query, registry: opts.registry, packs, ...(mismatch ? { registryMismatch: mismatch } : {}), ...skippedProjectJson(loaded, PACKS_SKIPPED) }),
           null,
           2,
         ),
@@ -366,7 +366,7 @@ async function runPackAddRegistry(
   const pack = parsePackText(bytes.toString('utf8'), entry.url, entry.name);
 
   if (opts.json && !opts.yes) {
-    line(io, JSON.stringify({ preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms }, null, 2));
+    line(io, JSON.stringify(jsonOk({ preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms }), null, 2));
     throw new PreviewOnly();
   }
   if (!opts.json) {
@@ -387,14 +387,23 @@ async function runPackAddRegistry(
     ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
     ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
   }, deps.registry);
-  if (opts.json) {
-    line(io, JSON.stringify({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope }, null, 2));
-  } else {
+  // Under --json runPackAdd prints the result, so stdout carries one document.
+  if (!opts.json) {
     line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
     line(io, dim('  the terms are live: normalize_transcript, the hook and the local API pick them up on the next call'));
   }
   return result;
+}
+
+/** The `--json` record of one community install. */
+interface CommunityInstallJson {
+  preview: false;
+  ref: string;
+  added: number;
+  merged: number;
+  path: string;
+  scope: string;
 }
 
 /** Thrown to unwind a preview-only run without an error message. */
@@ -410,17 +419,22 @@ class Declined extends Error {
 export async function runPackAdd(names: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
   const scope = opts.project ? 'project' : 'global';
-  // Registry installs print their own output (preview or result) inside
-  // runPackAddRegistry; only vendored installs accumulate here.
-  const results: InstallPackResult[] = [];
+  // Registry installs print their preview (and, without --json, their
+  // result) inside runPackAddRegistry. Under --json every install's result
+  // accumulates here and is printed once: a single community ref as its
+  // object, anything else as one array in argument order.
+  const results: (InstallPackResult | CommunityInstallJson)[] = [];
+  let vendored = 0;
   for (const name of names) {
     try {
       if (isRegistryRef(name)) {
         if (!needRegistry(opts, io)) return 1;
-        await runPackAddRegistry(name, opts, io, deps);
+        const result = await runPackAddRegistry(name, opts, io, deps);
+        results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
       } else {
         const result = await installPack(name, { cwd, scope, ...deps });
         results.push(result);
+        vendored += 1;
         if (!opts.json) {
           line(
             io,
@@ -440,8 +454,10 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
       return fail(io, err, opts.json === true && results.length === 0);
     }
   }
-  if (opts.json) line(io, JSON.stringify(results, null, 2));
-  else if (results.length > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  if (opts.json) {
+    const single = names.length === 1 && isRegistryRef(names[0]!) && results.length === 1;
+    line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson) : results, null, 2));
+  } else if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
   return 0;
 }
 
@@ -466,7 +482,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
     }
     if (byIndex.size === 0) {
       if (!opts.json) line(io, dim('no community packs installed; nothing to update.'));
-      else line(io, JSON.stringify({ updates: [] }, null, 2));
+      else line(io, JSON.stringify(jsonOk({ updates: [] }), null, 2));
       return 0;
     }
     const reports: { ref: string; status: string; from?: string; to?: string; added?: number | string[]; merged?: number; dropped?: string[]; error?: string }[] = [];
@@ -518,8 +534,10 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
         reports.push(applied);
       }
     }
-    if (opts.json) line(io, JSON.stringify({ updates: reports }, null, 2));
-    return reports.some(report => report.status === 'failed' || report.status === 'not-installed') ? 1 : 0;
+    const failed = reports.some((report) => report.status === 'failed' || report.status === 'not-installed');
+    // The report is the failure document too, so `ok` follows the exit code.
+    if (opts.json) line(io, JSON.stringify({ ok: !failed, updates: reports }, null, 2));
+    return failed ? 1 : 0;
   } catch (err) {
     return fail(io, err, opts.json);
   }
@@ -542,7 +560,7 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     const pack = parsePackText(text, abs);
     const { errors, warnings } = validateCommunityPack(pack);
     if (opts.json) {
-      line(io, JSON.stringify({ file: abs, pack: pack.name, errors, warnings }, null, 2));
+      line(io, JSON.stringify({ ok: errors.length === 0, file: abs, pack: pack.name, errors, warnings }, null, 2));
     } else {
       line(io, `${safe(pack.name)}: ${safe(pack.title)} (${plural(pack.lexicon.terms.length, 'term')}, ${pack.aliases === 1 ? '1 alias' : `${pack.aliases} aliases`})`);
       for (const w of warnings) line(io, `  warning: ${safe(w)}`);

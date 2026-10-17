@@ -430,10 +430,15 @@ describe('add / remove / path', () => {
     const trust = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, trust)).toBe(1);
     expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), canonical: 'Ashlr.AI', removed: false });
-    // Success is unchanged.
+    // Success leads with ok: true (it had no ok key, so `ok` only told failures apart).
     const ok = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
-    expect(JSON.parse(ok.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+    expect(JSON.parse(ok.out)).toEqual({ ok: true, canonical: 'Ashlr.AI', removed: true });
+    expect(Object.keys(JSON.parse(ok.out))[0]).toBe('ok');
+    const okAlias = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true, alias: 'Ashler' }, okAlias)).toBe(0);
+    expect(Object.keys(JSON.parse(okAlias.out))[0]).toBe('ok');
+    expect(JSON.parse(okAlias.out)).toMatchObject({ ok: true, canonical: 'Ashlr.AI', alias: 'Ashler', removed: true });
   });
 
   // Catches: `harvest --add --json` printed the candidate array before the
@@ -466,7 +471,7 @@ describe('add / remove / path', () => {
     expect(JSON.parse(added.out)).toMatchObject({ term: { canonical: 'Ashlr.AI' }, path: state.globalPath, created: true, scope: 'global' });
     const removed = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, removed)).toBe(0);
-    expect(JSON.parse(removed.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+    expect(JSON.parse(removed.out)).toEqual({ ok: true, canonical: 'Ashlr.AI', removed: true });
     const missing = makeIO();
     expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
     expect(JSON.parse(missing.out)).toEqual({ ok: false, canonical: 'Nope', removed: false, error: 'term "Nope" not found' });
@@ -490,7 +495,7 @@ describe('add / remove / path', () => {
     vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
     const json = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, json)).toBe(0);
-    expect(JSON.parse(json.out)).toEqual({ canonical: 'Ashlr.AI', removed: true, stillIn: [{ scope: 'global', path: state.globalPath }] });
+    expect(JSON.parse(json.out)).toEqual({ ok: true, canonical: 'Ashlr.AI', removed: true, stillIn: [{ scope: 'global', path: state.globalPath }] });
 
     // Only one copy: no warning, and the JSON keeps its old shape.
     const single = makeIO();
@@ -554,6 +559,7 @@ describe('add / remove / path', () => {
     const json = makeIO();
     expect(await runRemove('Ashlr.AI', { global: true, json: true }, json)).toBe(0);
     expect(JSON.parse(json.out)).toEqual({
+      ok: true,
       canonical: 'Ashlr.AI',
       removed: true,
       untrustedProject: { path: '/tmp/proj/.lexicon.yaml', trust: 'untrusted' },
@@ -606,7 +612,7 @@ describe('add / remove / path', () => {
 
     const json = makeIO();
     expect(await runRemove('Ashlr.AI', { alias: 'Ashler', json: true }, json)).toBe(0);
-    expect(JSON.parse(json.out)).toEqual({ canonical: 'Ashlr.AI', alias: 'Ashler', removed: true, aliases: ['Ashlar'], paths: [state.globalPath] });
+    expect(JSON.parse(json.out)).toEqual({ ok: true, canonical: 'Ashlr.AI', alias: 'Ashler', removed: true, aliases: ['Ashlar'], paths: [state.globalPath] });
   });
 
   // Catches: remove --alias dropped the global alias and printed success while the untrusted project copy (which wins once trusted) kept it.
@@ -630,6 +636,7 @@ describe('add / remove / path', () => {
     const json = makeIO();
     expect(await runRemove('Ashlr.AI', { alias: 'Ashler', global: true, json: true }, json)).toBe(0);
     expect(JSON.parse(json.out)).toEqual({
+      ok: true,
       canonical: 'Ashlr.AI',
       alias: 'Ashler',
       removed: true,
@@ -705,11 +712,11 @@ describe('add / remove / path', () => {
   it('path --json prints { global, project }, project null when there is none', async () => {
     const none = makeIO();
     expect(await runPath({ json: true }, none)).toBe(0);
-    expect(JSON.parse(none.out)).toEqual({ global: state.globalPath, project: null });
+    expect(JSON.parse(none.out)).toEqual({ ok: true, global: state.globalPath, project: null });
     state.projectPath = '/tmp/proj/.lexicon.yaml';
     const some = makeIO();
     expect(await runPath({ json: true }, some)).toBe(0);
-    expect(JSON.parse(some.out)).toEqual({ global: state.globalPath, project: '/tmp/proj/.lexicon.yaml' });
+    expect(JSON.parse(some.out)).toEqual({ ok: true, global: state.globalPath, project: '/tmp/proj/.lexicon.yaml' });
   });
 });
 

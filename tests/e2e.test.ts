@@ -1226,10 +1226,14 @@ console.log(JSON.stringify(data[args[1]]));
     const preview = await runCli(['import', '--guided', '--sources', 'github', '--json'], { env, cwd: h.repo });
     expect(preview.code).toBe(0);
     const report = JSON.parse(preview.stdout);
+    // The preview and the applied report lead with ok: true, as a refusal leads with ok: false.
+    expect(Object.keys(report)[0]).toBe('ok');
+    expect(report.ok).toBe(true);
     const selected = report.candidates.find((c: { canonical: string }) => c.canonical === 'Ada Lovelace');
     const applied = await runCli(['import', '--guided', '--sources', 'github', '--yes', '--json',
       '--preview-id', report.previewId, '--accept', selected.id], { env, cwd: h.repo });
     expect(applied.code).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ ok: true });
     const stored = await fs.readFile(h.globalPath, 'utf8');
     expect(stored).toContain('Ada Lovelace');
     expect(stored).toContain('import:github');
@@ -1423,7 +1427,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: agent journey (onboard, norm
       expect(stats.files).toEqual([{ path: globalPath, scope: 'global', terms: 5 }]);
       const cliStats = await cli(['stats', '--json']);
       expect(cliStats.code, cliStats.stderr).toBe(0);
-      expect(JSON.parse(cliStats.stdout)).toEqual(stats);
+      // The CLI's --json success leads with ok: true; the rest is what lexicon_stats returns.
+      expect(JSON.parse(cliStats.stdout)).toEqual({ ok: true, ...stats });
 
       // 7. Suggest: Vercel is no longer a new name to add; the garble is now alias
       // material for it. Applying that suggestion fixes the garble too.
@@ -1444,5 +1449,71 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: agent journey (onboard, norm
     // Nothing landed in the project, and stdout carried only JSON-RPC.
     expect(await fs.readdir(h.repo)).toEqual(['.git']);
     for (const line of rpc.stdoutLines) expect((JSON.parse(line) as { jsonrpc: string }).jsonrpc).toBe('2.0');
+  });
+});
+
+/**
+ * Catches: object-shaped `--json` successes (add, list --full, path, learn,
+ * stats, import) had no `ok`, while every failure of the same commands leads
+ * with `ok: false`, so a script could not read one key for either outcome.
+ * Array-shaped successes (list --json, harvest --json) stay bare arrays.
+ */
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: --json object successes lead with ok: true', () => {
+  const leadsWithOk = (stdout: string): Record<string, unknown> => {
+    const doc = JSON.parse(stdout) as Record<string, unknown>;
+    expect(Object.keys(doc)[0]).toBe('ok');
+    expect(doc.ok).toBe(true);
+    return doc;
+  };
+
+  it('add, list --full, path, learn, stats and import', async () => {
+    const h = await cloneOf(shared, 'json-ok');
+    const add = await runCli(['add', 'Pydantic', 'pie dentic', '--json'], { env: h.env });
+    expect(add.code, add.stderr).toBe(0);
+    expect(leadsWithOk(add.stdout)).toMatchObject({ created: true, term: { canonical: 'Pydantic' } });
+
+    const full = await runCli(['list', '--full'], { env: h.env });
+    expect(full.code, full.stderr).toBe(0);
+    expect(leadsWithOk(full.stdout)).toHaveProperty('terms');
+    const bare = await runCli(['list', '--json'], { env: h.env });
+    expect(Array.isArray(JSON.parse(bare.stdout))).toBe(true);
+
+    const where = await runCli(['path', '--json'], { env: h.env });
+    expect(where.code, where.stderr).toBe(0);
+    expect(leadsWithOk(where.stdout)).toEqual({ ok: true, global: h.globalPath, project: null });
+
+    const learn = await runCli(['learn', 'pie dantic', 'Pydantic', '--json'], { env: h.env });
+    expect(learn.code, learn.stderr).toBe(0);
+    expect(leadsWithOk(learn.stdout)).toMatchObject({ aliasAdded: true, heard: 'pie dantic', meant: 'Pydantic' });
+
+    const stats = await runCli(['stats', '--json'], { env: h.env });
+    expect(stats.code, stats.stderr).toBe(0);
+    expect(leadsWithOk(stats.stdout)).toHaveProperty('files');
+
+    const file = path.join(h.home, 'wispr.csv');
+    await fs.writeFile(file, 'word,replacement\nhead sner,Hetzner\n');
+    const dry = await runCli(['import', file, 'wispr', '--dry-run', '--json'], { env: h.env });
+    expect(dry.code, dry.stderr).toBe(0);
+    leadsWithOk(dry.stdout);
+    const imp = await runCli(['import', file, 'wispr', '--json'], { env: h.env });
+    expect(imp.code, imp.stderr).toBe(0);
+    leadsWithOk(imp.stdout);
+  });
+});
+
+// Catches: `pack add` with a community ref under `--json --yes` printed the
+// community install object and then the vendored results array: two JSON
+// documents, which no parser reads. A mix prints one array in argument order.
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: pack add --json with community refs', () => {
+  it('prints one array for a vendored and a community pack together', async () => {
+    const h = await freshHome('pack-mix');
+    const index = path.join(REPO_ROOT, 'registry', 'index.example.yaml');
+    const mixed = await runCli(['pack', 'add', 'developer', 'example/cardiology', '--registry', index, '--json', '--yes'], { env: h.env });
+    expect(mixed.code, mixed.stderr).toBe(0);
+    const docs = JSON.parse(mixed.stdout) as Record<string, unknown>[];
+    expect(Array.isArray(docs)).toBe(true);
+    expect(docs).toHaveLength(2);
+    expect(docs[0]).toMatchObject({ pack: { name: 'developer' } });
+    expect(docs[1]).toMatchObject({ preview: false, ref: 'example/cardiology' });
   });
 });

@@ -100,6 +100,7 @@ import {
   ensureNewline,
   green,
   jsonError,
+  jsonOk,
   line,
   plural,
   refuse,
@@ -384,7 +385,7 @@ export async function runAdd(
     line(
       io,
       JSON.stringify(
-        { term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) },
+        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts } : {}) }),
         null,
         2,
       ),
@@ -454,9 +455,10 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   };
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
-    // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it.
+    // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
+    // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`);
-    line(io, JSON.stringify({ ...failure, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -513,7 +515,7 @@ async function runRemoveAlias(
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }, null, 2));
+    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
     return 0;
   }
   line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
@@ -565,7 +567,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
       ...skippedProjectJson(loaded),
     };
-    line(io, JSON.stringify(payload, null, 2));
+    line(io, JSON.stringify(jsonOk(payload), null, 2));
     return 0;
   }
   if (opts.json) {
@@ -858,7 +860,7 @@ export async function runHarvest(
   if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
-    line(io, JSON.stringify({ root: target, candidates, count: candidates.length, ...addResult }, null, 2));
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...addResult }), null, 2));
   }
   return 0;
 }
@@ -934,7 +936,7 @@ export interface PathOptions extends CommonOptions {
 export async function runPath(opts: PathOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
   if (opts.json) {
-    line(io, JSON.stringify({ global: paths.global, project: paths.project ?? null }, null, 2));
+    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null }), null, 2));
     return 0;
   }
   line(io, `global: ${safe(paths.global)}`);

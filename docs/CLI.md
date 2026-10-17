@@ -130,11 +130,11 @@ Options:
                    1 when the term or alias is unknown)
   --project        only look in the project lexicon
   --global         only look in the global lexicon (not with --project)
-  --json           print { canonical, removed } as JSON (exit 1 when not found,
-                   with ok: false and error), plus stillIn when a copy is left
-                   in the other lexicon file and untrustedProject when the
-                   untrusted project lexicon has one; with --alias also alias,
-                   aliases and paths
+  --json           print { ok: true, canonical, removed } as JSON (exit 1 when
+                   not found, with ok: false and error), plus stillIn when a
+                   copy is left in the other lexicon file and untrustedProject
+                   when the untrusted project lexicon has one; with --alias also
+                   alias, aliases and paths
   -h, --help       display help for command
 ```
 
@@ -147,10 +147,10 @@ list terms from the merged global + project lexicon
 
 Options:
   --json                 print terms as JSON (a bare array)
-  --full                 print { terms, counts, paths } as JSON, the object MCP
-                         list_terms returns, plus projectTrust, skippedProject
-                         and note when an untrusted project lexicon was left out
-                         (implies --json)
+  --full                 print { ok: true, terms, counts, paths } as JSON, ok
+                         and then the object MCP list_terms returns, plus
+                         projectTrust, skippedProject and note when an untrusted
+                         project lexicon was left out (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
   -h, --help             display help for command
@@ -205,9 +205,9 @@ Options:
                      printed after the writes, the add summary goes to stderr,
                      and a failed write prints only { ok: false, error, added,
                      created, merged, path })
-  --full             print { root, candidates, count } as JSON, the object MCP
-                     harvest_repo returns, plus added, created, merged and path
-                     with --add (implies --json)
+  --full             print { ok: true, root, candidates, count } as JSON, the
+                     keys MCP harvest_repo returns, plus added, created, merged
+                     and path with --add (implies --json)
   -h, --help         display help for command
 ```
 
@@ -233,8 +233,8 @@ Usage: lexicon path [options]
 print the resolved global and project lexicon paths
 
 Options:
-  --json      print { global, project } as JSON (project is null when there is
-              no project lexicon)
+  --json      print { ok: true, global, project } as JSON (project is null when
+              there is no project lexicon)
   -h, --help  display help for command
 ```
 

@@ -36,7 +36,7 @@ import type {
   TermCategory,
 } from '../core/index.js';
 import { ProjectTrustError } from '../core/index.js';
-import { bold, dim, fail, line, plural, refuse, resolveCwd, safe } from './io.js';
+import { bold, dim, fail, jsonOk, line, plural, refuse, resolveCwd, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
@@ -206,7 +206,7 @@ export async function runImportGuided(
 
   if (chosen.length === 0) {
     if (!opts.json) line(io, dim('no usable import source selected; nothing imported.'));
-    else io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    else io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
     return 0;
   }
 
@@ -240,14 +240,14 @@ export async function runImportGuided(
     return refuse(io, opts.json, 'source contents or destination changed since preview; preview again before importing.');
   }
   if (candidates.length === 0) {
-    if (opts.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    if (opts.json) io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
     else line(io, dim('no candidates found in the chosen sources.'));
     return 0;
   }
 
   if (dryRun) {
     if (opts.json) {
-      io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+      io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
     } else {
       line(io, bold(`dry run: ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} (nothing written)`));
       candidates.forEach((c, i) => showImportCandidate(io, c, i, candidates.length));
@@ -340,7 +340,7 @@ export async function runImportGuided(
   });
 
   if (opts.json) {
-    io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
   } else {
     line(io);
     line(io, `imported ${plural(result.added + result.merged, 'term')} (${result.added} new, ${result.merged} merged, ${report.skipped} skipped)${result.path ? ` into ${safe(result.path)}` : ''}`);

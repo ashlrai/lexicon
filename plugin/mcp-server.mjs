@@ -59625,6 +59625,9 @@ function fail(io, err, json2) {
 function jsonError(error62, nextStep) {
   return { ok: false, error: error62, ...nextStep ? { nextStep } : {} };
 }
+function jsonOk(doc) {
+  return { ok: true, ...doc };
+}
 function printJsonError(io, error62, nextStep) {
   io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
 `);
@@ -63467,7 +63470,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   report.counts.created = report.terms.filter((t) => t.created).length;
   report.counts.merged = report.terms.length - report.counts.created;
   if (opts.json) {
-    io.stdout(`${JSON.stringify(report, null, 2)}
+    io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}
 `);
   } else {
     printReport(report, io);
@@ -63722,6 +63725,7 @@ var registerPackTools = (server, ctx) => {
         report = { output: out };
       }
       const stderr = io.err().trim();
+      if (isRecord(report) && report.ok === true) delete report.ok;
       return textResult(isRecord(report) ? { ...report, ...stderr ? { stderr } : {} } : report);
     })
   );

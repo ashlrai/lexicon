@@ -20,7 +20,7 @@ import {
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
 import { TERM_SOURCES } from '../core/index.js';
-import { refuse, renderTable, safe } from './io.js';
+import { jsonOk, refuse, renderTable, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { runImportGuided } from './cmd-import-guided.js';
 import type { ImportGuidedOptions } from './cmd-import-guided.js';
@@ -201,7 +201,7 @@ export async function runImport(
   report.counts.merged = report.terms.length - report.counts.created;
 
   if (opts.json) {
-    io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
   } else {
     printReport(report, io);
   }

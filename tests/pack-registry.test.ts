@@ -439,3 +439,70 @@ describe('installed flags: one source of truth across pack list, pack search and
     }
   });
 });
+
+// Catches: every object-shaped `pack ... --json` document lacked `ok`, though a
+// refusal leads with `ok: false`; update and validate, whose document is also
+// the failure report, now carry `ok` equal to exit code 0. The vendored
+// `pack add --json` array stays a bare array.
+describe('pack --json documents lead with ok', () => {
+  const doc = (out: string): Record<string, unknown> => {
+    const parsed = JSON.parse(out) as Record<string, unknown>;
+    expect(Object.keys(parsed)[0]).toBe('ok');
+    return parsed;
+  };
+
+  it('search, add --json preview, list, show, update, remove and validate', async () => {
+    const search = makeIO();
+    expect(await runPackSearch('cardio', { ...baseOpts(), json: true }, search)).toBe(0);
+    expect(doc(search.out).ok).toBe(true);
+
+    const preview = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true }, preview)).toBe(0);
+    expect(doc(preview.out)).toMatchObject({ ok: true, preview: true });
+
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, makeIO())).toBe(0);
+
+    const list = makeIO();
+    expect(await runPackList({ globalPath, json: true }, list)).toBe(0);
+    expect(doc(list.out)).toMatchObject({ ok: true, communityInstalled: ['example/cardiology'] });
+
+    const show = makeIO();
+    expect(await runPackShow('example/cardiology', { ...baseOpts(), json: true }, show)).toBe(0);
+    expect(doc(show.out)).toMatchObject({ ok: true, ref: 'example/cardiology' });
+    const vendored = makeIO();
+    expect(await runPackShow('developer', { globalPath, json: true }, vendored)).toBe(0);
+    expect(doc(vendored.out)).toMatchObject({ ok: true, name: 'developer' });
+
+    const update = makeIO();
+    expect(await runPackUpdate([], { ...baseOpts(), json: true }, update)).toBe(0);
+    expect(doc(update.out)).toMatchObject({ ok: true, updates: [{ ref: 'example/cardiology', status: 'current' }] });
+    const missing = makeIO();
+    expect(await runPackUpdate(['example/neurology'], { ...baseOpts(), json: true }, missing)).toBe(1);
+    expect(doc(missing.out)).toMatchObject({ ok: false, updates: [{ ref: 'example/neurology' }] });
+
+    const remove = makeIO();
+    expect(await runPackRemove('example/cardiology', { globalPath, json: true }, remove)).toBe(0);
+    expect(doc(remove.out)).toMatchObject({ ok: true, removed: ['Metoprolol'] });
+
+    const valid = makeIO();
+    expect(await runPackValidate(path.join(dir, 'cardiology.yaml'), { globalPath, json: true }, valid)).toBe(0);
+    expect(doc(valid.out)).toMatchObject({ ok: true, errors: [] });
+    const bad = path.join(dir, 'badpack.yaml');
+    writeFileSync(bad, 'name: badpack\ntitle: Bad\ndescription: x\nversion: 1\nterms:\n  - canonical: Sauce\n    aliases: [sawce]\n');
+    const invalid = makeIO();
+    expect(await runPackValidate(bad, { globalPath, json: true }, invalid)).toBe(1);
+    expect(doc(invalid.out)).toMatchObject({ ok: false, errors: expect.arrayContaining([expect.stringContaining('ordinary English word')]) });
+  });
+});
+
+// Catches: `pack add <community ref> --json --yes` printed the install object
+// and then the (empty) vendored results array, two JSON documents on stdout.
+describe('pack add --json --yes prints one JSON document', () => {
+  it('a single community ref prints only its install object', async () => {
+    const io = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true, yes: true }, io)).toBe(0);
+    const doc = JSON.parse(io.out) as Record<string, unknown>;
+    expect(Object.keys(doc)[0]).toBe('ok');
+    expect(doc).toMatchObject({ ok: true, preview: false, ref: 'example/cardiology', added: 1, merged: 0 });
+  });
+});

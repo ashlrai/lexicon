@@ -16,7 +16,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { fail, jsonError, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
+import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -131,7 +131,7 @@ export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps =
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
   const configPath = getServePath(storeOpts(opts));
   if (opts.json) {
-    line(io, JSON.stringify({ url, port, token: config.token, configPath }, null, 2));
+    line(io, JSON.stringify(jsonOk({ url, port, token: config.token, configPath }), null, 2));
     return 0;
   }
   line(io, `url:    ${url}`);
@@ -277,7 +277,7 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   }
 
   if (opts.json) {
-    line(io, JSON.stringify({ ...(opened ? {} : { ok: false }), up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
+    line(io, JSON.stringify({ ok: opened, up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
     return opened ? 0 : 1;
   }
   if (opened) {
@@ -731,7 +731,7 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
     return fail(io, err, opts.json);
   }
   if (opts.json) {
-    line(io, JSON.stringify({ url: info.url, port: info.port, host: info.host, token: info.token, configPath: info.configPath }));
+    line(io, JSON.stringify(jsonOk({ url: info.url, port: info.port, host: info.host, token: info.token, configPath: info.configPath })));
   } else {
     line(io, `lexicon serve listening on ${info.url} (token in ${safe(tildify(info.configPath, home))})`);
   }

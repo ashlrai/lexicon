@@ -181,12 +181,13 @@ describe('harvest --interactive', () => {
   });
 
   // Catches: `harvest --add --json` reported what it wrote on stderr only; stdout had just the candidates.
+  // Catches: the --full success object had no `ok`, though its failure leads with `ok: false`.
   it('runHarvest --full prints one object with the add result; --json keeps the bare array', async () => {
     await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
     const scan = makeIO();
     expect(await runHarvest(repo, { full: true, minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);
     const scanned = JSON.parse(scan.out) as { root: string; candidates: { canonical: string }[]; count: number };
-    expect(Object.keys(scanned)).toEqual(['root', 'candidates', 'count']);
+    expect(Object.keys(scanned)).toEqual(['ok', 'root', 'candidates', 'count']);
     expect(scanned.root).toBe(repo);
     expect(scanned.count).toBe(scanned.candidates.length);
     expect(scanned.candidates.map((c) => c.canonical.toLowerCase())).toContain('quokkatron');
@@ -194,7 +195,8 @@ describe('harvest --interactive', () => {
     const added = makeIO();
     expect(await runHarvest(repo, { add: true, yes: true, full: true, minCount: 1, globalPath }, added, { isInteractive: () => true })).toBe(0);
     const result = JSON.parse(added.out) as { count: number; added: number; created: number; merged: number; path: string };
-    expect(result).toMatchObject({ added: result.count, created: result.count, merged: 0, path: projectPath });
+    expect(Object.keys(result)[0]).toBe('ok');
+    expect(result).toMatchObject({ ok: true, added: result.count, created: result.count, merged: 0, path: projectPath });
     expect(added.err).toMatch(/added \d+ new term/);
     expect((await readYaml(projectPath)).terms.length).toBe(result.count);
 
