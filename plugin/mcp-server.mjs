@@ -57909,7 +57909,11 @@ function parseEspansoImport(content) {
       out.skipped.push({ line: line2, reason });
       return;
     }
-    const aliases = triggers.map((t) => t.replace(/^[:;]+/, ""));
+    const aliases = triggers.map((t) => t.replace(/^[:;]+/, "")).filter((a) => a.trim());
+    if (aliases.length === 0) {
+      out.skipped.push({ line: line2, reason: 'trigger is empty once its ":" or ";" prefix is removed' });
+      return;
+    }
     const { row, skip } = rowFor(line2, entry.replace, aliases);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);

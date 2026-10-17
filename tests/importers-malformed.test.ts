@@ -90,3 +90,21 @@ describe('espanso importer: triggers that are not words', () => {
     expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
   });
 });
+
+describe('espanso importer: empty triggers', () => {
+  it('skips, with a note, a match whose trigger is only a prefix or empty', () => {
+    const r = importLexicon('matches:\n  - trigger: ":"\n    replace: Foo\n  - trigger: ""\n    replace: Bar\n  - triggers: [";;", ":"]\n    replace: Baz\n', 'espanso');
+    expect(r.terms).toEqual([]);
+    expect(r.skipped).toEqual([
+      { line: 2, reason: 'trigger is empty once its ":" or ";" prefix is removed' },
+      { line: 4, reason: 'trigger is empty once its ":" or ";" prefix is removed' },
+      { line: 6, reason: 'trigger is empty once its ":" or ";" prefix is removed' },
+    ]);
+  });
+
+  it('keeps the other triggers of a match when one of them is only a prefix', () => {
+    const r = importLexicon('matches:\n  - triggers: [":", ":ashler"]\n    replace: Ashlr.AI\n', 'espanso');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([['Ashlr.AI', ['ashler']]]);
+    expect(r.skipped).toEqual([]);
+  });
+});

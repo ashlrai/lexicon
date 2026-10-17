@@ -69,7 +69,13 @@ export function parseEspansoImport(content: string): RawImport {
     }
     // espanso triggers are often prefixed with ':' or ';' to avoid firing on
     // ordinary typing; those prefixes are not what STT writes.
-    const aliases = triggers.map((t) => t.replace(/^[:;]+/, ''));
+    const aliases = triggers.map((t) => t.replace(/^[:;]+/, '')).filter((a) => a.trim());
+    // `trigger: ":"` or `trigger: ""` leaves nothing STT could write; importing
+    // the canonical alone would add a term the file never asked for, silently.
+    if (aliases.length === 0) {
+      out.skipped.push({ line, reason: 'trigger is empty once its ":" or ";" prefix is removed' });
+      return;
+    }
     const { row, skip } = rowFor(line, entry.replace, aliases);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);
