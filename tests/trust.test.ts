@@ -256,7 +256,8 @@ describe('concurrent trust registrations', () => {
     }
 
     const results = await Promise.all(projects.map((file) => runChild(script, [globalPath, file])));
-    expect(results.map((r) => r.code)).toEqual(projects.map(() => 0));
+    // Code and output together, so a child that fails says why in the CI log.
+    expect(results).toEqual(projects.map(() => ({ code: 0, out: 'trusted' })));
 
     const registry = await readTrustRegistry({ globalPath });
     expect(Object.keys(registry.trusted).sort()).toEqual([...projects].sort());
@@ -387,5 +388,22 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
       result: 'declined',
       summary: 'the user did not approve; nothing was trusted',
     });
+  });
+});
+
+// `list`, `normalize` and the rest warn `(run: lexicon trust)` about a skipped
+// project file, so a user with a broken one lands here, and `trust` stopped at
+// the parser's reason with no word on what to run next.
+describe('lexicon trust on an invalid file', () => {
+  it('names the command that fixes it', async () => {
+    process.env.LEXICON_PATH = globalPath;
+    await fs.writeFile(projectPath, 'terms: [oops\n');
+    const io = makeIO();
+    const code = await runTrust(projectPath, { cwd: path.dirname(projectPath) }, io);
+    expect(code).toBe(1);
+    expect(io.err).toContain('refusing to trust an invalid lexicon');
+    expect(io.err).toContain('run: lexicon edit --project');
+    expect(io.err).toContain('lexicon doctor');
+    expect(await listTrusted({ cwd: path.dirname(projectPath) })).toEqual([]);
   });
 });

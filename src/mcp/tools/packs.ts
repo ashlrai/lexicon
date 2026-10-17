@@ -31,7 +31,7 @@ import {
   verifyPackChecksum,
 } from '../../core/index.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
-import { IMPORT_FORMAT_VALUES, bufferIO, guarded, skippedProjectFields, textResult } from '../shared.js';
+import { IMPORT_FORMAT_VALUES, bufferIO, guarded, nonBlank, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 
@@ -244,8 +244,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). ' +
         'Use dryRun: true first to show the user what would be added, then run again without it.',
       inputSchema: {
-        path: z.string().optional().describe('File to import. Its extension helps auto-detection.'),
-        content: z.string().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine.'),
+        path: nonBlank().optional().describe('File to import. Its extension helps auto-detection.'),
+        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine. Must not be blank.'),
         format: z.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: z.boolean().optional().describe('Report what would be added without writing.'),

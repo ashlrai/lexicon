@@ -313,6 +313,19 @@ describe('blank required strings', () => {
     expect(suggest.isError).toBe(true);
     expect(suggest.text).toMatch(/must not be blank at heard/);
   });
+
+  // import_dictionary with blank content answered a success with 0 terms, so an
+  // agent that lost the file's text on the way reported an import that read nothing.
+  it('are refused for import_dictionary content and path', async () => {
+    for (const content of ['', '  \n\t']) {
+      const res = await call('import_dictionary', { content });
+      expect(res.isError).toBe(true);
+      expect(res.text).toMatch(/at content/);
+    }
+    const res = await call('import_dictionary', { path: ' ' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/must not be blank at path/);
+  });
 });
 
 describe('lexicon_stats and voice-context with an untrusted project lexicon', () => {

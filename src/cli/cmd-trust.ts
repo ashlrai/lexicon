@@ -30,7 +30,7 @@ import {
   untrustProject,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { line, renderTable, resolveCwd, safe, safeLines } from './io.js';
+import { line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
@@ -127,7 +127,12 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   try {
     file = await readLexiconFile(filePath, 'project');
   } catch (err) {
-    io.stderr(`lexicon: refusing to trust an invalid lexicon: ${safeLines(err instanceof Error ? err.message : String(err))}\n`);
+    const message = err instanceof Error ? err.message : String(err);
+    io.stderr(`lexicon: refusing to trust an invalid lexicon: ${safeLines(message)}\n`);
+    // The skipped-project warning on every other command says `run: lexicon
+    // trust`, so this is where a user with a broken file lands: name the fix.
+    const hint = unreadableLexiconHint(message);
+    if (hint) io.stderr(`lexicon: ${hint}\n`);
     return 1;
   }
 

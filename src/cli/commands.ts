@@ -660,17 +660,21 @@ export async function runNormalize(
       );
     }
     const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);
+    // The summary goes to stderr whatever stdout carries, so `--json --diff`
+    // keeps both. `--dry-run` alone shows it too: it promises to report the
+    // replacements, and stdout (the unchanged input) reports nothing. Before,
+    // `--json` dropped `--diff` and a plain `--dry-run` printed no report at all.
+    if (opts.diff || (opts.dryRun && !opts.json)) {
+      const summary = diffSummary(result);
+      // stdout must round-trip the user's text byte-exactly; the stderr diff quotes lexicon content, so it is sanitized per line.
+      if (summary) io.stderr(ensureNewline(safeLines(summary)));
+    }
     if (opts.json) {
       // Additive keys, as MCP normalize_transcript carries the skipped-project
       // ones: otherwise a script reading only stdout cannot tell corrections
       // from the built-in example, or an unchanged result from a skipped file.
       line(io, JSON.stringify({ ...result, ...(useExample ? { example: true } : {}), ...skippedProjectJson(loaded) }, null, 2));
       return 0;
-    }
-    if (opts.diff) {
-      const summary = diffSummary(result);
-      // stdout must round-trip the user's text byte-exactly; the stderr diff quotes lexicon content, so it is sanitized per line.
-      if (summary) io.stderr(ensureNewline(safeLines(summary)));
     }
     emit(result.output);
   } catch (err) {
@@ -865,10 +869,14 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 // path
 // ---------------------------------------------------------------------------
 
-export async function runPath(opts: CommonOptions & { json?: boolean }, io: IO): Promise<number> {
+export interface PathOptions extends CommonOptions {
+  /** Print `{ global, project }` as JSON (`project` is null when there is no project lexicon). */
+  json?: boolean;
+}
+
+export async function runPath(opts: PathOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
   if (opts.json) {
-    // `project` is the file the walk found, trusted or not; null when there is none.
     line(io, JSON.stringify({ global: paths.global, project: paths.project ?? null }, null, 2));
     return 0;
   }

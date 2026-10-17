@@ -168,8 +168,10 @@ Options:
                         true when the built-in example terms stood in and
                         projectTrust, skippedProject and note when an untrusted
                         project lexicon was left out
-  --diff                print a summary of replacements to stderr
-  --dry-run             report replacements without applying them
+  --diff                print a summary of replacements to stderr (with --json
+                        too)
+  --dry-run             print the replacement summary to stderr and the text
+                        unchanged to stdout
   --min-confidence <n>  minimum confidence (0..1) for fuzzy/phonetic matches
   --no-phonetic         disable phonetic matching
   --no-fuzzy            disable fuzzy (edit-distance) matching
@@ -225,7 +227,7 @@ print the resolved global and project lexicon paths
 
 Options:
   --json      print { global, project } as JSON (project is null when there is
-              none)
+              no project lexicon)
   -h, --help  display help for command
 ```
 
