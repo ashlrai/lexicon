@@ -224,7 +224,7 @@ function inventsBoundary(view: WindowView, e: AliasEntry): boolean {
   return false;
 }
 
-function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun'>>): Candidate | undefined {
+function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun' | 'shouldStop'>>): Candidate | undefined {
   // Held in an object read through a getter: TS does not invalidate narrowing of
   // a local across the closure calls below, so a plain `let best` narrows to never.
   const state: { best: Candidate | undefined } = { best: undefined };
@@ -384,7 +384,9 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
   const tokens = tokenize(text, resolved.skipCode);
   const candidates: Candidate[] = [];
 
+  const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
+    if (i > 0 && shouldStop?.()) break;
     if (tokens[i].skipped) continue;
     // Every window starting here shares this left edge, so one check covers them all.
     if (GLUE_BEFORE.has(text.charAt(tokens[i].start - 1))) continue;
@@ -413,9 +415,11 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
       // term at higher confidence. See PLURAL_RE.
       if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === 'alias')) {
         const stripped = last.text.slice(0, -1);
-        const swapped = tokens.slice(0, j);
+        // Only the window's own tokens: copying every token before it made a
+        // long prompt quadratic in its plurals.
+        const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
-        const view = makeView(text, swapped, i, j, false, index.protectedWords);
+        const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
         const bestPl = gluedAfter(text, view.end) ? undefined : findBest(view, index, resolved);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === 'alias')) best = bestPl;
       }

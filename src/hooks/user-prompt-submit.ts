@@ -33,7 +33,25 @@ import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '..
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
   cwd?: string;
+  /** Overrides HOOK_MATCH_BUDGET_MS. */
+  matchBudgetMs?: number;
 }
+
+/**
+ * How long the UserPromptSubmit hook spends matching before it stops and
+ * reports what it found. Matching is linear in prompt length times lexicon
+ * size: a 200 KB paste against a 2000-term lexicon took over 5 s, past the
+ * plugin's own hook timeout, so Claude Code killed it. A dictated prompt
+ * finishes far inside this; a huge paste gets the corrections from its start.
+ */
+export const HOOK_MATCH_BUDGET_MS = 100;
+
+/**
+ * Longest prompt the corrections note repeats back in full. Past this the
+ * note carries only the list of corrections: echoing a pasted log doubled the
+ * context the hook added for no benefit.
+ */
+export const CORRECTED_PROMPT_MAX_CHARS = 8000;
 
 /** Hook events this entry point handles. Anything else is treated as UserPromptSubmit. */
 export type HookEventName = 'UserPromptSubmit' | 'SessionStart';
@@ -126,12 +144,9 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
 
 /** Builds the note handed to the agent for a changed prompt. */
 export function formatAdditionalContext(result: NormalizeResult): string {
-  return (
-    'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' +
-    `${diffSummary(result)}\n` +
-    'Corrected prompt:\n' +
-    result.output
-  );
+  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + diffSummary(result);
+  if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
+  return `${head}\nCorrected prompt:\n${result.output}`;
 }
 
 /**
@@ -416,7 +431,10 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
   const correctionNote = correction ? formatCorrectionNote(correction) : '';
 
-  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged) : undefined;
+  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  const started = performance.now();
+  const shouldStop = (): boolean => performance.now() - started >= budget;
+  let result = loaded.merged.terms.length > 0 ? normalize(prompt, loaded.merged, { shouldStop }) : undefined;
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   if (result && correction) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.

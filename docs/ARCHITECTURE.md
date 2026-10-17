@@ -264,7 +264,7 @@ The hooks run on every prompt and every session start in Claude Code, so they ar
 
 | Path | Budget | How |
 |---|---|---|
-| `plugin/hook.mjs`, 1KB prompt | under 200ms end to end, including Node startup. Measured: about 100ms on an M-series Mac with an 8-term lexicon | No network. YAML read once. `buildIndex()` precomputes alias map and phonetic keys. Exact alias is a single word-boundary regex pass. One bundled file, no module resolution |
+| `plugin/hook.mjs`, 1KB prompt | under 200ms end to end, including Node startup. Measured: about 100ms on an M-series Mac with an 8-term lexicon | No network. YAML read once. `buildIndex()` precomputes alias map and phonetic keys. Exact alias is a single word-boundary regex pass. One bundled file, no module resolution. Matching stops after `HOOK_MATCH_BUDGET_MS` (100ms), so a huge paste against a large lexicon cannot run into the 5 s hook timeout; it gets the corrections from its start |
 | `normalize_transcript` | under 50ms for a typical prompt | Same index; server process stays warm. Benchmark: 0.3 ms per sentence including `buildIndex()` |
 | `POST /normalize` | a few ms on loopback | Lexicon cached per cwd for 2 s; 1 MB body cap; 64 in-flight requests, then 503 |
 | extension send | zero added delay when nothing changes | The worker prechecks the text on a 250 ms debounce while you type; an unchanged send is not intercepted at all |

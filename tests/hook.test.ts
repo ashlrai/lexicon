@@ -615,6 +615,29 @@ describe('runHook', () => {
   });
 });
 
+describe('a long prompt stays inside the hook budget', () => {
+  it('passes a stop condition to normalize and gives up once the budget is spent', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 0 });
+    const opts = mocks.normalize.mock.calls[0][2] as { shouldStop?: () => boolean } | undefined;
+    expect(typeof opts?.shouldStop).toBe('function');
+    expect(opts!.shouldStop!()).toBe(true);
+    mocks.normalize.mockClear();
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 60_000 });
+    const roomy = mocks.normalize.mock.calls[0][2] as { shouldStop?: () => boolean };
+    expect(roomy.shouldStop!()).toBe(false);
+  });
+
+  it('does not repeat a huge prompt back as the corrected copy', async () => {
+    const { formatAdditionalContext, CORRECTED_PROMPT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const big = `hi Ashler ${'x'.repeat(CORRECTED_PROMPT_MAX_CHARS)}`;
+    const text = formatAdditionalContext(fakeNormalize(big));
+    expect(text).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
+    expect(text.length).toBeLessThan(CORRECTED_PROMPT_MAX_CHARS);
+    expect(text).not.toContain('Corrected prompt:');
+  });
+});
+
 describe('formatAdditionalContext', () => {
   it('lists the diff and the corrected prompt', async () => {
     const { formatAdditionalContext } = await import('../src/hooks/user-prompt-submit.js');
