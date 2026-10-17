@@ -473,9 +473,12 @@ Options:
   --copy                 also put the corrected text on the clipboard
   --paste                copy and paste into the frontmost app (macOS; needs
                          Accessibility permission)
-  --json                 print { raw, output, replacements, summary, model,
-                         seconds, ms } as JSON (with --toggle, a press that
-                         starts prints {"status":"recording"})
+  --json                 print { ok: true, raw, output, replacements, summary,
+                         model, seconds, ms } as JSON (with --toggle, a press
+                         that starts prints {"status":"recording"}); every
+                         failure prints { ok: false, error, nextStep?, code }
+                         with code the exit code (over the result when there is
+                         text, e.g. nothing heard or a failed --paste)
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```
