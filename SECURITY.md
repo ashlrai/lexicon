@@ -272,7 +272,8 @@ treated as the user's own words).
   against the index before it is read, and a checksum mismatch refuses the
   install; an index or pack file over 2 MB is refused (the download stops at
   the cap), a remote index may name only `https://` URLs or paths relative to
-  itself, never a local file; the install script and Homebrew fetch the package itself.
+  itself, never a local file; and plain `http://` is refused for an index or
+  pack anywhere but this machine, redirects included; the install script and Homebrew fetch the package itself.
 - **Escape hatch.** `LEXICON_TRUST_ALL=1` treats every project lexicon as
   trusted. It is meant for CI or throwaway containers where the repository is
   already vetted; do not set it in an interactive shell.

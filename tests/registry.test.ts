@@ -11,6 +11,7 @@ import {
   MAX_LEXICON_BYTES,
   MAX_REGISTRY_FILE_BYTES,
   applyRegistryUpdate,
+  assertSecureRegistryUrl,
   cachedPackPath,
   downloadPack,
   findRegistryEntry,
@@ -168,6 +169,29 @@ describe('loadRegistryIndex', () => {
     const fetchText = vi.fn(async () => remoteIndex('./packs/cardiology.yaml'));
     const { index, base } = await loadRegistryIndex('https://registry.example/v1/index.yaml', { fetchText });
     expect(resolvePackUrl(entryFor(index), base)).toBe('https://registry.example/v1/packs/cardiology.yaml');
+  });
+
+  // Catches: plain http:// was accepted for an index and for pack files, and
+  // the index is what vouches for each pack's checksum, so anyone on the path
+  // could swap both and land any terms in the lexicon.
+  it('refuses plain http:// for an index or a pack file, except from this machine', async () => {
+    const fetchText = vi.fn(async () => 'version: 1\npacks: []\n');
+    await expect(loadRegistryIndex('http://registry.example/index.yaml', { fetchText })).rejects.toThrow(/fetched over https:\/\/ only/);
+    expect(fetchText).not.toHaveBeenCalled();
+    const indexText = [
+      'version: 1', 'packs:', '  - author: example', '    name: cardiology', '    title: Cardiology terms',
+      '    terms: 2', '    aliases: 3', `    checksum: ${sha256Hex(PACK_V1)}`, '    url: http://cdn.example/cardiology.yaml', '',
+    ].join('\n');
+    const { index, base } = await loadRegistryIndex('https://registry.example/index.yaml', { fetchText: async () => indexText });
+    const fetchBytes = vi.fn(async () => Buffer.from(PACK_V1));
+    await expect(downloadPack(entryFor(index), base, { fetchBytes })).rejects.toThrow(/fetched over https:\/\/ only/);
+    expect(fetchBytes).not.toHaveBeenCalled();
+    for (const ok of ['https://registry.example/i.yaml', 'http://127.0.0.1:8080/i.yaml', 'http://localhost/i.yaml', 'http://[::1]:9/i.yaml']) {
+      expect(() => assertSecureRegistryUrl(ok)).not.toThrow();
+    }
+    for (const bad of ['http://registry.example/i.yaml', 'http://127.0.0.1.evil.example/i.yaml', 'ftp://registry.example/i.yaml']) {
+      expect(() => assertSecureRegistryUrl(bad)).toThrow(/https:\/\/ only/);
+    }
   });
 
   it('a local index may name a file:// URL', async () => {

@@ -59276,8 +59276,31 @@ var REGISTRY_FETCH_TIMEOUT_MS = 3e4;
 function tooLargeError(what) {
   return new Error(`registry: ${what} exceeds the ${MAX_REGISTRY_FILE_BYTES} byte limit (refusing to read it)`);
 }
+function assertSecureRegistryUrl(url2) {
+  let parsed;
+  try {
+    parsed = new URL(url2);
+  } catch {
+    throw new Error(`registry: not a valid URL: ${url2}`);
+  }
+  if (parsed.protocol === "https:") return;
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const loopback = host === "localhost" || host === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+  if (parsed.protocol === "http:" && loopback) return;
+  throw new Error(
+    `registry: refusing ${parsed.protocol}//${parsed.host}: a registry index or pack file is fetched over https:// only (plain http:// only from this machine), because the index is what vouches for each pack's checksum`
+  );
+}
 async function boundedFetch(url2) {
   const res = await fetch(url2, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  if (res.url) {
+    try {
+      assertSecureRegistryUrl(res.url);
+    } catch (err) {
+      await res.body?.cancel().catch(() => void 0);
+      throw err;
+    }
+  }
   if (!res.ok) throw new Error(`registry: GET ${url2} failed (HTTP ${res.status})`);
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
@@ -59320,11 +59343,13 @@ async function readLocalRegistryFile(file2, what) {
 function resolvedDeps(deps) {
   return {
     fetchText: async (url2) => {
+      assertSecureRegistryUrl(url2);
       const text = await (deps.fetchText ?? defaultFetchText)(url2);
       if (Buffer.byteLength(text, "utf8") > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url2}`);
       return text;
     },
     fetchBytes: async (url2) => {
+      assertSecureRegistryUrl(url2);
       const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url2);
       if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url2}`);
       return bytes;

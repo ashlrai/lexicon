@@ -141,9 +141,42 @@ function tooLargeError(what: string): Error {
   return new Error(`registry: ${what} exceeds the ${MAX_REGISTRY_FILE_BYTES} byte limit (refusing to read it)`);
 }
 
+/**
+ * Throw unless `url` is https://, or plain http:// to this machine (a registry
+ * served from a local checkout). The index is the only thing that vouches
+ * for a pack's checksum, so an index or pack fetched over plain http from
+ * anywhere else can be rewritten in transit, checksum and all, into any
+ * terms an on-path attacker likes; those terms then reach the model on
+ * every prompt.
+ */
+export function assertSecureRegistryUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`registry: not a valid URL: ${url}`);
+  }
+  if (parsed.protocol === 'https:') return;
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const loopback = host === 'localhost' || host === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+  if (parsed.protocol === 'http:' && loopback) return;
+  throw new Error(
+    `registry: refusing ${parsed.protocol}//${parsed.host}: a registry index or pack file is fetched over https:// only (plain http:// only from this machine), because the index is what vouches for each pack's checksum`,
+  );
+}
+
 /** GET `url`, reading at most MAX_REGISTRY_FILE_BYTES of the body. */
 async function boundedFetch(url: string): Promise<Buffer> {
   const res = await fetch(url, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  // fetch follows redirects, including an https -> http downgrade.
+  if (res.url) {
+    try {
+      assertSecureRegistryUrl(res.url);
+    } catch (err) {
+      await res.body?.cancel().catch(() => undefined);
+      throw err;
+    }
+  }
   if (!res.ok) throw new Error(`registry: GET ${url} failed (HTTP ${res.status})`);
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
@@ -192,11 +225,13 @@ function resolvedDeps(deps: RegistryDeps): Required<RegistryDeps> {
   // An injected fetcher is held to the same cap after the fact.
   return {
     fetchText: async (url) => {
+      assertSecureRegistryUrl(url);
       const text = await (deps.fetchText ?? defaultFetchText)(url);
       if (Buffer.byteLength(text, 'utf8') > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
       return text;
     },
     fetchBytes: async (url) => {
+      assertSecureRegistryUrl(url);
       const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url);
       if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
       return bytes;
