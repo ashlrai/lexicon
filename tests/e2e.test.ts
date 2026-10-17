@@ -193,6 +193,15 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: basics', () => {
       expect(r.stdout).toContain(`Usage: lexicon ${cmd}`);
     }
   });
+
+  // hooks/hooks.json and `lexicon install claude` register `lexicon hook` for
+  // SessionStart too; the help said it was a UserPromptSubmit hook only.
+  it('hook --help names both events the hook handles', async () => {
+    const r = await runCli(['hook', '--help'], { env: shared.env });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('UserPromptSubmit');
+    expect(r.stdout).toContain('SessionStart');
+  });
 });
 
 // ---------------------------------------------------------------------------

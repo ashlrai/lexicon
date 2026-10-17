@@ -20,7 +20,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon path [options]`](#lexicon-path) | print the resolved global and project lexicon paths |
 | [`lexicon doctor [options]`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
-| [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
+| [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
 | [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
@@ -60,7 +60,7 @@ Commands:
   path [options]                          print the resolved global and project lexicon paths
   doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
-  hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
+  hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
@@ -269,7 +269,8 @@ Options:
 ```text
 Usage: lexicon hook [options]
 
-run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
+run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON
+from stdin)
 
 Options:
   -h, --help  display help for command

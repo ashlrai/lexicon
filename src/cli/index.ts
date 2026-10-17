@@ -191,7 +191,7 @@ program
 
 program
   .command('hook')
-  .description('run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)')
+  .description('run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)')
   .action(async () => {
     const { main } = await import('../hooks/user-prompt-submit.js');
     // commander already parsed this command's argv; the hook reads only stdin.
