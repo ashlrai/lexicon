@@ -8,8 +8,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { sanitizeForDisplay } from '../core/index.js';
-import type { ImportFormat, LexiconFile, LoadedLexicon, TermSuggestion } from '../core/index.js';
+import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { errorMessage } from '../util/errors.js';
 import { findPackageRoot, packageVersion } from '../util/package.js';
@@ -83,9 +82,6 @@ type _AllKindsCovered = Exclude<TermSuggestion['kind'], (typeof SUGGESTION_KINDS
 const _allKindsCovered: _AllKindsCovered = true;
 void _allKindsCovered;
 
-/** Terms listed in a trust preview before "... and N more". */
-const TRUST_PREVIEW_ROWS = 25;
-
 /** stderr-only logger. stdout belongs to the MCP transport. */
 export function log(...args: unknown[]): void {
   console.error(`[${SERVER_NAME}]`, ...args);
@@ -140,28 +136,11 @@ export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult
   }
 }
 
-interface TrustPreviewRow {
-  canonical: string;
-  firstAlias?: string;
-  aliasCount: number;
-  hasNotes: boolean;
-}
-
 /**
- * Compact, display-safe view of a project lexicon for the trust dialogue:
- * canonicals and the first alias only, sanitized, capped. Notes are reported
- * as present, never quoted: the file is untrusted input until the user says so.
+ * Compact, display-safe view of a project lexicon for the trust dialogue
+ * (defined in core so `lexicon trust --json` returns the same rows).
  */
-export function trustPreview(file: LexiconFile): { termCount: number; preview: TrustPreviewRow[]; more: number } {
-  const terms = file.lexicon.terms;
-  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t): TrustPreviewRow => ({
-    canonical: sanitizeForDisplay(t.canonical),
-    ...(t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {}),
-    aliasCount: t.aliases.length,
-    hasNotes: typeof t.notes === 'string' && t.notes.trim() !== '',
-  }));
-  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
-}
+export { trustPreview } from '../core/index.js';
 
 export function filePathsInUse(loaded: LoadedLexicon): { global: string; project?: string } {
   return {
@@ -176,14 +155,17 @@ export function filePathsInUse(loaded: LoadedLexicon): { global: string; project
  */
 export function skippedProjectFields(
   loaded: LoadedLexicon,
+  /** One more sentence for the note: what the skipped file means for this result. */
+  consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
   if (!loaded.skippedProject) return {};
+  const note =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.';
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
-    note:
-      loaded.projectTrust === 'changed'
-        ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
-        : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.',
+    note: consequence ? `${note} ${consequence}` : note,
   };
 }

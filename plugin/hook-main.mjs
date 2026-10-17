@@ -20368,7 +20368,7 @@ async function sessionStart(payload, opts) {
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
   if (loaded.merged.terms.length === 0) {
-    if (!await shouldEmitOnboardNote(loaded.global.path)) return "";
+    if (!await shouldEmitOnboardNote(loaded.global.path)) return skippedNote ? emit("SessionStart", [skippedNote]) : "";
     return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
   const parts = [truncateSessionContext(exportLexicon(loaded.merged, "claude-md").trimEnd())];
@@ -20402,15 +20402,36 @@ async function readStdin() {
   }
   return Buffer.concat(chunks).toString("utf8");
 }
-function writeStdout(text) {
+var processSink = {
+  writeSync: (fd, buffer, offset, length) => (0, import_node_fs5.writeSync)(fd, buffer, offset, length),
+  get stream() {
+    return process.stdout;
+  },
+  stderr: (line) => process.stderr.write(line)
+};
+function writeStdout(text, sink = processSink) {
   const bytes = Buffer.from(text, "utf8");
   let off = 0;
   try {
-    while (off < bytes.length) off += (0, import_node_fs5.writeSync)(1, bytes, off, bytes.length - off);
+    while (off < bytes.length) off += sink.writeSync(1, bytes, off, bytes.length - off);
     return;
-  } catch {
+  } catch (err) {
+    const code = err?.code;
+    if (code !== "EAGAIN") {
+      sink.stderr(`[lexicon hook] could not write the hook output (${code ?? errorText(err)}); the prompt goes through without it
+`);
+      return;
+    }
   }
-  process.stdout.write(bytes.subarray(off));
+  const stream = sink.stream;
+  stream.once("error", (err) => {
+    sink.stderr(`[lexicon hook] could not write the hook output (${err?.code ?? errorText(err)}); the prompt goes through without it
+`);
+  });
+  stream.write(bytes.subarray(off));
+}
+function errorText(err) {
+  return err instanceof Error ? err.message : String(err);
 }
 async function main() {
   try {
@@ -20458,5 +20479,6 @@ export {
   runSessionStartHook,
   runUserPromptSubmitHook,
   shouldEmitOnboardNote,
-  truncateSessionContext
+  truncateSessionContext,
+  writeStdout
 };

@@ -31,19 +31,19 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 |---|---|---|
 | `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`, and `incomplete` when the text was longer than 100,000 characters or matching ran past 1 second (the unchecked rest comes back unchanged). Also bumps each term's `hits` counter |
 | `add_term` | `canonical`, `aliases?`, `phonetic?`, `category?`, `notes?`, `never?`, `scope?` | The stored term, its file path and `created`. Aliases are auto-suggested when omitted |
-| `remove_term` | `canonical`, `alias?`, `scope?` | Whether it existed; when not, a `note` (and `foundIn`) saying which `scope` holds it. With `alias`, removes only that alias and returns the aliases the term keeps; an unknown term or alias is an error |
+| `remove_term` | `canonical`, `alias?`, `scope?` | Whether it existed; when not, a `note` (and `foundIn`) saying which `scope` holds it; when a copy is left in the other lexicon file, `stillIn` and a `note` naming the `scope` that removes it; when the untrusted project lexicon has a copy, `untrustedProject` { path, trust } (that file is never edited). With `alias`, removes only that alias and returns the aliases the term keeps, plus `untrustedProject` and a `note` when the untrusted project lexicon's copy of the term holds that alias too; an unknown term or alias is an error, and a refused untrusted project copy names the `scope: "global"` call |
 | `list_terms` | `query?`, `category?` | Matching terms, counts per file, the paths in use, and a note when a project file was skipped as untrusted |
 | `harvest_repo` | `path?`, `limit?`, `minCount?`, `add?` | Candidates. `add: true` writes them to that repo's project lexicon |
 | `export_lexicon` | `format`, `categories?`, `limit?` | The export as text |
 | `learn_correction` | `heard`, `meant`, `scope?` | The term the alias was added to, `created`, `aliasAdded`, a one-line summary |
-| `suggest_canonical` | `heard` (at most 60 characters) | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?" |
+| `suggest_canonical` | `heard` (at most 60 characters) | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?"; `skippedProject` when an untrusted project lexicon was left out |
 | `lexicon_stats` | none | Term and alias counts, total hits, top ten terms, never-hit terms, per-file breakdown |
 | `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, ready, summary, nextStep, checks: [{ level, message }], paths, versions }`, the same object `lexicon doctor --json` prints |
 | `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or `claude-desktop` |
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
 | `import_dictionary` | `path?` or `content?` (neither may be blank), `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |
 | `import_vocabulary` | `sources?`, `apply?`, `scope?`, `previewToken?`, `approvedCandidateIds?` | Ask which sources to read first. Omitted sources returns descriptions without probing or harvesting. Explicit sources previews candidate contents and ids. Apply uses the saved five-minute snapshot and only user-approved ids, never a fresh harvest; a missing token, unknown id or changed destination is refused |
-| `list_packs` | `registry?` | The starter packs in `packs/`, their size and which are installed; with `registry` also the community packs in that index. See [PACKS.md](PACKS.md) |
+| `list_packs` | `registry?` | The starter packs in `packs/`, their size and which are installed (from trusted files; an untrusted project lexicon adds `projectTrust`, `skippedProject` and `note`); with `registry` also the community packs in that index. See [PACKS.md](PACKS.md) |
 | `add_pack` | `name`, `scope?`, `registry?`, `confirm?`, `previewDigest?` | Install a starter pack into the global or project lexicon. `name` as `<author>/<name>` with `registry` installs a community pack: without `confirm: true` it returns every term field and a preview digest without writing; confirmation must include that digest and the same destination, and changed content is refused. See [PACKS.md](PACKS.md) |
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
 | `apply_suggestion` | `suggestion`, `scope?` | Applies one suggestion from `suggest_terms`, passed back as received |
@@ -55,7 +55,7 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 | Resource | Type | Content |
 |---|---|---|
 | `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file |
-| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out) |
+| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`) |
 
 ## Prompts
 

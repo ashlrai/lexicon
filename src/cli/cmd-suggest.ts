@@ -17,11 +17,12 @@ import {
   removeTerm,
   suggestAliases,
   suggestTerms,
+  termHolders,
 } from '../core/index.js';
 import type { LoadedLexicon, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
 import { askKey, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
-import { bold, dim, fail, line, plural, renderTable, safe, safeLines, warnSkippedProject } from './io.js';
+import { bold, dim, fail, line, plural, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 export interface SuggestCliOptions extends CommonOptions {
@@ -124,7 +125,14 @@ async function applyOne(
     }
     case 'stale': {
       const removed = await deps.removeTerm(s.canonical, { ...store, scope });
-      return removed ? `removed ${safe(s.canonical)}` : `${safe(s.canonical)} was already gone`;
+      if (!removed) return `${safe(s.canonical)} was already gone`;
+      // removeTerm edits only `scope`'s file. A copy in the other file keeps
+      // correcting, so name it and the command that removes it too.
+      const holders = termHolders(loaded, s.canonical);
+      const from = holders.find((h) => h.scope === scope);
+      const others = holders.filter((h) => h.scope !== scope);
+      const head = `removed ${safe(s.canonical)}${from ? ` from ${safe(from.path)}` : ''}`;
+      return [head, ...others.map((h) => stillInLine(s.canonical, h))].join('\n  ');
     }
     default:
       return `skipped ${safe(s.canonical)}`;

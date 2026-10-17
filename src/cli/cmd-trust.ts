@@ -4,6 +4,14 @@
  * A project `.lexicon.yaml` is only merged once the user has looked at it and
  * run `lexicon trust` (see SECURITY.md). Trust pins the file's sha256, so a
  * changed file drops back to 'changed' until trusted again.
+ *
+ * On a terminal `lexicon trust` asks before it pins the file (default no);
+ * `--yes` skips the question. Off a terminal (a script, CI, an agent's shell)
+ * there is nobody to ask, so it trusts after printing the preview, as it
+ * always has: refusing there would break every script that runs `lexicon
+ * trust` today, and `--yes` would not make an unattended run any safer, since
+ * whoever can run the command can add the flag. The question protects the
+ * person at the keyboard from approving a file they have not looked at.
  */
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -11,20 +19,36 @@ import type { Command } from 'commander';
 import {
   PROJECT_FILE_NAME,
   getTrustPath,
+  hashFile,
   isTrusted,
   listTrusted,
   readLexiconFile,
   resolvePaths,
   trustAllEnabled,
+  trustPreview,
   trustProject,
   untrustProject,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
+import { line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
 import type { CommonOptions, IO } from './io.js';
+import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
+import type { Prompter } from './prompt.js';
 
 export interface TrustOptions extends CommonOptions {
   list?: boolean;
+  /** Print the result as JSON (the shape MCP `trust_project` returns). */
+  json?: boolean;
+  /** Trust without asking, even on a terminal. */
+  yes?: boolean;
+}
+
+/** Test seams for the confirmation step. */
+export interface TrustDeps {
+  /** Default: stdin and stdout are both terminals. */
+  isInteractive?: () => boolean;
+  /** Default: a readline prompter on stdin, writing to stdout (stderr under --json). */
+  createPrompter?: () => Prompter;
 }
 
 /** Max terms shown in the preview before "... and N more". */
@@ -50,18 +74,40 @@ function previewAliases(term: Term): string {
   return more > 0 ? `${first} (+${more})` : first;
 }
 
-function renderPreview(file: LexiconFile, io: IO): void {
+function renderPreview(file: LexiconFile, write: (s: string) => void): void {
   const terms = file.lexicon.terms;
-  io.stdout(`${safe(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
+  write(`${safe(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
   if (terms.length === 0) return;
   const rows = terms.slice(0, PREVIEW_ROWS).map((t) => [t.canonical, previewAliases(t), t.notes ? 'has notes' : '']);
-  io.stdout(renderTable(rows, ['canonical', 'first alias', '']));
-  if (terms.length > PREVIEW_ROWS) io.stdout(`... and ${terms.length - PREVIEW_ROWS} more\n`);
+  write(renderTable(rows, ['canonical', 'first alias', '']));
+  if (terms.length > PREVIEW_ROWS) write(`... and ${terms.length - PREVIEW_ROWS} more\n`);
 }
 
-export async function runTrust(target: string | undefined, opts: TrustOptions, io: IO): Promise<number> {
+function printJson(io: IO, payload: unknown): void {
+  line(io, JSON.stringify(payload, null, 2));
+}
+
+/**
+ * Ask the person at the terminal whether to trust the file just previewed.
+ * Default no; a closed input (EOF, ctrl-D) is a no. Under --json the question
+ * goes to stderr so stdout stays one JSON document.
+ */
+async function confirmTrust(filePath: string, opts: TrustOptions, deps: TrustDeps): Promise<boolean> {
+  const own = deps.createPrompter === undefined;
+  const p = deps.createPrompter?.() ?? createPrompter({ input: process.stdin, output: opts.json ? process.stderr : process.stdout });
+  try {
+    return await p.confirm(`trust ${safe(filePath)}? its terms will be applied to every prompt in this repo`, false);
+  } catch (err) {
+    if (err instanceof PromptClosedError) return false;
+    throw err;
+  } finally {
+    if (own) p.close();
+  }
+}
+
+export async function runTrust(target: string | undefined, opts: TrustOptions, io: IO, deps: TrustDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
-  if (opts.list) return runTrustList(cwd, io);
+  if (opts.list) return runTrustList(cwd, opts, io);
 
   const filePath = resolveTarget(target, cwd);
   if (!filePath) {
@@ -73,7 +119,10 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return 1;
   }
 
-  // Parse first so a broken file is reported instead of trusted blind.
+  // Hash before parsing so a confirmation below covers bytes no newer than the
+  // preview (as MCP trust_project does), then parse so a broken file is
+  // reported instead of trusted blind.
+  const shownSha = await hashFile(filePath);
   let file: LexiconFile;
   try {
     file = await readLexiconFile(filePath, 'project');
@@ -88,15 +137,54 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   }
 
   const before = await isTrusted(file, { cwd });
-  renderPreview(file, io);
+  const registry = getTrustPath({ cwd });
+  // The table is for the person deciding; under --json it goes to stderr, and
+  // only when there is a question to answer, so stdout stays one document.
+  const ask = !opts.yes && (deps.isInteractive ?? isInteractive)();
+  if (!opts.json) renderPreview(file, io.stdout);
+  else if (ask) renderPreview(file, io.stderr);
+  if (ask && !(await confirmTrust(filePath, opts, deps))) {
+    if (opts.json) {
+      printJson(io, { action: 'trust', path: filePath, status: before, result: 'declined', summary: 'the user did not approve; nothing was trusted' });
+    } else {
+      line(io, 'declined; nothing was trusted.');
+    }
+    return 0;
+  }
+  // The answer covers the file that was previewed, not whatever is on disk after the question.
+  if (ask && (shownSha === undefined || (await hashFile(filePath)) !== shownSha)) {
+    io.stderr(`lexicon: ${safe(filePath)} changed while waiting for confirmation; nothing was trusted (run lexicon trust again)\n`);
+    return 1;
+  }
   const entry = await trustProject(filePath, { cwd });
+  if (ask && entry.sha256 !== shownSha) {
+    await untrustProject(filePath, { cwd });
+    io.stderr(`lexicon: ${safe(filePath)} changed while it was being trusted; trust was revoked (run lexicon trust again)\n`);
+    return 1;
+  }
   const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
-  io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(getTrustPath({ cwd }))}\n`);
+  if (opts.json) {
+    // The object MCP trust_project returns for action 'trust'.
+    printJson(io, {
+      action: 'trust',
+      path: filePath,
+      previousStatus: before,
+      status: 'trusted',
+      result: verb,
+      sha256: entry.sha256.slice(0, 12),
+      trustedAt: entry.trustedAt,
+      registry,
+      ...trustPreview(file),
+      note: 'Merged into the lexicon until its content changes; then it must be trusted again.',
+    });
+    return 0;
+  }
+  io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(registry)}\n`);
   io.stdout('It will be merged into the lexicon until its content changes; then run `lexicon trust` again.\n');
   return 0;
 }
 
-export async function runUntrust(target: string | undefined, opts: CommonOptions, io: IO): Promise<number> {
+export async function runUntrust(target: string | undefined, opts: CommonOptions & { json?: boolean }, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
   if (!filePath) {
@@ -104,6 +192,17 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
     return 1;
   }
   const removed = await untrustProject(filePath, { cwd });
+  if (opts.json) {
+    // The object MCP trust_project returns for action 'untrust'.
+    printJson(io, {
+      action: 'untrust',
+      path: filePath,
+      removed,
+      registry: getTrustPath({ cwd }),
+      summary: removed ? `untrusted ${filePath}; it will no longer be merged` : `${filePath} was not trusted; nothing to do`,
+    });
+    return 0;
+  }
   if (!removed) {
     io.stdout(`${safe(filePath)} was not trusted; nothing to do\n`);
     return 0;
@@ -112,8 +211,13 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
   return 0;
 }
 
-async function runTrustList(cwd: string, io: IO): Promise<number> {
+async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<number> {
   const entries = await listTrusted({ cwd });
+  if (opts.json) {
+    // The registry fields of MCP trust_project's 'status' result.
+    printJson(io, { registry: getTrustPath({ cwd }), trustAll: trustAllEnabled(), trusted: entries });
+    return 0;
+  }
   io.stdout(`registry: ${safe(getTrustPath({ cwd }))}\n`);
   if (trustAllEnabled()) io.stdout('LEXICON_TRUST_ALL is set: every project lexicon is treated as trusted\n');
   if (entries.length === 0) {
@@ -125,7 +229,7 @@ async function runTrustList(cwd: string, io: IO): Promise<number> {
   return 0;
 }
 
-export function registerTrustCommands(program: Command, io: IO): void {
+export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps = {}): void {
   const globals = (): { cwd?: string } => {
     const { cwd } = program.opts<{ cwd?: string }>();
     return cwd ? { cwd } : {};
@@ -136,16 +240,19 @@ export function registerTrustCommands(program: Command, io: IO): void {
 
   program
     .command('trust')
-    .description('approve a project .lexicon.yaml so its terms are merged (shows a preview first)')
+    .description('approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)')
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .option('--list', 'list trusted project lexicons and whether they still match')
-    .action(async (target: string | undefined, opts: { list?: boolean }) =>
-      done(await runTrust(target, { ...opts, ...globals() }, io)),
+    .option('-y, --yes', 'trust without asking (off a terminal it never asks)')
+    .option('--json', 'print the result as JSON, as MCP trust_project returns it (with --list: { registry, trustAll, trusted })')
+    .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; json?: boolean }) =>
+      done(await runTrust(target, { ...opts, ...globals() }, io, deps)),
     );
 
   program
     .command('untrust')
     .description('revoke approval for a project .lexicon.yaml')
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
-    .action(async (target: string | undefined) => done(await runUntrust(target, globals(), io)));
+    .option('--json', 'print { action, path, removed, registry, summary } as JSON, as MCP trust_project returns it')
+    .action(async (target: string | undefined, opts: { json?: boolean }) => done(await runUntrust(target, { ...opts, ...globals() }, io)));
 }

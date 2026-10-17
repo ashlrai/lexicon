@@ -15,7 +15,7 @@ import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
-import { errorMessage } from '../util/errors.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
 import { fail, line, safe, safeError, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
@@ -611,6 +611,27 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   return 1;
 }
 
+/**
+ * Delete a login-service file for --uninstall. A missing file is the "was not
+ * installed" case (true, exit 0); any other failure (permissions, a directory
+ * in its place) is reported on stderr and returns false, so the command does
+ * not say the service is gone while its file is still there.
+ */
+async function removeServiceFile(file: string, io: IO): Promise<boolean> {
+  try {
+    await fs.unlink(file);
+    line(io, `removed ${safe(file)}`);
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) {
+      line(io, `${safe(file)} was not installed`);
+      return true;
+    }
+    io.stderr(`lexicon: could not remove ${safe(file)}: ${safeLines(errorMessage(err))}\n`);
+    return false;
+  }
+}
+
 export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? os.homedir();
@@ -623,26 +644,16 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     const bootout = await runAndReport(exec, io, 'launchctl', ['bootout', `gui/${uid}/${serveLabel(env)}`]);
     if (bootout.code !== 0) await runAndReport(exec, io, 'launchctl', ['unload', plistPath]);
-    try {
-      await fs.unlink(plistPath);
-      line(io, `removed ${safe(plistPath)}`);
-    } catch {
-      line(io, `${safe(plistPath)} was not installed`);
-    }
+    if (!(await removeServiceFile(plistPath, io))) return 1;
     return 0;
   }
 
   if (platform === 'linux') {
     const unitPath = systemdUnitPath(home, env);
     await runAndReport(exec, io, 'systemctl', ['--user', 'disable', '--now', SYSTEMD_UNIT_NAME]);
-    try {
-      await fs.unlink(unitPath);
-      line(io, `removed ${safe(unitPath)}`);
-    } catch {
-      line(io, `${safe(unitPath)} was not installed`);
-    }
+    const removed = await removeServiceFile(unitPath, io);
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
-    return 0;
+    return removed ? 0 : 1;
   }
 
   if (platform === 'win32') {

@@ -10,7 +10,7 @@
  */
 import path from 'node:path';
 import { sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
-import type { LoadedLexicon } from '../core/index.js';
+import type { LearnConflict, LoadedLexicon, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -212,4 +212,69 @@ export function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 
   if (!loaded.skippedProject) return;
   const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
   io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
+}
+
+/**
+ * The additive `--json` keys for a skipped project lexicon, the same three
+ * the MCP tools return: `projectTrust`, `skippedProject` (path only, never its
+ * contents) and `note`. Empty when nothing was skipped, so the shape is
+ * unchanged then. `consequence` adds what the skip means for this output.
+ */
+export function skippedProjectJson(
+  loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>,
+  consequence?: string,
+): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
+  if (!loaded.skippedProject) return {};
+  const head =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
+  return {
+    projectTrust: loaded.projectTrust,
+    skippedProject: loaded.skippedProject.path,
+    note: consequence ? `${head} ${consequence}` : head,
+  };
+}
+
+/**
+ * The line naming a copy of a removed term that is still in another lexicon
+ * file (removeTerm edits one file), with the command that removes only that
+ * copy: `--project` or `--global`.
+ */
+export function stillInLine(canonical: string, holder: TermHolder): string {
+  const command = `lexicon remove ${JSON.stringify(safe(canonical))} --${holder.scope}`;
+  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
+}
+
+/**
+ * The line naming a copy of a term in the skipped (untrusted or changed)
+ * project lexicon. That file is not loaded and is never edited, but its copy
+ * wins the merge once the user trusts it. Path only, never its contents.
+ */
+export function untrustedLine(canonical: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
+  const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
+  return (
+    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    'it corrects from there once that file is trusted, so review it before running lexicon trust'
+  );
+}
+
+/** The alias counterpart of `untrustedLine`: the skipped project file's copy of the term still holds the alias. Path only. */
+export function untrustedAliasLine(canonical: string, alias: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
+  const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
+  return (
+    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    'it corrects from there once that file is trusted, so review it before running lexicon trust'
+  );
+}
+
+/**
+ * The `warn:` line for a spelling another term also holds (`learn`, `add`):
+ * the next transcript may still be corrected to that term. For an alias it
+ * names the `lexicon remove --alias` command that lets the new one win.
+ */
+export function conflictLine(c: LearnConflict): string {
+  return c.as === 'alias'
+    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
+    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`;
 }

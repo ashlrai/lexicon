@@ -115,14 +115,16 @@ program
   .argument('<canonical>')
   .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
   .option('--project', 'only look in the project lexicon')
-  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found); with --alias also alias, aliases and paths')
+  .option('--global', 'only look in the global lexicon (not with --project)')
+  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found), plus stillIn when a copy is left in the other lexicon file and untrustedProject when the untrusted project lexicon has one; with --alias also alias, aliases and paths')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
 program
   .command('list')
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
-  .option('--json', 'print terms as JSON')
+  .option('--json', 'print terms as JSON (a bare array)')
+  .option('--full', 'print { terms, counts, paths } as JSON, the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));
@@ -131,7 +133,7 @@ program
   .command('normalize')
   .description('correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read')
   .argument('[text...]')
-  .option('--json', 'print the full NormalizeResult as JSON')
+  .option('--json', 'print the full NormalizeResult as JSON, plus example: true when the built-in example terms stood in and projectTrust, skippedProject and note when an untrusted project lexicon was left out')
   .option('--diff', 'print a summary of replacements to stderr (with --json too)')
   .option('--dry-run', 'print the replacement summary to stderr and the text unchanged to stdout')
   .option('--min-confidence <n>', 'minimum confidence (0..1) for fuzzy/phonetic matches')
