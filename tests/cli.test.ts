@@ -2026,6 +2026,44 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: `voice --json` promises `code` on every failure, but a commander
+  // usage error (`--seconds abc`) printed { ok, error, nextStep } without it;
+  // and `voice --status --toggle` answered the status and dropped the toggle.
+  it('voice: a usage error under --json carries code, and two modes are refused with exit 1', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-voice-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      for (const [args, error] of [
+        [['voice', '--seconds', 'abc', '--json'], "option '--seconds <n>' argument 'abc' is invalid"],
+        [['voice', '--bogus', '--json'], "unknown option '--bogus'"],
+        [['voice', 'extra', '--json'], 'too many arguments'],
+      ] as [string[], string][]) {
+        const r = lexicon([...args, '--cwd', tmp], globalPath);
+        expect(r.status, args.join(' ')).toBe(1);
+        expect(JSON.parse(r.stdout), args.join(' ')).toEqual({ ok: false, error: expect.stringContaining(error), nextStep: 'see the usage: lexicon voice --help', code: 1 });
+      }
+      for (const [flags, named] of [
+        [['--status', '--toggle'], '--toggle and --status'],
+        [['--list-devices', '--status'], '--status and --list-devices'],
+      ] as [string[], string][]) {
+        const json = lexicon(['voice', ...flags, '--json', '--cwd', tmp], globalPath);
+        expect(json.status, flags.join(' ')).toBe(1);
+        expect(JSON.parse(json.stdout)).toEqual({
+          ok: false,
+          error: `${named} cannot be combined`,
+          nextStep: 'pass one of --toggle, --status or --list-devices (see lexicon voice --help)',
+          code: 1,
+        });
+        const plain = lexicon(['voice', ...flags, '--cwd', tmp], globalPath);
+        expect(plain.status).toBe(1);
+        expect(plain.stdout).toBe('');
+        expect(plain.stderr).toContain(`lexicon voice: ${named} cannot be combined`);
+      }
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: `--full` implies --json on list and harvest, but a failure under
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.

@@ -309,7 +309,11 @@ try {
     // --json a usage error also gets its stdout document. Same exit code.
     const failed = usageErrorCommand.get(err) ?? program;
     if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2), jsonFlagsOf(failed))) {
-      line(io, JSON.stringify(usageErrorJson(err.message, commandPath(failed)), null, 2));
+      const where = commandPath(failed);
+      // `voice --json` promises `code` (the exit code) on every failure, its
+      // own refusals and commander's alike.
+      const doc = where === 'lexicon voice' ? { ...usageErrorJson(err.message, where), code: err.exitCode } : usageErrorJson(err.message, where);
+      line(io, JSON.stringify(doc, null, 2));
     }
     process.exitCode = err.exitCode;
   } else {
