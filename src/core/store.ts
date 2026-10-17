@@ -20,7 +20,8 @@
 import { promises as fs, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
+import type { Document, YAMLMap } from 'yaml';
 import { emptyLexicon, parseLexicon } from './schema.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
@@ -248,12 +249,91 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
     .join('\n');
   await withLexiconLock(file.path, async () => {
     await pinCommittedHits(file);
-    const body = stringifyYaml(orderLexicon(file.lexicon), { lineWidth: 0 });
-    const text = `${header}\n\n${body}`;
+    const ordered = orderLexicon(file.lexicon);
+    const existing = await readLexiconText(file.path).catch(() => undefined);
+    const text =
+      (existing && updateInPlace(existing.text, ordered)) ??
+      `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
     assertReadsBack(text, file.path);
     await writeFileAtomic(file.path, text, { backup: true });
   });
   file.exists = true;
+}
+
+/**
+ * The file's existing text with `ordered` written into it, or undefined when
+ * that text is not a lexicon document we can edit (a parse error, a non-map
+ * root, a `terms` that is not a list).
+ *
+ * A lexicon file is often hand-written and committed (a project's
+ * `.lexicon.yaml`), so re-serializing it from scratch on every `learn` or
+ * `add` replaced its comments with our header, turned every `[a, b]` into a
+ * block list and added a `never: []` to each term: one learned alias became a
+ * whole-file diff. Editing the parsed document instead keeps comments, flow
+ * style and key order wherever a value did not change; only the values that
+ * did are rewritten, terms are matched by canonical, and removed keys and
+ * terms are dropped.
+ */
+function updateInPlace(text: string, ordered: Record<string, unknown>): string | undefined {
+  let doc: Document;
+  try {
+    doc = parseDocument(text, { prettyErrors: false });
+  } catch {
+    return undefined;
+  }
+  if (doc.errors.length > 0 || !isMap(doc.contents)) return undefined;
+  const root = doc.contents;
+  const terms = root.get('terms', true);
+  if (terms !== undefined && terms !== null && !(isSeq(terms) || (isScalar(terms) && terms.value === null))) {
+    return undefined;
+  }
+  const byCanonical = new Map<string, YAMLMap>();
+  if (isSeq(terms)) {
+    for (const item of terms.items) {
+      if (!isMap(item)) return undefined;
+      const canonical = item.get('canonical');
+      if (typeof canonical === 'string' && !byCanonical.has(canonical.toLowerCase())) {
+        byCanonical.set(canonical.toLowerCase(), item);
+      }
+    }
+  }
+  const { terms: newTerms, ...top } = ordered;
+  updateMap(doc, root, top, ['terms']);
+  const items = (newTerms as Record<string, unknown>[]).map((term) => {
+    const node = byCanonical.get(String(term.canonical).toLowerCase());
+    if (!node) return doc.createNode(term);
+    byCanonical.delete(String(term.canonical).toLowerCase());
+    updateMap(doc, node, term, []);
+    return node;
+  });
+  if (isSeq(terms)) {
+    terms.items = items;
+  } else {
+    root.set('terms', doc.createNode(items));
+  }
+  return doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+}
+
+/** Make `node` hold `value`'s keys, rewriting only the entries whose value changed. */
+function updateMap(doc: Document, node: YAMLMap, value: Record<string, unknown>, keep: string[]): void {
+  for (const pair of [...node.items]) {
+    const key = isScalar(pair.key) ? pair.key.value : pair.key;
+    if (typeof key === 'string' && !(key in value) && !keep.includes(key)) node.delete(key);
+  }
+  for (const [key, next] of Object.entries(value)) {
+    const current = node.get(key, true);
+    // An empty list the schema filled in (`never: []`) is not worth adding.
+    if (current === undefined && Array.isArray(next) && next.length === 0) continue;
+    if (isMap(current) && next !== null && typeof next === 'object' && !Array.isArray(next)) {
+      updateMap(doc, current, next as Record<string, unknown>, []);
+      continue;
+    }
+    const was = current === undefined ? undefined : isScalar(current) ? current.value : (current as { toJSON(): unknown }).toJSON();
+    if (current !== undefined && JSON.stringify(was) === JSON.stringify(next)) continue;
+    const created = doc.createNode(next);
+    if (isSeq(current) && isSeq(created)) created.flow = current.flow;
+    node.set(key, created);
+  }
 }
 
 /**

@@ -1204,3 +1204,57 @@ describe('XDG base directories', () => {
     expect(resolvePaths({ cwd: tmp, env: { LEXICON_PATH: '/from/env.yaml' }, home }).global).toBe('/from/env.yaml');
   });
 });
+
+describe('a write keeps a hand-written file\'s layout', () => {
+  // A committed project file is someone's prose: one learned alias must be a
+  // one-line diff, not the whole file re-serialized under our own header.
+  const handWritten = [
+    '# Phantom project vocabulary.',
+    '# Merged only after `lexicon trust`.',
+    'version: 1',
+    'terms:',
+    '  - canonical: Ashlr.AI',
+    '    category: brand',
+    '    aliases: [Ashler, Ashlar] # what STT writes',
+    '  - canonical: Locus',
+    '    aliases: [Locas]',
+    '    never: [locust]',
+    '    notes: Identity pins.',
+    '',
+  ].join('\n');
+
+  it('adding an alias changes only that alias list', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, handWritten);
+    await addTerm({ canonical: 'Locus', aliases: ['Lowkus'] }, { cwd: tmp, globalPath });
+    const text = await fs.readFile(globalPath, 'utf8');
+    expect(text).toBe(handWritten.replace('aliases: [Locas]', 'aliases: [Locas, Lowkus]'));
+  });
+
+  it('a new term is appended and the rest is left alone', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, handWritten);
+    await addTerm({ canonical: 'Cortex', aliases: ['Kortex'] }, { cwd: tmp, globalPath });
+    const text = await fs.readFile(globalPath, 'utf8');
+    expect(text.startsWith(handWritten.trimEnd())).toBe(true);
+    const back = await readLexiconFile(globalPath, 'global');
+    expect(back.lexicon.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Locus', 'Cortex']);
+    expect(findTerm(back.lexicon, 'Cortex')?.aliases).toEqual(['Kortex']);
+  });
+
+  it('removing a term removes only its entry', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, handWritten);
+    await removeTerm('Ashlr.AI', { cwd: tmp, globalPath });
+    const text = await fs.readFile(globalPath, 'utf8');
+    expect(text).toContain('# Phantom project vocabulary.');
+    expect(text).not.toContain('Ashlr.AI');
+    expect(text).toContain('    aliases: [Locas]\n    never: [locust]\n    notes: Identity pins.');
+  });
+});

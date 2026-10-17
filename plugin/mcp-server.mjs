@@ -7255,10 +7255,10 @@ var require_identity = __commonJS({
     var NODE_TYPE = /* @__PURE__ */ Symbol.for("yaml.node.type");
     var isAlias = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === ALIAS;
     var isDocument = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === DOC;
-    var isMap2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === MAP;
+    var isMap3 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === MAP;
     var isPair = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === PAIR;
-    var isScalar = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SCALAR;
-    var isSeq2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SEQ;
+    var isScalar2 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SCALAR;
+    var isSeq3 = (node2) => !!node2 && typeof node2 === "object" && node2[NODE_TYPE] === SEQ;
     function isCollection(node2) {
       if (node2 && typeof node2 === "object")
         switch (node2[NODE_TYPE]) {
@@ -7279,7 +7279,7 @@ var require_identity = __commonJS({
         }
       return false;
     }
-    var hasAnchor = (node2) => (isScalar(node2) || isCollection(node2)) && !!node2.anchor;
+    var hasAnchor = (node2) => (isScalar2(node2) || isCollection(node2)) && !!node2.anchor;
     exports.ALIAS = ALIAS;
     exports.DOC = DOC;
     exports.MAP = MAP;
@@ -7291,11 +7291,11 @@ var require_identity = __commonJS({
     exports.isAlias = isAlias;
     exports.isCollection = isCollection;
     exports.isDocument = isDocument;
-    exports.isMap = isMap2;
+    exports.isMap = isMap3;
     exports.isNode = isNode;
     exports.isPair = isPair;
-    exports.isScalar = isScalar;
-    exports.isSeq = isSeq2;
+    exports.isScalar = isScalar2;
+    exports.isSeq = isSeq3;
   }
 });
 
@@ -11403,9 +11403,9 @@ var require_resolve_flow_collection = __commonJS({
     var blockMsg = "Block collections are not allowed within flow collections";
     var isBlock = (token) => token && (token.type === "block-map" || token.type === "block-seq");
     function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag) {
-      const isMap2 = fc.start.source === "{";
-      const fcName = isMap2 ? "flow map" : "flow sequence";
-      const NodeClass = tag?.nodeClass ?? (isMap2 ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
+      const isMap3 = fc.start.source === "{";
+      const fcName = isMap3 ? "flow map" : "flow sequence";
+      const NodeClass = tag?.nodeClass ?? (isMap3 ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
       const coll = new NodeClass(ctx.schema);
       coll.flow = true;
       const atRoot = ctx.atRoot;
@@ -11441,7 +11441,7 @@ var require_resolve_flow_collection = __commonJS({
             offset = props.end;
             continue;
           }
-          if (!isMap2 && ctx.options.strict && utilContainsNewline.containsNewline(key))
+          if (!isMap3 && ctx.options.strict && utilContainsNewline.containsNewline(key))
             onError(
               key,
               // checked by containsNewline()
@@ -11481,7 +11481,7 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap2 && !sep && !props.found) {
+        if (!isMap3 && !sep && !props.found) {
           const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
@@ -11504,7 +11504,7 @@ var require_resolve_flow_collection = __commonJS({
             startOnNewline: false
           });
           if (valueProps.found) {
-            if (!isMap2 && !props.found && ctx.options.strict) {
+            if (!isMap3 && !props.found && ctx.options.strict) {
               if (sep)
                 for (const st of sep) {
                   if (st === valueProps.found)
@@ -11536,7 +11536,7 @@ var require_resolve_flow_collection = __commonJS({
           const pair = new Pair.Pair(keyNode, valueNode);
           if (ctx.options.keepSourceTokens)
             pair.srcToken = collItem;
-          if (isMap2) {
+          if (isMap3) {
             const map2 = coll;
             if (utilMapIncludes.mapIncludes(ctx, map2.items, keyNode))
               onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
@@ -11552,7 +11552,7 @@ var require_resolve_flow_collection = __commonJS({
           offset = valueNode ? valueNode.range[2] : valueProps.end;
         }
       }
-      const expectedEnd = isMap2 ? "}" : "]";
+      const expectedEnd = isMap3 ? "}" : "]";
       const [ce, ...ee] = fc.end;
       let cePos = offset;
       if (ce?.source === expectedEnd)
@@ -12839,7 +12839,7 @@ var require_cst = __commonJS({
     var FLOW_END = "";
     var SCALAR = "";
     var isCollection = (token) => !!token && "items" in token;
-    var isScalar = (token) => !!token && (token.type === "scalar" || token.type === "single-quoted-scalar" || token.type === "double-quoted-scalar" || token.type === "block-scalar");
+    var isScalar2 = (token) => !!token && (token.type === "scalar" || token.type === "single-quoted-scalar" || token.type === "double-quoted-scalar" || token.type === "block-scalar");
     function prettyToken(token) {
       switch (token) {
         case BOM:
@@ -12923,7 +12923,7 @@ var require_cst = __commonJS({
     exports.FLOW_END = FLOW_END;
     exports.SCALAR = SCALAR;
     exports.isCollection = isCollection;
-    exports.isScalar = isScalar;
+    exports.isScalar = isScalar2;
     exports.prettyToken = prettyToken;
     exports.tokenType = tokenType;
   }
@@ -14453,7 +14453,7 @@ var require_public_api = __commonJS({
         return docs;
       return Object.assign([], { empty: true }, composer$1.streamInfo());
     }
-    function parseDocument2(source, options = {}) {
+    function parseDocument3(source, options = {}) {
       const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options);
       const parser$1 = new parser.Parser(lineCounter2?.addNewLine);
       const composer$1 = new composer.Composer(options);
@@ -14479,7 +14479,7 @@ var require_public_api = __commonJS({
       } else if (options === void 0 && reviver && typeof reviver === "object") {
         options = reviver;
       }
-      const doc = parseDocument2(src, options);
+      const doc = parseDocument3(src, options);
       if (!doc)
         return null;
       doc.warnings.forEach((warning) => log2.warn(doc.options.logLevel, warning));
@@ -14515,7 +14515,7 @@ var require_public_api = __commonJS({
     }
     exports.parse = parse3;
     exports.parseAllDocuments = parseAllDocuments;
-    exports.parseDocument = parseDocument2;
+    exports.parseDocument = parseDocument3;
     exports.stringify = stringify;
   }
 });
@@ -48270,14 +48270,73 @@ async function writeLexiconFile(file2) {
   const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
   await withLexiconLock(file2.path, async () => {
     await pinCommittedHits(file2);
-    const body = (0, import_yaml.stringify)(orderLexicon(file2.lexicon), { lineWidth: 0 });
-    const text = `${header}
+    const ordered = orderLexicon(file2.lexicon);
+    const existing = await readLexiconText(file2.path).catch(() => void 0);
+    const text = (existing && updateInPlace(existing.text, ordered)) ?? `${header}
 
-${body}`;
+${(0, import_yaml.stringify)(ordered, { lineWidth: 0 })}`;
     assertReadsBack(text, file2.path);
     await writeFileAtomic(file2.path, text, { backup: true });
   });
   file2.exists = true;
+}
+function updateInPlace(text, ordered) {
+  let doc;
+  try {
+    doc = (0, import_yaml.parseDocument)(text, { prettyErrors: false });
+  } catch {
+    return void 0;
+  }
+  if (doc.errors.length > 0 || !(0, import_yaml.isMap)(doc.contents)) return void 0;
+  const root = doc.contents;
+  const terms = root.get("terms", true);
+  if (terms !== void 0 && terms !== null && !((0, import_yaml.isSeq)(terms) || (0, import_yaml.isScalar)(terms) && terms.value === null)) {
+    return void 0;
+  }
+  const byCanonical = /* @__PURE__ */ new Map();
+  if ((0, import_yaml.isSeq)(terms)) {
+    for (const item of terms.items) {
+      if (!(0, import_yaml.isMap)(item)) return void 0;
+      const canonical = item.get("canonical");
+      if (typeof canonical === "string" && !byCanonical.has(canonical.toLowerCase())) {
+        byCanonical.set(canonical.toLowerCase(), item);
+      }
+    }
+  }
+  const { terms: newTerms, ...top } = ordered;
+  updateMap(doc, root, top, ["terms"]);
+  const items = newTerms.map((term) => {
+    const node2 = byCanonical.get(String(term.canonical).toLowerCase());
+    if (!node2) return doc.createNode(term);
+    byCanonical.delete(String(term.canonical).toLowerCase());
+    updateMap(doc, node2, term, []);
+    return node2;
+  });
+  if ((0, import_yaml.isSeq)(terms)) {
+    terms.items = items;
+  } else {
+    root.set("terms", doc.createNode(items));
+  }
+  return doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+}
+function updateMap(doc, node2, value, keep) {
+  for (const pair of [...node2.items]) {
+    const key = (0, import_yaml.isScalar)(pair.key) ? pair.key.value : pair.key;
+    if (typeof key === "string" && !(key in value) && !keep.includes(key)) node2.delete(key);
+  }
+  for (const [key, next] of Object.entries(value)) {
+    const current = node2.get(key, true);
+    if (current === void 0 && Array.isArray(next) && next.length === 0) continue;
+    if ((0, import_yaml.isMap)(current) && next !== null && typeof next === "object" && !Array.isArray(next)) {
+      updateMap(doc, current, next, []);
+      continue;
+    }
+    const was = current === void 0 ? void 0 : (0, import_yaml.isScalar)(current) ? current.value : current.toJSON();
+    if (current !== void 0 && JSON.stringify(was) === JSON.stringify(next)) continue;
+    const created = doc.createNode(next);
+    if ((0, import_yaml.isSeq)(current) && (0, import_yaml.isSeq)(created)) created.flow = current.flow;
+    node2.set(key, created);
+  }
 }
 async function pinCommittedHits(file2) {
   const onDisk = /* @__PURE__ */ new Map();
