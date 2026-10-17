@@ -6,6 +6,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP tools refuse arguments their schema does not declare instead of dropping them. `add_term { canonical: "Foo", alias: "fu" }` (a typo for `aliases`) used to succeed and auto-suggest aliases the agent never asked for; it now fails with `Unrecognized key: "alias"` and writes nothing. Every tool schema in `tools/list` carries `additionalProperties: false`.
+- MCP `remove_term` (`canonical`, `alias`) and `suggest_canonical` (`heard`) refuse a blank string. Before, `remove_term { canonical: "  " }` answered `removed: false` as a success and `suggest_canonical` searched for whitespace.
+- `lexicon doctor --json` prints the report as JSON, the same `{ ok, ready, summary, nextStep, checks, paths, versions }` the MCP `lexicon_doctor` tool returns, with the same exit code. Before, `doctor` was the one checking command without `--json`.
+- A lexicon file that does not parse or validate now comes with its fix on every command that loads it (`list`, `add`, `stats`, `export`, `learn`, `remove`, `import`, `pack`, `suggest`): a second line names `lexicon edit` (`lexicon edit --project` for a project `.lexicon.yaml`) and `lexicon doctor`. Before, only `lexicon doctor` said what to run.
 - The MCP `learn_correction` description says a new term also gets generated STT misspellings (listed in `term.aliases`) and that a case-only correction (`ashlr` to `Ashlr`) recases the term instead of adding an alias. It said only that `heard` is added as an alias, so an agent reported one alias saved while several were.
 - The MCP `lexicon://json` resource description says an untrusted (or changed) project lexicon is left out, and that `lexicon://me` and `list_terms` name it. It promised `global + project` and the JSON carries no note, so a skipped repo file looked merged.
 - MCP `add_pack` and the server instructions no longer say a starter pack is `sixty-odd terms`: the shipped packs hold 14 to 82. They now point at the `terms` count `list_packs` returns, so the agent names the real size when it asks.
