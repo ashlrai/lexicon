@@ -286,21 +286,63 @@ export function formatCorrectionNote(correction: Correction): string {
   );
 }
 
-/** Every [start, end) span at which `needle` occurs in `haystack`, case-insensitively. */
-function spansOf(haystack: string, needle: string): Array<[number, number]> {
+/**
+ * `text` lowercased one code point at a time, with `starts[i]` / `ends[i]`
+ * the [start, end) offsets in `text` of the code point that produced unit `i`
+ * of the folded string. Lowercasing can change length (`İ` becomes `i` plus a
+ * combining dot), so offsets found in `text.toLowerCase()` do not index `text`;
+ * these do. Folding per code point (not the whole string) also keeps the
+ * result context-free, so a needle folded the same way compares equal.
+ */
+function foldWithOffsets(text: string): { folded: string; starts: number[]; ends: number[] } {
+  let folded = '';
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let at = 0;
+  for (const ch of text) {
+    const lower = ch.toLowerCase();
+    for (let k = 0; k < lower.length; k += 1) {
+      starts.push(at);
+      ends.push(at + ch.length);
+    }
+    folded += lower;
+    at += ch.length;
+  }
+  return { folded, starts, ends };
+}
+
+/** `text` lowercased one code point at a time, the way foldWithOffsets folds a haystack. */
+function foldPerCodePoint(text: string): string {
+  let folded = '';
+  for (const ch of text) folded += ch.toLowerCase();
+  return folded;
+}
+
+/**
+ * Every [start, end) span of `haystack` (offsets into `haystack` itself) at
+ * which `needle` occurs, case-insensitively: both are folded per code point
+ * and the match is mapped back through foldWithOffsets.
+ */
+function spansOf(haystack: ReturnType<typeof foldWithOffsets>, needle: string): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
-  if (!needle) return spans;
+  const folded = foldPerCodePoint(needle);
+  if (!folded) return spans;
   let from = 0;
   for (;;) {
-    const at = haystack.indexOf(needle, from);
+    const at = haystack.folded.indexOf(folded, from);
     if (at === -1) return spans;
-    spans.push([at, at + needle.length]);
-    from = at + needle.length;
+    spans.push([haystack.starts[at], haystack.ends[at + folded.length - 1]]);
+    from = at + folded.length;
   }
 }
 
+/** Whitespace runs collapsed to one space and trimmed; case is kept (spansOf folds it). */
+function squash(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 function collapse(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+  return squash(text).toLowerCase();
 }
 
 /**
@@ -315,10 +357,11 @@ function collapse(text: string): string {
  */
 export function dropCorrectionSpans(result: NormalizeResult, correction: Correction): NormalizeResult {
   const input = result.input;
-  const lower = input.toLowerCase();
-  const sides = [collapse(correction.heard), collapse(correction.meant)].filter((s) => s !== '');
+  const raw = [squash(correction.heard), squash(correction.meant)].filter((s) => s !== '');
+  const sides = raw.map((s) => s.toLowerCase());
   if (sides.length === 0 || result.replacements.length === 0) return result;
-  const protectedSpans = sides.flatMap((side) => spansOf(lower, side));
+  const haystack = foldWithOffsets(input);
+  const protectedSpans = raw.flatMap((side) => spansOf(haystack, side));
   return dropReplacements(result, (r) => sides.includes(collapse(input.slice(r.start, r.end))) || overlapsAny(r, protectedSpans));
 }
 
