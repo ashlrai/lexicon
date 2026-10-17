@@ -6,15 +6,15 @@ agent sees them. Not a dictation app. Ground truth for every doc is the code;
 `docs/CONTRACT.md` is the module API, `docs/ARCHITECTURE.md` the design.
 
 ## Layout
-- `src/core/` pure library: `types.ts` (contract), `schema.ts`, `store.ts` (YAML files, project-write trust gate), `trust.ts` (trust.json registry), `matcher.ts` (alias > phonetic > fuzzy), `normalize.ts`, `suggest.ts`, `learn.ts` (parseCorrection, learnCorrection, suggestCanonicalFor), `stats.ts`, `harvest.ts`, `exporters/` (15 formats), `importers/` (7 formats + auto). `index.ts` is the only cross-module import path.
-- `src/mcp/server.ts` stdio MCP server (bin `lexicon-mcp`): 20 tools, 2 resources, 2 prompts (`voice-context`, `onboard`). stderr logging only.
+- `src/core/` pure library: `types.ts` (contract), `schema.ts`, `store.ts` (YAML files, project-write trust gate), `trust.ts` (trust.json registry), `matcher.ts` (alias > phonetic > fuzzy), `normalize.ts`, `suggest.ts`, `learn.ts` (parseCorrection, learnCorrection, suggestCanonicalFor), `stats.ts`, `harvest.ts`, `exporters/` (15 formats), `importers/` (8 formats + auto). `index.ts` is the only cross-module import path.
+- `src/mcp/server.ts` stdio MCP server (bin `lexicon-mcp`): 20 tools, 2 resources, 2 prompts (`voice-context`, `onboard`). `--version` and `--help` print and exit 0 without starting the server (`cliFlagOutput`). stderr logging only.
 - `src/hooks/user-prompt-submit.ts` Claude Code hook for `UserPromptSubmit` (injects corrections as additionalContext, flags "it's X not Y" corrections for `learn_correction`, never rewrites the prompt or writes to the lexicon) and `SessionStart` (injects the claude-md export, capped at 4000 chars). `runHook` dispatches on `hook_event_name`.
-- `plugin/mcp-server.mjs`, `plugin/hook.mjs` committed esbuild bundles that `.mcp.json` and `hooks/hooks.json` point at. `dist/` stays untracked.
+- `plugin/mcp-server.mjs`, `plugin/hook.mjs` committed esbuild bundles. The plugin runs them through `.claude-plugin/plugin.json` (declares the MCP server inline with the bare `${CLAUDE_PLUGIN_ROOT}`) and `hooks/hooks.json`; the repo's own `.mcp.json` runs the server bundle by relative path when the repo is opened as a project. `dist/` stays untracked.
 - `src/cli/` commander CLI (bin `lexicon`, 25 commands): `index.ts` only wires commander; handlers in `commands.ts` and `cmd-import.ts`, `cmd-install.ts`, `cmd-trust.ts`, `cmd-learn.ts`, `cmd-review.ts` (interactive harvest/review/edit), `cmd-serve.ts` (local HTTP API), `cmd-voice.ts` (whisper.cpp push-to-talk), `cmd-setup.ts` (onboarding wizard), `cmd-suggest.ts` (suggestions from history and hits); `prompt.ts` is the readline prompter.
 - `src/daemon/clipboard.ts` clipboard watcher (loop and `--once`); `src/daemon/clipboard-backends.ts` pbcopy/wl/xclip/xsel/powershell backends + PATH detection.
 - `src/serve/` local HTTP API on 127.0.0.1:41733 (`config.ts` serve.json + bearer token, `server.ts` createServer with 11 endpoints). `src/voice/` ffmpeg + whisper.cpp push-to-talk (`voice.ts` runners, exit codes 0/1/2/3; `history.ts` voice/history.jsonl; `models.ts` Hugging Face download).
 - `extension/` Manifest V3 browser extension (`extension/src`, built by `scripts/build-extension.mjs`); `apps/macos/LexiconBar` SwiftPM menu bar app; `packaging/homebrew/lexicon.rb`; `scripts/install.sh` the curl | sh installer; `site/` the demo page.
-- `skills/`, `commands/`, `hooks/hooks.json`, `.mcp.json`, `.claude-plugin/` make the repo a Claude Code plugin.
+- `skills/`, `commands/`, `hooks/hooks.json`, `.claude-plugin/` make the repo a Claude Code plugin.
 - `tests/` vitest, one file per module, `e2e.test.ts` spawns the real CLI/hook/MCP; `bench/` synthetic and audio benchmarks; `scripts/` bundle, extension, site, macOS app and CLI-docs builders; `docs/CLI.md` is generated.
 
 ## Conventions

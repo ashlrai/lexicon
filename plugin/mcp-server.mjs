@@ -48559,6 +48559,7 @@ async function addTerm(term, opts = {}) {
     }
     const created = {
       ...incoming,
+      ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
       scope,
       source: incoming.source ?? "user",
       createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
@@ -59059,10 +59060,10 @@ var registerTermTools = (server, ctx) => {
     "add_term",
     {
       title: "Add a lexicon term",
-      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one.",
+      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that.",
       inputSchema: {
         canonical: external_exports.string().min(1).describe("The correct spelling, exactly as the user wants it written."),
-        aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest."),
+        aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest (new terms only)."),
         phonetic: external_exports.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
         category: external_exports.enum(TERM_CATEGORIES).optional(),
         notes: external_exports.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
@@ -59071,10 +59072,10 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ canonical, aliases, phonetic, category, notes, never: never2, scope }) => guarded(async () => {
-      const resolvedAliases = aliases && aliases.length > 0 ? aliases : suggestAliases(canonical);
+      const given = (aliases ?? []).length > 0;
       const term = {
         canonical,
-        aliases: resolvedAliases,
+        aliases: aliases ?? [],
         source: "user",
         ...phonetic !== void 0 ? { phonetic } : {},
         ...category !== void 0 ? { category } : {},
@@ -59082,7 +59083,11 @@ var registerTermTools = (server, ctx) => {
         ...never2 && never2.length > 0 ? { never: never2 } : {},
         ...scope !== void 0 ? { scope } : {}
       };
-      const saved = await addTerm(term, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
+      const saved = await addTerm(term, {
+        cwd: ctx.cwd,
+        ...scope !== void 0 ? { scope } : {},
+        ...given ? {} : { defaultAliases: suggestAliases(canonical) }
+      });
       return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
     })
   );
@@ -61748,13 +61753,16 @@ async function stepLexicon(ctx) {
   }
   if (ctx.plan) ctx.plan.lexiconExists = existed;
   const before = existed ? (await readLexiconFile(global, "global")).lexicon.terms.length : 0;
-  if (before >= SEEDED_TERMS && !ctx.opts.reseed) {
+  const gated = before >= SEEDED_TERMS && !ctx.opts.reseed;
+  if (gated && !ctx.opts.person && !ctx.opts.company) {
     ctx.say(dim(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
     return;
   }
+  if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
+  const guessCompany = async () => gated ? void 0 : suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
   if (ctx.plan) {
-    const person2 = ctx.opts.person ?? gitUserName(ctx);
-    const company2 = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+    const person2 = ctx.opts.person ?? (gated ? void 0 : gitUserName(ctx));
+    const company2 = ctx.opts.company ?? await guessCompany();
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
       [person2, "person"],
@@ -61776,26 +61784,26 @@ async function stepLexicon(ctx) {
     }
     return;
   }
-  const gitName = ctx.opts.person ?? gitUserName(ctx);
+  const gitName = ctx.opts.person ?? (gated ? void 0 : gitUserName(ctx));
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true) ? gitName : void 0;
   }
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: "person", source: "user" });
-  } else {
+  } else if (!gated) {
     ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
-  const suggestion = ctx.opts.company ?? suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+  const suggestion = ctx.opts.company ?? await guessCompany();
   let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
   let phonetic = ctx.opts.phonetic;
-  if (ctx.prompter && !ctx.opts.company) {
+  if (ctx.prompter && !ctx.opts.company && !gated) {
     company = (await ctx.prompter.ask("   Your company or product name (as you want it spelled; Enter to skip)", {
       default: suggestion ?? ""
     })).trim();
   }
   if (!company) {
-    ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
     return;
   }
   const aliases = suggestAliases(company);
@@ -61809,7 +61817,7 @@ async function stepLexicon(ctx) {
   if (phonetic) term.phonetic = phonetic;
   await seedTerm(ctx, term);
   ctx.company = company;
-  while (ctx.prompter && await ctx.prompter.confirm("   add another term?", false)) {
+  while (ctx.prompter && !gated && await ctx.prompter.confirm("   add another term?", false)) {
     const name = (await ctx.prompter.ask("   name (as you want it spelled; Enter to stop)", { default: "" })).trim();
     if (!name) break;
     const hint = (await ctx.prompter.ask("   phonetic hint (Enter for none)", { default: "" })).trim();

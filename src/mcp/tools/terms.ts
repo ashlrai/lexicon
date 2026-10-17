@@ -106,14 +106,15 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         "scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and " +
         'only gains the new aliases. ' +
         'WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling ' +
-        'exactly as the user writes it. Omit `aliases` and likely STT misspellings are generated for you, which beats inventing ' +
-        'your own; show the user what was generated so they can veto one.',
+        'exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats ' +
+        'inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, ' +
+        'so passing only never, phonetic, category or notes changes just that.',
       inputSchema: {
         canonical: z.string().min(1).describe('The correct spelling, exactly as the user wants it written.'),
         aliases: z
           .array(z.string())
           .optional()
-          .describe('Spellings STT actually produces for this term. Omit to auto-suggest.'),
+          .describe('Spellings STT actually produces for this term. Omit to auto-suggest (new terms only).'),
         phonetic: z.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
         category: z.enum(TERM_CATEGORIES).optional(),
         notes: z.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
@@ -129,10 +130,12 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ canonical, aliases, phonetic, category, notes, never, scope }) =>
       guarded(async () => {
-        const resolvedAliases = aliases && aliases.length > 0 ? aliases : suggestAliases(canonical);
+        // Generated aliases only for a term this call creates: adding a never word,
+        // phonetic, category or notes to an existing term must not append any.
+        const given = (aliases ?? []).length > 0;
         const term: Term = {
           canonical,
-          aliases: resolvedAliases,
+          aliases: aliases ?? [],
           source: 'user',
           ...(phonetic !== undefined ? { phonetic } : {}),
           ...(category !== undefined ? { category } : {}),
@@ -140,7 +143,11 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(never && never.length > 0 ? { never } : {}),
           ...(scope !== undefined ? { scope } : {}),
         };
-        const saved = await addTerm(term, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
+        const saved = await addTerm(term, {
+          cwd: ctx.cwd,
+          ...(scope !== undefined ? { scope } : {}),
+          ...(given ? {} : { defaultAliases: suggestAliases(canonical) }),
+        });
         return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
       }),
   );

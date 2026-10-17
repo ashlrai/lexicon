@@ -194,12 +194,33 @@ describe('runSetup --yes', () => {
       globalPath,
       'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n',
     );
-    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    const { summary, io } = await run({ yes: true, clients: 'none' }, f);
     expect(summary.termsAdded).toEqual([]);
     expect(io.out).toContain('already has 3 terms');
 
     const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', reseed: true }, f);
     expect(again.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+  });
+
+  it('seeds an explicit --company / --person into a lexicon that already has terms, without the guessed defaults', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(
+      globalPath,
+      'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n',
+    );
+    // The plan (what setup_lexicon previews) names exactly the names that were passed.
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'Acme Robotics' }, fakes());
+    expect(planned.plan?.wouldSeed).toEqual(['Acme Robotics']);
+
+    const company = await run({ yes: true, clients: 'none', company: 'Acme Robotics' }, fakes());
+    expect(company.summary.termsAdded).toEqual(['Acme Robotics']);
+    const person = await run({ yes: true, clients: 'none', person: 'Jo Smith' }, fakes());
+    expect(person.summary.termsAdded).toEqual(['Jo Smith']);
+    expect(person.io.out).not.toContain('no company term');
+
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.map((t) => t.canonical)).toEqual(['A', 'B', 'C', 'Acme Robotics', 'Jo Smith']);
+    expect(file.lexicon.terms.find((t) => t.canonical === 'Acme Robotics')?.category).toBe('brand');
   });
 
   it('suggests the company from the git remote when nothing is passed and seeds it', async () => {

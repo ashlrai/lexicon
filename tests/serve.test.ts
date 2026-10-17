@@ -365,6 +365,18 @@ describe('POST /learn and POST /add', () => {
     expect(health.terms).toBe(2);
   });
 
+  it('add with only never on an existing term appends no generated aliases', async () => {
+    const before = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string; aliases: string[] }[] } };
+    const existing = before.lexicon.terms.find((t) => t.canonical === 'Ashlr.AI');
+    expect(existing).toBeDefined();
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', never: ['ashes'] });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { term: { aliases: string[]; never?: string[] }; created: boolean };
+    expect(body.created).toBe(false);
+    expect(body.term.aliases).toEqual(existing?.aliases);
+    expect(body.term.never).toContain('ashes');
+  });
+
   it('add validates the category', async () => {
     const res = await api('POST', '/add', { canonical: 'X', category: 'nope' });
     expect(res.status).toBe(400);
