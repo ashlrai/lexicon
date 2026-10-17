@@ -1831,6 +1831,34 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: `--full` implies --json on list and harvest, but a failure under
+  // --full alone (a usage error, or a handler that threw) printed only the
+  // stderr line, so a script parsing stdout got an empty document.
+  it('a failure under --full alone (list, harvest) prints { ok: false, error } on stdout', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-full-')));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const usage = lexicon(['list', '--full', '--bogus', '--cwd', tmp], globalPath);
+      expect(usage.status).toBe(1);
+      expect(JSON.parse(usage.stdout)).toEqual({ ok: false, error: expect.stringContaining("unknown option '--bogus'"), nextStep: 'see the usage: lexicon list --help' });
+
+      const category = lexicon(['list', '--full', '--category', 'nope', '--cwd', tmp], globalPath);
+      expect(category.status).toBe(1);
+      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"') });
+
+      const missing = lexicon(['harvest', path.join(tmp, 'no-such-dir'), '--full', '--cwd', tmp], globalPath);
+      expect(missing.status).toBe(1);
+      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('path does not exist') });
+
+      // A command without --full keeps an empty stdout for it: there it is just an unknown option.
+      const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);
+      expect(other.status).toBe(1);
+      expect(other.stdout).toBe('');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
   it('a --json command that throws prints { ok: false, error, nextStep? } on stdout with exit 1', async () => {
     const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
