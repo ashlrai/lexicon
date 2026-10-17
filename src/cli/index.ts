@@ -152,7 +152,8 @@ program
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
   .option('--yes', 'with --add: add every candidate without prompting')
   .option('--symbols', 'also propose names seen only as a code symbol (off: they are what you type, not what you say)')
-  .option('--json', 'print candidates as JSON')
+  .option('--json', 'print candidates as JSON (a bare array; with --add the add summary goes to stderr)')
+  .option('--full', 'print { root, candidates, count } as JSON, the object MCP harvest_repo returns, plus added, created, merged and path with --add (implies --json)')
   .action(async (root: string | undefined, opts: HarvestCliOptions) =>
     done(await runHarvest(root, withGlobals(opts), io)),
   );
