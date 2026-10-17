@@ -261,9 +261,10 @@ export function installedPacks(loaded: LoadedLexicon): string[] {
  * Rewrite a file's `settings.packs`. Empty lists (the parser's `protectedWords: []`
  * default, an emptied `packs`) are dropped, and so is an empty `settings`, so a
  * file that only ever held packs goes back to how it looked before.
- * Re-pins a project file's trust.
+ * Re-pins a project file's trust, unless `leaveUntrusted` (the install left
+ * the file unpinned, and refreshTrust would bless a changed file).
  */
-async function writePacksSetting(file: LexiconFile, packs: string[], opts: StoreOptions): Promise<void> {
+async function writePacksSetting(file: LexiconFile, packs: string[], opts: StoreOptions, leaveUntrusted = false): Promise<void> {
   const settings: Record<string, unknown> = { ...(file.lexicon.settings ?? {}), packs };
   for (const [key, value] of Object.entries(settings)) {
     if (value === undefined || (Array.isArray(value) && value.length === 0)) delete settings[key];
@@ -271,7 +272,7 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
   if (Object.keys(settings).length > 0) file.lexicon.settings = settings as LexiconFile['lexicon']['settings'];
   else delete file.lexicon.settings;
   await writeLexiconFile(file);
-  if (file.scope === 'project') await refreshTrust(file.path, opts);
+  if (file.scope === 'project' && !leaveUntrusted) await refreshTrust(file.path, opts);
 }
 
 /**
@@ -284,9 +285,14 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
 export async function installLoadedPack(
   pack: Pack,
   recordAs: string,
-  opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
+  opts: StoreOptions & PackOptions & {
+    scope?: TermScope;
+    /** Write a project file without registering it as trusted (addTerm's `leaveUntrusted`); nothing is pinned or re-pinned. */
+    leaveUntrusted?: boolean;
+  } = {},
 ): Promise<InstallPackResult> {
   const scope: TermScope = opts.scope ?? 'global';
+  const leaveUntrusted = opts.leaveUntrusted === true;
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
 
   // One lock around the whole install, not one per term. Each `addTerm` takes
@@ -296,7 +302,7 @@ export async function installLoadedPack(
   // it. A term another writer added in between was read by nobody here and
   // would be renamed away by that final write, with the pack still reporting
   // success. The trust gate runs in `resolveScopeWritePath`, ahead of the lock.
-  const targetPath = await resolveScopeWritePath(scope, storeOpts);
+  const targetPath = await resolveScopeWritePath(scope, { ...storeOpts, leaveUntrusted });
   return withLexiconLock(targetPath, async () => {
     let added = 0;
     let merged = 0;
@@ -304,14 +310,14 @@ export async function installLoadedPack(
     for (const term of pack.lexicon.terms) {
       const incoming: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
       if (term.never) incoming.never = [...term.never];
-      const result = await addTerm(incoming, { ...storeOpts, scope });
+      const result = await addTerm(incoming, { ...storeOpts, scope, leaveUntrusted });
       file = result.file;
       if (result.created) added += 1;
       else merged += 1;
     }
     if (!file) throw new Error(`pack "${pack.name}" has no terms`);
     const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
-    await writePacksSetting(file, packs, storeOpts);
+    await writePacksSetting(file, packs, storeOpts, leaveUntrusted);
     return { pack: info(pack), added, merged, path: file.path, scope };
   });
 }
@@ -326,7 +332,7 @@ export async function installLoadedPack(
  */
 export async function installPack(
   name: string,
-  opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
+  opts: StoreOptions & PackOptions & { scope?: TermScope; leaveUntrusted?: boolean } = {},
 ): Promise<InstallPackResult> {
   return installLoadedPack(await loadPack(name, opts), name, opts);
 }

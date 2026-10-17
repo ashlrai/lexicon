@@ -147,7 +147,10 @@ tell your user what will change, and wait for a yes.
 
 Project-scope writes are gated. A repository's `.lexicon.yaml` is untrusted until
 the user reviews it, because its contents reach model context and a hostile
-repository could use that. If a write is refused with "project lexicon at
+repository could use that. Over MCP, a project-scope write to a file that is
+not trusted yet is saved but left untrusted: the result says `trusted: false`,
+so relay its `nextStep` instead of reporting the terms as active. From the CLI
+the same write is refused. If a write is refused with "project lexicon at
 &lt;path&gt; is untrusted", do not work around it: call
 `trust_project { action: 'status' }`, show your user the sanitized summary (they see the full preview with `lexicon trust` in a terminal), and
 let them decide. Never set `LEXICON_TRUST_ALL=1` on a user's behalf.

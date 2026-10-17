@@ -622,6 +622,8 @@ export interface InstallRegistryOptions extends RegistryStoreOptions {
   pinnedVersion?: string;
   /** Exact reviewed bytes. Copied and checksum-verified before any write. */
   approvedBytes?: Uint8Array;
+  /** Write a project file without registering it as trusted (see `installLoadedPack`). */
+  leaveUntrusted?: boolean;
 }
 
 function validatedPack(bytes: Buffer, entry: RegistryIndexEntry): Pack {
@@ -674,7 +676,9 @@ async function commitPack(
           if (before[i] === undefined) await fs.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i]!.toString('utf8'));
         }
-        if (opts.scope === 'project') {
+        // An unpinned install never touched the registry: restoring the bytes
+        // restores the status, and a refresh would bless a changed file.
+        if (opts.scope === 'project' && !opts.leaveUntrusted) {
           if (before[0] !== undefined) await refreshTrust(target, opts);
           else await untrustProject(target, opts);
         }

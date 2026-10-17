@@ -18,7 +18,7 @@ import {
 } from '../../core/index.js';
 import type { Term, VoiceHistoryEntry } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
-import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, guarded, log, nonBlank, shellWord, textResult } from '../shared.js';
+import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, guarded, log, mcpWriteOpts, nonBlank, shellWord, textResult, untrustedWriteFields } from '../shared.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import type { ToolRegistrar } from '../shared.js';
 
@@ -88,14 +88,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           count: candidates.length,
           ...(add ? { added, failures } : {}),
           ...(written !== undefined
-            ? {
-                path: written,
-                trusted: false,
-                nextStep:
-                  `${added} name(s) were written to ${written}, which is not trusted, so they do not apply yet. ` +
-                  `Ask the user to review the file and run ${cliCommand('trust')} in a terminal in that repo (it previews the file first), ` +
-                  'or call trust_project with action "trust", which asks them directly.',
-              }
+            ? { path: written, ...untrustedWriteFields(written, `${added} name(s)`, true) }
             : {}),
           ...(failures.length > 0
             ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }
@@ -143,7 +136,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), " +
         "'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); " +
         'when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. ' +
-        'Pass the suggestion object back as received.',
+        'Pass the suggestion object back as received. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.',
       inputSchema: {
         suggestion: z.object({
           kind: z.enum(SUGGESTION_KINDS),
@@ -230,14 +223,19 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           ...(kind === 'never' && alias ? { never: [alias] } : {}),
           ...(target !== undefined ? { scope: target } : {}),
         };
-        const saved = await addTerm(term, storeOpts);
+        const writeOpts = await mcpWriteOpts(ctx);
+        const saved = await addTerm(term, { ...storeOpts, ...writeOpts });
+        const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === 'project';
+        // Merged into a term an untrusted file already had: show only what this call wrote.
+        const shown = untrusted && !saved.created ? term : saved.term;
+        const pending = untrusted ? untrustedWriteFields(saved.file.path, 'It') : undefined;
         const summary =
-          kind === 'alias'
-            ? `"${alias}" -> "${saved.term.canonical}" saved`
+          (kind === 'alias'
+            ? `"${alias}" -> "${shown.canonical}" saved`
             : kind === 'never'
-              ? `"${alias}" will never be rewritten to "${saved.term.canonical}"`
-              : `added "${saved.term.canonical}" (${saved.term.aliases.length} alias${saved.term.aliases.length === 1 ? '' : 'es'})`;
-        return textResult({ kind, canonical: saved.term.canonical, term: saved.term, path: saved.file.path, created: saved.created, summary });
+              ? `"${alias}" will never be rewritten to "${shown.canonical}"`
+              : `added "${shown.canonical}" (${shown.aliases.length} alias${shown.aliases.length === 1 ? '' : 'es'})`) + (pending ? `. ${pending.nextStep}` : '');
+        return textResult({ kind, canonical: shown.canonical, term: shown, path: saved.file.path, created: saved.created, ...(pending ?? {}), summary });
       }),
   );
 };

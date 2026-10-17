@@ -11,6 +11,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
 import { runList } from '../src/cli/commands.js';
+import { trustProject } from '../src/core/trust.js';
 import { makeIO } from './helpers.js';
 
 let repo: string;
@@ -51,6 +52,18 @@ async function call(name: string, args: Record<string, unknown>): Promise<{ isEr
   }
 }
 
+/**
+ * The repo's .lexicon.yaml, created empty and trusted as `lexicon trust`
+ * would: an MCP write into a trusted file keeps it trusted, so the tests
+ * below that need project terms merged start from here.
+ */
+async function trustedProjectFile(): Promise<string> {
+  const file = path.join(repo, '.lexicon.yaml');
+  await fs.writeFile(file, 'version: 1\nterms: []\n');
+  await trustProject(file);
+  return file;
+}
+
 describe('trust_project with a directory path', () => {
   it('reads the .lexicon.yaml inside the directory, as `lexicon trust <dir>` does', async () => {
     await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
@@ -66,6 +79,7 @@ describe('trust_project with a directory path', () => {
 
 describe('remove_term', () => {
   it('tells the agent where a term lives when the requested scope does not hold it', async () => {
+    await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
     expect(added.isError).toBe(false);
 
@@ -87,6 +101,7 @@ describe('remove_term', () => {
 
   // Catches: without `scope` only the project copy went, and the result said nothing about the global copy.
   it('names the copy left in the other lexicon file when the term is in both', async () => {
+    await trustedProjectFile();
     await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
     await call('add_term', { canonical: 'Kubectl', aliases: ['cube cuddle'], scope: 'project' });
 
@@ -478,6 +493,7 @@ describe('apply_suggestion on a term in the project lexicon', () => {
   // term. The project term wins the merge, so the alias never took effect;
   // the suggestion carries no scope, so the agent could not pass the right one.
   it('writes the alias where the term lives, so the next normalize uses it', async () => {
+    await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' });
     expect(added.isError).toBe(false);
     const projectPath = path.join(repo, '.lexicon.yaml');
@@ -500,6 +516,7 @@ describe('apply_suggestion stale on a term in both lexicon files', () => {
   // stale term with a project copy and a global copy lost only the project
   // copy, and the result said "removed" while the global one kept firing.
   it('removes the copy it targets and names the other one', async () => {
+    await trustedProjectFile();
     expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' })).isError).toBe(false);
     expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cube netties'], scope: 'global' })).isError).toBe(false);
     const projectPath = path.join(repo, '.lexicon.yaml');
@@ -925,6 +942,106 @@ describe('apply_suggestion with a scope that does not hold the term', () => {
   });
 });
 
+describe('project-scope writes from MCP never trust the project file', () => {
+  const savedTrustAll = process.env.LEXICON_TRUST_ALL;
+  beforeEach(() => {
+    delete process.env.LEXICON_TRUST_ALL;
+  });
+  afterEach(() => {
+    if (savedTrustAll === undefined) delete process.env.LEXICON_TRUST_ALL;
+    else process.env.LEXICON_TRUST_ALL = savedTrustAll;
+  });
+
+  async function trustStatus(): Promise<string> {
+    return (JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string }).status;
+  }
+
+  // Catches: add_term, learn_correction, apply_suggestion and import_dictionary
+  // with scope: 'project' created the repo's .lexicon.yaml and registered it as
+  // trusted, so a model decided what every later prompt in that repo is
+  // rewritten with; trusting a project file is the user's call.
+  it.each([
+    ['add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' }],
+    ['learn_correction', { heard: 'cube control', meant: 'Kubectl', scope: 'project' }],
+    ['apply_suggestion', { suggestion: { kind: 'term', canonical: 'Kubectl', aliases: ['cube control'] }, scope: 'project' }],
+    ['import_dictionary', { content: 'Kubectl: cube control\n', format: 'text', scope: 'project' }],
+  ] as const)('%s writes a new project file untrusted and names the trust step', async (tool, args) => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const res = await call(tool, args);
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; trusted: boolean; nextStep: string };
+    expect(payload).toMatchObject({ path: projectPath, trusted: false });
+    expect(payload.nextStep).toContain('which is not trusted');
+    expect(payload.nextStep).toContain('`npx @ashlr/lexicon trust`');
+    expect(payload.nextStep).toContain('trust_project with action "trust"');
+    expect(await fs.readFile(projectPath, 'utf8')).toContain('Kubectl');
+    expect(await trustStatus()).toBe('untrusted');
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
+    expect(listed.terms).toEqual([]);
+    expect(listed.skippedProject).toBe(projectPath);
+  });
+
+  // Catches: a write into an existing untrusted file returned the file's own
+  // copy of the term (its notes and aliases) to the model.
+  it('merges into an existing untrusted file without trusting it or reading its term back', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [PLANTED-ALIAS]\n    notes: PLANTED-NOTE\n');
+    for (const [tool, args] of [
+      ['add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' }],
+      ['learn_correction', { heard: 'cube cuddle', meant: 'Kubectl', scope: 'project' }],
+      ['import_dictionary', { content: 'Kubectl: cube cutter\n', format: 'text', scope: 'project' }],
+    ] as const) {
+      const res = await call(tool, args);
+      expect(res.isError, `${tool}: ${res.text}`).toBe(false);
+      expect(JSON.parse(res.text)).toMatchObject({ path: projectPath, trusted: false });
+      expect(res.text).not.toContain('PLANTED');
+    }
+    expect(await trustStatus()).toBe('untrusted');
+    const onDisk = await fs.readFile(projectPath, 'utf8');
+    for (const alias of ['PLANTED-ALIAS', 'cube control', 'cube cuddle', 'cube cutter']) expect(onDisk).toContain(alias);
+  });
+
+  it('keeps a trusted project file trusted and merged after the edit', async () => {
+    const projectPath = await trustedProjectFile();
+    const res = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; trusted?: boolean; nextStep?: string };
+    expect(payload.path).toBe(projectPath);
+    expect(payload.trusted).toBeUndefined();
+    expect(payload.nextStep).toBeUndefined();
+    expect(await trustStatus()).toBe('trusted');
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'run cube control apply' })).text) as { output: string };
+    expect(normalized.output).toBe('run Kubectl apply');
+  });
+
+  // Catches: add_pack with scope: 'project' created and trusted the file.
+  it('add_pack installs into a new project file without trusting it, and into a trusted one as before', async () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const res = await call('add_pack', { name: 'voice-tools', scope: 'project' });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { path: string; trusted: boolean; nextStep: string };
+    expect(payload).toMatchObject({ path: projectPath, trusted: false });
+    expect(payload.nextStep).toContain('`npx @ashlr/lexicon trust`');
+    expect(await trustStatus()).toBe('untrusted');
+
+    await fs.rm(projectPath);
+    await trustedProjectFile();
+    const again = JSON.parse((await call('add_pack', { name: 'voice-tools', scope: 'project' })).text) as { trusted?: boolean };
+    expect(again.trusted).toBeUndefined();
+    expect(await trustStatus()).toBe('trusted');
+  });
+
+  it('leaves a project file that changed since it was trusted unpinned', async () => {
+    const projectPath = await trustedProjectFile();
+    await fs.appendFile(projectPath, '# edited by hand\n');
+    expect(await trustStatus()).toBe('changed');
+    const res = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
+    expect(res.isError).toBe(false);
+    expect(JSON.parse(res.text)).toMatchObject({ trusted: false });
+    expect(await trustStatus()).toBe('changed');
+  });
+});
+
 describe('harvest_repo and suggest_terms on a model-chosen path', () => {
   const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-repo');
   let outside: string;
@@ -1011,6 +1128,73 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect((await call('suggest_terms', { cwd: path.join(outside, 'other') })).isError).toBe(false);
   });
 
+  // Catches: trust_project resolved its model-chosen `path` wherever it
+  // pointed, so `status` read and summarized any file it named and `trust`
+  // asked the user to trust a file outside the project.
+  it('trust_project status and trust refuse a path outside the allowed roots', async () => {
+    const elsewhere = path.join(outside, 'other', '.lexicon.yaml');
+    await fs.writeFile(elsewhere, 'version: 1\nterms:\n  - canonical: PlantedName\n');
+    for (const action of ['status', 'trust'] as const) {
+      for (const target of [elsewhere, path.join(outside, 'other')]) {
+        const res = await call('trust_project', { action, path: target });
+        expect(res.isError, `${action} ${target}`).toBe(true);
+        expect(res.text).toContain('outside the directories this server may read');
+        expect(res.text).toContain('npx @ashlr/lexicon trust');
+        expect(res.text).toContain('LEXICON_HARVEST_ROOTS');
+        expect(res.text).not.toContain('PlantedName');
+      }
+    }
+    expect((await call('trust_project', { action: 'status', path: '/etc/passwd' })).isError).toBe(true);
+    // Through a symlink inside the repo, to the file or to its directory.
+    await fs.symlink(elsewhere, path.join(repo, 'linked.yaml'));
+    await fs.symlink(path.join(outside, 'other'), path.join(repo, 'linkdir'));
+    for (const target of ['linked.yaml', 'linkdir']) {
+      const res = await call('trust_project', { action: 'status', path: target });
+      expect(res.isError, target).toBe(true);
+      expect(res.text).not.toContain('PlantedName');
+    }
+    const registry = JSON.parse((await call('trust_project', { action: 'status' })).text) as { trusted: unknown[] };
+    expect(registry.trusted).toEqual([]);
+  });
+
+  it('trust_project reads an allowed path, a missing file in an allowed directory and a LEXICON_HARVEST_ROOTS file', async () => {
+    const missing = JSON.parse((await call('trust_project', { action: 'status', path: 'app/.lexicon.yaml' })).text) as { status: string };
+    expect(missing.status).toBe('missing');
+    await fs.writeFile(path.join(repo, 'app', '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n');
+    const inside = JSON.parse((await call('trust_project', { action: 'status', path: 'app' })).text) as { status: string; path: string };
+    expect(inside).toMatchObject({ status: 'untrusted', path: path.join(repo, 'app', '.lexicon.yaml') });
+
+    const elsewhere = path.join(outside, 'other', '.lexicon.yaml');
+    await fs.writeFile(elsewhere, 'version: 1\nterms:\n  - canonical: Kubectl\n');
+    process.env.LEXICON_HARVEST_ROOTS = outside;
+    const listed = JSON.parse((await call('trust_project', { action: 'status', path: elsewhere })).text) as { status: string };
+    expect(listed.status).toBe('untrusted');
+  });
+
+  // Catches: import_dictionary read whatever file `path` named and echoed
+  // every line that parsed as a term, so a dry run on a file outside the
+  // project put its contents into the conversation.
+  it('import_dictionary reads a path only inside the allowed roots', async () => {
+    const secret = path.join(outside, 'notes.txt');
+    await fs.writeFile(secret, 'PlantedSecret: hunter2\n');
+    for (const target of [secret, path.relative(repo, secret)]) {
+      const res = await call('import_dictionary', { path: target, format: 'text', dryRun: true });
+      expect(res.isError, target).toBe(true);
+      expect(res.text).toContain('outside the directories this server may read');
+      expect(res.text).toContain('npx @ashlr/lexicon import');
+      expect(res.text).not.toContain('PlantedSecret');
+    }
+    await fs.symlink(secret, path.join(repo, 'linked.txt'));
+    expect((await call('import_dictionary', { path: 'linked.txt', format: 'text', dryRun: true })).isError).toBe(true);
+
+    await fs.writeFile(path.join(repo, 'dict.txt'), 'Kubectl: cube control\n');
+    const inside = await call('import_dictionary', { path: 'dict.txt', format: 'text', dryRun: true });
+    expect(inside.isError).toBe(false);
+    expect(JSON.parse(inside.text)).toMatchObject({ terms: [{ canonical: 'Kubectl' }] });
+    process.env.LEXICON_HARVEST_ROOTS = outside;
+    expect((await call('import_dictionary', { path: secret, format: 'text', dryRun: true })).isError).toBe(false);
+  });
+
   it('reads any directory the client named as an MCP root', async () => {
     const { pathToFileURL } = await import('node:url');
     const { ListRootsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
@@ -1029,5 +1213,23 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
       await client.close();
       await server.close();
     }
+  });
+});
+
+describe('environment variables the MCP server reads', () => {
+  // Catches: LEXICON_HARVEST_ROOTS and LEXICON_REGISTRIES were named in error
+  // messages and tool descriptions but listed nowhere a user setting up the
+  // server would look.
+  it('are each listed in docs/MCP.md, which the README links to', async () => {
+    const { HARVEST_ROOTS_ENV } = await import('../src/mcp/shared.js');
+    const { REGISTRIES_ENV, TRUST_ALL_ENV } = await import('../src/core/index.js');
+    const { PASSTHROUGH_ENV } = await import('../src/cli/cmd-install.js');
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const mcpDoc = await fs.readFile(path.join(root, 'docs', 'MCP.md'), 'utf8');
+    const section = /^## Environment variables\n([\s\S]*?)(?=^## )/m.exec(mcpDoc)?.[1] ?? '';
+    for (const name of [HARVEST_ROOTS_ENV, REGISTRIES_ENV, TRUST_ALL_ENV, ...PASSTHROUGH_ENV]) {
+      expect(section, name).toContain(`| \`${name}\` |`);
+    }
+    expect(await fs.readFile(path.join(root, 'README.md'), 'utf8')).toContain('(docs/MCP.md#environment-variables)');
   });
 });

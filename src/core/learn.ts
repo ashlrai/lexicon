@@ -301,7 +301,11 @@ function dedupeCaseInsensitive(values: readonly string[]): string[] {
  */
 export async function learnCorrection(
   c: Correction,
-  opts: StoreOptions & { scope?: TermScope } = {},
+  opts: StoreOptions & {
+    scope?: TermScope;
+    /** Passed to `addTerm`: a project file written here is not registered as trusted. */
+    leaveUntrusted?: boolean;
+  } = {},
 ): Promise<LearnResult> {
   const heard = c.heard.trim().replace(/\s+/g, ' ');
   const meant = c.meant.trim().replace(/\s+/g, ' ');
@@ -318,9 +322,10 @@ export async function learnCorrection(
     throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
 
-  const { scope, ...storeOpts } = opts;
+  const { scope, leaveUntrusted, ...storeOpts } = opts;
   const loaded = await loadLexicon(storeOpts);
-  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts, scope);
+  const writeOpts: StoreOptions & { leaveUntrusted?: boolean } = { ...storeOpts, ...(leaveUntrusted ? { leaveUntrusted } : {}) };
+  if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, writeOpts, scope);
   const existing = termFor(loaded.merged, meant);
 
   const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
@@ -333,7 +338,7 @@ export async function learnCorrection(
     const targetScope: TermScope = scope ?? existing.scope ?? 'global';
     const saved = await addTerm(
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: 'learned' },
-      { ...storeOpts, scope: targetScope },
+      { ...writeOpts, scope: targetScope },
     );
     return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown, ...withConflict };
   }
@@ -341,7 +346,7 @@ export async function learnCorrection(
   const aliases = dedupeCaseInsensitive([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
     { canonical: meant, aliases, source: 'learned' },
-    { ...storeOpts, scope: scope ?? 'global' },
+    { ...writeOpts, scope: scope ?? 'global' },
   );
   return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
 }
@@ -404,7 +409,7 @@ async function learnCaseOnly(
   heard: string,
   meant: string,
   loaded: Awaited<ReturnType<typeof loadLexicon>>,
-  storeOpts: StoreOptions,
+  storeOpts: StoreOptions & { leaveUntrusted?: boolean },
   scope: TermScope | undefined,
 ): Promise<LearnResult> {
   const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));

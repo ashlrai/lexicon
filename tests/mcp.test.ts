@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
   diffSummary: vi.fn(),
   recordHits: vi.fn(),
   addTerm: vi.fn(),
+  // true: the project file is trusted, so writes keep today's arguments
+  projectWriteTrusted: vi.fn(),
   removeTerm: vi.fn(),
   harvestRepo: vi.fn(),
   exportLexicon: vi.fn(),
@@ -199,6 +201,7 @@ beforeEach(() => {
     created: true,
   }));
   mocks.removeTerm.mockResolvedValue(true);
+  mocks.projectWriteTrusted.mockResolvedValue(true);
   mocks.harvestRepo.mockResolvedValue([
     { canonical: 'FooBar', category: 'identifier', source: 'harvest:repo', evidence: ['src/a.ts'], count: 3, suggestedAliases: ['foo bar'] },
   ]);
@@ -764,12 +767,13 @@ describe('lexicon MCP server', () => {
         return { action: 'accept', content: { trust: true } };
       });
       try {
-        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust', path: 'sub/.lexicon.yaml' } });
+        // The default path: an explicit one must exist inside the allowed roots (tests/mcp-workflows.test.ts).
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
         expect(result.isError).toBe(false);
         const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
         expect(payload).toMatchObject({
           action: 'trust',
-          path: path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'),
+          path: '/fake/repo/.lexicon.yaml',
           previousStatus: 'untrusted',
           status: 'trusted',
           result: 'trusted',
@@ -778,9 +782,9 @@ describe('lexicon MCP server', () => {
         });
         expect(payload.sample).toEqual(['Kubernetes', 'Entire.io']);
         expect(payload).not.toHaveProperty('preview');
-        expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
+        expect(mocks.trustProject).toHaveBeenCalledWith('/fake/repo/.lexicon.yaml', { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
         expect(asked).toHaveLength(1);
-        expect(asked[0]).toMatch(/Trust the project lexicon at .*sub.*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
+        expect(asked[0]).toMatch(/Trust the project lexicon at .*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
         expect(asked[0]).not.toContain('ignore me');
       } finally {
         await close();
@@ -896,9 +900,11 @@ describe('lexicon MCP server', () => {
           expect.anything(),
           expect.any(Function),
         );
-        const withPath = await client.callTool({ name: 'import_dictionary', arguments: { path: 'dict.csv', format: 'wispr', scope: 'project' } });
+        // With content, path only names the file for format detection and is never read
+        // (a path that is read is held to the allowed roots: tests/mcp-workflows.test.ts).
+        const withPath = await client.callTool({ name: 'import_dictionary', arguments: { path: 'dict.csv', content: 'Ashlr.AI,Ashler\n', format: 'wispr', scope: 'project' } });
         expect(withPath.isError).toBe(false);
-        expect(cli.runImport).toHaveBeenLastCalledWith('dict.csv', { cwd: '/fake/repo', format: 'wispr', project: true, dryRun: false, json: true }, expect.anything(), undefined);
+        expect(cli.runImport).toHaveBeenLastCalledWith('dict.csv', { cwd: '/fake/repo', format: 'wispr', project: true, dryRun: false, json: true }, expect.anything(), expect.any(Function));
       } finally {
         await close();
       }
@@ -1011,6 +1017,24 @@ describe('lexicon MCP server', () => {
           expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
           expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo' });
           expect((await client.callTool({ name: 'import_vocabulary', arguments: args })).isError).toBe(true);
+        } finally { await close(); }
+      });
+
+      // Catches: apply with scope: 'project' created and trusted the repo's .lexicon.yaml.
+      it('applies into a project file that is not trusted without trusting it', async () => {
+        mocks.projectWriteTrusted.mockResolvedValue(false);
+        mocks.applyImportCandidates.mockResolvedValue({ added: 1, merged: 0, skipped: 0, path: '/fake/repo/.lexicon.yaml' });
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'], scope: 'project' } })));
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: {
+            apply: true, sources: ['github'], scope: 'project', previewToken: preview.previewToken, approvedCandidateIds: [preview.candidates[0].id],
+          } });
+          expect(result.isError).toBe(false);
+          const payload = JSON.parse(textOf(result)) as { trusted?: boolean; nextStep?: string };
+          expect(payload.trusted).toBe(false);
+          expect(payload.nextStep).toContain('/fake/repo/.lexicon.yaml, which is not trusted');
+          expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
         } finally { await close(); }
       });
 
@@ -1148,6 +1172,33 @@ describe('lexicon MCP server', () => {
           const fresh = JSON.parse(textOf(await client.callTool({ name: 'add_pack', arguments: args })));
           expect(fresh.preview.terms[0]).toMatchObject({ aliases: ['new alias'], notes: 'New context note' });
         } finally { await close(); }
+      });
+
+      // Catches: add_pack with scope: 'project' created and trusted the repo's .lexicon.yaml.
+      it('add_pack into a project file that is not trusted leaves it untrusted', async () => {
+        mocks.projectWriteTrusted.mockResolvedValue(false);
+        mocks.installPack.mockResolvedValue({ pack: { name: 'developer', title: 'Dev' }, added: 2, merged: 0, path: '/fake/repo/.lexicon.yaml', scope: 'project' });
+        mocks.installRegistryPack.mockResolvedValue({
+          ref: 'example/cardiology', pack: { name: 'cardiology', title: 'Cardiology terms' }, added: 1, merged: 0, path: '/fake/repo/.lexicon.yaml', scope: 'project',
+        });
+        const { client, close } = await connect();
+        try {
+          const vendored = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', scope: 'project' } });
+          expect(vendored.isError).toBe(false);
+          expect(JSON.parse(textOf(vendored))).toMatchObject({ trusted: false, nextStep: expect.stringContaining('which is not trusted') });
+          expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
+
+          const args = { name: 'example/cardiology', registry: '/fake/index.yaml', scope: 'project' };
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'add_pack', arguments: args })));
+          const community = await client.callTool({ name: 'add_pack', arguments: { ...args, confirm: true, previewDigest: preview.previewDigest } });
+          expect(community.isError).toBe(false);
+          expect(JSON.parse(textOf(community))).toMatchObject({ trusted: false, nextStep: expect.stringContaining('which is not trusted') });
+          expect(mocks.installRegistryPack).toHaveBeenCalledWith(entry, '/fake', '/fake/index.yaml', {
+            cwd: '/fake/repo', leaveUntrusted: true, approvedBytes: Buffer.from('pack-bytes'), scope: 'project',
+          });
+        } finally {
+          await close();
+        }
       });
 
       it('add_pack still installs vendored packs directly', async () => {

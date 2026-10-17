@@ -38,6 +38,13 @@ export interface ImportCliOptions extends CommonOptions {
   category?: string;
   /** Print the result as JSON. */
   json?: boolean;
+  /**
+   * Not a CLI flag: write a project file without registering it as trusted
+   * (addTerm's `leaveUntrusted`), for MCP import_dictionary on a project file
+   * the user has not trusted. The report then lists each term as imported,
+   * not as merged, so nothing already in that file is read back out.
+   */
+  leaveUntrusted?: boolean;
 }
 
 export interface ImportedTermReport {
@@ -192,9 +199,11 @@ export async function runImport(
     }
   } else {
     for (const term of result.terms) {
-      const added = await addTerm(term as Term, { scope, cwd });
+      const added = await addTerm(term as Term, { scope, cwd, ...(opts.leaveUntrusted ? { leaveUntrusted: true } : {}) });
       report.path ??= added.file.path;
-      report.terms.push({ canonical: added.term.canonical, aliases: added.term.aliases, created: added.created });
+      // A merge into an untrusted file returns that file's copy of the term.
+      const shown = opts.leaveUntrusted && scope === 'project' ? { canonical: term.canonical, aliases: term.aliases } : added.term;
+      report.terms.push({ canonical: shown.canonical, aliases: shown.aliases, created: added.created });
     }
   }
   report.counts.created = report.terms.filter((t) => t.created).length;

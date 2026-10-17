@@ -154,7 +154,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || undefined);
   let cwd = explicit ?? process.cwd();
   // Every usable directory the client named as a root: tools that read a
-  // model-chosen path (harvest_repo, suggest_terms) may read inside these.
+  // model-chosen path (harvest_repo, suggest_terms, trust_project, import_dictionary) may read inside these.
   let clientRoots: string[] = [];
   let rootsPending: Promise<void> | undefined;
   const load = async (): Promise<LoadedLexicon> => {
