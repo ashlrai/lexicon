@@ -537,3 +537,46 @@ describe('vendored pack add / remove honour globalPath', () => {
     }
   });
 });
+
+// Catches: `pack add developer example/x --json` without --yes installed the
+// vendored pack, then printed only the community preview and exited 0, so the
+// vendored write was unreported; a ref after the preview was never reached.
+// Without --json, a decline after a vendored install read "declined; nothing
+// written." though the vendored pack had been written.
+describe('pack add with a vendored and a previewed or declined community ref reports every ref', () => {
+  it('--json without --yes prints one array in argument order: the vendored install and the preview', async () => {
+    for (const order of [['developer', 'example/cardiology'], ['example/cardiology', 'developer']]) {
+      writeFileSync(globalPath, '');
+      const io = makeIO();
+      expect(await runPackAdd(order, { ...baseOpts(), cwd: dir, json: true }, io), io.err).toBe(0);
+      const doc = JSON.parse(io.out) as Record<string, unknown>[];
+      expect(Array.isArray(doc)).toBe(true);
+      expect(doc).toHaveLength(2);
+      const byRef = (n: string): Record<string, unknown> => doc[order.indexOf(n)]!;
+      expect(byRef('developer')).toMatchObject({ pack: { name: 'developer' }, path: globalPath, scope: 'global' });
+      expect((byRef('developer') as { added: number }).added).toBeGreaterThan(0);
+      expect(byRef('example/cardiology')).toMatchObject({ preview: true, ref: 'example/cardiology', terms: [{ canonical: 'Metoprolol' }] });
+      const written = readFileSync(globalPath, 'utf8');
+      expect(written).toContain('developer');
+      expect(written).not.toContain('Metoprolol');
+    }
+  });
+
+  it('a single community ref still prints its preview object', async () => {
+    const io = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true }, io)).toBe(0);
+    expect(JSON.parse(io.out)).toMatchObject({ ok: true, preview: true, ref: 'example/cardiology' });
+  });
+
+  it('the human output names the decline and adds up what was installed', async () => {
+    const io = makeIO();
+    expect(await runPackAdd(['developer', 'example/cardiology'], { ...baseOpts(), cwd: dir }, io, { isInteractive: () => false })).toBe(0);
+    expect(io.out).toContain('installed developer');
+    expect(io.out).toContain('declined example/cardiology; nothing written for it.');
+    expect(io.out).not.toContain('declined; nothing written.');
+    expect(io.out).toContain('the terms are live');
+    expect(io.out).toContain('1 pack installed (developer); declined: example/cardiology');
+    expect(io.err).toContain('pass --yes');
+    expect(readFileSync(globalPath, 'utf8')).not.toContain('Metoprolol');
+  });
+});
