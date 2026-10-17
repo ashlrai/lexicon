@@ -33,7 +33,7 @@ import {
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
-import { errorMessage } from '../../util/errors.js';
+import { errorMessage, isInputError } from '../../util/errors.js';
 import { cliCommand } from '../../util/cli-hint.js';
 
 /**
@@ -83,6 +83,13 @@ export function normalizeCut(text: string, max: number): number {
 function holds(terms: readonly Term[] | undefined, canonical: string): boolean {
   const key = canonical.trim().toLowerCase();
   return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
+}
+
+/** Whether `terms` has `canonical` with `alias` among its aliases (both case-insensitive). */
+function holdsAlias(terms: readonly Term[] | undefined, canonical: string, alias: string): boolean {
+  const key = canonical.trim().toLowerCase();
+  const drop = alias.trim().toLowerCase();
+  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
 }
 
 export const registerTermTools: ToolRegistrar = (server, ctx) => {
@@ -308,7 +315,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'name exactly -- use list_terms first if you are unsure which canonical the user means. ' +
         'A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other ' +
         'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an ' +
-        'unknown term or an alias the term does not have is an error.',
+        'unknown term or an alias the term does not have is an error; when the other lexicon file\'s copy of the term has that alias, the error names that file and the scope to pass.',
       inputSchema: {
         canonical: nonBlank(),
         alias: nonBlank()
@@ -332,9 +339,24 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           } catch (err) {
             // Without a scope the untrusted project copy comes first and is
             // refused; say that the global copy is still editable on its own.
-            const global = termHolders(await load(), canonical).find((h) => h.scope === 'global');
-            if (!isProjectTrustError(err) || !global) throw err;
-            throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+            const loaded = await load();
+            const global = termHolders(loaded, canonical).find((h) => h.scope === 'global');
+            if (isProjectTrustError(err) && global) {
+              throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+            }
+            // A scope whose file lacks the term or the alias, when the other
+            // (loaded) file's copy has it: name that file and the scope to pass,
+            // as the call without `alias` does in `foundIn` and `note`.
+            if (isInputError(err) && scope !== undefined) {
+              const other = scope === 'global' ? loaded.project : loaded.global;
+              if (other && holdsAlias(other.lexicon.terms, canonical, alias)) {
+                throw new Error(
+                  `${errorMessage(err)}. It is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); ` +
+                    `call remove_term again with scope "${other.scope}", or without scope to remove it from every file whose copy has it.`,
+                );
+              }
+            }
+            throw err;
           }
           // The skipped project file's copy of the term may hold the alias too:
           // it is never edited, and it corrects again once trusted. Path only.

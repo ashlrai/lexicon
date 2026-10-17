@@ -53421,6 +53421,9 @@ var InputError = class extends Error {
     this.name = "InputError";
   }
 };
+function isInputError(err) {
+  return err instanceof Error && err.name === "InputError";
+}
 
 // src/util/atomic.ts
 var BACKUP_SUFFIX = ".bak";
@@ -60292,6 +60295,11 @@ function holds(terms, canonical) {
   const key = canonical.trim().toLowerCase();
   return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
 }
+function holdsAlias(terms, canonical, alias) {
+  const key = canonical.trim().toLowerCase();
+  const drop = alias.trim().toLowerCase();
+  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
+}
 var registerTermTools = (server, ctx) => {
   const { load } = ctx;
   async function whereElse(canonical, scope) {
@@ -60423,7 +60431,7 @@ var registerTermTools = (server, ctx) => {
     "remove_term",
     {
       title: "Remove a lexicon term or one of its aliases",
-      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error.",
+      description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error: the result has `removed: false`, and when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an unknown term or an alias the term does not have is an error; when the other lexicon file's copy of the term has that alias, the error names that file and the scope to pass.",
       inputSchema: {
         canonical: nonBlank(),
         alias: nonBlank().optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
@@ -60439,9 +60447,20 @@ var registerTermTools = (server, ctx) => {
         try {
           result = await removeAlias(canonical, alias, opts);
         } catch (err) {
-          const global = termHolders(await load(), canonical).find((h) => h.scope === "global");
-          if (!isProjectTrustError(err) || !global) throw err;
-          throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+          const loaded = await load();
+          const global = termHolders(loaded, canonical).find((h) => h.scope === "global");
+          if (isProjectTrustError(err) && global) {
+            throw new Error(`${errorMessage(err)}. The global lexicon (${global.path}) also has "${canonical}"; call remove_term with alias and scope "global" to remove the alias from that copy only.`);
+          }
+          if (isInputError(err) && scope !== void 0) {
+            const other = scope === "global" ? loaded.project : loaded.global;
+            if (other && holdsAlias(other.lexicon.terms, canonical, alias)) {
+              throw new Error(
+                `${errorMessage(err)}. It is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); call remove_term again with scope "${other.scope}", or without scope to remove it from every file whose copy has it.`
+              );
+            }
+          }
+          throw err;
         }
         const untrustedProject2 = untrustedAliasHolder(await load(), canonical, alias);
         return textResult({

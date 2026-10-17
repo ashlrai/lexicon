@@ -1896,6 +1896,41 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: `remove --alias` with --project (or --global) naming a file
+  // whose copy lacked the term or the alias stopped at the bare error, while
+  // `remove` without --alias names the other file and the flag to pass.
+  it('remove --alias with the wrong scope names the file whose copy holds the alias and the flag', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-alias-scope-')));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      expect(lexicon(['add', 'Kubectl', 'cube control', '--cwd', repo], globalPath).status).toBe(0);
+
+      const wrong = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--project', '--json', '--cwd', repo], globalPath);
+      expect(wrong.status).toBe(1);
+      expect(JSON.parse(wrong.stdout)).toEqual({
+        ok: false,
+        error: 'no term "Kubectl" in the project lexicon',
+        nextStep: `it is an alias of "Kubectl" in the global lexicon (${globalPath}); run with --global to remove it there, or with neither flag to remove it from every file whose copy has it`,
+        canonical: 'Kubectl',
+        alias: 'cube control',
+        removed: false,
+      });
+      expect(wrong.stderr).toContain('lexicon: it is an alias of "Kubectl" in the global lexicon');
+
+      // An alias no file has keeps the bare error.
+      const nowhere = lexicon(['remove', 'Kubectl', '--alias', 'nope', '--global', '--json', '--cwd', repo], globalPath);
+      expect(nowhere.status).toBe(1);
+      expect(JSON.parse(nowhere.stdout)).not.toHaveProperty('nextStep');
+
+      const ok = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--global', '--json', '--cwd', repo], globalPath);
+      expect(ok.status).toBe(0);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
   it('a --json command that throws prints { ok: false, error, nextStep? } on stdout with exit 1', async () => {
     const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
