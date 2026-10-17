@@ -300,6 +300,34 @@ describe('undeclared arguments', () => {
   });
 });
 
+// Catches: list_packs, add_pack, list_terms, suggest_canonical and
+// trust_project descriptions told the model to relay `lexicon pack remove`,
+// `lexicon pack update` or `lexicon trust`, which a plugin-only user has no
+// binary for; every CLI command a description names comes with its npx form.
+describe('tool descriptions that name a lexicon command', () => {
+  it('also name the npx form of it', async () => {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const missing: string[] = [];
+      for (const tool of (await client.listTools()).tools) {
+        const text = tool.description ?? '';
+        for (const m of text.matchAll(/`lexicon ([a-z]+(?: [a-z]+)?)/g)) {
+          const command = m[1].split(' ')[0];
+          if (!text.includes(`npx @ashlr/lexicon ${command}`)) missing.push(`${tool.name}: lexicon ${m[1]}`);
+        }
+      }
+      expect(missing).toEqual([]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+});
+
 describe('blank required strings', () => {
   // `.min(1)` let "  " through: remove_term answered "no term" as a success
   // and suggest_canonical searched for nothing.

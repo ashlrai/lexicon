@@ -35,7 +35,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project ' +
         'would add. Call it without `add` first -- that is a read-only preview. ' +
         "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml but does not trust it: " +
-        'the file applies only after the user reviews it and runs `lexicon trust` (or `npx @ashlr/lexicon trust`), so show the candidate list and get a yes first, then relay `nextStep`. ' +
+        'the file applies only after the user reviews it and runs ' + cliCommand('trust') + ', so show the candidate list and get a yes first, then relay `nextStep`. ' +
         `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. ` +
         'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
         'candidates come back as names, categories and counts.',

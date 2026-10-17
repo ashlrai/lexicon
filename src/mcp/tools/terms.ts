@@ -135,7 +135,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
         `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, ' +
-        'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.',
+        'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
         text: z.string().describe('The dictated or transcribed text to correct.'),
         dryRun: z
@@ -531,7 +531,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above ' +
         "about 0.8 use the canonical and mention it in passing, below that ask \"did you mean X?\" and call learn_correction once " +
         'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
-        'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user `lexicon trust` would enable it.',
+        'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
         heard: nonBlank().describe(
           `The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`,
