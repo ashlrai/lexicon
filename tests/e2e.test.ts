@@ -1140,3 +1140,37 @@ console.log(JSON.stringify(data[args[1]]));
     await expect(fs.access(h.globalPath)).rejects.toThrow();
   });
 });
+
+/**
+ * `lexicon pack show developer | head -3` used to die with an unhandled
+ * EPIPE stack trace once head closed the pipe. A closed stdout is a reader
+ * that has seen enough: the CLI stops quietly with status 0.
+ */
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: a closed stdout pipe', () => {
+  it('ends quietly when the reader goes away', async () => {
+    const h = await freshHome('epipe');
+    const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ['--import', 'tsx', CLI, 'pack', 'show', 'developer', '--cwd', os.tmpdir()], {
+        cwd: REPO_ROOT,
+        env: h.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('timed out'));
+      }, TIMEOUT_MS);
+      // Close our end before it writes anything, the way `head` does once it has its lines.
+      child.stdout.destroy();
+      child.stderr.setEncoding('utf8').on('data', (d: string) => {
+        stderr += d;
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ code, stderr });
+      });
+    });
+    expect(result.stderr).not.toMatch(/EPIPE|Unhandled/);
+    expect(result.code).toBe(0);
+  });
+});
