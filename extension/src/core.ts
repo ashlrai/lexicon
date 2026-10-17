@@ -6,6 +6,7 @@
 export { normalize, normalizeWithIndex, diffSummary, timeBudgetIncomplete } from '../../src/core/normalize.js';
 export { parseLexicon, emptyLexicon, LIMITS } from '../../src/core/schema.js';
 export { suggestAliases } from '../../src/core/suggest.js';
+export { conflictNote } from '../../src/core/conflict-note.js';
 export { DEFAULT_MIN_CONFIDENCE, buildIndex } from '../../src/core/matcher.js';
 export type { MatcherIndex } from '../../src/core/matcher.js';
 export { isMap, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';

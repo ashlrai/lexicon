@@ -13,6 +13,12 @@ import { InputError } from '../util/errors.js';
 import type { StoreOptions } from './store.js';
 import { suggestAliases } from './suggest.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
+import type { LearnConflict } from './conflict-note.js';
+
+// The conflict wording lives in a module with no IO so the browser extension
+// bundles the same sentences (extension/src/core.ts re-exports it).
+export { conflictNote, conflictRemoveCommand } from './conflict-note.js';
+export type { ConflictNoteAudience, LearnConflict } from './conflict-note.js';
 
 export interface Correction {
   /**
@@ -47,16 +53,6 @@ export interface LearnResult {
    * that project term wins the merge over this correction.
    */
   untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
-}
-
-/** The term `LearnResult.conflict` names, and the spelling of `heard` it holds. */
-export interface LearnConflict {
-  canonical: string;
-  scope: TermScope;
-  /** 'alias': drop `spelling` from that term to let the correction win; 'canonical': `heard` is that term's own name. */
-  as: 'alias' | 'canonical';
-  /** `heard` as that term spells it. */
-  spelling: string;
 }
 
 export interface CanonicalSuggestion {
@@ -363,43 +359,6 @@ export function spellingConflicts(lexicon: Lexicon, spellings: readonly string[]
     if (c) out.push(c);
   }
   return out;
-}
-
-/** Who reads a `conflictNote`: `'cli'` names the `lexicon remove` command, `'mcp'` the `remove_term` call. */
-export type ConflictNoteAudience = 'cli' | 'mcp';
-
-/**
- * The `lexicon remove --alias` command that drops a conflicting alias from the
- * other term, limited to the file that holds it (`--<scope>`). `show` is
- * applied to each spelling first (a terminal sanitizer); JSON string literals
- * keep a `"` in a spelling from blurring where an argument ends.
- */
-export function conflictRemoveCommand(c: LearnConflict, show: (s: string) => string = (s) => s): string {
-  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
-}
-
-/**
- * The `note` that goes with `conflict`/`conflicts` in a JSON answer (CLI
- * `learn --json` and `add --json`, MCP `add_term`, serve `POST /learn`): one
- * sentence per conflict, naming how to drop an alias from the other term if
- * the user agrees, as the `lexicon remove` command (`'cli'`, the default) or
- * the `remove_term` call (`'mcp'`); for a spelling that is another term's
- * canonical, how to remove that term. Unsanitized, like every JSON field.
- */
-export function conflictNote(conflicts: readonly LearnConflict[], audience: ConflictNoteAudience = 'cli'): string {
-  return conflicts
-    .map((c) =>
-      c.as === 'alias'
-        ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
-          (audience === 'mcp'
-            ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
-            : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`)
-        : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` +
-          (audience === 'mcp'
-            ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".`
-            : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`),
-    )
-    .join(' ');
 }
 
 /**

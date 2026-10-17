@@ -4,7 +4,7 @@
  * run it under jsdom with a fake server.
  */
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
-import { parseLexicon } from './core.js';
+import { conflictNote, parseLexicon } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
   coerceSettings,
@@ -375,7 +375,9 @@ export function learnWarnings(heard: string, conflict: unknown, untrustedProject
     out +=
       c.as === 'alias'
         ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: lexicon remove ${JSON.stringify(c.canonical)} --alias ${JSON.stringify(spelling)} --${c.scope}).`
-        : ` But "${spelling}" is its own term (${c.scope} lexicon), so it may still be kept as written.`;
+        : // The core's sentence (CLI audience), so the popup names the same
+          // remove step as learn --json, add --json and serve POST /learn.
+          ` But ${conflictNote([{ canonical: c.canonical, scope: c.scope, as: 'canonical', spelling }])}.`;
   }
   const u = untrustedProject as { path?: unknown; trust?: unknown } | null | undefined;
   if (u && typeof u.path === 'string') {

@@ -58526,6 +58526,16 @@ function mergeRows(rows, source) {
   return { terms: [...byKey.values()], skipped };
 }
 
+// src/core/conflict-note.ts
+function conflictRemoveCommand(c, show = (s) => s) {
+  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+}
+function conflictNote(conflicts, audience = "cli") {
+  return conflicts.map(
+    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
+  ).join(" ");
+}
+
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
 var MAX_BARE_WORDS = 4;
@@ -58631,14 +58641,6 @@ function spellingConflicts(lexicon, spellings, target) {
     if (c) out.push(c);
   }
   return out;
-}
-function conflictRemoveCommand(c, show = (s) => s) {
-  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
-}
-function conflictNote(conflicts, audience = "cli") {
-  return conflicts.map(
-    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
-  ).join(" ");
 }
 function conflictFor(lexicon, heard, target) {
   for (const t of lexicon.terms) {
