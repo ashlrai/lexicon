@@ -396,4 +396,17 @@ describe('tool and resource descriptions agree with what the code does', () => {
       await server.close();
     }
   });
+
+  // Catches: "adds `heard` as an alias of `meant`" while a new term also gets
+  // generated misspellings, and a case-only correction recases the term instead.
+  it('learn_correction names the generated aliases and the case-only recase', async () => {
+    const { tools } = await listed();
+    const description = tools.find((t) => t.name === 'learn_correction')?.description ?? '';
+    const learned = JSON.parse((await call('learn_correction', { heard: 'open klaw', meant: 'OpenClaw' })).text) as { term: { aliases: string[] } };
+    expect(learned.term.aliases.length).toBeGreaterThan(1);
+    expect(description).toMatch(/generated/);
+    const recased = JSON.parse((await call('learn_correction', { heard: 'OpenClaw', meant: 'Openclaw' })).text) as { term: { canonical: string } };
+    expect(recased.term.canonical).toBe('Openclaw');
+    expect(description).toMatch(/case-only/);
+  });
 });

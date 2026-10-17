@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The MCP `learn_correction` description says a new term also gets generated STT misspellings (listed in `term.aliases`) and that a case-only correction (`ashlr` to `Ashlr`) recases the term instead of adding an alias. It said only that `heard` is added as an alias, so an agent reported one alias saved while several were.
 - The MCP `lexicon://json` resource description says an untrusted (or changed) project lexicon is left out, and that `lexicon://me` and `list_terms` name it. It promised `global + project` and the JSON carries no note, so a skipped repo file looked merged.
 - MCP `add_pack` and the server instructions no longer say a starter pack is `sixty-odd terms`: the shipped packs hold 14 to 82. They now point at the `terms` count `list_packs` returns, so the agent names the real size when it asks.
 - The browser extension's toast says `Stopped early` when matching stopped at the time budget (the API or the embedded engine), next to the corrections it did make, and a send with nothing corrected still shows that one line. The `incomplete` field reached the content script and was dropped, so a long message that was only partly checked looked clean.
