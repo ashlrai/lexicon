@@ -17,6 +17,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -35,6 +36,18 @@ export interface ServerOptions {
   cwd?: string;
   /** How long to wait for the client's `roots/list` answer. Default ROOTS_TIMEOUT_MS. */
   rootsTimeoutMs?: number;
+}
+
+/**
+ * A tool config whose raw `inputSchema` shape is replaced by a strict
+ * z.object of the same shape, so undeclared arguments are refused instead of
+ * silently dropped. A schema that is already a zod type is left alone.
+ */
+export function strictInput(config: unknown): unknown {
+  if (typeof config !== 'object' || config === null) return config;
+  const shape = (config as { inputSchema?: unknown }).inputSchema;
+  if (shape === undefined || shape instanceof z.ZodType) return config;
+  return { ...config, inputSchema: z.object(shape as z.ZodRawShape).strict() };
 }
 
 /** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
@@ -162,9 +175,16 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // Every tool waits for an in-flight roots/list too, not only the ones that
   // call load(): a handler that resolved the project path before the answer
   // and named it after would describe two different directories.
+  //
+  // Each tool's argument shape is also made strict here. The SDK wraps a raw
+  // shape in a stripping z.object, so a misspelt key (`alias` for `aliases`,
+  // `txt` for `text`) was dropped without a word and the call went ahead as if
+  // the argument had never been given: add_term then auto-suggested aliases the
+  // agent did not ask for. A strict object refuses the unknown key by name and
+  // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
   const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, config as never, (async (...args: unknown[]) => {
+    registerTool(name, strictInput(config) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);

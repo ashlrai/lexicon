@@ -32,6 +32,7 @@ import { runInstall } from './cmd-install.js';
 import type { ClipboardBackendName } from '../daemon/clipboard-backends.js';
 import type {
   AddOptions,
+  DoctorCliOptions,
   ExportCliOptions,
   HarvestCliOptions,
   InitOptions,
@@ -40,6 +41,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
+import { fail } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -171,7 +173,8 @@ program
 program
   .command('doctor')
   .description('check lexicon files, term conflicts and the Claude Code integration')
-  .action(async () => done(await runDoctor(withGlobals({}), io)));
+  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... }, as the lexicon_doctor MCP tool returns it)')
+  .action(async (opts: DoctorCliOptions) => done(await runDoctor(withGlobals(opts), io)));
 
 program
   .command('mcp')
@@ -263,7 +266,8 @@ try {
     // commander already printed help/version/usage errors; just carry its exit code.
     process.exitCode = err.exitCode;
   } else {
-    process.stderr.write(`lexicon: ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exitCode = 1;
+    // fail() is the same `lexicon: <message>` line plus, for a lexicon file
+    // that does not parse, the command that fixes it.
+    process.exitCode = fail(io, err);
   }
 }

@@ -4,6 +4,13 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- MCP tools refuse arguments their schema does not declare instead of dropping them. `add_term { canonical: "Foo", alias: "fu" }` (a typo for `aliases`) used to succeed and auto-suggest aliases the agent never asked for; it now fails with `Unrecognized key: "alias"` and writes nothing. Every tool schema in `tools/list` carries `additionalProperties: false`.
+- MCP `remove_term` (`canonical`, `alias`) and `suggest_canonical` (`heard`) refuse a blank string. Before, `remove_term { canonical: "  " }` answered `removed: false` as a success and `suggest_canonical` searched for whitespace.
+- `lexicon doctor --json` prints the report as JSON, the same `{ ok, ready, summary, nextStep, checks, paths, versions }` the MCP `lexicon_doctor` tool returns, with the same exit code. Before, `doctor` was the one checking command without `--json`.
+- A lexicon file that does not parse or validate now comes with its fix on every command that loads it (`list`, `add`, `stats`, `export`, `learn`, `remove`, `import`, `pack`, `suggest`): a second line names `lexicon edit` (`lexicon edit --project` for a project `.lexicon.yaml`) and `lexicon doctor`. Before, only `lexicon doctor` said what to run.
+
 ## 0.5.6 (2026-10-16)
 
 ### Security
@@ -31,7 +38,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - The prompt hook is about a third faster with the starter packs installed, which had pushed it past its 200 ms budget (median 304 ms to 201 ms on a matching prompt, 204 ms to 140 ms on one with nothing to correct, all four packs, 177 terms). Hit counts for global terms now go to the `hits.json` sidecar beside the lexicon instead of rewriting (and backing up) the whole YAML on every matching prompt, and the hook hands `recordHits` the lexicon it already loaded. `loadLexicon` keeps a parsed copy of a large global lexicon in `parse-cache.json`, keyed by the YAML text itself (cache format 2; a format 1 cache is reparsed and replaced), and the hook bundle no longer carries all of zod (1156 KB to 599 KB). Counts already in a lexicon file stay as a floor; `lexicon stats`, `suggest` and `review --never-hit` see the same totals.
 - `lexicon install` writes `LEXICON_PATH` and `LEXICON_CWD` into the client's MCP entry when they are set (as absolute paths; `env` for JSON clients and Codex, `-e` for `claude mcp add`), without replacing a value the entry already sets. A GUI client does not inherit the shell, so the installed server used to read the default lexicon instead of the one the user installed from.
 - The MCP server finds the project `.lexicon.yaml` from the client's MCP roots (the first `file://` root that exists, refreshed on `roots/list_changed`) when neither `LEXICON_CWD` nor a `cwd` option is set. Clients such as Claude Desktop and Cursor start the server in their own directory, so it used to look for the project file in the wrong place. A client without roots, or one that fails or times out (2 s), keeps the old behaviour.
-- `learn_correction` / `lexicon learn` accept a case-only correction ("ashlr" should be "Ashlr"): they create the term, or recase an existing canonical in its own file, instead of failing with "same spelling". When the word is another term's alias they say so.
+- `learn_correction` / `lexicon learn` accept a case-only correction ("acme" should be "Acme"): they create the term, or recase an existing canonical in its own file, instead of failing with "same spelling". When the word is another term's alias they say so.
 - `lexicon export wispr-flow` (and `wisprflow`, any case; also on `GET /export/<format>`) is accepted as the `wispr` format.
 - `setup` and `setup_lexicon` no longer offer starter packs the global lexicon already has; the plan lists them in `alreadyInstalledPacks`.
 - `setup --yes` finds your name in repo-level or system git config, or `GIT_AUTHOR_NAME`, when `git config --global user.name` is unset, instead of seeding nothing; when it still finds nothing it names `--person` and `--company`.

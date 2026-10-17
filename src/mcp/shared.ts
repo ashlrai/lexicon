@@ -5,6 +5,7 @@
  * its own; server.ts keeps the resources, the prompts and the wiring.
  */
 import { join } from 'node:path';
+import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { sanitizeForDisplay } from '../core/index.js';
@@ -52,6 +53,16 @@ export function bufferIO(): IO & { out: () => string; err: () => string } {
     out: () => out,
     err: () => err,
   };
+}
+
+/**
+ * A required string argument that must hold more than whitespace. `.min(1)`
+ * alone let `"  "` through, so remove_term answered "no term" for a blank
+ * canonical and suggest_canonical searched for nothing, both as successes.
+ * The pattern is in the JSON schema too, so a validating client sees it.
+ */
+export function nonBlank(): z.ZodString {
+  return z.string().min(1).regex(/\S/, 'must not be blank');
 }
 
 /** Clients `install_client` accepts: every `lexicon install` target except the `generic` printout. */

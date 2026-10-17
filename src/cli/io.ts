@@ -168,8 +168,25 @@ export function renderTable(rows: readonly (readonly string[])[], header?: reado
  * the commander wiring in index.ts stays a thin pass-through of exit codes.
  */
 export function fail(io: IO, err: unknown): number {
-  io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+  const message = errorMessage(err);
+  io.stderr(`lexicon: ${safeLines(message)}\n`);
+  const hint = unreadableLexiconHint(message);
+  if (hint) io.stderr(`lexicon: ${hint}\n`);
   return 1;
+}
+
+/**
+ * The next step after a lexicon file that does not parse or validate. Every
+ * command that loads the lexicon (list, add, stats, export, learn, ...) used
+ * to stop at the parser's reason, which names the file but not what to run;
+ * only `lexicon doctor` said `lexicon edit`. A project file is always named
+ * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
+ */
+export function unreadableLexiconHint(message: string): string | undefined {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  if (!m) return undefined;
+  const edit = path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
+  return `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor`;
 }
 
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */
