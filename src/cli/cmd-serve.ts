@@ -168,7 +168,8 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error, error: probe.error, hint: SERVE_STATUS_HINTS.failing };
     else if (foreign) rest = { reason: 'unexpected /health response', error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign };
     else rest = { reason: downError, error: downError, hint: SERVE_STATUS_HINTS.down };
-    line(io, JSON.stringify({ up, url, ...rest, ...notConfigured }, null, 2));
+    // `ok` equal to up (exit code 0) first, as every other --json document leads with it.
+    line(io, JSON.stringify({ ok: up, up, url, ...rest, ...notConfigured }, null, 2));
     return up ? 0 : 1;
   }
   if (!config) line(io, `serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}`);
@@ -801,7 +802,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .description(`run the local HTTP API on http://127.0.0.1:${DEFAULT_PORT} for extensions, Shortcuts, Raycast and desktop apps`)
     .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
     .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
-    .option('--json', 'print the listening info (or --show/--status result) as JSON')
+    .option('--json', 'print the listening info (or --show/--status result) as JSON, led by ok (for --status, ok equals up)')
     .option('--quiet', 'do not log requests')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')

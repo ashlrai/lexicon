@@ -276,6 +276,35 @@ describe('normalize', () => {
     const parsed = JSON.parse(io.out) as NormalizeResult;
     expect(parsed).toMatchObject({ input: 'meet Ashler', output: 'meet Ashler', changed: false });
   });
+
+  // Catches: normalize --json had no `ok`, so a failed load and a text that
+  // needed no correction printed the same keys and a script had only the exit
+  // code to go on; every other --json command leads with ok.
+  it('--json leads with ok: true on success and ok: false, error, nextStep on a failed load', async () => {
+    const first = (out: string): [string, unknown] => Object.entries(JSON.parse(out) as Record<string, unknown>)[0]!;
+    const good = makeIO();
+    expect(await runNormalize(['meet Ashler'], { json: true }, good)).toBe(0);
+    expect(first(good.out)).toEqual(['ok', true]);
+    expect(JSON.parse(good.out)).toMatchObject({ ok: true, output: 'meet Ashlr.AI', changed: true });
+
+    const empty = makeIO();
+    expect(await runNormalize([], { json: true }, empty, async () => '')).toBe(0);
+    expect(JSON.parse(empty.out)).toEqual({ ok: true, input: '', output: '', replacements: [], changed: false });
+
+    vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
+    const bad = makeIO();
+    expect(await runNormalize(['meet Ashler'], { json: true }, bad)).toBe(1);
+    expect(first(bad.out)).toEqual(['ok', false]);
+    expect(JSON.parse(bad.out)).toEqual({
+      ok: false,
+      error: 'bad yaml',
+      nextStep: expect.stringContaining('lexicon doctor'),
+      input: 'meet Ashler',
+      output: 'meet Ashler',
+      replacements: [],
+      changed: false,
+    });
+  });
 });
 
 describe('list', () => {

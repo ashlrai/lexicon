@@ -1101,6 +1101,7 @@ describe('lexicon serve (CLI)', () => {
       const json = memIO();
       expect(await runServe({ status: true, json: true, port, globalPath: env.globalPath }, json)).toBe(1);
       expect(JSON.parse(json.out.join(''))).toEqual({
+        ok: false,
         up: false,
         url: `http://127.0.0.1:${port}`,
         reason: 'unexpected /health response',
@@ -1127,6 +1128,24 @@ describe('lexicon serve (CLI)', () => {
     const parsed = JSON.parse(io.out.join('')) as { up: boolean; health: { ok: boolean } };
     expect(parsed.up).toBe(true);
     expect(parsed.health.ok).toBe(true);
+  });
+
+  // Catches: --status --json had no top-level `ok`, though every other --json
+  // document leads with it; a script had to know to read `up` here only.
+  it('--status --json leads with ok equal to up (and to exit code 0)', async () => {
+    const first = (out: string): [string, unknown] => Object.entries(JSON.parse(out) as Record<string, unknown>)[0]!;
+    const io = memIO();
+    expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);
+    expect(first(io.out.join(''))).toEqual(['ok', true]);
+    expect(JSON.parse(io.out.join(''))).toMatchObject({ ok: true, up: true });
+
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    expect(first(down.out.join(''))).toEqual(['ok', false]);
+    expect(JSON.parse(down.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.any(String), hint: expect.any(String) });
   });
 
   it('refuses two modes at once', async () => {
