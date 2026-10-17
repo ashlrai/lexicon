@@ -47666,6 +47666,19 @@ function sanitizeForDisplayMax(s, max) {
 function neutralizeMarkup(s) {
   return s.replace(/[<>]/g, (c) => c === "<" ? "\u2039" : "\u203A");
 }
+var MODEL_PATH_MAX_CHARS = 120;
+function pathForModel(p, max = MODEL_PATH_MAX_CHARS) {
+  const clean = neutralizeMarkup(sanitizeForDisplayMax(p, Number.POSITIVE_INFINITY));
+  const parts = clean.split(/[\\/]/).filter((part) => part !== "");
+  let out = clean;
+  if (parts.length > 3) {
+    const sep = clean.lastIndexOf("\\") > clean.lastIndexOf("/") ? "\\" : "/";
+    out = `\u2026${sep}${parts.slice(-3).join(sep)}`;
+  }
+  const chars = Array.from(out);
+  if (chars.length <= max) return out;
+  return `\u2026${chars.slice(chars.length - Math.max(0, max - 1)).join("")}`;
+}
 function SafeString(max) {
   return string2().transform((s) => stripInvisible(s).trim()).pipe(
     string2().max(max, `must be at most ${max} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
@@ -64203,7 +64216,7 @@ ${instruction}` }
 }
 function skippedProjectSuffix(loaded) {
   if (!loaded.skippedProject) return "";
-  const where = sanitizeForDisplayMax(loaded.skippedProject.path, 4096);
+  const where = pathForModel(loaded.skippedProject.path);
   return `
 
 Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;

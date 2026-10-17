@@ -258,8 +258,12 @@ treated as the user's own words).
   text, or break a table row. The one deliberate exception is the text
   `lexicon normalize` writes to stdout, which is the user's own input and must
   round-trip byte-exactly; only its stderr `--diff` lines are sanitized. The
-  Claude Code hook uses the same `stripControlChars` on the skipped-project path
-  and on correction notes; the local API sanitizes request paths in its log.
+  Claude Code hook and the MCP `lexicon://me` resource and `voice-context`
+  prompt name a skipped project file through `pathForModel`: sanitized as
+  above, `<` and `>` neutralized, and shortened to its last three components
+  and at most 120 characters, because the directory a repository is cloned
+  into is named by whoever published it; correction notes go through
+  `neutralizeForModel`; the local API sanitizes request paths in its log.
 - **Markdown safety.** The `claude-md` export escapes `|` and replaces every
   kind of line break (`\n`, `\r\n`, NEL, U+2028, U+2029) in table cells so a
   term cannot break out of its row.
