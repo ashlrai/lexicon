@@ -58,7 +58,7 @@ try {
   // Lifecycle output can precede the JSON report on stdout.
   const [info] = JSON.parse(packed.stdout.slice(packed.stdout.indexOf('[')));
   const files = new Set(info.files.map((f) => f.path));
-  const needed = [...Object.values(pkg.bin), 'plugin/hook.mjs', 'plugin/mcp-server.mjs', '.claude-plugin/plugin.json', 'README.md'].map((f) => f.replace(/^\.\//, ''));
+  const needed = [...Object.values(pkg.bin), 'plugin/hook.mjs', 'plugin/hook-main.mjs', 'plugin/mcp-server.mjs', '.claude-plugin/plugin.json', 'README.md'].map((f) => f.replace(/^\.\//, ''));
   const missing = needed.filter((f) => !files.has(f));
   report(`${info.id}: ${info.entryCount} files, ${(info.size / 1024).toFixed(0)} kB packed`, missing.length === 0, `missing ${missing.join(', ')}`);
 

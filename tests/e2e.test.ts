@@ -1191,7 +1191,7 @@ console.log(JSON.stringify(data[args[1]]));
  * EPIPE stack trace once head closed the pipe. A closed stdout is a reader
  * that has seen enough: the CLI stops quietly with status 0.
  */
-describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: a closed stdout pipe', () => {
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a closed stdout pipe', () => {
   it('ends quietly when the reader goes away', async () => {
     const h = await freshHome('epipe');
     const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
