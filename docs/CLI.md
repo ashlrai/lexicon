@@ -352,6 +352,9 @@ Options:
   --scope <scope>  user|project (project = the repo-level config file)
   --project        same as --scope project
   --home <dir>     treat <dir> as the home directory (mainly for tests)
+  --json           print { ok: true, client, scope, applied, written, output }
+                   as JSON ({ ok: false, error, nextStep } for an unknown client
+                   or scope)
   -h, --help       display help for command
 ```
 

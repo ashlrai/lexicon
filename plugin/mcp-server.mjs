@@ -61770,6 +61770,51 @@ function printGeneric(io, serverPath, env) {
   printExportHint(io, 1, "generic");
 }
 async function runInstall(client, opts, io, deps = {}) {
+  if (opts.json) return runInstallJson(client, opts, io, deps);
+  return installText(client, opts, io, deps);
+}
+async function runInstallJson(client, opts, io, deps) {
+  let out = "";
+  let err = "";
+  const buffer = {
+    stdout: (s) => {
+      out += s;
+    },
+    stderr: (s) => {
+      err += s;
+    }
+  };
+  const written = [];
+  const onWritten = (file2, outcome) => {
+    written.push({ file: file2, outcome });
+    deps.onWritten?.(file2, outcome);
+  };
+  const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+  const print = (doc) => line(io, JSON.stringify(doc, null, 2));
+  const name = (client ?? "generic").toLowerCase();
+  let code;
+  try {
+    code = await installText(client, { ...opts, json: false }, buffer, { ...deps, onWritten });
+  } catch (e) {
+    const message = errorMessage(e);
+    const nextStep = !isInstallClient(name) ? `name one of: ${INSTALL_CLIENTS.join(", ")} (e.g. lexicon install cursor --json)` : /--scope must be/.test(message) ? "pass --scope user or --scope project" : `fix the problem in error, then run lexicon install ${name}${opts.apply ? " --apply" : ""} --json again`;
+    print(jsonError(message, nextStep));
+    return 1;
+  }
+  if (err) io.stderr(err);
+  if (code !== 0) {
+    print({
+      ...jsonError(`lexicon install ${name} did not complete; output says which step failed`, `fix that step, then run lexicon install ${name}${opts.apply ? " --apply" : ""} --json again`),
+      output: plain(out)
+    });
+    return code;
+  }
+  const scope = opts.scope ?? (opts.project ? "project" : "user");
+  const result = { ok: true, client: name, scope, applied: opts.apply === true, written, output: plain(out) };
+  print(result);
+  return 0;
+}
+async function installText(client, opts, io, deps) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   const home = opts.home ? import_node_path20.default.resolve(opts.home) : import_node_os7.default.homedir();

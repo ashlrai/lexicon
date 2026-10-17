@@ -100,7 +100,9 @@ One command per client, each writing that client's own config file:
 | Anything else | `lexicon install generic` prints the block to paste |
 
 Drop `--apply` to print the diff without writing. Do that first when your user
-has not seen what you are about to change. From inside an MCP session you have
+has not seen what you are about to change. Add `--json` for one document:
+`{ ok: true, client, scope, applied, written, output }`, or
+`{ ok: false, error, nextStep }` for an unknown client or scope. From inside an MCP session you have
 the same thing as a tool: `install_client { client, apply? }`.
 
 In Claude Code, `lexicon install claude --apply` also merges a `SessionStart`
