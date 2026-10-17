@@ -448,7 +448,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       description:
         "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. " +
         `Aliases: ${EXPORT_ALIAS_NOTE}. ` +
-        'The first content block is the export itself, exactly as `lexicon export` writes it. A second block, only when there is something to say, is a note for you, not part of the export: ' +
+        'The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: ' +
         'the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
