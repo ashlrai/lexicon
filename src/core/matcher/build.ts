@@ -46,6 +46,8 @@ export interface PhoneticEntry {
   readonly alpha: string;
   /** Length of `alpha`. */
   readonly length: number;
+  /** The double-metaphone primary key of `alpha`: this entry's key in `phoneticKeys`. */
+  readonly key: string;
   /**
    * True when this alias has several tokens and its first (respectively last)
    * one carries no word sound of its own: "Claude 4", "Kubernetes 1". The
@@ -78,12 +80,24 @@ export interface MatcherIndex {
   readonly collapsed: ReadonlyMap<string, readonly AliasEntry[]>;
   /** phonetic key -> entries */
   readonly phoneticKeys: ReadonlyMap<string, readonly PhoneticEntry[]>;
-  /** token count -> entries (fuzzy only compares windows of equal token count) */
+  /**
+   * token count -> entries (fuzzy only compares windows of equal token count),
+   * each bucket sorted by `normLower.length` (stable), so the fuzzy pass can
+   * skip straight to the lengths its length bound admits (see sortFuzzyBuckets).
+   */
   readonly fuzzyBuckets: ReadonlyMap<number, readonly AliasEntry[]>;
   /** term index -> lowercased never-words (plain and collapsed forms) */
   readonly never: ReadonlyArray<ReadonlySet<string>>;
   /** term index -> true when the user listed at least one alias */
   readonly hasExplicitAliases: ReadonlyArray<boolean>;
+  /**
+   * Every alias entry (each also sits in `exact`, `collapsed` and
+   * `fuzzyBuckets`) and every phonetic entry, in the order buildIndex created
+   * them. matcher/serialize.ts writes these, so a cached index rebuilds every
+   * map in the same order.
+   */
+  readonly aliasEntries: readonly AliasEntry[];
+  readonly phoneticEntries: readonly PhoneticEntry[];
 }
 
 export function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -171,6 +185,31 @@ export function suffixedAliases(canonical: string, aliases: readonly string[]): 
   return out;
 }
 
+/**
+ * Sort every fuzzy bucket by `normLower.length`, keeping creation order among
+ * equal lengths. The fuzzy pass rejects an entry whose length is too far from
+ * the window's before it computes anything; with the bucket sorted it starts
+ * at the first admissible length and stops past the last one instead of
+ * testing every alias of the lexicon for every window. Which entries pass is
+ * unchanged, and so is the result: entries of one term at one confidence
+ * yield the same candidate in any order.
+ */
+export function sortFuzzyBuckets(buckets: Map<number, AliasEntry[]>): void {
+  for (const list of buckets.values()) list.sort((a, b) => a.normLower.length - b.normLower.length);
+}
+
+/** Index of the first entry in a sorted bucket whose `normLower.length` is at least `len`. */
+export function firstAtLeast(bucket: readonly AliasEntry[], len: number): number {
+  let lo = 0;
+  let hi = bucket.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (bucket[mid].normLower.length < len) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export function buildIndex(lexicon: Lexicon): MatcherIndex {
   const settings = lexicon.settings ?? {};
   const exact = new Map<string, AliasEntry[]>();
@@ -179,6 +218,8 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
   const fuzzyBuckets = new Map<number, AliasEntry[]>();
   const never: Set<string>[] = [];
   const hasExplicitAliases: boolean[] = [];
+  const aliasEntries: AliasEntry[] = [];
+  const phoneticEntries: PhoneticEntry[] = [];
   let maxWindow = 1;
   let maxFuzzyWindow = 1;
   let phoneticMinLen = Number.POSITIVE_INFINITY;
@@ -231,6 +272,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
         separators: separatorOffsets(norm),
         explicit,
       };
+      aliasEntries.push(entry);
       push(exact, normLower, entry);
       push(collapsed, collapsedLower, entry);
       push(fuzzyBuckets, tokenCount, entry);
@@ -247,7 +289,9 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
           const dedupePhonetic = `${key}\u0000${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
             termKeys.add(dedupePhonetic);
-            push(phoneticKeys, key, { termIndex, term, alias, alpha, length: alpha.length, startsNonWord, endsNonWord });
+            const phoneticEntry: PhoneticEntry = { termIndex, term, alias, alpha, length: alpha.length, key, startsNonWord, endsNonWord };
+            phoneticEntries.push(phoneticEntry);
+            push(phoneticKeys, key, phoneticEntry);
             phoneticMinLen = Math.min(phoneticMinLen, alpha.length);
             phoneticMaxLen = Math.max(phoneticMaxLen, alpha.length);
             // STT tends to split one long word into several ("pie dentic"), so
@@ -264,6 +308,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
   });
 
   if (!Number.isFinite(phoneticMinLen)) phoneticMinLen = 0;
+  sortFuzzyBuckets(fuzzyBuckets);
 
   const protectedWords = new Set<string>();
   for (const w of settings.protectedWords ?? []) {
@@ -288,5 +333,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
     phoneticKeys,
     fuzzyBuckets,
     never,
+    aliasEntries,
+    phoneticEntries,
   };
 }

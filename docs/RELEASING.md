@@ -75,7 +75,7 @@ The release workflow validates all eleven source version fields and the dated ch
 **Build the plugin bundle from a clean checkout, not from your working tree.** A bundle built where `node_modules` is a symlink bakes hundreds of absolute paths to the maintainer's home directory into the published artifact: esbuild names every bundled module by the path it resolved to rather than by `node_modules/...`, and the result is committed. The count in this paragraph has been guessed at twice, so here is what the repository can actually be asked: `git log --format=%H --all -- plugin/hook.mjs` piped through `git show <sha>:plugin/hook.mjs | grep -c /Users/` finds exactly one commit that shipped them, 385c412, carrying 453 in `mcp-server.mjs` and 242 in `hook.mjs`, which is the 695 the 0.5.3 notes report. Any earlier occurrence was caught before it was committed and left no record, so run that command rather than trusting a number here. Clone the repo to a scratch directory, `npm ci` there, `npm run build:bundle`, and copy `plugin/` back. Then check the artifact before you tag, because a bundle is not something anyone reads by eye:
 
 ```bash
-grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs   # both must be 0
+grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs plugin/hook-main.mjs   # all must be 0
 ```
 
 `npm run check:bundle` rebuilds in place and diffs, so it proves the bundle matches `src/`; it does not prove the bundle is free of your home directory. Both checks are needed.

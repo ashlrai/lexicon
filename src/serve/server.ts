@@ -34,7 +34,8 @@ import {
   learnCorrection,
   listPacks,
   loadLexicon,
-  normalize,
+  loadMatcherIndex,
+  normalizeWithIndex,
   recordHits,
   resolvePaths,
   isProjectTrustError,
@@ -47,6 +48,7 @@ import type {
   InstallPackResult,
   LexiconStats,
   LoadedLexicon,
+  MatcherIndex,
   NormalizeResult,
   PackInfo,
   Term,
@@ -89,6 +91,8 @@ export interface ServeServerOptions {
   reloadMs?: number;
   /** Hard cap on in-flight requests before 503. Default MAX_CONCURRENT_REQUESTS (64). */
   maxConcurrent?: number;
+  /** Matching budget per /normalize in ms. Default NORMALIZE_BUDGET_MS. */
+  normalizeBudgetMs?: number;
 }
 
 export interface ServeStartInfo {
@@ -155,6 +159,15 @@ export interface AliasesResponse {
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const MAX_CONCURRENT_REQUESTS = 64;
 export const LEXICON_RELOAD_MS = 2_000;
+/**
+ * How long one /normalize may spend matching before it stops and returns the
+ * corrections found so far (the hook's HOOK_MATCH_BUDGET_MS, for a server).
+ * The server is one thread: a 1 MB paste against a large lexicon used to hold
+ * every other client for seconds, and the extension, which gives up after
+ * 1.5 s, fell back to its embedded engine while the send waited. Under that
+ * timeout on purpose.
+ */
+export const NORMALIZE_BUDGET_MS = 1_000;
 /** Path of the extension pairing page (`lexicon serve --pair` opens it). */
 export const PAIR_PATH = '/pair';
 /** `<meta name>` attributes the pairing page carries; extension/src/pair.ts reads the same names. */
@@ -333,6 +346,8 @@ async function readJson(req: http.IncomingMessage, cap: number, optional = false
 interface CachedLexicon {
   loaded: LoadedLexicon;
   at: number;
+  /** Loaded on the first /normalize against this load (loadMatcherIndex); a 2000-term build is ~50 ms. */
+  index?: MatcherIndex;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +368,22 @@ export function isPairHost(hostHeader: string | undefined, port: number): boolea
   if (!hostHeader) return false;
   const h = hostHeader.trim().toLowerCase();
   return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
+}
+
+/**
+ * True when a /pair request may be answered given its `Origin` header: none
+ * (a top-level navigation, which is how the extension's content script meets
+ * the page) or the page's own origin. Anything else is a script on another
+ * origin fetching the token. CORS is granted to every browser-extension origin
+ * for the bearer routes, and those are useless without the token; /pair is
+ * the one route that hands it out, so it gets no CORS headers and refuses a
+ * cross-origin fetch outright, which keeps any other installed extension or
+ * an `allowedOrigins` page from reading it.
+ */
+export function isPairOrigin(origin: string | undefined, hostHeader: string | undefined): boolean {
+  if (origin === undefined) return true;
+  if (!hostHeader) return false;
+  return origin.trim().toLowerCase() === `http://${hostHeader.trim().toLowerCase()}`;
 }
 
 /** `127.0.0.1`, `::1` and the IPv4-mapped `::ffff:127.x.x.x` forms. */
@@ -450,6 +481,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   const version = opts.version ?? packageVersion(import.meta.url);
   const reloadMs = opts.reloadMs ?? LEXICON_RELOAD_MS;
   const maxConcurrent = opts.maxConcurrent ?? MAX_CONCURRENT_REQUESTS;
+  const normalizeBudgetMs = opts.normalizeBudgetMs ?? NORMALIZE_BUDGET_MS;
 
   let config: ServeConfig | undefined;
   let boundPort = 0;
@@ -460,17 +492,22 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     return given ? path.resolve(given) : defaultCwd;
   }
 
-  async function load(cwd: string): Promise<LoadedLexicon> {
+  async function loadEntry(cwd: string): Promise<CachedLexicon> {
     const now = Date.now();
     const hit = cache.get(cwd);
-    if (hit && now - hit.at < reloadMs) return hit.loaded;
+    if (hit && now - hit.at < reloadMs) return hit;
     const loaded = await loadLexicon({ cwd, ...storeOpts });
     if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
     }
-    cache.set(cwd, { loaded, at: now });
-    return loaded;
+    const entry: CachedLexicon = { loaded, at: now };
+    cache.set(cwd, entry);
+    return entry;
+  }
+
+  async function load(cwd: string): Promise<LoadedLexicon> {
+    return (await loadEntry(cwd)).loaded;
   }
 
   function invalidate(): void {
@@ -493,8 +530,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function handleNormalize(raw: unknown): Promise<NormalizeResponse> {
     const body = parseBody(NormalizeBody, raw);
     const cwd = resolveCwd(body.cwd);
-    const loaded = await load(cwd);
-    const result = normalize(body.text, loaded.merged, {
+    const entry = await loadEntry(cwd);
+    // From index-cache.json when the hook (or an earlier load) already built
+    // the index for this exact lexicon, which survives the reload that
+    // follows every hit-counting request.
+    entry.index ??= await loadMatcherIndex(entry.loaded);
+    const started = Date.now();
+    const result = normalizeWithIndex(body.text, entry.index, {
+      shouldStop: () => Date.now() - started >= normalizeBudgetMs,
       ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
       ...(body.minConfidence !== undefined ? { minConfidence: body.minConfidence } : {}),
     });
@@ -613,6 +656,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (!isPairHost(req.headers.host, boundPort)) {
       throw new HttpError(403, `the pairing page is served for Host 127.0.0.1:${boundPort} or localhost:${boundPort} only`);
     }
+    if (!isPairOrigin(req.headers.origin, req.headers.host)) {
+      throw new HttpError(403, 'the pairing page is not served to cross-origin requests');
+    }
     return {
       status: 200,
       text: pairPageHtml({ token: config.token, port: boundPort, version }),
@@ -723,7 +769,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
     const cors: Record<string, string> = {};
     const origin = req.headers.origin;
-    if (isOriginAllowed(origin, config?.allowedOrigins)) {
+    // Never for /pair: it carries the token (see isPairOrigin).
+    const isPair = (url.pathname.replace(/\/+$/, '') || '/') === PAIR_PATH;
+    if (!isPair && isOriginAllowed(origin, config?.allowedOrigins)) {
       cors['Access-Control-Allow-Origin'] = origin as string;
       cors['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
       cors['Access-Control-Allow-Methods'] = 'GET, POST, DELETE';

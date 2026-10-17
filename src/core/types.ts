@@ -161,6 +161,12 @@ export interface NormalizeOptions {
   skipCode?: boolean;
   /** Return candidates without applying them (output === input). */
   dryRun?: boolean;
+  /**
+   * Polled before each token after the first; once it returns true the scan
+   * ends and only the replacements found so far are returned. The prompt hook
+   * passes a clock-based budget here; the matcher itself never reads a clock.
+   */
+  shouldStop?: () => boolean;
 }
 
 /** A term proposed by a harvester, before the user accepts it. */

@@ -4,6 +4,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+## 0.5.6 (2026-10-16)
+
+### Security
+
+- MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
+
 ### Added
 
 - A plural keeps its "s". When a window minus its final "s" is an exact alias hit, or a closer match to the same term, only the base is replaced: "rotate the jots" becomes "rotate the JWTs", "three ollamas" becomes "three Ollamas" (it was "Ollama"), "the key pee eyes" becomes "the KPIs" (it was "KPI"). On the synthetic bench corpus (402 sentences of generated text, not audio): sentence accuracy 91.3% (367/402) to 92.0% (370/402), term recall 96.5% (302/313) to 96.8% (303/313), prose false positives excluding expected-hard unchanged at 0 of 95. Normalizing 29,659 lines of this workspace's own markdown gave identical output before and after.
@@ -14,15 +20,6 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon-mcp --version` prints the package version and `lexicon-mcp --help` a one-line usage, both exiting 0, instead of starting the stdio server.
 - `lexicon setup --company X --person Y` (and MCP `setup_lexicon` with `company`/`person`) seeds those names even when the lexicon already has 3 or more terms, for example after a starter pack. Before, an explicit name was dropped with "skipping the seed" and the plan showed `wouldSeed: []`. The guessed defaults (git user.name, the package scope) still wait for `--reseed`.
 - `lexicon add X --never w` (also `--phonetic`, `--category`, `--notes`), MCP `add_term` and `POST /add` on an existing term with no aliases no longer append generated aliases. Before, adding a never word to `Ashlr.AI` also added "Ashlr AI", "Ashlr", "Ashlar" and three more. A new term still gets the suggestions.
-
-## 0.5.6 (2026-10-16)
-
-### Security
-
-- MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
-
-### Fixed
-
 - MCP `serve_status` probes the port `lexicon serve` recorded in `serve.json` (falling back to 41733) instead of always 41733, so agents no longer start a second server when one runs on `--port`.
 - `lexicon export markdown` and `export claude-md` quote an alias that holds a comma (or starts with a double quote), CSV style, and the markdown importer reads a quoted alias whole. Before, an alias like `Ashlar, Inc` came back from an export and import as two aliases, `Ashlar` and `Inc`. Aliases without a comma are written exactly as before.
 - `lexicon serve`: a wrong method on `/health` (for example `POST /health`) now answers 405 like every other route, before the token check. It used to answer 401 because only `GET /health` skipped auth.

@@ -34,7 +34,7 @@ Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `ts
 
 ## The committed plugin bundles
 
-`plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.claude-plugin/plugin.json`, `hooks/hooks.json`). They are single-file esbuild bundles of `src/mcp/server.ts` and `src/hooks/user-prompt-submit.ts` with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
+`plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.claude-plugin/plugin.json`, `hooks/hooks.json`). They are esbuild bundles of `src/mcp/server.ts` and `src/hooks/plugin-entry.ts` (a small stub that enables Node's compile cache and imports `plugin/hook-main.mjs`, the bundle of `src/hooks/user-prompt-submit.ts`) with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
 
 Run `npm run build:bundle` before committing any change that the MCP server or the hook can reach (almost everything under `src/core`, `src/mcp`, `src/hooks`, or a dependency bump) and commit the regenerated files. CI runs `npm run check:bundle`, which rebuilds and fails on any diff under `plugin/`. `dist/` (the tsc output for the npm package and library types) stays untracked.
 
@@ -50,7 +50,7 @@ lexicon doctor
 ```bash
 npm install
 npm run build           # tsc -> dist/
-npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs (commit these)
+npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs (commit these)
 npm run check:bundle    # rebuild and fail if plugin/ differs from the checked-in files (CI runs this)
 npm run typecheck       # tsc --noEmit
 npm test                # unit + integration + e2e (vitest)

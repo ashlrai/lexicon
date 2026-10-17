@@ -249,6 +249,13 @@ registerSuggestCommands(program, io);
 registerReviewCommands(program, io);
 registerPackCommands(program, io);
 
+// A reader that closed the pipe (`lexicon list | head`) has seen all it wants:
+// stop quietly instead of dying on an unhandled EPIPE with a stack trace.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') process.exit(0);
+  throw err;
+});
+
 try {
   await program.parseAsync(process.argv);
 } catch (err) {

@@ -3,7 +3,9 @@
  * Builds the self-contained Claude Code plugin entry points:
  *
  *   plugin/mcp-server.mjs  <- src/mcp/server.ts
- *   plugin/hook.mjs        <- src/hooks/user-prompt-submit.ts
+ *   plugin/hook-main.mjs   <- src/hooks/user-prompt-submit.ts
+ *   plugin/hook.mjs        <- src/hooks/plugin-entry.ts (enables Node's
+ *                             compile cache, then imports hook-main.mjs)
  *
  * Every dependency (zod, yaml, the MCP SDK, double-metaphone, ...) is inlined,
  * so a bare `git clone` of the plugin (which is what `claude plugin install`
@@ -79,7 +81,8 @@ const builtinsViaRequire = {
 
 const entryPoints = {
   'mcp-server': resolve(root, 'src/mcp/server.ts'),
-  hook: resolve(root, 'src/hooks/user-prompt-submit.ts'),
+  'hook-main': resolve(root, 'src/hooks/user-prompt-submit.ts'),
+  hook: resolve(root, 'src/hooks/plugin-entry.ts'),
 };
 
 await build({
