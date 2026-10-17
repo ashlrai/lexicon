@@ -59774,13 +59774,18 @@ var registerHarvestTools = (server, ctx) => {
           evidence: external_exports.array(external_exports.string()).optional(),
           count: external_exports.number().optional()
         }),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("Where to write: 'global' (default) or 'project'.")
+        scope: external_exports.enum(TERM_SCOPES).optional().describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'.")
       }
     },
     async ({ suggestion, scope }) => guarded(async () => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
-      const storeOpts2 = { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} };
+      let target = scope;
+      if (target === void 0 && (kind === "alias" || kind === "never")) {
+        const key = canonical.trim().toLowerCase();
+        target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+      }
+      const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
         const removed = await removeTerm(canonical, storeOpts2);
         return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
@@ -59794,7 +59799,7 @@ var registerHarvestTools = (server, ctx) => {
         source: "user",
         ...kind === "term" && suggestion.category !== void 0 ? { category: suggestion.category } : {},
         ...kind === "never" && alias ? { never: [alias] } : {},
-        ...scope !== void 0 ? { scope } : {}
+        ...target !== void 0 ? { scope: target } : {}
       };
       const saved = await addTerm(term, storeOpts2);
       const summary = kind === "alias" ? `"${alias}" -> "${saved.term.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${saved.term.canonical}"` : `added "${saved.term.canonical}" (${saved.term.aliases.length} alias${saved.term.aliases.length === 1 ? "" : "es"})`;

@@ -206,3 +206,26 @@ describe('suggest_canonical length', () => {
     expect(JSON.parse(ok.text)).toMatchObject({ suggestions: [{ canonical: 'Hetzner' }] });
   });
 });
+
+describe('apply_suggestion on a term in the project lexicon', () => {
+  // Catches: with no `scope`, an 'alias' (or 'never') suggestion for a term
+  // that lives in the project file was written to a new global copy of the
+  // term. The project term wins the merge, so the alias never took effect;
+  // the suggestion carries no scope, so the agent could not pass the right one.
+  it('writes the alias where the term lives, so the next normalize uses it', async () => {
+    const added = await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' });
+    expect(added.isError).toBe(false);
+    const projectPath = path.join(repo, '.lexicon.yaml');
+
+    const applied = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys' } });
+    expect(applied.isError).toBe(false);
+    expect(JSON.parse(applied.text)).toMatchObject({ path: projectPath, created: false });
+
+    const never = await call('apply_suggestion', { suggestion: { kind: 'never', canonical: 'kubernetes', alias: 'cubes' } });
+    expect(JSON.parse(never.text)).toMatchObject({ path: projectPath, created: false });
+
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'deploy to kuber nettys' })).text) as { output: string };
+    expect(normalized.output).toBe('deploy to Kubernetes');
+    await expect(fs.stat(process.env.LEXICON_PATH as string)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});

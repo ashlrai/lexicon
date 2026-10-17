@@ -130,14 +130,25 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           evidence: z.array(z.string()).optional(),
           count: z.number().optional(),
         }),
-        scope: z.enum(TERM_SCOPES).optional().describe("Where to write: 'global' (default) or 'project'."),
+        scope: z
+          .enum(TERM_SCOPES)
+          .optional()
+          .describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'."),
       },
     },
     async ({ suggestion, scope }) =>
       guarded(async () => {
         const { kind, canonical } = suggestion;
         const alias = suggestion.alias?.trim();
-        const storeOpts = { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) };
+        // An alias or never word goes where the term lives, as `lexicon suggest`
+        // does: a global copy of a project term loses the merge, so it would
+        // never fire. Suggestions do not carry a scope for the agent to pass.
+        let target = scope;
+        if (target === undefined && (kind === 'alias' || kind === 'never')) {
+          const key = canonical.trim().toLowerCase();
+          target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+        }
+        const storeOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
         if (kind === 'stale') {
           const removed = await removeTerm(canonical, storeOpts);
           return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
@@ -151,7 +162,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           source: 'user',
           ...(kind === 'term' && suggestion.category !== undefined ? { category: suggestion.category } : {}),
           ...(kind === 'never' && alias ? { never: [alias] } : {}),
-          ...(scope !== undefined ? { scope } : {}),
+          ...(target !== undefined ? { scope: target } : {}),
         };
         const saved = await addTerm(term, storeOpts);
         const summary =
