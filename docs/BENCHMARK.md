@@ -204,8 +204,6 @@ tables above have since been regenerated and now include G and H.
 | hard-002 | `and tropic released` -> unchanged | `Anthropic released` | `anthropic` keys to `AN0RPK` (th = theta), `andtropic` to `ANTRPK`. Before H the output was `and tRPC released`; the lone-token similarity floor now refuses `tropic` -> tRPC, but nothing recovers Anthropic. |
 | hard-003 | `play right is flaky` -> unchanged | `Playwright` | Both tokens are stoplist words, so the window is never guessed. |
 | hard-004 | `the vite test run` -> `the Vite test run` | `Vitest` | `vite` is an exact hit and exact hits are claimed first. |
-| hard-005, 016 | `ollamas` -> `Ollama`, `key pee eyes` -> `KPI` | plural kept | Replacement is whole-token; no plural handling. |
-| hard-006 | `rotate the jots` -> unchanged | `JWTs` | Plural of an alias. |
 | hard-007 | `language chain` -> unchanged | `LangChain` | Different key, 2 tokens vs 1. |
 | hard-008 | `ask be yorn halvorsen` -> `ask be Bjørn Halvorsen` | `Bjørn Halvorsen` | The 3-token window starts on the function word `be` and is now refused; the 2-token fuzzy hit leaves `be` behind. |
 | hard-009 | `the a p eye` -> unchanged | `API` | Spelled-out aliases match exactly only, and `a p eye` is not one of the listed spellings. |

@@ -521,7 +521,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function handleAdd(raw: unknown): Promise<AddResponse> {
     const body = parseBody(AddBody, raw);
     const cwd = resolveCwd(body.cwd);
-    const aliases = body.aliases && body.aliases.length > 0 ? body.aliases : suggestAliases(body.canonical);
+    // Generated aliases only when this creates the term (see addTerm's defaultAliases).
+    const aliases = body.aliases ?? [];
+    const given = aliases.length > 0;
     const term: Term = {
       canonical: body.canonical,
       aliases,
@@ -532,7 +534,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       ...(body.never && body.never.length > 0 ? { never: body.never } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
     };
-    const saved = await addTerm(term, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
+    const saved = await addTerm(term, {
+      cwd,
+      ...storeOpts,
+      ...(body.scope !== undefined ? { scope: body.scope } : {}),
+      ...(given ? {} : { defaultAliases: suggestAliases(body.canonical) }),
+    });
     invalidate();
     return { term: saved.term, path: saved.file.path, created: saved.created };
   }

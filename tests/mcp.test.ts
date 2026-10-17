@@ -186,9 +186,9 @@ beforeEach(() => {
   );
   mocks.recordHits.mockResolvedValue(undefined);
   mocks.suggestAliases.mockImplementation((c: string) => [`${c} heard`, c.toLowerCase()]);
-  mocks.addTerm.mockImplementation(async (term: Term, opts?: { scope?: string }) => ({
+  mocks.addTerm.mockImplementation(async (term: Term, opts?: { scope?: string; defaultAliases?: string[] }) => ({
     file: { path: opts?.scope === 'project' ? '/fake/repo/.lexicon.yaml' : '/fake/global/lexicon.yaml', scope: opts?.scope ?? 'global', lexicon: fixtureLexicon, exists: true },
-    term,
+    term: term.aliases.length === 0 && opts?.defaultAliases ? { ...term, aliases: opts.defaultAliases } : term,
     created: true,
   }));
   mocks.removeTerm.mockResolvedValue(true);
@@ -382,6 +382,11 @@ describe('lexicon MCP server', () => {
       expect(payload.path).toBe('/fake/repo/.lexicon.yaml');
       expect(payload.created).toBe(true);
       expect(mocks.suggestAliases).toHaveBeenCalledWith('Zoë');
+      // The suggestions go in as the fallback for a new term, never as aliases to merge.
+      expect(mocks.addTerm).toHaveBeenLastCalledWith(
+        { canonical: 'Zoë', aliases: [], source: 'user', category: 'person', scope: 'project' },
+        { cwd: '/fake/repo', scope: 'project', defaultAliases: ['Zoë heard', 'zoë'] },
+      );
     } finally {
       await close();
     }

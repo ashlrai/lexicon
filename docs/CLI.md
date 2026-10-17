@@ -474,8 +474,8 @@ Options:
   --no-serve          skip installing the local API login service (no prompt)
   --dry-run           detect and suggest only; write nothing and print what a
                       run would do
-  --reseed            seed person/company terms even if the lexicon already has
-                      terms
+  --reseed            also seed the guessed person/company (git user.name,
+                      package scope) when the lexicon already has terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)
   --json              print a machine-readable summary on stdout (progress goes
                       to stderr)
