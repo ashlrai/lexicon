@@ -86,6 +86,7 @@ program
   .command('init')
   .description('create the lexicon file (global by default) if it does not exist')
   .option('--project', 'create a project .lexicon.yaml at the git root (or cwd) instead')
+  .option('--json', 'print { ok: true, scope, path, created } as JSON (plus trust for --project)')
   .action(async (opts: InitOptions) => done(await runInit(withGlobals(opts), io)));
 
 program

@@ -62692,7 +62692,25 @@ async function runInit(opts, io) {
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
   const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
-  const created = await withLexiconLock(target, async () => {
+  const created = await createLexiconFile(target, scope);
+  if (created && scope === "project") await trustProject(target, { cwd });
+  if (opts.json) {
+    const trust = scope === "project" ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
+    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    return 0;
+  }
+  if (!created) {
+    line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    return 0;
+  }
+  line(io, `created ${scope} lexicon: ${safe(target)}`);
+  if (scope === "project") {
+    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
+  }
+  return 0;
+}
+async function createLexiconFile(target, scope) {
+  return withLexiconLock(target, async () => {
     if ((0, import_node_fs22.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
@@ -62701,16 +62719,6 @@ async function runInit(opts, io) {
     await import_node_fs22.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
-  if (!created) {
-    line(io, `${scope} lexicon already exists: ${safe(target)}`);
-    return 0;
-  }
-  line(io, `created ${scope} lexicon: ${safe(target)}`);
-  if (scope === "project") {
-    await trustProject(target, { cwd });
-    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
-  }
-  return 0;
 }
 
 // src/cli/cmd-setup.ts

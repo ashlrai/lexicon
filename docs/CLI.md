@@ -87,6 +87,8 @@ create the lexicon file (global by default) if it does not exist
 
 Options:
   --project   create a project .lexicon.yaml at the git root (or cwd) instead
+  --json      print { ok: true, scope, path, created } as JSON (plus trust for
+              --project)
   -h, --help  display help for command
 ```
 

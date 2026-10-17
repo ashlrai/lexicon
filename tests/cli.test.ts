@@ -1946,6 +1946,29 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: `lexicon init --json` was an unknown option (exit 1, nothing
+  // created), though doctor's fix for a missing lexicon is `lexicon init` and
+  // every other command that writes a lexicon file takes --json.
+  it('init --json prints { ok, scope, path, created } and trust for --project', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-init-')));
+    try {
+      const globalPath = path.join(tmp, 'g', 'lexicon.yaml');
+      const repo = path.join(tmp, 'repo');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const first = lexicon(['init', '--json', '--cwd', repo], globalPath);
+      expect(first.status).toBe(0);
+      expect(JSON.parse(first.stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: true });
+      expect(JSON.parse(lexicon(['init', '--json', '--cwd', repo], globalPath).stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: false });
+      const project = lexicon(['init', '--project', '--json', '--cwd', repo], globalPath);
+      expect(project.status).toBe(0);
+      expect(JSON.parse(project.stdout)).toEqual({ ok: true, scope: 'project', path: path.join(repo, '.lexicon.yaml'), created: true, trust: 'trusted' });
+      // Without --json the text is unchanged.
+      expect(lexicon(['init', '--cwd', repo], globalPath).stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: the hidden `install-claude` alias did not take --json (an
   // unknown option, exit 1), and its `--scope` default of `user` beat
   // `--project`, so it did not behave like `install claude`.

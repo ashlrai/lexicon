@@ -217,6 +217,8 @@ export async function readStdin(maxBytes?: number): Promise<string> {
 
 export interface InitOptions extends CommonOptions {
   project?: boolean;
+  /** Print `{ ok: true, scope, path, created, trust? }` (or `{ ok: false, error, nextStep? }`). */
+  json?: boolean;
 }
 
 const EXAMPLE_TERM_COMMENT = `
@@ -245,7 +247,32 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   // first, and an add landing between the write and the append is renamed away
   // by nothing but read back without the comment. The lock is re-entrant, so
   // the writeLexiconFile inside takes it again for free.
-  const created = await withLexiconLock(target, async () => {
+  // A failure throws to the CLI entry, which prints `{ ok: false, error }` under --json.
+  const created = await createLexiconFile(target, scope);
+  // The user asked for this file; that is the approval `lexicon trust` records.
+  if (created && scope === 'project') await trustProject(target, { cwd });
+  if (opts.json) {
+    // `trust` for a project file only: an existing one may be untrusted, which
+    // is what decides whether its terms are merged.
+    const trust =
+      scope === 'project' ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
+    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    return 0;
+  }
+  if (!created) {
+    line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    return 0;
+  }
+  line(io, `created ${scope} lexicon: ${safe(target)}`);
+  if (scope === 'project') {
+    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
+  }
+  return 0;
+}
+
+/** Creates `target` with the default settings and the example comment; false when it already exists. */
+async function createLexiconFile(target: string, scope: TermScope): Promise<boolean> {
+  return withLexiconLock(target, async () => {
     if (existsSync(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
@@ -256,18 +283,6 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
     await fs.appendFile(target, EXAMPLE_TERM_COMMENT, 'utf8');
     return true;
   });
-
-  if (!created) {
-    line(io, `${scope} lexicon already exists: ${safe(target)}`);
-    return 0;
-  }
-  line(io, `created ${scope} lexicon: ${safe(target)}`);
-  if (scope === 'project') {
-    // The user asked for this file; that is the approval `lexicon trust` records.
-    await trustProject(target, { cwd });
-    line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
-  }
-  return 0;
 }
 
 // ---------------------------------------------------------------------------
