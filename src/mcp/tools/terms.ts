@@ -21,6 +21,7 @@ import {
   removeAlias,
   removeTerm,
   resolveExportFormat,
+  selectExportTerms,
   spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
@@ -446,7 +447,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       title: 'Export the lexicon',
       description:
         "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. " +
-        `Aliases: ${EXPORT_ALIAS_NOTE}.`,
+        `Aliases: ${EXPORT_ALIAS_NOTE}. ` +
+        'The first content block is the export itself, exactly as `lexicon export` writes it. A second block, only when there is something to say, is a note for you, not part of the export: ' +
+        'the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
         categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include these categories.'),
@@ -458,11 +461,26 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const resolved = resolveExportFormat(format);
         if (!resolved) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(', ')})`);
         const loaded = await load();
-        const exported = exportLexicon(loaded.merged, resolved, {
+        const opts = {
           ...(categories !== undefined ? { categories } : {}),
           ...(limit !== undefined ? { limit } : {}),
-        });
-        return textResult(exported);
+        };
+        const exported = exportLexicon(loaded.merged, resolved, opts);
+        // The export goes to a file or another tool verbatim, so what the
+        // caller needs to know rides in a separate block: an empty export
+        // and one missing the untrusted project's terms otherwise read as a
+        // complete one (`lexicon export` says the same on stderr).
+        const notes: string[] = [];
+        if (loaded.merged.terms.length === 0) {
+          notes.push('The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.');
+        } else if (selectExportTerms(loaded.merged, opts).length === 0) {
+          notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+        }
+        const skipped = skippedProjectFields(loaded, 'Its terms are not in this export.').note;
+        if (skipped) notes.push(skipped);
+        const result = textResult(exported);
+        if (notes.length > 0) result.content.push({ type: 'text', text: `Note (not part of the export): ${notes.join(' ')}` });
+        return result;
       }),
   );
 

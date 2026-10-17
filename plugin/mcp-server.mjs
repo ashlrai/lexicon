@@ -57671,6 +57671,9 @@ function exportLexicon(lexicon, format, opts = {}) {
   }
   return exporter(applyOptions(lexicon, opts), opts);
 }
+function selectExportTerms(lexicon, opts = {}) {
+  return applyOptions(lexicon, opts).terms;
+}
 function applyOptions(lexicon, opts) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
@@ -60522,7 +60525,7 @@ var registerTermTools = (server, ctx) => {
     "export_lexicon",
     {
       title: "Export the lexicon",
-      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}.`,
+      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly as \`lexicon export\` writes it. A second block, only when there is something to say, is a note for you, not part of the export: the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include these categories."),
@@ -60533,11 +60536,22 @@ var registerTermTools = (server, ctx) => {
       const resolved2 = resolveExportFormat(format);
       if (!resolved2) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
       const loaded = await load();
-      const exported = exportLexicon(loaded.merged, resolved2, {
+      const opts = {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
-      });
-      return textResult(exported);
+      };
+      const exported = exportLexicon(loaded.merged, resolved2, opts);
+      const notes = [];
+      if (loaded.merged.terms.length === 0) {
+        notes.push("The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.");
+      } else if (selectExportTerms(loaded.merged, opts).length === 0) {
+        notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+      }
+      const skipped = skippedProjectFields(loaded, "Its terms are not in this export.").note;
+      if (skipped) notes.push(skipped);
+      const result = textResult(exported);
+      if (notes.length > 0) result.content.push({ type: "text", text: `Note (not part of the export): ${notes.join(" ")}` });
+      return result;
     })
   );
   server.registerTool(

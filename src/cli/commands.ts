@@ -62,6 +62,7 @@ import {
   emptyLexicon,
   isEmptyLexicon,
   exportLexicon,
+  selectExportTerms,
   resolveExportFormat,
   harvestRepo,
   loadLexicon,
@@ -917,11 +918,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, ensureNewline(text), 'utf8');
     // The terms actually written: the same category filter and cap exportLexicon applies.
-    const allowed = exportOpts.categories && exportOpts.categories.length > 0 ? new Set(exportOpts.categories) : undefined;
-    const matching = allowed
-      ? merged.terms.filter((t) => t.category !== undefined && allowed.has(t.category)).length
-      : merged.terms.length;
-    const written = exportOpts.limit !== undefined ? Math.min(matching, exportOpts.limit) : matching;
+    const written = selectExportTerms(merged, exportOpts).length;
     line(io, `wrote ${format} export (${plural(written, 'term')}) to ${safe(outPath)}`);
   } else {
     io.stdout(ensureNewline(text));
