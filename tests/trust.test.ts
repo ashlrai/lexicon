@@ -252,7 +252,8 @@ describe('concurrent trust registrations', () => {
     }
 
     const results = await Promise.all(projects.map((file) => runChild(script, [globalPath, file])));
-    expect(results.map((r) => r.code)).toEqual(projects.map(() => 0));
+    // Code and output together, so a child that fails says why in the CI log.
+    expect(results).toEqual(projects.map(() => ({ code: 0, out: 'trusted' })));
 
     const registry = await readTrustRegistry({ globalPath });
     expect(Object.keys(registry.trusted).sort()).toEqual([...projects].sort());

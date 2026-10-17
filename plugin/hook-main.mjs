@@ -19091,7 +19091,7 @@ async function writeFileAtomic(target, data, opts = {}) {
   }
   try {
     if (opts.backup) await backupExisting(real);
-    await import_node_fs.promises.rename(tmp, real);
+    await renameReplacing(tmp, real);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
@@ -19113,12 +19113,32 @@ async function copyThroughTemp(from, to) {
     throw err;
   }
   try {
-    await import_node_fs.promises.rename(tmp, to);
+    await renameReplacing(tmp, to);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
   return true;
+}
+var WINDOWS_RENAME_RETRY_MS = 1e3;
+function isTransientWindowsError(err, platform = process.platform) {
+  if (platform !== "win32") return false;
+  const code = typeof err === "object" && err !== null ? err.code : void 0;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+async function renameReplacing(from, to) {
+  const deadline = Date.now() + WINDOWS_RENAME_RETRY_MS;
+  let wait = 5;
+  for (; ; ) {
+    try {
+      await import_node_fs.promises.rename(from, to);
+      return;
+    } catch (err) {
+      if (!isTransientWindowsError(err) || Date.now() >= deadline) throw err;
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 100);
+  }
 }
 async function isYoungerThan(file, ms) {
   try {
@@ -19222,16 +19242,19 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
   for (; ; ) {
+    let transient;
     try {
       await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
       await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
     } catch (err) {
-      if (!isEexist(err)) throw err;
+      if (isTransientWindowsError(err)) transient = err;
+      else if (!isEexist(err)) throw err;
     }
-    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (transient === void 0 && await breakIfStale(lockPath, staleMs)) continue;
     if (Date.now() >= deadline) {
+      if (transient !== void 0) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
     }
     await sleep(wait / 2 + Math.random() * wait);
