@@ -351,18 +351,20 @@ describe('harvestImportSources', () => {
 
 describe('applyImportCandidates', () => {
   it('writes candidates through addTerm with the import source tag', async () => {
-    const dir = `/tmp/lexicon-import-test-${process.pid}`;
-    const globalPath = `${dir}/lexicon.yaml`;
-    const candidates: HarvestCandidate[] = [
-      { canonical: 'Ada Lovelace', category: 'person', source: 'import:contacts', evidence: [], count: 1, suggestedAliases: [] },
-    ];
-    const result = await applyImportCandidates(candidates, { globalPath });
-    expect(result.added).toBe(1);
-    expect(result.merged).toBe(0);
-    expect(result.path).toBe(globalPath);
-    // A second apply merges rather than duplicating.
-    const again = await applyImportCandidates(candidates, { globalPath });
-    expect(again.added).toBe(0);
-    expect(again.merged).toBe(1);
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lexicon-import-test-'));
+    try {
+      const globalPath = path.join(dir, 'lexicon.yaml');
+      const candidates: HarvestCandidate[] = [
+        { canonical: 'Ada Lovelace', category: 'person', source: 'import:contacts', evidence: [], count: 1, suggestedAliases: [] },
+      ];
+      const result = await applyImportCandidates(candidates, { globalPath });
+      expect(result.added).toBe(1);
+      expect(result.merged).toBe(0);
+      expect(result.path).toBe(globalPath);
+      // A second apply merges rather than duplicating.
+      const again = await applyImportCandidates(candidates, { globalPath });
+      expect(again.added).toBe(0);
+      expect(again.merged).toBe(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
