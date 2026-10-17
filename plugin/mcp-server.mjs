@@ -59129,6 +59129,14 @@ function filePathsInUse(loaded) {
     ...loaded.project ? { project: loaded.project.path } : {}
   };
 }
+function skippedProjectFields(loaded) {
+  if (!loaded.skippedProject) return {};
+  return {
+    projectTrust: loaded.projectTrust,
+    skippedProject: loaded.skippedProject.path,
+    note: loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it."
+  };
+}
 
 // src/mcp/tools/terms.ts
 var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)];
@@ -59165,7 +59173,7 @@ var registerTermTools = (server, ctx) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently.",
+      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.",
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them (output === input)."),
@@ -59188,7 +59196,10 @@ var registerTermTools = (server, ctx) => {
         output: result.output,
         changed: result.changed,
         replacements: result.replacements,
-        summary: result.replacements.length > 0 ? diffSummary(result) : ""
+        summary: result.replacements.length > 0 ? diffSummary(result) : "",
+        // Without this an unchanged transcript in a repo whose lexicon is not
+        // trusted yet looks exactly like one that needed no correction.
+        ...skippedProjectFields(loaded)
       });
     })
   );
@@ -59285,11 +59296,7 @@ var registerTermTools = (server, ctx) => {
           project: loaded.project?.lexicon.terms.length ?? 0
         },
         paths: filePathsInUse(loaded),
-        ...loaded.skippedProject ? {
-          projectTrust: loaded.projectTrust,
-          skippedProject: loaded.skippedProject.path,
-          note: loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it."
-        } : {}
+        ...skippedProjectFields(loaded)
       });
     })
   );

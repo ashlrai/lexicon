@@ -23,7 +23,7 @@ import {
   suggestCanonicalFor,
 } from '../../core/index.js';
 import type { Term, TermScope } from '../../core/index.js';
-import { filePathsInUse, guarded, log, textResult } from '../shared.js';
+import { filePathsInUse, guarded, log, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 
@@ -93,7 +93,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
         'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
-        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently.',
+        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, ' +
+        'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.',
       inputSchema: {
         text: z.string().describe('The dictated or transcribed text to correct.'),
         dryRun: z
@@ -128,6 +129,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           changed: result.changed,
           replacements: result.replacements,
           summary: result.replacements.length > 0 ? diffSummary(result) : '',
+          // Without this an unchanged transcript in a repo whose lexicon is not
+          // trusted yet looks exactly like one that needed no correction.
+          ...skippedProjectFields(loaded),
         });
       }),
   );
@@ -277,16 +281,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             project: loaded.project?.lexicon.terms.length ?? 0,
           },
           paths: filePathsInUse(loaded),
-          ...(loaded.skippedProject
-            ? {
-                projectTrust: loaded.projectTrust,
-                skippedProject: loaded.skippedProject.path,
-                note:
-                  loaded.projectTrust === 'changed'
-                    ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
-                    : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.',
-              }
-            : {}),
+          ...skippedProjectFields(loaded),
         });
       }),
   );

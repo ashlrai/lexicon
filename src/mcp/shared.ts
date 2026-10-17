@@ -154,3 +154,21 @@ export function filePathsInUse(loaded: LoadedLexicon): { global: string; project
     ...(loaded.project ? { project: loaded.project.path } : {}),
   };
 }
+
+/**
+ * `{ projectTrust, skippedProject, note }` when a project lexicon exists but
+ * was not merged, else `{}`. The path only, never the untrusted file's text.
+ */
+export function skippedProjectFields(
+  loaded: LoadedLexicon,
+): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
+  if (!loaded.skippedProject) return {};
+  return {
+    projectTrust: loaded.projectTrust,
+    skippedProject: loaded.skippedProject.path,
+    note:
+      loaded.projectTrust === 'changed'
+        ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
+        : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.',
+  };
+}
