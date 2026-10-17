@@ -456,12 +456,17 @@ export function renderDoctorReport(report: DoctorReport, io: IO): number {
   return failures === 0 ? 0 : 1;
 }
 
-export async function runDoctor(opts: CommonOptions & { json?: boolean }, io: IO, deps: DoctorDeps = {}): Promise<number> {
+export interface DoctorCliOptions extends CommonOptions {
+  /** Print the report as JSON: the object the MCP `lexicon_doctor` tool returns. */
+  json?: boolean;
+}
+
+export async function runDoctor(opts: DoctorCliOptions, io: IO, deps: DoctorDeps = {}): Promise<number> {
   const report = await runDoctorReport(opts, deps);
   if (opts.json) {
-    // The same object MCP lexicon_doctor returns, and the same exit code as the text.
+    // Same exit code as the text report, so `doctor --json` still gates a script.
     line(io, JSON.stringify(report, null, 2));
-    return report.ok ? 0 : 1;
+    return report.checks.some((c) => c.level === 'fail') ? 1 : 0;
   }
   return renderDoctorReport(report, io);
 }

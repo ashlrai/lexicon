@@ -30,7 +30,7 @@ import {
   isProjectTrustError,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
-import { filePathsInUse, guarded, log, skippedProjectFields, textResult } from '../shared.js';
+import { filePathsInUse, guarded, log, nonBlank, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 
@@ -300,10 +300,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead. With `alias`, an ' +
         'unknown term or an alias the term does not have is an error.',
       inputSchema: {
-        canonical: z.string().min(1),
-        alias: z
-          .string()
-          .min(1)
+        canonical: nonBlank(),
+        alias: nonBlank()
           .optional()
           .describe('Remove only this alias (case-insensitive) from the term instead of the whole term.'),
         scope: z
@@ -534,10 +532,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
         'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user `lexicon trust` would enable it.',
       inputSchema: {
-        heard: z
-          .string()
-          .min(1)
-          .describe(`The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`),
+        heard: nonBlank().describe(
+          `The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`,
+        ),
       },
     },
     async ({ heard }) =>

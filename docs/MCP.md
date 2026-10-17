@@ -25,6 +25,8 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 
 ## Tools
 
+Arguments are checked against each tool's schema before the tool runs. A key the schema does not declare (`alias` for `aliases`, `txt` for `text`) is refused with `Unrecognized key: "<name>"` instead of being dropped, and every schema in `tools/list` carries `additionalProperties: false`. `remove_term`'s `canonical` and `alias`, and `suggest_canonical`'s `heard`, must hold more than whitespace (on the default branch, not yet in a published release).
+
 | Tool | Arguments | Returns |
 |---|---|---|
 | `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`, and `incomplete` when the text was longer than 100,000 characters or matching ran past 1 second (the unchecked rest comes back unchanged). Also bumps each term's `hits` counter |
@@ -36,7 +38,7 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 | `learn_correction` | `heard`, `meant`, `scope?` | The term the alias was added to, `created`, `aliasAdded`, a one-line summary |
 | `suggest_canonical` | `heard` (at most 60 characters) | Up to three existing terms closest to the garbled word, with confidence, for "did you mean X?"; `skippedProject` when an untrusted project lexicon was left out |
 | `lexicon_stats` | none | Term and alias counts, total hits, top ten terms, never-hit terms, per-file breakdown |
-| `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, checks: [{ level, message }], paths, versions }` |
+| `lexicon_doctor` | none | The `lexicon doctor` checks as data: `{ ok, ready, summary, nextStep, checks: [{ level, message }], paths, versions }`, the same object `lexicon doctor --json` prints |
 | `install_client` | `client`, `apply?`, `scope?` | Preview (default) or apply the MCP config for `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or `claude-desktop` |
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
 | `import_dictionary` | `path?` or `content?`, `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |

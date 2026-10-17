@@ -238,8 +238,7 @@ check lexicon files, term conflicts and the Claude Code integration
 
 Options:
   --json      print the report as JSON ({ ok, ready, summary, nextStep, checks,
-              paths, versions }, as MCP lexicon_doctor returns it); exit 1 when
-              a check fails
+              ... }, as the lexicon_doctor MCP tool returns it)
   -h, --help  display help for command
 ```
 

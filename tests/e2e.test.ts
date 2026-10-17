@@ -721,6 +721,49 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: stats, path, doctor', () => 
     expect(missing.stdout).toContain(`✗ global lexicon missing: ${h.globalPath}`);
     expect(missing.stdout).toMatch(/1 check failed/);
   });
+
+  // `doctor` had no --json, though `stats`, `list` and `pack list` do and the
+  // MCP lexicon_doctor tool returns exactly this report as JSON; a script or
+  // agent in a terminal could only scrape the text.
+  it('doctor --json prints the report as JSON and keeps the exit code', async () => {
+    const noBin = path.join(shared.home, 'empty-bin');
+    await fs.mkdir(noBin, { recursive: true });
+    const ok = await runCli(['doctor', '--json'], { env: { ...shared.env, PATH: noBin }, cwd: shared.repo });
+    expect(ok.code, ok.stderr).toBe(0);
+    const report = JSON.parse(ok.stdout) as { ok: boolean; ready: boolean; summary: string; nextStep: string; checks: { level: string; message: string }[] };
+    expect(report.ok).toBe(true);
+    expect(typeof report.summary).toBe('string');
+    expect(report.nextStep).not.toBe('');
+    expect(report.checks).toContainEqual({ level: 'ok', message: `global lexicon parses: ${shared.globalPath} (2 terms)` });
+
+    const h = await freshHome('doctor-json-missing');
+    const missing = await runCli(['doctor', '--json'], { env: { ...h.env, PATH: noBin }, cwd: h.repo });
+    expect(missing.code).toBe(1);
+    const failed = JSON.parse(missing.stdout) as { ok: boolean; nextStep: string };
+    expect(failed.ok).toBe(false);
+    expect(failed.nextStep).toMatch(/lexicon/);
+  });
+
+  // Every command that loads the lexicon stopped at the parser's reason;
+  // only doctor said what to run.
+  it('a lexicon that does not parse names the command that fixes it', async () => {
+    const h = await freshHome('unparsable');
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    await fs.writeFile(h.globalPath, 'version: 1\nterms:\n  - canonical: [oops\n');
+    for (const args of [['list'], ['add', 'Foo'], ['stats', '--json']]) {
+      const r = await runCli(args, { env: h.env, cwd: h.repo });
+      expect(r.code, args.join(' ')).toBe(1);
+      expect(r.stderr).toContain(`Failed to parse lexicon YAML at ${h.globalPath}`);
+      expect(r.stderr, args.join(' ')).toContain('(run: lexicon edit), then check it with: lexicon doctor');
+      expect(r.stdout).toBe('');
+    }
+    // A broken project file is opened with `edit --project`.
+    await fs.writeFile(h.globalPath, 'version: 1\nterms: []\n');
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'terms: [\n');
+    const project = await runCli(['list'], { env: { ...h.env, LEXICON_TRUST_ALL: '1' }, cwd: h.repo });
+    expect(project.code).toBe(1);
+    expect(project.stderr).toContain('(run: lexicon edit --project)');
+  });
 });
 
 // ---------------------------------------------------------------------------
