@@ -109,13 +109,13 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project; a project file that is not trusted yet is left untrusted, `trusted: false`: relay `nextStep`). ' +
         'Adds the pack\'s terms with source "pack"; a term the user already has keeps its own spelling and aliases and only gains the pack\'s. Idempotent. ' +
         'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with ' + cliCommand('pack remove <name>') + '. ' +
-        'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so ' + cliCommand('pack update') + ' re-checks it later.',
+        'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. A vendored pack installs directly: registry, previewDigest or confirm: false with one is refused and nothing is written. Community installs pin the checksum, so ' + cliCommand('pack update') + ' re-checks it later.',
       inputSchema: {
         name: z.string().describe('Pack name from list_packs (e.g. developer) or a community ref like example/cardiology.'),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
         registry: z.string().optional().describe(REGISTRY_SOURCE_DESC + ' Required for community refs.'),
-        confirm: z.boolean().optional().describe('Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing.'),
-        previewDigest: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Community packs: digest returned by the approved full-content preview; required with confirm.'),
+        confirm: z.boolean().optional().describe('Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing. A vendored pack has no preview: confirm: false with one is refused.'),
+        previewDigest: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Community packs only: digest returned by the approved full-content preview; required with confirm. Refused with a vendored pack.'),
       },
     },
     async ({ name, scope, registry, confirm, previewDigest }) =>
@@ -171,6 +171,21 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           });
         }
         if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
+        // A vendored pack installs in one call. registry, previewDigest and
+        // confirm: false belong to the community preview flow; silently
+        // installing anyway would turn a call that asked for a preview (or for
+        // a registry's pack of that name) into a write.
+        const stray = [
+          ...(registry !== undefined ? ['registry'] : []),
+          ...(previewDigest !== undefined ? ['previewDigest'] : []),
+          ...(confirm === false ? ['confirm: false'] : []),
+        ];
+        if (stray.length > 0) {
+          throw new Error(
+            `"${name}" is a vendored starter pack, which installs directly without a preview, so ${stray.join(', ')} ${stray.length === 1 ? 'does' : 'do'} not apply (they are for <author>/<name> community refs). Nothing was installed. ` +
+              'Call again with only name (and scope) once the user agreed to this pack, or pass the <author>/<name> ref for a community pack.',
+          );
+        }
         const writeOpts = scope === 'project' ? await mcpWriteOpts(ctx) : {};
         const result = await installPack(name, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}), ...writeOpts });
         return textResult({

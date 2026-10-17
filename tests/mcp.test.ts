@@ -1221,6 +1221,30 @@ describe('lexicon MCP server', () => {
         }
       });
 
+      // Catches: a vendored name with registry, previewDigest or confirm: false
+      // (the community preview flow) was installed anyway, so a call asking
+      // for a preview wrote dozens of terms.
+      it('add_pack refuses community-only parameters with a vendored pack and writes nothing', async () => {
+        const { client, close } = await connect();
+        try {
+          for (const extra of [{ confirm: false }, { registry: '/fake/index.yaml' }, { previewDigest: 'a'.repeat(64) }, { registry: '/fake/index.yaml', confirm: false }]) {
+            const result = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', ...extra } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/"developer" is a vendored starter pack/);
+            expect(textOf(result)).toMatch(/Nothing was installed/);
+          }
+          expect(textOf(await client.callTool({ name: 'add_pack', arguments: { name: 'developer', registry: '/fake/index.yaml', confirm: false } }))).toMatch(/registry, confirm: false do not apply/);
+          expect(mocks.installPack).not.toHaveBeenCalled();
+          expect(mocks.loadRegistryIndex).not.toHaveBeenCalled();
+          // confirm: true is what the description asks for after a yes, so it still installs.
+          const ok = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', confirm: true } });
+          expect(ok.isError).toBe(false);
+          expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
       it('refuses a registry the user did not register before reading it', async () => {
         mocks.assertUserRegistry.mockRejectedValue(new Error('registry "/etc/passwd" is not one the user registered, so it was not read.'));
         const { client, close } = await connect();
