@@ -58692,12 +58692,12 @@ function computeStats(loaded) {
   const terms = loaded.merged.terms;
   const byCategory = {};
   const bySource = {};
-  let aliasCount = 0;
+  let aliasCount2 = 0;
   let totalHits = 0;
   const neverHit = [];
   let neverHitCount = 0;
   for (const term of terms) {
-    aliasCount += term.aliases.length;
+    aliasCount2 += term.aliases.length;
     const hits = term.hits ?? 0;
     totalHits += hits;
     if (hits <= 0) {
@@ -58714,7 +58714,7 @@ function computeStats(loaded) {
   if (loaded.project) {
     files.push({ path: loaded.project.path, scope: "project", terms: loaded.project.lexicon.terms.length });
   }
-  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
+  return { termCount: terms.length, aliasCount: aliasCount2, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
 }
 
 // src/core/suggestTerms.ts
@@ -60605,7 +60605,9 @@ var registerTermTools = (server, ctx) => {
         ...conflict ? { conflict } : {},
         ...untrustedProject ? { untrustedProject } : {},
         ...pending ?? {},
-        summary: saved + conflictNote + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
+        // `saved` has no full stop of its own (the conflict note continues
+        // its sentence), so one is added before any note that starts a new one.
+        summary: saved + (conflictNote || (untrustedNote || pending ? "." : "")) + untrustedNote + (pending ? ` ${pending.nextStep}` : "")
       });
     })
   );
@@ -60652,6 +60654,9 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path14 = __toESM(require_node_path());
+function aliasCount(n) {
+  return `${n} alias${n === 1 ? "" : "es"}`;
+}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -60811,7 +60816,11 @@ var registerHarvestTools = (server, ctx) => {
       const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
       const shown = untrusted && !saved.created ? term : saved.term;
       const pending = untrusted ? untrustedWriteFields(saved.file.path, "It") : void 0;
-      const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : `added "${shown.canonical}" (${shown.aliases.length} alias${shown.aliases.length === 1 ? "" : "es"})`) + (pending ? `. ${pending.nextStep}` : "");
+      const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : saved.created ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})` : (
+        // A 'term' whose canonical the lexicon already had merges into it; an
+        // untrusted file's copy is not read back, so it has no count then.
+        `merged into the existing "${shown.canonical}"${untrusted ? "" : ` (${aliasCount(shown.aliases.length)} now)`}`
+      )) + (pending ? `. ${pending.nextStep}` : "");
       return textResult({ kind, canonical: shown.canonical, term: shown, path: saved.file.path, created: saved.created, ...pending ?? {}, summary });
     })
   );

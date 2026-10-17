@@ -1363,3 +1363,37 @@ describe('environment variables the MCP server reads', () => {
     expect(await fs.readFile(path.join(root, 'README.md'), 'utf8')).toContain('(docs/MCP.md#environment-variables)');
   });
 });
+
+// Catches: summaries an agent relays as written read wrong. learn_correction
+// into an untrusted project file ran its sentences together ("... saved It
+// was written to ..."), and apply_suggestion with a 'term' the lexicon
+// already had said "added" though `created` was false and it only merged.
+describe('summaries', () => {
+  it('learn_correction ends its first sentence before the untrusted-file next step', async () => {
+    const result = JSON.parse((await call('learn_correction', { heard: 'Hetsner', meant: 'Hetzner', scope: 'project' })).text) as {
+      trusted?: boolean;
+      summary: string;
+    };
+    expect(result.trusted).toBe(false);
+    expect(result.summary).toMatch(/^"Hetsner" -> "Hetzner" saved\. It was written to /);
+    // Nothing follows: no full stop is added.
+    const plain = JSON.parse((await call('learn_correction', { heard: 'Versel', meant: 'Vercel' })).text) as { summary: string };
+    expect(plain.summary).toBe('"Versel" -> "Vercel" saved');
+  });
+
+  it('apply_suggestion says a term suggestion merged into an existing term', async () => {
+    await call('add_term', { canonical: 'Vercel', aliases: ['Versel'] });
+    const merged = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'term', canonical: 'Vercel', aliases: ['Vrcl'] } })).text) as {
+      created: boolean;
+      summary: string;
+    };
+    expect(merged.created).toBe(false);
+    expect(merged.summary).toBe('merged into the existing "Vercel" (2 aliases now)');
+    const added = JSON.parse((await call('apply_suggestion', { suggestion: { kind: 'term', canonical: 'Hetzner', aliases: ['Hetsner'] } })).text) as {
+      created: boolean;
+      summary: string;
+    };
+    expect(added.created).toBe(true);
+    expect(added.summary).toBe('added "Hetzner" (1 alias)');
+  });
+});

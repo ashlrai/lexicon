@@ -25,6 +25,10 @@ import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, guarded, log, mcpWr
 import { cliCommand } from '../../util/cli-hint.js';
 import type { ToolRegistrar } from '../shared.js';
 
+function aliasCount(n: number): string {
+  return `${n} alias${n === 1 ? '' : 'es'}`;
+}
+
 export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
   const { load } = ctx;
@@ -254,7 +258,12 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             ? `"${alias}" -> "${shown.canonical}" saved`
             : kind === 'never'
               ? `"${alias}" will never be rewritten to "${shown.canonical}"`
-              : `added "${shown.canonical}" (${shown.aliases.length} alias${shown.aliases.length === 1 ? '' : 'es'})`) + (pending ? `. ${pending.nextStep}` : '');
+              : saved.created
+                ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})`
+                : // A 'term' whose canonical the lexicon already had merges into it; an
+                  // untrusted file's copy is not read back, so it has no count then.
+                  `merged into the existing "${shown.canonical}"${untrusted ? '' : ` (${aliasCount(shown.aliases.length)} now)`}`) +
+          (pending ? `. ${pending.nextStep}` : '');
         return textResult({ kind, canonical: shown.canonical, term: shown, path: saved.file.path, created: saved.created, ...(pending ?? {}), summary });
       }),
   );

@@ -576,7 +576,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(conflict ? { conflict } : {}),
           ...(untrustedProject ? { untrustedProject } : {}),
           ...(pending ?? {}),
-          summary: saved + conflictNote + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
+          // `saved` has no full stop of its own (the conflict note continues
+          // its sentence), so one is added before any note that starts a new one.
+          summary: saved + (conflictNote || (untrustedNote || pending ? '.' : '')) + untrustedNote + (pending ? ` ${pending.nextStep}` : ''),
         });
       }),
   );
