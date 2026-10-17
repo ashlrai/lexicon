@@ -104,10 +104,20 @@ export function stripControlChars(s: string): string {
  * terminal, set its title or hide text behind a cursor move.
  */
 export function sanitizeForDisplay(s: string): string {
+  return sanitizeForDisplayMax(s, DISPLAY_MAX_CHARS);
+}
+
+/**
+ * `sanitizeForDisplay` with its own cap of `max` code points, for text whose
+ * tail matters (an error naming a long file path). A separate function, not
+ * an optional parameter, so `.map(sanitizeForDisplay)` cannot read the array
+ * index as the cap.
+ */
+export function sanitizeForDisplayMax(s: string, max: number): string {
   const clean = stripControlChars(s.replace(ANSI_RE, '')).replace(OTHER_RE, '');
   const chars = Array.from(clean);
-  if (chars.length <= DISPLAY_MAX_CHARS) return clean;
-  return `${chars.slice(0, DISPLAY_MAX_CHARS - 1).join('')}\u2026`;
+  if (chars.length <= max) return clean;
+  return `${chars.slice(0, Math.max(0, max - 1)).join('')}\u2026`;
 }
 
 /** A trimmed string with invisible characters removed, no control characters, at most `max` chars. */

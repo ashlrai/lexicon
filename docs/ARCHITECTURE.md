@@ -96,6 +96,7 @@ scripts/
   install.sh                the curl | sh installer
   make-signing-identity.sh  the reusable ad-hoc identity the macOS app is signed with
   smoke.mjs                 runs the built CLI, hook and MCP server end to end (npm run smoke)
+  smoke-home.mjs            the temp HOME and lexicon copy smoke.mjs runs in, so it writes nothing into the repo
   check-links.mjs           every relative markdown link and anchor resolves (npm run check:links)
   check-facts.mjs           every number the docs state is re-derived from the code (npm run check:facts)
   check-server-json.mjs     server.json agrees with package.json (npm run check:server-json)

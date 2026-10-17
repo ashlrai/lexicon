@@ -23981,12 +23981,12 @@ var $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (i
 var $ZodCheckNumberFormat = /* @__PURE__ */ $constructor("$ZodCheckNumberFormat", (inst, def) => {
   $ZodCheck.init(inst, def);
   def.format = def.format || "float64";
-  const isInt = def.format?.includes("int");
-  const origin = isInt ? "int" : "number";
+  const isInt2 = def.format?.includes("int");
+  const origin = isInt2 ? "int" : "number";
   const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
   inst._zod.check = (payload) => {
     const input2 = payload.value;
-    if (isInt) {
+    if (isInt2) {
       if (!Number.isInteger(input2)) {
         payload.issues.push({
           expected: origin,
@@ -26621,14 +26621,14 @@ function handleReadonlyResult(payload) {
 function leafPattern(schema) {
   const def = schema._zod.def;
   let pattern = def.pattern;
-  let isInt = !!def.format?.includes("int");
+  let isInt2 = !!def.format?.includes("int");
   let minimum;
   let maximum;
   for (const ch of def.checks ?? []) {
     const d = ch._zod.def;
     if (d.pattern)
       pattern = d.pattern;
-    isInt || (isInt = !!d.format?.includes("int"));
+    isInt2 || (isInt2 = !!d.format?.includes("int"));
     const lo = d.minimum ?? d.length;
     const hi = d.maximum ?? d.length;
     if (lo !== void 0 && (minimum === void 0 || lo > minimum))
@@ -26643,7 +26643,7 @@ function leafPattern(schema) {
   if (minimum !== void 0 || maximum !== void 0)
     return string({ minimum, maximum }).source;
   const own2 = schema._zod.pattern;
-  return (isInt && own2 === number ? integer : own2)?.source;
+  return (isInt2 && own2 === number ? integer : own2)?.source;
 }
 function partPattern(schema) {
   const def = schema._zod.def;
@@ -38060,8 +38060,8 @@ var stringProcessor = (schema, ctx, _json, _params) => {
 };
 var numberProcessor = (schema, ctx, _json, params) => {
   const json2 = _json;
-  const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt } = aggregateChecks(schema);
-  json2.type = isInt ? "integer" : "number";
+  const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt: isInt2 } = aggregateChecks(schema);
+  json2.type = isInt2 ? "integer" : "number";
   const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
   const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
   const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
@@ -40234,8 +40234,8 @@ var ZodNumber2 = /* @__PURE__ */ $constructor(
       return Math.min(maximum ?? Number.POSITIVE_INFINITY, exclusiveMaximum ?? Number.POSITIVE_INFINITY);
     },
     isInt: (inst) => {
-      const { isInt, multipleOf } = aggregateChecks(inst);
-      return !!isInt || !!multipleOf?.some(Number.isSafeInteger);
+      const { isInt: isInt2, multipleOf } = aggregateChecks(inst);
+      return !!isInt2 || !!multipleOf?.some(Number.isSafeInteger);
     },
     format: (inst) => aggregateChecks(inst).format ?? null
   }, {
@@ -47606,10 +47606,13 @@ function stripControlChars(s) {
   return stripInvisible(s.replace(CONTROL_RE_G, ""));
 }
 function sanitizeForDisplay(s) {
+  return sanitizeForDisplayMax(s, DISPLAY_MAX_CHARS);
+}
+function sanitizeForDisplayMax(s, max) {
   const clean = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
   const chars = Array.from(clean);
-  if (chars.length <= DISPLAY_MAX_CHARS) return clean;
-  return `${chars.slice(0, DISPLAY_MAX_CHARS - 1).join("")}\u2026`;
+  if (chars.length <= max) return clean;
+  return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
 function SafeString(max) {
   return string2().transform((s) => stripInvisible(s).trim()).pipe(
@@ -52954,6 +52957,165 @@ function clamp01(n) {
   return Math.min(1, Math.max(0, n));
 }
 
+// src/core/matcher/serialize.ts
+var INDEX_FORMAT_VERSION = 1;
+function indexKey(lexicon) {
+  const s = lexicon.settings ?? {};
+  return JSON.stringify([
+    INDEX_FORMAT_VERSION,
+    s.minConfidence ?? null,
+    s.phonetic ?? null,
+    s.fuzzy ?? null,
+    s.skipCode ?? null,
+    s.protectedWords ?? null,
+    lexicon.terms.map((t) => [t.canonical, t.aliases, t.never ?? null, t.caseSensitive === true])
+  ]);
+}
+function serializeIndex(index) {
+  return {
+    v: INDEX_FORMAT_VERSION,
+    minConfidence: index.minConfidence,
+    phonetic: index.phonetic,
+    fuzzy: index.fuzzy,
+    skipCode: index.skipCode,
+    protectedWords: [...index.protectedWords],
+    maxWindow: index.maxWindow,
+    maxFuzzyWindow: index.maxFuzzyWindow,
+    phoneticMinLen: index.phoneticMinLen,
+    phoneticMaxLen: index.phoneticMaxLen,
+    aliases: index.aliasEntries.map((e) => [
+      e.termIndex,
+      e.alias,
+      e.norm === e.alias ? 0 : e.norm,
+      e.normLower === e.norm ? 0 : e.normLower,
+      e.collapsedRaw === e.norm ? 0 : e.collapsedRaw,
+      e.collapsed === e.normLower ? 0 : e.collapsed,
+      [...e.separators],
+      e.explicit ? 1 : 0,
+      e.tokenCount
+    ]),
+    phonetics: index.phoneticEntries.map((e) => [e.termIndex, e.alias, e.alpha, e.key, (e.startsNonWord ? 1 : 0) | (e.endsNonWord ? 2 : 0)]),
+    never: index.never.map((s) => [...s]),
+    hasExplicitAliases: index.hasExplicitAliases.map((b) => b ? 1 : 0)
+  };
+}
+var isStr = (v) => typeof v === "string";
+var isInt = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+var isNum = (v) => typeof v === "number" && Number.isFinite(v);
+var isBool = (v) => typeof v === "boolean";
+var isArr = Array.isArray;
+function deserializeIndex(data, lexicon) {
+  if (typeof data !== "object" || data === null) return void 0;
+  const d = data;
+  if (d.v !== INDEX_FORMAT_VERSION) return void 0;
+  if (!isNum(d.minConfidence) || !isBool(d.phonetic) || !isBool(d.fuzzy) || !isBool(d.skipCode)) return void 0;
+  if (!isInt(d.maxWindow) || !isInt(d.maxFuzzyWindow) || !isNum(d.phoneticMinLen) || !isNum(d.phoneticMaxLen)) return void 0;
+  if (!isArr(d.protectedWords) || !d.protectedWords.every(isStr)) return void 0;
+  if (!isArr(d.aliases) || !isArr(d.phonetics) || !isArr(d.never) || !isArr(d.hasExplicitAliases)) return void 0;
+  const terms = lexicon.terms;
+  const n = terms.length;
+  if (d.never.length !== n || d.hasExplicitAliases.length !== n) return void 0;
+  const aliasEntries = [];
+  const phoneticEntries = [];
+  const exact = /* @__PURE__ */ new Map();
+  const collapsed = /* @__PURE__ */ new Map();
+  const fuzzyBuckets = /* @__PURE__ */ new Map();
+  const aliases = d.aliases;
+  for (let i = 0; i < aliases.length; i++) {
+    const t = aliases[i];
+    if (!isArr(t) || t.length !== 9) return void 0;
+    const termIndex = t[0];
+    const alias = t[1];
+    const normRaw = t[2];
+    const normLowerRaw = t[3];
+    const collapsedRawRaw = t[4];
+    const collapsedLowerRaw = t[5];
+    const seps = t[6];
+    const explicit = t[7];
+    const tokenCount = t[8];
+    if (!isInt(termIndex) || termIndex >= n || typeof alias !== "string") return void 0;
+    if (!(normRaw === 0 || typeof normRaw === "string") || !(normLowerRaw === 0 || typeof normLowerRaw === "string")) return void 0;
+    if (!(collapsedRawRaw === 0 || typeof collapsedRawRaw === "string") || !(collapsedLowerRaw === 0 || typeof collapsedLowerRaw === "string")) return void 0;
+    if (!isArr(seps) || explicit !== 0 && explicit !== 1 || !isInt(tokenCount) || tokenCount < 1) return void 0;
+    for (let k = 0; k < seps.length; k++) if (!isInt(seps[k])) return void 0;
+    const norm = normRaw === 0 ? alias : normRaw;
+    const normLower = normLowerRaw === 0 ? norm : normLowerRaw;
+    const collapsedLower = collapsedLowerRaw === 0 ? normLower : collapsedLowerRaw;
+    const entry = {
+      termIndex,
+      term: terms[termIndex],
+      alias,
+      norm,
+      normLower,
+      collapsedRaw: collapsedRawRaw === 0 ? norm : collapsedRawRaw,
+      collapsed: collapsedLower,
+      tokenCount,
+      separators: new Set(seps),
+      explicit: explicit === 1
+    };
+    aliasEntries.push(entry);
+    push(exact, normLower, entry);
+    push(collapsed, collapsedLower, entry);
+    push(fuzzyBuckets, tokenCount, entry);
+  }
+  sortFuzzyBuckets(fuzzyBuckets);
+  const phoneticKeys = /* @__PURE__ */ new Map();
+  const phonetics = d.phonetics;
+  for (let i = 0; i < phonetics.length; i++) {
+    const t = phonetics[i];
+    if (!isArr(t) || t.length !== 5) return void 0;
+    const termIndex = t[0];
+    const alias = t[1];
+    const alpha = t[2];
+    const key = t[3];
+    const flags = t[4];
+    if (!isInt(termIndex) || termIndex >= n || typeof alias !== "string" || typeof alpha !== "string") return void 0;
+    if (typeof key !== "string" || key === "" || !isInt(flags)) return void 0;
+    const entry = {
+      termIndex,
+      term: terms[termIndex],
+      alias,
+      alpha,
+      length: alpha.length,
+      key,
+      startsNonWord: (flags & 1) !== 0,
+      endsNonWord: (flags & 2) !== 0
+    };
+    phoneticEntries.push(entry);
+    push(phoneticKeys, key, entry);
+  }
+  const never2 = [];
+  for (const words of d.never) {
+    if (!isArr(words) || !words.every(isStr)) return void 0;
+    never2.push(new Set(words));
+  }
+  const hasExplicitAliases = [];
+  for (const b of d.hasExplicitAliases) {
+    if (b !== 0 && b !== 1) return void 0;
+    hasExplicitAliases.push(b === 1);
+  }
+  return {
+    lexicon,
+    hasExplicitAliases,
+    minConfidence: d.minConfidence,
+    phonetic: d.phonetic,
+    fuzzy: d.fuzzy,
+    skipCode: d.skipCode,
+    protectedWords: new Set(d.protectedWords),
+    maxWindow: d.maxWindow,
+    maxFuzzyWindow: d.maxFuzzyWindow,
+    phoneticMinLen: d.phoneticMinLen,
+    phoneticMaxLen: d.phoneticMaxLen,
+    exact,
+    collapsed,
+    phoneticKeys,
+    fuzzyBuckets,
+    never: never2,
+    aliasEntries,
+    phoneticEntries
+  };
+}
+
 // src/core/trust.ts
 var import_node_fs3 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
@@ -52971,6 +53133,12 @@ function errorMessage(err) {
 function isEnoent(err) {
   return typeof err === "object" && err !== null && err.code === "ENOENT";
 }
+var InputError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "InputError";
+  }
+};
 
 // src/util/atomic.ts
 var BACKUP_SUFFIX = ".bak";
@@ -53542,6 +53710,35 @@ async function writeParseCache(filePath, text, lexicon, mode) {
   } catch {
   }
 }
+var INDEX_CACHE_FILE_NAME = "index-cache.json";
+var INDEX_CACHE_MIN_TERMS = 150;
+async function loadMatcherIndex(loaded, opts = {}) {
+  const lexicon = loaded.merged;
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
+  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
+  const key = indexKey(lexicon);
+  try {
+    const text = await import_node_fs4.promises.readFile(cachePath, "utf8");
+    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
+    if (text.startsWith(head.slice(0, -1))) {
+      const cached2 = JSON.parse(text);
+      if (isPlainObject3(cached2) && cached2.version === INDEX_FORMAT_VERSION && cached2.key === key) {
+        const index2 = deserializeIndex(cached2.index, lexicon);
+        if (index2) return index2;
+      }
+    }
+  } catch {
+  }
+  const index = buildIndex(lexicon);
+  if (opts.write !== false) {
+    try {
+      const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+      await writeFileAtomic(cachePath, out, { mode: 384 });
+    } catch {
+    }
+  }
+  return index;
+}
 async function writeLexiconFile(file2) {
   const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
   await withLexiconLock(file2.path, async () => {
@@ -53638,14 +53835,14 @@ function assertReadsBack(text, filePath) {
   try {
     raw = (0, import_yaml.parse)(text, { prettyErrors: false });
   } catch (err) {
-    throw new Error(
+    throw new InputError(
       `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`
     );
   }
   try {
     return parseLexicon(raw ?? emptyLexicon());
   } catch (err) {
-    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+    throw new InputError(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
   }
 }
 function withLexiconLock(filePath, fn) {
@@ -53863,7 +54060,7 @@ async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
-  if (!canonical) throw new Error("canonical must not be empty");
+  if (!canonical) throw new InputError("canonical must not be empty");
   const incoming = {
     ...term,
     canonical,
@@ -53937,10 +54134,10 @@ async function removeTerm(canonical, opts = {}) {
 async function removeAlias(canonical, alias, opts = {}) {
   const wanted = canonical.trim();
   const drop = alias.trim();
-  if (!wanted) throw new Error("canonical must not be empty");
-  if (!drop) throw new Error("alias must not be empty");
+  if (!wanted) throw new InputError("canonical must not be empty");
+  if (!drop) throw new InputError("alias must not be empty");
   if (sameCanonical(wanted, drop)) {
-    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
+    throw new InputError(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
   }
   let termFound = false;
   let firstTerm;
@@ -53964,8 +54161,8 @@ async function removeAlias(canonical, alias, opts = {}) {
   }
   if (firstTerm) return { term: firstTerm, files };
   const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
-  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
-  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
+  if (!termFound) throw new InputError(`no term "${wanted}" in ${where}`);
+  throw new InputError(`"${drop}" is not an alias of "${wanted}" in ${where}`);
 }
 async function recordHits(canonicals, opts = {}) {
   try {
@@ -57831,22 +58028,25 @@ function dedupeCaseInsensitive2(values) {
 async function learnCorrection(c, opts = {}) {
   const heard = c.heard.trim().replace(/\s+/g, " ");
   const meant = c.meant.trim().replace(/\s+/g, " ");
-  if (!meant) throw new Error("the intended spelling (meant) must not be empty");
+  if (!meant) throw new InputError("the intended spelling (meant) must not be empty");
   if (!heard) {
-    throw new Error(
+    throw new InputError(
       `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`
     );
   }
   if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new Error(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
+    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
   }
   if (heard === meant) {
-    throw new Error(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
+    throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
   }
   const { scope, ...storeOpts2 } = opts;
   const loaded = await loadLexicon(storeOpts2);
   if (sameText(heard, meant)) return learnCaseOnly(heard, meant, loaded, storeOpts2, scope);
   const existing = termFor(loaded.merged, meant);
+  const conflict = conflictFor(loaded.merged, heard, existing?.canonical ?? meant);
+  const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
+  const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (existing) {
     const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope = scope ?? existing.scope ?? "global";
@@ -57854,21 +58054,44 @@ async function learnCorrection(c, opts = {}) {
       { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: "learned" },
       { ...storeOpts2, scope: targetScope }
     );
-    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown };
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown, ...withConflict };
   }
   const aliases = dedupeCaseInsensitive2([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
     { canonical: meant, aliases, source: "learned" },
     { ...storeOpts2, scope: scope ?? "global" }
   );
-  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true };
+  return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
+}
+function spellingConflicts(lexicon, spellings, target) {
+  const out = [];
+  for (const spelling of spellings) {
+    const c = conflictFor(lexicon, spelling, target);
+    if (c) out.push(c);
+  }
+  return out;
+}
+function conflictFor(lexicon, heard, target) {
+  for (const t of lexicon.terms) {
+    if (sameText(t.canonical, target)) continue;
+    const scope = t.scope ?? "global";
+    if (sameText(t.canonical, heard)) return { canonical: t.canonical, scope, as: "canonical", spelling: t.canonical };
+    const alias = t.aliases.find((a) => sameText(a, heard));
+    if (alias !== void 0) return { canonical: t.canonical, scope, as: "alias", spelling: alias };
+  }
+  return void 0;
+}
+function untrustedClaim(loaded, heard, target) {
+  const skipped = loaded.skippedProject;
+  if (!skipped || !conflictFor(skipped.lexicon, heard, target)) return void 0;
+  return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
 }
 async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   const byCanonical = loaded.merged.terms.find((t) => sameText(t.canonical, meant));
   if (!byCanonical) {
     const viaAlias = loaded.merged.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
     if (viaAlias) {
-      throw new Error(
+      throw new InputError(
         `"${meant}" is an alias of "${viaAlias.canonical}", so it is corrected to that; if "${meant}" is its own name, first drop that alias from "${viaAlias.canonical}" (lexicon review or lexicon edit; removing the term would delete it)`
       );
     }
@@ -57923,11 +58146,15 @@ function computeStats(loaded) {
   let aliasCount = 0;
   let totalHits = 0;
   const neverHit = [];
+  let neverHitCount = 0;
   for (const term of terms) {
     aliasCount += term.aliases.length;
     const hits = term.hits ?? 0;
     totalHits += hits;
-    if (hits <= 0 && neverHit.length < NEVER_HIT_CAP) neverHit.push(term.canonical);
+    if (hits <= 0) {
+      neverHitCount += 1;
+      if (neverHit.length < NEVER_HIT_CAP) neverHit.push(term.canonical);
+    }
     bump(byCategory, term.category ?? "uncategorized");
     bump(bySource, term.source ?? "unknown");
   }
@@ -57938,7 +58165,7 @@ function computeStats(loaded) {
   if (loaded.project) {
     files.push({ path: loaded.project.path, scope: "project", terms: loaded.project.lexicon.terms.length });
   }
-  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, byCategory, bySource, files };
+  return { termCount: terms.length, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
 }
 
 // src/core/suggestTerms.ts
@@ -58521,7 +58748,13 @@ async function suggestTerms(input2) {
   }
   const merged = mergeSuggestions(suggestions);
   merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
-  return merged.slice(0, limit);
+  return merged.slice(0, limit).map((s) => withTarget(s, loaded));
+}
+function withTarget(s, loaded) {
+  const key = s.canonical.trim().toLowerCase();
+  const held = s.kind === "term" ? void 0 : loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+  const scope = held?.scope === "project" && loaded.project ? "project" : "global";
+  return { ...s, scope, path: scope === "project" && loaded.project ? loaded.project.path : loaded.global.path };
 }
 
 // src/core/packs.ts
@@ -59212,6 +59445,19 @@ function skippedProjectFields(loaded) {
 // src/mcp/tools/terms.ts
 var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)];
 var EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES).map(([alias, format]) => `'${alias}' means '${format}'`).join(", ");
+var MCP_NORMALIZE_BUDGET_MS = 1e3;
+var MCP_NORMALIZE_MAX_CHARS = 1e5;
+var CUT_LOOKBACK_CHARS = 64;
+function normalizeCut(text, max) {
+  if (text.length <= max) return text.length;
+  let cut = Math.max(0, max);
+  const code = text.charCodeAt(cut - 1);
+  if (cut > 0 && code >= 55296 && code <= 56319) cut -= 1;
+  for (let i = cut; i > 0 && i > cut - CUT_LOOKBACK_CHARS; i--) {
+    if (/\s/.test(text.charAt(i - 1))) return i;
+  }
+  return cut;
+}
 function holds(terms, canonical) {
   const key = canonical.trim().toLowerCase();
   return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
@@ -59244,7 +59490,7 @@ var registerTermTools = (server, ctx) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.",
+      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }; when \`changed\` is false the text was already correct and you should carry on silently, unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that \`lexicon trust\` would enable it.`,
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them (output === input)."),
@@ -59253,21 +59499,41 @@ var registerTermTools = (server, ctx) => {
     },
     async ({ text, dryRun, minConfidence }) => guarded(async () => {
       const loaded = await load();
-      const result = normalize(text, loaded.merged, {
+      const index = await loadMatcherIndex(loaded);
+      const cut = normalizeCut(text, ctx.normalizeMaxChars);
+      const head = cut < text.length ? text.slice(0, cut) : text;
+      const started = Date.now();
+      let timedOut = false;
+      const matched = normalizeWithIndex(head, index, {
+        shouldStop: () => timedOut ||= Date.now() - started >= ctx.normalizeBudgetMs,
         ...dryRun !== void 0 ? { dryRun } : {},
         ...minConfidence !== void 0 ? { minConfidence } : {}
       });
+      const tail = text.slice(head.length);
+      const result = tail ? { ...matched, input: text, output: matched.output + tail } : matched;
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
         await recordHits(canonicals, { cwd: ctx.cwd }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
+      const reasons = [...tail ? ["length"] : [], ...timedOut ? ["time"] : []];
+      const notes = [
+        ...tail ? [`Only the first ${head.length} of ${text.length} characters were checked; the rest is returned unchanged.`] : [],
+        ...timedOut ? [`Matching stopped at the ${ctx.normalizeBudgetMs} ms budget; later text may still hold uncorrected names.`] : []
+      ];
+      const incomplete = reasons.length > 0 ? {
+        reasons,
+        ...tail ? { checkedChars: head.length } : {},
+        totalChars: text.length,
+        note: `${notes.join(" ")} Call again with the unchecked part, in smaller pieces, if it matters.`
+      } : void 0;
       return textResult({
         output: result.output,
         changed: result.changed,
         replacements: result.replacements,
         summary: result.replacements.length > 0 ? diffSummary(result) : "",
+        ...incomplete ? { incomplete } : {},
         // Without this an unchanged transcript in a repo whose lexicon is not
         // trusted yet looks exactly like one that needed no correction.
         ...skippedProjectFields(loaded)
@@ -59278,7 +59544,7 @@ var registerTermTools = (server, ctx) => {
     "add_term",
     {
       title: "Add a lexicon term",
-      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that.",
+      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.",
       inputSchema: {
         canonical: external_exports.string().min(1).describe("The correct spelling, exactly as the user wants it written."),
         aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest (new terms only)."),
@@ -59306,7 +59572,16 @@ var registerTermTools = (server, ctx) => {
         ...scope !== void 0 ? { scope } : {},
         ...given ? {} : { defaultAliases: suggestAliases(canonical) }
       });
-      return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
+      const conflicts = spellingConflicts((await load()).merged, saved.term.aliases, saved.term.canonical);
+      const note = conflicts.map(
+        (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`
+      ).join(" ");
+      return textResult({
+        term: saved.term,
+        path: saved.file.path,
+        created: saved.created,
+        ...conflicts.length > 0 ? { conflicts, note } : {}
+      });
     })
   );
   server.registerTool(
@@ -59397,7 +59672,7 @@ var registerTermTools = (server, ctx) => {
     "learn_correction",
     {
       title: "Learn from a spelling correction",
-      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it. Then get on with what the user actually asked for.',
+      description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
         heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -59406,12 +59681,18 @@ var registerTermTools = (server, ctx) => {
     },
     async ({ heard, meant, scope }) => guarded(async () => {
       const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} });
+      const saved = learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+      const { conflict, untrustedProject } = learned;
+      const conflictNote = !conflict ? "" : conflict.as === "alias" ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".` : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. If the user never means "${conflict.canonical}", remove that term with remove_term.`;
+      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with \`lexicon trust\` (or trust_project status), which previews it first. Do not open it with Read or cat.`;
       return textResult({
         term: learned.term,
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
-        summary: learned.aliasAdded ? `"${heard}" -> "${learned.term.canonical}" saved` : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase() ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${learned.term.canonical}"`
+        ...conflict ? { conflict } : {},
+        ...untrustedProject ? { untrustedProject } : {},
+        summary: saved + conflictNote + untrustedNote
       });
     })
   );
@@ -59421,10 +59702,15 @@ var registerTermTools = (server, ctx) => {
       title: "Suggest the canonical form of a garbled word",
       description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term.',
       inputSchema: {
-        heard: external_exports.string().min(1).describe("The suspicious word or phrase as it appeared in the transcript.")
+        heard: external_exports.string().min(1).describe(`The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`)
       }
     },
     async ({ heard }) => guarded(async () => {
+      if (heard.trim().replace(/\s+/g, " ").length > MAX_CORRECTION_LENGTH) {
+        throw new Error(
+          `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`
+        );
+      }
       const loaded = await load();
       const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
         canonical: s.term.canonical,
@@ -59439,12 +59725,12 @@ var registerTermTools = (server, ctx) => {
     "lexicon_stats",
     {
       title: "Lexicon usage statistics",
-      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon.",
+      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. `neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only).",
       inputSchema: {}
     },
     async () => guarded(async () => {
       const loaded = await load();
-      return textResult(computeStats(loaded));
+      return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
     })
   );
 };
@@ -59505,7 +59791,7 @@ var registerHarvestTools = (server, ctx) => {
     "suggest_terms",
     {
       title: "Propose lexicon improvements",
-      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence.",
+      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
         cwd: external_exports.string().optional().describe("Repository to scan for evidence. Defaults to the server working directory."),
         limit: external_exports.number().int().positive().optional().describe("Max suggestions to return.")
@@ -59537,15 +59823,22 @@ var registerHarvestTools = (server, ctx) => {
           reason: external_exports.string().optional(),
           confidence: external_exports.number().optional(),
           evidence: external_exports.array(external_exports.string()).optional(),
-          count: external_exports.number().optional()
+          count: external_exports.number().optional(),
+          scope: external_exports.enum(TERM_SCOPES).optional(),
+          path: external_exports.string().optional()
         }),
-        scope: external_exports.enum(TERM_SCOPES).optional().describe("Where to write: 'global' (default) or 'project'.")
+        scope: external_exports.enum(TERM_SCOPES).optional().describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'.")
       }
     },
     async ({ suggestion, scope }) => guarded(async () => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
-      const storeOpts2 = { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {} };
+      let target = scope ?? suggestion.scope;
+      if (target === void 0 && (kind === "alias" || kind === "never")) {
+        const key = canonical.trim().toLowerCase();
+        target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+      }
+      const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
       if (kind === "stale") {
         const removed = await removeTerm(canonical, storeOpts2);
         return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
@@ -59559,7 +59852,7 @@ var registerHarvestTools = (server, ctx) => {
         source: "user",
         ...kind === "term" && suggestion.category !== void 0 ? { category: suggestion.category } : {},
         ...kind === "never" && alias ? { never: [alias] } : {},
-        ...scope !== void 0 ? { scope } : {}
+        ...target !== void 0 ? { scope: target } : {}
       };
       const saved = await addTerm(term, storeOpts2);
       const summary = kind === "alias" ? `"${alias}" -> "${saved.term.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${saved.term.canonical}"` : `added "${saved.term.canonical}" (${saved.term.aliases.length} alias${saved.term.aliases.length === 1 ? "" : "es"})`;
@@ -61639,6 +61932,27 @@ function serveUrl(port, host = DEFAULT_HOST) {
   const h = host.includes(":") ? `[${host}]` : host;
   return `http://${h}:${port}`;
 }
+async function probeHealth(baseUrl, opts = {}) {
+  const doFetch = opts.fetch ?? fetch;
+  let res;
+  try {
+    res = await doFetch(`${baseUrl}/health`, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 1500),
+      ...opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}
+    });
+  } catch (err) {
+    return { state: "down", error: err instanceof Error ? err.message : String(err) };
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    body = void 0;
+  }
+  if (res.ok) return { state: "up", body };
+  const given = typeof body === "object" && body !== null ? body.error : void 0;
+  return { state: "failing", status: res.status, error: typeof given === "string" ? given : `HTTP ${res.status}` };
+}
 
 // src/cli/cmd-serve.ts
 function storeOpts(opts) {
@@ -62583,10 +62897,10 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/mcp/tools/setup.ts
-async function serveHealthUrl() {
+async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
-  return `${serveUrl(port)}/health`;
+  return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {} };
 }
 var registerSetupTools = (server, ctx) => {
   const { load } = ctx;
@@ -62685,24 +62999,30 @@ var registerSetupTools = (server, ctx) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... } or { up: false }. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (`lexicon serve`, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); or { up: false, error } when nothing answers. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
-      const url2 = await serveHealthUrl();
-      try {
-        const res = await fetch(url2, { signal: AbortSignal.timeout(1500) });
-        if (!res.ok) return textResult({ up: false, url: url2, status: res.status });
-        const body = await res.json();
-        return textResult({ up: true, url: url2, ...isRecord(body) ? body : { body } });
-      } catch (err) {
+      const { base, token } = await serveTarget();
+      const url2 = `${base}/health`;
+      const probe = await probeHealth(base, token !== void 0 ? { token } : {});
+      if (probe.state === "up") return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : { body: probe.body } });
+      if (probe.state === "failing") {
         return textResult({
           up: false,
+          running: true,
           url: url2,
-          error: errorMessage(err),
-          hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+          status: probe.status,
+          error: probe.error,
+          hint: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and call serve_status again. Starting another server will not help."
         });
       }
+      return textResult({
+        up: false,
+        url: url2,
+        error: probe.error,
+        hint: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login (setup_lexicon with serve: true does the same)."
+      });
     })
   );
 };
@@ -63178,7 +63498,9 @@ function createServer2(opts = {}) {
     get cwd() {
       return cwd;
     },
-    load
+    load,
+    normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,
+    normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
   server.registerResource(
@@ -63191,12 +63513,7 @@ function createServer2(opts = {}) {
     },
     async (uri) => {
       const loaded = await load();
-      let text = exportLexicon(loaded.merged, "claude-md");
-      if (loaded.skippedProject) {
-        text += `
-
-Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
-      }
+      const text = exportLexicon(loaded.merged, "claude-md") + skippedProjectSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text }]
       };
@@ -63227,12 +63544,12 @@ Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrust
     },
     async () => {
       const loaded = await load();
-      const snippet2 = exportLexicon(loaded.merged, "claude-md");
+      const snippet2 = exportLexicon(loaded.merged, "claude-md").trimEnd() + skippedProjectSuffix(loaded);
       return {
         messages: [
           {
             role: "user",
-            content: { type: "text", text: `${snippet2.trimEnd()}
+            content: { type: "text", text: `${snippet2}
 
 ${VOICE_CONTEXT_INSTRUCTION}` }
           }
@@ -63251,6 +63568,12 @@ ${VOICE_CONTEXT_INSTRUCTION}` }
     })
   );
   return server;
+}
+function skippedProjectSuffix(loaded) {
+  if (!loaded.skippedProject) return "";
+  return `
+
+Note: this repo has an ${loaded.projectTrust === "changed" ? "edited" : "untrusted"} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
 }
 async function main() {
   const server = createServer2();

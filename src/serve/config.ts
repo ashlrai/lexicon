@@ -134,3 +134,43 @@ export function isLoopbackHost(host: string): boolean {
   const h = host.trim().toLowerCase();
   return h === 'localhost' || h === '::1' || h === '[::1]' || h.startsWith('127.');
 }
+
+/** What `probeHealth` saw at `<url>/health`. */
+export type HealthProbe =
+  /** 2xx: the parsed body (`HealthResponse`). */
+  | { state: 'up'; body: unknown }
+  /** The server answered, but with an error status: it is running and cannot serve (a broken lexicon file, say). */
+  | { state: 'failing'; status: number; error: string }
+  /** Nothing answered (refused, timed out). */
+  | { state: 'down'; error: string };
+
+/**
+ * GET `<baseUrl>/health`, sending the bearer `token` when there is one so a
+ * failing server returns its full error (see `errorStatus` in server.ts)
+ * rather than a pointer to its log. `lexicon serve --status` and the MCP
+ * `serve_status` tool share it, so neither calls a running server "down".
+ */
+export async function probeHealth(
+  baseUrl: string,
+  opts: { token?: string; timeoutMs?: number; fetch?: typeof fetch } = {},
+): Promise<HealthProbe> {
+  const doFetch = opts.fetch ?? fetch;
+  let res: Response;
+  try {
+    res = await doFetch(`${baseUrl}/health`, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 1_500),
+      ...(opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}),
+    });
+  } catch (err) {
+    return { state: 'down', error: err instanceof Error ? err.message : String(err) };
+  }
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = undefined;
+  }
+  if (res.ok) return { state: 'up', body };
+  const given = typeof body === 'object' && body !== null ? (body as { error?: unknown }).error : undefined;
+  return { state: 'failing', status: res.status, error: typeof given === 'string' ? given : `HTTP ${res.status}` };
+}

@@ -1,22 +1,26 @@
 /**
  * The embedded engine: the same core matcher the CLI uses, fed from the YAML
- * in extension storage. Compiles lazily and caches by YAML text.
+ * in extension storage. Compiles and caches by YAML text; the matcher index
+ * is built on the first normalize after a change and reused until the next
+ * one, and every call stops matching after EMBEDDED_MATCH_BUDGET_MS.
  *
  * Everything from src/core comes through ./core.js so the build can keep it
  * in one shared chunk (extension/dist/core.js) instead of inlining it here.
  */
 import {
+  buildIndex,
   emptyLexicon,
   isMap,
   isSeq,
   LIMITS,
-  normalize,
+  normalizeWithIndex,
   parseDocument,
   parseLexicon,
   parseYaml,
   stringifyYaml,
+  timeBudgetIncomplete,
 } from './core.js';
-import type { Lexicon, NormalizeResult } from './core.js';
+import type { Lexicon, MatcherIndex, NormalizeIncomplete, NormalizeResult } from './core.js';
 import { errorMessage } from './shared.js';
 
 export type Compiled = { lexicon: Lexicon; error: null } | { lexicon: null; error: string };
@@ -36,16 +40,44 @@ export interface EmbeddedEngine {
   lexicon(): Lexicon;
   error(): string | null;
   termCount(): number;
-  normalize(text: string, dryRun?: boolean): NormalizeResult;
+  /** `incomplete` is set only when matching stopped at the budget. */
+  normalize(text: string, dryRun?: boolean): EmbeddedNormalizeResult;
 }
 
-export function createEmbedded(initialYaml: string): EmbeddedEngine {
+export interface EmbeddedNormalizeResult extends NormalizeResult {
+  incomplete?: NormalizeIncomplete;
+}
+
+/**
+ * How long one embedded normalize may spend matching before it returns the
+ * corrections found so far: the hook's shouldStop budget, for the background
+ * worker. A content script waits on the reply before the send goes through,
+ * so a 1 MB paste against a large lexicon must not hold it for seconds.
+ */
+export const EMBEDDED_MATCH_BUDGET_MS = 250;
+
+export interface EmbeddedOptions {
+  /** Matching budget per normalize, in ms. Default EMBEDDED_MATCH_BUDGET_MS. */
+  budgetMs?: number;
+  /** Clock for the budget (tests). Default performance.now. */
+  now?: () => number;
+}
+
+export function createEmbedded(initialYaml: string, opts: EmbeddedOptions = {}): EmbeddedEngine {
+  const budgetMs = opts.budgetMs ?? EMBEDDED_MATCH_BUDGET_MS;
+  const now = opts.now ?? (() => performance.now());
   let yaml = '';
   let compiled: Compiled = { lexicon: emptyLexicon(), error: null };
+  // Built from `compiled` on first use, dropped whenever the YAML changes.
+  let index: MatcherIndex | null = null;
+  let loaded = false;
   const load = (text: string): string | null => {
-    if (text === yaml && compiled.lexicon) return compiled.error;
+    // A broken YAML is cached too: the same text gives the same error.
+    if (loaded && text === yaml) return compiled.error;
+    loaded = true;
     yaml = text;
     compiled = compileYaml(text);
+    index = null;
     return compiled.error;
   };
   load(initialYaml);
@@ -54,7 +86,13 @@ export function createEmbedded(initialYaml: string): EmbeddedEngine {
     lexicon: () => compiled.lexicon ?? emptyLexicon(),
     error: () => compiled.error,
     termCount: () => compiled.lexicon?.terms.length ?? 0,
-    normalize: (text, dryRun) => normalize(text, compiled.lexicon ?? emptyLexicon(), { dryRun }),
+    normalize: (text, dryRun) => {
+      index ??= buildIndex(compiled.lexicon ?? emptyLexicon());
+      const started = now();
+      let timedOut = false;
+      const result = normalizeWithIndex(text, index, { dryRun, shouldStop: () => (timedOut ||= now() - started >= budgetMs) });
+      return timedOut ? { ...result, incomplete: timeBudgetIncomplete(text.length, budgetMs) } : result;
+    },
   };
 }
 

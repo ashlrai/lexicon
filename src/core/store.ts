@@ -28,7 +28,7 @@ import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
 import type { TrustStatus } from './trust.js';
-import { errorMessage, isEnoent } from '../util/errors.js';
+import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
 import { globalLexiconPath } from '../util/xdg.js';
@@ -503,14 +503,14 @@ function assertReadsBack(text: string, filePath: string): Lexicon {
   try {
     raw = parseYaml(text, { prettyErrors: false });
   } catch (err) {
-    throw new Error(
+    throw new InputError(
       `Refusing to write lexicon at ${filePath}: the YAML it produced does not parse back: ${errorMessage(err)}`,
     );
   }
   try {
     return parseLexicon(raw ?? emptyLexicon());
   } catch (err) {
-    throw new Error(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
+    throw new InputError(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
   }
 }
 
@@ -942,7 +942,7 @@ export async function addTerm(
   // resolved the file rather than the path.
   const targetPath = await resolveScopeWritePath(scope, opts);
   const canonical = term.canonical.trim();
-  if (!canonical) throw new Error('canonical must not be empty');
+  if (!canonical) throw new InputError('canonical must not be empty');
 
   const incoming: Term = {
     ...term,
@@ -1077,10 +1077,10 @@ export async function removeAlias(
 ): Promise<RemoveAliasResult> {
   const wanted = canonical.trim();
   const drop = alias.trim();
-  if (!wanted) throw new Error('canonical must not be empty');
-  if (!drop) throw new Error('alias must not be empty');
+  if (!wanted) throw new InputError('canonical must not be empty');
+  if (!drop) throw new InputError('alias must not be empty');
   if (sameCanonical(wanted, drop)) {
-    throw new Error(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
+    throw new InputError(`"${drop}" is the canonical spelling of "${wanted}", not an alias; remove the term instead`);
   }
 
   let termFound = false;
@@ -1106,8 +1106,8 @@ export async function removeAlias(
   }
   if (firstTerm) return { term: firstTerm, files };
   const where = opts.scope ? `the ${opts.scope} lexicon` : 'the global or project lexicon';
-  if (!termFound) throw new Error(`no term "${wanted}" in ${where}`);
-  throw new Error(`"${drop}" is not an alias of "${wanted}" in ${where}`);
+  if (!termFound) throw new InputError(`no term "${wanted}" in ${where}`);
+  throw new InputError(`"${drop}" is not an alias of "${wanted}" in ${where}`);
 }
 
 /**

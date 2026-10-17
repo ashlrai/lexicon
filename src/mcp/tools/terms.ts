@@ -7,6 +7,7 @@ import { z } from 'zod';
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_ALIASES,
+  MAX_CORRECTION_LENGTH,
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
@@ -14,15 +15,17 @@ import {
   diffSummary,
   exportLexicon,
   learnCorrection,
-  normalize,
+  loadMatcherIndex,
+  normalizeWithIndex,
   recordHits,
   removeAlias,
   removeTerm,
   resolveExportFormat,
+  spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
 } from '../../core/index.js';
-import type { Term, TermScope } from '../../core/index.js';
+import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
@@ -37,6 +40,38 @@ const EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALI
 const EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES)
   .map(([alias, format]) => `'${alias}' means '${format}'`)
   .join(', ');
+
+/**
+ * How long one normalize_transcript may spend matching before it stops and
+ * returns the corrections found so far: serve's NORMALIZE_BUDGET_MS. The
+ * server is one thread, so a long match holds every other tool call.
+ */
+export const MCP_NORMALIZE_BUDGET_MS = 1_000;
+
+/**
+ * Characters of `text` normalize_transcript matches; the rest is returned
+ * unchanged. Dictation is a few thousand characters; this is a pasted file.
+ */
+export const MCP_NORMALIZE_MAX_CHARS = 100_000;
+
+/** How far back from the cap a cut looks for whitespace, so a word is not matched as a fragment. */
+const CUT_LOOKBACK_CHARS = 64;
+
+/**
+ * Where to cut `text` so at most `max` characters are matched: at the last
+ * whitespace within CUT_LOOKBACK_CHARS of the cap (kept on the checked side),
+ * never between the halves of a surrogate pair.
+ */
+export function normalizeCut(text: string, max: number): number {
+  if (text.length <= max) return text.length;
+  let cut = Math.max(0, max);
+  const code = text.charCodeAt(cut - 1);
+  if (cut > 0 && code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  for (let i = cut; i > 0 && i > cut - CUT_LOOKBACK_CHARS; i--) {
+    if (/\s/.test(text.charAt(i - 1))) return i;
+  }
+  return cut;
+}
 
 /** Case-insensitive canonical lookup, matching how the store compares canonicals. */
 function holds(terms: readonly Term[] | undefined, canonical: string): boolean {
@@ -93,6 +128,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
         'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
+        `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.',
       inputSchema: {
@@ -112,10 +148,22 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     async ({ text, dryRun, minConfidence }) =>
       guarded(async () => {
         const loaded = await load();
-        const result = normalize(text, loaded.merged, {
+        // Cached on disk for a large lexicon (index-cache.json, shared with the
+        // hook and serve), so a call does not rebuild the matcher every time.
+        const index = await loadMatcherIndex(loaded);
+        const cut = normalizeCut(text, ctx.normalizeMaxChars);
+        const head = cut < text.length ? text.slice(0, cut) : text;
+        const started = Date.now();
+        let timedOut = false;
+        const matched = normalizeWithIndex(head, index, {
+          shouldStop: () => (timedOut ||= Date.now() - started >= ctx.normalizeBudgetMs),
           ...(dryRun !== undefined ? { dryRun } : {}),
           ...(minConfidence !== undefined ? { minConfidence } : {}),
         });
+        const tail = text.slice(head.length);
+        const result: NormalizeResult = tail
+          ? { ...matched, input: text, output: matched.output + tail }
+          : matched;
         if (result.changed && !dryRun) {
           const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
           // Best effort: recordHits is contractually non-throwing, but guard anyway so
@@ -124,11 +172,26 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             log('recordHits failed:', errorMessage(err)),
           );
         }
+        const reasons: NormalizeIncomplete['reasons'] = [...(tail ? (['length'] as const) : []), ...(timedOut ? (['time'] as const) : [])];
+        const notes = [
+          ...(tail ? [`Only the first ${head.length} of ${text.length} characters were checked; the rest is returned unchanged.`] : []),
+          ...(timedOut ? [`Matching stopped at the ${ctx.normalizeBudgetMs} ms budget; later text may still hold uncorrected names.`] : []),
+        ];
+        const incomplete: NormalizeIncomplete | undefined =
+          reasons.length > 0
+            ? {
+                reasons,
+                ...(tail ? { checkedChars: head.length } : {}),
+                totalChars: text.length,
+                note: `${notes.join(' ')} Call again with the unchecked part, in smaller pieces, if it matters.`,
+              }
+            : undefined;
         return textResult({
           output: result.output,
           changed: result.changed,
           replacements: result.replacements,
           summary: result.replacements.length > 0 ? diffSummary(result) : '',
+          ...(incomplete ? { incomplete } : {}),
           // Without this an unchanged transcript in a repo whose lexicon is not
           // trusted yet looks exactly like one that needed no correction.
           ...skippedProjectFields(loaded),
@@ -151,7 +214,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling ' +
         'exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you, which beats ' +
         'inventing your own; show the user what was generated so they can veto one. On an existing term, omitted aliases add none, ' +
-        'so passing only never, phonetic, category or notes changes just that.',
+        'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
+        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.',
       inputSchema: {
         canonical: z.string().min(1).describe('The correct spelling, exactly as the user wants it written.'),
         aliases: z
@@ -191,7 +255,23 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(scope !== undefined ? { scope } : {}),
           ...(given ? {} : { defaultAliases: suggestAliases(canonical) }),
         });
-        return textResult({ term: saved.term, path: saved.file.path, created: saved.created });
+        // An alias another term already holds may keep being corrected to that
+        // term; say so, as learn_correction does, instead of reporting success.
+        const conflicts = spellingConflicts((await load()).merged, saved.term.aliases, saved.term.canonical);
+        const note = conflicts
+          .map((c) =>
+            c.as === 'alias'
+              ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
+                `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
+              : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written.`,
+          )
+          .join(' ');
+        return textResult({
+          term: saved.term,
+          path: saved.file.path,
+          created: saved.created,
+          ...(conflicts.length > 0 ? { conflicts, note } : {}),
+        });
       }),
   );
 
@@ -323,7 +403,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'being written down, and asking every time is the irritating version of this product. ' +
         'WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new. One term; nothing else is touched. ' +
         'WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- ' +
-        'pass only the misspelled name as `heard`, not the sentence around it. Then get on with what the user actually asked for.',
+        'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
+        'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
         heard: z.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
         meant: z.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
@@ -336,16 +417,36 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     async ({ heard, meant, scope }) =>
       guarded(async () => {
         const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}) });
+        const saved = learned.aliasAdded
+          ? `"${heard}" -> "${learned.term.canonical}" saved`
+          : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
+            ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
+            : `"${heard}" was already an alias of "${learned.term.canonical}"`;
+        const { conflict, untrustedProject } = learned;
+        // The other term is never edited here; the agent gets what it needs to
+        // ask the user and fix it with remove_term.
+        const conflictNote = !conflict
+          ? ''
+          : conflict.as === 'alias'
+            ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. ` +
+              // JSON literals: a `"` in a spelling must not blur where an argument ends.
+              `If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".`
+            : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. ` +
+              `If the user never means "${conflict.canonical}", remove that term with remove_term.`;
+        // Path only: the untrusted file's terms never reach the agent.
+        const untrustedNote = !untrustedProject
+          ? ''
+          : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, so it was not loaded, ` +
+            `and another term in it also claims "${heard}": once it is trusted that term wins over this correction. ` +
+            'Tell the user; they can review the file with `lexicon trust` (or trust_project status), which previews it first. Do not open it with Read or cat.';
         return textResult({
           term: learned.term,
           path: learned.file.path,
           created: learned.created,
           aliasAdded: learned.aliasAdded,
-          summary: learned.aliasAdded
-            ? `"${heard}" -> "${learned.term.canonical}" saved`
-            : heard.trim().toLowerCase() === learned.term.canonical.toLowerCase()
-              ? `"${learned.term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
-              : `"${heard}" was already an alias of "${learned.term.canonical}"`,
+          ...(conflict ? { conflict } : {}),
+          ...(untrustedProject ? { untrustedProject } : {}),
+          summary: saved + conflictNote + untrustedNote,
         });
       }),
   );
@@ -364,11 +465,21 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
         'offer to add it with add_term.',
       inputSchema: {
-        heard: z.string().min(1).describe('The suspicious word or phrase as it appeared in the transcript.'),
+        heard: z
+          .string()
+          .min(1)
+          .describe(`The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`),
       },
     },
     async ({ heard }) =>
       guarded(async () => {
+        // Scoring is linear in this length for every alias, and learn_correction
+        // could not save a longer `heard` anyway.
+        if (heard.trim().replace(/\s+/g, ' ').length > MAX_CORRECTION_LENGTH) {
+          throw new Error(
+            `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`,
+          );
+        }
         const loaded = await load();
         const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
           canonical: s.term.canonical,
@@ -385,13 +496,16 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Lexicon usage statistics',
       description:
-        'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon.',
+        'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. ' +
+        '`neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. ' +
+        'An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only).',
       inputSchema: {},
     },
     async () =>
       guarded(async () => {
         const loaded = await load();
-        return textResult(computeStats(loaded));
+        // Otherwise the counts silently leave out the repo's own terms.
+        return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
       }),
   );
 
