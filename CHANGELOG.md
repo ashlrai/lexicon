@@ -16,6 +16,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `normalize_transcript` matches against the cached matcher index (`index-cache.json`, as the hook and `lexicon serve` do) instead of rebuilding it on every call, checks at most the first 100,000 characters and stops matching after 1 second, like `POST /normalize`. A long paste used to hold the server's one thread, and every other tool call, for seconds (1 MB took about 14 s against 2000 terms). When a limit is hit the result carries `incomplete` with the reason and the unchecked text is returned unchanged.
 - The Claude Code plugin's MCP server now connects after `claude plugin install`. The plugin entry used `${CLAUDE_PLUGIN_ROOT:-.}`, which Claude Code does not expand, so it ran `./plugin/mcp-server.mjs` from the user's directory and failed. `.claude-plugin/plugin.json` now declares the server with the bare `${CLAUDE_PLUGIN_ROOT}`; the repo's own `.mcp.json` uses a relative path.
 - `lexicon-mcp --version` prints the package version and `lexicon-mcp --help` a one-line usage, both exiting 0, instead of starting the stdio server.
 - `lexicon setup --company X --person Y` (and MCP `setup_lexicon` with `company`/`person`) seeds those names even when the lexicon already has 3 or more terms, for example after a starter pack. Before, an explicit name was dropped with "skipping the seed" and the plan showed `wouldSeed: []`. The guessed defaults (git user.name, the package scope) still wait for `--reseed`.

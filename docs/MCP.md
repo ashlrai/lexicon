@@ -27,7 +27,7 @@ Guided import harvests only explicitly selected sources. Lexicon adds no automat
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`. Also bumps each term's `hits` counter |
+| `normalize_transcript` | `text`, `dryRun?`, `minConfidence?` | `output`, `changed`, `replacements[]`, `summary`, and `incomplete` when the text was longer than 100,000 characters or matching ran past 1 second (the unchecked rest comes back unchanged). Also bumps each term's `hits` counter |
 | `add_term` | `canonical`, `aliases?`, `phonetic?`, `category?`, `notes?`, `never?`, `scope?` | The stored term, its file path and `created`. Aliases are auto-suggested when omitted |
 | `remove_term` | `canonical`, `alias?`, `scope?` | Whether it existed; when not, a `note` (and `foundIn`) saying which `scope` holds it. With `alias`, removes only that alias and returns the aliases the term keeps; an unknown term or alias is an error |
 | `list_terms` | `query?`, `category?` | Matching terms, counts per file, the paths in use, and a note when a project file was skipped as untrusted |

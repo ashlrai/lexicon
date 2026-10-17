@@ -25,6 +25,7 @@ import type { LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
+import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
 
 export interface ServerOptions {
   /**
@@ -35,6 +36,10 @@ export interface ServerOptions {
   cwd?: string;
   /** How long to wait for the client's `roots/list` answer. Default ROOTS_TIMEOUT_MS. */
   rootsTimeoutMs?: number;
+  /** normalize_transcript's matching budget per call. Default MCP_NORMALIZE_BUDGET_MS. */
+  normalizeBudgetMs?: number;
+  /** Characters of `text` normalize_transcript matches. Default MCP_NORMALIZE_MAX_CHARS. */
+  normalizeMaxChars?: number;
 }
 
 /** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
@@ -176,6 +181,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       return cwd;
     },
     load,
+    normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,
+    normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS,
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
 

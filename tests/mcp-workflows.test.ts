@@ -134,3 +134,59 @@ describe('normalize_transcript with an untrusted project lexicon', () => {
     expect(Object.keys(payload).sort()).toEqual(['changed', 'output', 'replacements', 'summary']);
   });
 });
+
+describe('normalize_transcript limits', () => {
+  async function callWith(opts: { normalizeBudgetMs?: number; normalizeMaxChars?: number }, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const server = createServer({ cwd: repo, ...opts });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const result = (await client.callTool({ name: 'normalize_transcript', arguments: args })) as ToolResult;
+      expect(result.isError).not.toBe(true);
+      return JSON.parse((result.content ?? []).map((c) => c.text ?? '').join('\n')) as Record<string, unknown>;
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  }
+
+  beforeEach(async () => {
+    await fs.writeFile(process.env.LEXICON_PATH as string, 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [Hetsner]\n');
+  });
+
+  // A huge paste used to be matched in full on the server's one thread, with
+  // no time budget, holding every other tool call for seconds.
+  it('stops at the time budget and says the rest was not checked', async () => {
+    const payload = await callWith({ normalizeBudgetMs: 0 }, { text: 'Hetsner then Hetsner' });
+    expect(payload.output).toBe('Hetzner then Hetsner');
+    expect(payload.incomplete).toMatchObject({ reasons: ['time'], totalChars: 20 });
+    expect((payload.incomplete as { note: string }).note).toMatch(/0 ms/);
+  });
+
+  it('checks only the first maxChars and passes the rest through unchanged', async () => {
+    const text = 'Hetsner one two three Hetsner';
+    const payload = await callWith({ normalizeMaxChars: 20 }, { text });
+    // Cut back to the last space, so "three" is not matched as a fragment.
+    expect(payload.output).toBe('Hetzner one two three Hetsner');
+    expect(payload.changed).toBe(true);
+    expect(payload.incomplete).toMatchObject({ reasons: ['length'], checkedChars: 16, totalChars: text.length });
+    expect((payload.incomplete as { note: string }).note).toMatch(/first 16 of 29 characters/);
+  });
+
+  it('adds no incomplete field when both limits hold', async () => {
+    const payload = await callWith({}, { text: 'ask Hetsner' });
+    expect(payload.output).toBe('ask Hetzner');
+    expect(payload.incomplete).toBeUndefined();
+  });
+
+  it('applies the default length cap', async () => {
+    const { MCP_NORMALIZE_MAX_CHARS } = await import('../src/mcp/tools/terms.js');
+    const text = `Hetsner ${'word '.repeat(Math.ceil(MCP_NORMALIZE_MAX_CHARS / 5))}Hetsner`;
+    const payload = await callWith({ normalizeBudgetMs: 60_000 }, { text });
+    expect((payload.output as string).startsWith('Hetzner ')).toBe(true);
+    expect((payload.output as string).endsWith(' Hetsner')).toBe(true);
+    expect((payload.incomplete as { reasons: string[] }).reasons).toContain('length');
+  });
+});

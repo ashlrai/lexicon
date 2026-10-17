@@ -23981,12 +23981,12 @@ var $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (i
 var $ZodCheckNumberFormat = /* @__PURE__ */ $constructor("$ZodCheckNumberFormat", (inst, def) => {
   $ZodCheck.init(inst, def);
   def.format = def.format || "float64";
-  const isInt = def.format?.includes("int");
-  const origin = isInt ? "int" : "number";
+  const isInt2 = def.format?.includes("int");
+  const origin = isInt2 ? "int" : "number";
   const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
   inst._zod.check = (payload) => {
     const input2 = payload.value;
-    if (isInt) {
+    if (isInt2) {
       if (!Number.isInteger(input2)) {
         payload.issues.push({
           expected: origin,
@@ -26621,14 +26621,14 @@ function handleReadonlyResult(payload) {
 function leafPattern(schema) {
   const def = schema._zod.def;
   let pattern = def.pattern;
-  let isInt = !!def.format?.includes("int");
+  let isInt2 = !!def.format?.includes("int");
   let minimum;
   let maximum;
   for (const ch of def.checks ?? []) {
     const d = ch._zod.def;
     if (d.pattern)
       pattern = d.pattern;
-    isInt || (isInt = !!d.format?.includes("int"));
+    isInt2 || (isInt2 = !!d.format?.includes("int"));
     const lo = d.minimum ?? d.length;
     const hi = d.maximum ?? d.length;
     if (lo !== void 0 && (minimum === void 0 || lo > minimum))
@@ -26643,7 +26643,7 @@ function leafPattern(schema) {
   if (minimum !== void 0 || maximum !== void 0)
     return string({ minimum, maximum }).source;
   const own2 = schema._zod.pattern;
-  return (isInt && own2 === number ? integer : own2)?.source;
+  return (isInt2 && own2 === number ? integer : own2)?.source;
 }
 function partPattern(schema) {
   const def = schema._zod.def;
@@ -38060,8 +38060,8 @@ var stringProcessor = (schema, ctx, _json, _params) => {
 };
 var numberProcessor = (schema, ctx, _json, params) => {
   const json2 = _json;
-  const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt } = aggregateChecks(schema);
-  json2.type = isInt ? "integer" : "number";
+  const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt: isInt2 } = aggregateChecks(schema);
+  json2.type = isInt2 ? "integer" : "number";
   const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
   const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
   const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
@@ -40234,8 +40234,8 @@ var ZodNumber2 = /* @__PURE__ */ $constructor(
       return Math.min(maximum ?? Number.POSITIVE_INFINITY, exclusiveMaximum ?? Number.POSITIVE_INFINITY);
     },
     isInt: (inst) => {
-      const { isInt, multipleOf } = aggregateChecks(inst);
-      return !!isInt || !!multipleOf?.some(Number.isSafeInteger);
+      const { isInt: isInt2, multipleOf } = aggregateChecks(inst);
+      return !!isInt2 || !!multipleOf?.some(Number.isSafeInteger);
     },
     format: (inst) => aggregateChecks(inst).format ?? null
   }, {
@@ -52954,6 +52954,165 @@ function clamp01(n) {
   return Math.min(1, Math.max(0, n));
 }
 
+// src/core/matcher/serialize.ts
+var INDEX_FORMAT_VERSION = 1;
+function indexKey(lexicon) {
+  const s = lexicon.settings ?? {};
+  return JSON.stringify([
+    INDEX_FORMAT_VERSION,
+    s.minConfidence ?? null,
+    s.phonetic ?? null,
+    s.fuzzy ?? null,
+    s.skipCode ?? null,
+    s.protectedWords ?? null,
+    lexicon.terms.map((t) => [t.canonical, t.aliases, t.never ?? null, t.caseSensitive === true])
+  ]);
+}
+function serializeIndex(index) {
+  return {
+    v: INDEX_FORMAT_VERSION,
+    minConfidence: index.minConfidence,
+    phonetic: index.phonetic,
+    fuzzy: index.fuzzy,
+    skipCode: index.skipCode,
+    protectedWords: [...index.protectedWords],
+    maxWindow: index.maxWindow,
+    maxFuzzyWindow: index.maxFuzzyWindow,
+    phoneticMinLen: index.phoneticMinLen,
+    phoneticMaxLen: index.phoneticMaxLen,
+    aliases: index.aliasEntries.map((e) => [
+      e.termIndex,
+      e.alias,
+      e.norm === e.alias ? 0 : e.norm,
+      e.normLower === e.norm ? 0 : e.normLower,
+      e.collapsedRaw === e.norm ? 0 : e.collapsedRaw,
+      e.collapsed === e.normLower ? 0 : e.collapsed,
+      [...e.separators],
+      e.explicit ? 1 : 0,
+      e.tokenCount
+    ]),
+    phonetics: index.phoneticEntries.map((e) => [e.termIndex, e.alias, e.alpha, e.key, (e.startsNonWord ? 1 : 0) | (e.endsNonWord ? 2 : 0)]),
+    never: index.never.map((s) => [...s]),
+    hasExplicitAliases: index.hasExplicitAliases.map((b) => b ? 1 : 0)
+  };
+}
+var isStr = (v) => typeof v === "string";
+var isInt = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+var isNum = (v) => typeof v === "number" && Number.isFinite(v);
+var isBool = (v) => typeof v === "boolean";
+var isArr = Array.isArray;
+function deserializeIndex(data, lexicon) {
+  if (typeof data !== "object" || data === null) return void 0;
+  const d = data;
+  if (d.v !== INDEX_FORMAT_VERSION) return void 0;
+  if (!isNum(d.minConfidence) || !isBool(d.phonetic) || !isBool(d.fuzzy) || !isBool(d.skipCode)) return void 0;
+  if (!isInt(d.maxWindow) || !isInt(d.maxFuzzyWindow) || !isNum(d.phoneticMinLen) || !isNum(d.phoneticMaxLen)) return void 0;
+  if (!isArr(d.protectedWords) || !d.protectedWords.every(isStr)) return void 0;
+  if (!isArr(d.aliases) || !isArr(d.phonetics) || !isArr(d.never) || !isArr(d.hasExplicitAliases)) return void 0;
+  const terms = lexicon.terms;
+  const n = terms.length;
+  if (d.never.length !== n || d.hasExplicitAliases.length !== n) return void 0;
+  const aliasEntries = [];
+  const phoneticEntries = [];
+  const exact = /* @__PURE__ */ new Map();
+  const collapsed = /* @__PURE__ */ new Map();
+  const fuzzyBuckets = /* @__PURE__ */ new Map();
+  const aliases = d.aliases;
+  for (let i = 0; i < aliases.length; i++) {
+    const t = aliases[i];
+    if (!isArr(t) || t.length !== 9) return void 0;
+    const termIndex = t[0];
+    const alias = t[1];
+    const normRaw = t[2];
+    const normLowerRaw = t[3];
+    const collapsedRawRaw = t[4];
+    const collapsedLowerRaw = t[5];
+    const seps = t[6];
+    const explicit = t[7];
+    const tokenCount = t[8];
+    if (!isInt(termIndex) || termIndex >= n || typeof alias !== "string") return void 0;
+    if (!(normRaw === 0 || typeof normRaw === "string") || !(normLowerRaw === 0 || typeof normLowerRaw === "string")) return void 0;
+    if (!(collapsedRawRaw === 0 || typeof collapsedRawRaw === "string") || !(collapsedLowerRaw === 0 || typeof collapsedLowerRaw === "string")) return void 0;
+    if (!isArr(seps) || explicit !== 0 && explicit !== 1 || !isInt(tokenCount) || tokenCount < 1) return void 0;
+    for (let k = 0; k < seps.length; k++) if (!isInt(seps[k])) return void 0;
+    const norm = normRaw === 0 ? alias : normRaw;
+    const normLower = normLowerRaw === 0 ? norm : normLowerRaw;
+    const collapsedLower = collapsedLowerRaw === 0 ? normLower : collapsedLowerRaw;
+    const entry = {
+      termIndex,
+      term: terms[termIndex],
+      alias,
+      norm,
+      normLower,
+      collapsedRaw: collapsedRawRaw === 0 ? norm : collapsedRawRaw,
+      collapsed: collapsedLower,
+      tokenCount,
+      separators: new Set(seps),
+      explicit: explicit === 1
+    };
+    aliasEntries.push(entry);
+    push(exact, normLower, entry);
+    push(collapsed, collapsedLower, entry);
+    push(fuzzyBuckets, tokenCount, entry);
+  }
+  sortFuzzyBuckets(fuzzyBuckets);
+  const phoneticKeys = /* @__PURE__ */ new Map();
+  const phonetics = d.phonetics;
+  for (let i = 0; i < phonetics.length; i++) {
+    const t = phonetics[i];
+    if (!isArr(t) || t.length !== 5) return void 0;
+    const termIndex = t[0];
+    const alias = t[1];
+    const alpha = t[2];
+    const key = t[3];
+    const flags = t[4];
+    if (!isInt(termIndex) || termIndex >= n || typeof alias !== "string" || typeof alpha !== "string") return void 0;
+    if (typeof key !== "string" || key === "" || !isInt(flags)) return void 0;
+    const entry = {
+      termIndex,
+      term: terms[termIndex],
+      alias,
+      alpha,
+      length: alpha.length,
+      key,
+      startsNonWord: (flags & 1) !== 0,
+      endsNonWord: (flags & 2) !== 0
+    };
+    phoneticEntries.push(entry);
+    push(phoneticKeys, key, entry);
+  }
+  const never2 = [];
+  for (const words of d.never) {
+    if (!isArr(words) || !words.every(isStr)) return void 0;
+    never2.push(new Set(words));
+  }
+  const hasExplicitAliases = [];
+  for (const b of d.hasExplicitAliases) {
+    if (b !== 0 && b !== 1) return void 0;
+    hasExplicitAliases.push(b === 1);
+  }
+  return {
+    lexicon,
+    hasExplicitAliases,
+    minConfidence: d.minConfidence,
+    phonetic: d.phonetic,
+    fuzzy: d.fuzzy,
+    skipCode: d.skipCode,
+    protectedWords: new Set(d.protectedWords),
+    maxWindow: d.maxWindow,
+    maxFuzzyWindow: d.maxFuzzyWindow,
+    phoneticMinLen: d.phoneticMinLen,
+    phoneticMaxLen: d.phoneticMaxLen,
+    exact,
+    collapsed,
+    phoneticKeys,
+    fuzzyBuckets,
+    never: never2,
+    aliasEntries,
+    phoneticEntries
+  };
+}
+
 // src/core/trust.ts
 var import_node_fs3 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
@@ -53547,6 +53706,35 @@ async function writeParseCache(filePath, text, lexicon, mode) {
     );
   } catch {
   }
+}
+var INDEX_CACHE_FILE_NAME = "index-cache.json";
+var INDEX_CACHE_MIN_TERMS = 150;
+async function loadMatcherIndex(loaded, opts = {}) {
+  const lexicon = loaded.merged;
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
+  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
+  const key = indexKey(lexicon);
+  try {
+    const text = await import_node_fs4.promises.readFile(cachePath, "utf8");
+    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
+    if (text.startsWith(head.slice(0, -1))) {
+      const cached2 = JSON.parse(text);
+      if (isPlainObject3(cached2) && cached2.version === INDEX_FORMAT_VERSION && cached2.key === key) {
+        const index2 = deserializeIndex(cached2.index, lexicon);
+        if (index2) return index2;
+      }
+    }
+  } catch {
+  }
+  const index = buildIndex(lexicon);
+  if (opts.write !== false) {
+    try {
+      const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+      await writeFileAtomic(cachePath, out, { mode: 384 });
+    } catch {
+    }
+  }
+  return index;
 }
 async function writeLexiconFile(file2) {
   const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
@@ -59218,6 +59406,19 @@ function skippedProjectFields(loaded) {
 // src/mcp/tools/terms.ts
 var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIASES)];
 var EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES).map(([alias, format]) => `'${alias}' means '${format}'`).join(", ");
+var MCP_NORMALIZE_BUDGET_MS = 1e3;
+var MCP_NORMALIZE_MAX_CHARS = 1e5;
+var CUT_LOOKBACK_CHARS = 64;
+function normalizeCut(text, max) {
+  if (text.length <= max) return text.length;
+  let cut = Math.max(0, max);
+  const code = text.charCodeAt(cut - 1);
+  if (cut > 0 && code >= 55296 && code <= 56319) cut -= 1;
+  for (let i = cut; i > 0 && i > cut - CUT_LOOKBACK_CHARS; i--) {
+    if (/\s/.test(text.charAt(i - 1))) return i;
+  }
+  return cut;
+}
 function holds(terms, canonical) {
   const key = canonical.trim().toLowerCase();
   return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
@@ -59250,7 +59451,7 @@ var registerTermTools = (server, ctx) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.",
+      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }; when \`changed\` is false the text was already correct and you should carry on silently, unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that \`lexicon trust\` would enable it.`,
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them (output === input)."),
@@ -59259,21 +59460,41 @@ var registerTermTools = (server, ctx) => {
     },
     async ({ text, dryRun, minConfidence }) => guarded(async () => {
       const loaded = await load();
-      const result = normalize(text, loaded.merged, {
+      const index = await loadMatcherIndex(loaded);
+      const cut = normalizeCut(text, ctx.normalizeMaxChars);
+      const head = cut < text.length ? text.slice(0, cut) : text;
+      const started = Date.now();
+      let timedOut = false;
+      const matched = normalizeWithIndex(head, index, {
+        shouldStop: () => timedOut ||= Date.now() - started >= ctx.normalizeBudgetMs,
         ...dryRun !== void 0 ? { dryRun } : {},
         ...minConfidence !== void 0 ? { minConfidence } : {}
       });
+      const tail = text.slice(head.length);
+      const result = tail ? { ...matched, input: text, output: matched.output + tail } : matched;
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
         await recordHits(canonicals, { cwd: ctx.cwd }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
+      const reasons = [...tail ? ["length"] : [], ...timedOut ? ["time"] : []];
+      const notes = [
+        ...tail ? [`Only the first ${head.length} of ${text.length} characters were checked; the rest is returned unchanged.`] : [],
+        ...timedOut ? [`Matching stopped at the ${ctx.normalizeBudgetMs} ms budget; later text may still hold uncorrected names.`] : []
+      ];
+      const incomplete = reasons.length > 0 ? {
+        reasons,
+        ...tail ? { checkedChars: head.length } : {},
+        totalChars: text.length,
+        note: `${notes.join(" ")} Call again with the unchecked part, in smaller pieces, if it matters.`
+      } : void 0;
       return textResult({
         output: result.output,
         changed: result.changed,
         replacements: result.replacements,
         summary: result.replacements.length > 0 ? diffSummary(result) : "",
+        ...incomplete ? { incomplete } : {},
         // Without this an unchanged transcript in a repo whose lexicon is not
         // trusted yet looks exactly like one that needed no correction.
         ...skippedProjectFields(loaded)
@@ -63211,7 +63432,9 @@ function createServer2(opts = {}) {
     get cwd() {
       return cwd;
     },
-    load
+    load,
+    normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,
+    normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
   server.registerResource(

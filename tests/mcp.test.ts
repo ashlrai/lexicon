@@ -30,7 +30,8 @@ const loaded: LoadedLexicon = {
 
 const mocks = vi.hoisted(() => ({
   loadLexicon: vi.fn(),
-  normalize: vi.fn(),
+  loadMatcherIndex: vi.fn(),
+  normalizeWithIndex: vi.fn(),
   diffSummary: vi.fn(),
   recordHits: vi.fn(),
   addTerm: vi.fn(),
@@ -179,7 +180,10 @@ function fakeNormalize(text: string, _lexicon: Lexicon, opts?: { dryRun?: boolea
 
 beforeEach(() => {
   mocks.loadLexicon.mockResolvedValue(loaded);
-  mocks.normalize.mockImplementation(fakeNormalize);
+  mocks.loadMatcherIndex.mockImplementation(async (l: LoadedLexicon) => ({ lexicon: l.merged }));
+  mocks.normalizeWithIndex.mockImplementation((text: string, index: { lexicon: Lexicon }, opts?: { dryRun?: boolean }) =>
+    fakeNormalize(text, index.lexicon, opts),
+  );
   mocks.diffSummary.mockImplementation(
     (r: NormalizeResult) =>
       r.replacements.map((x) => `"${x.original}" -> "${x.replacement}" (${x.reason}, ${x.confidence.toFixed(2)})`).join('\n'),

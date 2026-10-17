@@ -14,7 +14,8 @@ import {
   diffSummary,
   exportLexicon,
   learnCorrection,
-  normalize,
+  loadMatcherIndex,
+  normalizeWithIndex,
   recordHits,
   removeAlias,
   removeTerm,
@@ -22,7 +23,7 @@ import {
   suggestAliases,
   suggestCanonicalFor,
 } from '../../core/index.js';
-import type { Term, TermScope } from '../../core/index.js';
+import type { NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
@@ -37,6 +38,45 @@ const EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALI
 const EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES)
   .map(([alias, format]) => `'${alias}' means '${format}'`)
   .join(', ');
+
+/**
+ * How long one normalize_transcript may spend matching before it stops and
+ * returns the corrections found so far: serve's NORMALIZE_BUDGET_MS. The
+ * server is one thread, so a long match holds every other tool call.
+ */
+export const MCP_NORMALIZE_BUDGET_MS = 1_000;
+
+/**
+ * Characters of `text` normalize_transcript matches; the rest is returned
+ * unchanged. Dictation is a few thousand characters; this is a pasted file.
+ */
+export const MCP_NORMALIZE_MAX_CHARS = 100_000;
+
+/** How far back from the cap a cut looks for whitespace, so a word is not matched as a fragment. */
+const CUT_LOOKBACK_CHARS = 64;
+
+/**
+ * Where to cut `text` so at most `max` characters are matched: at the last
+ * whitespace within CUT_LOOKBACK_CHARS of the cap (kept on the checked side),
+ * never between the halves of a surrogate pair.
+ */
+export function normalizeCut(text: string, max: number): number {
+  if (text.length <= max) return text.length;
+  let cut = Math.max(0, max);
+  const code = text.charCodeAt(cut - 1);
+  if (cut > 0 && code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  for (let i = cut; i > 0 && i > cut - CUT_LOOKBACK_CHARS; i--) {
+    if (/\s/.test(text.charAt(i - 1))) return i;
+  }
+  return cut;
+}
+
+interface IncompleteNormalize {
+  reasons: ('length' | 'time')[];
+  checkedChars?: number;
+  totalChars: number;
+  note: string;
+}
 
 /** Case-insensitive canonical lookup, matching how the store compares canonicals. */
 function holds(terms: readonly Term[] | undefined, canonical: string): boolean {
@@ -93,6 +133,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
         'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
+        `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that `lexicon trust` would enable it.',
       inputSchema: {
@@ -112,10 +153,22 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     async ({ text, dryRun, minConfidence }) =>
       guarded(async () => {
         const loaded = await load();
-        const result = normalize(text, loaded.merged, {
+        // Cached on disk for a large lexicon (index-cache.json, shared with the
+        // hook and serve), so a call does not rebuild the matcher every time.
+        const index = await loadMatcherIndex(loaded);
+        const cut = normalizeCut(text, ctx.normalizeMaxChars);
+        const head = cut < text.length ? text.slice(0, cut) : text;
+        const started = Date.now();
+        let timedOut = false;
+        const matched = normalizeWithIndex(head, index, {
+          shouldStop: () => (timedOut ||= Date.now() - started >= ctx.normalizeBudgetMs),
           ...(dryRun !== undefined ? { dryRun } : {}),
           ...(minConfidence !== undefined ? { minConfidence } : {}),
         });
+        const tail = text.slice(head.length);
+        const result: NormalizeResult = tail
+          ? { ...matched, input: text, output: matched.output + tail }
+          : matched;
         if (result.changed && !dryRun) {
           const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
           // Best effort: recordHits is contractually non-throwing, but guard anyway so
@@ -124,11 +177,26 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             log('recordHits failed:', errorMessage(err)),
           );
         }
+        const reasons: IncompleteNormalize['reasons'] = [...(tail ? (['length'] as const) : []), ...(timedOut ? (['time'] as const) : [])];
+        const notes = [
+          ...(tail ? [`Only the first ${head.length} of ${text.length} characters were checked; the rest is returned unchanged.`] : []),
+          ...(timedOut ? [`Matching stopped at the ${ctx.normalizeBudgetMs} ms budget; later text may still hold uncorrected names.`] : []),
+        ];
+        const incomplete: IncompleteNormalize | undefined =
+          reasons.length > 0
+            ? {
+                reasons,
+                ...(tail ? { checkedChars: head.length } : {}),
+                totalChars: text.length,
+                note: `${notes.join(' ')} Call again with the unchecked part, in smaller pieces, if it matters.`,
+              }
+            : undefined;
         return textResult({
           output: result.output,
           changed: result.changed,
           replacements: result.replacements,
           summary: result.replacements.length > 0 ? diffSummary(result) : '',
+          ...(incomplete ? { incomplete } : {}),
           // Without this an unchanged transcript in a repo whose lexicon is not
           // trusted yet looks exactly like one that needed no correction.
           ...skippedProjectFields(loaded),
