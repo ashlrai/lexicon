@@ -13,6 +13,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon pack search --json` and MCP `list_packs` report `registryMismatch { fileOnly, recordOnly }` when a lexicon file's `settings.packs` and the registry records disagree, as `lexicon pack list --json` does, and `pack search` prints the same `lexicon: warn:` lines. Only `pack list` said so, so the other two showed a pack as not installed (or one `pack update` would skip) with no reason.
 - `lexicon trust --json` and `lexicon untrust --json` print `{ action, path, error, nextStep? }` on stdout when they refuse (no project file, a missing or invalid file, a file that changed while it was being trusted), with the same stderr lines and exit 1. Under `--json` a refusal went to stderr only, so a script reading stdout got an empty document.
 - MCP `trust_project` names the fix for a project file that does not parse or validate: `status` adds `nextStep` next to `status: 'invalid'`, and the `trust` error ends with it (`lexicon edit --project`, then `lexicon doctor`, and do not open the file yourself), as `lexicon trust` does since #82. It stopped at the parser's reason.
 - The local API refuses a request body key it does not know with 400 `invalid request body: Unrecognized key ...`. Unknown keys were dropped, so `{ "dry_run": true }` on `POST /normalize` recorded hits as a real run, and `{ "alias": [...] }` on `POST /add` added generated aliases instead, both with 200.

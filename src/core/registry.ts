@@ -38,7 +38,7 @@ import { defaultProjectPath, MAX_LEXICON_BYTES, resolvePaths, resolveScopeWriteP
 import { refreshTrust, untrustProject } from './trust.js';
 import { writeFileAtomic } from '../util/atomic.js';
 import type { StoreOptions } from './store.js';
-import type { Term, TermScope } from './types.js';
+import type { LoadedLexicon, Term, TermScope } from './types.js';
 import { STOPLIST } from './stoplist.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 
@@ -347,6 +347,65 @@ export async function writeRegistryState(state: RegistryState, opts: RegistrySto
 /** Refs currently recorded as installed from a registry. */
 export async function installedRegistryPacks(opts: RegistryStoreOptions = {}): Promise<string[]> {
   return Object.keys((await readRegistryState(opts)).packs).sort();
+}
+
+/**
+ * Where a registry pack is recorded, when the two records disagree: the
+ * lexicon file's `settings.packs` (what the matcher and every `installed`
+ * flag read) and the registry state file (what `pack update` and `pack
+ * remove` use).
+ */
+export interface RegistryRecordMismatch {
+  /** In the lexicon file, with no registry record: `pack update` will not check it. */
+  fileOnly: string[];
+  /** Recorded in the registry state but not in the lexicon file: listed as not installed. */
+  recordOnly: string[];
+}
+
+/**
+ * Compare one scope's loaded file with that scope's registry records (state is
+ * kept per scope). A skipped project file is never read: `loaded.project` is
+ * set only when it was merged. Undefined when they agree or the file is absent.
+ */
+export function registryRecordMismatch(
+  loaded: Pick<LoadedLexicon, 'global' | 'project'>,
+  scope: TermScope,
+  recorded: readonly string[],
+): RegistryRecordMismatch | undefined {
+  const file = scope === 'project' ? loaded.project : loaded.global;
+  if (!file) return undefined;
+  const inFile = (file.lexicon.settings?.packs ?? []).filter((p) => isRegistryRef(p));
+  const fileOnly = inFile.filter((r) => !recorded.includes(r));
+  const recordOnly = recorded.filter((r) => !inFile.includes(r));
+  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : undefined;
+}
+
+/**
+ * The mismatch across every loaded scope (global, and the project file when it
+ * was merged), for surfaces that list packs from both files at once (`pack
+ * search`, MCP `list_packs`). Best effort: a scope whose registry state cannot
+ * be read is left out rather than failing the listing.
+ */
+export async function findRegistryRecordMismatch(
+  loaded: Pick<LoadedLexicon, 'global' | 'project'>,
+  opts: StoreOptions = {},
+): Promise<RegistryRecordMismatch | undefined> {
+  const fileOnly: string[] = [];
+  const recordOnly: string[] = [];
+  for (const scope of ['global', 'project'] as const) {
+    if (scope === 'project' && !loaded.project) continue;
+    let recorded: string[];
+    try {
+      recorded = await installedRegistryPacks({ ...opts, scope });
+    } catch {
+      continue;
+    }
+    const m = registryRecordMismatch(loaded, scope, recorded);
+    if (!m) continue;
+    for (const r of m.fileOnly) if (!fileOnly.includes(r)) fileOnly.push(r);
+    for (const r of m.recordOnly) if (!recordOnly.includes(r)) recordOnly.push(r);
+  }
+  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : undefined;
 }
 
 // ---------------------------------------------------------------------------
