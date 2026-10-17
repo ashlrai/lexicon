@@ -146,7 +146,9 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         scope: z
           .enum(TERM_SCOPES)
           .optional()
-          .describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'."),
+          .describe(
+            "Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'. An 'alias' or 'never' scope must name a file that holds the term; one that does not is refused, as it would create a copy.",
+          ),
       },
     },
     async ({ suggestion, scope }) =>
@@ -155,7 +157,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         const alias = suggestion.alias?.trim();
         // An alias or never word goes where the term lives, as `lexicon suggest`
         // does: a global copy of a project term loses the merge, so it would
-        // never fire. Suggestions do not carry a scope for the agent to pass.
+        // never fire. An explicit scope must name a file that holds the term.
         let target = scope ?? suggestion.scope;
         if (kind === 'alias' || kind === 'never') {
           // Both edit an existing term. When it is gone (removed since
@@ -163,11 +165,25 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           // used to create a new term holding just this word, reported as
           // "saved": a term the user never asked for.
           const key = canonical.trim().toLowerCase();
-          const existing = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+          const current = await load();
+          const existing = current.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
           if (!existing) {
             throw new Error(
               `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === 'alias' ? 'alias' : 'never word'} to (it may have been removed since suggest_terms ran); ` +
                 'nothing was written. Call suggest_terms again, or add_term if the user wants the term created.',
+            );
+          }
+          // A scope that names a file without the term (an explicit `scope`,
+          // or a suggestion's own from before the term moved) made addTerm
+          // create a copy there holding only this word. A project copy wins
+          // the merge, so the global term's never words, category and notes
+          // stopped applying; a global copy leaked the term into every repo.
+          const holders = termHolders(current, canonical);
+          if (target !== undefined && target !== existing.scope && !holders.some((h) => h.scope === target)) {
+            const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(' and ') || `${existing.scope} lexicon`;
+            throw new Error(
+              `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === 'alias' ? 'alias' : 'never word'} would create a copy of the term there; nothing was written. ` +
+                `Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`,
             );
           }
           target ??= existing.scope;

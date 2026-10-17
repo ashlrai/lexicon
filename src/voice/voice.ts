@@ -20,6 +20,11 @@
  * Every process interaction goes through `VoiceDeps` so tests never touch a
  * microphone. Exit codes: 0 ok, 1 error, 2 ffmpeg/whisper-cli missing,
  * 3 nothing heard.
+ *
+ * Under `--json` stdout carries exactly one document on every path: the
+ * result (`ok: true`), a toggle status line, or `VoiceJsonFailure` (`ok:
+ * false, error, nextStep?, code`) for every non-zero exit. The stderr lines
+ * and the exit codes are the same with or without `--json`.
  */
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -144,6 +149,8 @@ export interface VoiceIO {
 }
 
 export interface VoiceJsonResult {
+  /** True for a delivered transcription; a failed one carries the `VoiceJsonFailure` keys instead. */
+  ok: boolean;
   raw: string;
   output: string;
   replacements: TranscribeResult['normalized']['replacements'];
@@ -151,6 +158,20 @@ export interface VoiceJsonResult {
   model: string;
   seconds: number;
   ms: { record: number; transcribe: number; normalize: number };
+}
+
+/**
+ * The `--json` stdout document of a voice run that exited non-zero. `code` is
+ * the exit code (1 error, 2 ffmpeg/whisper-cli missing, 3 nothing heard).
+ * A transcription that was made but not delivered (nothing heard, a clipboard
+ * or paste failure) is the `VoiceJsonResult` with these keys over it, so the
+ * text is not lost; every other failure is this object alone.
+ */
+export interface VoiceJsonFailure {
+  ok: false;
+  error: string;
+  nextStep?: string;
+  code: number;
 }
 
 interface Resolved {
@@ -170,6 +191,10 @@ interface Resolved {
   log: (s: string) => void;
   /** Carriage-return progress updates (model download). */
   progress: (s: string) => void;
+  /** The failure a non-zero exit reports under --json (set by `failed`). */
+  failure?: { error: string; nextStep?: string };
+  /** Whether a document already went to stdout, so a failure does not add a second one. */
+  printed: boolean;
 }
 
 function resolve(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps): Resolved {
@@ -191,7 +216,52 @@ function resolve(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps): Resolved {
     clock: deps.clock ?? Date.now,
     log: opts.quiet ? () => undefined : (s: string) => io.stderr(`${s}\n`),
     progress: opts.quiet ? () => undefined : (s: string) => io.stderr(`\r${s}`),
+    printed: false,
   };
+}
+
+/** Record what a non-zero exit failed on, for the --json failure document, and return `code`. */
+function failed(r: Resolved, code: number, error: string, nextStep?: string): number {
+  r.failure = { error, ...(nextStep ? { nextStep } : {}) };
+  return code;
+}
+
+function jsonFailure(code: number, error: string, nextStep?: string): VoiceJsonFailure {
+  return { ok: false, error, ...(nextStep ? { nextStep } : {}), code };
+}
+
+/**
+ * Run one voice entry point so that under --json a non-zero exit always leaves
+ * one document on stdout. The body's stdout is tracked; when it printed
+ * nothing, the recorded failure (or an unexpected exception, reported on
+ * stderr as well) becomes the `VoiceJsonFailure`.
+ */
+async function runReported(
+  opts: VoiceOptions,
+  io: VoiceIO,
+  deps: VoiceDeps,
+  body: (io: VoiceIO, r: Resolved) => Promise<number>,
+): Promise<number> {
+  const r = resolve(opts, io, deps);
+  const tracked: VoiceIO = {
+    stdout: (s) => {
+      r.printed = true;
+      io.stdout(s);
+    },
+    stderr: (s) => io.stderr(s),
+  };
+  let code: number;
+  try {
+    code = await body(tracked, r);
+  } catch (e) {
+    io.stderr(`lexicon voice: ${message(e)}\n`);
+    code = failed(r, EXIT_ERROR, message(e));
+  }
+  if (opts.json && code !== EXIT_OK && !r.printed) {
+    const f = r.failure ?? { error: `lexicon voice exited ${code}` };
+    tracked.stdout(`${JSON.stringify(jsonFailure(code, f.error, f.nextStep))}\n`);
+  }
+  return code;
 }
 
 function message(e: unknown): string {
@@ -218,6 +288,7 @@ async function requireTools(r: Resolved, io: VoiceIO, deps: VoiceDeps, need: { f
     io.stderr(
       `lexicon voice: ${missing.join(' and ')} not found on PATH.\n  install: ${installHint(r.platform, which)}\n  (or set ${vars} to the binary)\n`,
     );
+    failed(r, EXIT_MISSING_TOOL, `${missing.join(' and ')} not found on PATH`, `install: ${installHint(r.platform, which)} (or set ${vars} to the binary)`);
     return undefined;
   }
   return { ffmpeg, whisperCli };
@@ -251,7 +322,12 @@ export async function deliver(
 ): Promise<number> {
   if (result.raw.length === 0) {
     if (opts.json) {
-      io.stdout(`${JSON.stringify(jsonResult(result, recordMs, seconds))}\n`);
+      const failure = jsonFailure(
+        EXIT_NOTHING_HEARD,
+        'nothing heard',
+        'whisper read nothing out of the recording; a wrong --lang or a model too small for the speaker look the same as silence, so check those and speak closer to the microphone',
+      );
+      io.stdout(`${JSON.stringify({ ...jsonResult(result, recordMs, seconds), ...failure })}\n`);
     } else {
       io.stdout('(nothing heard)\n');
     }
@@ -275,8 +351,12 @@ export async function deliver(
     r.log(`${result.normalized.replacements.length} correction${result.normalized.replacements.length === 1 ? '' : 's'}: ${diffSummary(result.normalized).replace(/\n/g, '; ')}`);
   }
 
-  if (opts.json) io.stdout(`${JSON.stringify(jsonResult(result, recordMs, seconds))}\n`);
-  else io.stdout(`${result.output}\n`);
+  // Under --json the one document waits for the clipboard and paste steps, so
+  // a failure there is reported in it (with the text) rather than after it.
+  const printJson = (failure?: VoiceJsonFailure): void => {
+    if (opts.json) io.stdout(`${JSON.stringify({ ...jsonResult(result, recordMs, seconds), ...failure })}\n`);
+  };
+  if (!opts.json) io.stdout(`${result.output}\n`);
 
   let wantCopy = opts.copy === true || opts.paste === true;
   let wantPaste = opts.paste === true;
@@ -296,6 +376,7 @@ export async function deliver(
       await write(result.output);
     } catch (e) {
       io.stderr(`lexicon voice: could not copy to the clipboard: ${message(e)}\n`);
+      printJson(jsonFailure(EXIT_ERROR, `could not copy to the clipboard: ${message(e)}`, 'the corrected text is in output; run `lexicon doctor` to check the clipboard backend'));
       return EXIT_ERROR;
     }
   }
@@ -313,14 +394,23 @@ export async function deliver(
         `lexicon voice: --paste failed: ${message(e)}\n` +
           '  The app that runs this command (Terminal, Raycast, Hammerspoon, ...) needs Accessibility permission: System Settings > Privacy & Security > Accessibility. The text is on the clipboard.\n',
       );
+      printJson(
+        jsonFailure(
+          EXIT_ERROR,
+          `--paste failed: ${message(e)}`,
+          'give the app that runs this command Accessibility permission: System Settings > Privacy & Security > Accessibility. The text is on the clipboard.',
+        ),
+      );
       return EXIT_ERROR;
     }
   }
+  printJson();
   return EXIT_OK;
 }
 
 export function jsonResult(result: TranscribeResult, recordMs: number, seconds: number): VoiceJsonResult {
   return {
+    ok: true,
     raw: result.raw,
     output: result.output,
     replacements: result.normalized.replacements,
@@ -417,6 +507,22 @@ function micPermissionHint(r: Resolved, launcher: string): string {
     : '';
 }
 
+/** The --json `nextStep` for an input device ffmpeg could not resolve. */
+const DEVICE_HINT = 'run `lexicon voice --list-devices` and pass one of them with --device <name|index>';
+
+/** The --json `error` of a capture with no usable audio: the parser's reason and ffmpeg's last line. */
+function recordingFailedError(reason: string | undefined, tail: string): string {
+  const last = tail.split('\n').pop()?.trim();
+  return `recording failed (${reason ?? 'no audio'})${last ? `; ffmpeg said: ${last}` : ''}`;
+}
+
+/** The --json `nextStep` of a capture with no usable audio. */
+function recordingFailedNextStep(r: Resolved, launcher: string): string {
+  return r.platform === 'darwin'
+    ? `check that ${launcher} has Microphone permission (System Settings > Privacy & Security > Microphone), then try again`
+    : 'check the input device (`lexicon voice --list-devices`, then --device <name|index>) and try again';
+}
+
 /**
  * The last few lines of ffmpeg's stderr, each sanitized for a terminal and
  * indented under `ffmpeg said:`. Sanitizing line by line keeps the line
@@ -494,14 +600,14 @@ async function transcribeCapture(
   if (!tools) {
     // The audio outlives the missing transcriber; say where it is.
     io.stderr(`lexicon voice: the recording is kept at ${wav}\n`);
-    return EXIT_MISSING_TOOL;
+    return failed(r, EXIT_MISSING_TOOL, `${r.failure?.error ?? 'whisper-cli not found'} (audio kept at ${wav})`, r.failure?.nextStep);
   }
   let lexicon: Lexicon;
   try {
     lexicon = await loadMerged(r, opts);
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, `${message(e)} (audio kept at ${wav})`, 'fix the lexicon file (`lexicon doctor` names the problem), then transcribe the kept audio');
   }
   try {
     r.log('transcribing ...');
@@ -509,9 +615,20 @@ async function transcribeCapture(
     await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
     return await deliver(result, recordMs, seconds, opts, io, deps, r);
   } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
-    return e instanceof MissingToolError ? EXIT_MISSING_TOOL : EXIT_ERROR;
+    return transcribeFailed(r, io, e, wav);
   }
+}
+
+/** A whisper (or model) failure: the stderr line, the kept audio, exit 2 for a missing binary else 1. */
+function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string): number {
+  io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
+  const missing = e instanceof MissingToolError;
+  return failed(
+    r,
+    missing ? EXIT_MISSING_TOOL : EXIT_ERROR,
+    `${message(e)} (audio kept at ${wav})`,
+    missing ? `install: ${installHint(r.platform, { ffmpeg: false, whisper: true })} (or set LEXICON_WHISPER_BIN to the binary)` : undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -519,7 +636,10 @@ async function transcribeCapture(
 
 /** Record until Enter, Ctrl-C or `--seconds`, then transcribe, normalize and output. Returns the exit code. */
 export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
-  const r = resolve(opts, io, deps);
+  return runReported(opts, io, deps, (tracked, r) => recordForeground(opts, tracked, deps, r));
+}
+
+async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
 
@@ -528,7 +648,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
     lexicon = await loadMerged(r, opts);
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)}\n`);
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, message(e), 'fix the lexicon file (`lexicon doctor` names the problem), then run `lexicon voice` again');
   }
 
   let input;
@@ -536,7 +656,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
     input = await resolveInput({ platform: r.platform, ffmpeg: tools.ffmpeg, exec: r.exec, ...(opts.device ? { device: opts.device } : {}) });
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)}\n`);
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, message(e), DEVICE_HINT);
   }
 
   await fs.mkdir(r.tmpDir, { recursive: true });
@@ -577,7 +697,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
         (tail ? `  ffmpeg said: ${tail}\n` : '') +
         (await discardOrKeep(capture, wav)),
     );
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, recordingFailedError(capture.reason, tail), recordingFailedNextStep(r, 'this terminal'));
   }
 
   try {
@@ -586,8 +706,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
     await keepOrRemoveTranscribed(result, wav, io);
     return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r);
   } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
-    return e instanceof MissingToolError ? EXIT_MISSING_TOOL : EXIT_ERROR;
+    return transcribeFailed(r, io, e, wav);
   }
 }
 
@@ -609,7 +728,10 @@ function toggleLine(status: 'recording' | 'stopping', opts: Pick<VoiceOptions, '
 }
 
 export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
-  const r = resolve(opts, io, deps);
+  return runReported(opts, io, deps, (tracked, r) => toggle(opts, tracked, deps, r));
+}
+
+async function toggle(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number> {
   // Read, decide, claim. Losing the claim means another toggle wrote the file
   // between our read and our create, so read again and decide again.
   for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
@@ -646,7 +768,7 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
     if (outcome !== 'lost') return outcome;
   }
   io.stderr(`lexicon voice: could not claim ${stateFilePath(r.globalPath)} after ${CLAIM_ATTEMPTS} attempts; try again\n`);
-  return EXIT_ERROR;
+  return failed(r, EXIT_ERROR, `could not claim ${stateFilePath(r.globalPath)} after ${CLAIM_ATTEMPTS} attempts`, 'press the hotkey (or run `lexicon voice --toggle`) again');
 }
 
 /**
@@ -781,7 +903,7 @@ async function stopAndTranscribe(
         (await discardOrKeep(capture, state.wav)) +
         `  ffmpeg log: ${recorderLogPath(r.globalPath)}\n`,
     );
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, recordingFailedError(capture.reason, tail), `${recordingFailedNextStep(r, 'the app running this command')}; ffmpeg log: ${recorderLogPath(r.globalPath)}`);
   }
 
   return transcribeCapture(state.wav, { recordMs, seconds: recordMs / 1000 }, opts, io, deps, r);
@@ -840,7 +962,12 @@ async function recoverDeadRecorder(
       `  ffmpeg log: ${recorderLogPath(r.globalPath)}\n` +
       '  Press the hotkey again to start a new recording.\n',
   );
-  return EXIT_ERROR;
+  return failed(
+    r,
+    EXIT_ERROR,
+    `the recorder (pid ${state.pid}) stopped on its own and left no audio (${capture.reason ?? 'no audio'})`,
+    `press the hotkey (or run \`lexicon voice --toggle\`) again to start a new recording; ffmpeg log: ${recorderLogPath(r.globalPath)}`,
+  );
 }
 
 /**
@@ -858,7 +985,7 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
     input = await resolveInput({ platform: r.platform, ffmpeg: tools.ffmpeg, exec: r.exec, ...(opts.device ? { device: opts.device } : {}) });
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)}\n`);
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, message(e), DEVICE_HINT);
   }
 
   const dir = await ensureVoiceDir(r.globalPath);
@@ -880,7 +1007,7 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
     await clearState(r.globalPath);
     await fs.rm(wav, { force: true }).catch(() => undefined);
     io.stderr(`lexicon voice: ${message(e)}\n`);
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, message(e), `check ffmpeg (\`${tools.ffmpeg} -version\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
   }
   await writeState(r.globalPath, { pid: child.pid, wav, startedAt: startedAt.toISOString() });
   // Sweep what is provably worthless (zero-byte captures, a claim breadcrumb a
@@ -916,7 +1043,10 @@ export async function runVoiceStatus(opts: VoiceOptions, io: VoiceIO, deps: Voic
 
 /** Print the audio input devices ffmpeg can see. */
 export async function runVoiceListDevices(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
-  const r = resolve(opts, io, deps);
+  return runReported(opts, io, deps, (tracked, r) => listDevices(opts, tracked, r, deps));
+}
+
+async function listDevices(opts: VoiceOptions, io: VoiceIO, r: Resolved, deps: VoiceDeps): Promise<number> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: false });
   if (!tools) return EXIT_MISSING_TOOL;
   try {
@@ -926,6 +1056,6 @@ export async function runVoiceListDevices(opts: VoiceOptions, io: VoiceIO, deps:
     return EXIT_OK;
   } catch (e) {
     io.stderr(`lexicon voice: could not list devices: ${message(e)}\n`);
-    return EXIT_ERROR;
+    return failed(r, EXIT_ERROR, `could not list devices: ${message(e)}`);
   }
 }

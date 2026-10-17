@@ -193,7 +193,10 @@ term, `term` adds it (aliases auto-suggested when none given), `never` records
 the word on the term's `never` list, `stale` removes the term from one
 lexicon file. A term with a copy in both the project and the global file comes
 back with `stillIn` naming the other copy, which keeps correcting until it is
-removed with its own `scope`.
+removed with its own `scope`. An `alias` or `never` goes where the term lives;
+a `scope` naming a file that does not hold the term is refused and nothing is
+written, since it would create a copy holding only that word (use `add_term`
+with that `scope` for a deliberate copy).
 
 > **User:** how can I make dictation more accurate?
 > **Agent:** *calls `suggest_terms`*

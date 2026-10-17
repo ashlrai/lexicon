@@ -852,3 +852,46 @@ describe('every tool rejects a missing required argument and a mistyped property
     }
   });
 });
+
+describe('apply_suggestion with a scope that does not hold the term', () => {
+  // Catches: an 'alias' or 'never' suggestion applied with an explicit scope
+  // (or a suggestion scope from before the term moved) naming the file the
+  // term is not in. addTerm created a copy of the term there holding only the
+  // new word, reported as saved; a project copy wins the merge, so the global
+  // term's never words and category stopped applying.
+  it('refuses, writes nothing, and keeps the global term whole', async () => {
+    const globalPath = process.env.LEXICON_PATH as string;
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Vercel\n    aliases: [versel]\n    category: brand\n    never: [vessel]\n');
+    const before = await fs.readFile(globalPath, 'utf8');
+
+    for (const args of [
+      { suggestion: { kind: 'alias', canonical: 'Vercel', alias: 'versal' }, scope: 'project' },
+      { suggestion: { kind: 'never', canonical: 'Vercel', alias: 'parcel' }, scope: 'project' },
+      { suggestion: { kind: 'alias', canonical: 'Vercel', alias: 'versal', scope: 'project', path: projectPath } },
+    ]) {
+      const res = await call('apply_suggestion', args);
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain(`"Vercel" is in the global lexicon (${globalPath}), not the project one`);
+      expect(res.text).toContain('nothing was written');
+      expect(res.text).toContain('without scope');
+    }
+    await expect(fs.stat(projectPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+
+    // Without a scope it goes where the term lives, and the term keeps its never word.
+    const applied = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Vercel', alias: 'versal' } });
+    expect(JSON.parse(applied.text)).toMatchObject({ path: globalPath, created: false });
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: Array<{ canonical: string; never?: string[]; category?: string; aliases: string[] }> };
+    expect(listed.terms.find((t) => t.canonical === 'Vercel')).toMatchObject({ category: 'brand', never: ['vessel'], aliases: ['versel', 'versal'] });
+  });
+
+  it('accepts a scope that holds a copy of the term', async () => {
+    const globalPath = process.env.LEXICON_PATH as string;
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' })).isError).toBe(false);
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cube netties'], scope: 'global' })).isError).toBe(false);
+    const res = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: 'Kubernetes', alias: 'kuber nettys' }, scope: 'global' });
+    expect(res.isError).toBe(false);
+    expect(JSON.parse(res.text)).toMatchObject({ path: globalPath, created: false });
+  });
+});
