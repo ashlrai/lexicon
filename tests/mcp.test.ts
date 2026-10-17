@@ -773,7 +773,7 @@ describe('lexicon MCP server', () => {
           termCount: 2,
         });
         expect((payload.preview as unknown[]).length).toBe(2);
-        expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo' });
+        expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
         expect(asked).toHaveLength(1);
         expect(asked[0]).toMatch(/Trust the project lexicon at .*sub.*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
         expect(asked[0]).not.toContain('ignore me');

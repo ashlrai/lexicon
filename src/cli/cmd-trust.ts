@@ -28,6 +28,8 @@ import {
   trustPreview,
   trustProject,
   untrustProject,
+  isTrustContentChangedError,
+  parsedContentHash,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
 import { jsonError, jsonOk, line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
@@ -137,10 +139,9 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return fail(io, opts.json, 'trust', filePath, `file does not exist: ${filePath}`, 'pass the path of an existing .lexicon.yaml, or run: lexicon init --project');
   }
 
-  // Hash before parsing so a confirmation below covers bytes no newer than the
-  // preview (as MCP trust_project does), then parse so a broken file is
-  // reported instead of trusted blind.
-  const shownSha = await hashFile(filePath);
+  // Parse so a broken file is reported instead of trusted blind; the bytes
+  // that parse read are the ones the preview shows and the only ones that
+  // may be pinned (as MCP trust_project does).
   let file: LexiconFile;
   try {
     file = await readLexiconFile(filePath, 'project');
@@ -151,6 +152,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return fail(io, opts.json, 'trust', filePath, `refusing to trust an invalid lexicon: ${message}`, unreadableLexiconHint(message));
   }
 
+  const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));
   const before = await isTrusted(file, { cwd });
   const registry = getTrustPath({ cwd });
   // The table is for the person deciding; under --json it goes to stderr, and
@@ -171,7 +173,13 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   if (ask && (shownSha === undefined || (await hashFile(filePath)) !== shownSha)) {
     return fail(io, opts.json, 'trust', filePath, `${filePath} changed while waiting for confirmation; nothing was trusted`, 'review it and run: lexicon trust');
   }
-  const entry = await trustProject(filePath, { cwd });
+  let entry: Awaited<ReturnType<typeof trustProject>>;
+  try {
+    entry = await trustProject(filePath, { cwd, ...(shownSha !== undefined ? { expectedSha256: shownSha } : {}) });
+  } catch (err) {
+    if (!isTrustContentChangedError(err)) throw err;
+    return fail(io, opts.json, 'trust', filePath, `${filePath} changed while it was being trusted; nothing was trusted`, 'review it and run: lexicon trust');
+  }
   // Asked or not (--yes, off a terminal), only the bytes that were parsed and
   // previewed above may be pinned: trustProject hashes the file again, and a
   // file swapped in meanwhile (even one that does not parse) would otherwise

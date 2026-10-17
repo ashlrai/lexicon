@@ -19,6 +19,8 @@ import {
   trustAllEnabled,
   trustProject,
   untrustProject,
+  isTrustContentChangedError,
+  parsedContentHash,
 } from '../../core/index.js';
 import type { LexiconFile } from '../../core/index.js';
 import { guarded, textResult, trustPreview } from '../shared.js';
@@ -142,10 +144,9 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
           });
         }
 
-        // action === 'trust': hash before parsing so the approval below is bound
-        // to bytes no newer than the preview, then parse so a broken file is
-        // reported instead of trusted blind.
-        const shownSha = await hashFile(filePath);
+        // action === 'trust': parse so a broken file is reported instead of
+        // trusted blind. The approval below is bound to the bytes that parse
+        // read, which are the ones the preview shows.
         let file: LexiconFile;
         try {
           file = await readLexiconFile(filePath, 'project');
@@ -153,6 +154,7 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
           throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? '')}`);
         }
         if (!file.exists) throw new Error(`file does not exist: ${safePath}`);
+        const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));
         const before = await isTrusted(file, { cwd: ctx.cwd });
 
         // Re-pinning unchanged content grants nothing new; anything else needs the human.
@@ -172,7 +174,17 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
             throw new Error(`${safePath} changed while waiting for approval; nothing was trusted`);
           }
         }
-        const entry = await trustProject(filePath, { cwd: ctx.cwd });
+        let entry: Awaited<ReturnType<typeof trustProject>>;
+        try {
+          entry = await trustProject(filePath, {
+            cwd: ctx.cwd,
+            // Always: a re-pin of a trusted file must not pin bytes that replaced it after the check.
+            ...(shownSha !== undefined ? { expectedSha256: shownSha } : {}),
+          });
+        } catch (err) {
+          if (!isTrustContentChangedError(err)) throw err;
+          throw new Error(`${safePath} changed while it was being trusted; nothing was trusted`);
+        }
         if (before !== 'trusted' && entry.sha256 !== shownSha) {
           await untrustProject(filePath, { cwd: ctx.cwd });
           throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);

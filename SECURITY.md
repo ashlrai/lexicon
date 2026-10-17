@@ -32,7 +32,8 @@ rewrite anything they copy. Payloads over 20,000 characters are skipped.
 **Local HTTP API (`lexicon serve`).** The server binds `127.0.0.1` only (a
 non-loopback `--host` is possible but prints a warning) and every request
 except `GET /health` needs the bearer token from `<config dir>/serve.json`,
-which is created with mode 0600 and compared in constant time. CORS headers are
+which is created with mode 0600 (an existing one that others can read is put
+back to 0600 when it is reused) and compared in constant time. CORS headers are
 sent only to browser-extension origins (`chrome-extension://`,
 `moz-extension://`, `safari-web-extension://`) or exact origins the user lists
 in `serve.json.allowedOrigins`, never `*`, so a web page cannot read responses
@@ -203,7 +204,9 @@ treated as the user's own words).
   `loadLexicon()`, which applies the gate by default.
 - **sha256 pinning.** Trust records the file's content hash. If the file
   changes (for example after `git pull`) it drops to `changed` and is skipped
-  until trusted again.
+  until trusted again. The hash checked is that of the bytes that were parsed,
+  not of a second read, and `lexicon trust` pins exactly the bytes its preview
+  showed, so a file rewritten between the read and the check is never merged.
 - **Auto-trust only for files the user authored.** Project-scope writes
   (`lexicon init --project`, `add --project`, `import --project`,
   `learn --project`, `harvest --add`, `review --project`, `suggest --project`,
@@ -233,7 +236,9 @@ treated as the user's own words).
   phonetic at most 200, `createdAt` at most 64, at most 64 aliases per term,
   at most 5000 terms, no control characters or line breaks anywhere
   (including the Unicode line/paragraph separators U+2028/U+2029 and NEL).
-  Lexicon files over 2 MB are refused; `lexicon import` and `import_dictionary`
+  Lexicon files over 2 MB are refused, counted on the bytes actually read,
+  and only a regular file is read: a `.lexicon.yaml` committed as a symlink
+  to `/dev/zero` or `/dev/stdin`, or a FIFO, is refused without reading it; `lexicon import` and `import_dictionary`
   refuse files, stdin and `content` over 8 MB before reading them whole, and the
   importers are linear-time scanners. The local API caps bodies at 1 MB.
 - **Invisible-character stripping.** Zero-width characters (U+200B–U+200F),
@@ -265,7 +270,10 @@ treated as the user's own words).
   `lexicon pack` fetching a community pack index and pack files from the
   `--registry` URL the user passed. Every pack download is sha256-verified
   against the index before it is read, and a checksum mismatch refuses the
-  install; the install script and Homebrew fetch the package itself.
+  install; an index or pack file over 2 MB is refused (the download stops at
+  the cap), a remote index may name only `https://` URLs or paths relative to
+  itself, never a local file; and plain `http://` is refused for an index or
+  pack anywhere but this machine, redirects included; the install script and Homebrew fetch the package itself.
 - **Escape hatch.** `LEXICON_TRUST_ALL=1` treats every project lexicon as
   trusted. It is meant for CI or throwaway containers where the repository is
   already vetted; do not set it in an interactive shell.
