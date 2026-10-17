@@ -15,10 +15,11 @@ import {
   removeTerm,
   suggestAliases,
   suggestTerms,
+  termHolders,
 } from '../../core/index.js';
 import type { Term, VoiceHistoryEntry } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
-import { SUGGESTION_KINDS, guarded, log, textResult } from '../shared.js';
+import { SUGGESTION_KINDS, guarded, log, nonBlank, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 
 export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
@@ -76,12 +77,19 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             }
           }
         }
-        return textResult({
+        const payload = {
           root,
           candidates,
           count: candidates.length,
           ...(add ? { added, failures } : {}),
-        });
+          ...(failures.length > 0
+            ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }
+            : {}),
+        };
+        // Every write failed: nothing was added, so this is not a success the
+        // agent should report as "added" (the payload still lists the reasons).
+        if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+        return textResult(payload);
       }),
   );
 
@@ -118,11 +126,13 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       title: 'Apply one suggestion',
       description:
         "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), " +
-        "'never' records the word as never-rewrite on the term, 'stale' removes the term. Pass the suggestion object back as received.",
+        "'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); " +
+        'when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. ' +
+        'Pass the suggestion object back as received.',
       inputSchema: {
         suggestion: z.object({
           kind: z.enum(SUGGESTION_KINDS),
-          canonical: z.string().min(1),
+          canonical: nonBlank(),
           alias: z.string().optional(),
           aliases: z.array(z.string()).optional(),
           category: z.enum(TERM_CATEGORIES).optional(),
@@ -136,7 +146,9 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         scope: z
           .enum(TERM_SCOPES)
           .optional()
-          .describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'."),
+          .describe(
+            "Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'. An 'alias' or 'never' scope must name a file that holds the term; one that does not is refused, as it would create a copy.",
+          ),
       },
     },
     async ({ suggestion, scope }) =>
@@ -145,16 +157,52 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         const alias = suggestion.alias?.trim();
         // An alias or never word goes where the term lives, as `lexicon suggest`
         // does: a global copy of a project term loses the merge, so it would
-        // never fire. Suggestions do not carry a scope for the agent to pass.
+        // never fire. An explicit scope must name a file that holds the term.
         let target = scope ?? suggestion.scope;
-        if (target === undefined && (kind === 'alias' || kind === 'never')) {
+        if (kind === 'alias' || kind === 'never') {
+          // Both edit an existing term. When it is gone (removed since
+          // suggest_terms ran, or only in a skipped project file) addTerm
+          // used to create a new term holding just this word, reported as
+          // "saved": a term the user never asked for.
           const key = canonical.trim().toLowerCase();
-          target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;
+          const current = await load();
+          const existing = current.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+          if (!existing) {
+            throw new Error(
+              `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === 'alias' ? 'alias' : 'never word'} to (it may have been removed since suggest_terms ran); ` +
+                'nothing was written. Call suggest_terms again, or add_term if the user wants the term created.',
+            );
+          }
+          // A scope that names a file without the term (an explicit `scope`,
+          // or a suggestion's own from before the term moved) made addTerm
+          // create a copy there holding only this word. A project copy wins
+          // the merge, so the global term's never words, category and notes
+          // stopped applying; a global copy leaked the term into every repo.
+          const holders = termHolders(current, canonical);
+          if (target !== undefined && target !== existing.scope && !holders.some((h) => h.scope === target)) {
+            const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(' and ') || `${existing.scope} lexicon`;
+            throw new Error(
+              `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === 'alias' ? 'alias' : 'never word'} would create a copy of the term there; nothing was written. ` +
+                `Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`,
+            );
+          }
+          target ??= existing.scope;
         }
         const storeOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
         if (kind === 'stale') {
+          // removeTerm edits one file (the project one first without a scope).
+          // A term with a copy in both files keeps firing from the other copy,
+          // so name every file still holding it rather than report it gone.
+          const before = termHolders(await load(), canonical);
           const removed = await removeTerm(canonical, storeOpts);
-          return textResult({ kind, canonical, removed, summary: removed ? `removed "${canonical}"` : `"${canonical}" was not in the lexicon` });
+          const after = termHolders(await load(), canonical);
+          const from = before.find((b) => !after.some((a) => a.path === b.path));
+          const stillIn = after.length > 0 ? { stillIn: after } : {};
+          const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ''}` : `"${canonical}" was not in the ${target ?? 'global or project'} lexicon`;
+          const tail = after
+            .map((h) => `; it is still in the ${h.scope} lexicon (${h.path}): ask the user, then call apply_suggestion again with scope "${h.scope}" to remove that copy too`)
+            .join('');
+          return textResult({ kind, canonical, removed, ...(from ? { path: from.path } : {}), ...stillIn, summary: head + tail });
         }
         if ((kind === 'alias' || kind === 'never') && !alias) throw new Error(`a "${kind}" suggestion needs an alias`);
         const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== '') ?? [];

@@ -6,17 +6,17 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, isLoopbackHost, probeHealth, serveUrl } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
 import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
-import { errorMessage } from '../util/errors.js';
-import { fail, line, safe, safeError, safeLines, tildify } from './io.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
+import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -131,7 +131,7 @@ export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps =
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
   const configPath = getServePath(storeOpts(opts));
   if (opts.json) {
-    line(io, JSON.stringify({ url, port, token: config.token, configPath }, null, 2));
+    line(io, JSON.stringify(jsonOk({ url, port, token: config.token, configPath }), null, 2));
     return 0;
   }
   line(io, `url:    ${url}`);
@@ -141,25 +141,38 @@ export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps =
 }
 
 export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
-  const config = await ensureServeConfig(storeOpts(opts));
-  const port = opts.port ?? config.port;
+  // A status query is read-only: it used to create serve.json (and a token)
+  // when none existed. Without one, the default port is probed with no token
+  // and the result says serve is not configured.
+  const config = await readServeConfig(storeOpts(opts));
+  const configPath = getServePath(storeOpts(opts));
+  const port = opts.port ?? config?.port ?? DEFAULT_PORT;
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
   const probe = await probeHealth(url, {
-    token: config.token,
+    ...(config ? { token: config.token } : {}),
     timeoutMs: STATUS_TIMEOUT_MS,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
+  const why = existsSync(configPath) ? 'has no usable token; lexicon serve replaces it' : 'does not exist; lexicon serve creates it';
+  const notConfigured = config ? {} : { configured: false, configPath, note: `serve is not configured: ${configPath} ${why}` };
   const health =
     probe.state === 'up' && isRecord(probe.body) ? (probe.body as { ok?: unknown; version?: unknown; terms?: unknown }) : undefined;
-  const up = health?.ok === true;
+  const up = probe.state === 'up' && isLexiconHealth(probe.body);
+  // A 200 that is not lexicon serve's /health: another program holds the port.
+  const foreign = probe.state === 'up' && !up;
+  const downError = probe.state === 'down' ? probe.error : '';
   if (opts.json) {
+    // `error` and `hint` are the keys MCP serve_status returns; `reason` stays for existing scripts.
     let rest: Record<string, unknown>;
     if (up) rest = { health };
-    else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error };
-    else rest = { reason: probe.state === 'down' ? probe.error : 'unexpected /health response' };
-    line(io, JSON.stringify({ up, url, ...rest }, null, 2));
+    else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error, error: probe.error, hint: SERVE_STATUS_HINTS.failing };
+    else if (foreign) rest = { reason: 'unexpected /health response', error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign };
+    else rest = { reason: downError, error: downError, hint: SERVE_STATUS_HINTS.down };
+    // `ok` equal to up (exit code 0) first, as every other --json document leads with it.
+    line(io, JSON.stringify({ ok: up, up, url, ...rest, ...notConfigured }, null, 2));
     return up ? 0 : 1;
   }
+  if (!config) line(io, `serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}`);
   if (up) {
     const version = typeof health?.version === 'string' ? health.version : '?';
     const terms = typeof health?.terms === 'number' ? health.terms : 0;
@@ -172,8 +185,13 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     line(io, `lexicon serve is running at ${url} but /health failed (HTTP ${probe.status}): ${safeError(probe.error)}`);
     return 1;
   }
-  const reason = probe.state === 'down' ? probe.error : 'unexpected /health response';
-  line(io, `lexicon serve is down at ${url}${reason ? ` (${safe(reason)})` : ''}`);
+  if (foreign) {
+    // "Start it" would fail with EADDRINUSE: the port is taken by something else.
+    line(io, `something answered at ${url}, but it is not lexicon serve (unexpected /health response)`);
+    line(io, 'another program holds the port: stop it, or run the local API on another port with: lexicon serve --port <n>');
+    return 1;
+  }
+  line(io, `lexicon serve is down at ${url}${downError ? ` (${safe(downError)})` : ''}`);
   line(io, 'start it with: lexicon serve      (or install it: lexicon serve --install)');
   return 1;
 }
@@ -209,7 +227,20 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   const platform = deps.platform ?? process.platform;
   const exec = deps.exec ?? defaultServeExec;
   const doFetch = deps.fetch ?? fetch;
-  const config = await ensureServeConfig(storeOpts(opts));
+  // Read-only, like --status: pairing used to create serve.json (and mint a
+  // token) when none existed, which configured serve as a side effect of
+  // asking to pair with it. Without one there is no server to pair with.
+  const config = await readServeConfig(storeOpts(opts));
+  if (!config) {
+    const configPath = getServePath(storeOpts(opts));
+    const why = existsSync(configPath) ? 'has no usable token; lexicon serve replaces it' : 'does not exist; lexicon serve creates it';
+    const error = `serve is not configured: ${configPath} ${why}`;
+    const nextStep = 'run `lexicon serve --install` (or `lexicon serve` in the foreground) first, then run `lexicon serve --pair` again';
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(error, nextStep), up: false, configured: false, configPath }, null, 2));
+    io.stderr(`lexicon: serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}\n`);
+    io.stderr(`lexicon: ${nextStep}\n`);
+    return 1;
+  }
   const port = opts.port ?? config.port;
   const url = pairUrl(port);
   const healthUrl = `${serveUrl(port, DEFAULT_HOST)}/health`;
@@ -225,7 +256,9 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   }
   if (!up) {
     if (opts.json) {
-      line(io, JSON.stringify({ up: false, url, reason }, null, 2));
+      const error = `lexicon serve is down at ${serveUrl(port, DEFAULT_HOST)}${reason ? ` (${reason})` : ''}`;
+      const nextStep = 'start it with `lexicon serve` or `lexicon serve --install` first, then run `lexicon serve --pair` again';
+      line(io, JSON.stringify({ ...jsonError(error, nextStep), up: false, url, reason }, null, 2));
     } else {
       io.stderr(`lexicon: lexicon serve is down at ${serveUrl(port, DEFAULT_HOST)}${reason ? ` (${safe(reason)})` : ''}\n`);
       io.stderr('lexicon: start it with `lexicon serve` or `lexicon serve --install` first, then run `lexicon serve --pair` again\n');
@@ -245,7 +278,7 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   }
 
   if (opts.json) {
-    line(io, JSON.stringify({ up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
+    line(io, JSON.stringify({ ok: opened, up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
     return opened ? 0 : 1;
   }
   if (opened) {
@@ -495,8 +528,8 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   // and names the one command that makes it permanent.
   if (isVolatileEntry(cliPath)) {
     io.stderr(
-      `lexicon: refusing to install the login service: this copy is running from an npx cache (${safe(cliPath)}), ` +
-        'which npm deletes. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written\n',
+      `lexicon: refusing to install the login service: this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), ` +
+        'which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written\n',
     );
     return 1;
   }
@@ -611,6 +644,27 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   return 1;
 }
 
+/**
+ * Delete a login-service file for --uninstall. A missing file is the "was not
+ * installed" case (true, exit 0); any other failure (permissions, a directory
+ * in its place) is reported on stderr and returns false, so the command does
+ * not say the service is gone while its file is still there.
+ */
+async function removeServiceFile(file: string, io: IO): Promise<boolean> {
+  try {
+    await fs.unlink(file);
+    line(io, `removed ${safe(file)}`);
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) {
+      line(io, `${safe(file)} was not installed`);
+      return true;
+    }
+    io.stderr(`lexicon: could not remove ${safe(file)}: ${safeLines(errorMessage(err))}\n`);
+    return false;
+  }
+}
+
 export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? os.homedir();
@@ -623,26 +677,16 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     const bootout = await runAndReport(exec, io, 'launchctl', ['bootout', `gui/${uid}/${serveLabel(env)}`]);
     if (bootout.code !== 0) await runAndReport(exec, io, 'launchctl', ['unload', plistPath]);
-    try {
-      await fs.unlink(plistPath);
-      line(io, `removed ${safe(plistPath)}`);
-    } catch {
-      line(io, `${safe(plistPath)} was not installed`);
-    }
+    if (!(await removeServiceFile(plistPath, io))) return 1;
     return 0;
   }
 
   if (platform === 'linux') {
     const unitPath = systemdUnitPath(home, env);
     await runAndReport(exec, io, 'systemctl', ['--user', 'disable', '--now', SYSTEMD_UNIT_NAME]);
-    try {
-      await fs.unlink(unitPath);
-      line(io, `removed ${safe(unitPath)}`);
-    } catch {
-      line(io, `${safe(unitPath)} was not installed`);
-    }
+    const removed = await removeServiceFile(unitPath, io);
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
-    return 0;
+    return removed ? 0 : 1;
   }
 
   if (platform === 'win32') {
@@ -685,10 +729,10 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
   try {
     info = await server.start();
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
   if (opts.json) {
-    line(io, JSON.stringify({ url: info.url, port: info.port, host: info.host, token: info.token, configPath: info.configPath }));
+    line(io, JSON.stringify(jsonOk({ url: info.url, port: info.port, host: info.host, token: info.token, configPath: info.configPath })));
   } else {
     line(io, `lexicon serve listening on ${info.url} (token in ${safe(tildify(info.configPath, home))})`);
   }
@@ -716,10 +760,10 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
 
 export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const modes = [opts.show, opts.status, opts.pair, opts.install, opts.uninstall].filter(Boolean).length;
-  if (modes > 1) {
-    io.stderr('lexicon: use only one of --show, --status, --pair, --install, --uninstall\n');
-    return 1;
-  }
+  // --install and --uninstall print a transcript, not JSON, so only the modes
+  // whose output --json shapes report a failure as `{ ok: false, error }`.
+  const json = opts.json === true && !opts.install && !opts.uninstall;
+  if (modes > 1) return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall');
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);
@@ -728,7 +772,7 @@ export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {})
     if (opts.uninstall) return await runServeUninstall(opts, io, deps);
     return await runServeForeground(opts, io, deps);
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, json);
   }
 }
 
@@ -758,7 +802,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .description(`run the local HTTP API on http://127.0.0.1:${DEFAULT_PORT} for extensions, Shortcuts, Raycast and desktop apps`)
     .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
     .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
-    .option('--json', 'print the listening info (or --show/--status result) as JSON')
+    .option('--json', 'print the listening info (or --show/--status result) as JSON, led by ok (for --status, ok equals up)')
     .option('--quiet', 'do not log requests')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')

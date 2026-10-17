@@ -146,17 +146,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path6) {
-      const ctrl = callVisitor(key, node2, visitor, path6);
+    function visit_(key, node2, visitor, path7) {
+      const ctrl = callVisitor(key, node2, visitor, path7);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path6, ctrl);
-        return visit_(key, ctrl, visitor, path6);
+        replaceNode(key, path7, ctrl);
+        return visit_(key, ctrl, visitor, path7);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
+          path7 = Object.freeze(path7.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path6);
+            const ci = visit_(i, node2.items[i], visitor, path7);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -167,13 +167,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path6);
+          path7 = Object.freeze(path7.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path7);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path6);
+          const cv = visit_("value", node2.value, visitor, path7);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -194,17 +194,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path6) {
-      const ctrl = await callVisitor(key, node2, visitor, path6);
+    async function visitAsync_(key, node2, visitor, path7) {
+      const ctrl = await callVisitor(key, node2, visitor, path7);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path6, ctrl);
-        return visitAsync_(key, ctrl, visitor, path6);
+        replaceNode(key, path7, ctrl);
+        return visitAsync_(key, ctrl, visitor, path7);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
+          path7 = Object.freeze(path7.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path6);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path7);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -215,13 +215,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path6 = Object.freeze(path6.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path6);
+          path7 = Object.freeze(path7.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path7);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path6);
+          const cv = await visitAsync_("value", node2.value, visitor, path7);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -248,23 +248,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path6) {
+    function callVisitor(key, node2, visitor, path7) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path6);
+        return visitor(key, node2, path7);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path6);
+        return visitor.Map?.(key, node2, path7);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path6);
+        return visitor.Seq?.(key, node2, path7);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path6);
+        return visitor.Pair?.(key, node2, path7);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path6);
+        return visitor.Scalar?.(key, node2, path7);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path6);
+        return visitor.Alias?.(key, node2, path7);
       return void 0;
     }
-    function replaceNode(key, path6, node2) {
-      const parent = path6[path6.length - 1];
+    function replaceNode(key, path7, node2) {
+      const parent = path7[path7.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -876,10 +876,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path6, value) {
+    function collectionFromPath(schema, path7, value) {
       let v = value;
-      for (let i = path6.length - 1; i >= 0; --i) {
-        const k = path6[i];
+      for (let i = path7.length - 1; i >= 0; --i) {
+        const k = path7[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -898,7 +898,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path6) => path6 == null || typeof path6 === "object" && !!path6[Symbol.iterator]().next().done;
+    var isEmptyPath = (path7) => path7 == null || typeof path7 === "object" && !!path7[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -928,11 +928,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path6, value) {
-        if (isEmptyPath(path6))
+      addIn(path7, value) {
+        if (isEmptyPath(path7))
           this.add(value);
         else {
-          const [key, ...rest] = path6;
+          const [key, ...rest] = path7;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -946,8 +946,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path6) {
-        const [key, ...rest] = path6;
+      deleteIn(path7) {
+        const [key, ...rest] = path7;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -961,8 +961,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path6, keepScalar) {
-        const [key, ...rest] = path6;
+      getIn(path7, keepScalar) {
+        const [key, ...rest] = path7;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -980,8 +980,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path6) {
-        const [key, ...rest] = path6;
+      hasIn(path7) {
+        const [key, ...rest] = path7;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -991,8 +991,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path6, value) {
-        const [key, ...rest] = path6;
+      setIn(path7, value) {
+        const [key, ...rest] = path7;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -3507,9 +3507,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path6, value) {
+      addIn(path7, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path6, value);
+          this.contents.addIn(path7, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -3584,14 +3584,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path6) {
-        if (Collection.isEmptyPath(path6)) {
+      deleteIn(path7) {
+        if (Collection.isEmptyPath(path7)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path6) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path7) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -3606,10 +3606,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path6, keepScalar) {
-        if (Collection.isEmptyPath(path6))
+      getIn(path7, keepScalar) {
+        if (Collection.isEmptyPath(path7))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path6, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path7, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -3620,10 +3620,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path6) {
-        if (Collection.isEmptyPath(path6))
+      hasIn(path7) {
+        if (Collection.isEmptyPath(path7))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path6) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path7) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -3640,13 +3640,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path6, value) {
-        if (Collection.isEmptyPath(path6)) {
+      setIn(path7, value) {
+        if (Collection.isEmptyPath(path7)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path6), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path7), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path6, value);
+          this.contents.setIn(path7, value);
         }
       }
       /**
@@ -5607,9 +5607,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path6) => {
+    visit.itemAtPath = (cst, path7) => {
       let item = cst;
-      for (const [field, index] of path6) {
+      for (const [field, index] of path7) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -5618,23 +5618,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path6) => {
-      const parent = visit.itemAtPath(cst, path6.slice(0, -1));
-      const field = path6[path6.length - 1][0];
+    visit.parentCollection = (cst, path7) => {
+      const parent = visit.itemAtPath(cst, path7.slice(0, -1));
+      const field = path7[path7.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path6, item, visitor) {
-      let ctrl = visitor(item, path6);
+    function _visit(path7, item, visitor) {
+      let ctrl = visitor(item, path7);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path6.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path7.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -5645,10 +5645,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path6);
+            ctrl = ctrl(item, path7);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path6) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path7) : ctrl;
     }
     exports.visit = visit;
   }
@@ -7562,9 +7562,9 @@ var require_node_crypto = __commonJS({
 });
 
 // src/hooks/user-prompt-submit.ts
-var import_node_fs5 = __toESM(require_node_fs(), 1);
-var import_node_path6 = __toESM(require_node_path(), 1);
-var import_node_url = __toESM(require_node_url(), 1);
+var import_node_fs6 = __toESM(require_node_fs(), 1);
+var import_node_path7 = __toESM(require_node_path(), 1);
+var import_node_url2 = __toESM(require_node_url(), 1);
 
 // src/core/types.ts
 var TERM_CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -7835,10 +7835,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path6) {
-  if (!path6)
+function getElementAtPath(obj, path7) {
+  if (!path7)
     return obj;
-  return path6.reduce((acc, key) => acc?.[key], obj);
+  return path7.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -8178,11 +8178,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path6, issues) {
+function prefixIssues(path7, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path6);
+    iss.path.unshift(path7);
     return iss;
   });
 }
@@ -8628,16 +8628,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path6 = []) => {
+  const processError = (error3, path7 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path6, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path7, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path7, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path6, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path7, ...issue2.path]);
       } else {
-        const fullpath = [...path6, ...issue2.path];
+        const fullpath = [...path7, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -13494,6 +13494,7 @@ var LIMITS = {
 var INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 var CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
 var CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+var ANSI_RE = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
 var OTHER_RE = new RegExp("\\p{C}", "gu");
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
@@ -13503,6 +13504,12 @@ function hasControlChars(s) {
 }
 function stripControlChars(s) {
   return stripInvisible(s.replace(CONTROL_RE_G, ""));
+}
+function sanitizeForDisplayMax(s, max) {
+  const clean = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
+  const chars = Array.from(clean);
+  if (chars.length <= max) return clean;
+  return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
 function SafeString(max) {
   return string2().transform((s) => stripInvisible(s).trim()).pipe(
@@ -13573,10 +13580,10 @@ function schemas() {
   built = { category, scope, source, term, settings, lexicon: buildLexicon(term, settings) };
   return built;
 }
-function formatPath(path6) {
-  if (path6.length === 0) return "(root)";
+function formatPath(path7) {
+  if (path7.length === 0) return "(root)";
   let out = "";
-  for (const seg of path6) {
+  for (const seg of path7) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -17746,13 +17753,14 @@ function similarity(a, b) {
 
 // src/core/matcher/tokenize.ts
 var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-var TRAILING_PUNCT_RE = /[.'’\-]+$/u;
+var TRAILING_PUNCT = /* @__PURE__ */ new Set([".", "'", "\u2019", "-"]);
 var POSSESSIVE_RE = /['’][sS]$/u;
 var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
-var EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+var EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
+var EMAIL_LOCAL_CHAR_RE = /[\w.+-]/;
 var PATH_RE = /(?:^|(?<=\s|[("'\[]))(?:~|\.{1,2}|@)?[\w.~-]*(?:\/[\w.\-]+)+/g;
 var INDENT_UNIT = 4;
 var QUOTE_PREFIX_RE = /^ {0,3}(?:>[ \t]?)+/;
@@ -17827,9 +17835,32 @@ function indentedCodeRanges(text) {
   }
   return out;
 }
+function emailRanges(text) {
+  const out = [];
+  let floor = 0;
+  let at = text.indexOf("@");
+  while (at !== -1) {
+    let start = at;
+    while (start > floor && EMAIL_LOCAL_CHAR_RE.test(text.charAt(start - 1))) start--;
+    if (start < at) {
+      EMAIL_DOMAIN_RE.lastIndex = at;
+      const m = EMAIL_DOMAIN_RE.exec(text);
+      if (m) {
+        const end = at + m[0].length;
+        out.push({ start, end });
+        floor = end;
+        at = text.indexOf("@", end);
+        continue;
+      }
+    }
+    at = text.indexOf("@", at + 1);
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
+  for (const r of emailRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -17843,6 +17874,11 @@ function collectRanges(text) {
   ranges.sort((a, b) => a.start - b.start);
   return ranges;
 }
+function trimTrailingPunct(raw) {
+  let end = raw.length;
+  while (end > 0 && TRAILING_PUNCT.has(raw.charAt(end - 1))) end--;
+  return end === raw.length ? raw : raw.slice(0, end);
+}
 function tokenize(text, skipCode) {
   const ranges = skipCode ? collectRanges(text) : [];
   const tokens = [];
@@ -17853,7 +17889,7 @@ function tokenize(text, skipCode) {
   while ((m = TOKEN_RE.exec(text)) !== null) {
     let raw = m[0];
     const start = m.index;
-    const trimmed = raw.replace(TRAILING_PUNCT_RE, "");
+    const trimmed = trimTrailingPunct(raw);
     if (trimmed.length === 0) continue;
     raw = trimmed;
     const end = start + raw.length;
@@ -18521,10 +18557,117 @@ function leadContrasts(text, blockFrom, first, second) {
   const last = gapWords[gapWords.length - 1];
   return last === void 0 || !DETERMINERS.has(last);
 }
+function isBlankLine(text, from, to) {
+  for (let i = from; i < to; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== 32 && c !== 9 && c !== 13) return false;
+  }
+  return true;
+}
+function lastAtMost(xs, x) {
+  let lo = 0;
+  let hi = xs.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    if (xs[mid] <= x) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
+function firstAtOrAfter(sorted, min) {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = lo + hi >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+var ParagraphIndex = class {
+  constructor(text) {
+    this.text = text;
+    let lineStart2 = 0;
+    let prevNewline = -1;
+    for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) {
+      if (isBlankLine(text, lineStart2, i)) {
+        if (i > 0) this.blankEnds.push(i);
+        if (prevNewline >= 0) this.breaks.push(prevNewline);
+      }
+      prevNewline = i;
+      lineStart2 = i + 1;
+    }
+  }
+  text;
+  /** Newline offsets that end a blank line (a paragraph starts after one). */
+  blankEnds = [];
+  /** Newline offsets followed by a blank line that is itself newline-terminated. */
+  breaks = [];
+  cache = /* @__PURE__ */ new Map();
+  /**
+   * True when the canonical stands (in any folded spelling) somewhere in the
+   * paragraph around `start..end`, outside the span itself. A paragraph runs
+   * from just after the nearest blank line above to the nearest blank line
+   * below.
+   */
+  holds(start, end, canonical) {
+    const above = lastAtMost(this.blankEnds, start - 1);
+    const from = above < 0 ? 0 : this.blankEnds[above] + 1;
+    const belowAt = lastAtMost(this.breaks, end - 1) + 1;
+    const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
+    const para = this.paragraph(from, to);
+    const needle = foldPerCodePoint(canonical);
+    if (needle.length === 0) return false;
+    let found = para.matches.get(needle);
+    if (!found) {
+      found = [];
+      for (let at = para.folded.indexOf(needle); at >= 0; at = para.folded.indexOf(needle, at + 1)) found.push(at);
+      para.matches.set(needle, found);
+    }
+    const k1 = para.before[start - from];
+    const k2 = para.before[end - from];
+    if (found.length > 0 && found[0] + needle.length <= k1) return true;
+    if (found.length > 0 && found[found.length - 1] >= k2) return true;
+    const n = needle.length - 1;
+    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined.includes(needle);
+  }
+  paragraph(from, to) {
+    const cached2 = this.cache.get(from);
+    if (cached2) return cached2;
+    const before = new Uint32Array(to - from + 1);
+    const parts = [];
+    let length = 0;
+    let i = from;
+    while (i < to) {
+      const cp = this.text.codePointAt(i);
+      const width = cp > 65535 ? 2 : 1;
+      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      before[i - from] = length;
+      if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
+      parts.push(piece);
+      length += piece.length;
+      i += width;
+    }
+    before[to - from] = length;
+    const para = { folded: parts.join(""), before, matches: /* @__PURE__ */ new Map() };
+    this.cache.set(from, para);
+    return para;
+  }
+};
+function foldPerCodePoint(value) {
+  let out = "";
+  for (const ch of value) out += foldSpelling(ch);
+  return out;
+}
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
   const occurrences = /* @__PURE__ */ new Map();
+  let paragraphs = null;
   let cursor = 0;
   const bounds = blockBounds(text);
   for (let b = 0; b < bounds.length; b++) {
@@ -18551,18 +18694,24 @@ function declineCollapsedMentions(text, spans) {
         bare = wordOccurrences(text, result);
         occurrences.set(result, bare);
       }
-      for (const at of bare) {
-        if (at < from || at + result.length > to) continue;
-        if (here.some(({ span }) => at < span.end && span.start < at + result.length)) continue;
+      let span = 0;
+      for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
+        const at = bare[o];
+        if (at + result.length > to) break;
+        while (span < here.length && here[span].span.end <= at) span++;
+        if (span < here.length && here[span].span.start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
       const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
       // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
       previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
-      if (!anchored) continue;
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || (paragraphs ??= new ParagraphIndex(text)).holds(p.start, p.end, result)) {
+          declined.add(p.index);
+        }
       }
+      if (!anchored) continue;
       points.sort((a, b2) => a.start - b2.start);
       const links = [];
       for (let i = 0; i + 1 < points.length; i++) {
@@ -18811,16 +18960,19 @@ function findReplacements(text, index, opts = {}) {
     if (a.confidence !== b.confidence) return b.confidence - a.confidence;
     return REASON_RANK[a.reason] - REASON_RANK[b.reason];
   });
+  const claimed = new Uint8Array(text.length);
   const accepted = [];
   for (const c of candidates) {
     let overlaps = false;
-    for (const a of accepted) {
-      if (c.start < a.end && a.start < c.end) {
+    for (let k = c.start; k < c.end; k++) {
+      if (claimed[k] === 1) {
         overlaps = true;
         break;
       }
     }
-    if (!overlaps) accepted.push(c);
+    if (overlaps) continue;
+    claimed.fill(1, c.start, c.end);
+    accepted.push(c);
   }
   accepted.sort((a, b) => a.start - b.start);
   const surviving = declineCollapsedMentions(
@@ -19071,7 +19223,7 @@ async function writeFileAtomic(target, data, opts = {}) {
   }
   try {
     if (opts.backup) await backupExisting(real);
-    await import_node_fs.promises.rename(tmp, real);
+    await renameReplacing(tmp, real);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
@@ -19093,12 +19245,32 @@ async function copyThroughTemp(from, to) {
     throw err;
   }
   try {
-    await import_node_fs.promises.rename(tmp, to);
+    await renameReplacing(tmp, to);
   } catch (err) {
     await import_node_fs.promises.rm(tmp, { force: true }).catch(() => void 0);
     throw err;
   }
   return true;
+}
+var WINDOWS_RENAME_RETRY_MS = 1e3;
+function isTransientWindowsError(err, platform = process.platform) {
+  if (platform !== "win32") return false;
+  const code = typeof err === "object" && err !== null ? err.code : void 0;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+async function renameReplacing(from, to) {
+  const deadline = Date.now() + WINDOWS_RENAME_RETRY_MS;
+  let wait = 5;
+  for (; ; ) {
+    try {
+      await import_node_fs.promises.rename(from, to);
+      return;
+    } catch (err) {
+      if (!isTransientWindowsError(err) || Date.now() >= deadline) throw err;
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 100);
+  }
 }
 async function isYoungerThan(file, ms) {
   try {
@@ -19202,16 +19374,19 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
   for (; ; ) {
+    let transient;
     try {
       await import_node_fs.promises.mkdir(import_node_path.default.dirname(lockPath), { recursive: true });
       await import_node_fs.promises.writeFile(lockPath, payload, { encoding: "utf8", flag: "wx" });
       rememberForCleanup(lockPath);
       return token;
     } catch (err) {
-      if (!isEexist(err)) throw err;
+      if (isTransientWindowsError(err)) transient = err;
+      else if (!isEexist(err)) throw err;
     }
-    if (await breakIfStale(lockPath, staleMs)) continue;
+    if (transient === void 0 && await breakIfStale(lockPath, staleMs)) continue;
     if (Date.now() >= deadline) {
+      if (transient !== void 0) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
     }
     await sleep(wait / 2 + Math.random() * wait);
@@ -19301,6 +19476,9 @@ function sleep(ms) {
 // src/util/json.ts
 var import_node_fs2 = __toESM(require_node_fs());
 var import_node_path2 = __toESM(require_node_path());
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
@@ -19734,11 +19912,14 @@ function normalizeWithIndex(text, index, opts = {}) {
   if (opts.dryRun || replacements.length === 0) {
     return { input: text, output: text, replacements, changed: false };
   }
-  let output = text;
-  for (let i = replacements.length - 1; i >= 0; i--) {
-    const r = replacements[i];
-    output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+  const parts = [];
+  let at = 0;
+  for (const r of replacements) {
+    parts.push(text.slice(at, r.start), r.replacement);
+    at = r.end;
   }
+  parts.push(text.slice(at));
+  const output = parts.join("");
   return { input: text, output, replacements, changed: output !== text };
 }
 function diffSummary(result) {
@@ -20090,6 +20271,37 @@ function parseCorrection(text) {
   return void 0;
 }
 
+// src/util/package.ts
+var import_node_fs5 = __toESM(require_node_fs());
+var import_node_path6 = __toESM(require_node_path());
+var import_node_url = __toESM(require_node_url());
+var PACKAGE_NAME = "@ashlr/lexicon";
+var UNKNOWN_VERSION = "0.0.0";
+function findPackageRoot(from) {
+  let dir = from.startsWith("file:") ? import_node_path6.default.dirname((0, import_node_url.fileURLToPath)(from)) : import_node_path6.default.resolve(from);
+  for (; ; ) {
+    if (readPackageJson(import_node_path6.default.join(dir, "package.json"))) return dir;
+    const parent = import_node_path6.default.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function packageVersion(moduleUrl) {
+  const root = findPackageRoot(moduleUrl);
+  const pkg = root ? readPackageJson(import_node_path6.default.join(root, "package.json")) : void 0;
+  return pkg?.version ?? UNKNOWN_VERSION;
+}
+function readPackageJson(file) {
+  try {
+    const parsed = JSON.parse((0, import_node_fs5.readFileSync)(file, "utf8"));
+    if (isRecord(parsed) && parsed.name === PACKAGE_NAME && typeof parsed.version === "string") {
+      return { version: parsed.version };
+    }
+  } catch {
+  }
+  return void 0;
+}
+
 // src/hooks/user-prompt-submit.ts
 var HOOK_MATCH_BUDGET_MS = 100;
 var CORRECTED_PROMPT_MAX_CHARS = 8e3;
@@ -20098,12 +20310,12 @@ var ONBOARD_NOTE_FILE = "onboard-note.json";
 var ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1e3;
 var ONBOARD_NOTE = "The user's voice lexicon is empty, so dictated names are not being corrected. Do not act on this now and do not mention it on its own. Wait until a message looks dictated (run-on prose, spoken filler, or a proper noun that looks like speech-to-text mangled it). When that happens: answer what the user asked first, then add one short sentence offering to fix it, naming the word that looked wrong. Offer once. If they decline or ignore it, do not raise it again this session. If they accept, ask for (1) their company/product names, spelled exactly, and how they pronounce them; (2) their own name as they write it; (3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool with company, person and clients (or use the onboard prompt). setup_lexicon previews by default: show the user its plan and call it again with apply: true only after they say yes. Install nothing they did not name.";
 function onboardNotePath(globalPath) {
-  return (0, import_node_path6.join)((0, import_node_path6.dirname)(globalPath), ONBOARD_NOTE_FILE);
+  return (0, import_node_path7.join)((0, import_node_path7.dirname)(globalPath), ONBOARD_NOTE_FILE);
 }
 async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   const file = onboardNotePath(globalPath);
   try {
-    const raw = await import_node_fs5.promises.readFile(file, "utf8");
+    const raw = await import_node_fs6.promises.readFile(file, "utf8");
     const parsed = JSON.parse(raw);
     const last = typeof parsed === "object" && parsed !== null ? parsed.lastNotedAt : void 0;
     const lastMs = typeof last === "string" ? Date.parse(last) : Number.NaN;
@@ -20112,8 +20324,8 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   const state = { lastNotedAt: new Date(now).toISOString() };
   try {
-    await import_node_fs5.promises.mkdir((0, import_node_path6.dirname)(file), { recursive: true });
-    await import_node_fs5.promises.writeFile(file, `${JSON.stringify(state)}
+    await import_node_fs6.promises.mkdir((0, import_node_path7.dirname)(file), { recursive: true });
+    await import_node_fs6.promises.writeFile(file, `${JSON.stringify(state)}
 `, "utf8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -20122,8 +20334,29 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   return true;
 }
+var CORRECTION_LIST_MAX_CHARS = 4e3;
+function capCorrectionList(summary, max = CORRECTION_LIST_MAX_CHARS) {
+  if (summary.length <= max) return summary;
+  const counts = /* @__PURE__ */ new Map();
+  for (const l of summary.split("\n")) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const more = (n) => `... ${n} more correction${n === 1 ? "" : "s"} not listed; call the lexicon normalize_transcript tool on the prompt for the full list.`;
+  const kept = [];
+  let used = 0;
+  let left = 0;
+  for (const [text, n] of counts) {
+    const shown = n > 1 ? `${text} (${n} times)` : text;
+    if (left > 0 || used + shown.length + 1 + more(Number.MAX_SAFE_INTEGER).length > max) {
+      left += n;
+      continue;
+    }
+    kept.push(shown);
+    used += shown.length + 1;
+  }
+  if (left === 0) return kept.join("\n");
+  return [...kept, more(left)].join("\n");
+}
 function formatAdditionalContext(result) {
-  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + diffSummary(result);
+  const head = "Voice lexicon corrections for this prompt (the user dictated; apply these):\n" + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}
 Corrected prompt:
@@ -20264,19 +20497,44 @@ function parseInput(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return {};
   const parsed = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== "object") return {};
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    const kind = parsed === null ? "null" : Array.isArray(parsed) ? "an array" : `a ${typeof parsed}`;
+    process.stderr.write(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do
+`);
+    return {};
+  }
   return parsed;
+}
+function shownValue(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return JSON.stringify(sanitizeForDisplayMax(text, 60));
 }
 async function loadOrExplain(cwd) {
   try {
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
     const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+      return {
+        note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
+Tell the user to run \`lexicon doctor\`, which names the file and what is wrong with it.`
+      };
+    }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
 Tell the user to run \`lexicon edit\` and fix the parse error. \`lexicon setup\` will not repair this, and \`lexicon doctor\` will show the same thing.`
     };
   }
+}
+var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+function payloadCwd(payload) {
+  const cwd = payload.cwd;
+  if (typeof cwd === "string" && cwd.trim() !== "") return cwd;
+  if (cwd !== void 0 && cwd !== null) {
+    process.stderr.write(`[lexicon hook] ignoring the payload's cwd ${shownValue(cwd)} (not a directory path); using ${shownValue(process.cwd())}
+`);
+  }
+  return void 0;
 }
 function emit(hookEventName, parts) {
   const output = {
@@ -20287,7 +20545,7 @@ function emit(hookEventName, parts) {
 async function userPromptSubmit(payload, opts) {
   const prompt = payload.prompt;
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
@@ -20319,13 +20577,13 @@ function formatBudgetNote(budgetMs) {
   return `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.`;
 }
 async function sessionStart(payload, opts) {
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
   if (loaded.merged.terms.length === 0) {
-    if (!await shouldEmitOnboardNote(loaded.global.path)) return "";
+    if (!await shouldEmitOnboardNote(loaded.global.path)) return skippedNote ? emit("SessionStart", [skippedNote]) : "";
     return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
   const parts = [truncateSessionContext(exportLexicon(loaded.merged, "claude-md").trimEnd())];
@@ -20340,7 +20598,12 @@ async function runSessionStartHook(input, opts = {}) {
 }
 async function runHook(input, opts = {}) {
   const payload = parseInput(input);
-  if (payload.hook_event_name === "SessionStart") return sessionStart(payload, opts);
+  const event = payload.hook_event_name;
+  if (event === "SessionStart") return sessionStart(payload, opts);
+  if (event !== void 0 && event !== "UserPromptSubmit") {
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)
+`);
+  }
   return userPromptSubmit(payload, opts);
 }
 async function readStdin() {
@@ -20348,7 +20611,7 @@ async function readStdin() {
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (; ; ) {
-      const n = (0, import_node_fs5.readSync)(0, buf, 0, buf.length, null);
+      const n = (0, import_node_fs6.readSync)(0, buf, 0, buf.length, null);
       if (n === 0) return Buffer.concat(chunks).toString("utf8");
       chunks.push(Buffer.from(buf.subarray(0, n)));
     }
@@ -20359,17 +20622,52 @@ async function readStdin() {
   }
   return Buffer.concat(chunks).toString("utf8");
 }
-function writeStdout(text) {
+var processSink = {
+  writeSync: (fd, buffer, offset, length) => (0, import_node_fs6.writeSync)(fd, buffer, offset, length),
+  get stream() {
+    return process.stdout;
+  },
+  stderr: (line) => process.stderr.write(line)
+};
+function writeStdout(text, sink = processSink) {
   const bytes = Buffer.from(text, "utf8");
   let off = 0;
   try {
-    while (off < bytes.length) off += (0, import_node_fs5.writeSync)(1, bytes, off, bytes.length - off);
+    while (off < bytes.length) off += sink.writeSync(1, bytes, off, bytes.length - off);
     return;
-  } catch {
+  } catch (err) {
+    const code = err?.code;
+    if (code !== "EAGAIN") {
+      sink.stderr(`[lexicon hook] could not write the hook output (${code ?? errorText(err)}); the prompt goes through without it
+`);
+      return;
+    }
   }
-  process.stdout.write(bytes.subarray(off));
+  const stream = sink.stream;
+  stream.once("error", (err) => {
+    sink.stderr(`[lexicon hook] could not write the hook output (${err?.code ?? errorText(err)}); the prompt goes through without it
+`);
+  });
+  stream.write(bytes.subarray(off));
 }
-async function main() {
+function errorText(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function hookFlagOutput(argv) {
+  if (argv.includes("--version") || argv.includes("-v")) return packageVersion(import.meta.url);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    return "Usage: hook.mjs [--version] [--help]  (Claude Code UserPromptSubmit and SessionStart hook for the personal lexicon; reads the hook JSON on stdin)";
+  }
+  return void 0;
+}
+async function main(argv = process.argv.slice(2)) {
+  const flagOutput = hookFlagOutput(argv);
+  if (flagOutput !== void 0) {
+    writeStdout(`${flagOutput}
+`);
+    process.exitCode = 0;
+    return;
+  }
   try {
     const raw = await readStdin();
     const out = await runHook(raw);
@@ -20386,7 +20684,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs5.realpathSync)((0, import_node_path6.resolve)(entry)) === (0, import_node_fs5.realpathSync)((0, import_node_url.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs6.realpathSync)((0, import_node_path7.resolve)(entry)) === (0, import_node_fs6.realpathSync)((0, import_node_url2.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }
@@ -20396,12 +20694,14 @@ if (isMainModule()) {
 }
 export {
   CORRECTED_PROMPT_MAX_CHARS,
+  CORRECTION_LIST_MAX_CHARS,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
   SESSION_CONTEXT_MAX_CHARS,
+  capCorrectionList,
   dataBlockSpans,
   dropCorrectionSpans,
   dropDataBlockSpans,
@@ -20409,11 +20709,13 @@ export {
   formatBudgetNote,
   formatCorrectionNote,
   formatSkippedProjectNote,
+  hookFlagOutput,
   main,
   onboardNotePath,
   runHook,
   runSessionStartHook,
   runUserPromptSubmitHook,
   shouldEmitOnboardNote,
-  truncateSessionContext
+  truncateSessionContext,
+  writeStdout
 };

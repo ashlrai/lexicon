@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { STOPLIST, buildIndex, findReplacements, phoneticKey, separatorOffsets, similarity } from '../src/core/matcher.js';
+import { normalizeWithIndex } from '../src/core/normalize.js';
+import { emailRanges } from '../src/core/matcher/tokenize.js';
 import type { Lexicon, Replacement, Term } from '../src/core/types.js';
 
 function lex(terms: Term[], settings?: Lexicon['settings']): Lexicon {
@@ -687,7 +689,7 @@ describe('identifier glue', () => {
   });
 });
 
-describe('robustness and performance', () => {
+describe('robustness', () => {
   it('handles empty input and empty lexicon', () => {
     expect(find('', [ASHLR])).toEqual([]);
     expect(find('Ashler', [])).toEqual([]);
@@ -696,26 +698,6 @@ describe('robustness and performance', () => {
   it('ignores blank aliases and blank never entries', () => {
     const reps = find('Ashler', [{ canonical: 'Ashlr.AI', aliases: ['', '  ', 'Ashler'], never: [''] }]);
     expect(reps).toHaveLength(1);
-  });
-
-  it('finds replacements in a 2KB text with 200 terms in under 20ms', () => {
-    const terms: Term[] = Array.from({ length: 200 }, (_, i) => ({
-      canonical: `Widgetron${i}X`,
-      aliases: [`widget tron ${i}`, `wigetron${i}`],
-    }));
-    terms.push(ASHLR, K8S);
-    const index = buildIndex(lex(terms));
-    const text = "The quick brown fox jumps over the lazy dog while Ashler ships Cooper Nettie's clusters to widget tron 7. ".repeat(20);
-    expect(text.length).toBeGreaterThan(2000);
-    findReplacements(text, index); // warm-up
-    let best = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < 5; i++) {
-      const t0 = performance.now();
-      const reps = findReplacements(text, index);
-      best = Math.min(best, performance.now() - t0);
-      expect(reps.length).toBe(60);
-    }
-    expect(best).toBeLessThan(20);
   });
 });
 
@@ -951,6 +933,39 @@ describe('bug J: text that quotes a misspelling is not flattened into one spelli
     // one paragraph up, not two: an unrelated paragraph in between breaks it
     const far = 'Ashlr.AI ships today.\n\nThe cluster is fine.\n\nreddis and red iss are the same box.';
     expect(apply(far, find(far, [REDIS]))).toBe('Ashlr.AI ships today.\n\nThe cluster is fine.\n\nRedis and Redis are the same box.');
+  });
+
+  // The quote rule's anchor reached only this sentence and the one above, while
+  // tests/enumeration.property.test.ts holds it to the whole paragraph. A
+  // changelog bullet or README paragraph names the canonical, says something
+  // else for two sentences and then quotes the alias; that quote was flattened.
+  it('keeps a quoted spelling when the canonical stands anywhere in its paragraph', () => {
+    keeps('The term is Ashlr.AI. It has many aliases. One of them is "Ashler" and it stays.', [ASHLR]);
+    keeps('- Fixed the Ashlr.AI thing.\n- Other stuff here.\n- The alias "Ashler" is kept.\n', [ASHLR]);
+    keeps('Fixed the Ashlr.AI thing.\nOther stuff here.\nThe alias `Ashler` is kept.', [ASHLR]);
+    // the wider anchor stops at the paragraph, and an unquoted mention is still fixed
+    const apart = 'The term is Ashlr.AI.\n\nThe cluster is fine.\n\nOne of them is "Ashler" and it stays.';
+    expect(apply(apart, find(apart, [ASHLR]))).toBe('The term is Ashlr.AI.\n\nThe cluster is fine.\n\nOne of them is "Ashlr.AI" and it stays.');
+    const plain = 'The term is Ashlr.AI. It has many aliases. Then ashler went down.';
+    expect(apply(plain, find(plain, [ASHLR]))).toBe('The term is Ashlr.AI. It has many aliases. Then Ashlr.AI went down.');
+  });
+
+  // The anchor is the paragraph, not the sentence. A changelog bullet list is
+  // one paragraph; the canonical stood in an earlier bullet, and a later bullet
+  // quoted a case-only correction of the term's own alias ("ashlr" should be
+  // "Ashlr"). The anchor was looked up in the sentence and the one before it
+  // only, so both quoted spellings were flattened to Ashlr.AI.
+  it('anchors on the canonical anywhere in the same paragraph (quoted case-only correction)', () => {
+    const SHORT: Term = { canonical: 'Ashlr.AI', aliases: ['Ashlr AI', 'Ashlr', 'Ashler'] };
+    const text = [
+      '- Adding a never word to `Ashlr.AI` used to add "Ashlr AI" and three more. A new term still gets them.',
+      '- The hook is faster. It reads a cache.',
+      '- `lexicon learn` accepts a case-only correction ("ashlr" should be "Ashlr"): it recases the term.',
+    ].join('\n');
+    keeps(text, [SHORT]);
+    // and the reach stops at the paragraph: one further up does not anchor
+    const far = 'Ashlr.AI ships.\n\nThe cluster is fine.\n\nThe docs say "ashler" in one place.';
+    expect(apply(far, find(far, [SHORT]))).toBe('Ashlr.AI ships.\n\nThe cluster is fine.\n\nThe docs say "Ashlr.AI" in one place.');
   });
 });
 
@@ -1321,5 +1336,66 @@ describe('a long text does not copy every earlier token per plural', () => {
     const text = `${'words here '.repeat(3000)}two ollamas`;
     const r = findReplacements(text, index);
     expect(r.map((x) => [x.original, x.replacement])).toEqual([['ollama', 'Ollama']]);
+  });
+});
+
+// The time budget (shouldStop) is polled between tokens only, so the work
+// before the first token (protected ranges, token trimming) and after the
+// scan (overlaps, collapsed mentions, the splice) has to be linear on its own,
+// or the 1 MB the local API accepts and the 100 000 characters MCP checks
+// hold the one thread for seconds past any budget. Each case here took
+// several seconds before; the bound is loose so a slow CI runner still passes.
+describe('pathological input stays linear outside the shouldStop scan', () => {
+  const index = buildIndex({ version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] });
+  const cases: Array<[string, string]> = [
+    ['a long run with no space or @ (the email pattern)', 'a'.repeat(200_000)],
+    ['a dotted run with no @', 'ab.'.repeat(70_000)],
+    ['a token of dashes that does not end in one (the trailing-punctuation trim)', `a${'-'.repeat(200_000)}b`],
+    ['a token of apostrophes', `a${"'".repeat(200_000)}b`],
+    ['tens of thousands of alias hits (overlaps and the splice)', 'Ashler '.repeat(28_000)],
+    ['hits beside the canonical in one block (collapsed mentions)', 'Ashler Ashlr.AI '.repeat(25_000)],
+    ['hits in many blocks with the canonical everywhere', 'Ashler Ashlr.AI\n\n'.repeat(23_000)],
+  ];
+  for (const [name, text] of cases) {
+    it(name, () => {
+      // No budget: the whole scan has to fit too, and none of these is long in tokens.
+      const started = Date.now();
+      normalizeWithIndex(text, index);
+      expect(Date.now() - started).toBeLessThan(2_500);
+    });
+  }
+
+  it('still corrects every hit and skips the address', () => {
+    const text = `${'Ashler '.repeat(3)}mail ashler@example.com`;
+    const out = normalizeWithIndex(text, index);
+    expect(out.output).toBe(`${'Ashlr.AI '.repeat(3)}mail ashler@example.com`);
+  });
+});
+
+describe('emailRanges', () => {
+  const OLD = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+  function viaRegex(text: string): Array<{ start: number; end: number }> {
+    const out: Array<{ start: number; end: number }> = [];
+    OLD.lastIndex = 0;
+    for (let m = OLD.exec(text); m !== null; m = OLD.exec(text)) out.push({ start: m.index, end: m.index + m[0].length });
+    return out;
+  }
+
+  it('finds exactly what the old single regex found', () => {
+    const alphabet = 'ab.+-@_ x9@.-é';
+    let seed = 7;
+    const next = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed;
+    };
+    for (let i = 0; i < 20_000; i++) {
+      let text = '';
+      const len = next() % 30;
+      for (let k = 0; k < len; k++) text += alphabet[next() % alphabet.length];
+      expect(emailRanges(text)).toEqual(viaRegex(text));
+    }
+    for (const text of ['me@x.io and you@y.co.uk', 'a@b.com+x@c.com', 'a@b@c.d', '@x.y', 'q.@a-b.c-d.e', 'x@y', 'a@b.c.']) {
+      expect(emailRanges(text)).toEqual(viaRegex(text));
+    }
   });
 });

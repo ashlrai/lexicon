@@ -269,7 +269,7 @@ Hotkeys are stored in `UserDefaults` under `hotkey.pushToTalk`, `hotkey.fixClipb
 
 The app is a thin remote control. Everything it shows comes from these calls and their documented output:
 
-- `lexicon voice --toggle --json`: first call prints `recording`; the second prints `{ raw, output, replacements, summary, model, seconds, ms }`. The app treats a `pasted: false` field, a `pasteError` field, or an `--paste failed` / "Accessibility" message on stderr as a paste failure.
+- `lexicon voice --toggle --json`: first call prints `{"status":"recording"}`; the second prints `{ ok: true, raw, output, replacements, summary, model, seconds, ms }`. A failure prints `{ ok: false, error, nextStep?, code }` (`code` is the exit code), over the result when there is text (nothing heard, a failed `--paste`); one without `output` is reported from stderr. The app treats a `pasted: false` field, a `pasteError` field, an `error` naming paste or Accessibility, or an `--paste failed` / "Accessibility" message on stderr as a paste failure.
 - `lexicon voice --status`: exit 0 while recording, 1 when idle.
 - `lexicon daemon --once [--paste]`: text output (`N corrections` then one `"a" -> "b" (reason, confidence)` line each, or `no changes`). The app parses those lines; a JSON object is also accepted if a later CLI prints one.
 - `lexicon path`: `global: <path>` / `project: <path>|(none)`.

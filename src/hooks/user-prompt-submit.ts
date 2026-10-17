@@ -27,8 +27,9 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, sanitizeForDisplayMax, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
+import { packageVersion } from '../util/package.js';
 
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
@@ -142,9 +143,46 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
   return true;
 }
 
+/**
+ * Longest list of corrections the note carries. The list had no bound: a
+ * pasted log naming a term thousands of times put one line per occurrence
+ * into the context (tens of kilobytes), even after the prompt itself stopped
+ * being echoed past CORRECTED_PROMPT_MAX_CHARS.
+ */
+export const CORRECTION_LIST_MAX_CHARS = 4000;
+
+/**
+ * `summary` (one correction per line) when it fits in `max` characters.
+ * Otherwise identical lines are merged with a count (`... (12 times)`), lines
+ * are kept from the start while they fit, and one closing line says how many
+ * corrections were left out and where to get them all. Exported for tests.
+ */
+export function capCorrectionList(summary: string, max: number = CORRECTION_LIST_MAX_CHARS): string {
+  if (summary.length <= max) return summary;
+  const counts = new Map<string, number>();
+  for (const l of summary.split('\n')) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const more = (n: number): string =>
+    `... ${n} more correction${n === 1 ? '' : 's'} not listed; call the lexicon normalize_transcript tool on the prompt for the full list.`;
+  const kept: string[] = [];
+  let used = 0;
+  let left = 0;
+  for (const [text, n] of counts) {
+    const shown = n > 1 ? `${text} (${n} times)` : text;
+    // Room for the closing line, whatever count it ends up with.
+    if (left > 0 || used + shown.length + 1 + more(Number.MAX_SAFE_INTEGER).length > max) {
+      left += n;
+      continue;
+    }
+    kept.push(shown);
+    used += shown.length + 1;
+  }
+  if (left === 0) return kept.join('\n');
+  return [...kept, more(left)].join('\n');
+}
+
 /** Builds the note handed to the agent for a changed prompt. */
 export function formatAdditionalContext(result: NormalizeResult): string {
-  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + diffSummary(result);
+  const head = 'Voice lexicon corrections for this prompt (the user dictated; apply these):\n' + capCorrectionList(diffSummary(result));
   if (result.output.length > CORRECTED_PROMPT_MAX_CHARS) return head;
   return `${head}\nCorrected prompt:\n${result.output}`;
 }
@@ -382,8 +420,20 @@ function parseInput(raw: string): HookInput {
   const trimmed = raw.trim();
   if (!trimmed) return {};
   const parsed: unknown = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== 'object') return {};
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    // Valid JSON that is not a payload: nothing to read, and saying so is the
+    // only clue a person has that the caller sent the wrong thing.
+    const kind = parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : `a ${typeof parsed}`;
+    process.stderr.write(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do\n`);
+    return {};
+  }
   return parsed as HookInput;
+}
+
+/** A short, display-safe rendering of an untrusted value for a stderr line. */
+function shownValue(value: unknown): string {
+  const text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  return JSON.stringify(sanitizeForDisplayMax(text, 60));
 }
 
 /**
@@ -401,6 +451,15 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
     const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    // Only a store parse/validation error is a file to fix with `lexicon edit`;
+    // anything else (a file that cannot be read) used to be reported as one too.
+    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+      return {
+        note:
+          `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}\n` +
+          'Tell the user to run `lexicon doctor`, which names the file and what is wrong with it.',
+      };
+    }
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
@@ -408,6 +467,25 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
         'and `lexicon doctor` will show the same thing.',
     };
   }
+}
+
+/** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */
+const UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+
+/**
+ * The payload's `cwd` when it is a non-empty string, else undefined (the
+ * hook then uses its own working directory). Any other value used to reach
+ * loadLexicon, whose TypeError was reported to the model as a lexicon file
+ * that does not parse, telling the user to run `lexicon edit` on a file that
+ * was fine. A present but unusable value gets one stderr line.
+ */
+function payloadCwd(payload: HookInput): string | undefined {
+  const cwd: unknown = payload.cwd;
+  if (typeof cwd === 'string' && cwd.trim() !== '') return cwd;
+  if (cwd !== undefined && cwd !== null) {
+    process.stderr.write(`[lexicon hook] ignoring the payload's cwd ${shownValue(cwd)} (not a directory path); using ${shownValue(process.cwd())}\n`);
+  }
+  return undefined;
 }
 
 function emit(hookEventName: HookEventName, parts: readonly string[]): string {
@@ -421,7 +499,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const prompt = payload.prompt;
   if (typeof prompt !== 'string' || prompt.trim() === '') return '';
 
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
   const attempt = await loadOrExplain(cwd);
@@ -477,15 +555,18 @@ export function formatBudgetNote(budgetMs: number): string {
 }
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit('SessionStart', [attempt.note ?? '']);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
 
   if (loaded.merged.terms.length === 0) {
-    // Nothing to inject; nudge the model to offer onboarding, but not every session.
-    if (!(await shouldEmitOnboardNote(loaded.global.path))) return '';
+    // Nothing to inject; nudge the model to offer onboarding, but not every
+    // session. The skipped-project note is not rationed with it: a session
+    // with terms always gets it, and an empty global lexicon is exactly when
+    // the repo's file is the only vocabulary there is.
+    if (!(await shouldEmitOnboardNote(loaded.global.path))) return skippedNote ? emit('SessionStart', [skippedNote]) : '';
     return emit('SessionStart', skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
 
@@ -512,10 +593,18 @@ export async function runSessionStartHook(input: string, opts: HookOptions = {})
   return sessionStart(parseInput(input), opts);
 }
 
-/** Dispatches on `hook_event_name`. Unknown or missing events are handled as UserPromptSubmit. */
+/**
+ * Dispatches on `hook_event_name`. Unknown or missing events are handled as
+ * UserPromptSubmit; an unknown one (registered for an event this hook does
+ * not handle, or a misspelling) also gets one stderr line.
+ */
 export async function runHook(input: string, opts: HookOptions = {}): Promise<string> {
   const payload = parseInput(input);
-  if (payload.hook_event_name === 'SessionStart') return sessionStart(payload, opts);
+  const event: unknown = payload.hook_event_name;
+  if (event === 'SessionStart') return sessionStart(payload, opts);
+  if (event !== undefined && event !== 'UserPromptSubmit') {
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)\n`);
+  }
   return userPromptSubmit(payload, opts);
 }
 
@@ -544,25 +633,79 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/** What `writeStdout` writes through; tests replace it. */
+export interface StdoutSink {
+  writeSync(fd: number, buffer: Uint8Array, offset: number, length: number): number;
+  stream: Pick<NodeJS.WritableStream, 'write' | 'once'>;
+  stderr(line: string): void;
+}
+
+const processSink: StdoutSink = {
+  writeSync: (fd, buffer, offset, length) => writeSync(fd, buffer, offset, length),
+  get stream() {
+    return process.stdout;
+  },
+  stderr: (line) => process.stderr.write(line),
+};
+
 /**
  * Write `text` to stdout. Synchronously first, for the same reason stdin is
  * read that way: touching `process.stdout` on a pipe loads `node:net`. A
  * non-blocking descriptor that refuses part of it (EAGAIN) gets the rest
  * through the stream.
+ *
+ * A reader that has gone away (EPIPE: Claude Code timed the hook out or
+ * closed the pipe) gets nothing more: handing the rest to the stream used to
+ * end in an unhandled 'error' event, a stack trace and exit 1, which breaks
+ * the hook's exit-0 rule. That case, and any error the stream reports later,
+ * is one stderr line instead. Exported for tests.
  */
-function writeStdout(text: string): void {
+export function writeStdout(text: string, sink: StdoutSink = processSink): void {
   const bytes = Buffer.from(text, 'utf8');
   let off = 0;
   try {
-    while (off < bytes.length) off += writeSync(1, bytes, off, bytes.length - off);
+    while (off < bytes.length) off += sink.writeSync(1, bytes, off, bytes.length - off);
     return;
-  } catch {
-    // finish through the stream below
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== 'EAGAIN') {
+      sink.stderr(`[lexicon hook] could not write the hook output (${code ?? errorText(err)}); the prompt goes through without it\n`);
+      return;
+    }
+    // EAGAIN: finish through the stream below
   }
-  process.stdout.write(bytes.subarray(off));
+  const stream = sink.stream;
+  stream.once('error', (err: unknown) => {
+    sink.stderr(`[lexicon hook] could not write the hook output (${(err as NodeJS.ErrnoException | undefined)?.code ?? errorText(err)}); the prompt goes through without it\n`);
+  });
+  stream.write(bytes.subarray(off));
 }
 
-export async function main(): Promise<void> {
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * What `--version` / `-v` and `--help` / `-h` print, or undefined for any other
+ * argv. Claude Code runs the hook with no arguments; the flags are for a person
+ * checking an install (`node plugin/hook.mjs --version`), who would otherwise
+ * be left waiting on a stdin that never ends. Same flags as `lexicon-mcp`.
+ */
+export function hookFlagOutput(argv: readonly string[]): string | undefined {
+  if (argv.includes('--version') || argv.includes('-v')) return packageVersion(import.meta.url);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    return 'Usage: hook.mjs [--version] [--help]  (Claude Code UserPromptSubmit and SessionStart hook for the personal lexicon; reads the hook JSON on stdin)';
+  }
+  return undefined;
+}
+
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const flagOutput = hookFlagOutput(argv);
+  if (flagOutput !== undefined) {
+    writeStdout(`${flagOutput}\n`);
+    process.exitCode = 0;
+    return;
+  }
   try {
     const raw = await readStdin();
     const out = await runHook(raw);

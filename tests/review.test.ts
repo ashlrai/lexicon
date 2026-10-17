@@ -159,6 +159,54 @@ describe('harvest --interactive', () => {
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
   });
 
+  // Catches: `harvest --add --yes` printed the candidate table (or the --json
+  // array) and only then hit the trust gate, so the output read as a success.
+  it('runHarvest --add --yes refuses an untrusted project lexicon before printing candidates', async () => {
+    await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n', 'utf8');
+    const io = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, minCount: 1, globalPath }, io, { isInteractive: () => false })).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toMatch(/is untrusted; review it and run `lexicon trust` first/);
+
+    const json = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true, minCount: 1, globalPath }, json, { isInteractive: () => false })).toBe(1);
+    expect(JSON.parse(json.out)).toEqual({ ok: false, added: false, path: projectPath, projectTrust: 'untrusted', error: expect.stringContaining('is untrusted') });
+    expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
+
+    // Without --add nothing is written, so the scan still prints.
+    const scan = makeIO();
+    expect(await runHarvest(repo, { minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);
+    expect(scan.out).toContain('quokkatron');
+  });
+
+  // Catches: `harvest --add --json` reported what it wrote on stderr only; stdout had just the candidates.
+  // Catches: the --full success object had no `ok`, though its failure leads with `ok: false`.
+  it('runHarvest --full prints one object with the add result; --json keeps the bare array', async () => {
+    await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    const scan = makeIO();
+    expect(await runHarvest(repo, { full: true, minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);
+    const scanned = JSON.parse(scan.out) as { root: string; candidates: { canonical: string }[]; count: number };
+    expect(Object.keys(scanned)).toEqual(['ok', 'root', 'candidates', 'count']);
+    expect(scanned.root).toBe(repo);
+    expect(scanned.count).toBe(scanned.candidates.length);
+    expect(scanned.candidates.map((c) => c.canonical.toLowerCase())).toContain('quokkatron');
+
+    const added = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, full: true, minCount: 1, globalPath }, added, { isInteractive: () => true })).toBe(0);
+    const result = JSON.parse(added.out) as { count: number; added: number; created: number; merged: number; path: string };
+    expect(Object.keys(result)[0]).toBe('ok');
+    expect(result).toMatchObject({ ok: true, added: result.count, created: result.count, merged: 0, path: projectPath });
+    expect(added.err).toMatch(/added \d+ new term/);
+    expect((await readYaml(projectPath)).terms.length).toBe(result.count);
+
+    // The documented --json shape is unchanged: the bare array, the summary on stderr.
+    const plain = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true, minCount: 1, globalPath }, plain, { isInteractive: () => false })).toBe(0);
+    expect(Array.isArray(JSON.parse(plain.out))).toBe(true);
+    expect(plain.err).toMatch(/added 0 new terms, merged \d+/);
+  });
+
   it('runHarvest --interactive without a terminal errors before scanning', async () => {
     await expect(
       runHarvest(repo, { interactive: true, globalPath }, makeIO(), { isInteractive: () => false }),

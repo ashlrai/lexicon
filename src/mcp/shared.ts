@@ -5,11 +5,12 @@
  * its own; server.ts keeps the resources, the prompts and the wiring.
  */
 import { join } from 'node:path';
+import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { sanitizeForDisplay } from '../core/index.js';
-import type { ImportFormat, LexiconFile, LoadedLexicon, TermSuggestion } from '../core/index.js';
+import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
+import { unreadableLexiconEdit } from '../cli/io.js';
 import { errorMessage } from '../util/errors.js';
 import { findPackageRoot, packageVersion } from '../util/package.js';
 
@@ -58,6 +59,16 @@ export function bufferIO(): IO & { out: () => string; err: () => string } {
   };
 }
 
+/**
+ * A required string argument that must hold more than whitespace. `.min(1)`
+ * alone let `"  "` through, so remove_term answered "no term" for a blank
+ * canonical and suggest_canonical searched for nothing, both as successes.
+ * The pattern is in the JSON schema too, so a validating client sees it.
+ */
+export function nonBlank(): z.ZodString {
+  return z.string().min(1).regex(/\S/, 'must not be blank');
+}
+
 /** Clients `install_client` accepts: every `lexicon install` target except the `generic` printout. */
 export const INSTALL_CLIENT_VALUES = ['claude', 'codex', 'cursor', 'windsurf', 'gemini', 'vscode', 'claude-desktop'] as const;
 
@@ -71,9 +82,6 @@ export const SUGGESTION_KINDS = ['alias', 'term', 'never', 'stale'] as const sat
 type _AllKindsCovered = Exclude<TermSuggestion['kind'], (typeof SUGGESTION_KINDS)[number]> extends never ? true : never;
 const _allKindsCovered: _AllKindsCovered = true;
 void _allKindsCovered;
-
-/** Terms listed in a trust preview before "... and N more". */
-const TRUST_PREVIEW_ROWS = 25;
 
 /** stderr-only logger. stdout belongs to the MCP transport. */
 export function log(...args: unknown[]): void {
@@ -114,9 +122,22 @@ export function textResult(payload: unknown): CallToolResult {
 }
 
 function errorResult(err: unknown): CallToolResult {
-  const message = errorMessage(err);
+  const message = withLexiconFix(errorMessage(err));
   log('tool error:', message);
   return { isError: true, content: [{ type: 'text', text: message }] };
+}
+
+/**
+ * A store error for a lexicon file that does not parse or validate, which
+ * already names the file, with the fix appended on a second line: the
+ * `lexicon edit` command that opens it and `lexicon doctor` to check it.
+ * Any other message is returned unchanged. Tools, resources and prompts all
+ * report a broken file this way, so a model reading any of them can relay it.
+ */
+export function withLexiconFix(message: string): string {
+  const edit = unreadableLexiconEdit(message);
+  if (!edit) return message;
+  return `${message}\nNothing was read or changed. Ask the user to fix that file (run: ${edit}), then check it with: lexicon doctor (or call lexicon_doctor).`;
 }
 
 
@@ -129,28 +150,11 @@ export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult
   }
 }
 
-interface TrustPreviewRow {
-  canonical: string;
-  firstAlias?: string;
-  aliasCount: number;
-  hasNotes: boolean;
-}
-
 /**
- * Compact, display-safe view of a project lexicon for the trust dialogue:
- * canonicals and the first alias only, sanitized, capped. Notes are reported
- * as present, never quoted: the file is untrusted input until the user says so.
+ * Compact, display-safe view of a project lexicon for the trust dialogue
+ * (defined in core so `lexicon trust --json` returns the same rows).
  */
-export function trustPreview(file: LexiconFile): { termCount: number; preview: TrustPreviewRow[]; more: number } {
-  const terms = file.lexicon.terms;
-  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t): TrustPreviewRow => ({
-    canonical: sanitizeForDisplay(t.canonical),
-    ...(t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {}),
-    aliasCount: t.aliases.length,
-    hasNotes: typeof t.notes === 'string' && t.notes.trim() !== '',
-  }));
-  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
-}
+export { trustPreview } from '../core/index.js';
 
 export function filePathsInUse(loaded: LoadedLexicon): { global: string; project?: string } {
   return {
@@ -165,14 +169,17 @@ export function filePathsInUse(loaded: LoadedLexicon): { global: string; project
  */
 export function skippedProjectFields(
   loaded: LoadedLexicon,
+  /** One more sentence for the note: what the skipped file means for this result. */
+  consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
   if (!loaded.skippedProject) return {};
+  const note =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.';
   return {
     projectTrust: loaded.projectTrust,
     skippedProject: loaded.skippedProject.path,
-    note:
-      loaded.projectTrust === 'changed'
-        ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run `lexicon trust` again.'
-        : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run `lexicon trust` to enable it.',
+    note: consequence ? `${note} ${consequence}` : note,
   };
 }

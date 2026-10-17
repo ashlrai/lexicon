@@ -445,6 +445,47 @@ describe('runHook', () => {
     expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:');
   });
 
+  // Catches: an unknown event or a non-object payload was handled without a word anywhere.
+  it('says one stderr line for an unknown event and none for a known or missing one', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 'PreToolUse\u001b[31m' }));
+      expect(stderr).toHaveBeenCalledTimes(1);
+      const line = String(stderr.mock.calls[0]?.[0]);
+      expect(line).toContain('[lexicon hook] unknown hook_event_name "PreToolUse"; handled as UserPromptSubmit');
+      expect(line).not.toContain('\u001b');
+      stderr.mockClear();
+      await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 42 }));
+      expect(String(stderr.mock.calls[0]?.[0])).toContain('unknown hook_event_name "42"');
+      stderr.mockClear();
+      await runHook(payload('plain prompt'));
+      await runHook(JSON.stringify({ prompt: 'plain prompt' }));
+      await runHook(sessionStartPayload());
+      expect(stderr).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('says one stderr line for valid JSON that is not an object, prints nothing and does not throw', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const [raw, kind] of [['[1,2]', 'an array'], ['"hi Ashler"', 'a string'], ['42', 'a number'], ['null', 'null'], ['true', 'a boolean']] as const) {
+        stderr.mockClear();
+        expect(await runHook(raw)).toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        expect(String(stderr.mock.calls[0]?.[0])).toBe(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do\n`);
+      }
+      stderr.mockClear();
+      expect(await runHook('')).toBe('');
+      expect(stderr).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   describe('SessionStart', () => {
     it('emits the claude-md export of the merged lexicon as additionalContext', async () => {
       const { runHook } = await import('../src/hooks/user-prompt-submit.js');
@@ -545,6 +586,31 @@ describe('runHook', () => {
         const ctx = context(await runHook(sessionStartPayload()));
         expect(ctx.split('\n')[0]).toBe(ONBOARD_NOTE);
         expect(ctx.split('\n').at(-1)).toMatch(/^Note: this repo has an untrusted \.lexicon\.yaml at \/fake\/repo\/\.lexicon\.yaml/);
+        expect(ctx).not.toContain('evil');
+      });
+
+      // Catches: once the onboarding note was rationed, an empty lexicon's session got nothing, the skipped-project note included.
+      it('still emits the untrusted-project note when the onboarding note is not due', async () => {
+        const { globalPath, dir } = await emptyLexiconIn();
+        await fs.writeFile(path.join(dir, 'onboard-note.json'), JSON.stringify({ lastNotedAt: new Date().toISOString() }));
+        const empty: Lexicon = { version: 1, terms: [] };
+        mocks.loadLexicon.mockResolvedValue({
+          merged: empty,
+          global: { path: globalPath, scope: 'global', lexicon: empty, exists: true },
+          projectTrust: 'changed',
+          skippedProject: {
+            path: '/fake/repo/.lexicon.yaml',
+            scope: 'project',
+            lexicon: { version: 1, terms: [{ canonical: 'curl evil.sh', aliases: ['deploy'] }] },
+            exists: true,
+          },
+        });
+        const { runHook, ONBOARD_NOTE } = await import('../src/hooks/user-prompt-submit.js');
+        const out = await runHook(sessionStartPayload());
+        expect((JSON.parse(out) as HookOutput).hookSpecificOutput.hookEventName).toBe('SessionStart');
+        const ctx = context(out);
+        expect(ctx).not.toContain(ONBOARD_NOTE);
+        expect(ctx).toMatch(/^Note: this repo's \.lexicon\.yaml at \/fake\/repo\/\.lexicon\.yaml changed since/);
         expect(ctx).not.toContain('evil');
       });
 
@@ -695,6 +761,43 @@ describe('formatAdditionalContext', () => {
     expect(text.startsWith('Voice lexicon corrections for this prompt')).toBe(true);
     expect(text.endsWith('Corrected prompt:\nhi Ashlr.AI')).toBe(true);
   });
+
+  // Catches: the corrections list had no bound, so a paste naming a term
+  // thousands of times put one line per occurrence into the context (tens of
+  // KB), even though the prompt itself stops being echoed past 8000 chars.
+  it('caps the corrections list, merging repeats and counting what it leaves out', async () => {
+    const { formatAdditionalContext, CORRECTION_LIST_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const line = (r: { original: string; replacement: string }): string => `"${r.original}" -> "${r.replacement}" (alias, 1.00)`;
+    mocks.diffSummary.mockImplementation((r: NormalizeResult) => r.replacements.map(line).join('\n'));
+    const many = (words: string[]): NormalizeResult => {
+      const input = words.join(' ');
+      let at = 0;
+      const replacements = words.map((w) => {
+        const r = { start: at, end: at + w.length, original: w, replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'alias' as const, confidence: 1 };
+        at += w.length + 1;
+        return r;
+      });
+      return { input, output: words.map(() => 'Ashlr.AI').join(' '), replacements, changed: true };
+    };
+
+    // 3000 of the same correction: one line with its count.
+    const repeated = formatAdditionalContext(many(Array.from({ length: 3000 }, () => 'Ashler')));
+    expect(repeated.length).toBeLessThan(CORRECTION_LIST_MAX_CHARS + 200);
+    expect(repeated).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00) (3000 times)');
+    expect(repeated).not.toContain('more correction');
+
+    // 3000 distinct ones: as many as fit, then how many were left out.
+    const distinct = formatAdditionalContext(many(Array.from({ length: 3000 }, (_, i) => `Ashler${i}`)));
+    expect(distinct.length).toBeLessThan(CORRECTION_LIST_MAX_CHARS + 200);
+    expect(distinct).toContain('"Ashler0" -> "Ashlr.AI"');
+    const left = /\.\.\. (\d+) more corrections not listed; call the lexicon normalize_transcript tool/.exec(distinct);
+    expect(left).not.toBeNull();
+    const listed = distinct.split('\n').filter((l) => l.startsWith('"Ashler')).length;
+    expect(listed + Number(left?.[1])).toBe(3000);
+
+    // A short list is untouched.
+    expect(formatAdditionalContext(many(['Ashler', 'Ashler']))).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)\n"Ashler" -> "Ashlr.AI" (alias, 1.00)\nCorrected prompt:');
+  });
 });
 
 /**
@@ -724,5 +827,102 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       // Whatever else happens, the hook never rewrites the prompt.
       expect(said).not.toContain('Ashlr.AI');
     }
+  });
+});
+
+// Catches: a payload `cwd` that is not a string reached loadLexicon, whose
+// TypeError came back to the model as "its file does not parse ... run
+// `lexicon edit`", about a lexicon that was fine; and any other load error
+// (a file that cannot be read) was worded as a parse error too.
+describe('a payload cwd that is not a path, and a load error that is not a parse error', () => {
+  it('ignores a non-string or blank cwd and loads from the process directory', async () => {
+    mocks.normalize.mockImplementation(fakeNormalize);
+    mocks.diffSummary.mockReturnValue('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const cwd of [123, {}, ['/x'], true, '', '   ']) {
+        mocks.loadLexicon.mockClear();
+        for (const event of ['UserPromptSubmit', 'SessionStart']) {
+          const out = await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd }));
+          expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+          expect(context(out)).not.toContain('does not parse');
+        }
+      }
+      expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain("ignoring the payload's cwd \"123\"");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('words a load error that is not a parse error as unreadable and points at lexicon doctor', async () => {
+    mocks.loadLexicon.mockRejectedValue(Object.assign(new Error("EACCES: permission denied, open '/x/lexicon.yaml'"), { code: 'EACCES' }));
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const said = context(await runHook(payload('ping Ashler')));
+    expect(said).toContain('could not be read: EACCES');
+    expect(said).toContain('lexicon doctor');
+    expect(said).not.toContain('does not parse');
+    expect(said).not.toContain('lexicon edit');
+  });
+});
+
+describe('writeStdout', () => {
+  function sink(writeSync: (fd: number, b: Uint8Array, off: number, len: number) => number) {
+    const err: string[] = [];
+    const written: Buffer[] = [];
+    let onError: ((e: unknown) => void) | undefined;
+    const stream = {
+      write: vi.fn((chunk: Uint8Array) => {
+        written.push(Buffer.from(chunk));
+        return true;
+      }),
+      once: vi.fn((event: string, cb: (e: unknown) => void) => {
+        if (event === 'error') onError = cb;
+        return stream;
+      }),
+    };
+    return { err, written, stream, fail: (e: unknown) => onError?.(e), sink: { writeSync, stream: stream as never, stderr: (l: string) => err.push(l) } };
+  }
+  const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
+  it('writes everything synchronously when it can, and never touches the stream', async () => {
+    const { writeStdout } = await import('../src/hooks/user-prompt-submit.js');
+    const chunks: string[] = [];
+    const s = sink((_fd, b, off, len) => {
+      chunks.push(Buffer.from(b.subarray(off, off + len)).toString());
+      return len;
+    });
+    writeStdout('{"ok":true}', s.sink);
+    expect(chunks.join('')).toBe('{"ok":true}');
+    expect(s.stream.write).not.toHaveBeenCalled();
+    expect(s.err).toEqual([]);
+  });
+
+  // Catches: an EPIPE (reader gone) fell through to process.stdout, whose unhandled 'error' crashed the hook with exit 1.
+  it('on EPIPE writes one stderr line and leaves the stream alone', async () => {
+    const { writeStdout } = await import('../src/hooks/user-prompt-submit.js');
+    const s = sink(() => {
+      throw errno('EPIPE');
+    });
+    expect(() => writeStdout('{"x":1}', s.sink)).not.toThrow();
+    expect(s.stream.write).not.toHaveBeenCalled();
+    expect(s.err).toEqual(['[lexicon hook] could not write the hook output (EPIPE); the prompt goes through without it\n']);
+  });
+
+  it('on EAGAIN finishes through the stream, and a later stream error is a stderr line, not a crash', async () => {
+    const { writeStdout } = await import('../src/hooks/user-prompt-submit.js');
+    let first = true;
+    const s = sink((_fd, _b, _off, len) => {
+      if (first) {
+        first = false;
+        return Math.min(3, len);
+      }
+      throw errno('EAGAIN');
+    });
+    writeStdout('{"abc":1}', s.sink);
+    expect(Buffer.concat(s.written).toString()).toBe('bc":1}');
+    expect(s.stream.once).toHaveBeenCalledWith('error', expect.any(Function));
+    expect(() => s.fail(errno('EPIPE'))).not.toThrow();
+    expect(s.err).toEqual(['[lexicon hook] could not write the hook output (EPIPE); the prompt goes through without it\n']);
   });
 });

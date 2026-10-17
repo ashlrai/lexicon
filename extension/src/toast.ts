@@ -14,6 +14,8 @@ export interface ToastOptions {
   mode?: Mode;
   /** Shown instead of the corrections list (errors). */
   message?: string;
+  /** A short line under the corrections, e.g. that matching stopped early. */
+  notice?: string;
 }
 
 const STYLE = `
@@ -60,7 +62,7 @@ export function showToast(doc: Document, corrections: readonly Correction[], opt
   const title = doc.createElement('div');
   title.className = 'title';
   const heading = doc.createElement('span');
-  heading.textContent = opts.message ? 'Lexicon' : `Lexicon fixed ${corrections.length} ${corrections.length === 1 ? 'word' : 'words'}`;
+  heading.textContent = opts.message || corrections.length === 0 ? 'Lexicon' : `Lexicon fixed ${corrections.length} ${corrections.length === 1 ? 'word' : 'words'}`;
   title.appendChild(heading);
   if (opts.mode) {
     const badge = doc.createElement('span');
@@ -95,7 +97,13 @@ export function showToast(doc: Document, corrections: readonly Correction[], opt
       li.append(from, arrow, to, reason);
       list.appendChild(li);
     }
-    box.appendChild(list);
+    if (corrections.length > 0) box.appendChild(list);
+  }
+  if (opts.notice) {
+    const notice = doc.createElement('div');
+    notice.className = 'msg notice';
+    notice.textContent = opts.notice;
+    box.appendChild(notice);
   }
 
   const row = doc.createElement('div');

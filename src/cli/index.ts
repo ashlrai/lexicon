@@ -32,14 +32,17 @@ import { runInstall } from './cmd-install.js';
 import type { ClipboardBackendName } from '../daemon/clipboard-backends.js';
 import type {
   AddOptions,
+  DoctorCliOptions,
   ExportCliOptions,
   HarvestCliOptions,
   InitOptions,
   ListOptions,
   NormalizeCliOptions,
+  PathOptions,
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
+import { argvRequestsJson, fail, jsonFlagsOf, line, optsRequestJson, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -112,14 +115,16 @@ program
   .argument('<canonical>')
   .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
   .option('--project', 'only look in the project lexicon')
-  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found); with --alias also alias, aliases and paths')
+  .option('--global', 'only look in the global lexicon (not with --project)')
+  .option('--json', 'print { ok: true, canonical, removed } as JSON (exit 1 when not found, with ok: false and error), plus stillIn when a copy is left in the other lexicon file and untrustedProject when the untrusted project lexicon has one; with --alias also alias, aliases and paths')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
 program
   .command('list')
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
-  .option('--json', 'print terms as JSON')
+  .option('--json', 'print terms as JSON (a bare array)')
+  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));
@@ -128,9 +133,9 @@ program
   .command('normalize')
   .description('correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read')
   .argument('[text...]')
-  .option('--json', 'print the full NormalizeResult as JSON')
-  .option('--diff', 'print a summary of replacements to stderr')
-  .option('--dry-run', 'report replacements without applying them')
+  .option('--json', 'print ok: true and the full NormalizeResult as JSON ({ ok: false, error, nextStep } and the unchanged input when the lexicon fails to load), plus example: true when the built-in example terms stood in and projectTrust, skippedProject and note when an untrusted project lexicon was left out')
+  .option('--diff', 'print a summary of replacements to stderr (with --json too)')
+  .option('--dry-run', 'print the replacement summary to stderr and the text unchanged to stdout')
   .option('--min-confidence <n>', 'minimum confidence (0..1) for fuzzy/phonetic matches')
   .option('--no-phonetic', 'disable phonetic matching')
   .option('--no-fuzzy', 'disable fuzzy (edit-distance) matching')
@@ -147,7 +152,8 @@ program
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
   .option('--yes', 'with --add: add every candidate without prompting')
   .option('--symbols', 'also propose names seen only as a code symbol (off: they are what you type, not what you say)')
-  .option('--json', 'print candidates as JSON')
+  .option('--json', 'print candidates as JSON (a bare array; with --add it is printed after the writes, the add summary goes to stderr, and a failed write prints only { ok: false, error, added, created, merged, path })')
+  .option('--full', 'print { ok: true, root, candidates, count } as JSON, the keys MCP harvest_repo returns, plus added, created, merged and path with --add (implies --json)')
   .action(async (root: string | undefined, opts: HarvestCliOptions) =>
     done(await runHarvest(root, withGlobals(opts), io)),
   );
@@ -166,12 +172,14 @@ program
 program
   .command('path')
   .description('print the resolved global and project lexicon paths')
-  .action(async () => done(await runPath(withGlobals({}), io)));
+  .option('--json', 'print { ok: true, global, project } as JSON (project is null when there is no project lexicon)')
+  .action(async (opts: PathOptions) => done(await runPath(withGlobals(opts), io)));
 
 program
   .command('doctor')
   .description('check lexicon files, term conflicts and the Claude Code integration')
-  .action(async () => done(await runDoctor(withGlobals({}), io)));
+  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... }, as the lexicon_doctor MCP tool returns it)')
+  .action(async (opts: DoctorCliOptions) => done(await runDoctor(withGlobals(opts), io)));
 
 program
   .command('mcp')
@@ -183,10 +191,11 @@ program
 
 program
   .command('hook')
-  .description('run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)')
+  .description('run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)')
   .action(async () => {
     const { main } = await import('../hooks/user-prompt-submit.js');
-    await main();
+    // commander already parsed this command's argv; the hook reads only stdin.
+    await main([]);
   });
 
 program
@@ -249,6 +258,32 @@ registerSuggestCommands(program, io);
 registerReviewCommands(program, io);
 registerPackCommands(program, io);
 
+// Commander usage errors (unknown option or command, missing argument, an
+// invalid --port) are raised before any handler runs, so under --json they
+// got no stdout document. Every command throws its own CommanderError, which
+// is remembered with the command, so the catch below can print
+// `{ ok: false, error, nextStep }` naming that command's --help. The stderr
+// text and the exit code stay commander's.
+const usageErrorCommand = new WeakMap<CommanderError, Command>();
+function trackUsageErrors(cmd: Command): void {
+  cmd.exitOverride((err) => {
+    usageErrorCommand.set(err, cmd);
+    throw err;
+  });
+  for (const sub of cmd.commands) trackUsageErrors(sub);
+}
+trackUsageErrors(program);
+
+/** `lexicon pack add` for the `add` subcommand of `pack`. */
+function commandPath(cmd: Command): string {
+  const names: string[] = [];
+  for (let c: Command | null = cmd; c; c = c.parent) names.unshift(c.name());
+  return names.join(' ');
+}
+
+/** Exits that are not usage errors: help and version output, which stay as they are. */
+const NOT_USAGE_ERRORS = new Set(['commander.helpDisplayed', 'commander.help', 'commander.version', 'commander.executeSubCommandAsync']);
+
 // A reader that closed the pipe (`lexicon list | head`) has seen all it wants:
 // stop quietly instead of dying on an unhandled EPIPE with a stack trace.
 process.stdout.on('error', (err: NodeJS.ErrnoException) => {
@@ -256,14 +291,29 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   throw err;
 });
 
+// The command whose action is running, so an error it throws can be reported
+// in the form its flags asked for: under --json, a `{ ok: false, error }`
+// document on stdout as well as the stderr line.
+let active: Command | undefined;
+program.hook('preAction', (_program, actionCommand) => {
+  active = actionCommand;
+});
+
 try {
   await program.parseAsync(process.argv);
 } catch (err) {
   if (err instanceof CommanderError) {
-    // commander already printed help/version/usage errors; just carry its exit code.
+    // commander already printed help/version/usage errors on stderr; under
+    // --json a usage error also gets its stdout document. Same exit code.
+    const failed = usageErrorCommand.get(err) ?? program;
+    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2), jsonFlagsOf(failed))) {
+      line(io, JSON.stringify(usageErrorJson(err.message, commandPath(failed)), null, 2));
+    }
     process.exitCode = err.exitCode;
   } else {
-    process.stderr.write(`lexicon: ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exitCode = 1;
+    // fail() is the same `lexicon: <message>` line plus, for a lexicon file
+    // that does not parse, the command that fixes it.
+    // `--full` (list, harvest) implies --json, so its failure gets the document too.
+    process.exitCode = fail(io, err, optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()));
   }
 }

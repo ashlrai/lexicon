@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { fail, line, renderTable, resolveCwd, safe } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -39,16 +39,46 @@ export function correctionFromArgs(words: readonly string[], from: string | unde
   return parseCorrection(words.join(' '));
 }
 
+/**
+ * A word that reads as a command-line option (`--dry-run`, `-n`, `--scope=project`).
+ * `learn` allows unknown options so a bare `->` passes as a word, which also let
+ * a mistyped or unsupported flag through as the heard spelling: `lexicon learn
+ * --dry-run Ashlr.AI` saved `--dry-run` as an alias. No STT spelling starts with
+ * a dash followed by a letter; the arrows (`->`, `=>`) do not match.
+ */
+export function optionLikeWord(words: readonly string[]): string | undefined {
+  return words.find((w) => /^--?[\p{L}]/u.test(w));
+}
+
 export async function runLearn(words: readonly string[], opts: LearnOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
+  const option = optionLikeWord(words);
+  if (option !== undefined) {
+    const error = `unknown option '${option}'; nothing was learned`;
+    const nextStep = 'see the usage: lexicon learn --help (learn takes --from, --project and --json)';
+    if (opts.json) printJsonError(io, error, nextStep);
+    io.stderr(`lexicon: unknown option '${safe(option)}'; nothing was learned\n`);
+    io.stderr(`lexicon: ${nextStep}\n`);
+    return 1;
+  }
   const correction = correctionFromArgs(words, opts.from);
   if (!correction) {
     const source = opts.from ?? words.join(' ');
+    if (opts.json) {
+      printJsonError(io, source ? `could not find a correction in "${source}"` : 'nothing to learn', 'run: lexicon learn <heard> <meant>, or lexicon learn --from "<sentence>"');
+    }
     io.stderr(source ? `lexicon: could not find a correction in "${safe(source)}"\n` : 'lexicon: nothing to learn\n');
     usageHint(io);
     return 1;
   }
   if (!correction.heard) {
+    if (opts.json) {
+      printJsonError(
+        io,
+        `"${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard`,
+        `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`,
+      );
+    }
     io.stderr(
       `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
@@ -60,7 +90,18 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   try {
     const result = await learnCorrection(correction, { cwd, ...(scope !== undefined ? { scope } : {}) });
     if (opts.json) {
-      line(io, JSON.stringify({ ...result, heard: correction.heard, meant: correction.meant }, null, 2));
+      // The keys MCP learn_correction returns, plus heard and meant. `file`
+      // keeps only its path and scope: the whole file's terms do not belong
+      // in a one-correction result.
+      const { file, ...rest } = result;
+      line(
+        io,
+        JSON.stringify(
+          jsonOk({ ...rest, path: file.path, file: { path: file.path, scope: file.scope }, heard: correction.heard, meant: correction.meant }),
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     const what = result.created
@@ -70,15 +111,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
         : 'already known';
     line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
-    const c = result.conflict;
-    if (c) {
-      line(
-        io,
-        c.as === 'alias'
-          ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
-          : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`,
-      );
-    }
+    if (result.conflict) line(io, conflictLine(result.conflict));
     const u = result.untrustedProject;
     if (u) {
       line(
@@ -89,7 +122,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -144,15 +177,18 @@ export function renderStats(stats: LexiconStats): string {
 export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
-    const stats = computeStats(await loadLexicon({ cwd }));
+    const loaded = await loadLexicon({ cwd });
+    // The counts leave a skipped project file out; say so, as lexicon_stats does.
+    warnSkippedProject(loaded, io);
+    const stats = computeStats(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(stats, null, 2));
+      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded) }), null, 2));
     } else {
       io.stdout(renderStats(stats));
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 

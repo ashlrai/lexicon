@@ -281,6 +281,46 @@ describe('content: send interception', () => {
   });
 });
 
+describe('content: matching that stopped early', () => {
+  const incomplete = { reasons: ['time' as const], totalChars: 40, note: 'Matching stopped at the 25 ms budget; ...' };
+  function stoppedSend(req: Request): Promise<NormalizeReply> {
+    return fakeSend(req).then((r) => (r.ok ? { ...r, incomplete } : r));
+  }
+  function chatgptDom(text: string): HTMLElement {
+    document.body.innerHTML =
+      `<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>${text}</p></div>` +
+      '<button data-testid="send-button" aria-label="Send prompt">send</button>';
+    return document.getElementById('prompt-textarea')!;
+  }
+
+  it('says so in the toast next to the corrections', async () => {
+    const composer = chatgptDom('ping ashler');
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(stoppedSend), settings: { enabled: true, live: false } });
+    composer.addEventListener('keydown', (ev) => ev.preventDefault());
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(readText(composer)).toBe('ping Ashlr.AI');
+    expect(toastText()).toContain('Ashlr.AI');
+    expect(toastText()).toMatch(/stopped early/i);
+  });
+
+  it('shows a notice even when nothing was corrected, and a precheck does not hide it', async () => {
+    const composer = chatgptDom('hello world');
+    const send = vi.fn(stoppedSend);
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5 });
+    const siteEnter = vi.fn((ev: KeyboardEvent) => ev.preventDefault());
+    composer.addEventListener('keydown', siteEnter);
+    composer.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(30);
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(siteEnter).toHaveBeenCalledTimes(1);
+    expect(readText(composer)).toBe('hello world');
+    expect(toastText()).toMatch(/stopped early/i);
+    expect(document.getElementById(TOAST_ID)!.shadowRoot!.querySelector('button.undo')).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 
 describe('toast', () => {
@@ -774,6 +814,37 @@ describe('content: generic sites keep the Enter key working', () => {
     await handle.idle();
     expect(q.value).toBe('ping Ashlr.AI');
     expect(clicked).toHaveBeenCalledTimes(1);
+    expect(submitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('a form without a submit button and several text fields is not submitted, as a real Enter would not', async () => {
+    document.body.innerHTML =
+      '<form id="f"><input id="u" type="text"><input id="p" type="password"><button type="button">log in</button></form>';
+    const u = document.getElementById('u') as HTMLInputElement;
+    const form = document.getElementById('f') as HTMLFormElement;
+    const submitted = vi.fn((e: Event) => e.preventDefault());
+    form.addEventListener('submit', submitted);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    u.value = 'ping ashler';
+    u.focus();
+    u.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(u.value).toBe('ping Ashlr.AI');
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it('a form without a submit button and one text field is still submitted', async () => {
+    document.body.innerHTML = '<form id="f"><input id="q" type="search"><input type="checkbox"></form>';
+    const q = document.getElementById('q') as HTMLInputElement;
+    const form = document.getElementById('f') as HTMLFormElement;
+    const submitted = vi.fn((e: Event) => e.preventDefault());
+    form.addEventListener('submit', submitted);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    q.value = 'ping ashler';
+    q.focus();
+    q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(q.value).toBe('ping Ashlr.AI');
     expect(submitted).toHaveBeenCalledTimes(1);
   });
 

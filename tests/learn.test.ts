@@ -281,6 +281,34 @@ describe('learnCorrection', () => {
       expect(result).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/global.yaml' } });
       expect(result.term.canonical).toBe('Zoë');
     });
+
+    it('reports another term that also holds the spelling as an alias', async () => {
+      const lex: Lexicon = {
+        version: 1,
+        terms: [
+          { canonical: 'ashlr', aliases: [], scope: 'global' },
+          { canonical: 'Ashlr.AI', aliases: ['Ashlr'], scope: 'global' },
+        ],
+      };
+      store.loadLexicon.mockResolvedValueOnce({ merged: lex, global: { path: '/fake/global.yaml', scope: 'global', lexicon: lex, exists: true } });
+      const result = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' });
+      expect(result.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashlr' });
+    });
+
+    it('names an untrusted project lexicon that claims the spelling for another term', async () => {
+      const base = untrustedLoaded();
+      store.loadLexicon.mockResolvedValue({
+        ...base,
+        skippedProject: { ...base.skippedProject!, lexicon: { version: 1, terms: [{ canonical: 'Hostile Name', aliases: ['ashlr', 'zoë'] }] } },
+      });
+      const created = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' }, { cwd: '/fake/repo' });
+      expect(created.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+      expect(JSON.stringify(created)).not.toContain('Hostile Name');
+      // Already spelled that way: nothing is written, the warning still comes back.
+      const known = await learnCorrection({ heard: 'zoë', meant: 'Zoë' }, { cwd: '/fake/repo' });
+      expect(store.addTerm).toHaveBeenCalledTimes(1);
+      expect(known.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+    });
   });
 
   it.each([
@@ -368,6 +396,45 @@ describe('lexicon learn (CLI)', () => {
     expect(correctionFromArgs([], undefined)).toBeUndefined();
   });
 
+  // Catches: `learn --json` with no correction printed only the usage on stderr, leaving stdout empty.
+  it('--json prints { ok: false, error, nextStep } when there is nothing to learn', async () => {
+    const { io, out } = captureIO();
+    expect(await runLearn(['just', 'some', 'words'], { json: true, cwd: '/fake/repo' }, io)).toBe(1);
+    expect(JSON.parse(out())).toEqual({
+      ok: false,
+      error: 'could not find a correction in "just some words"',
+      nextStep: expect.stringContaining('lexicon learn <heard> <meant>'),
+    });
+    const meantOnly = captureIO();
+    expect(await runLearn([], { json: true, from: 'that should be Ashlr.AI', cwd: '/fake/repo' }, meantOnly.io)).toBe(1);
+    expect(JSON.parse(meantOnly.out())).toEqual({
+      ok: false,
+      error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
+      nextStep: 'run: lexicon learn <heard> "Ashlr.AI"',
+    });
+  });
+
+  // Catches: learn allows unknown options (so a bare `->` is a word), and
+  // `lexicon learn --dry-run Ashlr.AI` saved "--dry-run" as an alias of Ashlr.AI.
+  it('refuses a word that reads as an option and writes nothing', async () => {
+    for (const words of [['--dry-run', 'Ashlr.AI'], ['--scope=project', 'Ashlr.AI'], ['-n', 'Ashler', 'Ashlr.AI']]) {
+      const { io, out, err } = captureIO();
+      expect(await runLearn(words, { json: true, cwd: '/fake/repo' }, io), words.join(' ')).toBe(1);
+      expect(JSON.parse(out())).toEqual({
+        ok: false,
+        error: `unknown option '${words[0]}'; nothing was learned`,
+        nextStep: expect.stringContaining('lexicon learn --help'),
+      });
+      expect(err()).toContain(`lexicon: unknown option '${words[0]}'`);
+    }
+    // An option-like word next to --from is refused too, not ignored.
+    expect(await runLearn(['--yes'], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, captureIO().io)).toBe(1);
+    expect(store.addTerm).not.toHaveBeenCalled();
+    // The arrows are still words.
+    expect(await runLearn(['Ashlur', '->', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+    expect(await runLearn(['Ashlur', '=>', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+  });
+
   it('--from learns a parsed correction', async () => {
     const { io, out } = captureIO();
     const code = await runLearn([], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, io);
@@ -420,10 +487,11 @@ describe('lexicon learn (CLI)', () => {
     expect(out()).toBe('');
   });
 
-  it('--json keeps stdout empty when there is nothing to learn (usage goes to stderr)', async () => {
+  it('--json prints only the error object on stdout when there is nothing to learn (usage goes to stderr)', async () => {
     const { io, out, err } = captureIO();
     expect(await runLearn([], { json: true }, io)).toBe(1);
-    expect(out()).toBe('');
+    expect(JSON.parse(out())).toEqual({ ok: false, error: 'nothing to learn', nextStep: expect.any(String) });
+    expect(out()).not.toContain('usage:');
     expect(err()).toContain('usage: lexicon learn');
   });
 
@@ -433,5 +501,17 @@ describe('lexicon learn (CLI)', () => {
     expect(code).toBe(0);
     const payload = JSON.parse(out()) as { heard: string; meant: string; aliasAdded: boolean };
     expect(payload).toMatchObject({ heard: 'Ashlur', meant: 'Ashlr.AI', aliasAdded: true });
+  });
+
+  // Catches: --json dumped the whole lexicon file (every term in it) under `file` and had no `path`, unlike learn_correction.
+  it('--json gives path and the file path/scope only, not the file\'s terms', async () => {
+    const { io, out } = captureIO();
+    expect(await runLearn(['Ashlur', 'Ashlr.AI'], { json: true }, io)).toBe(0);
+    const payload = JSON.parse(out()) as Record<string, unknown>;
+    expect(payload.path).toBe('/fake/global.yaml');
+    expect(payload.file).toEqual({ path: '/fake/global.yaml', scope: 'global' });
+    expect(out()).not.toContain('Mason Wyatt');
+    expect(Object.keys(payload).sort()).toEqual(['aliasAdded', 'created', 'file', 'heard', 'meant', 'ok', 'path', 'term']);
+    expect(Object.keys(payload)[0]).toBe('ok');
   });
 });

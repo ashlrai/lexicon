@@ -575,6 +575,22 @@ describe('lexicon voice --toggle', () => {
   });
 });
 
+// Catches: `voice --toggle --json` printed a bare `recording` on the first press, so stdout was not JSON.
+describe('lexicon voice --toggle --json', () => {
+  it('prints {"status":"recording"} on the press that starts, and on a double-tap', async () => {
+    const h = await harness();
+    expect(await runVoiceToggle({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['{"status":"recording"}\n']);
+
+    const again = await harness();
+    const wav = path.join(voiceDir(again.globalPath), 'recording-in-flight.wav');
+    expect(await claimState(again.globalPath, { wav, startedAt: '2026-09-19T12:00:00.000Z' })).toBe(true);
+    expect(await runVoiceToggle({ ...again.opts, json: true }, again.io, again.deps)).toBe(EXIT_OK);
+    expect(again.out).toEqual(['{"status":"recording"}\n']);
+    expect(JSON.parse(again.out[0] ?? '')).toEqual({ status: 'recording' });
+  });
+});
+
 describe('lexicon voice --toggle start race', () => {
   it('a second press while a start is in flight prints "recording" and spawns nothing', async () => {
     const h = await harness();
@@ -885,7 +901,7 @@ describe('lexicon voice (foreground)', () => {
     expect(args).toEqual(expect.arrayContaining(['-l', 'de', '-tr']));
   });
 
-  it('--json prints { raw, output, replacements, summary, model, seconds, ms }', async () => {
+  it('--json prints { ok: true, raw, output, replacements, summary, model, seconds, ms }', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
     const code = await runVoice({ ...h.opts, json: true }, h.io, h.deps);
@@ -901,7 +917,8 @@ describe('lexicon voice (foreground)', () => {
     expect(parsed.model).toBe('base.en');
     expect(typeof parsed.seconds).toBe('number');
     expect(Object.keys(parsed.ms).sort()).toEqual(['normalize', 'record', 'transcribe']);
-    expect(Object.keys(parsed).sort()).toEqual(['model', 'ms', 'output', 'raw', 'replacements', 'seconds', 'summary']);
+    expect(Object.keys(parsed).sort()).toEqual(['model', 'ms', 'ok', 'output', 'raw', 'replacements', 'seconds', 'summary']);
+    expect(parsed.ok).toBe(true);
   });
 
   it('appends to voice/history.jsonl and records hits for the corrected terms', async () => {
@@ -1086,6 +1103,141 @@ describe('lexicon voice (foreground)', () => {
 
 // ---------------------------------------------------------------------------
 // Pure pieces
+
+/**
+ * Under --json stdout is what the menu bar app (and any script) reads, so a
+ * failure that only went to stderr left it nothing to parse. Every non-zero
+ * exit prints exactly one `{ ok: false, error, nextStep?, code }` document; a
+ * failure with no transcription carries no `raw`/`output`, which is how
+ * LexiconBar's `VoiceResult.parse` tells it from a finished one.
+ */
+describe('lexicon voice --json failures', () => {
+  function onlyDocument(h: Harness): Record<string, unknown> {
+    expect(h.out).toHaveLength(1);
+    expect(h.out[0].endsWith('\n')).toBe(true);
+    return JSON.parse(h.out[0]) as Record<string, unknown>;
+  }
+
+  it('missing whisper-cli: exit 2, the stderr hint, and { ok: false, error, nextStep, code: 2 } on stdout', async () => {
+    const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+    const doc = onlyDocument(h);
+    expect(doc).toEqual({
+      ok: false,
+      error: 'whisper-cli not found on PATH',
+      nextStep: 'install: brew install whisper-cpp (or set LEXICON_WHISPER_BIN to the binary)',
+      code: EXIT_MISSING_TOOL,
+    });
+    expect(h.err.join('')).toContain('whisper-cli not found on PATH.');
+  });
+
+  it('missing tools on the toggle start and --list-devices print the document too', async () => {
+    const h = await harness({ missing: ['ffmpeg'] });
+    expect(await runVoiceToggle({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(onlyDocument(h)).toMatchObject({ ok: false, error: 'ffmpeg not found on PATH', code: EXIT_MISSING_TOOL });
+
+    const d = await harness({ missing: ['ffmpeg'] });
+    expect(await runVoiceListDevices({ ...d.opts, json: true }, d.io, d.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(onlyDocument(d)).toMatchObject({ ok: false, code: EXIT_MISSING_TOOL });
+  });
+
+  it('a recording that failed: exit 1 with the reason, ffmpeg last line and a next step', async () => {
+    const h = await harness({ platform: 'linux' });
+    const spawn = h.deps.spawn;
+    h.deps.spawn = (cmd, args, opts) => {
+      const child = spawn!(cmd, args, opts);
+      writeFileSync(args[args.length - 1], '');
+      setTimeout(() => h.children[0].resolve(1), 5);
+      return { ...child, stderr: () => 'Error opening input files: No such process\n' };
+    };
+    expect(await runVoice({ ...h.opts, seconds: 1, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const doc = onlyDocument(h);
+    expect(doc).toMatchObject({
+      ok: false,
+      error: 'recording failed (the recording is empty); ffmpeg said: Error opening input files: No such process',
+      code: EXIT_ERROR,
+    });
+    expect(doc.nextStep).toContain('--list-devices');
+    expect(doc).not.toHaveProperty('output');
+    expect(h.err.join('')).toContain('lexicon voice: recording failed (the recording is empty)');
+  });
+
+  it('a whisper failure and a missing explicit model keep the audio and say so in error', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.whisperExit = 1;
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(String(onlyDocument(h).error)).toMatch(/^whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)$/);
+
+    const m = await harness();
+    m.deps.waitForStop = async () => 'enter';
+    expect(await runVoice({ ...m.opts, model: path.join(m.dir, 'nope.bin'), json: true }, m.io, m.deps)).toBe(EXIT_ERROR);
+    const doc = onlyDocument(m);
+    expect(doc).toMatchObject({ ok: false, code: EXIT_ERROR });
+    expect(String(doc.error)).toContain('nope.bin');
+  });
+
+  it('nothing heard: exit 3, one document with ok: false and code 3 over the empty result', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = ' [BLANK_AUDIO] ';
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_NOTHING_HEARD);
+    const doc = onlyDocument(h);
+    expect(doc).toMatchObject({ ok: false, error: 'nothing heard', code: EXIT_NOTHING_HEARD, raw: '', output: '' });
+    expect(doc.nextStep).toContain('--lang');
+  });
+
+  it('a paste failure is reported in the one result document, with the text', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.sendPaste = async () => {
+      throw new Error('osascript exited 1: not allowed assistive access');
+    };
+    expect(await runVoice({ ...h.opts, paste: true, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const doc = onlyDocument(h);
+    expect(doc).toMatchObject({
+      ok: false,
+      error: '--paste failed: osascript exited 1: not allowed assistive access',
+      code: EXIT_ERROR,
+      output: 'ping Ashlr.AI about the Kubernetes rollout',
+    });
+    expect(doc.nextStep).toContain('Accessibility');
+    expect(h.err.join('')).toContain('--paste failed');
+
+    const c = await harness();
+    c.deps.waitForStop = async () => 'enter';
+    c.deps.clipboardWrite = async () => {
+      throw new Error('no clipboard');
+    };
+    expect(await runVoice({ ...c.opts, copy: true, json: true }, c.io, c.deps)).toBe(EXIT_ERROR);
+    expect(onlyDocument(c)).toMatchObject({ ok: false, error: 'could not copy to the clipboard: no clipboard', code: EXIT_ERROR });
+  });
+
+  it('a toggle press that finds a dead recorder with no audio prints the failure document', async () => {
+    const h = await harness();
+    await deadRecorderState(h, Buffer.alloc(0));
+    expect(await runVoiceToggle({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const doc = onlyDocument(h);
+    expect(doc).toMatchObject({ ok: false, code: EXIT_ERROR });
+    expect(String(doc.error)).toContain('stopped on its own and left no audio');
+    expect(String(doc.nextStep)).toContain('again');
+  });
+
+  it('a device that cannot be resolved names --list-devices as the next step', async () => {
+    const h = await harness({ platform: 'win32' });
+    h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+    // dshow lists no audio device at all
+    h.deps.exec = async () => ({ code: 1, stdout: '', stderr: '' });
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(onlyDocument(h)).toMatchObject({ ok: false, code: EXIT_ERROR, nextStep: expect.stringContaining('--list-devices') });
+  });
+
+  it('without --json stdout stays empty on a failure', async () => {
+    const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+    expect(h.out).toEqual([]);
+  });
+});
 
 describe('cleanTranscript', () => {
   it('strips whisper tags, collapses whitespace and trims', () => {

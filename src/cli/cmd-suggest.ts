@@ -17,11 +17,12 @@ import {
   removeTerm,
   suggestAliases,
   suggestTerms,
+  termHolders,
 } from '../core/index.js';
 import type { LoadedLexicon, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
 import { askKey, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
-import { bold, dim, fail, line, plural, renderTable, safe, safeLines, warnSkippedProject } from './io.js';
+import { bold, dim, fail, line, plural, refuse, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 export interface SuggestCliOptions extends CommonOptions {
@@ -124,7 +125,14 @@ async function applyOne(
     }
     case 'stale': {
       const removed = await deps.removeTerm(s.canonical, { ...store, scope });
-      return removed ? `removed ${safe(s.canonical)}` : `${safe(s.canonical)} was already gone`;
+      if (!removed) return `${safe(s.canonical)} was already gone`;
+      // removeTerm edits only `scope`'s file. A copy in the other file keeps
+      // correcting, so name it and the command that removes it too.
+      const holders = termHolders(loaded, s.canonical);
+      const from = holders.find((h) => h.scope === scope);
+      const others = holders.filter((h) => h.scope !== scope);
+      const head = `removed ${safe(s.canonical)}${from ? ` from ${safe(from.path)}` : ''}`;
+      return [head, ...others.map((h) => stillInLine(s.canonical, h))].join('\n  ');
     }
     default:
       return `skipped ${safe(s.canonical)}`;
@@ -143,10 +151,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   if (typeof opts.harvest === 'string') harvestDir = path.resolve(opts.harvest);
   else if (opts.harvest === true || opts.cwd) harvestDir = cwd;
 
-  if (opts.apply && opts.yes) {
-    io.stderr('lexicon: --apply and --yes are mutually exclusive\n');
-    return 1;
-  }
+  if (opts.apply && opts.yes) return refuse(io, opts.json, '--apply and --yes are mutually exclusive');
   if (opts.apply && !opts.json && !deps.prompter && !isInteractive()) {
     io.stderr(
       `lexicon: suggest --apply needs a terminal (stdin and stdout must be a TTY); use --yes to apply everything at or above ${AUTO_APPLY_CONFIDENCE.toFixed(2)} confidence\n`,
@@ -165,7 +170,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     if (deps.now !== undefined) input.now = deps.now;
     suggestions = await suggest(input);
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 
   if (opts.json) {

@@ -16,7 +16,6 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
-  ProjectTrustError,
   applyRegistryUpdate,
   downloadPack,
   findRegistryEntry,
@@ -39,11 +38,11 @@ import {
   validateCommunityPack,
   verifyPackChecksum,
 } from '../core/index.js';
-import { loadLexicon } from '../core/index.js';
-import type { InstallPackResult, RegistryDeps, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, line, plural, renderTable, resolveCwd, safe } from './io.js';
+import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
+import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
+import { bold, dim, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
-import { isEnoent } from '../util/errors.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -72,29 +71,77 @@ export interface PackDeps {
   isInteractive?: () => boolean;
 }
 
+/** What a skipped project lexicon means for an `installed` flag. */
+const PACKS_SKIPPED = 'A pack recorded only in that file shows as not installed until it is trusted.';
+
 function scopeOf(opts: PackCliOptions): TermScope {
   return opts.project ? 'project' : 'global';
 }
 
-/** `lexicon pack list`: every pack with its size and whether it is installed. With --registry, the index's community packs. */
+/** Kept as an export of this module for existing importers; defined in core. */
+export type { RegistryRecordMismatch } from '../core/index.js';
+
+/** One `lexicon: warn:` line per ref the two records disagree on. `scope` names the file when the listing is scoped. */
+function warnRegistryMismatch(io: IO, mismatch: RegistryRecordMismatch, scope?: TermScope): void {
+  const where = scope ? `the ${scope} lexicon's settings.packs` : 'the lexicon files\' settings.packs';
+  const flag = scope === 'project' ? ' --project' : '';
+  for (const ref of mismatch.fileOnly) {
+    io.stderr(`lexicon: warn: ${safe(ref)} is in ${where} but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${safe(ref)} --registry <index>${flag})\n`);
+  }
+  for (const ref of mismatch.recordOnly) {
+    io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in ${where}, so it is listed as not installed (lexicon pack remove ${safe(ref)}${flag} clears the record)\n`);
+  }
+}
+
+/**
+ * `lexicon pack list`: every pack with its size and whether it is installed.
+ * With --registry, the index's community packs. `installed` comes from
+ * `settings.packs` of the trusted lexicon files (`installedPacks`), the same
+ * source as `pack search` and MCP `list_packs`; the registry state file only
+ * adds version and source, and a disagreement between the two is reported.
+ */
 export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
-  const storeOpts = { cwd, scope: scopeOf(opts), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
+  const scope = scopeOf(opts);
+  const storeOpts = { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   try {
     const packs = await listPacks(deps);
-    const installed = installedPacks(await loadLexicon(storeOpts));
+    const loaded = await loadLexicon(storeOpts);
+    // installedPacks reads trusted files only: a pack the skipped project file
+    // records shows as not installed, so name that file (stderr, path only).
+    warnSkippedProject(loaded, io);
+    const installed = installedPacks(loaded);
     const rows = packs.map((p) => ({ ...p, installed: installed.includes(p.name) }));
+    // Registry records of this scope: what `pack update` checks.
     const communityInstalled = await installedRegistryPacks(storeOpts);
+    const mismatch = registryRecordMismatch(loaded, scope, communityInstalled);
+    if (mismatch) warnRegistryMismatch(io, mismatch, scope);
+    const community = installed.filter((p) => isRegistryRef(p));
     if (opts.json) {
-      let registryPacks: RegistryIndexEntry[] | undefined;
+      let registryPacks: (RegistryIndexEntry & { installed: boolean })[] | undefined;
       if (opts.registry) {
         const { index } = await loadRegistryIndex(opts.registry, deps.registry);
-        registryPacks = index.packs;
+        // The same per-pack flag MCP list_packs and pack search give.
+        registryPacks = index.packs.map((p) => ({ ...p, installed: installed.includes(p.ref) }));
       }
-      line(io, JSON.stringify({ packs: rows, installed, communityInstalled, ...(registryPacks ? { registry: registryPacks } : {}) }, null, 2));
+      line(
+        io,
+        JSON.stringify(
+          jsonOk({
+            packs: rows,
+            installed,
+            communityInstalled,
+            ...(mismatch ? { registryMismatch: mismatch } : {}),
+            ...(registryPacks ? { registry: registryPacks } : {}),
+            ...skippedProjectJson(loaded, PACKS_SKIPPED),
+          }),
+          null,
+          2,
+        ),
+      );
       return 0;
     }
-    if (rows.length === 0 && communityInstalled.length === 0) {
+    if (rows.length === 0 && community.length === 0) {
       line(io, 'no packs found');
       return 0;
     }
@@ -104,13 +151,13 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
         ['name', 'title', 'terms', 'aliases', 'installed', 'description'],
       ),
     );
-    if (communityInstalled.length > 0) {
+    if (community.length > 0) {
       const state = await readRegistryState(storeOpts);
       line(io);
       line(io, bold('community packs installed:'));
       io.stdout(
         renderTable(
-          communityInstalled.map((r) => [r, state.packs[r]?.version ?? '', state.packs[r]?.indexSource ?? '']),
+          community.map((r) => [r, state.packs[r]?.version ?? '', state.packs[r]?.indexSource ?? '']),
           ['ref', 'version', 'registry'],
         ),
       );
@@ -124,7 +171,7 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
       } else {
         io.stdout(
           renderTable(
-            index.packs.map((p) => [p.ref, p.title, String(p.terms), communityInstalled.includes(p.ref) ? 'yes' : '', p.description]),
+            index.packs.map((p) => [p.ref, p.title, String(p.terms), installed.includes(p.ref) ? 'yes' : '', p.description]),
             ['ref', 'title', 'terms', 'installed', 'description'],
           ),
         );
@@ -134,7 +181,7 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
     line(io, dim('community: lexicon pack search <query> --registry <index>'));
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -147,10 +194,10 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
       const ref = parseRegistryRef(name).ref;
       result = await uninstallRegistryPack(ref, opts.registry, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}) }, deps.registry);
     } else {
-      result = await uninstallPack(name, { cwd, ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
+      result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
     }
     if (opts.json) {
-      line(io, JSON.stringify(result, null, 2));
+      line(io, JSON.stringify(jsonOk(result), null, 2));
       return 0;
     }
     if (result.files.length === 0) {
@@ -163,7 +210,7 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -183,7 +230,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
         await fs.writeFile(file, bytes);
         const pack = await loadPackFile(file, entry.name);
         if (opts.json) {
-          line(io, JSON.stringify({ ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, pack }, null, 2));
+          line(io, JSON.stringify(jsonOk({ ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, pack }), null, 2));
           return 0;
         }
         line(io, `${safe(entry.ref)} ${dim(`(community pack${entry.author ? ` by ${entry.author}` : ''}, version ${entry.version || 'unversioned'}, checksum ${entry.checksum.slice(0, 12)}...)`)}`);
@@ -195,13 +242,13 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
     }
     const pack = await loadPack(name, deps);
     if (opts.json) {
-      line(io, JSON.stringify(pack, null, 2));
+      line(io, JSON.stringify(jsonOk(pack), null, 2));
       return 0;
     }
     printPackTerms(io, pack);
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -216,15 +263,27 @@ function printPackTerms(io: IO, pack: { name: string; title: string; description
 export async function runPackSearch(query: string, opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   try {
     if (!opts.registry) {
-      io.stderr('lexicon: pack search needs --registry <index> (a local path, file:// or https:// URL)\n');
-      return 1;
+      return refuse(io, opts.json, 'pack search needs --registry <index> (a local path, file:// or https:// URL)');
     }
     const { index } = await loadRegistryIndex(opts.registry, deps.registry);
     const hits = searchRegistryIndex(index, query);
     const cwd = resolveCwd(opts);
-    const installed = installedPacks(await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) }));
+    const loaded = await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) });
+    warnSkippedProject(loaded, io);
+    const installed = installedPacks(loaded);
+    // The same report as `pack list`, over every file the flags come from.
+    const mismatch = await findRegistryRecordMismatch(loaded, opts.globalPath !== undefined ? { cwd, globalPath: opts.globalPath } : { cwd });
+    if (mismatch) warnRegistryMismatch(io, mismatch);
     if (opts.json) {
-      line(io, JSON.stringify({ query, registry: opts.registry, packs: hits }, null, 2));
+      const packs = hits.map((p) => ({ ...p, installed: installed.includes(p.ref) }));
+      line(
+        io,
+        JSON.stringify(
+          jsonOk({ query, registry: opts.registry, packs, ...(mismatch ? { registryMismatch: mismatch } : {}), ...skippedProjectJson(loaded, PACKS_SKIPPED) }),
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     if (hits.length === 0) {
@@ -248,13 +307,15 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
     line(io, dim(`install with: lexicon pack add <ref> --registry ${opts.registry}   (shows the term list before writing)`));
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
+const NEED_REGISTRY = 'community packs need --registry <index> (a local path, file:// or https:// URL)';
+
 function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   if (!opts.registry) {
-    io.stderr('lexicon: community packs need --registry <index> (a local path, file:// or https:// URL)\n');
+    refuse(io, opts.json, NEED_REGISTRY);
     return false;
   }
   return true;
@@ -283,17 +344,36 @@ async function confirmCommunityWrite(
   }
 }
 
+/** The `--json` preview of one community pack (`--json` without `--yes`): nothing was written. */
+interface CommunityPreviewJson {
+  preview: true;
+  scope: TermScope;
+  ref: string;
+  author: string | undefined;
+  homepage: string | undefined;
+  version: string;
+  checksum: string;
+  terms: Term[];
+}
+
+/** What one community ref came to: installed, only previewed (`--json` without `--yes`), or declined at the question. */
+type RegistryAddOutcome =
+  | { kind: 'installed'; result: InstallPackResult & { ref: string } }
+  | { kind: 'preview'; preview: CommunityPreviewJson }
+  | { kind: 'declined'; ref: string };
+
 /**
  * Install one community pack: download, checksum-verify, show the full term
  * list, and only write after the user confirms. A `@version` pin is recorded
- * and honored by `pack update`.
+ * and honored by `pack update`. Under `--json` without `--yes` it returns the
+ * preview instead, and runPackAdd prints it with every other ref's outcome.
  */
 async function runPackAddRegistry(
   rawName: string,
   opts: PackRegistryCliOptions,
   io: IO,
   deps: PackDeps,
-): Promise<InstallPackResult & { ref: string }> {
+): Promise<RegistryAddOutcome> {
   const cwd = resolveCwd(opts);
   const scope = opts.project ? 'project' : 'global';
   const parsed = parseRegistryRef(rawName);
@@ -307,8 +387,10 @@ async function runPackAddRegistry(
   const pack = parsePackText(bytes.toString('utf8'), entry.url, entry.name);
 
   if (opts.json && !opts.yes) {
-    line(io, JSON.stringify({ preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms }, null, 2));
-    throw new PreviewOnly();
+    return {
+      kind: 'preview',
+      preview: { preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms },
+    };
   }
   if (!opts.json) {
     line(io, bold(`community pack ${safe(entry.ref)}`));
@@ -320,7 +402,7 @@ async function runPackAddRegistry(
     line(io);
   }
   const ok = await confirmCommunityWrite(io, `install ${entry.ref} (${pack.lexicon.terms.length} terms)?`, opts, deps);
-  if (!ok) throw new Declined();
+  if (!ok) return { kind: 'declined', ref: entry.ref };
   const result = await installRegistryPack(entry, base, opts.registry as string, {
     cwd,
     scope,
@@ -328,40 +410,74 @@ async function runPackAddRegistry(
     ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
     ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
   }, deps.registry);
-  if (opts.json) {
-    line(io, JSON.stringify({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope }, null, 2));
-  } else {
+  // Under --json runPackAdd prints the result, so stdout carries one document.
+  if (!opts.json) {
     line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
     line(io, dim('  the terms are live: normalize_transcript, the hook and the local API pick them up on the next call'));
   }
-  return result;
+  return { kind: 'installed', result };
 }
 
-/** Thrown to unwind a preview-only run without an error message. */
-class PreviewOnly extends Error {
-  constructor() { super('preview'); this.name = 'PreviewOnly'; }
-}
-/** Thrown when the user declines the install at the confirm prompt. */
-class Declined extends Error {
-  constructor() { super('declined'); this.name = 'Declined'; }
+/** The `--json` record of one community install. */
+interface CommunityInstallJson {
+  preview: false;
+  ref: string;
+  added: number;
+  merged: number;
+  path: string;
+  scope: string;
 }
 
-/** `lexicon pack add <name...>`: install one or more packs. Stops at the first failure and exits 1. */
+/** The `--json` entry of the ref a `pack add` run stopped at: `{ ref, ok: false, error, nextStep? }`. */
+interface PackAddFailureJson {
+  ref: string;
+  ok: false;
+  error: string;
+  nextStep?: string;
+}
+
+/**
+ * `lexicon pack add <name...>`: install one or more packs. Stops at the first
+ * failure and exits 1: the failing ref is reported (under `--json` as a
+ * `{ ref, ok: false, error, nextStep? }` entry after the refs before it), the
+ * refs after it are not attempted and not reported. A community ref that is
+ * only previewed (`--json` without `--yes`) or declined at the question writes
+ * nothing and does not stop the refs after it, so every ref's outcome is
+ * reported.
+ */
 export async function runPackAdd(names: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
   const scope = opts.project ? 'project' : 'global';
-  // Registry installs print their own output (preview or result) inside
-  // runPackAddRegistry; only vendored installs accumulate here.
-  const results: InstallPackResult[] = [];
-  for (const name of names) {
+  // Registry installs print their preview (and, without --json, their
+  // result) inside runPackAddRegistry. Under --json every ref's outcome (an
+  // install, or a community preview) accumulates here and is printed once: a
+  // single community ref as its object, anything else as one array in
+  // argument order.
+  const results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[] = [];
+  let vendored = 0;
+  const installed: string[] = [];
+  const declined: string[] = [];
+  for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
-        if (!needRegistry(opts, io)) return 1;
-        await runPackAddRegistry(name, opts, io, deps);
+        if (!opts.registry) throw new Error(NEED_REGISTRY);
+        const outcome = await runPackAddRegistry(name, opts, io, deps);
+        if (outcome.kind === 'preview') {
+          results.push(outcome.preview);
+        } else if (outcome.kind === 'declined') {
+          declined.push(outcome.ref);
+          if (!opts.json) line(io, dim(names.length > 1 ? `declined ${safe(outcome.ref)}; nothing written for it.` : 'declined; nothing written.'));
+        } else {
+          const result = outcome.result;
+          installed.push(result.ref);
+          results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
+        }
       } else {
-        const result = await installPack(name, { cwd, scope, ...deps });
+        const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...deps });
         results.push(result);
+        installed.push(result.pack.name);
+        vendored += 1;
         if (!opts.json) {
           line(
             io,
@@ -370,19 +486,53 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         }
       }
     } catch (err) {
-      if (err instanceof PreviewOnly) return 0;
-      if (err instanceof Declined) {
-        if (!opts.json) line(io, dim('declined; nothing written.'));
-        return 0;
-      }
-      if (opts.json && results.length > 0) line(io, JSON.stringify(results, null, 2));
-      if (err instanceof ProjectTrustError) return fail(io, err);
-      return fail(io, err);
+      return failPackAdd(io, opts, names, results, at, err);
     }
   }
-  if (opts.json) line(io, JSON.stringify(results, null, 2));
-  else if (results.length > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  if (opts.json) {
+    const single = names.length === 1 && isRegistryRef(names[0]!) && results.length === 1;
+    line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson | CommunityPreviewJson) : results, null, 2));
+    return 0;
+  }
+  if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  // With several refs, one line that adds them up, so a decline is not read as "nothing was written" when another ref was.
+  if (names.length > 1 && declined.length > 0) {
+    line(io, `${plural(installed.length, 'pack')} installed${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
+  }
   return 0;
+}
+
+/**
+ * Report the ref a `pack add` run stopped at. Under `--json` stdout carries one
+ * document: for a single ref `{ ok: false, ref, error, nextStep? }`, for a list
+ * the array of the refs before it with `{ ref, ok: false, error, nextStep? }`
+ * appended; the refs after it were not attempted and are left out. On stderr
+ * the `lexicon: <ref>: <error>` line (then the hint, and for a list the refs
+ * not attempted). Exit code 1.
+ */
+function failPackAdd(
+  io: IO,
+  opts: PackRegistryCliOptions,
+  names: readonly string[],
+  results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[],
+  at: number,
+  err: unknown,
+): number {
+  const ref = names[at]!;
+  const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (opts.json) {
+    const { ok, ...detail } = jsonError(message, hint);
+    const entry: PackAddFailureJson = { ref, ok, ...detail };
+    // A single ref's object leads with `ok`, as every object-shaped document does.
+    const doc = names.length === 1 ? { ok, ref, ...detail } : [...results, entry];
+    line(io, JSON.stringify(doc, null, 2));
+  }
+  io.stderr(`lexicon: ${safe(ref)}: ${safeLines(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${hint}\n`);
+  const after = names.slice(at + 1);
+  if (after.length > 0) io.stderr(`lexicon: not attempted: ${after.map(safe).join(', ')}\n`);
+  return 1;
 }
 
 /** `lexicon pack update [ref...]`: re-check installed community packs against a fresh index. Never silent: every changed pack is previewed and confirmed. */
@@ -406,7 +556,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
     }
     if (byIndex.size === 0) {
       if (!opts.json) line(io, dim('no community packs installed; nothing to update.'));
-      else line(io, JSON.stringify({ updates: [] }, null, 2));
+      else line(io, JSON.stringify(jsonOk({ updates: [] }), null, 2));
       return 0;
     }
     const reports: { ref: string; status: string; from?: string; to?: string; added?: number | string[]; merged?: number; dropped?: string[]; error?: string }[] = [];
@@ -458,10 +608,12 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
         reports.push(applied);
       }
     }
-    if (opts.json) line(io, JSON.stringify({ updates: reports }, null, 2));
-    return reports.some(report => report.status === 'failed' || report.status === 'not-installed') ? 1 : 0;
+    const failed = reports.some((report) => report.status === 'failed' || report.status === 'not-installed');
+    // The report is the failure document too, so `ok` follows the exit code.
+    if (opts.json) line(io, JSON.stringify({ ok: !failed, updates: reports }, null, 2));
+    return failed ? 1 : 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -482,7 +634,7 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     const pack = parsePackText(text, abs);
     const { errors, warnings } = validateCommunityPack(pack);
     if (opts.json) {
-      line(io, JSON.stringify({ file: abs, pack: pack.name, errors, warnings }, null, 2));
+      line(io, JSON.stringify({ ok: errors.length === 0, file: abs, pack: pack.name, errors, warnings }, null, 2));
     } else {
       line(io, `${safe(pack.name)}: ${safe(pack.title)} (${plural(pack.lexicon.terms.length, 'term')}, ${pack.aliases === 1 ? '1 alias' : `${pack.aliases} aliases`})`);
       for (const w of warnings) line(io, `  warning: ${safe(w)}`);
@@ -491,7 +643,7 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     }
     return errors.length > 0 ? 1 : 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 

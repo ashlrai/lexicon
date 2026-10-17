@@ -206,6 +206,15 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: basics', () => {
       expect(r.stdout).toContain(`Usage: lexicon ${cmd}`);
     }
   });
+
+  // hooks/hooks.json and `lexicon install claude` register `lexicon hook` for
+  // SessionStart too; the help said it was a UserPromptSubmit hook only.
+  it('hook --help names both events the hook handles', async () => {
+    const r = await runCli(['hook', '--help'], { env: shared.env });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('UserPromptSubmit');
+    expect(r.stdout).toContain('SessionStart');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -734,6 +743,58 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doct
     expect(missing.stdout).toContain(`✗ global lexicon missing: ${h.globalPath}`);
     expect(missing.stdout).toMatch(/1 check failed/);
   });
+
+  // `doctor` had no --json, though `stats`, `list` and `pack list` do and the
+  // MCP lexicon_doctor tool returns exactly this report as JSON; a script or
+  // agent in a terminal could only scrape the text.
+  it('doctor --json prints the report as JSON and keeps the exit code', async () => {
+    const noBin = path.join(shared.home, 'empty-bin');
+    await fs.mkdir(noBin, { recursive: true });
+    const ok = await runCli(['doctor', '--json'], { env: { ...shared.env, PATH: noBin }, cwd: shared.repo });
+    expect(ok.code, ok.stderr).toBe(0);
+    const report = JSON.parse(ok.stdout) as { ok: boolean; ready: boolean; summary: string; nextStep: string; checks: { level: string; message: string }[] };
+    expect(report.ok).toBe(true);
+    expect(typeof report.summary).toBe('string');
+    expect(report.nextStep).not.toBe('');
+    expect(report.checks).toContainEqual({ level: 'ok', message: `global lexicon parses: ${shared.globalPath} (2 terms)` });
+
+    const h = await freshHome('doctor-json-missing');
+    const missing = await runCli(['doctor', '--json'], { env: { ...h.env, PATH: noBin }, cwd: h.repo });
+    expect(missing.code).toBe(1);
+    const failed = JSON.parse(missing.stdout) as { ok: boolean; nextStep: string };
+    expect(failed.ok).toBe(false);
+    expect(failed.nextStep).toMatch(/lexicon/);
+  });
+
+  // Every command that loads the lexicon stopped at the parser's reason;
+  // only doctor said what to run.
+  it('a lexicon that does not parse names the command that fixes it', async () => {
+    const h = await freshHome('unparsable');
+    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
+    await fs.writeFile(h.globalPath, 'version: 1\nterms:\n  - canonical: [oops\n');
+    for (const args of [['list'], ['add', 'Foo'], ['stats', '--json']]) {
+      const r = await runCli(args, { env: h.env, cwd: h.repo });
+      expect(r.code, args.join(' ')).toBe(1);
+      expect(r.stderr).toContain(`Failed to parse lexicon YAML at ${h.globalPath}`);
+      expect(r.stderr, args.join(' ')).toContain('(run: lexicon edit), then check it with: lexicon doctor');
+      if (args.includes('--json')) {
+        // Under --json stdout is the error document, with the same fix as nextStep.
+        expect(JSON.parse(r.stdout)).toEqual({
+          ok: false,
+          error: expect.stringContaining(`Failed to parse lexicon YAML at ${h.globalPath}`),
+          nextStep: expect.stringContaining('(run: lexicon edit), then check it with: lexicon doctor'),
+        });
+      } else {
+        expect(r.stdout).toBe('');
+      }
+    }
+    // A broken project file is opened with `edit --project`.
+    await fs.writeFile(h.globalPath, 'version: 1\nterms: []\n');
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'terms: [\n');
+    const project = await runCli(['list'], { env: { ...h.env, LEXICON_TRUST_ALL: '1' }, cwd: h.repo });
+    expect(project.code).toBe(1);
+    expect(project.stderr).toContain('(run: lexicon edit --project)');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -868,6 +929,32 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     const out = JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } };
     expect(out.hookSpecificOutput.additionalContext).toContain(`untrusted .lexicon.yaml at ${projectPath}`);
     expect(out.hookSpecificOutput.additionalContext).not.toContain('SECRET-INJECTION');
+  });
+
+  // Catches: a reader that closed the pipe (Claude Code timing the hook out) made the
+  // stream fallback throw an unhandled EPIPE: a stack trace and exit 1 from a hook that must exit 0.
+  it('exits 0 with one stderr line when stdout is already closed', async () => {
+    const h = await cloneOf(shared, 'hook-epipe');
+    const r = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ['--import', 'tsx', HOOK], { cwd: REPO_ROOT, env: h.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      child.stdout.destroy();
+      let stderr = '';
+      child.stderr.setEncoding('utf8').on('data', (d: string) => {
+        stderr += d;
+      });
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error(`timed out\n${stderr}`));
+      }, TIMEOUT_MS);
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ code, stderr });
+      });
+      child.stdin.end(payload('ask Ashler about it', h.repo));
+    });
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stderr).not.toContain('Unhandled');
+    expect(r.stderr).toContain('[lexicon hook] could not write the hook output (EPIPE)');
   });
 
   it('is reachable through `lexicon hook` as well', async () => {
@@ -1161,10 +1248,14 @@ console.log(JSON.stringify(data[args[1]]));
     const preview = await runCli(['import', '--guided', '--sources', 'github', '--json'], { env, cwd: h.repo });
     expect(preview.code).toBe(0);
     const report = JSON.parse(preview.stdout);
+    // The preview and the applied report lead with ok: true, as a refusal leads with ok: false.
+    expect(Object.keys(report)[0]).toBe('ok');
+    expect(report.ok).toBe(true);
     const selected = report.candidates.find((c: { canonical: string }) => c.canonical === 'Ada Lovelace');
     const applied = await runCli(['import', '--guided', '--sources', 'github', '--yes', '--json',
       '--preview-id', report.previewId, '--accept', selected.id], { env, cwd: h.repo });
     expect(applied.code).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ ok: true });
     const stored = await fs.readFile(h.globalPath, 'utf8');
     expect(stored).toContain('Ada Lovelace');
     expect(stored).toContain('import:github');
@@ -1217,5 +1308,234 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a closed stdout p
     });
     expect(result.stderr).not.toMatch(/EPIPE|Unhandled/);
     expect(result.code).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The agent journey, end to end on the shipped artifacts
+// ---------------------------------------------------------------------------
+
+/** What the npm `lexicon` bin runs once built; the tsx source when dist/ is absent (CI builds first). */
+const BUILT_CLI = path.join(REPO_ROOT, 'dist', 'cli', 'index.js');
+const BUNDLED_MCP = path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs');
+const BUNDLED_HOOK = path.join(REPO_ROOT, 'plugin', 'hook.mjs');
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: agent journey (onboard, normalize, learn, stats, suggest)', () => {
+  interface Suggestion {
+    kind: string;
+    canonical: string;
+    alias?: string;
+    scope?: string;
+    path?: string;
+  }
+  interface Stats {
+    termCount: number;
+    topTerms: { canonical: string; hits: number }[];
+    bySource: Record<string, number>;
+    files: { path: string; scope: string; terms: number }[];
+  }
+
+  it('a correction flagged by the hook and learned over MCP fixes the next transcript and shows up in stats and suggest', async () => {
+    // No LEXICON_PATH: finding the lexicon under XDG_CONFIG_HOME is part of the journey.
+    const h = await freshHome('journey');
+    const env: NodeJS.ProcessEnv = { ...h.env };
+    delete env.LEXICON_PATH;
+    const globalPath = path.join(h.home, '.config', 'lexicon', 'lexicon.yaml');
+    const cliScript = (await fs.stat(BUILT_CLI).then(() => true, () => false)) ? BUILT_CLI : CLI;
+    const cli = (args: readonly string[]): Promise<RunResult> => runNode(cliScript, [...args, '--cwd', h.repo], { env });
+
+    const rpc = new StdioRpc(env, h.repo, BUNDLED_MCP);
+    const tool = async <T>(name: string, args: Record<string, unknown> = {}): Promise<T> => {
+      const r = await rpc.request('tools/call', { name, arguments: args });
+      expect(r.error, name).toBeUndefined();
+      const result = r.result as ToolCallResult;
+      expect(result.isError, `${name}: ${result.content[0]?.text}`).not.toBe(true);
+      return JSON.parse(result.content[0].text) as T;
+    };
+    const hookContext = async (prompt: string): Promise<string> => {
+      const r = await runNode(BUNDLED_HOOK, [], {
+        env,
+        stdin: JSON.stringify({ session_id: 'journey', cwd: h.repo, hook_event_name: 'UserPromptSubmit', prompt }),
+      });
+      expect(r.code, r.stderr).toBe(0);
+      expect(r.stderr).toBe('');
+      return (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    };
+    try {
+      const init = await rpc.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'journey', version: '0.0.0' } });
+      expect(init.error).toBeUndefined();
+      rpc.notify('notifications/initialized');
+
+      // 1. Onboard: the prompt points at setup_lexicon; the preview writes nothing, apply seeds.
+      const onboard = await rpc.request('prompts/get', { name: 'onboard' });
+      expect((onboard.result as { messages: { content: { text: string } }[] }).messages[0].content.text).toContain('setup_lexicon');
+      const plan = await tool<{ plan: boolean; lexiconPath: string; lexiconExists: boolean; wouldSeed: string[]; wouldInstallClients: string[] }>(
+        'setup_lexicon',
+        { company: 'Ashlr.AI', person: 'Mason Wyatt' },
+      );
+      expect(plan).toMatchObject({ plan: true, lexiconPath: globalPath, lexiconExists: false, wouldInstallClients: [] });
+      expect(plan.wouldSeed.sort()).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+      await expect(fs.stat(globalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      const applied = await tool<{ applied: boolean; summary: { lexiconPath: string; termsAdded: string[]; clients: string[] } }>('setup_lexicon', {
+        company: 'Ashlr.AI',
+        person: 'Mason Wyatt',
+        apply: true,
+      });
+      expect(applied.applied).toBe(true);
+      expect(applied.summary).toMatchObject({ lexiconPath: globalPath, clients: [] });
+      expect(applied.summary.termsAdded.sort()).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+
+      // 2. Add terms: one through the built CLI, one through MCP.
+      const add = await cli(['add', 'Hetzner', 'head sner', '--category', 'product']);
+      expect(add.code, add.stderr).toBe(0);
+      await tool('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'] });
+
+      // Earlier dictations (what `lexicon voice` records): "Vercel" typed out
+      // three times, and a garble of it that nothing corrects yet.
+      const historyPath = path.join(path.dirname(globalPath), 'voice', 'history.jsonl');
+      await fs.mkdir(path.dirname(historyPath), { recursive: true });
+      const said = ['the preview on Vercel is up', 'we moved the cron to Vercel', 'check the Vercel logs', 'is versal down again', 'ask versal support', 'pay the versal bill'];
+      await fs.writeFile(historyPath, said.map((t, i) => JSON.stringify({ at: `2026-10-0${i + 1}T10:00:00.000Z`, raw: t, output: t })).join('\n') + '\n');
+      const before = await tool<Suggestion[]>('suggest_terms');
+      expect(before).toContainEqual(expect.objectContaining({ kind: 'term', canonical: 'Vercel', scope: 'global', path: globalPath }));
+
+      // 3. Normalize a transcript: everything known is fixed, "versel" is not known yet.
+      const transcript = 'ask ashler to deploy cooper netties on head sner via versel';
+      const first = await tool<{ output: string }>('normalize_transcript', { text: transcript });
+      expect(first.output).toBe('ask Ashlr.AI to deploy Kubernetes on Hetzner via versel');
+      expect(await hookContext('ship it on versel and ashler')).toContain('Corrected prompt:\nship it on versel and Ashlr.AI');
+
+      // 4. The user corrects it. The hook flags the correction (and writes nothing);
+      // the agent passes the arguments the note names to learn_correction.
+      const lexiconBefore = await fs.readFile(globalPath, 'utf8');
+      const note = await hookContext("it's Vercel, not versel");
+      const flagged = /learn_correction tool with heard: ("(?:[^"\\]|\\.)*"), meant: ("(?:[^"\\]|\\.)*")/.exec(note);
+      expect(flagged, note).not.toBeNull();
+      const heard = JSON.parse(flagged![1]) as string;
+      const meant = JSON.parse(flagged![2]) as string;
+      expect({ heard, meant }).toEqual({ heard: 'versel', meant: 'Vercel' });
+      expect(await fs.readFile(globalPath, 'utf8')).toBe(lexiconBefore);
+
+      const learned = await tool<{ created: boolean; path: string; term: { canonical: string; aliases: string[]; source: string }; conflict?: unknown; untrustedProject?: unknown }>(
+        'learn_correction',
+        { heard, meant },
+      );
+      expect(learned).toMatchObject({ created: true, path: globalPath, term: { canonical: 'Vercel', source: 'learned' } });
+      expect(learned.term.aliases).toContain('versel');
+      expect(learned.conflict).toBeUndefined();
+      expect(learned.untrustedProject).toBeUndefined();
+
+      // 5. The next normalize applies it, and so does the hook's next prompt
+      // (its index cache was built before the correction was learned).
+      const second = await tool<{ output: string }>('normalize_transcript', { text: transcript });
+      expect(second.output).toBe('ask Ashlr.AI to deploy Kubernetes on Hetzner via Vercel');
+      expect(await hookContext('ship it on versel')).toContain('Corrected prompt:\nship it on Vercel');
+      const me = await rpc.request('resources/read', { uri: 'lexicon://me' });
+      const meText = (me.result as { contents: { text: string }[] }).contents[0].text;
+      expect(meText).toContain('Vercel');
+      expect(meText).toContain('versel');
+      const voiceContext = await rpc.request('prompts/get', { name: 'voice-context' });
+      expect((voiceContext.result as { messages: { content: { text: string } }[] }).messages[0].content.text).toContain('| Vercel | versel |');
+      const guess = await tool<{ suggestions: { canonical: string; confidence: number }[] }>('suggest_canonical', { heard: 'vercell' });
+      expect(guess.suggestions[0]).toMatchObject({ canonical: 'Vercel' });
+
+      // 6. Stats count the learned term and its hits, over MCP and from the built CLI alike.
+      const stats = await tool<Stats>('lexicon_stats');
+      expect(stats.termCount).toBe(5);
+      expect(stats.bySource).toMatchObject({ learned: 1 });
+      // One hit from the MCP normalize, one from the hook; the correction prompt itself counts none.
+      expect(stats.topTerms).toContainEqual({ canonical: 'Vercel', hits: 2 });
+      expect(stats.topTerms).toContainEqual({ canonical: 'Hetzner', hits: 2 });
+      expect(stats.files).toEqual([{ path: globalPath, scope: 'global', terms: 5 }]);
+      const cliStats = await cli(['stats', '--json']);
+      expect(cliStats.code, cliStats.stderr).toBe(0);
+      // The CLI's --json success leads with ok: true; the rest is what lexicon_stats returns.
+      expect(JSON.parse(cliStats.stdout)).toEqual({ ok: true, ...stats });
+
+      // 7. Suggest: Vercel is no longer a new name to add; the garble is now alias
+      // material for it. Applying that suggestion fixes the garble too.
+      const after = await tool<Suggestion[]>('suggest_terms');
+      expect(after.some((x) => x.kind === 'term' && x.canonical === 'Vercel')).toBe(false);
+      const alias = after.find((x) => x.kind === 'alias' && x.canonical === 'Vercel');
+      expect(alias).toMatchObject({ alias: 'versal', scope: 'global', path: globalPath });
+      const cliSuggest = await cli(['suggest', '--json']);
+      expect(cliSuggest.code, cliSuggest.stderr).toBe(0);
+      expect(JSON.parse(cliSuggest.stdout)).toEqual(after);
+      expect(await tool('apply_suggestion', { suggestion: alias })).toMatchObject({ kind: 'alias', path: globalPath, created: false });
+      expect((await tool<{ output: string }>('normalize_transcript', { text: 'is versal down again' })).output).toBe('is Vercel down again');
+      expect(await hookContext('is versal down again')).toContain('Corrected prompt:\nis Vercel down again');
+      expect((await tool<Suggestion[]>('suggest_terms')).some((x) => x.canonical === 'Vercel')).toBe(false);
+    } finally {
+      expect(await rpc.close()).toBe(0);
+    }
+    // Nothing landed in the project, and stdout carried only JSON-RPC.
+    expect(await fs.readdir(h.repo)).toEqual(['.git']);
+    for (const line of rpc.stdoutLines) expect((JSON.parse(line) as { jsonrpc: string }).jsonrpc).toBe('2.0');
+  });
+});
+
+/**
+ * Catches: object-shaped `--json` successes (add, list --full, path, learn,
+ * stats, import) had no `ok`, while every failure of the same commands leads
+ * with `ok: false`, so a script could not read one key for either outcome.
+ * Array-shaped successes (list --json, harvest --json) stay bare arrays.
+ */
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: --json object successes lead with ok: true', () => {
+  const leadsWithOk = (stdout: string): Record<string, unknown> => {
+    const doc = JSON.parse(stdout) as Record<string, unknown>;
+    expect(Object.keys(doc)[0]).toBe('ok');
+    expect(doc.ok).toBe(true);
+    return doc;
+  };
+
+  it('add, list --full, path, learn, stats and import', async () => {
+    const h = await cloneOf(shared, 'json-ok');
+    const add = await runCli(['add', 'Pydantic', 'pie dentic', '--json'], { env: h.env });
+    expect(add.code, add.stderr).toBe(0);
+    expect(leadsWithOk(add.stdout)).toMatchObject({ created: true, term: { canonical: 'Pydantic' } });
+
+    const full = await runCli(['list', '--full'], { env: h.env });
+    expect(full.code, full.stderr).toBe(0);
+    expect(leadsWithOk(full.stdout)).toHaveProperty('terms');
+    const bare = await runCli(['list', '--json'], { env: h.env });
+    expect(Array.isArray(JSON.parse(bare.stdout))).toBe(true);
+
+    const where = await runCli(['path', '--json'], { env: h.env });
+    expect(where.code, where.stderr).toBe(0);
+    expect(leadsWithOk(where.stdout)).toEqual({ ok: true, global: h.globalPath, project: null });
+
+    const learn = await runCli(['learn', 'pie dantic', 'Pydantic', '--json'], { env: h.env });
+    expect(learn.code, learn.stderr).toBe(0);
+    expect(leadsWithOk(learn.stdout)).toMatchObject({ aliasAdded: true, heard: 'pie dantic', meant: 'Pydantic' });
+
+    const stats = await runCli(['stats', '--json'], { env: h.env });
+    expect(stats.code, stats.stderr).toBe(0);
+    expect(leadsWithOk(stats.stdout)).toHaveProperty('files');
+
+    const file = path.join(h.home, 'wispr.csv');
+    await fs.writeFile(file, 'word,replacement\nhead sner,Hetzner\n');
+    const dry = await runCli(['import', file, 'wispr', '--dry-run', '--json'], { env: h.env });
+    expect(dry.code, dry.stderr).toBe(0);
+    leadsWithOk(dry.stdout);
+    const imp = await runCli(['import', file, 'wispr', '--json'], { env: h.env });
+    expect(imp.code, imp.stderr).toBe(0);
+    leadsWithOk(imp.stdout);
+  });
+});
+
+// Catches: `pack add` with a community ref under `--json --yes` printed the
+// community install object and then the vendored results array: two JSON
+// documents, which no parser reads. A mix prints one array in argument order.
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: pack add --json with community refs', () => {
+  it('prints one array for a vendored and a community pack together', async () => {
+    const h = await freshHome('pack-mix');
+    const index = path.join(REPO_ROOT, 'registry', 'index.example.yaml');
+    const mixed = await runCli(['pack', 'add', 'developer', 'example/cardiology', '--registry', index, '--json', '--yes'], { env: h.env });
+    expect(mixed.code, mixed.stderr).toBe(0);
+    const docs = JSON.parse(mixed.stdout) as Record<string, unknown>[];
+    expect(Array.isArray(docs)).toBe(true);
+    expect(docs).toHaveLength(2);
+    expect(docs[0]).toMatchObject({ pack: { name: 'developer' } });
+    expect(docs[1]).toMatchObject({ preview: false, ref: 'example/cardiology' });
   });
 });

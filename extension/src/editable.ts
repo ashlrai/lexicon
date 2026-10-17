@@ -349,13 +349,25 @@ function defaultButton(form: HTMLFormElement): HTMLButtonElement | HTMLInputElem
   return null;
 }
 
+/** Input types that block implicit submission (HTML: "a field that blocks implicit submission"). */
+const BLOCKING_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', 'password', 'date', 'month', 'week', 'time', 'datetime-local', 'number']);
+
+/** How many of `form`'s fields block implicit submission. */
+function blockingFieldCount(form: HTMLFormElement): number {
+  let n = 0;
+  for (const el of Array.from(form.elements)) {
+    if (el.tagName === 'INPUT' && BLOCKING_INPUT_TYPES.has((el as HTMLInputElement).type)) n++;
+  }
+  return n;
+}
+
 /**
  * Carry out what a real Enter does in `el` when no handler cancelled it: a
  * script-dispatched keydown has no default action, so after the composer guard
  * swallowed the user's Enter and re-dispatched it, nothing else would.
  *
  * - single-line input: implicit submission (click the form's default button,
- *   or submit a form without one);
+ *   or submit a form without one when this is its only text-like field);
  * - textarea: a newline replacing the selection;
  * - contenteditable: a new paragraph (a line break when the editor refuses).
  */
@@ -369,6 +381,10 @@ export function performEnterDefault(doc: Document, el: HTMLElement): void {
         if (!button.disabled) button.click();
         return;
       }
+      // Without a submit button a browser submits only a form whose single
+      // text-like field this is; one with several (a login form driven by a
+      // type="button") is never submitted by Enter.
+      if (blockingFieldCount(form) > 1) return;
       if (typeof form.requestSubmit === 'function') form.requestSubmit();
       else form.submit();
       return;

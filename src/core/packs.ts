@@ -1,7 +1,7 @@
 /**
  * Starter term packs: curated lexicons shipped in `packs/*.yaml` at the
  * package root (developer, ai, business, voice-tools) that a new user installs
- * with one command instead of typing sixty names. A pack is a plain lexicon
+ * with one command instead of typing dozens of names. A pack is a plain lexicon
  * file plus `name`, `title` and `description`; its terms are added with
  * `addTerm` and `source: 'pack'`, so a term the user already has keeps its own
  * spelling, aliases and source and only gains the pack's aliases. The names of

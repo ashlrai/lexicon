@@ -26,12 +26,13 @@ import {
   loadRegistryIndex,
   findRegistryEntry,
   downloadPack,
+  findRegistryRecordMismatch,
   parsePackText,
   parseRegistryRef,
   verifyPackChecksum,
 } from '../../core/index.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
-import { IMPORT_FORMAT_VALUES, bufferIO, guarded, textResult } from '../shared.js';
+import { IMPORT_FORMAT_VALUES, bufferIO, guarded, nonBlank, skippedProjectFields, textResult } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
 
@@ -55,6 +56,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
         'Pass registry (a local path, file:// or https:// URL) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
+        'The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. ' +
+        'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by `lexicon pack update`, recordOnly reads as not installed (`lexicon pack remove <ref>` clears the record). ' +
         'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
       inputSchema: {
         registry: z.string().optional().describe(REGISTRY_SOURCE_DESC),
@@ -64,9 +67,12 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const [packs, loaded] = await Promise.all([listPacks(), load()]);
         const installed = installedPacks(loaded);
+        // `lexicon pack list` and `pack search` report the same disagreement.
+        const mismatch = await findRegistryRecordMismatch(loaded, { cwd: ctx.cwd });
         const result: Record<string, unknown> = {
           packs: packs.map((p) => ({ name: p.name, title: p.title, description: p.description, terms: p.terms, aliases: p.aliases, installed: installed.includes(p.name) })),
           installed,
+          ...(mismatch ? { registryMismatch: mismatch } : {}),
         };
         if (registry) {
           const { index } = await loadRegistryIndex(registry);
@@ -83,7 +89,12 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
             installed: installed.includes(p.ref),
           }));
         }
-        return textResult(result);
+        // installedPacks reads trusted files only: a pack the skipped project
+        // file records shows as not installed, so name that file (path only).
+        return textResult({
+          ...result,
+          ...skippedProjectFields(loaded, 'A pack recorded only in that file shows as not installed until it is trusted.'),
+        });
       }),
   );
 
@@ -94,7 +105,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). ' +
         'Adds the pack\'s terms with source "pack"; a term the user already has keeps its own spelling and aliases and only gains the pack\'s. Idempotent. ' +
-        'A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`. ' +
+        'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with `lexicon pack remove <name>`. ' +
         'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.',
       inputSchema: {
         name: z.string().describe('Pack name from list_packs (e.g. developer) or a community ref like example/cardiology.'),
@@ -238,8 +249,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). ' +
         'Use dryRun: true first to show the user what would be added, then run again without it.',
       inputSchema: {
-        path: z.string().optional().describe('File to import. Its extension helps auto-detection.'),
-        content: z.string().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine.'),
+        path: nonBlank().optional().describe('File to import. Its extension helps auto-detection.'),
+        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine. Must not be blank.'),
         format: z.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: z.boolean().optional().describe('Report what would be added without writing.'),
@@ -264,6 +275,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           report = { output: out };
         }
         const stderr = io.err().trim();
+        // `import --json` leads with the CLI's `ok: true`; the tool result keeps its own shape.
+        if (isRecord(report) && report.ok === true) delete report.ok;
         return textResult(isRecord(report) ? { ...report, ...(stderr ? { stderr } : {}) } : report);
       }),
   );

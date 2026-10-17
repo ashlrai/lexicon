@@ -448,6 +448,21 @@ describe('installing from an npx cache', () => {
     expect(isVolatileEntry('/Users/u/code/lexicon/dist/cli/index.js')).toBe(false);
   });
 
+  // The plugin's MCP server runs from <config>/plugins/cache/<marketplace>/lexicon/<version>/.
+  // install_client and setup_lexicon called from a plugin session wrote that
+  // versioned path into Cursor, Codex and the Claude hooks, which then ran the
+  // old version after a plugin update and nothing once Claude Code removed it.
+  it('treats Claude Code\'s per-version plugin cache as a cache too', () => {
+    const plugin = '/Users/u/.claude/plugins/cache/ashlrai/lexicon/0.5.6/plugin';
+    expect(isVolatileEntry(`${plugin}/mcp-server.mjs`)).toBe(true);
+    expect(isVolatileEntry('C:\\Users\\u\\.claude\\plugins\\cache\\ashlrai\\lexicon\\0.5.6\\plugin\\hook.mjs')).toBe(true);
+    expect(launchFor(`${plugin}/mcp-server.mjs`, 'mcp', '0.5.6')).toEqual({ command: 'npx', args: ['-y', '@ashlr/lexicon@0.5.6', 'mcp'], viaNpx: true });
+    expect(launchCommandLine(launchFor(`${plugin}/hook.mjs`, 'hook', '0.5.6'), 'linux')).toBe('npx -y @ashlr/lexicon@0.5.6 hook');
+    // Another plugin's cache, and a checkout that merely has a plugins/ directory, are not this.
+    expect(isVolatileEntry('/Users/u/.claude/plugins/cache/ashlrai/other/1.0.0/plugin/mcp-server.mjs')).toBe(false);
+    expect(isVolatileEntry('/Users/u/code/lexicon/plugin/mcp-server.mjs')).toBe(false);
+  });
+
   it('writes an npx command rather than a path npm may delete', () => {
     const launch = launchFor(`${NPX_CLI}/../mcp/server.js`, 'mcp', '1.2.3');
     expect(launch).toEqual({ command: 'npx', args: ['-y', '@ashlr/lexicon@1.2.3', 'mcp'], viaNpx: true });

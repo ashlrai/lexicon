@@ -10,7 +10,7 @@
  */
 import path from 'node:path';
 import { sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
-import type { LoadedLexicon } from '../core/index.js';
+import type { LearnConflict, LoadedLexicon, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -182,12 +182,122 @@ export function renderTable(rows: readonly (readonly string[])[], header?: reado
 
 /**
  * The house style for a failed command: one `lexicon: <message>` line on
- * stderr, exit code 1. Handlers `return fail(io, err)` rather than throwing, so
+ * stderr, exit code 1. With `json` true (the command's `--json`) the
+ * `{ ok: false, error, nextStep? }` document goes to stdout as well, `nextStep`
+ * being the unreadable-lexicon hint when there is one. Handlers `return fail(io, err)` rather than throwing, so
  * the commander wiring in index.ts stays a thin pass-through of exit codes.
  */
-export function fail(io: IO, err: unknown): number {
-  io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+export function fail(io: IO, err: unknown, json?: boolean): number {
+  const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (json) printJsonError(io, message, hint);
+  io.stderr(`lexicon: ${safeLines(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${hint}\n`);
   return 1;
+}
+
+/**
+ * The stdout document of a `--json` command that failed: `{ ok: false, error,
+ * nextStep? }`, as `setup --json` prints it. Under --json stdout is the one
+ * thing a script reads, so a refusal that only went to stderr left it with an
+ * empty document to parse. The text is unsanitized (it is JSON, not a
+ * terminal line), like every other `--json` field.
+ */
+export interface JsonError {
+  ok: false;
+  error: string;
+  nextStep?: string;
+}
+
+export function jsonError(error: string, nextStep?: string): JsonError {
+  return { ok: false, error, ...(nextStep ? { nextStep } : {}) };
+}
+
+/**
+ * The stdout document of a `--json` command that succeeded with an object:
+ * `{ ok: true, ...doc }`, `ok` first, so a script tells success from a
+ * `JsonError` by the same key. Array-shaped successes stay bare arrays.
+ */
+export function jsonOk<T extends object>(doc: T): { ok: true } & T {
+  return { ok: true, ...doc };
+}
+
+/** Print `jsonError(error, nextStep)` on stdout. */
+export function printJsonError(io: IO, error: string, nextStep?: string): void {
+  io.stdout(`${JSON.stringify(jsonError(error, nextStep), null, 2)}\n`);
+}
+
+/**
+ * Whether a command line asked for `--json`: the flag appears before any `--`
+ * (after it, `--json` is text for `normalize`, not a flag). index.ts uses it
+ * for the errors commander raises before any handler runs, when no command's
+ * parsed options exist to read it from. `flags` are the spellings that ask
+ * for JSON on that command: `--json`, plus `--full` where it implies --json
+ * (`list`, `harvest`).
+ */
+export function argvRequestsJson(args: readonly string[], flags: readonly string[] = ['--json']): boolean {
+  const end = args.indexOf('--');
+  const before = end === -1 ? args : args.slice(0, end);
+  return flags.some((flag) => before.includes(flag));
+}
+
+/**
+ * The flags that ask `cmd` for a JSON document: `--json`, and `--full` on a
+ * command that defines it (`list --full` and `harvest --full` imply --json).
+ */
+export function jsonFlagsOf(cmd: { options: readonly { long?: string }[] } | undefined): string[] {
+  return cmd?.options.some((o) => o.long === '--full') ? ['--json', '--full'] : ['--json'];
+}
+
+/** Whether a command's parsed options ask for JSON: `--json`, or `--full`, which implies it. */
+export function optsRequestJson(opts: { json?: unknown; full?: unknown } | undefined): boolean {
+  return opts?.json === true || opts?.full === true;
+}
+
+/**
+ * The `--json` document for a commander usage error (an unknown option or
+ * command, a missing argument, an invalid option value): commander's message
+ * without its `error: ` prefix, and the `--help` command of the command that
+ * rejected the line (`lexicon pack add`, or just `lexicon`) as `nextStep`.
+ */
+export function usageErrorJson(message: string, commandPath: string): JsonError {
+  const error = message.replace(/^error:\s*/, '').trim() || 'invalid command line';
+  return jsonError(error, `see the usage: ${commandPath} --help`);
+}
+
+/**
+ * A refusal that is not an exception: the `lexicon: <error>` line (and a
+ * `lexicon: <nextStep>` line) on stderr and, under --json, the `JsonError`
+ * document on stdout. Exit code 1.
+ */
+export function refuse(io: IO, json: boolean | undefined, error: string, nextStep?: string): number {
+  if (json) printJsonError(io, error, nextStep);
+  io.stderr(`lexicon: ${safeLines(error)}\n`);
+  if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
+  return 1;
+}
+
+/**
+ * The next step after a lexicon file that does not parse or validate. Every
+ * command that loads the lexicon (list, add, stats, export, learn, ...) used
+ * to stop at the parser's reason, which names the file but not what to run;
+ * only `lexicon doctor` said `lexicon edit`. A project file is always named
+ * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
+ */
+export function unreadableLexiconHint(message: string): string | undefined {
+  const edit = unreadableLexiconEdit(message);
+  return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
+}
+
+/**
+ * The `lexicon edit` command that opens the file a store parse/validation
+ * error names (`--project` for a `.lexicon.yaml`), or undefined when the
+ * message is not one. The MCP server words its own next step around it.
+ */
+export function unreadableLexiconEdit(message: string): string | undefined {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  if (!m) return undefined;
+  return path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
 }
 
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */
@@ -195,4 +305,69 @@ export function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 
   if (!loaded.skippedProject) return;
   const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
   io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
+}
+
+/**
+ * The additive `--json` keys for a skipped project lexicon, the same three
+ * the MCP tools return: `projectTrust`, `skippedProject` (path only, never its
+ * contents) and `note`. Empty when nothing was skipped, so the shape is
+ * unchanged then. `consequence` adds what the skip means for this output.
+ */
+export function skippedProjectJson(
+  loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>,
+  consequence?: string,
+): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
+  if (!loaded.skippedProject) return {};
+  const head =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
+  return {
+    projectTrust: loaded.projectTrust,
+    skippedProject: loaded.skippedProject.path,
+    note: consequence ? `${head} ${consequence}` : head,
+  };
+}
+
+/**
+ * The line naming a copy of a removed term that is still in another lexicon
+ * file (removeTerm edits one file), with the command that removes only that
+ * copy: `--project` or `--global`.
+ */
+export function stillInLine(canonical: string, holder: TermHolder): string {
+  const command = `lexicon remove ${JSON.stringify(safe(canonical))} --${holder.scope}`;
+  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
+}
+
+/**
+ * The line naming a copy of a term in the skipped (untrusted or changed)
+ * project lexicon. That file is not loaded and is never edited, but its copy
+ * wins the merge once the user trusts it. Path only, never its contents.
+ */
+export function untrustedLine(canonical: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
+  const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
+  return (
+    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    'it corrects from there once that file is trusted, so review it before running lexicon trust'
+  );
+}
+
+/** The alias counterpart of `untrustedLine`: the skipped project file's copy of the term still holds the alias. Path only. */
+export function untrustedAliasLine(canonical: string, alias: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
+  const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
+  return (
+    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    'it corrects from there once that file is trusted, so review it before running lexicon trust'
+  );
+}
+
+/**
+ * The `warn:` line for a spelling another term also holds (`learn`, `add`):
+ * the next transcript may still be corrected to that term. For an alias it
+ * names the `lexicon remove --alias` command that lets the new one win.
+ */
+export function conflictLine(c: LearnConflict): string {
+  return c.as === 'alias'
+    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: lexicon remove ${JSON.stringify(safe(c.canonical))} --alias ${JSON.stringify(safe(c.spelling))}`
+    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written`;
 }

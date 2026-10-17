@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/core/index.js';
+import { addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -477,6 +477,31 @@ describe('POST /learn and POST /add', () => {
     expect(body.term.never).toContain('ashes');
   });
 
+  // Catches: POST /add answered a bare success for an alias another term
+  // already holds, while MCP add_term and `lexicon add --json` report it as
+  // `conflicts`; the alias may keep correcting to the other term.
+  it('add reports an alias another term already holds as conflicts, as MCP add_term does', async () => {
+    // A trusted project file of its own, so the shared global lexicon other cases count stays as it is.
+    const repo = path.join(env.home, 'add-conflict-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const res = await api('POST', '/add', { canonical: 'Ashley', aliases: ['Ashler', 'ashleigh'], scope: 'project', cwd: repo });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { created: boolean; path: string; conflicts?: unknown };
+      expect(body.created).toBe(true);
+      expect(body.path).toBe(file);
+      expect(body.conflicts).toEqual([{ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' }]);
+      // No conflict, no key: the documented shape is unchanged.
+      const clean = (await (await api('POST', '/add', { canonical: 'Zorkmid', aliases: ['zork mid'], scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
+      expect(clean).not.toHaveProperty('conflicts');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('add validates the category', async () => {
     const res = await api('POST', '/add', { canonical: 'X', category: 'nope' });
     expect(res.status).toBe(400);
@@ -493,6 +518,34 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(body.paths.global).toBe(env.globalPath);
     expect(body.paths.project).toBeUndefined();
     expect(body.skippedProject).toBeUndefined();
+  });
+
+  // Catches: paths.project named the skipped (untrusted) file while MCP list_terms listed only loaded files.
+  it('/lexicon paths lists the files merged, as MCP list_terms does', async () => {
+    const skipped = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`)).json()) as {
+      paths: { global: string; project?: string };
+      skippedProject?: string;
+    };
+    expect(skipped.paths).toEqual({ global: env.globalPath });
+    expect(skipped.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+
+    const repo = path.join(env.home, 'trusted-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: TrustedCorp\n    aliases: [trustcorp]\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const trusted = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(repo)}`)).json()) as {
+        paths: { global: string; project?: string };
+        projectTrust?: string;
+        skippedProject?: string;
+      };
+      expect(trusted.paths).toEqual({ global: env.globalPath, project: file });
+      expect(trusted.projectTrust).toBe('trusted');
+      expect(trusted.skippedProject).toBeUndefined();
+    } finally {
+      await untrustProject(file, { globalPath: env.globalPath });
+    }
   });
 
   it('/export/<format> serves the exporter content type', async () => {
@@ -712,6 +765,32 @@ describe('limits and errors', () => {
     expect(res.status).toBe(405);
   });
 
+  // Catches: a 405 carried no `Allow` header (RFC 9110 requires one), so a
+  // client could only learn the right method by parsing the message.
+  it('every 405 names the allowed methods in Allow, and the JSON error is unchanged', async () => {
+    const cases: [string, string, string, string][] = [
+      ['GET', '/normalize', 'POST', 'use POST'],
+      ['GET', '/learn', 'POST', 'use POST'],
+      ['GET', '/add', 'POST', 'use POST'],
+      ['POST', '/lexicon', 'GET', 'use GET'],
+      ['POST', '/stats', 'GET', 'use GET'],
+      ['POST', '/packs', 'GET', 'use GET'],
+      ['PUT', '/packs/developer', 'POST, DELETE', 'use POST to install or DELETE to remove'],
+      ['POST', '/aliases', 'GET', 'use GET'],
+      ['POST', '/export/json', 'GET', 'use GET'],
+      ['POST', '/health', 'GET', 'use GET'],
+      ['POST', '/pair', 'GET', 'use GET'],
+    ];
+    for (const [method, route, allow, error] of cases) {
+      const res = await api(method, route, method === 'GET' ? undefined : {});
+      expect(res.status, `${method} ${route}`).toBe(405);
+      expect(res.headers.get('allow'), `${method} ${route}`).toBe(allow);
+      expect(await res.json()).toEqual({ error });
+    }
+    // Other errors carry no Allow.
+    expect((await api('GET', '/nope')).headers.get('allow')).toBeNull();
+  });
+
   it('503 once the concurrency cap is reached', async () => {
     const tiny = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true, maxConcurrent: 0 });
     const t = await tiny.start();
@@ -724,6 +803,45 @@ describe('limits and errors', () => {
     }
   });
 });
+
+describe('request log', () => {
+  // Catches: a client that hung up before the response finished left no log line at all.
+  it('logs one line for a finished request and one for a request the client aborted', async () => {
+    const lines: string[] = [];
+    const logged = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, log: (l) => lines.push(l) });
+    const t = await logged.start();
+    try {
+      await (await fetch(`${t.url}/health`)).text();
+      await waitFor(() => lines.some((l) => l.startsWith('[serve] GET /health 200 ')));
+
+      const socket = net.connect(t.port, '127.0.0.1');
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+      });
+      socket.write(
+        `POST /normalize HTTP/1.1\r\nHost: 127.0.0.1:${t.port}\r\nAuthorization: Bearer ${t.token}\r\n` +
+          'Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{"text":',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      socket.destroy();
+      await waitFor(() => lines.some((l) => l.includes('aborted')));
+      const aborted = lines.filter((l) => l.startsWith('[serve] POST /normalize'));
+      expect(aborted).toHaveLength(1);
+      expect(aborted[0]).toMatch(/^\[serve\] POST \/normalize aborted by the client before a response was sent \d+ms$/);
+    } finally {
+      await logged.stop();
+    }
+  });
+});
+
+async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
+  const until = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > until) throw new Error('timed out waiting for the log line');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // trust gate
@@ -756,10 +874,120 @@ describe('trust gate', () => {
 });
 
 // ---------------------------------------------------------------------------
+// requests that used to succeed while doing something else
+// ---------------------------------------------------------------------------
+
+describe('requests that used to succeed while doing something else', () => {
+  // A server of its own, so these writes cannot shift another suite's counts.
+  let home3: string;
+  let global3: string;
+  let cwd3: string;
+  let srv3: LexiconHttpServer;
+  let info3: ServeStartInfo;
+  const api = (method: string, route: string, body?: unknown): Promise<Response> =>
+    fetch(`${info3.url}${route}`, {
+      method,
+      headers: { Authorization: `Bearer ${info3.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  beforeAll(async () => {
+    home3 = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-strict-')));
+    global3 = path.join(home3, 'lexicon', 'lexicon.yaml');
+    cwd3 = path.join(home3, 'work');
+    await fs.mkdir(cwd3, { recursive: true });
+    srv3 = createServer({ port: 0, cwd: cwd3, globalPath: global3, quiet: true, reloadMs: 0 });
+    info3 = await srv3.start();
+  });
+  afterAll(async () => {
+    await srv3.stop();
+    await fs.rm(home3, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // Catches: `dry_run` (for dryRun) was dropped, so the "dry run" recorded hits and answered 200.
+  it('an unknown body key is a 400 naming it, on every POST route, and nothing is written', async () => {
+    await addTerm({ canonical: 'Strictly', aliases: ['strictlee'] }, { globalPath: global3, cwd: cwd3 });
+    const before = await fs.readFile(global3, 'utf8');
+    const routes: [string, Record<string, unknown>][] = [
+      ['/normalize', { text: 'ping strictlee', dry_run: true }],
+      ['/learn', { heard: 'strictlea', meant: 'Strictly', scop: 'global' }],
+      ['/add', { canonical: 'Typo', alias: ['typoo'] }],
+      ['/packs/developer', { scpe: 'project' }],
+    ];
+    for (const [route, body] of routes) {
+      const res = await api('POST', route, body);
+      expect(res.status, route).toBe(400);
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toMatch(/invalid request body/);
+      expect(error).toMatch(/dry_run|scop|alias|scpe/);
+    }
+    expect(await fs.readFile(global3, 'utf8')).toBe(before);
+    const stats = (await (await api('GET', '/stats')).json()) as LexiconStats;
+    expect(stats.topTerms.find((t) => t.canonical === 'Strictly')).toBeUndefined();
+  });
+
+  // Catches: a typo'd cwd fell back to the global lexicon alone and answered 200 for a project nobody looked at.
+  it('a cwd that is empty or not an existing directory is a 400, on GET and POST', async () => {
+    const missing = path.join(home3, 'no-such-dir');
+    const file = global3;
+    for (const cwd of [missing, file]) {
+      const post = await api('POST', '/normalize', { text: 'hello', cwd });
+      expect(post.status).toBe(400);
+      expect(((await post.json()) as { error: string }).error).toContain('cwd is not an existing directory');
+      for (const route of ['/lexicon', '/stats', '/packs', '/export/json', '/health']) {
+        const res = await api('GET', `${route}?cwd=${encodeURIComponent(cwd)}`);
+        expect(res.status, route).toBe(400);
+      }
+      expect((await api('DELETE', `/packs/developer?cwd=${encodeURIComponent(cwd)}`)).status).toBe(400);
+    }
+    const empty = await api('GET', '/lexicon?cwd=');
+    expect(empty.status).toBe(400);
+    expect(((await empty.json()) as { error: string }).error).toContain('cwd must not be empty');
+    // Without the token /health?cwd= is still a 401, so it cannot probe which directories exist.
+    expect((await fetch(`${info3.url}/health?cwd=${encodeURIComponent(missing)}`)).status).toBe(401);
+    // An existing directory works as before.
+    expect((await api('GET', `/lexicon?cwd=${encodeURIComponent(cwd3)}`)).status).toBe(200);
+  });
+
+  // Catches: DELETE ignored its body, so { scope: 'project' } removed the pack from the global lexicon.
+  it('DELETE /packs/:name with a body is a 400 that points at the query string', async () => {
+    const res = await api('DELETE', '/packs/developer', { scope: 'project' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('query string');
+    expect((await api('DELETE', '/packs/developer')).status).toBe(200);
+  });
+
+  // Catches: DELETE read only scope and cwd from the query and ignored any
+  // other key, so a typo (?scop=project) removed the pack from the global
+  // lexicon and answered 200, the lie the strict body fixed for POST.
+  it('DELETE /packs/:name refuses an unknown or repeated query parameter and removes nothing', async () => {
+    expect((await api('POST', '/packs/developer', {})).status).toBe(200);
+    const before = await fs.readFile(global3, 'utf8');
+    const typo = await api('DELETE', '/packs/developer?scop=project');
+    expect(typo.status).toBe(400);
+    expect(((await typo.json()) as { error: string }).error).toContain('unknown query parameter "scop"');
+    const twice = await api('DELETE', '/packs/developer?scope=project&scope=global');
+    expect(twice.status).toBe(400);
+    expect(await fs.readFile(global3, 'utf8')).toBe(before);
+    expect((await api('DELETE', '/packs/developer?scope=global')).status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CLI handlers
 // ---------------------------------------------------------------------------
 
 describe('lexicon serve (CLI)', () => {
+  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty.
+  it('--json prints { ok: false, error } when two modes are combined', async () => {
+    const io = memIO();
+    expect(await runServe({ show: true, status: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
+    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    // --install prints a transcript, not JSON, so its refusal stays on stderr.
+    const install = memIO();
+    expect(await runServe({ install: true, uninstall: true, json: true, globalPath: env.globalPath }, install)).toBe(1);
+    expect(install.out.join('')).toBe('');
+  });
+
   it('--show prints the URL and token', async () => {
     const io = memIO();
     const code = await runServe({ show: true, port: info.port, globalPath: env.globalPath }, io, { home: env.home });
@@ -771,7 +999,10 @@ describe('lexicon serve (CLI)', () => {
 
     const json = memIO();
     await runServe({ show: true, json: true, port: info.port, globalPath: env.globalPath }, json);
+    // Catches: the --show success object had no `ok`, though a failure leads with `ok: false`.
+    expect(Object.keys(JSON.parse(json.out.join('')))[0]).toBe('ok');
     expect(JSON.parse(json.out.join(''))).toEqual({
+      ok: true,
       url: `http://127.0.0.1:${info.port}`,
       port: info.port,
       token: info.token,
@@ -790,6 +1021,33 @@ describe('lexicon serve (CLI)', () => {
     const down = memIO();
     expect(await runServe({ status: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
     expect(down.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+  });
+
+  // Catches: --status created serve.json (and minted a token) when it was missing; a status query must write nothing.
+  it('--status writes nothing and says serve is not configured when serve.json is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'status-unconfigured-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    const servePath = getServePath({ globalPath });
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+
+    const text = memIO();
+    expect(await runServe({ status: true, port: c.port, globalPath }, text, { home: env.home })).toBe(1);
+    expect(text.out.join('')).toContain('serve is not configured:');
+    expect(text.out.join('')).toContain('does not exist; lexicon serve creates it');
+    expect(text.out.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
+
+    const json = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath }, json)).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, configured: false, configPath: servePath, note: expect.stringContaining('not configured') });
+    await expect(fs.stat(servePath)).rejects.toThrow();
+    expect(await fs.readdir(dir)).toEqual([]);
+
+    // A configured one carries no configured/note keys.
+    const configured = memIO();
+    await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, configured);
+    expect(JSON.parse(configured.out.join(''))).not.toHaveProperty('configured');
   });
 
   /**
@@ -813,7 +1071,14 @@ describe('lexicon serve (CLI)', () => {
 
       const json = memIO();
       expect(await runServe({ status: true, json: true, port: t.port, globalPath }, json)).toBe(1);
-      expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, running: true, status: 500, reason: expect.stringContaining('Failed to parse') });
+      expect(JSON.parse(json.out.join(''))).toMatchObject({
+        up: false,
+        running: true,
+        status: 500,
+        reason: expect.stringContaining('Failed to parse'),
+        error: expect.stringContaining('Failed to parse'),
+        hint: expect.stringContaining('Starting another server will not help'),
+      });
     } finally {
       await broken.stop();
     }
@@ -841,12 +1106,72 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: a 200 from another program on the port read as "down" with
+  // "start it" advice that fails with EADDRINUSE, and the JSON lacked the
+  // `error` and `hint` keys MCP serve_status returns.
+  it('--status names another program on the port, and --json carries error and hint', async () => {
+    const other = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"status":"fine"}');
+    });
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const port = (other.address() as net.AddressInfo).port;
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port, globalPath: env.globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(out).toContain(`something answered at http://127.0.0.1:${port}, but it is not lexicon serve`);
+      expect(out).toContain('lexicon serve --port <n>');
+      expect(out).not.toContain('start it with');
+
+      const json = memIO();
+      expect(await runServe({ status: true, json: true, port, globalPath: env.globalPath }, json)).toBe(1);
+      expect(JSON.parse(json.out.join(''))).toEqual({
+        ok: false,
+        up: false,
+        url: `http://127.0.0.1:${port}`,
+        reason: 'unexpected /health response',
+        error: 'unexpected /health response (not lexicon serve)',
+        hint: expect.stringContaining('lexicon serve --port <n>'),
+      });
+    } finally {
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
+
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    const d = JSON.parse(down.out.join('')) as Record<string, unknown>;
+    expect(d).toMatchObject({ up: false, hint: expect.stringContaining('lexicon serve') });
+    expect(d.error).toBe(d.reason);
+  });
+
   it('--status --json', async () => {
     const io = memIO();
     expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);
     const parsed = JSON.parse(io.out.join('')) as { up: boolean; health: { ok: boolean } };
     expect(parsed.up).toBe(true);
     expect(parsed.health.ok).toBe(true);
+  });
+
+  // Catches: --status --json had no top-level `ok`, though every other --json
+  // document leads with it; a script had to know to read `up` here only.
+  it('--status --json leads with ok equal to up (and to exit code 0)', async () => {
+    const first = (out: string): [string, unknown] => Object.entries(JSON.parse(out) as Record<string, unknown>)[0]!;
+    const io = memIO();
+    expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);
+    expect(first(io.out.join(''))).toEqual(['ok', true]);
+    expect(JSON.parse(io.out.join(''))).toMatchObject({ ok: true, up: true });
+
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    expect(first(down.out.join(''))).toEqual(['ok', false]);
+    expect(JSON.parse(down.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.any(String), hint: expect.any(String) });
   });
 
   it('refuses two modes at once', async () => {
@@ -884,7 +1209,38 @@ describe('lexicon serve (CLI)', () => {
     // --json reports the URL and whether the opener ran.
     const json = memIO();
     expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec([]) })).toBe(0);
-    expect(JSON.parse(json.out.join(''))).toEqual({ up: true, url, opened: true });
+    // Catches: a pair that opened the browser had no `ok`, though one that did not leads with `ok: false`.
+    expect(JSON.parse(json.out.join(''))).toEqual({ ok: true, up: true, url, opened: true });
+    expect(Object.keys(JSON.parse(json.out.join('')))[0]).toBe('ok');
+  });
+
+  // Catches: --pair created serve.json (and minted a token) when it was
+  // missing, so asking to pair configured serve as a side effect.
+  it('--pair writes nothing and says serve is not configured when serve.json is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'pair-unconfigured-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    const servePath = getServePath({ globalPath });
+    const calls: string[][] = [];
+    const text = memIO();
+    expect(await runServe({ pair: true, port: info.port, globalPath }, text, { home: env.home, platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(text.err.join('')).toContain('lexicon: serve is not configured:');
+    expect(text.err.join('')).toContain('does not exist; lexicon serve creates it');
+    expect(text.err.join('')).toContain('lexicon serve --install');
+    expect(text.out.join('')).toBe('');
+
+    const json = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath }, json, { platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toEqual({
+      ok: false,
+      error: `serve is not configured: ${servePath} does not exist; lexicon serve creates it`,
+      nextStep: expect.stringContaining('lexicon serve --install'),
+      up: false,
+      configured: false,
+      configPath: servePath,
+    });
+    expect(calls).toEqual([]);
+    await expect(fs.stat(servePath)).rejects.toThrow();
+    expect(await fs.readdir(dir)).toEqual([]);
   });
 
   it('--pair exits 1 with a start hint when the server is down, and when no browser opens', async () => {
@@ -897,11 +1253,17 @@ describe('lexicon serve (CLI)', () => {
     expect(calls).toEqual([]);
     expect(down.err.join('')).toContain(`lexicon serve is down at http://127.0.0.1:${c.port}`);
     expect(down.err.join('')).toContain('lexicon serve --install');
+    const downJson = memIO();
+    expect(await runServe({ pair: true, json: true, port: c.port, globalPath: env.globalPath }, downJson, { platform: 'darwin', exec: fakeExec(calls) })).toBe(1);
+    expect(JSON.parse(downJson.out.join(''))).toMatchObject({ ok: false, error: expect.stringContaining('lexicon serve is down'), nextStep: expect.stringContaining('lexicon serve'), up: false, url: `http://127.0.0.1:${c.port}/pair` });
 
     const failed = memIO();
     expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, failed, { platform: 'darwin', exec: fakeExec([], 1) })).toBe(1);
     expect(failed.err.join('')).toContain('could not open a browser');
     expect(failed.out.join('')).toContain(`http://127.0.0.1:${info.port}/pair`);
+    const failedJson = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, failedJson, { platform: 'darwin', exec: fakeExec([], 1) })).toBe(1);
+    expect(JSON.parse(failedJson.out.join(''))).toMatchObject({ ok: false, up: true, opened: false, error: expect.any(String) });
   });
 
   it('runs in the foreground until the signal fires and prints the listening line', async () => {
@@ -924,6 +1286,26 @@ describe('lexicon serve (CLI)', () => {
     expect(await run).toBe(0);
     expect(io.out.join('')).toContain(`lexicon serve listening on ${seen!.url} (token in ~/.config/lexicon/serve.json)`);
     expect(io.err.join('')).not.toContain('warning');
+  });
+
+  // Catches: the --json listening line had no `ok`, though a failed start prints `{ ok: false, error }`.
+  it('--json prints one listening document that leads with ok: true', async () => {
+    const io = memIO();
+    const controller = new AbortController();
+    let seen: { port: number; url: string; token: string } | undefined;
+    const run = runServe({ port: 0, quiet: true, json: true, cwd: env.cwd, globalPath: env.globalPath }, io, {
+      home: env.home,
+      signal: controller.signal,
+      onListening: (i) => {
+        seen = i;
+      },
+    });
+    for (let i = 0; i < 200 && !seen; i += 1) await new Promise((r) => setTimeout(r, 10));
+    controller.abort();
+    expect(await run).toBe(0);
+    const doc = JSON.parse(io.out.join('')) as Record<string, unknown>;
+    expect(Object.keys(doc)[0]).toBe('ok');
+    expect(doc).toMatchObject({ ok: true, url: seen!.url, port: seen!.port, token: seen!.token });
   });
 
   it('warns in red-or-plain when --host is not loopback, and reports a busy port', async () => {
@@ -1041,6 +1423,34 @@ describe('lexicon serve (CLI)', () => {
       expect(await runServe({ uninstall: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec(calls2) })).toBe(0);
       expect(calls2[0]).toEqual(['systemctl', '--user', 'disable', '--now', SYSTEMD_UNIT_NAME]);
       await expect(fs.access(unitPath)).rejects.toThrow();
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: any unlink failure (a directory in place, permissions) printed "was not installed" and exited 0.
+  it('--uninstall reports a service file it could not remove, and still says when there was none', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const none = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, none, { platform: 'linux', home, env: {}, exec: fakeExec([]) })).toBe(0);
+      expect(none.out.join('')).toContain('was not installed');
+
+      // A directory where the unit file goes: unlink fails with something other than ENOENT.
+      const unitPath = systemdUnitPath(home, {});
+      await fs.mkdir(unitPath, { recursive: true });
+      const calls: string[][] = [];
+      const linux = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, linux, { platform: 'linux', home, env: {}, exec: fakeExec(calls) })).toBe(1);
+      expect(linux.out.join('')).not.toContain('was not installed');
+      expect(linux.err.join('')).toContain(`could not remove ${unitPath}`);
+      expect(calls.at(-1)).toEqual(['systemctl', '--user', 'daemon-reload']);
+
+      const plistPath = launchAgentPath(home, {});
+      await fs.mkdir(plistPath, { recursive: true });
+      const mac = memIO();
+      expect(await runServe({ uninstall: true, globalPath: env.globalPath }, mac, { platform: 'darwin', home, env: {}, exec: fakeExec([]), uid: 501 })).toBe(1);
+      expect(mac.err.join('')).toContain(`could not remove ${plistPath}`);
     } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
@@ -1438,6 +1848,35 @@ describe('packs and aliases routes', () => {
     expect((await api2('POST', '/packs', {})).status).toBe(405);
   });
 
+  // Catches: GET /packs left out what MCP list_packs and `pack list --json` report:
+  // a community pack the lexicon lists with no registry record, and a skipped project file.
+  it('GET /packs lists community refs and carries registryMismatch, projectTrust and skippedProject', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-packs-community-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repo = path.join(dir, 'repo');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nsettings:\n  packs: [developer, example/cardiology]\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nsettings:\n  packs: [ai]\nterms: []\n');
+    const srv = createServer({ port: 0, cwd: repo, globalPath, quiet: true, reloadMs: 0 });
+    const started = await srv.start();
+    try {
+      const res = await fetch(`${started.url}/packs`, { headers: { Authorization: `Bearer ${started.token}` } });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { packs: { name: string; installed: boolean }[]; installed: string[]; registryMismatch?: unknown; projectTrust?: string; skippedProject?: string };
+      expect(body.installed).toEqual(['developer', 'example/cardiology']);
+      expect(body.packs.find((p) => p.name === 'developer')?.installed).toBe(true);
+      // The untrusted project file records `ai`; it is not read, so `ai` is not installed.
+      expect(body.packs.find((p) => p.name === 'ai')?.installed).toBe(false);
+      expect(body.registryMismatch).toEqual({ fileOnly: ['example/cardiology'], recordOnly: [] });
+      expect(body.projectTrust).toBe('untrusted');
+      expect(body.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {
     const first = await api2('POST', '/packs/developer');
     expect(first.status).toBe(200);
@@ -1605,10 +2044,14 @@ describe('consumer contract: Phantom desktop voice client', () => {
     }
   });
 
+  // Phantom caches only when `paths` has no project AND `projectTrust` is
+  // absent; `projectTrust` is set whenever a project file exists, so a skipped
+  // file still keeps the response live-only after `paths` dropped it.
   it('GET /lexicon reports project context, which Phantom keeps out of its cache', async () => {
     const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`);
-    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string };
-    expect(body.paths.project).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string; skippedProject?: string };
+    expect(body.paths.project).toBeUndefined();
+    expect(body.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
     expect(body.projectTrust).toBe('untrusted');
   });
 

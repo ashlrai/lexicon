@@ -17,12 +17,13 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon } from '../core/index.js';
+import { exportLexicon, loadLexicon, sanitizeForDisplayMax } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
-import { SERVER_NAME, log, readPackageVersion } from './shared.js';
+import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
 import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
@@ -40,6 +41,18 @@ export interface ServerOptions {
   normalizeBudgetMs?: number;
   /** Characters of `text` normalize_transcript matches. Default MCP_NORMALIZE_MAX_CHARS. */
   normalizeMaxChars?: number;
+}
+
+/**
+ * A tool config whose raw `inputSchema` shape is replaced by a strict
+ * z.object of the same shape, so undeclared arguments are refused instead of
+ * silently dropped. A schema that is already a zod type is left alone.
+ */
+export function strictInput(config: unknown): unknown {
+  if (typeof config !== 'object' || config === null) return config;
+  const shape = (config as { inputSchema?: unknown }).inputSchema;
+  if (shape === undefined || shape instanceof z.ZodType) return config;
+  return { ...config, inputSchema: z.object(shape as z.ZodRawShape).strict() };
 }
 
 /** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
@@ -70,6 +83,15 @@ export function cwdFromRoots(roots: ReadonlyArray<{ uri: string }>): string | un
 const VOICE_CONTEXT_INSTRUCTION =
   'Apply these canonical spellings to everything I say for the rest of this session. ' +
   'If you see a word that looks like a garbled version of one of them, use the canonical form without asking.';
+
+/**
+ * What `voice-context` and `lexicon://me` say when the merged lexicon has no
+ * terms: an empty table under "apply these spellings" read as a lexicon that
+ * was loaded and simply had nothing to correct.
+ */
+const EMPTY_LEXICON_NOTE =
+  'Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. ' +
+  'If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).';
 
 /** The `onboard` prompt: a user-role script that drives the model through first-run setup. */
 const ONBOARD_PROMPT = [
@@ -114,7 +136,7 @@ const SERVER_INSTRUCTIONS = [
   'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
   PROACTIVE_OFFER,
   'setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.',
-  'Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.',
+  'Starter packs (list_packs: developer, ai, business, voice-tools) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.',
   'When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.',
   'Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name.',
 ].join('\n');
@@ -167,9 +189,16 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // Every tool waits for an in-flight roots/list too, not only the ones that
   // call load(): a handler that resolved the project path before the answer
   // and named it after would describe two different directories.
+  //
+  // Each tool's argument shape is also made strict here. The SDK wraps a raw
+  // shape in a stripping z.object, so a misspelt key (`alias` for `aliases`,
+  // `txt` for `text`) was dropped without a word and the call went ahead as if
+  // the argument had never been given: add_term then auto-suggested aliases the
+  // agent did not ask for. A strict object refuses the unknown key by name and
+  // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
   const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, config as never, (async (...args: unknown[]) => {
+    registerTool(name, strictInput(config) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);
@@ -186,6 +215,21 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
 
+  // Resources and prompts have no isError result: a thrown error becomes the
+  // JSON-RPC error message. For a lexicon file that does not parse, that was
+  // the bare parse error; it now carries the fix, as a tool's error does.
+  const loadForContext = async (): Promise<LoadedLexicon> => {
+    try {
+      return await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      const fixed = withLexiconFix(message);
+      if (fixed === message) throw err;
+      log('lexicon unreadable:', message);
+      throw new Error(fixed);
+    }
+  };
+
   server.registerResource(
     'Personal voice lexicon',
     'lexicon://me',
@@ -196,8 +240,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       mimeType: 'text/markdown',
     },
     async (uri) => {
-      const loaded = await load();
-      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded);
+      const loaded = await loadForContext();
+      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -209,15 +253,22 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     'lexicon://json',
     {
       title: 'Lexicon JSON',
-      description: 'The merged lexicon (global + project) as raw JSON.',
+      description:
+        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.',
       mimeType: 'application/json',
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
+      // Additive keys, present only when a project file was skipped (path
+      // only, never its contents), as list_terms and lexicon_stats report it.
+      // The lexicon JSON importer strips unknown keys, so the text still imports.
+      const skipped = skippedProjectFields(loaded);
+      const text =
+        Object.keys(skipped).length > 0
+          ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}\n`
+          : exportLexicon(loaded.merged, 'json');
       return {
-        contents: [
-          { uri: uri.href, mimeType: 'application/json', text: exportLexicon(loaded.merged, 'json') },
-        ],
+        contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };
     },
   );
@@ -232,15 +283,17 @@ export function createServer(opts: ServerOptions = {}): McpServer {
         "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session.",
     },
     async () => {
-      const loaded = await load();
+      const loaded = await loadForContext();
       // The same path-only note lexicon://me carries, so the session knows the
       // repo's own spellings are missing and why.
       const snippet = exportLexicon(loaded.merged, 'claude-md').trimEnd() + skippedProjectSuffix(loaded);
+      // Nothing to apply: say so instead of asking the model to apply an empty table.
+      const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
           {
             role: 'user',
-            content: { type: 'text', text: `${snippet}\n\n${VOICE_CONTEXT_INSTRUCTION}` },
+            content: { type: 'text', text: `${snippet}\n\n${instruction}` },
           },
         ],
       };
@@ -262,10 +315,22 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   return server;
 }
 
-/** A path-only note on a skipped project lexicon, never its contents; '' when none was skipped. */
+/**
+ * A path-only note on a skipped project lexicon, never its contents; '' when
+ * none was skipped. The path goes through the display sanitizer: this text is
+ * raw markdown (no JSON escaping), and the directory is named by whoever
+ * published the repo, so an escape sequence or bidi override in it would
+ * otherwise reach the conversation verbatim.
+ */
 function skippedProjectSuffix(loaded: LoadedLexicon): string {
   if (!loaded.skippedProject) return '';
-  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+  const where = sanitizeForDisplayMax(loaded.skippedProject.path, 4096);
+  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+}
+
+/** `EMPTY_LEXICON_NOTE` after a blank line when the merged lexicon has no terms, else ''. */
+function emptyLexiconSuffix(loaded: LoadedLexicon): string {
+  return loaded.merged.terms.length === 0 ? `\n${EMPTY_LEXICON_NOTE}\n` : '';
 }
 
 export async function main(): Promise<void> {

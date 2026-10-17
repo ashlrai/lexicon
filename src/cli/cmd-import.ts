@@ -20,7 +20,7 @@ import {
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
 import { TERM_SOURCES } from '../core/index.js';
-import { renderTable, safe } from './io.js';
+import { jsonOk, refuse, renderTable, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { runImportGuided } from './cmd-import-guided.js';
 import type { ImportGuidedOptions } from './cmd-import-guided.js';
@@ -201,7 +201,7 @@ export async function runImport(
   report.counts.merged = report.terms.length - report.counts.created;
 
   if (opts.json) {
-    io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
   } else {
     printReport(report, io);
   }
@@ -260,8 +260,7 @@ export function registerImportCommands(program: Command, io: IO): void {
       };
       if (merged.guided) {
         if (file !== undefined) {
-          io.stderr('lexicon: --guided takes no file argument (it harvests from your sources instead)\n');
-          process.exitCode = 1;
+          process.exitCode = refuse(io, merged.json, '--guided takes no file argument (it harvests from your sources instead)');
           return;
         }
         const code = await runImportGuided(merged, io);
@@ -269,8 +268,7 @@ export function registerImportCommands(program: Command, io: IO): void {
         return;
       }
       if (file === undefined) {
-        io.stderr('lexicon: pass a file to import, - for stdin, or --guided for the vocabulary import wizard\n');
-        process.exitCode = 1;
+        process.exitCode = refuse(io, merged.json, 'pass a file to import, - for stdin, or --guided for the vocabulary import wizard');
         return;
       }
       const code = await runImport(file, merged, io);
