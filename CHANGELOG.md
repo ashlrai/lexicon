@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `learn_correction` writes the `remove_term` arguments in its conflict summary as JSON string literals, so a canonical or alias holding a double quote no longer blurs where an argument ends.
 - MCP `lexicon_stats` and the `voice-context` prompt name a project lexicon that was skipped as untrusted (path only, as `list_terms` and `lexicon://me` already did). Both left the repo's terms out with no word why.
 - The hook's correction note writes `heard` and `meant` as JSON string literals. A spelling holding a double quote was wrapped in quotes unescaped, so the `learn_correction` arguments it told the agent to pass had no clear end. A plain spelling reads the same as before.
 - `learn_correction` (MCP, `lexicon learn`, `POST /learn`) says when the misheard spelling also belongs to a term in the repo's untrusted (or changed) project lexicon. The correction was written globally with no conflict reported, and once the user trusted the file its term won the merge. The result now carries `untrustedProject { path, trust }`, the MCP summary points at `lexicon trust`, and the CLI prints a `warn:` line. The file is still never merged, and none of its terms are reported.

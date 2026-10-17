@@ -411,7 +411,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ? ''
           : conflict.as === 'alias'
             ? `, but "${conflict.spelling}" is also an alias of "${conflict.canonical}" (${conflict.scope}), so it may still be corrected to that. ` +
-              `If the user agrees, call remove_term with canonical "${conflict.canonical}", alias "${conflict.spelling}", scope "${conflict.scope}".`
+              // JSON literals: a `"` in a spelling must not blur where an argument ends.
+              `If the user agrees, call remove_term with canonical ${JSON.stringify(conflict.canonical)}, alias ${JSON.stringify(conflict.spelling)}, scope "${conflict.scope}".`
             : `, but "${conflict.spelling}" is its own term (${conflict.scope}), so it may still be kept as written. ` +
               `If the user never means "${conflict.canonical}", remove that term with remove_term.`;
         // Path only: the untrusted file's terms never reach the agent.

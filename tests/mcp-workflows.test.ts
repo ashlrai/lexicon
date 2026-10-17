@@ -284,6 +284,12 @@ describe('learn_correction when another term already claims `heard`', () => {
     expect(normalized.output).toBe('deploy to Vercel');
   });
 
+  it('escapes a quote in the remove_term arguments it names', async () => {
+    await call('add_term', { canonical: 'The "Verse" Co', aliases: ['Ver"sel'] });
+    const payload = JSON.parse((await call('learn_correction', { heard: 'ver"sel', meant: 'Vercel' })).text) as { summary: string };
+    expect(payload.summary).toContain('remove_term with canonical "The \\"Verse\\" Co", alias "Ver\\"sel", scope "global"');
+  });
+
   it('names a term whose canonical is the heard spelling, which no alias can override', async () => {
     await call('add_term', { canonical: 'Verse', aliases: ['vurse'] });
     const payload = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercel' })).text) as { conflict?: { canonical: string; as: string }; summary: string };
