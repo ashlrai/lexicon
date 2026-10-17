@@ -57,8 +57,9 @@ once, and take silence as a no. The agent that quietly installs software
 nobody asked for and the agent that pitches on every message are the same
 failure.
 
-The `onboard` prompt (Claude Code: `/lexicon:onboard`, or `/lexicon setup`
-from the plugin command) scripts the conversation:
+The `onboard` prompt (Claude Code lists MCP prompts as `/mcp__<server>__<prompt>`
+slash commands, so `/mcp__lexicon__onboard` for a server added as `lexicon`; or
+`/lexicon setup` from the plugin command) scripts the conversation:
 
 > **User:** /lexicon setup
 > **Agent:** What company or product names should always be spelled a
