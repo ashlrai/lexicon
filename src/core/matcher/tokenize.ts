@@ -1,7 +1,8 @@
 /**
  * Splitting input into the tokens the matcher slides its windows over, and
  * working out which character ranges to leave alone: code fences, inline
- * code, URLs, emails and file paths are never rewritten.
+ * code, HTML `<code>`/`<pre>` elements, URLs, emails and file paths are never
+ * rewritten.
  */
 import { foldLower } from './text.js';
 
@@ -281,8 +282,51 @@ export function codeSpanRanges(text: string): Range[] {
   return out;
 }
 
+/**
+ * An HTML `<code>` or `<pre>` opening tag (any case, with attributes), and the
+ * closing tag of each. Only real tags: the escaped `&lt;code&gt;` an HTML page
+ * uses to show markup as text is prose, and is corrected like any other.
+ */
+const HTML_CODE_OPEN_RE = /<(code|pre)(?=[\s>/])[^<>]*>/gi;
+const HTML_CODE_CLOSE_RE: Readonly<Record<string, RegExp>> = { code: /<\/code\s*>/gi, pre: /<\/pre\s*>/gi };
+
+/**
+ * `<code>...</code>` and `<pre>...</pre>` in HTML (or in markdown, which
+ * allows inline HTML), opening tag to closing tag. An element that never
+ * closes is literal text, not a range: unlike a fence, a stray `<code>` in a
+ * sentence is usually someone naming the tag.
+ *
+ * Linear: the search for a closing tag starts where the last range ended, and
+ * once a tag name has no closing tag left in the text no later opener of that
+ * name is searched for again.
+ */
+export function htmlCodeRanges(text: string): Range[] {
+  const out: Range[] = [];
+  if (!text.includes('<')) return out;
+  const unclosed = new Set<string>();
+  HTML_CODE_OPEN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = HTML_CODE_OPEN_RE.exec(text)) !== null) {
+    const name = m[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const close = HTML_CODE_CLOSE_RE[name];
+    close.lastIndex = m.index + m[0].length;
+    const c = close.exec(text);
+    if (!c) {
+      unclosed.add(name);
+      if (unclosed.size === 2) break;
+      continue;
+    }
+    const end = c.index + c[0].length;
+    out.push({ start: m.index, end });
+    HTML_CODE_OPEN_RE.lastIndex = end;
+  }
+  return out;
+}
+
 export function collectRanges(text: string): Range[] {
   const ranges: Range[] = indentedCodeRanges(text);
+  for (const r of htmlCodeRanges(text)) ranges.push(r);
   // A loop, not push(...): a pasted address list can hold more ranges than a call takes arguments.
   for (const r of emailRanges(text)) ranges.push(r);
   for (const r of codeSpanRanges(text)) ranges.push(r);

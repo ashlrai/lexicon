@@ -48,3 +48,35 @@ describe('code the matcher leaves alone', () => {
     expect(performance.now() - t0).toBeLessThan(500);
   });
 });
+
+describe('HTML code elements', () => {
+  it('skips a real <code> or <pre> element, attributes and any case included', () => {
+    expect(out('<p>ashler is <code>ashler run</code></p>')).toBe('<p>Ashlr.AI is <code>ashler run</code></p>');
+    expect(out('<pre class="sh">\nashler deploy\n</pre> then ashler')).toBe('<pre class="sh">\nashler deploy\n</pre> then Ashlr.AI');
+    expect(out('<CODE>ashler</CODE> and <pre><code>ashler</code></pre> and ashler')).toBe(
+      '<CODE>ashler</CODE> and <pre><code>ashler</code></pre> and Ashlr.AI',
+    );
+  });
+
+  it('corrects escaped markup, which is text the page shows, not code', () => {
+    expect(out('wrap &lt;code&gt;ashler&lt;/code&gt; here')).toBe('wrap &lt;code&gt;Ashlr.AI&lt;/code&gt; here');
+    // ...unless the escaped sample itself sits inside a real code element.
+    expect(out('<pre>&lt;code&gt;ashler&lt;/code&gt;</pre>')).toBe('<pre>&lt;code&gt;ashler&lt;/code&gt;</pre>');
+  });
+
+  it('treats an unclosed tag, or a longer tag name, as text', () => {
+    expect(out('the <code> tag holds ashler')).toBe('the <code> tag holds Ashlr.AI');
+    expect(out('<codex>ashler</codex> <code-block>ashler</code-block>')).toBe(
+      '<codex>Ashlr.AI</codex> <code-block>Ashlr.AI</code-block>',
+    );
+  });
+
+  it('finds HTML code elements in linear time', () => {
+    const unclosed = '<code> ashler <pre> '.repeat(20000);
+    const t0 = performance.now();
+    collectRanges(unclosed);
+    const closed = '<code>x</code> <pre> '.repeat(20000);
+    collectRanges(closed);
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+});
