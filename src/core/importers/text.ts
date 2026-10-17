@@ -8,6 +8,7 @@
  *
  * The `=` form (space-padded) is checked first so canonicals containing a
  * colon (`Ashlr:AI = ...`) and aliases containing commas survive round trips.
+ * The colon of `scheme://` never separates, so a URL line stays one canonical.
  * `lexicon export text` writes this format.
  */
 import { rowFor } from './shared.js';
@@ -16,6 +17,8 @@ import type { RawImport } from './shared.js';
 const EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
 /** `Canonical =` with nothing after it: how `lexicon export text` writes a canonical with a colon and no aliases. */
 const BARE_EQUALS_FORM = /^(.+?)\s+=$/;
+/** A colon that separates canonical from aliases: any colon except the one in `scheme://`. */
+const SEPARATOR_COLON = /:(?!\/\/)/;
 
 export function parseTextLine(raw: string): { canonical: string; aliases: string[] } | undefined {
   const text = raw.trim();
@@ -27,7 +30,10 @@ export function parseTextLine(raw: string): { canonical: string; aliases: string
   const bare = BARE_EQUALS_FORM.exec(text);
   if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === '=') return { canonical: '', aliases: [] };
-  const colon = text.indexOf(':');
+  // The separator is the first colon that does not open `scheme://`: a line
+  // that is a URL (`https://example.com`) is a canonical, not "https" with the
+  // alias "//example.com".
+  const colon = text.search(SEPARATOR_COLON);
   if (colon >= 0) {
     return {
       canonical: text.slice(0, colon).trim(),

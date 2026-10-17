@@ -126,3 +126,32 @@ describe('superwhisper importer: entries with no usable original', () => {
     ]);
   });
 });
+
+describe('text importer: URLs and scheme:// text', () => {
+  it('does not split a line at the colon of scheme://', () => {
+    const r = importLexicon('https://example.com\nfile:///tmp/x\nDocs: https://docs.example.com, the docs\nhttps://phm.dev: phantom site\n', 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['https://example.com', []],
+      ['file:///tmp/x', []],
+      ['Docs', ['https://docs.example.com', 'the docs']],
+      ['https://phm.dev', ['phantom site']],
+    ]);
+  });
+
+  it('round-trips a URL canonical through the text exporter, with and without aliases', () => {
+    const lexicon: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'https://example.com', aliases: [] },
+        { canonical: 'https://phm.dev', aliases: ['phantom site'] },
+        { canonical: 'Re:Invent', aliases: [] },
+      ],
+    };
+    const r = importLexicon(exportText(lexicon), 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['https://example.com', []],
+      ['https://phm.dev', ['phantom site']],
+      ['Re:Invent', []],
+    ]);
+  });
+});

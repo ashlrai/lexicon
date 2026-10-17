@@ -58241,6 +58241,7 @@ function parseSuperwhisperImport(content) {
 // src/core/importers/text.ts
 var EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
 var BARE_EQUALS_FORM = /^(.+?)\s+=$/;
+var SEPARATOR_COLON = /:(?!\/\/)/;
 function parseTextLine(raw) {
   const text = raw.trim();
   if (!text || text.startsWith("#")) return void 0;
@@ -58251,7 +58252,7 @@ function parseTextLine(raw) {
   const bare = BARE_EQUALS_FORM.exec(text);
   if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === "=") return { canonical: "", aliases: [] };
-  const colon = text.indexOf(":");
+  const colon = text.search(SEPARATOR_COLON);
   if (colon >= 0) {
     return {
       canonical: text.slice(0, colon).trim(),
