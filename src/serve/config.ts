@@ -145,6 +145,27 @@ export type HealthProbe =
   | { state: 'down'; error: string };
 
 /**
+ * True when a 2xx /health body is lexicon serve's (`{ ok: true, ... }`).
+ * Anything else that answers 200 on the port is another program, so neither
+ * `lexicon serve --status` nor MCP `serve_status` may call it up.
+ */
+export function isLexiconHealth(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && !Array.isArray(body) && (body as { ok?: unknown }).ok === true;
+}
+
+/** The next step for each way /health can fail, shared by `lexicon serve --status --json` and MCP `serve_status`. */
+export const SERVE_STATUS_HINTS = {
+  failing:
+    'The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.',
+  down: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.',
+  foreign:
+    'Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>.',
+} as const;
+
+/** The `error` for a 2xx /health whose body is not lexicon serve's. */
+export const FOREIGN_HEALTH_ERROR = 'unexpected /health response (not lexicon serve)';
+
+/**
  * GET `<baseUrl>/health`, sending the bearer `token` when there is one so a
  * failing server returns its full error (see `errorStatus` in server.ts)
  * rather than a pointer to its log. `lexicon serve --status` and the MCP

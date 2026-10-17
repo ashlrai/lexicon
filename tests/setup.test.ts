@@ -727,6 +727,29 @@ describe('helpers', () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  // Catches: `setup --json --app nope` printed the refusal on stderr only, leaving stdout empty.
+  it('registerSetupCommands prints { ok: false, error } under --json when setup refuses', async () => {
+    const io = makeIO();
+    const program = new Command().exitOverride().option('--cwd <dir>');
+    registerSetupCommands(program, io);
+    const saved = process.exitCode;
+    try {
+      await program.parseAsync(['setup', '--yes', '--json', '--app', 'nope', '--clients', 'none', '--cwd', cwd], { from: 'user' });
+      expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('unknown app "nope"') });
+      expect(io.err).toContain('lexicon: unknown app "nope"');
+      expect(process.exitCode).toBe(1);
+      expect(existsSync(globalPath)).toBe(false);
+
+      const plain = makeIO();
+      const p2 = new Command().exitOverride().option('--cwd <dir>');
+      registerSetupCommands(p2, plain);
+      await expect(p2.parseAsync(['setup', '--yes', '--app', 'nope', '--cwd', cwd], { from: 'user' })).rejects.toThrow('unknown app');
+      expect(plain.out).toBe('');
+    } finally {
+      process.exitCode = saved;
+    }
+  });
+
   it('registerSetupCommands wires --dry-run (writes nothing) and leaves serve undefined without --serve/--no-serve', async () => {
     const io = makeIO();
     const program = new Command().exitOverride().option('--cwd <dir>');

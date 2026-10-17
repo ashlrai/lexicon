@@ -598,6 +598,16 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 const CLAIM_ATTEMPTS = 3;
 
 /** Start a detached recording, or stop the running one and transcribe it. Returns the exit code. */
+/**
+ * What a toggle press that did not finish a transcription prints: the bare
+ * word, or under --json `{"status":"recording"}` / `{"status":"stopping"}` so
+ * stdout is JSON on every path (the finished press prints the result object).
+ * The menu bar app reads either form.
+ */
+function toggleLine(status: 'recording' | 'stopping', opts: Pick<VoiceOptions, 'json'>): string {
+  return opts.json ? `${JSON.stringify({ status })}\n` : `${status}\n`;
+}
+
 export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   const r = resolve(opts, io, deps);
   // Read, decide, claim. Losing the claim means another toggle wrote the file
@@ -606,7 +616,7 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
     const state = await readState(r.globalPath);
     if (state && isProvisional(state) && !isStaleProvisional(state, r.now().getTime())) {
       // A start is in flight (double-tap): idempotent, let it finish.
-      io.stdout('recording\n');
+      io.stdout(toggleLine('recording', opts));
       return EXIT_OK;
     }
     if (state) {
@@ -618,7 +628,7 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
       // so exactly one of them gets past here.
       const claimed = await claimStop(r.globalPath);
       if (!claimed) {
-        io.stdout('stopping\n');
+        io.stdout(toggleLine('stopping', opts));
         return EXIT_OK;
       }
       if (isProvisional(claimed) && !isStaleProvisional(claimed, r.now().getTime())) {
@@ -626,7 +636,7 @@ export async function runVoiceToggle(opts: VoiceOptions, io: VoiceIO, deps: Voic
         // back, exclusively so a third press cannot be clobbered, and treat
         // this press as the double-tap it turned out to be.
         await claimState(r.globalPath, claimed).catch(() => false);
-        io.stdout('recording\n');
+        io.stdout(toggleLine('recording', opts));
         return EXIT_OK;
       }
       const taken = await handleClaimedState(claimed, opts, io, deps, r);
@@ -884,7 +894,7 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
       `${leftovers.kept} earlier recording${leftovers.kept === 1 ? '' : 's'} (${(leftovers.bytes / 1_000_000).toFixed(1)} MB) ${leftovers.kept === 1 ? 'is' : 'are'} still in ${voiceDir(r.globalPath)}; nothing here deletes them for you`,
     );
   }
-  io.stdout('recording\n');
+  io.stdout(toggleLine('recording', opts));
   return EXIT_OK;
 }
 

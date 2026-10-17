@@ -13494,6 +13494,7 @@ var LIMITS = {
 var INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 var CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
 var CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+var ANSI_RE = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
 var OTHER_RE = new RegExp("\\p{C}", "gu");
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
@@ -13503,6 +13504,12 @@ function hasControlChars(s) {
 }
 function stripControlChars(s) {
   return stripInvisible(s.replace(CONTROL_RE_G, ""));
+}
+function sanitizeForDisplayMax(s, max) {
+  const clean = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
+  const chars = Array.from(clean);
+  if (chars.length <= max) return clean;
+  return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
 function SafeString(max) {
   return string2().transform((s) => stripInvisible(s).trim()).pipe(
@@ -20307,8 +20314,17 @@ function parseInput(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return {};
   const parsed = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== "object") return {};
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    const kind = parsed === null ? "null" : Array.isArray(parsed) ? "an array" : `a ${typeof parsed}`;
+    process.stderr.write(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do
+`);
+    return {};
+  }
   return parsed;
+}
+function shownValue(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return JSON.stringify(sanitizeForDisplayMax(text, 60));
 }
 async function loadOrExplain(cwd) {
   try {
@@ -20383,7 +20399,12 @@ async function runSessionStartHook(input, opts = {}) {
 }
 async function runHook(input, opts = {}) {
   const payload = parseInput(input);
-  if (payload.hook_event_name === "SessionStart") return sessionStart(payload, opts);
+  const event = payload.hook_event_name;
+  if (event === "SessionStart") return sessionStart(payload, opts);
+  if (event !== void 0 && event !== "UserPromptSubmit") {
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)
+`);
+  }
   return userPromptSubmit(payload, opts);
 }
 async function readStdin() {

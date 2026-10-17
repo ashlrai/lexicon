@@ -43,25 +43,25 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 | `trust_project` | `action` (`status`, `trust`, `untrust`), `path?` | Trust state, or a sanitized preview of the file's canonicals before pinning it. The agent shows the preview and asks first |
 | `import_dictionary` | `path?` or `content?` (neither may be blank), `format?`, `scope?`, `dryRun?` | Import a Wispr, Superwhisper, macOS, espanso, markdown, text, CSV or JSON dictionary |
 | `import_vocabulary` | `sources?`, `apply?`, `scope?`, `previewToken?`, `approvedCandidateIds?` | Ask which sources to read first. Omitted sources returns descriptions without probing or harvesting. Explicit sources previews candidate contents and ids. Apply uses the saved five-minute snapshot and only user-approved ids, never a fresh harvest; a missing token, unknown id or changed destination is refused |
-| `list_packs` | `registry?` | The starter packs in `packs/`, their size and which are installed (from trusted files; an untrusted project lexicon adds `projectTrust`, `skippedProject` and `note`); with `registry` also the community packs in that index. See [PACKS.md](PACKS.md) |
+| `list_packs` | `registry?` | The starter packs in `packs/`, their size and which are installed (from trusted files; an untrusted project lexicon adds `projectTrust`, `skippedProject` and `note`; `registryMismatch { fileOnly, recordOnly }` when `settings.packs` and the registry records disagree); with `registry` also the community packs in that index. See [PACKS.md](PACKS.md) |
 | `add_pack` | `name`, `scope?`, `registry?`, `confirm?`, `previewDigest?` | Install a starter pack into the global or project lexicon. `name` as `<author>/<name>` with `registry` installs a community pack: without `confirm: true` it returns every term field and a preview digest without writing; confirmation must include that digest and the same destination, and changed content is refused. See [PACKS.md](PACKS.md) |
 | `suggest_terms` | `cwd?`, `limit?` | Proposed aliases, terms, never-words and stale terms from voice history, usage and the repo |
 | `apply_suggestion` | `suggestion`, `scope?` | Applies one suggestion from `suggest_terms`, passed back as received |
 | `setup_lexicon` | `company?`, `person?`, `clients?`, `packs?`, `harvest?`, `serve?`, `apply?` | Without `apply` returns a plan computed by a dry run (what it would seed and harvest, the clients it detected, whether it would install the login service) and writes nothing. With `apply: true` runs `lexicon setup` non-interactively for exactly the `clients` given (omitted = none). The three that write a lot are each opt-in and separately confirmed: `packs` names the starter packs to install (omitted = none), `harvest: true` writes the repo names in `wouldHarvest` into the project `.lexicon.yaml` and trusts it, and `serve: true` installs the local API as a login service. Returns the `SetupSummary` |
-| `serve_status` | none | Whether the local API is up on `127.0.0.1` (the port in `serve.json`, default 41733), with its version and term count |
+| `serve_status` | none | Whether the local API is up on `127.0.0.1` (the port in `serve.json`, default 41733), with its version and term count; when it is not, `error` and a `hint` (also when another program answers on the port) |
 
 ## Resources
 
 | Resource | Type | Content |
 |---|---|---|
-| `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file |
+| `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file, and one saying the lexicon is empty when it has no terms |
 | `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`) |
 
 ## Prompts
 
 | Prompt | Purpose |
 |---|---|
-| `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session |
+| `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session (with no terms, a note that there is nothing to apply and how to set it up instead) |
 | `onboard` | Walks the agent through first-run setup: ask for company, product and teammate spellings, which clients are in use, then call `setup_lexicon` and `add_term` |
 
 ## Writes and previews

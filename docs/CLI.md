@@ -464,7 +464,8 @@ Options:
   --paste                copy and paste into the frontmost app (macOS; needs
                          Accessibility permission)
   --json                 print { raw, output, replacements, summary, model,
-                         seconds, ms } as JSON
+                         seconds, ms } as JSON (with --toggle, a press that
+                         starts prints {"status":"recording"})
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```
@@ -504,7 +505,7 @@ Options:
                       package scope) when the lexicon already has terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)
   --json              print a machine-readable summary on stdout (progress goes
-                      to stderr)
+                      to stderr; a refusal prints { ok: false, error })
   -h, --help          display help for command
 ```
 

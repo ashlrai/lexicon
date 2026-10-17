@@ -40,7 +40,6 @@ import {
   loadMatcherIndex,
   normalizeWithIndex,
   recordHits,
-  resolvePaths,
   isProjectTrustError,
   sanitizeForDisplay,
   suggestAliases,
@@ -150,6 +149,7 @@ export interface AddResponse {
 
 export interface LexiconResponse {
   lexicon: LoadedLexicon['merged'];
+  /** The files merged into `lexicon`; a skipped project file is in `skippedProject` instead. */
   paths: { global: string; project?: string };
   projectTrust?: LoadedLexicon['projectTrust'];
   /** Path only; the contents of an untrusted file never leave the disk. */
@@ -673,10 +673,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function handleLexicon(cwd: string): Promise<LexiconResponse> {
     const loaded = await load(cwd);
-    const paths = resolvePaths({ cwd, ...storeOpts });
+    // The files merged into `lexicon`, as MCP list_terms reports `paths`: a
+    // skipped (untrusted or changed) project file is `skippedProject`, not a
+    // path in use. `projectTrust` is set whenever a project file exists.
     return {
       lexicon: loaded.merged,
-      paths: { global: paths.global, ...(paths.project !== undefined ? { project: paths.project } : {}) },
+      paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
       ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
       ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
     };
@@ -856,6 +858,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} ${res.statusCode} ${Date.now() - started}ms`);
     };
     res.once('finish', logLine);
+    // A client that goes away before the response is complete never fires
+    // 'finish', so that request left no line at all. 'close' always fires.
+    res.once('close', () => {
+      if (opts.quiet || res.writableFinished) return;
+      const stage = res.headersSent ? `after ${res.statusCode} headers were sent` : 'before a response was sent';
+      log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} aborted by the client ${stage} ${Date.now() - started}ms`);
+    });
 
     const cors: Record<string, string> = {};
     const origin = req.headers.origin;

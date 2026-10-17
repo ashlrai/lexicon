@@ -140,6 +140,17 @@ describe('trust_project never echoes an untrusted lexicon back', () => {
     },
   );
 
+  // Catches: the CLI named `lexicon edit --project` for a broken file (#82) and MCP gave no next step.
+  it('names the fix for an invalid file in status and trust', async () => {
+    const status = JSON.parse(await callTrust('status')) as { status: string; nextStep?: string };
+    expect(status.status).toBe('invalid');
+    expect(status.nextStep).toContain('lexicon edit --project');
+    expect(status.nextStep).toContain('lexicon doctor');
+    const trust = await callTrust('trust');
+    expect(trust).toContain('lexicon edit --project');
+    expect(trust).toContain('Do not open it yourself');
+  });
+
   it("action 'trust' refuses without quoting it", async () => {
     const text = await callTrust('trust');
     expect(text).toContain('refusing to trust an invalid lexicon');

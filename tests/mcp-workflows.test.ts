@@ -649,3 +649,64 @@ describe('lexicon list --full and MCP list_terms', () => {
     expect(JSON.parse(bare.out)).toEqual(mcp.terms);
   });
 });
+
+describe('voice-context and lexicon://me', () => {
+  async function read(): Promise<{ prompt: string; me: string }> {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const prompt = await client.getPrompt({ name: 'voice-context' });
+      const me = await client.readResource({ uri: 'lexicon://me' });
+      return {
+        prompt: prompt.messages.map((m) => (m.content.type === 'text' ? m.content.text : '')).join('\n'),
+        me: me.contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n'),
+      };
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  }
+
+  // Catches: an empty lexicon came back as an empty table under "Apply these canonical spellings".
+  it('say the lexicon is empty instead of asking to apply an empty table', async () => {
+    const { prompt, me } = await read();
+    expect(prompt).toContain('the lexicon has no terms yet');
+    expect(prompt).not.toContain('Apply these canonical spellings');
+    expect(me).toContain('the lexicon has no terms yet');
+
+    await fs.writeFile(path.join(home, 'lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
+    const filled = await read();
+    expect(filled.prompt).toContain('Apply these canonical spellings');
+    expect(filled.prompt).not.toContain('no terms yet');
+    expect(filled.me).not.toContain('no terms yet');
+  });
+
+  // Catches: the skipped file's path went into raw markdown unsanitized, so a
+  // bidi override in a cloned directory's name reached the conversation.
+  it('sanitize the skipped project path', async () => {
+    const nasty = path.join(repo, 'evil‮name');
+    await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
+    await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
+    const server = createServer({ cwd: nasty });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const prompt = await client.getPrompt({ name: 'voice-context' });
+      const text = prompt.messages.map((m) => (m.content.type === 'text' ? m.content.text : '')).join('\n');
+      const me = (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
+      for (const t of [text, me]) {
+        expect(t).toContain('evilname');
+        expect(t).not.toContain('‮');
+        expect(t).not.toContain('Fantom');
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+});

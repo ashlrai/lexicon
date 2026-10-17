@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, stripControlChars } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, normalizeWithIndex, parseCorrection, recordHits, sanitizeForDisplayMax, stripControlChars } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 
 export interface HookOptions {
@@ -382,8 +382,20 @@ function parseInput(raw: string): HookInput {
   const trimmed = raw.trim();
   if (!trimmed) return {};
   const parsed: unknown = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== 'object') return {};
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    // Valid JSON that is not a payload: nothing to read, and saying so is the
+    // only clue a person has that the caller sent the wrong thing.
+    const kind = parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : `a ${typeof parsed}`;
+    process.stderr.write(`[lexicon hook] the payload is ${kind}, not a JSON object; nothing to do\n`);
+    return {};
+  }
   return parsed as HookInput;
+}
+
+/** A short, display-safe rendering of an untrusted value for a stderr line. */
+function shownValue(value: unknown): string {
+  const text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  return JSON.stringify(sanitizeForDisplayMax(text, 60));
 }
 
 /**
@@ -515,10 +527,18 @@ export async function runSessionStartHook(input: string, opts: HookOptions = {})
   return sessionStart(parseInput(input), opts);
 }
 
-/** Dispatches on `hook_event_name`. Unknown or missing events are handled as UserPromptSubmit. */
+/**
+ * Dispatches on `hook_event_name`. Unknown or missing events are handled as
+ * UserPromptSubmit; an unknown one (registered for an event this hook does
+ * not handle, or a misspelling) also gets one stderr line.
+ */
 export async function runHook(input: string, opts: HookOptions = {}): Promise<string> {
   const payload = parseInput(input);
-  if (payload.hook_event_name === 'SessionStart') return sessionStart(payload, opts);
+  const event: unknown = payload.hook_event_name;
+  if (event === 'SessionStart') return sessionStart(payload, opts);
+  if (event !== undefined && event !== 'UserPromptSubmit') {
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)\n`);
+  }
   return userPromptSubmit(payload, opts);
 }
 

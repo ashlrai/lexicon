@@ -64,6 +64,8 @@ import {
   loadLexicon,
   normalize,
   isProjectTrustError,
+  isTrusted,
+  ProjectTrustError,
   removeAlias,
   removeTerm,
   termHolders,
@@ -741,6 +743,23 @@ export async function runHarvest(
   if (opts.interactive && opts.json) throw new Error('harvest: --interactive and --json cannot be combined');
   const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !opts.json && tty);
 
+  // `--add` writes to the project file, which refuses an untrusted one. Check
+  // up front, as the interactive walk does: the table (or the --json array)
+  // used to print first, so the output read as a success right before exit 1.
+  const store = { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) };
+  if (opts.add && !interactive) {
+    const projectPath = resolvePaths(store).project;
+    if (projectPath && existsSync(projectPath)) {
+      const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
+      if (status !== 'trusted') {
+        const message = new ProjectTrustError(projectPath, status).message;
+        if (opts.json) line(io, JSON.stringify({ added: false, path: projectPath, projectTrust: status, error: message }, null, 2));
+        io.stderr(`lexicon: ${safeLines(message)}\n`);
+        return 1;
+      }
+    }
+  }
+
   const harvestOpts: HarvestOptions = {};
   const limit = parseIntOption(opts.limit, '--limit');
   const minCount = parseIntOption(opts.minCount, '--min-count');
@@ -791,7 +810,7 @@ export async function runHarvest(
         category: c.category,
         source: c.source,
       };
-      const result = await addTerm(term, { scope: 'project', cwd: target });
+      const result = await addTerm(term, { ...store, scope: 'project' });
       filePath = result.file.path;
       if (result.created) created += 1;
       else merged += 1;

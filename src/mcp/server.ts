@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon } from '../core/index.js';
+import { exportLexicon, loadLexicon, sanitizeForDisplayMax } from '../core/index.js';
 import type { LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields } from './shared.js';
 import { errorMessage } from '../util/errors.js';
@@ -83,6 +83,15 @@ export function cwdFromRoots(roots: ReadonlyArray<{ uri: string }>): string | un
 const VOICE_CONTEXT_INSTRUCTION =
   'Apply these canonical spellings to everything I say for the rest of this session. ' +
   'If you see a word that looks like a garbled version of one of them, use the canonical form without asking.';
+
+/**
+ * What `voice-context` and `lexicon://me` say when the merged lexicon has no
+ * terms: an empty table under "apply these spellings" read as a lexicon that
+ * was loaded and simply had nothing to correct.
+ */
+const EMPTY_LEXICON_NOTE =
+  'Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. ' +
+  'If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).';
 
 /** The `onboard` prompt: a user-role script that drives the model through first-run setup. */
 const ONBOARD_PROMPT = [
@@ -217,7 +226,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
     async (uri) => {
       const loaded = await load();
-      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded);
+      const text = exportLexicon(loaded.merged, 'claude-md') + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -263,11 +272,13 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       // The same path-only note lexicon://me carries, so the session knows the
       // repo's own spellings are missing and why.
       const snippet = exportLexicon(loaded.merged, 'claude-md').trimEnd() + skippedProjectSuffix(loaded);
+      // Nothing to apply: say so instead of asking the model to apply an empty table.
+      const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
           {
             role: 'user',
-            content: { type: 'text', text: `${snippet}\n\n${VOICE_CONTEXT_INSTRUCTION}` },
+            content: { type: 'text', text: `${snippet}\n\n${instruction}` },
           },
         ],
       };
@@ -289,10 +300,22 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   return server;
 }
 
-/** A path-only note on a skipped project lexicon, never its contents; '' when none was skipped. */
+/**
+ * A path-only note on a skipped project lexicon, never its contents; '' when
+ * none was skipped. The path goes through the display sanitizer: this text is
+ * raw markdown (no JSON escaping), and the directory is named by whoever
+ * published the repo, so an escape sequence or bidi override in it would
+ * otherwise reach the conversation verbatim.
+ */
 function skippedProjectSuffix(loaded: LoadedLexicon): string {
   if (!loaded.skippedProject) return '';
-  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+  const where = sanitizeForDisplayMax(loaded.skippedProject.path, 4096);
+  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run \`lexicon trust\`.`;
+}
+
+/** `EMPTY_LEXICON_NOTE` after a blank line when the merged lexicon has no terms, else ''. */
+function emptyLexiconSuffix(loaded: LoadedLexicon): string {
+  return loaded.merged.terms.length === 0 ? `\n${EMPTY_LEXICON_NOTE}\n` : '';
 }
 
 export async function main(): Promise<void> {

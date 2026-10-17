@@ -8,7 +8,7 @@ only, protected by a bearer token, and applies the same merged lexicon and
 trust gate as every other surface.
 
 ```bash
-lexicon serve                 # foreground, logs one line per request to stderr
+lexicon serve                 # foreground, logs one line per request to stderr (an aborted one too)
 lexicon serve --show          # print the URL and token (manual fallback for the extension options page)
 lexicon serve --status        # is it up?
 lexicon serve --pair          # open http://127.0.0.1:41733/pair in the browser; the extension pairs itself
@@ -105,7 +105,10 @@ no-referrer`. Nothing else consumes it.
 `cwd` picks which project `.lexicon.yaml` is considered (body field on POST,
 `?cwd=` on GET). It defaults to the directory the server was started in. An
 untrusted project file is never merged; `/health` (with the token) and `/lexicon` report
-`projectTrust: "untrusted"` and `/lexicon` names the skipped file by path.
+`projectTrust: "untrusted"` and `/lexicon` names the skipped file by path in
+`skippedProject`. `/lexicon` `paths` lists only the files merged into `lexicon` (as MCP
+`list_terms` does), so `paths.project` is present only for a trusted project file;
+`projectTrust` is set whenever a project file exists, trusted or not.
 
 Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,
 `deepgram`, `assemblyai`, `azure`, `google`) -> `application/json`,

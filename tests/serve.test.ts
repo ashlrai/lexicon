@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addTerm, loadLexicon, readLexiconFile, suggestAliases } from '../src/core/index.js';
+import { addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -495,6 +495,34 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(body.skippedProject).toBeUndefined();
   });
 
+  // Catches: paths.project named the skipped (untrusted) file while MCP list_terms listed only loaded files.
+  it('/lexicon paths lists the files merged, as MCP list_terms does', async () => {
+    const skipped = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`)).json()) as {
+      paths: { global: string; project?: string };
+      skippedProject?: string;
+    };
+    expect(skipped.paths).toEqual({ global: env.globalPath });
+    expect(skipped.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+
+    const repo = path.join(env.home, 'trusted-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: TrustedCorp\n    aliases: [trustcorp]\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const trusted = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(repo)}`)).json()) as {
+        paths: { global: string; project?: string };
+        projectTrust?: string;
+        skippedProject?: string;
+      };
+      expect(trusted.paths).toEqual({ global: env.globalPath, project: file });
+      expect(trusted.projectTrust).toBe('trusted');
+      expect(trusted.skippedProject).toBeUndefined();
+    } finally {
+      await untrustProject(file, { globalPath: env.globalPath });
+    }
+  });
+
   it('/export/<format> serves the exporter content type', async () => {
     const csv = await api('GET', '/export/csv');
     expect(csv.status).toBe(200);
@@ -725,6 +753,45 @@ describe('limits and errors', () => {
   });
 });
 
+describe('request log', () => {
+  // Catches: a client that hung up before the response finished left no log line at all.
+  it('logs one line for a finished request and one for a request the client aborted', async () => {
+    const lines: string[] = [];
+    const logged = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, log: (l) => lines.push(l) });
+    const t = await logged.start();
+    try {
+      await (await fetch(`${t.url}/health`)).text();
+      await waitFor(() => lines.some((l) => l.startsWith('[serve] GET /health 200 ')));
+
+      const socket = net.connect(t.port, '127.0.0.1');
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+      });
+      socket.write(
+        `POST /normalize HTTP/1.1\r\nHost: 127.0.0.1:${t.port}\r\nAuthorization: Bearer ${t.token}\r\n` +
+          'Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{"text":',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      socket.destroy();
+      await waitFor(() => lines.some((l) => l.includes('aborted')));
+      const aborted = lines.filter((l) => l.startsWith('[serve] POST /normalize'));
+      expect(aborted).toHaveLength(1);
+      expect(aborted[0]).toMatch(/^\[serve\] POST \/normalize aborted by the client before a response was sent \d+ms$/);
+    } finally {
+      await logged.stop();
+    }
+  });
+});
+
+async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
+  const until = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > until) throw new Error('timed out waiting for the log line');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // trust gate
 // ---------------------------------------------------------------------------
@@ -897,7 +964,14 @@ describe('lexicon serve (CLI)', () => {
 
       const json = memIO();
       expect(await runServe({ status: true, json: true, port: t.port, globalPath }, json)).toBe(1);
-      expect(JSON.parse(json.out.join(''))).toMatchObject({ up: false, running: true, status: 500, reason: expect.stringContaining('Failed to parse') });
+      expect(JSON.parse(json.out.join(''))).toMatchObject({
+        up: false,
+        running: true,
+        status: 500,
+        reason: expect.stringContaining('Failed to parse'),
+        error: expect.stringContaining('Failed to parse'),
+        hint: expect.stringContaining('Starting another server will not help'),
+      });
     } finally {
       await broken.stop();
     }
@@ -923,6 +997,47 @@ describe('lexicon serve (CLI)', () => {
     } finally {
       await broken.stop();
     }
+  });
+
+  // Catches: a 200 from another program on the port read as "down" with
+  // "start it" advice that fails with EADDRINUSE, and the JSON lacked the
+  // `error` and `hint` keys MCP serve_status returns.
+  it('--status names another program on the port, and --json carries error and hint', async () => {
+    const other = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"status":"fine"}');
+    });
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const port = (other.address() as net.AddressInfo).port;
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port, globalPath: env.globalPath }, io)).toBe(1);
+      const out = io.out.join('');
+      expect(out).toContain(`something answered at http://127.0.0.1:${port}, but it is not lexicon serve`);
+      expect(out).toContain('lexicon serve --port <n>');
+      expect(out).not.toContain('start it with');
+
+      const json = memIO();
+      expect(await runServe({ status: true, json: true, port, globalPath: env.globalPath }, json)).toBe(1);
+      expect(JSON.parse(json.out.join(''))).toEqual({
+        up: false,
+        url: `http://127.0.0.1:${port}`,
+        reason: 'unexpected /health response',
+        error: 'unexpected /health response (not lexicon serve)',
+        hint: expect.stringContaining('lexicon serve --port <n>'),
+      });
+    } finally {
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
+
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    const d = JSON.parse(down.out.join('')) as Record<string, unknown>;
+    expect(d).toMatchObject({ up: false, hint: expect.stringContaining('lexicon serve') });
+    expect(d.error).toBe(d.reason);
   });
 
   it('--status --json', async () => {
@@ -1717,10 +1832,14 @@ describe('consumer contract: Phantom desktop voice client', () => {
     }
   });
 
+  // Phantom caches only when `paths` has no project AND `projectTrust` is
+  // absent; `projectTrust` is set whenever a project file exists, so a skipped
+  // file still keeps the response live-only after `paths` dropped it.
   it('GET /lexicon reports project context, which Phantom keeps out of its cache', async () => {
     const res = await phantomRequest('GET', `/lexicon?cwd=${encodeURIComponent(env.untrustedProject)}`);
-    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string };
-    expect(body.paths.project).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
+    const body = JSON.parse(res.body) as { paths: { project?: string }; projectTrust?: string; skippedProject?: string };
+    expect(body.paths.project).toBeUndefined();
+    expect(body.skippedProject).toBe(path.join(env.untrustedProject, '.lexicon.yaml'));
     expect(body.projectTrust).toBe('untrusted');
   });
 
