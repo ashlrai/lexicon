@@ -63241,7 +63241,7 @@ var registerPackTools = (server, ctx) => {
     "add_pack",
     {
       title: "Install a starter term pack",
-      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`. For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.",
+      description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack adds dozens of terms (list_packs gives each pack's `terms` count), so name the pack and its size and ask before calling this. Remove one later with `lexicon pack remove <name>`. For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.",
       inputSchema: {
         name: external_exports.string().describe("Pack name from list_packs (e.g. developer) or a community ref like example/cardiology."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
@@ -63466,7 +63466,7 @@ var SERVER_INSTRUCTIONS = [
   'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
   PROACTIVE_OFFER,
   "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.",
-  "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
+  "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
   "When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.",
   "Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
 ].join("\n");

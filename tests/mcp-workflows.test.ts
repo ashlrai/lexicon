@@ -348,3 +348,33 @@ describe('learn_correction when another term already claims `heard`', () => {
     expect(payload.conflict).toBeUndefined();
   });
 });
+
+describe('tool and resource descriptions agree with what the code does', () => {
+  async function listed(): Promise<{ tools: { name: string; description?: string }[]; resources: { uri: string; description?: string }[]; instructions: string }> {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      return {
+        tools: (await client.listTools()).tools,
+        resources: (await client.listResources()).resources,
+        instructions: client.getInstructions() ?? '',
+      };
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  }
+
+  // Catches: "a pack is sixty-odd terms" while the shipped packs hold 14 to 82.
+  it('add_pack and the server instructions state no pack size the packs do not have', async () => {
+    const { tools, instructions } = await listed();
+    const addPack = tools.find((t) => t.name === 'add_pack')?.description ?? '';
+    for (const text of [addPack, instructions]) expect(text).not.toMatch(/sixty/i);
+    expect(addPack).toMatch(/list_packs[^.]*`terms`/);
+    const sizes = JSON.parse((await call('list_packs', {})).text) as { packs: { terms: number }[] };
+    expect(new Set(sizes.packs.map((p) => p.terms)).size).toBeGreaterThan(1);
+  });
+});

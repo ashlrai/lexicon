@@ -94,7 +94,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       description:
         'Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project). ' +
         'Adds the pack\'s terms with source "pack"; a term the user already has keeps its own spelling and aliases and only gains the pack\'s. Idempotent. ' +
-        'A pack is sixty-odd terms, so name the pack and ask before calling this. Remove one later with `lexicon pack remove <name>`. ' +
+        'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with `lexicon pack remove <name>`. ' +
         'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. Community installs pin the checksum, so `lexicon pack update` re-checks it later.',
       inputSchema: {
         name: z.string().describe('Pack name from list_packs (e.g. developer) or a community ref like example/cardiology.'),
