@@ -293,13 +293,30 @@ export function formatCorrectionNote(correction: Correction): string {
  * combining dot), so offsets found in `text.toLowerCase()` do not index `text`;
  * these do. Folding per code point (not the whole string) also keeps the
  * result context-free, so a needle folded the same way compares equal.
+ * A run of whitespace folds to one space whose span covers the whole run, so
+ * a needle squashed the same way (see `squash`) matches "Ash  Lur" or
+ * "Ash\nLur" in the prompt and the span still indexes `text`.
  */
 function foldWithOffsets(text: string): { folded: string; starts: number[]; ends: number[] } {
   let folded = '';
   const starts: number[] = [];
   const ends: number[] = [];
   let at = 0;
+  let inSpace = false;
   for (const ch of text) {
+    if (/\s/u.test(ch)) {
+      if (inSpace) {
+        ends[ends.length - 1] = at + ch.length;
+      } else {
+        starts.push(at);
+        ends.push(at + ch.length);
+        folded += ' ';
+        inSpace = true;
+      }
+      at += ch.length;
+      continue;
+    }
+    inSpace = false;
     const lower = ch.toLowerCase();
     for (let k = 0; k < lower.length; k += 1) {
       starts.push(at);
@@ -315,7 +332,7 @@ function foldWithOffsets(text: string): { folded: string; starts: number[]; ends
 function foldPerCodePoint(text: string): string {
   let folded = '';
   for (const ch of text) folded += ch.toLowerCase();
-  return folded;
+  return squash(folded);
 }
 
 /**

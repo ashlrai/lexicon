@@ -14,6 +14,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The hook's correction detection protects the words of "it's X not Y" when the prompt separates them with a run of whitespace (`Ash  Lur`, a tab or a line break). The heard and meant sides were squashed to single spaces but the prompt was searched as typed, so a correction with a double space was not found and its own words were rewritten. The prompt is now folded the same way, and spans still index the original text.
 - MCP `import_vocabulary` refuses `previewToken` or `approvedCandidateIds` without `apply: true`, before any source is read, and keeps the saved preview so the next call can apply it. They were ignored: the call read the sources again and returned a fresh preview, so a model that left out `apply` was told only by `applied: false` that nothing was imported.
 - MCP `add_pack` with a vendored starter pack name refuses `registry`, `previewDigest` and `confirm: false` and writes nothing, naming the parameters that do not apply. It ignored them and installed the pack, so a call that asked for a preview (`confirm: false`, as for a community pack) or for a registry's pack of that name wrote dozens of terms. `confirm: true` still installs.
 - The `SessionStart` hook keeps its whole context within the documented 4000 characters when a project lexicon was skipped. The table was cut to the cap and the skipped-project note appended after it, so a large lexicon in an untrusted repo ran a few hundred characters over; the table now gives up room for the note.
