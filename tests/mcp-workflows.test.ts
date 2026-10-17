@@ -9,6 +9,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
+import { runList } from '../src/cli/commands.js';
+import { makeIO } from './helpers.js';
 
 let repo: string;
 let home: string;
@@ -550,5 +552,31 @@ describe('list_packs with an untrusted project lexicon', () => {
     const payload = JSON.parse((await call('list_packs', {})).text) as Record<string, unknown>;
     expect(payload).not.toHaveProperty('skippedProject');
     expect(payload).not.toHaveProperty('note');
+  });
+});
+
+describe('lexicon list --full and MCP list_terms', () => {
+  // Catches: `lexicon list --json` is a bare array, so a script had no counts, paths or skipped-project keys list_terms gives.
+  it('--full prints the list_terms object; plain --json stays a bare array', async () => {
+    await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'] });
+    await call('add_term', { canonical: 'Hetzner', aliases: ['het zner'] });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Secret\n    aliases: [secret]\n');
+    const mcp = JSON.parse((await call('list_terms', { query: 'kube' })).text) as Record<string, unknown>;
+
+    const full = makeIO();
+    expect(await runList({ cwd: repo, query: 'kube', full: true }, full)).toBe(0);
+    const cli = JSON.parse(full.out) as Record<string, unknown>;
+    expect(Object.keys(cli).sort()).toEqual(Object.keys(mcp).sort());
+    const { note: cliNote, ...cliRest } = cli;
+    const { note: mcpNote, ...mcpRest } = mcp;
+    expect(cliRest).toEqual(mcpRest);
+    expect(cliRest).toMatchObject({ counts: { matched: 1, total: 2, global: 2, project: 0 }, projectTrust: 'untrusted', skippedProject: path.join(repo, '.lexicon.yaml') });
+    expect(cliNote).toMatch(/lexicon trust/);
+    expect(mcpNote).toMatch(/lexicon trust/);
+    expect(full.out).not.toContain('Secret');
+
+    const bare = makeIO();
+    expect(await runList({ cwd: repo, query: 'kube', json: true }, bare)).toBe(0);
+    expect(JSON.parse(bare.out)).toEqual(mcp.terms);
   });
 });

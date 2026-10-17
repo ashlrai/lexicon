@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `lexicon list --full` prints the object MCP `list_terms` returns: `{ terms, counts: { matched, total, global, project }, paths }`, plus `projectTrust`, `skippedProject` and `note` when an untrusted project lexicon was left out. `lexicon list --json` still prints the bare array, so existing scripts are unchanged.
 - `lexicon trust --json`, `lexicon trust --list --json` and `lexicon untrust --json` print the objects MCP `trust_project` returns (`{ action, path, previousStatus, status, result, sha256, trustedAt, registry, termCount, preview, more, note }` for a trust, `{ action, path, removed, registry, summary }` for an untrust, and the registry fields `{ registry, trustAll, trusted }` for the list). A script had to scrape the sentence.
 - `lexicon trust` asks `trust <path>? [y/N]` on a terminal after the preview, and `--yes` skips the question. It pinned the file straight after printing the preview, so the only way to say no was ctrl-C. Off a terminal it still trusts without asking, so existing scripts keep working (see docs/TRUST.md for why that is the choice). A file that changes while the question is open is not trusted.
 - `lexicon doctor --json` prints the report as data, the same `{ ok, ready, summary, nextStep, checks, paths, versions }` object MCP `lexicon_doctor` returns, and exits 1 when a check fails, as the text does. A script had to scrape the check glyphs.

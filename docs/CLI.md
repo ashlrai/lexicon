@@ -145,7 +145,11 @@ Usage: lexicon list|ls [options]
 list terms from the merged global + project lexicon
 
 Options:
-  --json                 print terms as JSON
+  --json                 print terms as JSON (a bare array)
+  --full                 print { terms, counts, paths } as JSON, the object MCP
+                         list_terms returns, plus projectTrust, skippedProject
+                         and note when an untrusted project lexicon was left out
+                         (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
   -h, --help             display help for command

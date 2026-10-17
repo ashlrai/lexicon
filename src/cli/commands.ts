@@ -519,6 +519,12 @@ async function runRemoveAlias(
 
 export interface ListOptions extends CommonOptions {
   json?: boolean;
+  /**
+   * Print the object MCP `list_terms` returns (`{ terms, counts, paths,
+   * projectTrust?, skippedProject?, note? }`) instead of the bare array
+   * `--json` prints. Implies `json`.
+   */
+  full?: boolean;
   category?: string;
   query?: string;
 }
@@ -537,6 +543,22 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     );
   }
 
+  if (opts.full) {
+    // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.
+    const payload = {
+      terms,
+      counts: {
+        matched: terms.length,
+        total: loaded.merged.terms.length,
+        global: loaded.global.lexicon.terms.length,
+        project: loaded.project?.lexicon.terms.length ?? 0,
+      },
+      paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
+      ...skippedProjectJson(loaded),
+    };
+    line(io, JSON.stringify(payload, null, 2));
+    return 0;
+  }
   if (opts.json) {
     line(io, JSON.stringify(terms, null, 2));
     return 0;
