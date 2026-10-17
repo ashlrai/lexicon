@@ -20300,9 +20300,10 @@ function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    if (aliases.length === 0) return t.canonical.includes(":") ? `${t.canonical} =` : t.canonical;
-    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
-    return needsEquals ? `${t.canonical} = ${aliases.join(" | ")}` : `${t.canonical}: ${aliases.join(", ")}`;
+    const canonical = /^\\*#/.test(t.canonical) ? `\\${t.canonical}` : t.canonical;
+    if (aliases.length === 0) return canonical.includes(":") ? `${canonical} =` : canonical;
+    const needsEquals = canonical.includes(":") || aliases.some((a) => a.includes(","));
+    return needsEquals ? `${canonical} = ${aliases.join(" | ")}` : `${canonical}: ${aliases.join(", ")}`;
   });
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }

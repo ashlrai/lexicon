@@ -155,3 +155,33 @@ describe('text importer: URLs and scheme:// text', () => {
     ]);
   });
 });
+
+describe('text format: a canonical that starts with #', () => {
+  it('round-trips through the text exporter instead of becoming a comment', () => {
+    const lexicon: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: '#hashtag', aliases: [] },
+        { canonical: '#Ashlr', aliases: ['hash ashler'] },
+        { canonical: '#Re:Invent', aliases: [] },
+        { canonical: '\\#odd', aliases: ['odd one'] },
+        { canonical: '\\LaTeX', aliases: [] },
+      ],
+    };
+    const text = exportText(lexicon);
+    expect(text.split('\n').filter(Boolean).every((l) => !l.startsWith('#'))).toBe(true);
+    const r = importLexicon(text, 'text');
+    expect(r.skipped).toEqual([]);
+    expect(r.terms.map((t) => [t.canonical, t.aliases]).sort()).toEqual(
+      lexicon.terms.map((t) => [t.canonical, t.aliases]).sort(),
+    );
+  });
+
+  it('still reads an unescaped # line as a comment and leaves other backslashes alone', () => {
+    const r = importLexicon('# a comment\n\\#tag: hash tag\n\\LaTeX\n', 'text');
+    expect(r.terms.map((t) => [t.canonical, t.aliases])).toEqual([
+      ['#tag', ['hash tag']],
+      ['\\LaTeX', []],
+    ]);
+  });
+});
