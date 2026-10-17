@@ -7,8 +7,7 @@
 import { join } from 'node:path';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { sanitizeForDisplay } from '../core/index.js';
-import type { ImportFormat, LexiconFile, LoadedLexicon, TermSuggestion } from '../core/index.js';
+import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { errorMessage } from '../util/errors.js';
 import { findPackageRoot, packageVersion } from '../util/package.js';
@@ -72,9 +71,6 @@ type _AllKindsCovered = Exclude<TermSuggestion['kind'], (typeof SUGGESTION_KINDS
 const _allKindsCovered: _AllKindsCovered = true;
 void _allKindsCovered;
 
-/** Terms listed in a trust preview before "... and N more". */
-const TRUST_PREVIEW_ROWS = 25;
-
 /** stderr-only logger. stdout belongs to the MCP transport. */
 export function log(...args: unknown[]): void {
   console.error(`[${SERVER_NAME}]`, ...args);
@@ -129,28 +125,11 @@ export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult
   }
 }
 
-interface TrustPreviewRow {
-  canonical: string;
-  firstAlias?: string;
-  aliasCount: number;
-  hasNotes: boolean;
-}
-
 /**
- * Compact, display-safe view of a project lexicon for the trust dialogue:
- * canonicals and the first alias only, sanitized, capped. Notes are reported
- * as present, never quoted: the file is untrusted input until the user says so.
+ * Compact, display-safe view of a project lexicon for the trust dialogue
+ * (defined in core so `lexicon trust --json` returns the same rows).
  */
-export function trustPreview(file: LexiconFile): { termCount: number; preview: TrustPreviewRow[]; more: number } {
-  const terms = file.lexicon.terms;
-  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t): TrustPreviewRow => ({
-    canonical: sanitizeForDisplay(t.canonical),
-    ...(t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {}),
-    aliasCount: t.aliases.length,
-    hasNotes: typeof t.notes === 'string' && t.notes.trim() !== '',
-  }));
-  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
-}
+export { trustPreview } from '../core/index.js';
 
 export function filePathsInUse(loaded: LoadedLexicon): { global: string; project?: string } {
   return {

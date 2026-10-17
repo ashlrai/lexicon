@@ -53572,6 +53572,17 @@ async function listTrusted(opts = {}) {
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
+var TRUST_PREVIEW_ROWS = 25;
+function trustPreview(file2) {
+  const terms = file2.lexicon.terms;
+  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t) => ({
+    canonical: sanitizeForDisplay(t.canonical),
+    ...t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {},
+    aliasCount: t.aliases.length,
+    hasNotes: typeof t.notes === "string" && t.notes.trim() !== ""
+  }));
+  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
+}
 
 // src/util/xdg.ts
 var import_node_path4 = __toESM(require_node_path());
@@ -59396,7 +59407,6 @@ var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", 
 var INSTALL_SCOPES = ["user", "project"];
 var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "markdown", "text", "csv", "json"];
 var SUGGESTION_KINDS = ["alias", "term", "never", "stale"];
-var TRUST_PREVIEW_ROWS = 25;
 function log(...args) {
   console.error(`[${SERVER_NAME}]`, ...args);
 }
@@ -59429,16 +59439,6 @@ async function guarded(fn) {
   } catch (err) {
     return errorResult(err);
   }
-}
-function trustPreview(file2) {
-  const terms = file2.lexicon.terms;
-  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t) => ({
-    canonical: sanitizeForDisplay(t.canonical),
-    ...t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {},
-    aliasCount: t.aliases.length,
-    hasNotes: typeof t.notes === "string" && t.notes.trim() !== ""
-  }));
-  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
 }
 function filePathsInUse(loaded) {
   return {
