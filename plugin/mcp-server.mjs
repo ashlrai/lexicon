@@ -18851,7 +18851,6 @@ __export(util_exports, {
   required: () => required,
   safeExtend: () => safeExtend,
   shallowClone: () => shallowClone,
-  sizeCaps: () => sizeCaps,
   slugify: () => slugify,
   stringifyPrimitive: () => stringifyPrimitive,
   toZod: () => toZod,
@@ -19370,18 +19369,6 @@ function prefixIssues(path27, issues) {
 }
 function unwrapMessage(message) {
   return typeof message === "string" ? message : message?.message;
-}
-function sizeCaps(defChecks) {
-  const caps = [];
-  for (const ch of defChecks ?? []) {
-    const d = ch._zod.def;
-    if (!/_(length|size)$|_equals$/.test(d.check))
-      break;
-    const max = d.maximum ?? d.length ?? d.size;
-    if (max >= 0)
-      caps.push([max, ch]);
-  }
-  return caps;
 }
 function attachSchema(issues, start, inst) {
   var _a3;
@@ -20803,7 +20790,7 @@ ${content.join("\n")}
 var version = {
   major: 4,
   minor: 6,
-  patch: 7
+  patch: 5
 };
 
 // node_modules/zod/v4/core/schemas.js
@@ -21559,31 +21546,6 @@ var $ZodDate = /* @__PURE__ */ $constructor("$ZodDate", (inst, def) => {
     return payload;
   };
 });
-function capSize(inst, size) {
-  const caps = sizeCaps(inst._zod.def.checks);
-  if (!caps.length)
-    return;
-  const cap = Math.min(...caps.map((c) => c[0]));
-  const parse3 = inst._zod.parse;
-  inst._zod.parse = (payload, ctx) => {
-    const n = size(payload.value);
-    if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
-      for (const [max, ch] of sizeCaps(inst._zod.def.checks)) {
-        if (n > max && ch._zod.def.when(payload)) {
-          const start = payload.issues.length;
-          ch._zod.check(payload);
-          payload.issues[start].continue = false;
-          attachSchema(payload.issues, start, inst);
-          return payload;
-        }
-      }
-    }
-    return parse3(payload, ctx);
-  };
-}
-var arraySize = (input2) => Array.isArray(input2) ? input2.length : -1;
-var mapSize = (input2) => input2 instanceof Map ? input2.size : -1;
-var setSize = (input2) => input2 instanceof Set ? input2.size : -1;
 function handleArrayResult(result, final, index) {
   if (result.issues.length) {
     final.issues.push(...prefixIssues(index, result.issues));
@@ -21627,7 +21589,6 @@ var $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
     }
     return payload;
   };
-  capSize(inst, arraySize);
 });
 function handlePropertyResult(result, final, key, input2, optin, optout) {
   const isPresent = key in input2;
@@ -22584,7 +22545,6 @@ var $ZodMap = /* @__PURE__ */ $constructor("$ZodMap", (inst, def) => {
       return Promise.all(proms).then(() => payload);
     return payload;
   };
-  capSize(inst, mapSize);
 });
 function handleMapResult(keyResult, valueResult, final, key, input2, inst, ctx) {
   if (keyResult.issues.length) {
@@ -22651,7 +22611,6 @@ var $ZodSet = /* @__PURE__ */ $constructor("$ZodSet", (inst, def) => {
       return Promise.all(proms).then(() => payload);
     return payload;
   };
-  capSize(inst, setSize);
 });
 function handleSetResult(result, final) {
   if (result.issues.length) {
@@ -32182,15 +32141,9 @@ function generateNullableCheck(doc, ctx, schema, accessor, buildsValue = true) {
   doc.write(`}`);
   return outputVar;
 }
-function generateSizeGate(doc, schema, size) {
-  for (const [max, check2] of sizeCaps(schema._zod.def.checks)) {
-    doc.write(`if (${size} > ${numericOperand(max, check2._zod.def.check)}) return INVALID;`);
-  }
-}
 function generateArrayCheck(doc, ctx, schema, accessor, buildsValue = true) {
   const def = schema._zod.def;
   doc.write(`if (!Array.isArray(${accessor})) return INVALID;`);
-  generateSizeGate(doc, schema, `${accessor}.length`);
   const outputVar = buildsValue ? newVar(ctx) : null;
   const iVar = newVar(ctx);
   const elemVar = newVar(ctx);
@@ -32590,7 +32543,6 @@ function literalPropertyKey(ctx, key) {
 function generateMapCheck(doc, ctx, schema, accessor) {
   const def = schema._zod.def;
   doc.write(`if (!(${accessor} instanceof Map)) return INVALID;`);
-  generateSizeGate(doc, schema, `${accessor}.size`);
   const outputVar = newVar(ctx);
   const kVar = newVar(ctx);
   const valVar = newVar(ctx);
@@ -32607,7 +32559,6 @@ function generateMapCheck(doc, ctx, schema, accessor) {
 function generateSetCheck(doc, ctx, schema, accessor) {
   const def = schema._zod.def;
   doc.write(`if (!(${accessor} instanceof Set)) return INVALID;`);
-  generateSizeGate(doc, schema, `${accessor}.size`);
   const outputVar = newVar(ctx);
   const valVar = newVar(ctx);
   doc.write(`const ${outputVar} = new Set();`);
@@ -51929,7 +51880,7 @@ var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
 var TRAILING_PUNCT = /* @__PURE__ */ new Set([".", "'", "\u2019", "-"]);
 var POSSESSIVE_RE = /['’][sS]$/u;
 var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
-var INLINE_CODE_RE = /`[^`\n]*`/g;
+var TILDE_FENCE_RE = /(?:^|\n) {0,3}~~~[\s\S]*?(?:\n {0,3}~~~|$)/g;
 var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
 var EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
@@ -52030,10 +51981,53 @@ function emailRanges(text) {
   }
   return out;
 }
+function codeSpanRanges(text) {
+  const out = [];
+  let lineStart2 = 0;
+  while (lineStart2 <= text.length) {
+    let lineEnd2 = text.indexOf("\n", lineStart2);
+    if (lineEnd2 === -1) lineEnd2 = text.length;
+    let tick = text.indexOf("`", lineStart2);
+    if (tick !== -1 && tick < lineEnd2) {
+      const runs = [];
+      while (tick !== -1 && tick < lineEnd2) {
+        let end = tick;
+        while (end < lineEnd2 && text.charCodeAt(end) === 96) end++;
+        runs.push({ start: tick, len: end - tick });
+        tick = text.indexOf("`", end);
+      }
+      const byLen = /* @__PURE__ */ new Map();
+      runs.forEach((r, i2) => {
+        const list = byLen.get(r.len);
+        if (list) list.push(i2);
+        else byLen.set(r.len, [i2]);
+      });
+      const cursor = /* @__PURE__ */ new Map();
+      let i = 0;
+      while (i < runs.length) {
+        const r = runs[i];
+        const list = byLen.get(r.len);
+        let k = cursor.get(r.len) ?? 0;
+        while (k < list.length && list[k] <= i) k++;
+        cursor.set(r.len, k);
+        if (k < list.length) {
+          const close = runs[list[k]];
+          out.push({ start: r.start, end: close.start + close.len });
+          i = list[k] + 1;
+        } else {
+          i++;
+        }
+      }
+    }
+    lineStart2 = lineEnd2 + 1;
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
   for (const r of emailRanges(text)) ranges.push(r);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
+  for (const r of codeSpanRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, TILDE_FENCE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -57504,7 +57498,7 @@ function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    if (aliases.length === 0) return t.canonical;
+    if (aliases.length === 0) return t.canonical.includes(":") ? `${t.canonical} =` : t.canonical;
     const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
     return needsEquals ? `${t.canonical} = ${aliases.join(" | ")}` : `${t.canonical}: ${aliases.join(", ")}`;
   });
@@ -57694,6 +57688,7 @@ function parseCsv(content) {
   let line2 = 1;
   let recordLine = 1;
   let sawQuote = false;
+  let quoteLine = 1;
   const endField = () => {
     fields.push(field);
     field = "";
@@ -57724,6 +57719,7 @@ function parseCsv(content) {
     if (ch === '"' && field === "" && !sawQuote) {
       inQuotes = true;
       sawQuote = true;
+      quoteLine = line2;
     } else if (ch === ",") {
       endField();
     } else if (ch === "\r") {
@@ -57738,6 +57734,11 @@ function parseCsv(content) {
     } else {
       field += ch;
     }
+  }
+  if (inQuotes) {
+    throw new Error(
+      `the quoted field that opens on line ${quoteLine} never closes, so every line after it would be read as part of it; close the quote (a quote inside a quoted field is written as "")`
+    );
   }
   if (field !== "" || fields.length > 0 || sawQuote) endRecord();
   return records;
@@ -57881,8 +57882,12 @@ var NAMED_ENTITIES = {
 };
 function xmlUnescape(value) {
   return value.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, body) => {
-    if (body.startsWith("#x") || body.startsWith("#X")) return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-    if (body.startsWith("#")) return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
+    if (body.startsWith("#")) {
+      const hex3 = body[1] === "x" || body[1] === "X";
+      const code = Number.parseInt(body.slice(hex3 ? 2 : 1), hex3 ? 16 : 10);
+      const allowed = code > 0 && code <= 1114111 && (code < 55296 || code > 57343);
+      return allowed ? String.fromCodePoint(code) : whole;
+    }
     return NAMED_ENTITIES[body] ?? whole;
   });
 }
@@ -58158,6 +58163,7 @@ function parseSuperwhisperImport(content) {
 
 // src/core/importers/text.ts
 var EQUALS_FORM = /^(.+?)\s+=\s+(.*)$/;
+var BARE_EQUALS_FORM = /^(.+?)\s+=$/;
 function parseTextLine(raw) {
   const text = raw.trim();
   if (!text || text.startsWith("#")) return void 0;
@@ -58165,6 +58171,8 @@ function parseTextLine(raw) {
   if (eq) {
     return { canonical: eq[1].trim(), aliases: eq[2].split("|").map((a) => a.trim()).filter(Boolean) };
   }
+  const bare = BARE_EQUALS_FORM.exec(text);
+  if (bare) return { canonical: bare[1].trim(), aliases: [] };
   if (text === "=") return { canonical: "", aliases: [] };
   const colon = text.indexOf(":");
   if (colon >= 0) {
@@ -58270,7 +58278,12 @@ function detectImportFormat(content, filename) {
   if (looksLikeEspanso(text)) return "espanso";
   if (/^(version|terms)\s*:/m.test(text) && /^terms\s*:/m.test(text)) return "json";
   if (looksLikeMarkdown(text)) return "markdown";
-  const firstLine = parseCsv(text)[0]?.fields;
+  let firstLine;
+  try {
+    firstLine = parseCsv(text.split(/\r\n|\r|\n/, 1)[0])[0]?.fields;
+  } catch {
+    firstLine = void 0;
+  }
   if (firstLine) {
     if (isWisprHeader(firstLine)) return "wispr";
     if (isLexiconCsvHeader(firstLine)) return "csv";

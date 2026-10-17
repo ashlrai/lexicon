@@ -7670,7 +7670,6 @@ __export(util_exports, {
   required: () => required,
   safeExtend: () => safeExtend,
   shallowClone: () => shallowClone,
-  sizeCaps: () => sizeCaps,
   slugify: () => slugify,
   stringifyPrimitive: () => stringifyPrimitive,
   toZod: () => toZod,
@@ -8189,18 +8188,6 @@ function prefixIssues(path7, issues) {
 }
 function unwrapMessage(message) {
   return typeof message === "string" ? message : message?.message;
-}
-function sizeCaps(defChecks) {
-  const caps = [];
-  for (const ch of defChecks ?? []) {
-    const d = ch._zod.def;
-    if (!/_(length|size)$|_equals$/.test(d.check))
-      break;
-    const max = d.maximum ?? d.length ?? d.size;
-    if (max >= 0)
-      caps.push([max, ch]);
-  }
-  return caps;
 }
 function attachSchema(issues, start, inst) {
   var _a3;
@@ -9258,7 +9245,7 @@ ${content.join("\n")}
 var version = {
   major: 4,
   minor: 6,
-  patch: 7
+  patch: 5
 };
 
 // node_modules/zod/v4/core/schemas.js
@@ -9815,29 +9802,6 @@ var $ZodNever = /* @__PURE__ */ $constructor("$ZodNever", (inst, def) => {
     return payload;
   };
 });
-function capSize(inst, size) {
-  const caps = sizeCaps(inst._zod.def.checks);
-  if (!caps.length)
-    return;
-  const cap = Math.min(...caps.map((c) => c[0]));
-  const parse2 = inst._zod.parse;
-  inst._zod.parse = (payload, ctx) => {
-    const n = size(payload.value);
-    if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
-      for (const [max, ch] of sizeCaps(inst._zod.def.checks)) {
-        if (n > max && ch._zod.def.when(payload)) {
-          const start = payload.issues.length;
-          ch._zod.check(payload);
-          payload.issues[start].continue = false;
-          attachSchema(payload.issues, start, inst);
-          return payload;
-        }
-      }
-    }
-    return parse2(payload, ctx);
-  };
-}
-var arraySize = (input) => Array.isArray(input) ? input.length : -1;
 function handleArrayResult(result, final, index) {
   if (result.issues.length) {
     final.issues.push(...prefixIssues(index, result.issues));
@@ -9881,7 +9845,6 @@ var $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
     }
     return payload;
   };
-  capSize(inst, arraySize);
 });
 function handlePropertyResult(result, final, key, input, optin, optout) {
   const isPresent = key in input;
@@ -17812,7 +17775,7 @@ var TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
 var TRAILING_PUNCT = /* @__PURE__ */ new Set([".", "'", "\u2019", "-"]);
 var POSSESSIVE_RE = /['’][sS]$/u;
 var FENCE_RE = /```[\s\S]*?(?:```|$)/g;
-var INLINE_CODE_RE = /`[^`\n]*`/g;
+var TILDE_FENCE_RE = /(?:^|\n) {0,3}~~~[\s\S]*?(?:\n {0,3}~~~|$)/g;
 var URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 var WWW_RE = /\bwww\.\S+/gi;
 var EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
@@ -17913,10 +17876,53 @@ function emailRanges(text) {
   }
   return out;
 }
+function codeSpanRanges(text) {
+  const out = [];
+  let lineStart2 = 0;
+  while (lineStart2 <= text.length) {
+    let lineEnd2 = text.indexOf("\n", lineStart2);
+    if (lineEnd2 === -1) lineEnd2 = text.length;
+    let tick = text.indexOf("`", lineStart2);
+    if (tick !== -1 && tick < lineEnd2) {
+      const runs = [];
+      while (tick !== -1 && tick < lineEnd2) {
+        let end = tick;
+        while (end < lineEnd2 && text.charCodeAt(end) === 96) end++;
+        runs.push({ start: tick, len: end - tick });
+        tick = text.indexOf("`", end);
+      }
+      const byLen = /* @__PURE__ */ new Map();
+      runs.forEach((r, i2) => {
+        const list = byLen.get(r.len);
+        if (list) list.push(i2);
+        else byLen.set(r.len, [i2]);
+      });
+      const cursor = /* @__PURE__ */ new Map();
+      let i = 0;
+      while (i < runs.length) {
+        const r = runs[i];
+        const list = byLen.get(r.len);
+        let k = cursor.get(r.len) ?? 0;
+        while (k < list.length && list[k] <= i) k++;
+        cursor.set(r.len, k);
+        if (k < list.length) {
+          const close = runs[list[k]];
+          out.push({ start: r.start, end: close.start + close.len });
+          i = list[k] + 1;
+        } else {
+          i++;
+        }
+      }
+    }
+    lineStart2 = lineEnd2 + 1;
+  }
+  return out;
+}
 function collectRanges(text) {
   const ranges = indentedCodeRanges(text);
   for (const r of emailRanges(text)) ranges.push(r);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, PATH_RE]) {
+  for (const r of codeSpanRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, TILDE_FENCE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -20257,7 +20263,7 @@ function exportText(lexicon, _opts = {}) {
   const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    if (aliases.length === 0) return t.canonical;
+    if (aliases.length === 0) return t.canonical.includes(":") ? `${t.canonical} =` : t.canonical;
     const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
     return needsEquals ? `${t.canonical} = ${aliases.join(" | ")}` : `${t.canonical}: ${aliases.join(", ")}`;
   });

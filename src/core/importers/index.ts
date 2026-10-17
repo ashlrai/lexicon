@@ -143,7 +143,15 @@ export function detectImportFormat(content: string, filename?: string): Concrete
   // Loose sniffing, so after every format with an unambiguous marker.
   if (looksLikeMarkdown(text)) return 'markdown';
 
-  const firstLine = parseCsv(text)[0]?.fields;
+  // Only the header row matters here, so only the first line is parsed: a
+  // quote left open further down is the parser's to report once the format is
+  // known, and a first line that opens with an unbalanced quote is no header.
+  let firstLine: string[] | undefined;
+  try {
+    firstLine = parseCsv(text.split(/\r\n|\r|\n/, 1)[0])[0]?.fields;
+  } catch {
+    firstLine = undefined;
+  }
   if (firstLine) {
     if (isWisprHeader(firstLine)) return 'wispr';
     if (isLexiconCsvHeader(firstLine)) return 'csv';
