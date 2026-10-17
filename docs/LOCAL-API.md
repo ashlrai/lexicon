@@ -37,7 +37,9 @@ still exists; `lexicon serve --uninstall && lexicon serve --install` repairs a
 stale one.
 
 The first run creates `~/.config/lexicon/serve.json` (mode 0600, next to your
-global lexicon; follows `LEXICON_PATH` and `XDG_CONFIG_HOME`):
+global lexicon; follows `LEXICON_PATH` and `XDG_CONFIG_HOME`). An existing one
+that other users can read (restored from a backup, synced, copied) is put back
+to 0600 when `lexicon serve`, `--show` or `--install` reuses it:
 
 ```json
 {

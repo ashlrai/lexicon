@@ -17,10 +17,12 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { resolvePaths } from './store.js';
+import { MAX_LEXICON_BYTES, resolvePaths } from './store.js';
 import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import { readBoundedRegularFile } from '../util/bounded-read.js';
+import { recalledParsedHash } from './parsed-hash.js';
 import { formatJson } from '../util/json.js';
 import { sanitizeForDisplay } from './schema.js';
 
@@ -69,10 +71,15 @@ async function canonicalPath(filePath: string): Promise<string> {
   }
 }
 
-/** Hex sha256 of a file's bytes, or undefined when it cannot be read. */
+/**
+ * Hex sha256 of a file's bytes, or undefined when it cannot be read. Only a
+ * regular file of at most MAX_LEXICON_BYTES is hashed (anything larger could
+ * never be loaded): the path is a repository's, and a symlink to a device
+ * such as `/dev/zero` must not turn a trust check into an unbounded read.
+ */
 export async function hashFile(filePath: string): Promise<string | undefined> {
   try {
-    const bytes = await fs.readFile(filePath);
+    const { bytes } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     // Loaded on first use: node:crypto costs the prompt hook several ms to
     // load, and the hook only hashes when a project lexicon exists.
     const { createHash } = await import('node:crypto');
@@ -187,16 +194,52 @@ export async function isTrusted(projectFile: LexiconFile, opts: StoreOptions = {
   const registry = await readTrustRegistry(opts);
   const entry = registry.trusted[key];
   if (!entry) return 'untrusted';
-  const sha = await hashFile(key);
+  // The bytes that were parsed, when this object came from readLexiconFile:
+  // a second read could see a different file than the one being merged.
+  const sha = (await recalledParsedHash(projectFile)) ?? (await hashFile(key));
   if (sha === undefined) return 'untrusted';
   return sha === entry.sha256 ? 'trusted' : 'changed';
 }
 
-/** Register (or re-pin) `projectPath` at its current content hash. The file must exist. */
-export async function trustProject(projectPath: string, opts: StoreOptions = {}): Promise<TrustEntry> {
+/**
+ * The sha256 of the bytes `readLexiconFile` parsed for this object (project
+ * scope), or undefined for an object it did not produce (a copy, a literal).
+ * Pass it to `trustProject` as `expectedSha256` to pin exactly what a preview
+ * showed.
+ */
+export function parsedContentHash(file: LexiconFile): Promise<string | undefined> {
+  return recalledParsedHash(file);
+}
+
+/** Thrown by `trustProject` when the file no longer has the `expectedSha256` content. Nothing was pinned. */
+export class TrustContentChangedError extends Error {
+  readonly path: string;
+
+  constructor(projectPath: string) {
+    super(`${projectPath} changed since it was read; nothing was trusted`);
+    this.name = 'TrustContentChangedError';
+    this.path = projectPath;
+  }
+}
+
+/** True for a `TrustContentChangedError` (duck-typed by name). */
+export function isTrustContentChangedError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'TrustContentChangedError';
+}
+
+/**
+ * Register (or re-pin) `projectPath` at its current content hash. The file must exist.
+ * With `expectedSha256`, refuses (`TrustContentChangedError`, nothing written)
+ * unless the file still holds exactly those bytes.
+ */
+export async function trustProject(
+  projectPath: string,
+  opts: StoreOptions & { expectedSha256?: string } = {},
+): Promise<TrustEntry> {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
   if (sha256 === undefined) throw new Error(`cannot read the project lexicon at ${projectPath}`);
+  if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
     const registry = await readTrustRegistry(opts);
     const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
