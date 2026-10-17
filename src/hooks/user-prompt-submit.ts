@@ -413,6 +413,15 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
     const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    // Only a store parse/validation error is a file to fix with `lexicon edit`;
+    // anything else (a file that cannot be read) used to be reported as one too.
+    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+      return {
+        note:
+          `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}\n` +
+          'Tell the user to run `lexicon doctor`, which names the file and what is wrong with it.',
+      };
+    }
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
@@ -420,6 +429,25 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
         'and `lexicon doctor` will show the same thing.',
     };
   }
+}
+
+/** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */
+const UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+
+/**
+ * The payload's `cwd` when it is a non-empty string, else undefined (the
+ * hook then uses its own working directory). Any other value used to reach
+ * loadLexicon, whose TypeError was reported to the model as a lexicon file
+ * that does not parse, telling the user to run `lexicon edit` on a file that
+ * was fine. A present but unusable value gets one stderr line.
+ */
+function payloadCwd(payload: HookInput): string | undefined {
+  const cwd: unknown = payload.cwd;
+  if (typeof cwd === 'string' && cwd.trim() !== '') return cwd;
+  if (cwd !== undefined && cwd !== null) {
+    process.stderr.write(`[lexicon hook] ignoring the payload's cwd ${shownValue(cwd)} (not a directory path); using ${shownValue(process.cwd())}\n`);
+  }
+  return undefined;
 }
 
 function emit(hookEventName: HookEventName, parts: readonly string[]): string {
@@ -433,7 +461,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const prompt = payload.prompt;
   if (typeof prompt !== 'string' || prompt.trim() === '') return '';
 
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
   const attempt = await loadOrExplain(cwd);
@@ -489,7 +517,7 @@ export function formatBudgetNote(budgetMs: number): string {
 }
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit('SessionStart', [attempt.note ?? '']);
   const loaded = attempt.loaded;

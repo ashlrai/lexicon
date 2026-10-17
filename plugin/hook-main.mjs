@@ -20459,11 +20459,27 @@ async function loadOrExplain(cwd) {
     return { loaded: await loadLexicon({ cwd }) };
   } catch (err) {
     const message = stripControlChars(err instanceof Error ? err.message : String(err));
+    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+      return {
+        note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
+Tell the user to run \`lexicon doctor\`, which names the file and what is wrong with it.`
+      };
+    }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
 Tell the user to run \`lexicon edit\` and fix the parse error. \`lexicon setup\` will not repair this, and \`lexicon doctor\` will show the same thing.`
     };
   }
+}
+var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+function payloadCwd(payload) {
+  const cwd = payload.cwd;
+  if (typeof cwd === "string" && cwd.trim() !== "") return cwd;
+  if (cwd !== void 0 && cwd !== null) {
+    process.stderr.write(`[lexicon hook] ignoring the payload's cwd ${shownValue(cwd)} (not a directory path); using ${shownValue(process.cwd())}
+`);
+  }
+  return void 0;
 }
 function emit(hookEventName, parts) {
   const output = {
@@ -20474,7 +20490,7 @@ function emit(hookEventName, parts) {
 async function userPromptSubmit(payload, opts) {
   const prompt = payload.prompt;
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
@@ -20506,7 +20522,7 @@ function formatBudgetNote(budgetMs) {
   return `Lexicon stopped checking this prompt for misspelled names after its ${budgetMs} ms budget, so later parts were not checked. If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.`;
 }
 async function sessionStart(payload, opts) {
-  const cwd = opts.cwd ?? payload.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);
   if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
   const loaded = attempt.loaded;

@@ -793,6 +793,42 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
   });
 });
 
+// Catches: a payload `cwd` that is not a string reached loadLexicon, whose
+// TypeError came back to the model as "its file does not parse ... run
+// `lexicon edit`", about a lexicon that was fine; and any other load error
+// (a file that cannot be read) was worded as a parse error too.
+describe('a payload cwd that is not a path, and a load error that is not a parse error', () => {
+  it('ignores a non-string or blank cwd and loads from the process directory', async () => {
+    mocks.normalize.mockImplementation(fakeNormalize);
+    mocks.diffSummary.mockReturnValue('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const cwd of [123, {}, ['/x'], true, '', '   ']) {
+        mocks.loadLexicon.mockClear();
+        for (const event of ['UserPromptSubmit', 'SessionStart']) {
+          const out = await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd }));
+          expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+          expect(context(out)).not.toContain('does not parse');
+        }
+      }
+      expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain("ignoring the payload's cwd \"123\"");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('words a load error that is not a parse error as unreadable and points at lexicon doctor', async () => {
+    mocks.loadLexicon.mockRejectedValue(Object.assign(new Error("EACCES: permission denied, open '/x/lexicon.yaml'"), { code: 'EACCES' }));
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const said = context(await runHook(payload('ping Ashler')));
+    expect(said).toContain('could not be read: EACCES');
+    expect(said).toContain('lexicon doctor');
+    expect(said).not.toContain('does not parse');
+    expect(said).not.toContain('lexicon edit');
+  });
+});
+
 describe('writeStdout', () => {
   function sink(writeSync: (fd: number, b: Uint8Array, off: number, len: number) => number) {
     const err: string[] = [];
