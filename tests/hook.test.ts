@@ -728,6 +728,23 @@ describe('runHook', () => {
       expect(shown + Number(more![1])).toBe(300);
     });
 
+    // Catches: the table was cut to the cap and the skipped-project note was
+    // appended after it, so the context ran past SESSION_CONTEXT_MAX_CHARS.
+    it('keeps the table plus the skipped-project note within the cap', async () => {
+      const terms: Term[] = Array.from({ length: 300 }, (_, i) => ({ canonical: `Term${i}`, aliases: [`turm${i}`], category: 'product' }));
+      mocks.loadLexicon.mockResolvedValue({
+        ...loaded,
+        merged: { version: 1, terms },
+        projectTrust: 'changed',
+        skippedProject: { path: `/${'deep/'.repeat(40)}repo/.lexicon.yaml`, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
+      });
+      const { runHook, SESSION_CONTEXT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runHook(sessionStartPayload()));
+      expect(ctx.length).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+      expect(ctx).toMatch(/more terms; read the lexicon:\/\/me resource for the full list\./);
+      expect(ctx.split('\n').at(-1)).toMatch(/^Note: this repo's \.lexicon\.yaml at .* changed since/);
+    });
+
     it('truncateSessionContext leaves short text alone and hard-cuts text without a table', async () => {
       const { truncateSessionContext } = await import('../src/hooks/user-prompt-submit.js');
       expect(truncateSessionContext('short', 10)).toBe('short');

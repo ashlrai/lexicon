@@ -14,6 +14,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The `SessionStart` hook keeps its whole context within the documented 4000 characters when a project lexicon was skipped. The table was cut to the cap and the skipped-project note appended after it, so a large lexicon in an untrusted repo ran a few hundred characters over; the table now gives up room for the note.
 - The hook's correction detection keeps the words of "it's X not Y" alone on the right offsets when the prompt holds a letter whose lowercase is longer (`İ` lowercases to two characters). Spans were found in the lowercased prompt, so every span after such a letter was shifted: the correction's own words could be rewritten and an unrelated garble just after them left uncorrected. Matching still ignores case.
 - MCP `apply_suggestion` refuses a project-scope suggestion whose `path` names another repo's `.lexicon.yaml` (what `suggest_terms` with `cwd` returns) and writes nothing, naming both files and `lexicon suggest --cwd <dir> --apply`. It wrote the server's own project file instead, so the agent told the user one file and edited another, or created a copy of the term there.
 - With `skipCode` on, HTML `<kbd>`, `<samp>`, `<script>` and `<style>` elements are left alone like `<code>` and `<pre>`: a keyboard shortcut, sample program output, a script or a stylesheet pasted into a prompt no longer has its identifiers rewritten. Only real tags that close count, and the scan stays linear.

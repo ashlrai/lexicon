@@ -20869,7 +20869,8 @@ async function sessionStart(payload, opts) {
     if (!await shouldEmitOnboardNote(loaded.global.path)) return skippedNote ? emit("SessionStart", [skippedNote]) : "";
     return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
   }
-  const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd())];
+  const room = SESSION_CONTEXT_MAX_CHARS - (skippedNote ? skippedNote.length + 1 : 0);
+  const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd(), room)];
   if (skippedNote) parts.push(skippedNote);
   return emit("SessionStart", parts);
 }

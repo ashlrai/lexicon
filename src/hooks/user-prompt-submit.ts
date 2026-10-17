@@ -77,7 +77,7 @@ interface HookOutput {
   };
 }
 
-/** Upper bound for the SessionStart context; longer tables are truncated with a pointer to lexicon://me. */
+/** Upper bound for the whole SessionStart context, skipped-project note included; longer tables are truncated with a pointer to lexicon://me. */
 export const SESSION_CONTEXT_MAX_CHARS = 4000;
 
 /** State file (next to the global lexicon) recording when the empty-lexicon onboarding note was last emitted. */
@@ -666,7 +666,10 @@ async function sessionStart(payload: HookInput, opts: HookOptions): Promise<stri
 
   // The model-facing variant: `<` and `>` in a canonical or note become
   // lookalikes, so the table cannot close or open a tag around it.
-  const parts: string[] = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd())];
+  // The cap covers the whole context: the table gives up room for the
+  // skipped-project note (bounded by pathForModel) and the joining newline.
+  const room = SESSION_CONTEXT_MAX_CHARS - (skippedNote ? skippedNote.length + 1 : 0);
+  const parts: string[] = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd(), room)];
   if (skippedNote) parts.push(skippedNote);
   return emit('SessionStart', parts);
 }
