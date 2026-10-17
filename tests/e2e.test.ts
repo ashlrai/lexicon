@@ -1320,7 +1320,7 @@ const BUILT_CLI = path.join(REPO_ROOT, 'dist', 'cli', 'index.js');
 const BUNDLED_MCP = path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs');
 const BUNDLED_HOOK = path.join(REPO_ROOT, 'plugin', 'hook.mjs');
 
-describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: agent journey (onboard, normalize, learn, stats, suggest)', () => {
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: agent journey (onboard, normalize, learn, stats, suggest)', () => {
   interface Suggestion {
     kind: string;
     canonical: string;
@@ -1480,7 +1480,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: agent journey (onboard, norm
  * with `ok: false`, so a script could not read one key for either outcome.
  * Array-shaped successes (list --json, harvest --json) stay bare arrays.
  */
-describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: --json object successes lead with ok: true', () => {
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: --json object successes lead with ok: true', () => {
   const leadsWithOk = (stdout: string): Record<string, unknown> => {
     const doc = JSON.parse(stdout) as Record<string, unknown>;
     expect(Object.keys(doc)[0]).toBe('ok');
@@ -1526,7 +1526,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: --json object successes lead
 // Catches: `pack add` with a community ref under `--json --yes` printed the
 // community install object and then the vendored results array: two JSON
 // documents, which no parser reads. A mix prints one array in argument order.
-describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: pack add --json with community refs', () => {
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add --json with community refs', () => {
   it('prints one array for a vendored and a community pack together', async () => {
     const h = await freshHome('pack-mix');
     const index = path.join(REPO_ROOT, 'registry', 'index.example.yaml');
