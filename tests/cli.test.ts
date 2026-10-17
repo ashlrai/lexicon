@@ -811,6 +811,20 @@ describe('export', () => {
     expect(core.exportLexicon).not.toHaveBeenCalled();
   });
 
+  // Catches: `export --out lex.md` with the format forgotten listed the formats and exited 0, writing nothing.
+  it('refuses --out, --category or --limit without a format (exit 1, nothing written)', async () => {
+    const io = makeIO();
+    expect(await runExport(undefined, { out: 'lex.md', limit: 5 }, io)).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toContain('lexicon: --out, --limit need a format; nothing was exported');
+    expect(io.err).toContain('lexicon: run: lexicon export <format> (formats below)');
+    expect(io.err).toContain('superwhisper');
+    const cat = makeIO();
+    expect(await runExport(undefined, { category: ['brand'] }, cat)).toBe(1);
+    expect(cat.err).toContain('lexicon: --category needs a format');
+    expect(core.exportLexicon).not.toHaveBeenCalled();
+  });
+
   it('lists formats (exit 0) when no format is given', async () => {
     const io = makeIO();
     expect(await runExport(undefined, {}, io)).toBe(0);
