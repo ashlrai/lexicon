@@ -260,6 +260,8 @@ export interface AddOptions extends CommonOptions {
   never?: string[];
   /** `-i`: confirm suggested aliases as a checklist, then ask for phonetic and category. */
   interactive?: boolean;
+  /** Print `{ term, path, created, scope, suggested }` as JSON instead of the summary lines. */
+  json?: boolean;
   /** Explicit global lexicon path (test hook, no CLI flag). */
   globalPath?: string;
 }
@@ -278,6 +280,7 @@ export async function runAdd(
   if (opts.interactive && !prompter && !isInteractive()) {
     throw new Error('add --interactive needs a terminal (stdin and stdout must be a TTY); pass aliases as arguments instead');
   }
+  if (opts.interactive && opts.json) throw new Error('add: --interactive and --json cannot be combined');
   const ownPrompter = opts.interactive && !prompter;
   const p: Prompter | undefined = opts.interactive
     ? (prompter ?? createPrompter({ input: process.stdin, output: process.stdout }))
@@ -342,6 +345,10 @@ export async function runAdd(
   if (never.length > 0) term.never = never;
 
   const result = await addTerm(term, { scope, cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) });
+  if (opts.json) {
+    line(io, JSON.stringify({ term: result.term, path: result.file.path, created: result.created, scope, suggested }, null, 2));
+    return 0;
+  }
   line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
   if (suggested.length > 0 && !p) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
@@ -351,11 +358,18 @@ export async function runAdd(
 
 export interface RemoveOptions extends CommonOptions {
   project?: boolean;
+  /** Print `{ canonical, removed }` as JSON (exit 1 still means not found). */
+  json?: boolean;
 }
 
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   const removed = await removeTerm(canonical, opts.project ? { scope: 'project', cwd } : { cwd });
+  if (opts.json) {
+    line(io, JSON.stringify({ canonical, removed }, null, 2));
+    if (!removed) io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
+    return removed ? 0 : 1;
+  }
   if (!removed) {
     io.stderr(`lexicon: term "${safe(canonical)}" not found${opts.project ? ' in project lexicon' : ''}\n`);
     return 1;

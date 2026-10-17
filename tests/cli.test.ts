@@ -337,6 +337,18 @@ describe('add / remove / path', () => {
     expect(missing.err).toContain('not found');
   });
 
+  it('add --json and remove --json print parseable JSON on stdout', async () => {
+    const added = makeIO();
+    expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
+    expect(JSON.parse(added.out)).toMatchObject({ term: { canonical: 'Ashlr.AI' }, path: state.globalPath, created: true, scope: 'global' });
+    const removed = makeIO();
+    expect(await runRemove('Ashlr.AI', { json: true }, removed)).toBe(0);
+    expect(JSON.parse(removed.out)).toEqual({ canonical: 'Ashlr.AI', removed: true });
+    const missing = makeIO();
+    expect(await runRemove('Nope', { json: true }, missing)).toBe(1);
+    expect(JSON.parse(missing.out)).toEqual({ canonical: 'Nope', removed: false });
+  });
+
   it('path prints both scopes', async () => {
     const io = makeIO();
     await runPath({}, io);

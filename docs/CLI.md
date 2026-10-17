@@ -112,6 +112,8 @@ Options:
                          phonetic hint and category
   --never <word...>      words that must never be rewritten to this term even if
                          they sound alike, e.g. --never sauce
+  --json                 print the saved term, file path and whether it was
+                         created as JSON
   -h, --help             display help for command
 ```
 
@@ -124,6 +126,7 @@ remove a term (project lexicon first, then global)
 
 Options:
   --project   only look in the project lexicon
+  --json      print { canonical, removed } as JSON (exit 1 when not found)
   -h, --help  display help for command
 ```
 

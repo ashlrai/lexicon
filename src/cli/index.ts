@@ -100,6 +100,7 @@ program
     '--never <word...>',
     'words that must never be rewritten to this term even if they sound alike, e.g. --never sauce',
   )
+  .option('--json', 'print the saved term, file path and whether it was created as JSON')
   .action(async (canonical: string, aliases: string[], opts: AddOptions) =>
     done(await runAdd(canonical, aliases, withGlobals(opts), io)),
   );
@@ -110,6 +111,7 @@ program
   .description('remove a term (project lexicon first, then global)')
   .argument('<canonical>')
   .option('--project', 'only look in the project lexicon')
+  .option('--json', 'print { canonical, removed } as JSON (exit 1 when not found)')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
 program
