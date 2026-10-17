@@ -224,7 +224,7 @@ export interface HarvestOptions {
 }
 
 /**
- * Export targets, in the order `lexicon export --list` prints them. One
+ * Export targets, in the order `lexicon export` (no format) lists them. One
  * sentence of prose per format lives in `EXPORT_FORMAT_INFO`
  * (core/exporters/index.ts), which is keyed by this type.
  */

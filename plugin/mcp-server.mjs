@@ -18198,7 +18198,7 @@ var require_commander = __commonJS({
 // src/mcp/server.ts
 var import_node_fs27 = __toESM(require_node_fs(), 1);
 var import_node_path30 = __toESM(require_node_path(), 1);
-var import_node_url5 = __toESM(require_node_url(), 1);
+var import_node_url4 = __toESM(require_node_url(), 1);
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -60544,8 +60544,9 @@ function resolveIntegrationPaths(cliDir) {
   };
 }
 var NPX_CACHE_SEGMENT = /[\\/]_npx[\\/]/;
+var PLUGIN_CACHE_SEGMENT = /[\\/]plugins[\\/]cache[\\/][^\\/]+[\\/]lexicon[\\/]/;
 function isVolatileEntry(p) {
-  return NPX_CACHE_SEGMENT.test(p);
+  return NPX_CACHE_SEGMENT.test(p) || PLUGIN_CACHE_SEGMENT.test(p);
 }
 function launchFor(entryPath, subcommand, version2) {
   if (!isVolatileEntry(entryPath)) return { command: "node", args: [entryPath], viaNpx: false };
@@ -60740,10 +60741,13 @@ var import_node_os6 = __toESM(require_node_os());
 var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
 var import_promises = __toESM(require_promises());
-var import_node_url4 = __toESM(require_node_url());
 var DEFAULT_MODEL = "base.en";
 var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-var REPO_MODELS_DIR = (0, import_node_url4.fileURLToPath)(new URL("../../bench/audio/models/", import.meta.url));
+var REPO_MODELS_DIR = repoModelsDir();
+function repoModelsDir() {
+  const root = findPackageRoot2(import.meta.url);
+  return root ? import_node_path19.default.join(root, "bench", "audio", "models") : void 0;
+}
 function modelFileName(name) {
   return `ggml-${name}.bin`;
 }
@@ -60773,7 +60777,7 @@ function resolveModel(spec, opts) {
   const file2 = modelFileName(spec);
   const primary = import_node_path19.default.join(modelsDir(opts.globalPath, opts.env), file2);
   if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
-  for (const dir of opts.fallbackDirs ?? [REPO_MODELS_DIR]) {
+  for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
     const candidate = import_node_path19.default.join(dir, file2);
     if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
@@ -61210,14 +61214,32 @@ async function runInstall(client, opts, io, deps = {}) {
   }
   return 0;
 }
+async function installedLexiconPlugin(settingsPath, installedPluginsPath) {
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  return findInstalledLexiconPlugin(settings.error === void 0 ? settings.value : void 0, installed.error === void 0 ? installed.value : void 0);
+}
 var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
 async function runInstallClaude(opts, io, deps = {}) {
   const scope = opts.scope ?? "user";
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const settingsPath = deps.settingsPath ?? import_node_path20.default.join(claudeConfigDir(), "settings.json");
+  if (scope === "user") {
+    const pluginId = await installedLexiconPlugin(
+      settingsPath,
+      deps.installedPluginsPath ?? import_node_path20.default.join(import_node_path20.default.dirname(settingsPath), "plugins", "installed_plugins.json")
+    );
+    if (pluginId) {
+      line(
+        io,
+        `the lexicon Claude Code plugin (${safe(pluginId)}) already provides the MCP server and the ${HOOK_EVENTS.join(" and ")} hooks, so nothing was ${opts.apply ? "written" : "planned"}; to wire Claude Code by hand instead, uninstall it first: claude plugin uninstall ${safe(pluginId)}`
+      );
+      return 0;
+    }
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const exec = deps.exec ?? defaultExec;
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
@@ -61226,7 +61248,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const mcpArgs = ["mcp", "add", ...envArgs, "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
   line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
-  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx cache, so the config calls npx rather than a path npm may delete)"));
+  if (serverLaunch.viaNpx) line(io, dim("   (run from an npx or Claude Code plugin cache, so the config calls npx rather than a path that may be deleted)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !(0, import_node_fs18.existsSync)(serverPath)) {
@@ -62481,7 +62503,7 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (isVolatileEntry(cliPath)) {
     io.stderr(
-      `lexicon: refusing to install the login service: this copy is running from an npx cache (${safe(cliPath)}), which npm deletes. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written
+      `lexicon: refusing to install the login service: this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written
 `
     );
     return 1;
@@ -63762,7 +63784,7 @@ function cwdFromRoots(roots) {
   for (const root of roots) {
     if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
     try {
-      const dir = (0, import_node_url5.fileURLToPath)(root.uri);
+      const dir = (0, import_node_url4.fileURLToPath)(root.uri);
       if ((0, import_node_fs27.statSync)(dir).isDirectory()) return dir;
     } catch {
     }
@@ -63958,7 +63980,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs27.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs27.realpathSync)((0, import_node_url5.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs27.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs27.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

@@ -1,8 +1,9 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUNDLE = path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs');
@@ -118,5 +119,118 @@ describe('plugin manifests agree with the package and the bundles', () => {
       const unknown = named.filter((n) => !tools.has(n));
       expect(unknown, doc).toEqual([]);
     }
+  });
+});
+
+/** Starts `bundle`, initializes, calls one tool, and returns the tool's text. */
+function callBundleTool(bundle: string, tool: string, env: NodeJS.ProcessEnv, cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [bundle], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`no tools/call answer from ${bundle}; stderr: ${err}`));
+    }, 15_000);
+    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    child.stdout.on('data', (d: Buffer) => {
+      out += d.toString();
+      for (const line of out.split('\n')) {
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line) as { id?: number; result?: { content?: Array<{ text?: string }> } };
+        if (msg.id === 2) {
+          clearTimeout(timer);
+          child.kill();
+          resolve(msg.result?.content?.[0]?.text ?? '');
+          return;
+        }
+      }
+    });
+    const send = (m: unknown): void => void child.stdin.write(`${JSON.stringify(m)}\n`);
+    send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: tool, arguments: {} } });
+  });
+}
+
+describe('plugin bundles find package files from where they are installed', () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), 'lexicon-plugin-layout-'));
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // plugin/mcp-server.mjs is one level below the package root, not two like
+  // dist/voice/models.js, so a fixed `../../bench/audio/models` from the module
+  // looked in a sibling of the install (npm's @ashlr/, Claude Code's plugin
+  // cache). Only the package's own bench/ may count as the repo models dir.
+  it('the MCP bundle never looks for whisper models outside its package', async () => {
+    const pkg = path.join(tmp, 'lexicon');
+    mkdirSync(path.join(pkg, 'plugin'), { recursive: true });
+    writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@ashlr/lexicon', version: '9.9.9' }));
+    copyFileSync(BUNDLE, path.join(pkg, 'plugin', 'mcp-server.mjs'));
+    const outside = path.join(tmp, 'bench', 'audio', 'models');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, 'ggml-base.en.bin'), 'planted');
+    const home = path.join(tmp, 'home');
+    mkdirSync(home);
+    const env: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH ?? '',
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: path.join(home, '.config'),
+      LEXICON_PATH: path.join(home, 'lexicon.yaml'),
+      LEXICON_WHISPER_MODELS: path.join(home, 'models'),
+    };
+    const report = JSON.parse(await callBundleTool(path.join(pkg, 'plugin', 'mcp-server.mjs'), 'lexicon_doctor', env, home)) as {
+      checks: Array<{ message: string }>;
+      versions: { lexicon: string };
+    };
+    expect(report.versions.lexicon).toBe('9.9.9');
+    const model = report.checks.find((c) => c.message.startsWith('whisper model'));
+    expect(model?.message).toMatch(/absent/);
+    expect(model?.message).not.toContain(outside);
+  });
+});
+
+/** Runs `node <script> ...args` with stdin left open (as on a terminal) and resolves on exit or after `ms`. */
+function runWithOpenStdin(script: string, args: string[], ms: number): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, ...args], { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let timedOut = false;
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, ms);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, timedOut });
+    });
+  });
+}
+
+describe('hook.mjs flags (plugin bundle)', () => {
+  const HOOK = path.join(REPO_ROOT, 'plugin', 'hook.mjs');
+  const version = readJson<{ version: string }>('package.json').version;
+
+  // Without these the hook waited for EOF on stdin, so `node plugin/hook.mjs
+  // --version` (the obvious install check) hung on a terminal.
+  it('--version prints the package version and exits 0 without reading stdin', async () => {
+    const r = await runWithOpenStdin(HOOK, ['--version'], 10_000);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim()).toBe(version);
+  });
+
+  it('--help prints a one-line usage and exits 0 without reading stdin', async () => {
+    const r = await runWithOpenStdin(HOOK, ['--help'], 10_000);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim().split('\n')).toHaveLength(1);
+    expect(r.stdout).toMatch(/^Usage: .*UserPromptSubmit and SessionStart/);
   });
 });

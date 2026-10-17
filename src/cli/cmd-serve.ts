@@ -528,8 +528,8 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   // and names the one command that makes it permanent.
   if (isVolatileEntry(cliPath)) {
     io.stderr(
-      `lexicon: refusing to install the login service: this copy is running from an npx cache (${safe(cliPath)}), ` +
-        'which npm deletes. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written\n',
+      `lexicon: refusing to install the login service: this copy is running from an npx or Claude Code plugin cache (${safe(cliPath)}), ` +
+        'which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install. Nothing was written\n',
     );
     return 1;
   }
