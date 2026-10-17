@@ -1211,10 +1211,25 @@ describe('lexicon MCP server', () => {
         expect(harvested.isError).toBe(false);
         expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'tRPC', aliases: ['t r p c', 'trpc'], source: 'user', category: 'product' }, { cwd: '/fake/repo' });
 
-        const never = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'never', canonical: 'SaaS', alias: 'sauce' } } });
+        const never = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'never', canonical: 'Kubernetes', alias: 'cuber' } } });
         expect(never.isError).toBe(false);
-        expect(JSON.parse(textOf(never))).toMatchObject({ summary: '"sauce" will never be rewritten to "SaaS"' });
-        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'SaaS', aliases: [], source: 'user', never: ['sauce'] }, { cwd: '/fake/repo' });
+        expect(JSON.parse(textOf(never))).toMatchObject({ summary: '"cuber" will never be rewritten to "Kubernetes"' });
+        // Written where the term lives (Kubernetes is a project term).
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(
+          { canonical: 'Kubernetes', aliases: [], source: 'user', never: ['cuber'], scope: 'project' },
+          { cwd: '/fake/repo', scope: 'project' },
+        );
+
+        // Catches: an alias or never word for a term no longer in the lexicon
+        // created a new term holding only that word, reported as "saved".
+        mocks.addTerm.mockClear();
+        for (const gone of [{ kind: 'never', canonical: 'SaaS', alias: 'sauce' }, { kind: 'alias', canonical: 'Gone.io', alias: 'gone eye oh' }]) {
+          const res = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: gone } });
+          expect(res.isError).toBe(true);
+          expect(textOf(res)).toContain(`no term "${gone.canonical}" in the lexicon`);
+          expect(textOf(res)).toContain('nothing was written');
+        }
+        expect(mocks.addTerm).not.toHaveBeenCalled();
 
         const stale = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'stale', canonical: 'Kubernetes' } } });
         expect(JSON.parse(textOf(stale))).toMatchObject({ kind: 'stale', removed: true });
