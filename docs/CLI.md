@@ -366,8 +366,8 @@ Arguments:
 Options:
   --list      list trusted project lexicons and whether they still match
   -y, --yes   trust without asking (off a terminal it never asks)
-  --json      print the result as JSON, as MCP trust_project returns it (with
-              --list: { registry, trustAll, trusted })
+  --json      print the result as JSON: ok, then the object MCP trust_project
+              returns (with --list: { ok, registry, trustAll, trusted })
   -h, --help  display help for command
 ```
 
@@ -383,8 +383,8 @@ Arguments:
               .lexicon.yaml for the current directory)
 
 Options:
-  --json      print { action, path, removed, registry, summary } as JSON, as MCP
-              trust_project returns it
+  --json      print { ok, action, path, removed, registry, summary } as JSON, as
+              MCP trust_project returns it plus ok
   -h, --help  display help for command
 ```
 

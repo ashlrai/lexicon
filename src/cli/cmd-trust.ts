@@ -30,7 +30,7 @@ import {
   untrustProject,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
+import { jsonError, jsonOk, line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
@@ -89,8 +89,9 @@ function printJson(io: IO, payload: unknown): void {
 
 /**
  * A refusal: the stderr line(s) as always, and under --json one
- * `{ action, path, error, nextStep? }` document on stdout too, so a script
- * that parses stdout is not left with nothing. Always exit code 1.
+ * `{ ok: false, error, nextStep?, action, path? }` document on stdout too, so
+ * a script that parses stdout is not left with nothing, and reads `ok` as it
+ * does on every other command. Always exit code 1.
  */
 function fail(
   io: IO,
@@ -100,7 +101,7 @@ function fail(
   error: string,
   nextStep?: string,
 ): number {
-  if (json) printJson(io, { action, ...(filePath !== undefined ? { path: filePath } : {}), error, ...(nextStep ? { nextStep } : {}) });
+  if (json) printJson(io, { ...jsonError(error, nextStep), action, ...(filePath !== undefined ? { path: filePath } : {}) });
   io.stderr(`lexicon: ${safeLines(error)}\n`);
   if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
   return 1;
@@ -159,7 +160,8 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   else if (ask) renderPreview(file, io.stderr);
   if (ask && !(await confirmTrust(filePath, opts, deps))) {
     if (opts.json) {
-      printJson(io, { action: 'trust', path: filePath, status: before, result: 'declined', summary: 'the user did not approve; nothing was trusted' });
+      // Exit 0 (a no is an answer, not a failure), so ok is true as on every exit-0 document.
+      printJson(io, jsonOk({ action: 'trust', path: filePath, status: before, result: 'declined', summary: 'the user did not approve; nothing was trusted' }));
     } else {
       line(io, 'declined; nothing was trusted.');
     }
@@ -180,8 +182,8 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   }
   const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
   if (opts.json) {
-    // The object MCP trust_project returns for action 'trust'.
-    printJson(io, {
+    // `ok: true`, then the object MCP trust_project returns for action 'trust'.
+    printJson(io, jsonOk({
       action: 'trust',
       path: filePath,
       previousStatus: before,
@@ -192,7 +194,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
       registry,
       ...trustPreview(file),
       note: 'Merged into the lexicon until its content changes; then it must be trusted again.',
-    });
+    }));
     return 0;
   }
   io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(registry)}\n`);
@@ -206,14 +208,14 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
   if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass a path');
   const removed = await untrustProject(filePath, { cwd });
   if (opts.json) {
-    // The object MCP trust_project returns for action 'untrust'.
-    printJson(io, {
+    // `ok: true`, then the object MCP trust_project returns for action 'untrust'.
+    printJson(io, jsonOk({
       action: 'untrust',
       path: filePath,
       removed,
       registry: getTrustPath({ cwd }),
       summary: removed ? `untrusted ${filePath}; it will no longer be merged` : `${filePath} was not trusted; nothing to do`,
-    });
+    }));
     return 0;
   }
   if (!removed) {
@@ -227,8 +229,8 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
 async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<number> {
   const entries = await listTrusted({ cwd });
   if (opts.json) {
-    // The registry fields of MCP trust_project's 'status' result.
-    printJson(io, { registry: getTrustPath({ cwd }), trustAll: trustAllEnabled(), trusted: entries });
+    // `ok: true`, then the registry fields of MCP trust_project's 'status' result.
+    printJson(io, jsonOk({ registry: getTrustPath({ cwd }), trustAll: trustAllEnabled(), trusted: entries }));
     return 0;
   }
   io.stdout(`registry: ${safe(getTrustPath({ cwd }))}\n`);
@@ -257,7 +259,7 @@ export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps 
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .option('--list', 'list trusted project lexicons and whether they still match')
     .option('-y, --yes', 'trust without asking (off a terminal it never asks)')
-    .option('--json', 'print the result as JSON, as MCP trust_project returns it (with --list: { registry, trustAll, trusted })')
+    .option('--json', 'print the result as JSON: ok, then the object MCP trust_project returns (with --list: { ok, registry, trustAll, trusted })')
     .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; json?: boolean }) =>
       done(await runTrust(target, { ...opts, ...globals() }, io, deps)),
     );
@@ -266,6 +268,6 @@ export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps 
     .command('untrust')
     .description('revoke approval for a project .lexicon.yaml')
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
-    .option('--json', 'print { action, path, removed, registry, summary } as JSON, as MCP trust_project returns it')
+    .option('--json', 'print { ok, action, path, removed, registry, summary } as JSON, as MCP trust_project returns it plus ok')
     .action(async (target: string | undefined, opts: { json?: boolean }) => done(await runUntrust(target, { ...opts, ...globals() }, io)));
 }
