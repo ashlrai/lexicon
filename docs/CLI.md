@@ -165,10 +165,12 @@ correct dictated text (from arguments, or stdin when omitted); stdout always
 round-trips the input, exit 1 if the lexicon could not be read
 
 Options:
-  --json                print the full NormalizeResult as JSON, plus example:
-                        true when the built-in example terms stood in and
-                        projectTrust, skippedProject and note when an untrusted
-                        project lexicon was left out
+  --json                print ok: true and the full NormalizeResult as JSON ({
+                        ok: false, error, nextStep } and the unchanged input
+                        when the lexicon fails to load), plus example: true when
+                        the built-in example terms stood in and projectTrust,
+                        skippedProject and note when an untrusted project
+                        lexicon was left out
   --diff                print a summary of replacements to stderr (with --json
                         too)
   --dry-run             print the replacement summary to stderr and the text
@@ -366,8 +368,8 @@ Arguments:
 Options:
   --list      list trusted project lexicons and whether they still match
   -y, --yes   trust without asking (off a terminal it never asks)
-  --json      print the result as JSON, as MCP trust_project returns it (with
-              --list: { registry, trustAll, trusted })
+  --json      print the result as JSON: ok, then the object MCP trust_project
+              returns (with --list: { ok, registry, trustAll, trusted })
   -h, --help  display help for command
 ```
 
@@ -383,8 +385,8 @@ Arguments:
               .lexicon.yaml for the current directory)
 
 Options:
-  --json      print { action, path, removed, registry, summary } as JSON, as MCP
-              trust_project returns it
+  --json      print { ok, action, path, removed, registry, summary } as JSON, as
+              MCP trust_project returns it plus ok
   -h, --help  display help for command
 ```
 
@@ -430,7 +432,8 @@ Options:
   --port <n>     port to listen on (default 41733; 0 picks a free port)
   --host <host>  interface to bind (default 127.0.0.1; anything else is exposed
                  to the network)
-  --json         print the listening info (or --show/--status result) as JSON
+  --json         print the listening info (or --show/--status result) as JSON,
+                 led by ok (for --status, ok equals up)
   --quiet        do not log requests
   --show         print the URL and bearer token (for the extension options page)
                  and exit

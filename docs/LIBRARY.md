@@ -8,6 +8,8 @@ Everything the CLI, MCP server and hooks do is available as plain functions. `no
 npm i @ashlr/lexicon
 ```
 
+The package is ESM only. `exports` maps `.` to `dist/core/index.js` under the `import` and `default` conditions (types under `types`), and exports `./package.json`, so `@ashlr/lexicon/package.json` resolves for tooling that reads the version. There is no CommonJS build; `require('@ashlr/lexicon')` works only on a Node that can `require()` an ES module.
+
 ```ts
 import { normalize, loadLexicon, addTerm, harvestRepo, exportLexicon } from '@ashlr/lexicon';
 

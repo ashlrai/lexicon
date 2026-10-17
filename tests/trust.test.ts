@@ -376,6 +376,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     const listed = makeIO();
     expect(await runTrust(undefined, { cwd: cwd(), list: true, json: true }, listed)).toBe(0);
     expect(JSON.parse(listed.out)).toEqual({
+      ok: true,
       registry: getTrustPath({ globalPath }),
       trustAll: false,
       trusted: [expect.objectContaining({ path: projectPath, status: 'trusted' })],
@@ -384,6 +385,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     const untrusted = makeIO();
     expect(await runUntrust(undefined, { cwd: cwd(), json: true }, untrusted)).toBe(0);
     expect(JSON.parse(untrusted.out)).toEqual({
+      ok: true,
       action: 'untrust',
       path: projectPath,
       removed: true,
@@ -400,6 +402,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     expect(await runTrust(undefined, { cwd: cwd(), json: true }, io, { isInteractive: () => true, createPrompter: () => scripted(['n']) })).toBe(0);
     expect(io.err).toContain(`${projectPath}: 1 term`);
     expect(JSON.parse(io.out)).toEqual({
+      ok: true,
       action: 'trust',
       path: projectPath,
       status: 'untrusted',
@@ -475,5 +478,72 @@ describe('lexicon trust / untrust --json refusals', () => {
     const io = makeIO();
     expect(await runTrust(undefined, { cwd: path.dirname(projectPath), json: true }, io, { isInteractive: () => true, createPrompter: () => p })).toBe(1);
     expect(JSON.parse(io.out)).toMatchObject({ action: 'trust', path: projectPath, nextStep: 'review it and run: lexicon trust' });
+  });
+});
+
+// Catches: trust and untrust --json documents had no `ok`, while every other
+// --json command leads its success with `ok: true` and its failure with
+// `ok: false`, so a script had to tell them apart by `error` alone.
+describe('lexicon trust / untrust --json lead with ok', () => {
+  beforeEach(() => {
+    process.env.LEXICON_PATH = globalPath;
+  });
+  const first = (out: string): [string, unknown] => Object.entries(JSON.parse(out) as Record<string, unknown>)[0]!;
+
+  it('ok: true first on every success: trust, declined, --list, untrust', async () => {
+    const cwd = path.dirname(projectPath);
+    const trusted = makeIO();
+    expect(await runTrust(undefined, { cwd, json: true }, trusted, { isInteractive: () => false })).toBe(0);
+    expect(first(trusted.out)).toEqual(['ok', true]);
+    expect(JSON.parse(trusted.out)).toMatchObject({ action: 'trust', result: 'trusted', status: 'trusted' });
+
+    const declined = makeIO();
+    expect(await runTrust(undefined, { cwd, json: true }, declined, { isInteractive: () => true, createPrompter: () => scripted(['n']) })).toBe(0);
+    expect(first(declined.out)).toEqual(['ok', true]);
+
+    const listed = makeIO();
+    expect(await runTrust(undefined, { cwd, list: true, json: true }, listed)).toBe(0);
+    expect(first(listed.out)).toEqual(['ok', true]);
+
+    for (const want of [true, false]) {
+      const un = makeIO();
+      expect(await runUntrust(undefined, { cwd, json: true }, un)).toBe(0);
+      expect(first(un.out)).toEqual(['ok', true]);
+      expect(JSON.parse(un.out)).toMatchObject({ action: 'untrust', removed: want });
+    }
+  });
+
+  it('ok: false first on every refusal, with action, path, error and nextStep kept', async () => {
+    const cwd = path.dirname(projectPath);
+    const missing = path.join(tmp, 'repo', 'nope.yaml');
+    const io = makeIO();
+    expect(await runTrust(missing, { cwd, json: true }, io)).toBe(1);
+    expect(first(io.out)).toEqual(['ok', false]);
+    expect(JSON.parse(io.out)).toEqual({
+      ok: false,
+      action: 'trust',
+      path: missing,
+      error: `file does not exist: ${missing}`,
+      nextStep: 'pass the path of an existing .lexicon.yaml, or run: lexicon init --project',
+    });
+
+    const changing: Prompter = {
+      ...scripted([]),
+      confirm: async () => {
+        await fs.appendFile(projectPath, '  - canonical: Sneaky\n    aliases: [sneaky]\n');
+        return true;
+      },
+    };
+    const raced = makeIO();
+    expect(await runTrust(undefined, { cwd, json: true }, raced, { isInteractive: () => true, createPrompter: () => changing })).toBe(1);
+    expect(first(raced.out)).toEqual(['ok', false]);
+    expect(await listTrusted({ globalPath })).toEqual([]);
+
+    const empty = path.join(tmp, 'empty-ok');
+    await fs.mkdir(path.join(empty, '.git'), { recursive: true });
+    const un = makeIO();
+    expect(await runUntrust(undefined, { cwd: empty, json: true }, un)).toBe(1);
+    expect(first(un.out)).toEqual(['ok', false]);
+    expect(JSON.parse(un.out)).toEqual({ ok: false, action: 'untrust', error: `no project .lexicon.yaml found from ${empty}`, nextStep: 'pass a path' });
   });
 });

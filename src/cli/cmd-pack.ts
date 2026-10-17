@@ -40,9 +40,9 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { bold, dim, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
-import { isEnoent } from '../util/errors.js';
+import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -194,7 +194,7 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
       const ref = parseRegistryRef(name).ref;
       result = await uninstallRegistryPack(ref, opts.registry, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}) }, deps.registry);
     } else {
-      result = await uninstallPack(name, { cwd, ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
+      result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
     }
     if (opts.json) {
       line(io, JSON.stringify(jsonOk(result), null, 2));
@@ -311,9 +311,11 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
   }
 }
 
+const NEED_REGISTRY = 'community packs need --registry <index> (a local path, file:// or https:// URL)';
+
 function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   if (!opts.registry) {
-    refuse(io, opts.json, 'community packs need --registry <index> (a local path, file:// or https:// URL)');
+    refuse(io, opts.json, NEED_REGISTRY);
     return false;
   }
   return true;
@@ -342,17 +344,36 @@ async function confirmCommunityWrite(
   }
 }
 
+/** The `--json` preview of one community pack (`--json` without `--yes`): nothing was written. */
+interface CommunityPreviewJson {
+  preview: true;
+  scope: TermScope;
+  ref: string;
+  author: string | undefined;
+  homepage: string | undefined;
+  version: string;
+  checksum: string;
+  terms: Term[];
+}
+
+/** What one community ref came to: installed, only previewed (`--json` without `--yes`), or declined at the question. */
+type RegistryAddOutcome =
+  | { kind: 'installed'; result: InstallPackResult & { ref: string } }
+  | { kind: 'preview'; preview: CommunityPreviewJson }
+  | { kind: 'declined'; ref: string };
+
 /**
  * Install one community pack: download, checksum-verify, show the full term
  * list, and only write after the user confirms. A `@version` pin is recorded
- * and honored by `pack update`.
+ * and honored by `pack update`. Under `--json` without `--yes` it returns the
+ * preview instead, and runPackAdd prints it with every other ref's outcome.
  */
 async function runPackAddRegistry(
   rawName: string,
   opts: PackRegistryCliOptions,
   io: IO,
   deps: PackDeps,
-): Promise<InstallPackResult & { ref: string }> {
+): Promise<RegistryAddOutcome> {
   const cwd = resolveCwd(opts);
   const scope = opts.project ? 'project' : 'global';
   const parsed = parseRegistryRef(rawName);
@@ -366,8 +387,10 @@ async function runPackAddRegistry(
   const pack = parsePackText(bytes.toString('utf8'), entry.url, entry.name);
 
   if (opts.json && !opts.yes) {
-    line(io, JSON.stringify(jsonOk({ preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms }), null, 2));
-    throw new PreviewOnly();
+    return {
+      kind: 'preview',
+      preview: { preview: true, scope, ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, terms: pack.lexicon.terms },
+    };
   }
   if (!opts.json) {
     line(io, bold(`community pack ${safe(entry.ref)}`));
@@ -379,7 +402,7 @@ async function runPackAddRegistry(
     line(io);
   }
   const ok = await confirmCommunityWrite(io, `install ${entry.ref} (${pack.lexicon.terms.length} terms)?`, opts, deps);
-  if (!ok) throw new Declined();
+  if (!ok) return { kind: 'declined', ref: entry.ref };
   const result = await installRegistryPack(entry, base, opts.registry as string, {
     cwd,
     scope,
@@ -393,7 +416,7 @@ async function runPackAddRegistry(
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
     line(io, dim('  the terms are live: normalize_transcript, the hook and the local API pick them up on the next call'));
   }
-  return result;
+  return { kind: 'installed', result };
 }
 
 /** The `--json` record of one community install. */
@@ -406,34 +429,54 @@ interface CommunityInstallJson {
   scope: string;
 }
 
-/** Thrown to unwind a preview-only run without an error message. */
-class PreviewOnly extends Error {
-  constructor() { super('preview'); this.name = 'PreviewOnly'; }
-}
-/** Thrown when the user declines the install at the confirm prompt. */
-class Declined extends Error {
-  constructor() { super('declined'); this.name = 'Declined'; }
+/** The `--json` entry of the ref a `pack add` run stopped at: `{ ref, ok: false, error, nextStep? }`. */
+interface PackAddFailureJson {
+  ref: string;
+  ok: false;
+  error: string;
+  nextStep?: string;
 }
 
-/** `lexicon pack add <name...>`: install one or more packs. Stops at the first failure and exits 1. */
+/**
+ * `lexicon pack add <name...>`: install one or more packs. Stops at the first
+ * failure and exits 1: the failing ref is reported (under `--json` as a
+ * `{ ref, ok: false, error, nextStep? }` entry after the refs before it), the
+ * refs after it are not attempted and not reported. A community ref that is
+ * only previewed (`--json` without `--yes`) or declined at the question writes
+ * nothing and does not stop the refs after it, so every ref's outcome is
+ * reported.
+ */
 export async function runPackAdd(names: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
   const scope = opts.project ? 'project' : 'global';
   // Registry installs print their preview (and, without --json, their
-  // result) inside runPackAddRegistry. Under --json every install's result
-  // accumulates here and is printed once: a single community ref as its
-  // object, anything else as one array in argument order.
-  const results: (InstallPackResult | CommunityInstallJson)[] = [];
+  // result) inside runPackAddRegistry. Under --json every ref's outcome (an
+  // install, or a community preview) accumulates here and is printed once: a
+  // single community ref as its object, anything else as one array in
+  // argument order.
+  const results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[] = [];
   let vendored = 0;
-  for (const name of names) {
+  const installed: string[] = [];
+  const declined: string[] = [];
+  for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
-        if (!needRegistry(opts, io)) return 1;
-        const result = await runPackAddRegistry(name, opts, io, deps);
-        results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
+        if (!opts.registry) throw new Error(NEED_REGISTRY);
+        const outcome = await runPackAddRegistry(name, opts, io, deps);
+        if (outcome.kind === 'preview') {
+          results.push(outcome.preview);
+        } else if (outcome.kind === 'declined') {
+          declined.push(outcome.ref);
+          if (!opts.json) line(io, dim(names.length > 1 ? `declined ${safe(outcome.ref)}; nothing written for it.` : 'declined; nothing written.'));
+        } else {
+          const result = outcome.result;
+          installed.push(result.ref);
+          results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
+        }
       } else {
-        const result = await installPack(name, { cwd, scope, ...deps });
+        const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...deps });
         results.push(result);
+        installed.push(result.pack.name);
         vendored += 1;
         if (!opts.json) {
           line(
@@ -443,22 +486,53 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         }
       }
     } catch (err) {
-      if (err instanceof PreviewOnly) return 0;
-      if (err instanceof Declined) {
-        if (!opts.json) line(io, dim('declined; nothing written.'));
-        return 0;
-      }
-      // Packs already installed are the --json document (the array, as on
-      // success); with none, the failure is: `{ ok: false, error }`.
-      if (opts.json && results.length > 0) line(io, JSON.stringify(results, null, 2));
-      return fail(io, err, opts.json === true && results.length === 0);
+      return failPackAdd(io, opts, names, results, at, err);
     }
   }
   if (opts.json) {
     const single = names.length === 1 && isRegistryRef(names[0]!) && results.length === 1;
-    line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson) : results, null, 2));
-  } else if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+    line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson | CommunityPreviewJson) : results, null, 2));
+    return 0;
+  }
+  if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  // With several refs, one line that adds them up, so a decline is not read as "nothing was written" when another ref was.
+  if (names.length > 1 && declined.length > 0) {
+    line(io, `${plural(installed.length, 'pack')} installed${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
+  }
   return 0;
+}
+
+/**
+ * Report the ref a `pack add` run stopped at. Under `--json` stdout carries one
+ * document: for a single ref `{ ok: false, ref, error, nextStep? }`, for a list
+ * the array of the refs before it with `{ ref, ok: false, error, nextStep? }`
+ * appended; the refs after it were not attempted and are left out. On stderr
+ * the `lexicon: <ref>: <error>` line (then the hint, and for a list the refs
+ * not attempted). Exit code 1.
+ */
+function failPackAdd(
+  io: IO,
+  opts: PackRegistryCliOptions,
+  names: readonly string[],
+  results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[],
+  at: number,
+  err: unknown,
+): number {
+  const ref = names[at]!;
+  const message = errorMessage(err);
+  const hint = unreadableLexiconHint(message);
+  if (opts.json) {
+    const { ok, ...detail } = jsonError(message, hint);
+    const entry: PackAddFailureJson = { ref, ok, ...detail };
+    // A single ref's object leads with `ok`, as every object-shaped document does.
+    const doc = names.length === 1 ? { ok, ref, ...detail } : [...results, entry];
+    line(io, JSON.stringify(doc, null, 2));
+  }
+  io.stderr(`lexicon: ${safe(ref)}: ${safeLines(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${hint}\n`);
+  const after = names.slice(at + 1);
+  if (after.length > 0) io.stderr(`lexicon: not attempted: ${after.map(safe).join(', ')}\n`);
+  return 1;
 }
 
 /** `lexicon pack update [ref...]`: re-check installed community packs against a fresh index. Never silent: every changed pack is previewed and confirmed. */

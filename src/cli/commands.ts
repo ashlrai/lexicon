@@ -648,7 +648,7 @@ export async function runNormalize(
   };
 
   if (text.length === 0) {
-    if (opts.json) line(io, JSON.stringify({ input: '', output: '', replacements: [], changed: false }));
+    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false })));
     return 0;
   }
 
@@ -684,7 +684,8 @@ export async function runNormalize(
       // Additive keys, as MCP normalize_transcript carries the skipped-project
       // ones: otherwise a script reading only stdout cannot tell corrections
       // from the built-in example, or an unchanged result from a skipped file.
-      line(io, JSON.stringify({ ...result, ...(useExample ? { example: true } : {}), ...skippedProjectJson(loaded) }, null, 2));
+      // `ok: true` first, as on every other --json success; the rest is the NormalizeResult.
+      line(io, JSON.stringify(jsonOk({ ...result, ...(useExample ? { example: true } : {}), ...skippedProjectJson(loaded) }), null, 2));
       return 0;
     }
     emit(result.output);
@@ -696,10 +697,14 @@ export async function runNormalize(
     // because "no corrections applied" and "nothing needed correcting" are
     // different answers and exit 0 made them indistinguishable: a script, a
     // watcher or a person saw silence and concluded it was working.
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+    const message = errorMessage(err);
+    io.stderr(`lexicon: ${safeLines(message)}\n`);
     io.stderr('lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n');
     if (opts.json) {
-      line(io, JSON.stringify({ input: text, output: text, replacements: [], changed: false }, null, 2));
+      // `{ ok: false, error, nextStep }` and then the unchanged NormalizeResult,
+      // so a script reading `output` still gets the input back.
+      const nextStep = unreadableLexiconHint(message) ?? 'no corrections were applied and the text is unchanged; run: lexicon doctor';
+      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }, null, 2));
     } else {
       emit(text);
     }

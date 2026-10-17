@@ -58,7 +58,7 @@ interface PackageJson {
   main: string;
   types: string;
   bin: Record<string, string>;
-  exports: Record<string, Record<string, string>>;
+  exports: Record<string, string | Record<string, string>>;
 }
 
 const rel = (p: string) => path.posix.normalize(p.replace(/^\.\//, ''));
@@ -72,7 +72,7 @@ describe.skipIf(!NPM_ROOT)('published package contents', () => {
       ...Object.values(pkg.bin),
       pkg.main,
       pkg.types,
-      ...Object.values(pkg.exports).flatMap((conditions) => Object.values(conditions)),
+      ...Object.values(pkg.exports).flatMap((target) => (typeof target === 'string' ? [target] : Object.values(target))),
     ].map(rel);
     for (const target of targets) expect(files, target).toContain(target);
   });
@@ -109,5 +109,31 @@ describe.skipIf(!NPM_ROOT)('published package contents', () => {
         (f.endsWith('.ts') && !f.endsWith('.d.ts')),
     );
     expect(devOnly).toEqual([]);
+  });
+});
+
+// Catches: `exports` had no `./package.json` subpath and no `default`
+// condition, so tooling that resolves `@ashlr/lexicon/package.json` (to read
+// the version) hit ERR_PACKAGE_PATH_NOT_EXPORTED, and a resolver that asks
+// for neither `import` nor `types` found no target for the package itself.
+describe('package.json exports', () => {
+  const pkg = readJson<PackageJson & { name: string }>('package.json');
+  // Self-reference by name: Node resolves it through this package.json's exports.
+  const req = createRequire(path.join(REPO_ROOT, 'tests', 'package.test.ts'));
+
+  it('exports ./package.json and gives "." a default condition after import and types', () => {
+    expect(pkg.exports['./package.json']).toBe('./package.json');
+    const root = pkg.exports['.'] as Record<string, string>;
+    expect(Object.keys(root)).toEqual(['types', 'import', 'default']);
+    expect(root.default).toBe(root.import);
+    expect(root.default).toBe(pkg.main);
+  });
+
+  it('resolves @ashlr/lexicon/package.json through the exports map', () => {
+    expect(req.resolve(`${pkg.name}/package.json`)).toBe(path.join(REPO_ROOT, 'package.json'));
+  });
+
+  it.skipIf(!BUILT)('resolves @ashlr/lexicon under the require condition to the default target (needs npm run build)', () => {
+    expect(req.resolve(pkg.name)).toBe(path.join(REPO_ROOT, rel(pkg.main)));
   });
 });
