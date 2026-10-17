@@ -11,13 +11,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { fileURLToPath } from 'node:url';
+import { findPackageRoot } from '../util/package.js';
 
 export const DEFAULT_MODEL = 'base.en';
 export const MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 
-/** Where a source or dist checkout keeps the benchmark's models (../../bench/audio/models from src/voice or dist/voice). */
-export const REPO_MODELS_DIR: string = fileURLToPath(new URL('../../bench/audio/models/', import.meta.url));
+/**
+ * Where a source or dist checkout keeps the benchmark's models:
+ * `<package root>/bench/audio/models`, the root found by the package.json walk.
+ * Not a fixed `../../` from this module: that is right for src/voice and
+ * dist/voice, but the plugin bundle (plugin/mcp-server.mjs) sits one level
+ * below the root, so it pointed outside the package, at a sibling directory
+ * of the npm install or of Claude Code's plugin cache. Undefined when no
+ * `@ashlr/lexicon` package.json is found above this module.
+ */
+export const REPO_MODELS_DIR: string | undefined = repoModelsDir();
+
+function repoModelsDir(): string | undefined {
+  const root = findPackageRoot(import.meta.url);
+  return root ? path.join(root, 'bench', 'audio', 'models') : undefined;
+}
 
 export function modelFileName(name: string): string {
   return `ggml-${name}.bin`;
@@ -87,7 +100,7 @@ export function resolveModel(spec: string, opts: ResolveModelOptions): ResolvedM
   const file = modelFileName(spec);
   const primary = path.join(modelsDir(opts.globalPath, opts.env), file);
   if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
-  for (const dir of opts.fallbackDirs ?? [REPO_MODELS_DIR]) {
+  for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
     const candidate = path.join(dir, file);
     if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }

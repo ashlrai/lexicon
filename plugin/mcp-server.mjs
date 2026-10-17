@@ -18198,7 +18198,7 @@ var require_commander = __commonJS({
 // src/mcp/server.ts
 var import_node_fs27 = __toESM(require_node_fs(), 1);
 var import_node_path30 = __toESM(require_node_path(), 1);
-var import_node_url5 = __toESM(require_node_url(), 1);
+var import_node_url4 = __toESM(require_node_url(), 1);
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -60740,10 +60740,13 @@ var import_node_os6 = __toESM(require_node_os());
 var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
 var import_promises = __toESM(require_promises());
-var import_node_url4 = __toESM(require_node_url());
 var DEFAULT_MODEL = "base.en";
 var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-var REPO_MODELS_DIR = (0, import_node_url4.fileURLToPath)(new URL("../../bench/audio/models/", import.meta.url));
+var REPO_MODELS_DIR = repoModelsDir();
+function repoModelsDir() {
+  const root = findPackageRoot2(import.meta.url);
+  return root ? import_node_path19.default.join(root, "bench", "audio", "models") : void 0;
+}
 function modelFileName(name) {
   return `ggml-${name}.bin`;
 }
@@ -60773,7 +60776,7 @@ function resolveModel(spec, opts) {
   const file2 = modelFileName(spec);
   const primary = import_node_path19.default.join(modelsDir(opts.globalPath, opts.env), file2);
   if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
-  for (const dir of opts.fallbackDirs ?? [REPO_MODELS_DIR]) {
+  for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
     const candidate = import_node_path19.default.join(dir, file2);
     if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
@@ -63762,7 +63765,7 @@ function cwdFromRoots(roots) {
   for (const root of roots) {
     if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
     try {
-      const dir = (0, import_node_url5.fileURLToPath)(root.uri);
+      const dir = (0, import_node_url4.fileURLToPath)(root.uri);
       if ((0, import_node_fs27.statSync)(dir).isDirectory()) return dir;
     } catch {
     }
@@ -63958,7 +63961,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs27.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs27.realpathSync)((0, import_node_url5.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs27.realpathSync)((0, import_node_path30.resolve)(entry)) === (0, import_node_fs27.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }
