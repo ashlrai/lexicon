@@ -58730,7 +58730,13 @@ async function suggestTerms(input2) {
   }
   const merged = mergeSuggestions(suggestions);
   merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
-  return merged.slice(0, limit);
+  return merged.slice(0, limit).map((s) => withTarget(s, loaded));
+}
+function withTarget(s, loaded) {
+  const key = s.canonical.trim().toLowerCase();
+  const held = s.kind === "term" ? void 0 : loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+  const scope = held?.scope === "project" && loaded.project ? "project" : "global";
+  return { ...s, scope, path: scope === "project" && loaded.project ? loaded.project.path : loaded.global.path };
 }
 
 // src/core/packs.ts
@@ -59756,7 +59762,7 @@ var registerHarvestTools = (server, ctx) => {
     "suggest_terms",
     {
       title: "Propose lexicon improvements",
-      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence.",
+      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
         cwd: external_exports.string().optional().describe("Repository to scan for evidence. Defaults to the server working directory."),
         limit: external_exports.number().int().positive().optional().describe("Max suggestions to return.")
@@ -59788,7 +59794,9 @@ var registerHarvestTools = (server, ctx) => {
           reason: external_exports.string().optional(),
           confidence: external_exports.number().optional(),
           evidence: external_exports.array(external_exports.string()).optional(),
-          count: external_exports.number().optional()
+          count: external_exports.number().optional(),
+          scope: external_exports.enum(TERM_SCOPES).optional(),
+          path: external_exports.string().optional()
         }),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'.")
       }
@@ -59796,7 +59804,7 @@ var registerHarvestTools = (server, ctx) => {
     async ({ suggestion, scope }) => guarded(async () => {
       const { kind, canonical } = suggestion;
       const alias = suggestion.alias?.trim();
-      let target = scope;
+      let target = scope ?? suggestion.scope;
       if (target === void 0 && (kind === "alias" || kind === "never")) {
         const key = canonical.trim().toLowerCase();
         target = (await load()).merged.terms.find((t) => t.canonical.trim().toLowerCase() === key)?.scope;

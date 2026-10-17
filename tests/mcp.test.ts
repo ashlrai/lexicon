@@ -1141,6 +1141,11 @@ describe('lexicon MCP server', () => {
         const alias = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
         expect(alias.isError).toBe(false);
         expect(JSON.parse(textOf(alias))).toMatchObject({ kind: 'alias', canonical: 'Ashlr.AI', path: '/fake/global/lexicon.yaml', summary: '"ashlur" -> "Ashlr.AI" saved' });
+        // The scope suggest_terms reported is honoured when passed back.
+        mocks.addTerm.mockClear();
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'project', path: '/fake/repo/.lexicon.yaml' } } });
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'project' }), { cwd: '/fake/repo', scope: 'project' });
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
         // No scope given: written where the term lives (Ashlr.AI is a global term).
         expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Ashlr.AI', aliases: ['ashlur'], source: 'user', scope: 'global' }, { cwd: '/fake/repo', scope: 'global' });
 
