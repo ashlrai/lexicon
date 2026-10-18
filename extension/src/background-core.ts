@@ -81,6 +81,9 @@ class TokenRejectedError extends Error {
   }
 }
 
+/** A bearer route with no token stored. Pairing is the one-command fix; pasting is the fallback. */
+export const NO_TOKEN_MESSAGE = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
+
 /** What a request that never reached the server says: where it went and how to start the server. */
 export function unreachableMessage(baseUrl: string): string {
   return `cannot reach lexicon serve at ${baseUrl}; start it with \`lexicon serve\` (or \`lexicon serve --install\` to start it at login)`;
@@ -135,7 +138,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (init.body !== undefined) headers['Content-Type'] = 'application/json';
       if (init.auth !== false) {
-        if (!settings.token) throw new Error('No API token set (run `lexicon serve --show` and paste it in Options).');
+        if (!settings.token) throw new Error(NO_TOKEN_MESSAGE);
         headers.Authorization = `Bearer ${settings.token}`;
       }
       let res: Response;

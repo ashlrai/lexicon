@@ -485,6 +485,16 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(reply.ok && reply.fallback).toBe(expected);
   });
 
+  // Catches: with no token stored, learn and sync said only to paste the
+  // `lexicon serve --show` token, never `lexicon serve --pair`, the one-step fix.
+  it('a missing token names lexicon serve --pair first, then the manual paste', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: '1', terms: 1 }) }) as unknown as Response);
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore(), defaultYaml: EXAMPLE_YAML });
+    const expected = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
+    expect(await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' })).toEqual({ ok: false, error: expected });
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: expected });
+  });
+
   it('uses the local API with the bearer token when /health is ok, and learn/sync hit the right routes', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const json = (body: unknown, status = 200): Response =>
