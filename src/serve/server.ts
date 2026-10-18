@@ -32,6 +32,7 @@ import {
   addTerm,
   computeStats,
   conflictNote,
+  learnUnchangedNote,
   diffSummary,
   exportLexicon,
   findRegistryRecordMismatch,
@@ -363,19 +364,6 @@ const BODY_SHAPES = {
   '/packs/:name': 'POST /packs/:name takes { scope?, cwd? } or an empty body',
 } as const;
 type BodyRoute = keyof typeof BODY_SHAPES;
-
-/**
- * The `note` of a POST /learn that wrote nothing: the "Nothing was added:"
- * lead of POST /add (`unchangedTermNote`) with the reason MCP
- * learn_correction gives, `heard` already an alias of the term or already
- * its canonical in another case.
- */
-function learnUnchangedNote(heard: string, canonical: string): string {
-  const said = heard.trim().replace(/\s+/g, ' ');
-  return said.toLowerCase() === canonical.toLowerCase()
-    ? `Nothing was added: ${JSON.stringify(canonical)} is already the canonical spelling; ${JSON.stringify(said)} is corrected to it.`
-    : `Nothing was added: ${JSON.stringify(said)} was already an alias of ${JSON.stringify(canonical)}.`;
-}
 
 /** Seconds a 503 asks the client to wait (its `Retry-After`) before sending the same request again. */
 const BUSY_RETRY_AFTER_S = 1;

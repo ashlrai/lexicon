@@ -570,6 +570,26 @@ describe('lexicon learn (CLI)', () => {
     expect(payload).toMatchObject({ heard: 'Ashlur', meant: 'Ashlr.AI', aliasAdded: true });
   });
 
+  // Catches: a spelling the term already held printed "learned Ashler ->
+  // Ashlr.AI (already known)", which reads as a write, and `--json` had no
+  // `unchanged`, unlike serve POST /learn.
+  it('says nothing was added when heard is already an alias, in text and --json', async () => {
+    const text = captureIO();
+    expect(await runLearn(['Ashler', 'Ashlr.AI'], { cwd: '/fake/repo' }, text.io)).toBe(0);
+    expect(text.out().split('\n')[0]).toBe('Nothing was added: "Ashler" was already an alias of "Ashlr.AI". (global: /fake/global.yaml)');
+    expect(text.out()).not.toContain('learned');
+
+    const json = captureIO();
+    expect(await runLearn(['Ashler', 'Ashlr.AI'], { cwd: '/fake/repo', json: true }, json.io)).toBe(0);
+    expect(JSON.parse(json.out())).toMatchObject({
+      ok: true,
+      created: false,
+      aliasAdded: false,
+      unchanged: true,
+      note: 'Nothing was added: "Ashler" was already an alias of "Ashlr.AI".',
+    });
+  });
+
   // Catches: --json dumped the whole lexicon file (every term in it) under `file` and had no `path`, unlike learn_correction.
   it('--json gives path and the file path/scope only, not the file\'s terms', async () => {
     const { io, out } = captureIO();

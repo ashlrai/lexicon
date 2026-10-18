@@ -4,7 +4,7 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
+import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
 import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
@@ -109,7 +109,15 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       // in a one-correction result.
       // A conflict comes with the `note` naming the scoped remove command, as
       // `add --json` and the MCP summary do.
+      // Nothing written (heard was already an alias, or the canonical in
+      // another case): `unchanged: true` and the note POST /learn gives, so
+      // two false flags are not read as a failure or a merge.
       const { file, ...rest } = result;
+      const unchanged = !result.created && !result.aliasAdded;
+      const notes = [
+        ...(unchanged ? [learnUnchangedNote(correction.heard, result.term.canonical)] : []),
+        ...(result.conflict ? [conflictNote([result.conflict])] : []),
+      ];
       line(
         io,
         JSON.stringify(
@@ -119,7 +127,8 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
             file: { path: file.path, scope: file.scope },
             heard: correction.heard,
             meant: correction.meant,
-            ...(result.conflict ? { note: conflictNote([result.conflict]) } : {}),
+            ...(unchanged ? { unchanged: true } : {}),
+            ...(notes.length > 0 ? { note: notes.join(' ') } : {}),
           }),
           null,
           2,
@@ -127,12 +136,12 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       );
       return 0;
     }
-    const what = result.created
-      ? 'new term'
-      : result.aliasAdded
-        ? 'alias added'
-        : 'already known';
-    line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
+    if (!result.created && !result.aliasAdded) {
+      // It said "learned X -> Y (already known)", which reads as a write.
+      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical))} (${result.file.scope}: ${safe(result.file.path)})`);
+    } else {
+      line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safe(result.file.path)}`);
+    }
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
     if (result.conflict) line(io, conflictLine(result.conflict));
     const u = result.untrustedProject;
