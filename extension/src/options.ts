@@ -2,6 +2,7 @@
 /** Options page: server pairing, mode, live toggle, embedded YAML editor, site list, any-site opt-in. */
 import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
+import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
 import { coerceSettings, errorMessage, pairUrl, STORAGE_KEYS } from './shared.js';
 import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
@@ -162,19 +163,19 @@ ui.test.addEventListener('click', () => {
     await save();
     const status = await sendToBackground<StatusReply | Failure>({ type: 'status' });
     if (!status.ok) {
-      ui.testResult.textContent = status.error;
+      setMessage(ui.testResult, status.error);
       return;
     }
     if (status.server && status.tokenError) {
-      ui.testResult.textContent = `Reachable (lexicon ${status.server.version}), but ${status.tokenError}`;
+      setMessage(ui.testResult, `Reachable (lexicon ${status.server.version}), but ${status.tokenError}`);
     } else if (status.server) {
-      ui.testResult.textContent = `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set: corrections use the embedded lexicon until you run `lexicon serve --pair`)'}.`;
+      setMessage(ui.testResult, `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set: corrections use the embedded lexicon until you run `lexicon serve --pair`)'}.`);
     } else {
       const why = status.serverError ?? 'no reply';
-      ui.testResult.textContent = `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
+      setMessage(ui.testResult, `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`);
     }
   })().catch((err: unknown) => {
-    ui.testResult.textContent = errorMessage(err);
+    setMessage(ui.testResult, errorMessage(err));
   });
 });
 
@@ -192,12 +193,12 @@ ui.sync.addEventListener('click', () => {
     } else {
       ui.yamlOk.textContent = '';
       ui.yamlError.hidden = false;
-      ui.yamlError.textContent = `Sync failed: ${reply.error}`;
+      setMessage(ui.yamlError, `Sync failed: ${reply.error}`);
     }
   })()
     .catch((err: unknown) => {
       ui.yamlError.hidden = false;
-      ui.yamlError.textContent = `Sync failed: ${errorMessage(err)}`;
+      setMessage(ui.yamlError, `Sync failed: ${errorMessage(err)}`);
     })
     .finally(() => {
       ui.sync.disabled = false;
@@ -227,10 +228,10 @@ ui.anySite.addEventListener('change', () => {
       ui.anySiteMsg.textContent = ui.anySite.checked ? 'Enabled on every site (focused text box).' : 'Limited to the listed chat sites.';
     } else {
       ui.anySite.checked = !ui.anySite.checked;
-      ui.anySiteMsg.textContent = reply.error;
+      setMessage(ui.anySiteMsg, reply.error);
     }
   })().catch((err: unknown) => {
-    ui.anySiteMsg.textContent = errorMessage(err);
+    setMessage(ui.anySiteMsg, errorMessage(err));
   });
 });
 

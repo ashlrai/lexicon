@@ -94,7 +94,7 @@ The pairing page is served without a token but only to a loopback client whose `
 | **Local API** (default) | `lexicon serve` on this machine | you already use the CLI or the Claude Code plugin; one lexicon everywhere |
 | **Embedded lexicon** | inside the extension, from the YAML in Options | no server, another machine, or you want the extension fully self-contained |
 
-With **Local API** selected, the extension falls back to the embedded lexicon whenever `/health` fails (server stopped, token rejected, timeout). The popup shows "Embedded (fallback)" and why. Nothing is queued or dropped: every send is corrected by whichever engine is available.
+With **Local API** selected, the extension falls back to the embedded lexicon when `/health` fails (server stopped, `/health` timed out or reported not ok) and when the server answers `/health` but the correction itself cannot go through: no token stored, the token rejected (`/normalize` answers 401; `/health` needs no token, so it never sees a bad one), or `/normalize` failing or timing out. The popup shows "Embedded (fallback)" and why: it checks the stored token against `GET /stats`, so a missing or rejected token shows there too, not only on the next send. Nothing is queued or dropped: every send is corrected by whichever engine is available.
 
 **Sync from local API** (Options) pulls `GET /lexicon` into the embedded YAML, so the fallback carries your real terms rather than the example file. The YAML editor validates with the same `parseLexicon` the CLI uses and refuses to save an invalid file.
 
@@ -131,7 +131,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 - Engine and server status ("Local API, lexicon 0.5.2, 42 terms" or "Embedded (fallback), server: cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve`"). The same sentence is what **Test connection** and **Sync from local API** in Options say when the server is not running.
 - On/off for this site.
 - The last five corrections.
-- **Learn a word**: "It's `Ashlr.AI` not `Ashler`". Posts to `/learn` when the API is up, otherwise adds the alias to the embedded YAML (comments in the YAML are preserved). When the server reports that another term also holds the spelling, the message says so and names the `lexicon remove ... --alias ... --global` (or `--project`) command that drops it; an untrusted project lexicon that claims it too is named by path.
+- **Learn a word**: "It's `Ashlr.AI` not `Ashler`". Posts to `/learn` when the API is up and accepts the stored token, otherwise adds the alias to the embedded YAML (comments in the YAML are preserved): the same rule that decides where a send is corrected. When the server is up but no token is stored or it rejects the token, the message says the word went to the embedded lexicon only, why, and that **Sync from local API** replaces the embedded YAML, so learn it again once paired. A `/learn` the server refuses for another reason (bad input, an untrusted project lexicon) shows the server's error and writes nothing. When the server reports that another term also holds the spelling, the message says so and names the `lexicon remove ... --alias ... --global` (or `--project`) command that drops it; an untrusted project lexicon that claims it too is named by path.
 
 ## Limitations
 
@@ -159,7 +159,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 
 ```bash
 npm run build:extension                          # rebuild dist/
-npx tsc -p extension/tsconfig.json --noEmit      # typecheck the extension sources (DOM + chrome types)
+npx tsc -p extension/tsconfig.json --noEmit      # typecheck the extension sources (DOM + chrome types); npm run typecheck runs it too
 npx vitest run tests/extension.test.ts           # jsdom tests: adapters, rewrite, Enter/click, toast, embedded, routing
 ```
 

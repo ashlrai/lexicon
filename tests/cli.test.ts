@@ -2208,7 +2208,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       const missing = path.join(tmp, 'no-such-dir');
       const doc = {
         ok: false,
-        error: `--cwd ${JSON.stringify(missing)} is not an existing directory`,
+        error: `--cwd "${missing}" is not an existing directory`,
         nextStep: 'pass a directory that exists, or leave --cwd out to use the current directory',
       };
       for (const args of [['stats', '--json'], ['doctor', '--json'], ['path', '--json'], ['list', '--full']]) {

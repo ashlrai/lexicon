@@ -153,7 +153,7 @@ extension ServeOwnership {
             return ServeStatus(
                 ownership: .foreign,
                 title: "Local API: reachable (not managed by this app)",
-                detail: "Something else is already listening on 127.0.0.1:\(probe.port) — most likely a `lexicon serve` you started by hand.",
+                detail: "Something else is already listening on 127.0.0.1:\(probe.port), most likely a `lexicon serve` you started by hand.",
                 hint: "Find it with `lsof -nP -iTCP:\(probe.port) -sTCP:LISTEN`",
                 isInteractive: false,
                 isOn: false)

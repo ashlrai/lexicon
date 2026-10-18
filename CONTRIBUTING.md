@@ -30,7 +30,7 @@ npm run build
 npm test
 ```
 
-Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit`.
+Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package and on the extension sources (`extension/tsconfig.json`).
 
 ## The committed plugin bundles
 
@@ -52,7 +52,7 @@ npm install
 npm run build           # tsc -> dist/
 npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs (commit these)
 npm run check:bundle    # rebuild and fail if plugin/ differs from the checked-in files (CI runs this)
-npm run typecheck       # tsc --noEmit
+npm run typecheck       # tsc --noEmit (package, then extension/tsconfig.json)
 npm test                # unit + integration + e2e (vitest)
 npm run test:e2e        # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
 npm run bench           # synthetic accuracy benchmark (see bench/README.md)

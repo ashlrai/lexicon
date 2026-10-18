@@ -123,6 +123,21 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     expect(result.stdout).not.toContain('installed lexicon');
   });
 
+  // Catches: the permissions fallback `curl ... | sudo sh` went on to run
+  // `lexicon setup` as root, writing root's lexicon and agent configs.
+  it('installs under sudo but leaves setup to the user', () => {
+    stub('id', `if [ "$1" = "-u" ]; then printf '%s\\n' "$TEST_UID"; else exit 99; fi`);
+    const root = run({ LEXICON_NO_SETUP: '0', SUDO_USER: 'alice', TEST_UID: '0' });
+    expect(root.status).toBe(0);
+    expect(root.calls).toContain('install -g @ashlr/lexicon@0.5.4\n');
+    expect(root.stdout).toContain('skipping setup under sudo: it would configure root, not alice; as alice, without sudo, run: lexicon setup');
+    expect(root.stderr).not.toContain('unexpected setup');
+    // A plain user with a stale SUDO_USER in the environment is not root.
+    const user = run({ LEXICON_NO_SETUP: '0', SUDO_USER: 'alice', TEST_UID: '501' });
+    expect(user.stdout).not.toContain('under sudo');
+    expect(user.stdout).toContain('next: run  lexicon setup');
+  });
+
   it('reports a failed version probe before claiming success', () => {
     const result = run({ TEST_VERSION_CODE: '1' });
     expect(result.status).toBe(1);

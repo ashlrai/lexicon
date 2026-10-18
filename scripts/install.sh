@@ -5,7 +5,8 @@
 #
 # Needs Node 20 or newer. Installs from the npm registry when the package is
 # published there, otherwise from GitHub at its latest stable release tag.
-# Failed discovery stops without installing a mutable branch. POSIX sh only.
+# Failed discovery stops without installing a mutable branch. Under sudo it
+# installs but skips setup, which must run as the user. POSIX sh only.
 #
 #   LEXICON_NO_SETUP=1   skip `lexicon setup` afterwards
 #   LEXICON_REF=<ref>    install this git ref instead of the latest tag
@@ -85,6 +86,7 @@ if ! npm install -g "$SPEC"; then
   say "npm install -g failed. If it was a permissions error, either:" >&2
   say "  - fix the npm prefix: https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally" >&2
   say "  - or rerun with sudo:  curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sudo sh" >&2
+  say "    (under sudo it installs only; then run lexicon setup as yourself, without sudo)" >&2
   fail "install failed"
 fi
 
@@ -105,6 +107,12 @@ say "installed lexicon ${INSTALLED_VERSION}"
 # 4. Setup --------------------------------------------------------------------
 if [ "${LEXICON_NO_SETUP:-0}" = "1" ]; then
   say "skipping setup (LEXICON_NO_SETUP=1); run: lexicon setup"
+  exit 0
+fi
+# `| sudo sh` (the permissions fallback above) runs as root: setup would write
+# root's lexicon and agent configs, not the user's, so leave it to them.
+if [ -n "${SUDO_USER:-}" ] && [ "$(id -u 2>/dev/null || echo)" = "0" ]; then
+  say "skipping setup under sudo: it would configure root, not ${SUDO_USER}; as ${SUDO_USER}, without sudo, run: lexicon setup"
   exit 0
 fi
 if [ -t 0 ] && [ -t 1 ]; then

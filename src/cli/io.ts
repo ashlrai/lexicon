@@ -312,7 +312,7 @@ export function cwdOptionProblem(cwd: string | undefined): CliRefusal | undefine
     // missing or unreadable: refused below
   }
   return new CliRefusal(
-    `--cwd ${JSON.stringify(cwd)} is not an existing directory`,
+    `--cwd "${sanitizeForDisplay(cwd)}" is not an existing directory`,
     'pass a directory that exists, or leave --cwd out to use the current directory',
   );
 }

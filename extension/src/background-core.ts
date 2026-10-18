@@ -256,7 +256,9 @@ export function createBackground(deps: BackgroundDeps): Background {
         if (err instanceof TokenRejectedError) tokenError = err.message;
       }
     }
-    const activeMode: Mode = settings.mode === 'api' && h.health && !tokenError ? 'api' : 'embedded';
+    // No token means every /normalize falls back (fetchJson refuses a bearer
+    // route without one), so the popup must not read "Local API" then either.
+    const activeMode: Mode = settings.mode === 'api' && h.health && settings.token && !tokenError ? 'api' : 'embedded';
     const embeddedError = embedded.load(settings.yaml);
     return {
       ok: true,
@@ -277,7 +279,13 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function learnReq(heard: string, meant: string): Promise<LearnReply | Failure> {
     const settings = await getSettings();
     const useApi = settings.mode === 'api' && (await health(settings)).health !== null;
-    if (useApi) {
+    // Why the API was skipped although the server answers /health. Normalize
+    // falls back to the embedded lexicon for a missing or rejected token, so
+    // Learn does the same (the popup promises it writes the embedded YAML
+    // whenever the API is not usable), and says so: the server never saw it.
+    let skipped: string | undefined;
+    if (useApi && !settings.token) skipped = NO_TOKEN_MESSAGE;
+    if (useApi && skipped === undefined) {
       try {
         // Server reply: { term, created, aliasAdded, path, conflict?, untrustedProject? } (src/serve/server.ts LearnResponse).
         const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }) })) as {
@@ -296,13 +304,17 @@ export function createBackground(deps: BackgroundDeps): Background {
             : `"${heard}" is already an alias of ${canonical}.`;
         return { ok: true, mode: 'api', message: message + learnWarnings(heard, raw?.conflict, raw?.untrustedProject) };
       } catch (err) {
-        return { ok: false, error: errorMessage(err) };
+        // Only a rejected token falls back; a 400 or 403 is the server refusing
+        // this correction, which the embedded copy must not quietly accept.
+        if (!(err instanceof TokenRejectedError)) return { ok: false, error: errorMessage(err) };
+        healthCache = null;
+        skipped = err.message;
       }
     }
     try {
       const out = learnIntoYaml(settings.yaml, heard, meant);
       await saveSettings({ yaml: out.yaml });
-      return { ok: true, mode: 'embedded', message: out.message };
+      return { ok: true, mode: 'embedded', message: out.message + (skipped ? embeddedOnlyNote(skipped) : '') };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
@@ -375,6 +387,15 @@ export function createBackground(deps: BackgroundDeps): Background {
   }
 
   return { handle, getSettings, saveSettings };
+}
+
+/**
+ * What a Learn that went to the embedded YAML while the server is up must
+ * add: the server's lexicon did not get it, why, and that Sync from local API
+ * replaces the embedded YAML. Exported for tests.
+ */
+export function embeddedOnlyNote(reason: string): string {
+  return ` Saved to the embedded lexicon only, not the server's: ${reason} A later Sync from local API replaces the embedded lexicon, so learn it again once paired.`;
 }
 
 /**

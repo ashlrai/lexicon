@@ -18,8 +18,9 @@ import { applyCorrections, flatten, invertCorrections, readText } from '../exten
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
 import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, PAIR_META } from '../extension/src/shared.js';
-import type { Correction, Failure, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
+import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
+import { setMessage } from '../extension/src/rich-text.js';
 
 // import.meta.url is an http: URL under the jsdom environment; resolve from the repo root instead.
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
@@ -491,8 +492,37 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: '1', terms: 1 }) }) as unknown as Response);
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore(), defaultYaml: EXAMPLE_YAML });
     const expected = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
-    expect(await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' })).toEqual({ ok: false, error: expected });
+    const learn = (await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' })) as LearnReply;
+    expect(learn.message).toContain(expected);
     expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: expected });
+  });
+
+  // Catches: with the server up but no token (or a rejected one), Normalize
+  // fell back to the embedded YAML while Learn failed outright, so the word the
+  // popup said it could not learn was also never in the copy every send used.
+  it('learn falls back to the embedded YAML exactly when normalize does, and says the server did not get it', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    let learnStatus = 401;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+      if (url.endsWith('/learn')) return json({ error: 'unauthorized' }, learnStatus);
+      return json({ error: 'unauthorized' }, 401);
+    });
+    for (const token of ['', 'stale-token']) {
+      learnStatus = 401;
+      const store = memoryStore({ settings: { token } });
+      const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+      expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping quorbix' });
+      const learn = (await bg.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' })) as LearnReply;
+      expect(learn).toMatchObject({ ok: true, mode: 'embedded' });
+      expect(learn.message).toContain("Saved to the embedded lexicon only, not the server's:");
+      expect(learn.message).toContain(token ? 'rejected the token' : 'No API token set');
+      expect(learn.message).toContain('Sync from local API replaces');
+      expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Quorbyx' });
+      // A server that refuses the correction itself is not overridden by the embedded copy.
+      learnStatus = 400;
+      if (token) expect(await bg.handle({ type: 'learn', heard: 'Hetznr', meant: 'Hetzner' })).toMatchObject({ ok: false });
+    }
   });
 
   it('uses the local API with the bearer token when /health is ok, and learn/sync hit the right routes', async () => {
@@ -579,6 +609,15 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(bad.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
     expect(bad.activeMode).toBe('embedded');
     expect(bad.tokenError).toMatch(/rejected the token \(401\)/);
+
+    // Catches: with no token stored, status said "Local API" while every
+    // /normalize fell back to the embedded lexicon.
+    await bg.saveSettings({ token: '' });
+    const none = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(none.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(none.tokenSet).toBe(false);
+    expect(none.activeMode).toBe('embedded');
+    expect(((await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true }).mode).toBe('embedded');
 
     token = 'right-token';
     await bg.saveSettings({ token });
@@ -989,5 +1028,47 @@ describe('content: live mode keeps the caret where the user is typing', () => {
     expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
     const { caretOffset } = await import('../extension/src/editable.js');
     expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+// Catches: Options and the popup set every message with textContent, so a
+// command read "`lexicon serve --pair`" with the backticks shown literally.
+describe('popup and options messages render commands as <code>', () => {
+  it('turns backticked spans into <code> and keeps everything else as text', () => {
+    const el = document.createElement('p');
+    setMessage(el, 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.');
+    expect(el.textContent).toBe('No API token set: run lexicon serve --pair to pair this browser, or paste the token lexicon serve --show prints into Options.');
+    expect(Array.from(el.querySelectorAll('code'), (c) => c.textContent)).toEqual(['lexicon serve --pair', 'lexicon serve --show']);
+    expect(el.innerHTML).toBe('No API token set: run <code>lexicon serve --pair</code> to pair this browser, or paste the token <code>lexicon serve --show</code> prints into Options.');
+  });
+
+  it('never parses markup, inside or outside the backticks, and keeps an unpaired backtick', () => {
+    const el = document.createElement('p');
+    setMessage(el, 'API /learn: <img src=x onerror="alert(1)"> run `<b>x</b>` then ` dangling');
+    expect(el.querySelector('img, b')).toBeNull();
+    expect(el.querySelector('code')!.textContent).toBe('<b>x</b>');
+    expect(el.textContent).toBe('API /learn: <img src=x onerror="alert(1)"> run <b>x</b> then ` dangling');
+    setMessage(el, 'empty `` pair');
+    expect(el.textContent).toBe('empty `` pair');
+    expect(el.querySelector('code')).toBeNull();
+    setMessage(el, 'replaced');
+    expect(el.innerHTML).toBe('replaced');
+  });
+
+  it('options and popup route every command-bearing message through setMessage and never use innerHTML', () => {
+    for (const file of ['extension/src/options.ts', 'extension/src/popup.ts']) {
+      const src = readFileSync(resolve(process.cwd(), file), 'utf8');
+      expect(src).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML/);
+      // The YAML editor's parse error stays plain text: it quotes the user's YAML, backticks and all.
+      const plain = src.split('\n').filter((l) => /\.textContent\s*=/.test(l) && !l.includes('ui.yamlError.textContent = errorMessage(err)'));
+      expect(plain.length).toBeGreaterThan(10);
+      for (const line of plain) {
+        // A message assigned as plain text may not carry a backticked command
+        // or a string that came from the background (error/message fields).
+        expect(line, `${file}: ${line.trim()}`).not.toMatch(/`lexicon[^`$]*`|\.error\b|\.message\b|errorMessage\(|tokenError|parts\.join/);
+      }
+    }
   });
 });
