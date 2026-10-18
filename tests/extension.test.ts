@@ -18,7 +18,7 @@ import { applyCorrections, flatten, invertCorrections, readText } from '../exten
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
 import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, PAIR_META } from '../extension/src/shared.js';
-import type { Correction, Failure, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
+import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 
 // import.meta.url is an http: URL under the jsdom environment; resolve from the repo root instead.
@@ -491,8 +491,37 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: '1', terms: 1 }) }) as unknown as Response);
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore(), defaultYaml: EXAMPLE_YAML });
     const expected = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
-    expect(await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' })).toEqual({ ok: false, error: expected });
+    const learn = (await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' })) as LearnReply;
+    expect(learn.message).toContain(expected);
     expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: expected });
+  });
+
+  // Catches: with the server up but no token (or a rejected one), Normalize
+  // fell back to the embedded YAML while Learn failed outright, so the word the
+  // popup said it could not learn was also never in the copy every send used.
+  it('learn falls back to the embedded YAML exactly when normalize does, and says the server did not get it', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    let learnStatus = 401;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+      if (url.endsWith('/learn')) return json({ error: 'unauthorized' }, learnStatus);
+      return json({ error: 'unauthorized' }, 401);
+    });
+    for (const token of ['', 'stale-token']) {
+      learnStatus = 401;
+      const store = memoryStore({ settings: { token } });
+      const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+      expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping quorbix' });
+      const learn = (await bg.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' })) as LearnReply;
+      expect(learn).toMatchObject({ ok: true, mode: 'embedded' });
+      expect(learn.message).toContain("Saved to the embedded lexicon only, not the server's:");
+      expect(learn.message).toContain(token ? 'rejected the token' : 'No API token set');
+      expect(learn.message).toContain('Sync from local API replaces');
+      expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Quorbyx' });
+      // A server that refuses the correction itself is not overridden by the embedded copy.
+      learnStatus = 400;
+      if (token) expect(await bg.handle({ type: 'learn', heard: 'Hetznr', meant: 'Hetzner' })).toMatchObject({ ok: false });
+    }
   });
 
   it('uses the local API with the bearer token when /health is ok, and learn/sync hit the right routes', async () => {

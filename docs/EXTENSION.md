@@ -131,7 +131,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 - Engine and server status ("Local API, lexicon 0.5.2, 42 terms" or "Embedded (fallback), server: cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve`"). The same sentence is what **Test connection** and **Sync from local API** in Options say when the server is not running.
 - On/off for this site.
 - The last five corrections.
-- **Learn a word**: "It's `Ashlr.AI` not `Ashler`". Posts to `/learn` when the API is up, otherwise adds the alias to the embedded YAML (comments in the YAML are preserved). When the server reports that another term also holds the spelling, the message says so and names the `lexicon remove ... --alias ... --global` (or `--project`) command that drops it; an untrusted project lexicon that claims it too is named by path.
+- **Learn a word**: "It's `Ashlr.AI` not `Ashler`". Posts to `/learn` when the API is up and accepts the stored token, otherwise adds the alias to the embedded YAML (comments in the YAML are preserved): the same rule that decides where a send is corrected. When the server is up but no token is stored or it rejects the token, the message says the word went to the embedded lexicon only, why, and that **Sync from local API** replaces the embedded YAML, so learn it again once paired. A `/learn` the server refuses for another reason (bad input, an untrusted project lexicon) shows the server's error and writes nothing. When the server reports that another term also holds the spelling, the message says so and names the `lexicon remove ... --alias ... --global` (or `--project`) command that drops it; an untrusted project lexicon that claims it too is named by path.
 
 ## Limitations
 
