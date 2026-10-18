@@ -1100,6 +1100,73 @@ describe('the load cache after POST /normalize records hits', () => {
   });
 });
 
+describe('the load cache after a write', () => {
+  // Catches: /learn, /add and pack install and uninstall cleared the cached
+  // load of every cwd, though a project-scope write changes only the loads
+  // that read that project file.
+  it('a project write drops only the loads that used that file; a global write drops them all', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-writecache-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repoA = path.join(dir, 'a');
+    const repoB = path.join(dir, 'b');
+    const repoC = path.join(dir, 'c');
+    const subC = path.join(repoC, 'src');
+    const other = path.join(dir, 'other');
+    for (const r of [repoA, repoB, repoC]) await fs.mkdir(path.join(r, '.git'), { recursive: true });
+    await fs.mkdir(subC, { recursive: true });
+    await fs.mkdir(other, { recursive: true });
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['ashler'] }, { globalPath, cwd: other });
+    for (const [r, name] of [[repoA, 'Alpha'], [repoB, 'Bravo']] as const) {
+      await fs.writeFile(path.join(r, '.lexicon.yaml'), `version: 1\nterms:\n  - canonical: ${name}\n    aliases: [${name.toLowerCase()}o]\n`);
+      await trustProject(path.join(r, '.lexicon.yaml'), { globalPath });
+    }
+    // A long reload interval: only an invalidation makes the server re-read.
+    const srv = createServer({ port: 0, cwd: other, globalPath, quiet: true, reloadMs: 60_000 });
+    const started = await srv.start();
+    const call = async (method: string, route: string, body?: unknown): Promise<Response> =>
+      fetch(`${started.url}${route}`, {
+        method,
+        headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const count = async (cwd: string): Promise<number> =>
+      ((await (await call('GET', `/stats?cwd=${encodeURIComponent(cwd)}`)).json()) as LexiconStats).termCount;
+    const counts = async (): Promise<number[]> => [await count(repoA), await count(repoB), await count(subC), await count(other)];
+    const ok = async (res: Promise<Response>): Promise<void> => {
+      const r = await res;
+      expect(r.status, await r.clone().text()).toBe(200);
+    };
+    try {
+      expect(await counts()).toEqual([2, 2, 1, 1]);
+      // Behind the server's back: any reload now sees one more global term.
+      await addTerm({ canonical: 'Laterly', aliases: ['laterlee'] }, { globalPath, cwd: other });
+
+      await ok(call('POST', '/add', { canonical: 'Alpine', aliases: ['alpeen'], scope: 'project', cwd: repoA }));
+      expect(await counts()).toEqual([4, 2, 1, 1]);
+      await ok(call('POST', '/learn', { heard: 'bravvo', meant: 'Bravo', scope: 'project', cwd: repoB }));
+      expect(await counts()).toEqual([4, 3, 1, 1]);
+      const packTerms = (await (await call('POST', '/packs/voice-tools', { scope: 'project', cwd: repoA })).json()) as { added: number; path: string };
+      expect(packTerms.path).toBe(path.join(repoA, '.lexicon.yaml'));
+      expect(await count(repoA)).toBe(4 + packTerms.added);
+      expect((await counts()).slice(1)).toEqual([3, 1, 1]);
+      await ok(call('DELETE', `/packs/voice-tools?scope=project&cwd=${encodeURIComponent(repoA)}`));
+      expect(await counts()).toEqual([4, 3, 1, 1]);
+
+      // A write that creates a repo's .lexicon.yaml drops the loads of the
+      // cwds that now resolve to it, though their cached load had no project file.
+      await ok(call('POST', '/add', { canonical: 'Charlie', aliases: ['charlee'], scope: 'project', cwd: repoC }));
+      expect(await counts()).toEqual([4, 3, 3, 1]);
+
+      // A global write drops every load.
+      await ok(call('POST', '/add', { canonical: 'Globo', aliases: ['globoh'], cwd: other }));
+      expect(await counts()).toEqual([5, 4, 4, 3]);
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});
+
 describe('trust gate', () => {
   it('never merges an untrusted project file and reports it by path only', async () => {
     const cwd = env.untrustedProject;
