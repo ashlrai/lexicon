@@ -159,7 +159,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 
 ```bash
 npm run build:extension                          # rebuild dist/
-npx tsc -p extension/tsconfig.json --noEmit      # typecheck the extension sources (DOM + chrome types)
+npx tsc -p extension/tsconfig.json --noEmit      # typecheck the extension sources (DOM + chrome types); npm run typecheck runs it too
 npx vitest run tests/extension.test.ts           # jsdom tests: adapters, rewrite, Enter/click, toast, embedded, routing
 ```
 
