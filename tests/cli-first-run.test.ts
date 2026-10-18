@@ -93,4 +93,19 @@ describe('first run of the lexicon CLI', () => {
       nextStep: 'see the usage: lexicon add --help',
     });
   }, 30_000);
+
+  // Catches: `lexicon init` created an empty file and stopped, with no word of
+  // what to do next; the second run said only "already exists".
+  it('init names the next step once it creates the file, and only then', () => {
+    const globalPath = path.join(home, '.config', 'lexicon', 'lexicon.yaml');
+    const first = lexicon(['init', '--cwd', home]);
+    expect(first.status).toBe(0);
+    expect(first.stdout).toBe(
+      `created global lexicon: ${globalPath}\nnext: add a term with lexicon add "Ashlr.AI" Ashler, or run lexicon setup for the guided first run\n`,
+    );
+    const second = lexicon(['init', '--cwd', home]);
+    expect(second.status).toBe(0);
+    expect(second.stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
+    expect(JSON.parse(lexicon(['init', '--json', '--cwd', home]).stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: false });
+  }, 30_000);
 });

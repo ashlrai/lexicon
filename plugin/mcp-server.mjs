@@ -62769,6 +62769,9 @@ async function runInit(opts, io) {
   line(io, `created ${scope} lexicon: ${safe(target)}`);
   if (scope === "project") {
     line(io, dim(`trusted ${safe(target)} (it is re-pinned by lexicon add/harvest; after hand edits run: lexicon trust)`));
+    line(io, dim('next: add a term with lexicon add "Ashlr.AI" Ashler --project'));
+  } else {
+    line(io, dim('next: add a term with lexicon add "Ashlr.AI" Ashler, or run lexicon setup for the guided first run'));
   }
   return 0;
 }
