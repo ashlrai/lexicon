@@ -90,18 +90,24 @@ or a retry with `"scope": "global"` in the body, `?scope=global` on a DELETE), o
 / a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
 `METHOD /path`) or export format,
 405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 500 a problem on the server's side,
-503 more than 64 requests in flight, or `/pair` before the server has finished starting (either way the request was not run; the `error` says to retry after the `Retry-After` seconds, 1).
+503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or `/pair` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
 
 400 always means the request itself is wrong: fix the input and do not retry
 as is. A 400 about a POST body (empty, not JSON, not an object, or a field that is
 missing, mistyped or unknown) ends with the fields that route takes, such as
 `(POST /normalize takes { text, dryRun?, minConfidence?, cwd? })`. 500 means the request was fine and the server could not serve it: the
 lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
-<path>: ...`), a lock on it is still held after its timeout, or the file
-cannot be read or written. The message names the cause and the file, so fix
+<path>: ...`), or the file or its lock cannot be read or written. The message names the cause and the file, so fix
 that and retry. An unauthenticated `/health` that hits the same problem gets
 only `internal error (the lexicon serve log has the detail)`; the detail is
 on the server's stderr either way.
+
+A write that waited out a lock another writer (the prompt hook, the MCP
+server, a CLI command) still holds is a 503 with `Retry-After: 1`, not a 500:
+`another writer is still using the lexicon file: could not lock <path> for
+writing: still held after 10000ms by <holder> ...; retry after 1 second
+(Retry-After)`. Nothing was written under that lock, so send the same request
+again.
 
 `/pair` is for `lexicon serve --pair`: the CLI confirms `/health`, opens the
 URL in the default browser, and the extension's content script on that page

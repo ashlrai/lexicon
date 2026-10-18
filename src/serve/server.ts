@@ -81,6 +81,7 @@ import {
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
+import { isHeldLockError } from '../util/atomic.js';
 import { errorMessage, isInputError } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 
@@ -368,17 +369,34 @@ const EXPORT_ROUTE_RE = /^\/export\/([a-z-]+)$/i;
 /**
  * The status for an error thrown while handling a request. 400 is for what
  * the request got wrong (`HttpError`s raised here, and core's `InputError`:
- * an empty canonical, heard equal to meant, a term the schema rejects);
- * anything else (a lexicon file that does not parse, a lock still held after
- * its timeout, EACCES) is the server's state, so 500, which tells a client to
- * retry or report rather than to change its input.
+ * an empty canonical, heard equal to meant, a term the schema rejects); a
+ * lock another writer still held at its timeout is 503 (retry); anything
+ * else (a lexicon file that does not parse, a lock that cannot be created,
+ * EACCES) is the server's state, so 500, which tells a client to report
+ * rather than to change its input.
  */
 export function errorStatus(err: unknown): number {
   if (err instanceof HttpError) return err.status;
   if (isProjectTrustError(err)) return 403;
   if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
   if (isInputError(err)) return 400;
+  // Another writer (the hook, the MCP server, a CLI command) still held the
+  // file's lock when the wait ran out: the server's state, but a passing one,
+  // so a retry is the fix, not a report. Every other lock failure stays 500.
+  if (isHeldLockError(err)) return 503;
   return 500;
+}
+
+/**
+ * The message of a 503 for a lock another writer still holds (`errorStatus`).
+ * The lock error names the file and its holder, which a caller with the token
+ * may see, as it may a 500's detail; an anonymous one gets the advice only.
+ */
+function heldLockMessage(err: unknown, authed: boolean): string {
+  const retry = `retry after ${BUSY_RETRY_AFTER_S} second (Retry-After)`;
+  return authed
+    ? `another writer is still using the lexicon file: ${errorMessage(err)}; ${retry}`
+    : `another writer is still using the lexicon file; ${retry}`;
 }
 
 /**
@@ -1240,8 +1258,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
             ? `internal error: ${message}`
             : 'internal error (the lexicon serve log has the detail)';
         }
-        if (status === 500) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
+        const heldLock = isHeldLockError(err);
+        if (heldLock) message = heldLockMessage(err, authed);
+        if (status === 500 || heldLock) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
         const extra: Record<string, string> = { ...cors, ...(err instanceof HttpError ? err.headers : {}) };
+        if (heldLock) extra['Retry-After'] = String(BUSY_RETRY_AFTER_S);
         if (status === 413) extra['Connection'] = 'close';
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
         send(res, json(status, { error: message }), extra, head);

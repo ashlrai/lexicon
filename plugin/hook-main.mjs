@@ -19410,11 +19410,18 @@ async function isYoungerThan(file, ms) {
 var FileLockError = class extends Error {
   path;
   lockPath;
-  constructor(target, lockPath, detail) {
+  /**
+   * True only when another live writer still held the lock at the timeout:
+   * contention that a retry can get past. False for a lock that cannot be
+   * created at all or an in-process ordering bug, which a retry repeats.
+   */
+  held;
+  constructor(target, lockPath, detail, opts = {}) {
     super(`could not lock ${target} for writing: ${detail} (lock file: ${lockPath})`);
     this.name = "FileLockError";
     this.path = target;
     this.lockPath = lockPath;
+    this.held = opts.held ?? false;
   }
 };
 var ownedLocks = /* @__PURE__ */ new Set();
@@ -19531,7 +19538,7 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
     if (transient === void 0 && await breakIfStale(lockPath, staleMs)) continue;
     if (Date.now() >= deadline) {
       if (transient !== void 0) throw transient;
-      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
+      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`, { held: true });
     }
     await sleep(wait / 2 + Math.random() * wait);
     wait = Math.min(wait * 2, 120);

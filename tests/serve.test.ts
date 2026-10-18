@@ -979,13 +979,46 @@ describe('limits and errors', () => {
     expect((await api('POST', '/add', { canonical: '   ' })).status).toBe(400);
   });
 
-  it('errorStatus: lock timeouts and fs errors are 500, input errors 400', () => {
-    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', 'still held after 5000ms'))).toBe(500);
+  // Catches: a lock another writer still held at the timeout mapped to 500,
+  // which tells a client to report rather than to retry.
+  it('errorStatus: a lock another writer holds is 503, other lock failures and fs errors 500, input errors 400', () => {
+    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', 'still held after 5000ms', { held: true }))).toBe(503);
+    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', '/x is not a directory'))).toBe(500);
     expect(errorStatus(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }))).toBe(500);
     expect(errorStatus(new Error('Invalid lexicon at /x: bad'))).toBe(500);
     expect(errorStatus(new TypeError('x is undefined'))).toBe(500);
     expect(errorStatus(new InputError('canonical must not be empty'))).toBe(400);
   });
+
+  // Catches: a write that waited out the lock another lexicon process held
+  // answered 500 "internal error", with no Retry-After and no word to retry.
+  it('a write while another writer holds the lexicon lock is a 503 that says to retry', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'locked-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms: []\n', 'utf8');
+    const locked = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await locked.start();
+    // A live pid on this host with a token that is not the server's: what a
+    // second lexicon process mid-write looks like.
+    const lockPath = `${globalPath}.lock`;
+    await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'someone-else', at: new Date().toISOString() }));
+    try {
+      const res = await fetch(`${t.url}/add`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canonical: 'Lockly', aliases: ['lock lee'] }),
+      });
+      expect(res.status).toBe(503);
+      expect(res.headers.get('retry-after')).toBe('1');
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toMatch(/^another writer is still using the lexicon file: could not lock .* for writing: still held after \d+ms by .*; retry after 1 second \(Retry-After\)$/);
+      expect(error).toContain(globalPath);
+      expect(await fs.readFile(globalPath, 'utf8')).toBe('version: 1\nterms: []\n');
+    } finally {
+      await fs.rm(lockPath, { force: true });
+      await locked.stop();
+    }
+  }, 60_000);
 
   it('405 on the wrong method', async () => {
     const res = await api('GET', '/normalize');
