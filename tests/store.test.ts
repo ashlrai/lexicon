@@ -1316,19 +1316,40 @@ describe('project parse cache', () => {
     expect((await loadLexicon({ cwd: repos[2].root, globalPath })).projectTrust).toBe('changed');
   });
 
-  it('is never written for an untrusted project file or a small one', async () => {
+  it('is never written for an untrusted project file', async () => {
     const { root } = await makeRepo();
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
     await fs.writeFile(path.join(root, '.lexicon.yaml'), `${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: []\n`);
     expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('untrusted');
+    expect((await loadLexicon({ cwd: root, globalPath, parseSkipped: false })).projectTrust).toBe('untrusted');
     expect((await loadLexicon({ cwd: root, globalPath, includeUntrusted: true })).project).toBeDefined();
     await expect(fs.stat(cachePath())).rejects.toThrow();
+  });
 
-    await fs.writeFile(path.join(root, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: P\n    aliases: []\n');
-    await trustProject(path.join(root, '.lexicon.yaml'), { globalPath });
+  // Catches: files under PARSE_CACHE_MIN_BYTES were left out, so a small
+  // trusted repo file still cost every prompt a parse and node:crypto.
+  it('caches a small trusted project file too, under the same byte-exact rule', async () => {
+    const small = 'version: 1\nterms:\n  - canonical: P\n    aliases: [pee]\n';
+    expect(Buffer.byteLength(small)).toBeLessThan(PARSE_CACHE_MIN_BYTES);
+    const { root, projectPath } = await trustedRepo(small);
     expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('trusted');
-    await expect(fs.stat(cachePath())).rejects.toThrow();
+    const entry = await readEntry();
+    expect(entry.path).toBe(projectPath);
+    expect(entry.text).toBe(small);
+    expect(entry.sha256).toBe(await hashFile(projectPath));
+    if (process.platform !== 'win32') expect((await fs.stat(cachePath())).mode & 0o777).toBe(0o600);
+
+    // The entry is what gets read (doctored, checksum kept), on the hook's path too.
+    const lexicon = JSON.stringify({ version: 1, terms: [{ canonical: 'P', aliases: ['from-cache'] }] });
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon, sum: cacheChecksum(`${entry.sha256}${lexicon}`) }));
+    expect(findTerm((await loadLexicon({ cwd: root, globalPath, parseSkipped: false })).merged, 'P')?.aliases).toEqual(['from-cache']);
+
+    // Different bytes are a different file: changed, and the entry is not used.
+    await fs.writeFile(projectPath, small.replace('pee', 'pea'));
+    const changed = await loadLexicon({ cwd: root, globalPath, parseSkipped: false });
+    expect(changed.projectTrust).toBe('changed');
+    expect(findTerm(changed.merged, 'P')).toBeUndefined();
   });
 });
 

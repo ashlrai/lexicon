@@ -19956,18 +19956,16 @@ async function readProjectBytes(filePath, globalPath) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return void 0;
   const out = { text: read.text, bytes: read.bytes };
-  if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
-    const key = import_node_path5.default.resolve(filePath);
-    const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
-    const main2 = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
-    out.mainId = main2.id;
-    if (main2.hit) out.cached = main2.hit;
-    else if (main2.id !== key) {
-      const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
-      if (spill.hit) {
-        out.cached = spill.hit;
-        out.fromSpill = true;
-      }
+  const key = import_node_path5.default.resolve(filePath);
+  const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const main2 = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
+  out.mainId = main2.id;
+  if (main2.hit) out.cached = main2.hit;
+  else if (main2.id !== key) {
+    const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
+    if (spill.hit) {
+      out.cached = spill.hit;
+      out.fromSpill = true;
     }
   }
   return out;
@@ -20002,7 +20000,6 @@ function projectFileOf(filePath, read) {
   return { file, fresh: { text: read.text } };
 }
 async function writeProjectParseCache(file, text, globalPath, mainId) {
-  if (Buffer.byteLength(text, "utf8") < PARSE_CACHE_MIN_BYTES) return;
   try {
     const sha256 = await recalledParsedHash(file);
     if (sha256 === void 0) return;

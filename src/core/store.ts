@@ -421,8 +421,16 @@ async function promoteCacheEntry(mainPath: string, id: string, mainId: string | 
  * edit the registry, so it adds no new way in. `sum` (see `cacheChecksum`)
  * catches a damaged entry, not a forged one. Up to CACHE_ENTRIES entries,
  * one per project file, least recently used out (see CACHE_ENTRIES), so
- * alternating between a few repos does not parse each time; files under
- * PARSE_CACHE_MIN_BYTES are not cached.
+ * alternating between a few repos does not parse each time.
+ *
+ * Every trusted project file is cached, whatever its size. A file under
+ * PARSE_CACHE_MIN_BYTES used to be left out, on the theory that a small file
+ * parses in a few milliseconds; measured, a 10-term file still cost the warm
+ * prompt about 30 to 45 ms and a 100-term one 55 to 65 ms (the YAML parse and
+ * schema validation on a cold process, plus loading node:crypto for the
+ * hash). Size plays no part in the argument above: reuse is still for
+ * identical bytes only, the entry is still written only for a file the gate
+ * just found trusted, and only in the global config directory.
  */
 export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
 
@@ -452,18 +460,16 @@ async function readProjectBytes(filePath: string, globalPath: string): Promise<P
   const read = await readLexiconText(filePath);
   if (read === undefined) return undefined;
   const out: ProjectBytes = { text: read.text, bytes: read.bytes };
-  if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
-    const key = path.resolve(filePath);
-    const mainPath = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
-    const main = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
-    out.mainId = main.id;
-    if (main.hit) out.cached = main.hit;
-    else if (main.id !== key) {
-      const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
-      if (spill.hit) {
-        out.cached = spill.hit;
-        out.fromSpill = true;
-      }
+  const key = path.resolve(filePath);
+  const mainPath = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const main = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
+  out.mainId = main.id;
+  if (main.hit) out.cached = main.hit;
+  else if (main.id !== key) {
+    const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
+    if (spill.hit) {
+      out.cached = spill.hit;
+      out.fromSpill = true;
     }
   }
   return out;
@@ -530,7 +536,6 @@ function projectFileOf(filePath: string, read: ProjectBytes | undefined): Projec
  * project parse cache entry. Best effort, never throws.
  */
 async function writeProjectParseCache(file: LexiconFile, text: string, globalPath: string, mainId: string | undefined): Promise<void> {
-  if (Buffer.byteLength(text, 'utf8') < PARSE_CACHE_MIN_BYTES) return;
   try {
     const sha256 = await recalledParsedHash(file);
     if (sha256 === undefined) return;
