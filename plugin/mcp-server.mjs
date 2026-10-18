@@ -59670,6 +59670,10 @@ var import_yaml6 = __toESM(require_dist2());
 var PACKS_DIR_NAME = "packs";
 var PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var DEFAULT_PACKS = ["developer", "ai", "voice-tools"];
+function packAlreadyInstalledNote(name, result, show = (s) => s) {
+  const { terms, aliases } = result.pack;
+  return `${show(name)} is already installed in ${show(result.path)} (${terms} term${terms === 1 ? "" : "s"}, ${aliases} ${aliases === 1 ? "alias" : "aliases"}); nothing was added`;
+}
 var PackNotFoundError = class extends Error {
   pack;
   constructor(name, available) {
@@ -65039,9 +65043,10 @@ var registerPackTools = (server, ctx) => {
           title: result2.pack.title,
           added: result2.added,
           merged: result2.merged,
+          alreadyInstalled: result2.alreadyInstalled === true,
           path: result2.path,
           scope: result2.scope,
-          summary: `installed community pack ${result2.ref}: ${result2.added} new term${result2.added === 1 ? "" : "s"}, ${result2.merged} merged into ${result2.path}`,
+          summary: result2.alreadyInstalled ? packAlreadyInstalledNote(result2.ref, result2) : `installed community pack ${result2.ref}: ${result2.added} new term${result2.added === 1 ? "" : "s"}, ${result2.merged} merged into ${result2.path}`,
           ...writeOpts2.leaveUntrusted ? untrustedWriteFields(result2.path, `The ${result2.ref} terms`, true) : {}
         });
       }
@@ -65063,9 +65068,12 @@ var registerPackTools = (server, ctx) => {
         title: result.pack.title,
         added: result.added,
         merged: result.merged,
+        // A reinstall that changed nothing says so, with the pack's counts,
+        // as `lexicon pack add` does, instead of "0 new terms, N merged".
+        alreadyInstalled: result.alreadyInstalled === true,
         path: result.path,
         scope: result.scope,
-        summary: `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? "" : "s"}, ${result.merged} merged into ${result.path}`,
+        summary: result.alreadyInstalled ? packAlreadyInstalledNote(result.pack.name, result) : `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? "" : "s"}, ${result.merged} merged into ${result.path}`,
         ...writeOpts.leaveUntrusted ? untrustedWriteFields(result.path, `The ${result.pack.name} pack's terms`, true) : {}
       });
     })

@@ -44,6 +44,7 @@ import {
   loadLexicon,
   loadMatcherIndex,
   normalizeWithIndex,
+  packAlreadyInstalledNote,
   recordHits,
   resolvePaths,
   isProjectTrustError,
@@ -166,6 +167,14 @@ export interface AddResponse {
   created: boolean;
   /** Aliases another term also holds, so they may still be corrected to it (MCP add_term `conflicts`). Only when there is one. */
   conflicts?: LearnConflict[];
+}
+
+/** POST /packs/:name: the install result, `alreadyInstalled` always set, and one sentence saying what happened. */
+export interface InstallPackResponse extends InstallPackResult {
+  /** True when the reinstall left the file byte for byte as it was. */
+  alreadyInstalled: boolean;
+  /** `installed <name>: N added, M merged into <path>`, or `packAlreadyInstalledNote` for a reinstall that changed nothing. */
+  summary: string;
 }
 
 export interface LexiconResponse {
@@ -886,12 +895,21 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     };
   }
 
-  async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResult> {
+  async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResponse> {
     const body = parseBody(PackBody, raw);
     const cwd = await resolveCwd(body.cwd);
     const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
     invalidateWritten([result]);
-    return result;
+    // A reinstall that changed nothing says so, with the pack's counts, in the
+    // words `lexicon pack add` and MCP add_pack use, not "0 added, N merged".
+    const alreadyInstalled = result.alreadyInstalled === true;
+    return {
+      ...result,
+      alreadyInstalled,
+      summary: alreadyInstalled
+        ? packAlreadyInstalledNote(result.pack.name, result)
+        : `installed ${result.pack.name}: ${result.added} added, ${result.merged} merged into ${result.path}`,
+    };
   }
 
   async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {

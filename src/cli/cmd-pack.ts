@@ -28,6 +28,7 @@ import {
   loadPack,
   loadPackFile,
   loadRegistryIndex,
+  packAlreadyInstalledNote,
   parsePackText,
   parseRegistryRef,
   previewRegistryUpdates,
@@ -450,7 +451,7 @@ const TERMS_LIVE = 'the terms are live: lexicon normalize, the prompt hook and l
 
 /** A reinstall that left the file as it was: say so, with the pack's counts, instead of "0 added, N merged". */
 function alreadyInstalledLine(name: string, result: InstallPackResult): string {
-  return `${safe(name)} is already installed in ${safe(result.path)} (${plural(result.pack.terms, 'term')}, ${result.pack.aliases} ${result.pack.aliases === 1 ? 'alias' : 'aliases'}); nothing was added`;
+  return packAlreadyInstalledNote(name, result, safe);
 }
 
 /** The `--json` record of one community install. */

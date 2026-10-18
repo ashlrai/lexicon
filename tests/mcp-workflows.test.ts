@@ -1295,6 +1295,18 @@ describe('project-scope writes from MCP never trust the project file', () => {
     expect(normalized.output).toBe('run Kubectl apply');
   });
 
+  // Catches: a reinstall of a pack the file already had came back as
+  // "installed developer: 0 new terms, N merged", never saying it was there.
+  it('add_pack on a pack already installed says so with its counts and alreadyInstalled', async () => {
+    const first = JSON.parse((await call('add_pack', { name: 'voice-tools' })).text) as { added: number; alreadyInstalled: boolean; path: string };
+    expect(first.added).toBeGreaterThan(0);
+    expect(first.alreadyInstalled).toBe(false);
+    const again = JSON.parse((await call('add_pack', { name: 'voice-tools' })).text) as { added: number; merged: number; alreadyInstalled: boolean; summary: string };
+    expect(again).toMatchObject({ added: 0, merged: first.added, alreadyInstalled: true });
+    expect(again.summary).toMatch(/^voice-tools is already installed in .+ \(\d+ terms, \d+ aliases\); nothing was added$/);
+    expect(again.summary).toContain(first.path);
+  });
+
   // Catches: add_pack with scope: 'project' created and trusted the file.
   it('add_pack installs into a new project file without trusting it, and into a trusted one as before', async () => {
     const projectPath = path.join(repo, '.lexicon.yaml');

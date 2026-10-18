@@ -24,6 +24,7 @@ import {
   listImportSources,
   listPacks,
   loadRegistryIndex,
+  packAlreadyInstalledNote,
   findRegistryEntry,
   downloadPack,
   findRegistryRecordMismatch,
@@ -171,9 +172,12 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
             title: result.pack.title,
             added: result.added,
             merged: result.merged,
+            alreadyInstalled: result.alreadyInstalled === true,
             path: result.path,
             scope: result.scope,
-            summary: `installed community pack ${result.ref}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
+            summary: result.alreadyInstalled
+              ? packAlreadyInstalledNote(result.ref, result)
+              : `installed community pack ${result.ref}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
             ...(writeOpts.leaveUntrusted ? untrustedWriteFields(result.path, `The ${result.ref} terms`, true) : {}),
           });
         }
@@ -200,9 +204,14 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           title: result.pack.title,
           added: result.added,
           merged: result.merged,
+          // A reinstall that changed nothing says so, with the pack's counts,
+          // as `lexicon pack add` does, instead of "0 new terms, N merged".
+          alreadyInstalled: result.alreadyInstalled === true,
           path: result.path,
           scope: result.scope,
-          summary: `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
+          summary: result.alreadyInstalled
+            ? packAlreadyInstalledNote(result.pack.name, result)
+            : `installed ${result.pack.name}: ${result.added} new term${result.added === 1 ? '' : 's'}, ${result.merged} merged into ${result.path}`,
           ...(writeOpts.leaveUntrusted ? untrustedWriteFields(result.path, `The ${result.pack.name} pack's terms`, true) : {}),
         });
       }),

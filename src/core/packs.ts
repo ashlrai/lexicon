@@ -86,6 +86,23 @@ export interface UninstallPackResult {
   files: string[];
 }
 
+/**
+ * The sentence for an install that left the file as it was
+ * (`alreadyInstalled`): `<name> is already installed in <path> (N terms,
+ * M aliases); nothing was added`, the counts being the pack's own. `lexicon
+ * pack add`, MCP `add_pack` and serve `POST /packs/:name` all say it, so a
+ * reinstall never reads `0 added, N merged`. `show` (default identity) is
+ * applied to the name and the path, as the CLI's terminal sanitizer is.
+ */
+export function packAlreadyInstalledNote(
+  name: string,
+  result: Pick<InstallPackResult, 'path'> & { pack: Pick<PackInfo, 'terms' | 'aliases'> },
+  show: (s: string) => string = (s) => s,
+): string {
+  const { terms, aliases } = result.pack;
+  return `${show(name)} is already installed in ${show(result.path)} (${terms} term${terms === 1 ? '' : 's'}, ${aliases} ${aliases === 1 ? 'alias' : 'aliases'}); nothing was added`;
+}
+
 /** Thrown by `loadPack` for a name that is not a pack file; HTTP callers map it to 404. */
 export class PackNotFoundError extends Error {
   readonly pack: string;

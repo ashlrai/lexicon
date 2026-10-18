@@ -2328,8 +2328,13 @@ describe('packs and aliases routes', () => {
     const health = (await (await fetch(`${info2.url}/health`)).json()) as { terms: number };
     expect(health.terms).toBe(installed.added);
 
-    const again = (await (await api2('POST', '/packs/developer', {})).json()) as { added: number; merged: number };
+    const again = (await (await api2('POST', '/packs/developer', {})).json()) as { added: number; merged: number; alreadyInstalled: boolean; summary: string };
     expect(again).toMatchObject({ added: 0, merged: installed.added });
+    // Catches: a reinstall that changed nothing came back as "0 added, N
+    // merged" with no word that the pack was already there.
+    expect(again.alreadyInstalled).toBe(true);
+    expect(again.summary).toMatch(new RegExp(`^developer is already installed in ${globalPath2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(\\d+ terms, \\d+ aliases\\); nothing was added$`));
+    expect(installed).toMatchObject({ alreadyInstalled: false, summary: `installed developer: ${installed.added} added, 0 merged into ${globalPath2}` });
 
     // The new terms are live for /normalize right away.
     const norm = await api2('POST', '/normalize', { text: 'deploy to cuban eats on versal with superbase' });
