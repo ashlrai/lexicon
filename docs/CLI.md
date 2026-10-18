@@ -541,7 +541,8 @@ Usage: lexicon suggest [options]
 suggest aliases, new terms, never-words and stale terms from your voice history
 
 Options:
-  --json           print the suggestions as JSON
+  --json           print the suggestions as JSON; with --yes, one document
+                   naming what was applied and the file each went to
   --apply          walk the suggestions one by one: y apply, n skip, a apply all
                    remaining, q quit
   --yes            apply every suggestion at or above 0.80 confidence without

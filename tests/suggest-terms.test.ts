@@ -527,7 +527,61 @@ describe('runSuggest', () => {
     const store = mockStore();
     const io = makeIO();
     expect(await runSuggest({ json: true, apply: true, yes: true }, io, store.deps)).toBe(1);
-    expect(JSON.parse(io.out)).toEqual({ ok: false, error: '--apply and --yes are mutually exclusive' });
+    expect(JSON.parse(io.out)).toEqual({
+      ok: false,
+      error: '--apply and --yes are mutually exclusive',
+      nextStep: 'pass --apply to choose one by one, or --yes to apply those at or above 0.80',
+    });
+  });
+
+  // Catches: `suggest --json --apply` printed the bare suggestion array, exit 0, and applied nothing.
+  it('--json --apply is refused with a document naming --yes --json, and asks nothing', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    const prompter = lenientPrompter(['y', 'y', 'y', 'y', 'y']);
+    expect(await runSuggest({ json: true, apply: true }, io, { ...store.deps, prompter })).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({
+      ok: false,
+      error: '--apply asks about each suggestion and cannot be combined with --json',
+      nextStep: 'pass --yes --json to apply those at or above 0.80 without asking, or drop --json',
+    });
+    expect(prompter.asked).toEqual([]);
+    expect(store.added).toEqual([]);
+    expect(store.removed).toEqual([]);
+  });
+
+  // Catches: `suggest --json --yes` printed the bare suggestion array and wrote nothing.
+  it('--json --yes applies those at or above 0.80 and prints one document naming each write and its file', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    expect(await runSuggest({ json: true, yes: true }, io, store.deps)).toBe(0);
+    expect(store.added.map((a) => a.term.canonical)).toEqual(['Vercel', 'Siobhan Reilly']);
+    expect(store.removed).toEqual([]);
+    expect(JSON.parse(io.out)).toEqual({
+      ok: true,
+      threshold: 0.8,
+      applied: [
+        { kind: 'alias', canonical: 'Vercel', alias: 'versal', scope: 'global', action: 'merged', path: '/tmp/mock/lexicon.yaml' },
+        { kind: 'term', canonical: 'Siobhan Reilly', scope: 'global', action: 'added', path: '/tmp/mock/lexicon.yaml' },
+      ],
+      skipped: FIXED.slice(2),
+    });
+
+    // A refused write stops the run: still one document, with what was written before it.
+    const refused = mockStore();
+    const real = refused.deps.addTerm;
+    refused.deps.addTerm = async (term, opts) => {
+      if (term.canonical === 'Siobhan Reilly') throw new ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted');
+      return (real as NonNullable<typeof real>)(term, opts);
+    };
+    const io2 = makeIO();
+    expect(await runSuggest({ json: true, yes: true, project: true }, io2, refused.deps)).toBe(1);
+    const doc = JSON.parse(io2.out) as { ok: boolean; error: string; nextStep: string; applied: Array<{ canonical: string }> };
+    expect(doc.ok).toBe(false);
+    expect(doc.error).toContain('/tmp/proj/.lexicon.yaml is untrusted');
+    expect(doc.nextStep).toContain('lexicon trust');
+    expect(doc.applied.map((a) => a.canonical)).toEqual(['Vercel']);
+    expect(io2.err).toContain('lexicon: project lexicon at /tmp/proj/.lexicon.yaml is untrusted');
   });
 
   it('prints a table by default, sanitized, with the kind/canonical/alias/count/confidence/reason columns', async () => {

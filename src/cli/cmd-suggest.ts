@@ -90,8 +90,25 @@ function scopeFor(s: TermSuggestion, loaded: LoadedLexicon, opts: SuggestCliOpti
 }
 
 /**
- * Apply one suggestion through the store. Returns a one-line report.
- * Throws ProjectTrustError (and any other store error) to the caller.
+ * What `suggest --yes --json` reports for one suggestion it applied: the
+ * suggestion's kind, canonical and alias, what the write did, and the file it
+ * wrote (`path`, absent only for a stale term that was already gone).
+ */
+export interface SuggestApplied {
+  kind: TermSuggestion['kind'];
+  canonical: string;
+  alias?: string;
+  scope: TermScope;
+  action: 'added' | 'merged' | 'removed' | 'already-gone' | 'skipped';
+  path?: string;
+  /** For a removed stale term: the other files that still hold a copy. */
+  stillIn?: Array<{ scope: TermScope; path: string }>;
+}
+
+/**
+ * Apply one suggestion through the store. Returns a one-line report and the
+ * record `--json` prints. Throws ProjectTrustError (and any other store
+ * error) to the caller.
  */
 async function applyOne(
   s: TermSuggestion,
@@ -99,19 +116,26 @@ async function applyOne(
   opts: SuggestCliOptions,
   store: { cwd: string; globalPath?: string },
   deps: Required<Pick<SuggestDeps, 'addTerm' | 'removeTerm'>>,
-): Promise<string> {
+): Promise<{ text: string; record: SuggestApplied }> {
   const scope = scopeFor(s, loaded, opts);
+  const base = { kind: s.kind, canonical: s.canonical, ...(s.alias !== undefined ? { alias: s.alias } : {}) };
   switch (s.kind) {
     case 'alias': {
       const result = await deps.addTerm({ canonical: s.canonical, aliases: s.alias ? [s.alias] : [] }, { ...store, scope });
-      return `alias ${safe(s.alias ?? '')} -> ${safe(result.term.canonical)} in ${safe(result.file.path)}`;
+      return {
+        text: `alias ${safe(s.alias ?? '')} -> ${safe(result.term.canonical)} in ${safe(result.file.path)}`,
+        record: { ...base, scope: result.file.scope, action: result.created ? 'added' : 'merged', path: result.file.path },
+      };
     }
     case 'never': {
       const result = await deps.addTerm(
         { canonical: s.canonical, aliases: [], never: s.alias ? [s.alias] : [] },
         { ...store, scope },
       );
-      return `never ${safe(s.alias ?? '')} for ${safe(result.term.canonical)} in ${safe(result.file.path)}`;
+      return {
+        text: `never ${safe(s.alias ?? '')} for ${safe(result.term.canonical)} in ${safe(result.file.path)}`,
+        record: { ...base, scope: result.file.scope, action: result.created ? 'added' : 'merged', path: result.file.path },
+      };
     }
     case 'term': {
       const term: Term = {
@@ -121,21 +145,33 @@ async function applyOne(
       };
       if (s.category) term.category = s.category;
       const result = await deps.addTerm(term, { ...store, scope });
-      return `${result.created ? 'added' : 'merged'} ${safe(result.term.canonical)} in ${safe(result.file.path)}`;
+      return {
+        text: `${result.created ? 'added' : 'merged'} ${safe(result.term.canonical)} in ${safe(result.file.path)}`,
+        record: { ...base, scope: result.file.scope, action: result.created ? 'added' : 'merged', path: result.file.path },
+      };
     }
     case 'stale': {
       const removed = await deps.removeTerm(s.canonical, { ...store, scope });
-      if (!removed) return `${safe(s.canonical)} was already gone`;
+      if (!removed) return { text: `${safe(s.canonical)} was already gone`, record: { ...base, scope, action: 'already-gone' } };
       // removeTerm edits only `scope`'s file. A copy in the other file keeps
       // correcting, so name it and the command that removes it too.
       const holders = termHolders(loaded, s.canonical);
       const from = holders.find((h) => h.scope === scope);
       const others = holders.filter((h) => h.scope !== scope);
       const head = `removed ${safe(s.canonical)}${from ? ` from ${safe(from.path)}` : ''}`;
-      return [head, ...others.map((h) => stillInLine(s.canonical, h))].join('\n  ');
+      return {
+        text: [head, ...others.map((h) => stillInLine(s.canonical, h))].join('\n  '),
+        record: {
+          ...base,
+          scope,
+          action: 'removed',
+          ...(from ? { path: from.path } : {}),
+          ...(others.length > 0 ? { stillIn: others.map((h) => ({ scope: h.scope, path: h.path })) } : {}),
+        },
+      };
     }
     default:
-      return `skipped ${safe(s.canonical)}`;
+      return { text: `skipped ${safe(s.canonical)}`, record: { ...base, scope, action: 'skipped' } };
   }
 }
 
@@ -151,7 +187,15 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   if (typeof opts.harvest === 'string') harvestDir = path.resolve(opts.harvest);
   else if (opts.harvest === true || opts.cwd) harvestDir = cwd;
 
-  if (opts.apply && opts.yes) return refuse(io, opts.json, '--apply and --yes are mutually exclusive');
+  const threshold = AUTO_APPLY_CONFIDENCE.toFixed(2);
+  if (opts.apply && opts.yes) {
+    return refuse(io, opts.json, '--apply and --yes are mutually exclusive', `pass --apply to choose one by one, or --yes to apply those at or above ${threshold}`);
+  }
+  // --apply asks a question per suggestion; under --json stdout is the
+  // document, so it printed the bare suggestion array and applied nothing.
+  if (opts.apply && opts.json) {
+    return refuse(io, true, '--apply asks about each suggestion and cannot be combined with --json', `pass --yes --json to apply those at or above ${threshold} without asking, or drop --json`);
+  }
   if (opts.apply && !opts.json && !deps.prompter && !isInteractive()) {
     io.stderr(
       `lexicon: suggest --apply needs a terminal (stdin and stdout must be a TTY); use --yes to apply everything at or above ${AUTO_APPLY_CONFIDENCE.toFixed(2)} confidence\n`,
@@ -173,6 +217,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     return fail(io, err, opts.json);
   }
 
+  if (opts.json && opts.yes) return applyAllJson(suggestions, loaded, opts, store, writers, io);
   if (opts.json) {
     line(io, JSON.stringify(suggestions, null, 2));
     return 0;
@@ -184,7 +229,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
 
   const apply = async (s: TermSuggestion): Promise<boolean> => {
     try {
-      line(io, `  ${await applyOne(s, loaded, opts, store, writers)}`);
+      line(io, `  ${(await applyOne(s, loaded, opts, store, writers)).text}`);
       return true;
     } catch (err) {
       if (err instanceof ProjectTrustError) {
@@ -259,6 +304,44 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   return 0;
 }
 
+/**
+ * `suggest --yes --json`: apply every suggestion at or above
+ * AUTO_APPLY_CONFIDENCE and print one document, `{ ok: true, threshold,
+ * applied, skipped }` (`applied` the SuggestApplied records, `skipped` the
+ * suggestions below the threshold, as `--json` prints them). It printed the
+ * bare suggestion array and wrote nothing, so a script could not tell `--yes`
+ * was dropped. A write the store refuses stops the run with `{ ok: false,
+ * error, nextStep, applied }`, `applied` listing what was written before it.
+ */
+async function applyAllJson(
+  suggestions: readonly TermSuggestion[],
+  loaded: LoadedLexicon,
+  opts: SuggestCliOptions,
+  store: { cwd: string; globalPath?: string },
+  writers: Required<Pick<SuggestDeps, 'addTerm' | 'removeTerm'>>,
+  io: IO,
+): Promise<number> {
+  const applied: SuggestApplied[] = [];
+  const skipped = suggestions.filter((s) => s.confidence < AUTO_APPLY_CONFIDENCE);
+  for (const s of suggestions) {
+    if (s.confidence < AUTO_APPLY_CONFIDENCE) continue;
+    try {
+      applied.push((await applyOne(s, loaded, opts, store, writers)).record);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const nextStep =
+        err instanceof ProjectTrustError
+          ? 'review the project lexicon and run lexicon trust, or drop --project to write new terms to the global lexicon, then run lexicon suggest --yes --json again'
+          : 'fix the problem in error, then run lexicon suggest --yes --json again';
+      io.stderr(`lexicon: ${safeLines(error)}\n`);
+      line(io, JSON.stringify({ ok: false, error, nextStep, applied }, null, 2));
+      return 1;
+    }
+  }
+  line(io, JSON.stringify({ ok: true, threshold: AUTO_APPLY_CONFIDENCE, applied, skipped }, null, 2));
+  return 0;
+}
+
 // ---------------------------------------------------------------------------
 // commander wiring
 // ---------------------------------------------------------------------------
@@ -281,7 +364,7 @@ export function registerSuggestCommands(program: Command, io: IO): void {
   program
     .command('suggest')
     .description('suggest aliases, new terms, never-words and stale terms from your voice history')
-    .option('--json', 'print the suggestions as JSON')
+    .option('--json', 'print the suggestions as JSON; with --yes, one document naming what was applied and the file each went to')
     .option('--apply', 'walk the suggestions one by one: y apply, n skip, a apply all remaining, q quit')
     .option('--yes', `apply every suggestion at or above ${AUTO_APPLY_CONFIDENCE.toFixed(2)} confidence without asking`)
     .option('--harvest [dir]', 'also harvest a repository for new-term candidates (default: the --cwd directory); an explicit --cwd harvests too')
