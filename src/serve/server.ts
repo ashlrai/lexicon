@@ -1075,7 +1075,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (!config || !tokenMatches(req.headers.authorization, config.token)) {
-      throw new HttpError(401, 'missing or invalid bearer token (see: lexicon serve --show)');
+      // Both ways to get the token: an extension user pairs (`--pair`), any
+      // other client copies it (`--show`). It named only `--show`.
+      throw new HttpError(
+        401,
+        'missing or invalid bearer token (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
+      );
     }
 
     if (pathname === '/normalize') {

@@ -327,7 +327,11 @@ describe('auth', () => {
   it('401 without a token and with a wrong token', async () => {
     const none = await fetch(`${info.url}/stats`);
     expect(none.status).toBe(401);
-    expect(await none.json()).toEqual({ error: expect.stringContaining('bearer token') });
+    // Catches: the 401 named only `lexicon serve --show`, not `--pair`,
+    // which is how a browser extension user gets the token.
+    expect(await none.json()).toEqual({
+      error: 'missing or invalid bearer token (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
+    });
     const wrong = await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${'0'.repeat(32)}` } });
     expect(wrong.status).toBe(401);
     const post = await fetch(`${info.url}/normalize`, {
