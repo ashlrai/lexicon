@@ -597,6 +597,31 @@ describe('POST /learn and POST /add', () => {
     }
   });
 
+  // Catches: POST /add of an alias the term already has answered 200 with
+  // created: false and nothing else, though nothing was written, while
+  // `lexicon add --json` and MCP add_term say unchanged.
+  it('add of an alias the term already has says nothing was added', async () => {
+    const repo = path.join(env.home, 'add-unchanged-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const add = { canonical: 'Quuxly', aliases: ['cooks lee'], scope: 'project', cwd: repo };
+      const first = (await (await api('POST', '/add', add)).json()) as Record<string, unknown>;
+      expect(first).toMatchObject({ created: true });
+      expect(first).not.toHaveProperty('unchanged');
+      expect(first).not.toHaveProperty('note');
+      const before = await fs.readFile(file, 'utf8');
+      const res = await api('POST', '/add', add);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ created: false, unchanged: true, note: 'Nothing was added: "Quuxly" already has every alias and field given.' });
+      expect(await fs.readFile(file, 'utf8')).toBe(before);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('add validates the category', async () => {
     const res = await api('POST', '/add', { canonical: 'X', category: 'nope' });
     expect(res.status).toBe(400);

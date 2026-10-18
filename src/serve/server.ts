@@ -53,6 +53,7 @@ import {
   stripInvisible,
   suggestAliases,
   timeBudgetIncomplete,
+  unchangedTermNote,
   uninstallPack,
 } from '../core/index.js';
 import type {
@@ -167,6 +168,10 @@ export interface AddResponse {
   created: boolean;
   /** Aliases another term also holds, so they may still be corrected to it (MCP add_term `conflicts`). Only when there is one. */
   conflicts?: LearnConflict[];
+  /** The term already had every alias and field given; nothing was written. Only then. */
+  unchanged?: true;
+  /** With `unchanged` only: `unchangedTermNote(canonical)`. */
+  note?: string;
 }
 
 /** POST /packs/:name: the install result, `alreadyInstalled` always set, and one sentence saying what happened. */
@@ -854,7 +859,16 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       (loaded) => spellingConflicts(loaded.merged, saved.term.aliases, saved.term.canonical),
       () => [],
     );
-    return { term: saved.term, path: saved.file.path, created: saved.created, ...(conflicts.length > 0 ? { conflicts } : {}) };
+    return {
+      term: saved.term,
+      path: saved.file.path,
+      created: saved.created,
+      // The term already had every alias and field given, so nothing was
+      // written: say so, as `lexicon add --json` and MCP add_term do, instead
+      // of a 200 that reads like a merge.
+      ...(saved.unchanged ? { unchanged: true as const, note: unchangedTermNote(saved.term.canonical) } : {}),
+      ...(conflicts.length > 0 ? { conflicts } : {}),
+    };
   }
 
   async function handleLexicon(cwd: string): Promise<LexiconResponse> {
