@@ -61113,6 +61113,10 @@ var suggestionSchema = external_exports.object({
 function aliasCount(n) {
   return `${n} alias${n === 1 ? "" : "es"}`;
 }
+function emptySuggestionsNote(historyEntries) {
+  const history = historyEntries === 0 ? `there is no voice history yet (only ${cliCommand("voice")} push-to-talk records one)` : `the ${historyEntries} ${historyEntries === 1 ? "dictation in the voice history holds" : "dictations in the voice history hold"} no new garble or name`;
+  return `No suggestions: ${history}, no term is stale yet, and the repo gave no name the lexicon lacks. Suggestions come from dictations recorded in the voice history, from terms that never fire, and from the repo. Tell the user, and offer add_term for a name they know is misheard; call suggest_terms again after they have dictated for a while.`;
+}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -61194,7 +61198,9 @@ var registerHarvestTools = (server, ctx) => {
         return [];
       });
       const suggestions = await suggestTerms({ loaded, history, cwd: root, ...limit !== void 0 ? { limit } : {} });
-      return textResult(suggestions);
+      const result = textResult(suggestions);
+      if (suggestions.length === 0) result.content.push({ type: "text", text: emptySuggestionsNote(history.length) });
+      return result;
     })
   );
   server.registerTool(

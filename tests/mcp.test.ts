@@ -1429,6 +1429,34 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: an empty history gave a bare [] and nothing else, so the agent
+    // could not tell the user why nothing came back or what would produce some.
+    it('suggest_terms keeps the bare array and adds a second text block saying why it is empty', async () => {
+      const { client, close } = await connect();
+      try {
+        const withSome = await client.callTool({ name: 'suggest_terms', arguments: {} });
+        expect((withSome.content as unknown[]).length).toBe(1);
+
+        mocks.suggestTerms.mockResolvedValueOnce([]);
+        const empty = await client.callTool({ name: 'suggest_terms', arguments: {} });
+        expect(empty.isError).toBe(false);
+        expect(JSON.parse(textOf(empty))).toEqual([]);
+        const content = empty.content as { type: string; text: string }[];
+        expect(content).toHaveLength(2);
+        expect(content[1]!.type).toBe('text');
+        expect(content[1]!.text).toMatch(/^No suggestions: there is no voice history yet \(only `lexicon voice` \(or `npx @ashlr\/lexicon voice`\) push-to-talk records one\)/);
+        expect(content[1]!.text).toContain('Suggestions come from dictations recorded in the voice history, from terms that never fire, and from the repo.');
+        expect(content[1]!.text).toContain('add_term');
+
+        mocks.loadVoiceHistory.mockResolvedValueOnce([{ at: '2026-10-01T00:00:00.000Z', raw: 'hi', output: 'hi' }]);
+        mocks.suggestTerms.mockResolvedValueOnce([]);
+        const quiet = await client.callTool({ name: 'suggest_terms', arguments: {} });
+        expect((quiet.content as { text: string }[])[1]!.text).toMatch(/^No suggestions: the 1 dictation in the voice history holds no new garble or name/);
+      } finally {
+        await close();
+      }
+    });
+
     // Catches: suggest_terms and add_term's conflict check read only the
     // merged files, yet parsed an untrusted project .lexicon.yaml to skip it.
     it('suggest_terms and the add_term conflict check load without parsing a skipped project file', async () => {
