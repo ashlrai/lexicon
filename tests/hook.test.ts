@@ -1033,6 +1033,22 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       expect(said).not.toContain('Ashlr.AI');
     }
   });
+
+  // Catches: a trusted repo .lexicon.yaml that stopped parsing was reported
+  // with plain `lexicon edit`, which opens the global file instead.
+  it('names lexicon edit --project when the file that does not parse is the repo one', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const cases: Array<[string, string]> = [
+      [path.join('/fake', 'repo', '.lexicon.yaml'), 'Tell the user to run `lexicon edit --project` (or `npx @ashlr/lexicon edit --project`)'],
+      ['C:\\Users\\me\\repo\\.lexicon.yaml', 'Tell the user to run `lexicon edit --project` (or `npx @ashlr/lexicon edit --project`)'],
+      [path.join('/fake', 'home', 'lexicon.yaml'), 'Tell the user to run `lexicon edit` (or `npx @ashlr/lexicon edit`)'],
+    ];
+    for (const [file, step] of cases) {
+      mocks.loadLexicon.mockRejectedValueOnce(new Error(`Invalid lexicon at ${file}: terms.0.canonical: Required`));
+      const said = context(await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'ping Ashler', cwd: '/fake/repo' })));
+      expect(said).toContain(step);
+    }
+  });
 });
 
 // Catches: a payload `cwd` that is not a string reached loadLexicon, whose

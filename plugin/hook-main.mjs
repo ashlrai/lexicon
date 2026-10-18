@@ -20881,11 +20881,16 @@ Call the lexicon_doctor tool, or tell the user to run ` + cliCommand("doctor") +
     }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
-Tell the user to run ` + cliCommand("edit") + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
+Tell the user to run ` + cliCommand(unparseableEditCommand(message)) + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
     };
   }
 }
 var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+function unparseableEditCommand(message) {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  const file = m?.[1] ?? "";
+  return /(?:^|[\\/])\.lexicon\.yaml$/.test(file) ? "edit --project" : "edit";
+}
 function payloadCwd(payload) {
   const cwd = payload.cwd;
   if (typeof cwd === "string" && cwd.trim() !== "") return cwd;

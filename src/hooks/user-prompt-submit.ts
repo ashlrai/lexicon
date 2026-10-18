@@ -666,7 +666,7 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
-        'Tell the user to run ' + cliCommand('edit') + ' and fix the parse error. Setup will not repair this, ' +
+        'Tell the user to run ' + cliCommand(unparseableEditCommand(message)) + ' and fix the parse error. Setup will not repair this, ' +
         'and lexicon_doctor will show the same thing.',
     };
   }
@@ -674,6 +674,19 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
 
 /** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */
 const UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+
+/**
+ * The `lexicon edit` arguments that open the file an unparseable-lexicon
+ * `message` names: `edit --project` for a repo's `.lexicon.yaml`, else `edit`
+ * (the global file), as src/cli/io.ts unreadableLexiconEdit does. A trusted
+ * project file that stopped parsing was reported with plain `lexicon edit`,
+ * which opens the global file and leaves the broken one as it was.
+ */
+function unparseableEditCommand(message: string): string {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  const file = m?.[1] ?? '';
+  return /(?:^|[\\/])\.lexicon\.yaml$/.test(file) ? 'edit --project' : 'edit';
+}
 
 /**
  * The payload's `cwd` when it is a non-empty string, else undefined (the
