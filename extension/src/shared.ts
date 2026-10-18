@@ -216,9 +216,9 @@ export function incompleteNotice(inc: NormalizeIncomplete): string {
 export function connectionTestLine(s: StatusReply): string {
   if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}`;
   if (s.server && !s.tokenSet) {
-    return `Server is up, not paired: lexicon ${s.server.version}, ${s.server.terms} terms. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
+    return `Server is up, not paired: lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
   }
-  if (s.server) return `Connected: lexicon ${s.server.version}, ${s.server.terms} terms.`;
+  if (s.server) return `Connected: lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}.`;
   const why = s.serverError ?? 'no reply';
   return `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
 }
@@ -240,10 +240,10 @@ export interface StatusView {
  */
 export function statusView(s: StatusReply): StatusView {
   if (s.activeMode === 'api' && s.server) {
-    return { mode: 'Local API', warn: false, line: `lexicon ${s.server.version}, ${s.server.terms} terms` };
+    return { mode: 'Local API', warn: false, line: `lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}` };
   }
   const api = s.configuredMode === 'api';
-  const parts: string[] = [`${s.embeddedTerms} embedded terms`];
+  const parts: string[] = [`${countOf(s.embeddedTerms, 'embedded term')}`];
   if (api && s.tokenError) parts.push(s.tokenError);
   else if (api && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable; start it with `lexicon serve`');
   if (api && !s.tokenSet) {

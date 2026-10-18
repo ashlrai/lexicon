@@ -10,7 +10,7 @@
  * can drive it under jsdom; the auto-run at the bottom is the chrome wiring.
  */
 import { sendToBackground } from './chrome-store.js';
-import { errorMessage, PAIR_META } from './shared.js';
+import { countOf, errorMessage, PAIR_META } from './shared.js';
 import type { Failure, PairReply, Request } from './shared.js';
 
 export interface PairDeps {
@@ -57,7 +57,7 @@ export async function pairFromDocument(deps: PairDeps): Promise<PairOutcome> {
     reply = { ok: false, error: errorMessage(err) };
   }
   if (reply.ok) {
-    const status = `Paired with lexicon serve (${reply.terms} term${reply.terms === 1 ? '' : 's'}). You can close this tab.`;
+    const status = `Paired with lexicon serve (${countOf(reply.terms, 'term')}). You can close this tab.`;
     setStatus(doc, status, 'ok');
     const heading = doc.querySelector('h1');
     if (heading) heading.textContent = 'Paired';
