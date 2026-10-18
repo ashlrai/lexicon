@@ -60743,24 +60743,30 @@ var registerHarvestTools = (server, ctx) => {
       let written;
       const failures = [];
       const writeOpts = add ? await mcpWriteOpts({ cwd: root }) : {};
-      if (add) {
-        for (const c of candidates) {
-          try {
-            const saved = await addTerm(
-              {
-                canonical: c.canonical,
-                aliases: c.suggestedAliases,
-                category: c.category,
-                source: c.source,
-                scope: "project"
-              },
-              { cwd: root, scope: "project", ...writeOpts }
-            );
-            written = saved.file.path;
-            added += 1;
-          } catch (err) {
-            if (isProjectTrustError(err)) throw err;
-            failures.push({ canonical: c.canonical, error: errorMessage(err) });
+      if (add && candidates.length > 0) {
+        const terms = candidates.map((c) => ({
+          canonical: c.canonical,
+          aliases: c.suggestedAliases,
+          category: c.category,
+          source: c.source,
+          scope: "project"
+        }));
+        const opts = { cwd: root, scope: "project", ...writeOpts };
+        try {
+          const saved = await addTerms(terms, opts);
+          written = saved.file.path;
+          added = saved.results.length;
+        } catch (err) {
+          if (isProjectTrustError(err)) throw err;
+          for (const term of terms) {
+            try {
+              const saved = await addTerm(term, opts);
+              written = saved.file.path;
+              added += 1;
+            } catch (inner) {
+              if (isProjectTrustError(inner)) throw inner;
+              failures.push({ canonical: term.canonical, error: errorMessage(inner) });
+            }
           }
         }
       }
@@ -63694,10 +63700,10 @@ async function stepHarvest(ctx) {
   let file2;
   const leaveUntrusted = ctx.opts.harvestUntrusted === true && !await projectWriteTrusted({ cwd: root });
   try {
-    for (const c of candidates) {
-      const term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: "project", cwd: root, ...leaveUntrusted ? { leaveUntrusted: true } : {} });
-      file2 = result.file.path;
+    const terms = candidates.map((c) => ({ canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source }));
+    const batch = await addTerms(terms, { scope: "project", cwd: root, ...leaveUntrusted ? { leaveUntrusted: true } : {} });
+    file2 = batch.file.path;
+    for (const result of batch.results) {
       if (result.created) {
         created += 1;
         ctx.summary.termsAdded.push(result.term.canonical);

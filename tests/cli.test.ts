@@ -70,6 +70,10 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
       term: term.aliases.length === 0 && opts?.defaultAliases ? { ...term, aliases: opts.defaultAliases } : term,
       created: true,
     })),
+    addTerms: vi.fn(async (terms: { canonical: string; aliases: string[] }[], opts?: { scope?: string }) => ({
+      file: { path: opts?.scope === 'project' ? '/tmp/proj/.lexicon.yaml' : state.globalPath, scope: opts?.scope ?? 'global', lexicon, exists: true },
+      results: terms.map((term) => ({ term, created: true })),
+    })),
     removeTerm: vi.fn(async (canonical: string) => canonical === 'Ashlr.AI'),
     removeAlias: vi.fn(async (canonical: string, alias: string, opts?: { scope?: string }) => {
       if (canonical !== 'Ashlr.AI') throw new Error(`no term "${canonical}" in the global or project lexicon`);
@@ -516,18 +520,20 @@ describe('add / remove / path', () => {
   // Catches: `harvest --add --json` printed the candidate array before the
   // writes, so a write that failed partway left two JSON documents on stdout
   // (the array, then the `{ ok: false }` index.ts prints for the throw).
-  it('harvest --add --json prints exactly one JSON document, also when a write fails partway', async () => {
+  it('harvest --add --json prints exactly one JSON document, also when the write fails', async () => {
     const candidate = (canonical: string) => ({ canonical, category: 'product' as const, count: 2, suggestedAliases: [`${canonical}x`], evidence: [], source: 'harvest:repo' as const });
     const repo = os.tmpdir();
     vi.mocked(core.harvestRepo).mockResolvedValueOnce([candidate('Quokka'), candidate('Wombat')]);
-    vi.mocked(core.addTerm).mockImplementationOnce(vi.mocked(core.addTerm).getMockImplementation()!).mockRejectedValueOnce(new Error('disk full'));
+    // The candidates go in one batch write, so a failure writes none of them.
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new Error('disk full'));
     const io = makeIO();
     // index.ts routes a thrown error through fail(io, err, json), so do the same here.
     const code = await runHarvest(repo, { add: true, yes: true, json: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err, true));
     expect(code).toBe(1);
-    expect(JSON.parse(io.out)).toEqual({ ok: false, error: 'disk full', nextStep: DEFAULT_NEXT_STEP, added: 1, created: 1, merged: 0, path: '/tmp/proj/.lexicon.yaml' });
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: 'disk full', nextStep: DEFAULT_NEXT_STEP, added: 0, created: 0, merged: 0 });
     expect(io.err).toContain('lexicon: disk full');
-    expect(io.err).toContain('added 1 new term, merged 0 before the failure');
+    expect(io.err).toContain('nothing was added');
+    expect(core.addTerm).not.toHaveBeenCalled();
 
     // Success keeps the documented shape: the bare array on stdout, the summary on stderr.
     vi.mocked(core.harvestRepo).mockResolvedValueOnce([candidate('Quokka')]);

@@ -11,6 +11,7 @@ import {
   EXPORT_FORMAT_INFO,
   ProjectTrustError,
   addTerm,
+  addTerms,
   demonstrate,
   exportLexicon,
   harvestRepo,
@@ -424,10 +425,12 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   // new, untrusted or changed one is written unpinned.
   const leaveUntrusted = ctx.opts.harvestUntrusted === true && !(await projectWriteTrusted({ cwd: root }));
   try {
-    for (const c of candidates) {
-      const term: Term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: 'project', cwd: root, ...(leaveUntrusted ? { leaveUntrusted: true } : {}) });
-      file = result.file.path;
+    // One read and one write for the list, as `lexicon harvest --add` does:
+    // one addTerm per name re-parsed the growing file on every write.
+    const terms: Term[] = candidates.map((c) => ({ canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source }));
+    const batch = await addTerms(terms, { scope: 'project', cwd: root, ...(leaveUntrusted ? { leaveUntrusted: true } : {}) });
+    file = batch.file.path;
+    for (const result of batch.results) {
       if (result.created) {
         created += 1;
         ctx.summary.termsAdded.push(result.term.canonical);
