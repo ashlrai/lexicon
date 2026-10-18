@@ -54400,6 +54400,7 @@ async function refreshIndexCache(written, opts = {}) {
     const loaded = await loadLexicon({
       globalPath,
       cwd: import_node_path5.default.dirname(project),
+      parseSkipped: false,
       ...opts.env !== void 0 ? { env: opts.env } : {},
       ...opts.home !== void 0 ? { home: opts.home } : {}
     });

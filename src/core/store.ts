@@ -778,9 +778,12 @@ export async function refreshIndexCache(written: { scope: TermScope; path: strin
       return;
     }
     if (typeof project !== 'string') return;
+    // Only the merge (global plus a trusted project file) is indexed, so a
+    // project file that is no longer trusted is never parsed here.
     const loaded = await loadLexicon({
       globalPath,
       cwd: path.dirname(project),
+      parseSkipped: false,
       ...(opts.env !== undefined ? { env: opts.env } : {}),
       ...(opts.home !== undefined ? { home: opts.home } : {}),
     });
