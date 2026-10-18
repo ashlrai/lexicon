@@ -254,7 +254,10 @@ export async function trustProject(
  * through this tool, so their own edit does not flip it to 'changed'). Does
  * nothing for unregistered files. Returns true when an entry was updated.
  */
-export async function refreshTrust(projectPath: string, opts: StoreOptions = {}): Promise<boolean> {
+export async function refreshTrust(
+  projectPath: string,
+  opts: StoreOptions & { expectedSha256?: string } = {},
+): Promise<boolean> {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
     const registry = await readTrustRegistry(opts);
@@ -262,9 +265,42 @@ export async function refreshTrust(projectPath: string, opts: StoreOptions = {})
     if (!existing) return false;
     const sha256 = await hashFile(key);
     if (sha256 === undefined || sha256 === existing.sha256) return false;
+    // With `expectedSha256` (the bytes the caller just wrote), a file
+    // rewritten by someone else since is left on its old pin, so it reads
+    // 'changed', rather than having their bytes pinned as the user's edit.
+    if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) return false;
     registry.trusted[key] = { sha256, trustedAt: existing.trustedAt };
     await writeTrustRegistry(registry, opts);
     return true;
+  }, opts);
+}
+
+/**
+ * The registry entry for `projectPath` as it stands, for a caller that may
+ * have to roll a write back (`restoreTrustEntry`). Not exported from the
+ * package: the pack registry's install and removal are the users.
+ */
+export async function trustEntryOf(projectPath: string, opts: StoreOptions = {}): Promise<TrustEntry | undefined> {
+  const key = await canonicalPath(projectPath);
+  const entry = (await readTrustRegistry(opts)).trusted[key];
+  return entry ? { ...entry } : undefined;
+}
+
+/**
+ * Put `projectPath`'s registry entry back to `entry` (or remove it), after a
+ * failed operation restored the file's bytes. Re-hashing the restored file
+ * instead (`refreshTrust`) pinned whatever the snapshot held, which is not
+ * necessarily what the user had trusted: a file rewritten before the
+ * operation took its lock was snapshotted, restored and blessed.
+ */
+export async function restoreTrustEntry(projectPath: string, entry: TrustEntry | undefined, opts: StoreOptions = {}): Promise<void> {
+  const key = await canonicalPath(projectPath);
+  await withTrustLock(async () => {
+    const registry = await readTrustRegistry(opts);
+    if (entry) registry.trusted[key] = { ...entry };
+    else if (key in registry.trusted) delete registry.trusted[key];
+    else return;
+    await writeTrustRegistry(registry, opts);
   }, opts);
 }
 

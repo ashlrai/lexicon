@@ -22,7 +22,7 @@ import * as z from 'zod';
 import { parseLexicon } from './schema.js';
 import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, refreshIndexCache, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
-import { isTrusted, refreshTrust } from './trust.js';
+import { isTrusted, parsedContentHash, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord } from '../util/json.js';
@@ -274,7 +274,7 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
   else delete file.lexicon.settings;
   await writeLexiconFile(file);
   if (file.scope === 'project' && !leaveUntrusted) {
-    await refreshTrust(file.path, opts);
+    await refreshTrust(file.path, { ...opts, expectedSha256: await parsedContentHash(file) });
     // Now that the trust entry says what the hook will merge (see addTerm).
     await refreshIndexCache(file, opts);
   }

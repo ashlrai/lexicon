@@ -53963,9 +53963,25 @@ async function refreshTrust(projectPath, opts = {}) {
     if (!existing) return false;
     const sha256 = await hashFile(key);
     if (sha256 === void 0 || sha256 === existing.sha256) return false;
+    if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) return false;
     registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
     await writeTrustRegistry(registry2, opts);
     return true;
+  }, opts);
+}
+async function trustEntryOf(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  const entry = (await readTrustRegistry(opts)).trusted[key];
+  return entry ? { ...entry } : void 0;
+}
+async function restoreTrustEntry(projectPath, entry, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  await withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    if (entry) registry2.trusted[key] = { ...entry };
+    else if (key in registry2.trusted) delete registry2.trusted[key];
+    else return;
+    await writeTrustRegistry(registry2, opts);
   }, opts);
 }
 async function untrustProject(projectPath, opts = {}) {
@@ -54736,6 +54752,11 @@ async function assertProjectWritable(projectPath, opts) {
   );
   if (status !== "trusted") throw new ProjectTrustError(projectPath, status);
 }
+async function assertParsedProjectWritable(file2, opts) {
+  if (file2.scope !== "project" || !file2.exists) return;
+  const status = await isTrusted(file2, opts);
+  if (status !== "trusted") throw new ProjectTrustError(file2.path, status);
+}
 async function projectWriteTrusted(opts = {}) {
   const projectPath = projectWritePath(opts);
   if (!(0, import_node_fs5.existsSync)(projectPath)) return false;
@@ -54806,6 +54827,7 @@ async function addTerm(term, opts = {}) {
   const incoming = prepareIncoming(term);
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFileForWrite(targetPath, scope);
+    if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
     return { file: file2, ...result };
@@ -54817,6 +54839,7 @@ async function addTerms(terms, opts = {}) {
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFileForWrite(targetPath, scope);
+    if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file2, opts);
     return { file: file2, results };
@@ -54839,11 +54862,11 @@ async function removeTerm(canonical, opts = {}) {
       if (!file2.exists) return false;
       const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file2.lexicon.terms.length) return false;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      await assertParsedProjectWritable(file2, opts);
       file2.lexicon.terms = remaining;
       await writeLexiconFile(file2);
       if (file2.scope === "project") {
-        await refreshTrust(file2.path, opts);
+        await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
         await dropProjectHits(file2.path, canonical, opts);
         await refreshIndexCache(file2, opts);
       } else {
@@ -54891,11 +54914,11 @@ async function removeAlias(canonical, alias, opts = {}) {
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
       await writeLexiconFile(file2);
       if (file2.scope === "project") {
-        await refreshTrust(file2.path, opts);
+        await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
         await refreshIndexCache(file2, opts);
       }
       files.push(file2);
@@ -59769,7 +59792,7 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
   else delete file2.lexicon.settings;
   await writeLexiconFile(file2);
   if (file2.scope === "project" && !leaveUntrusted) {
-    await refreshTrust(file2.path, opts);
+    await refreshTrust(file2.path, { ...opts, expectedSha256: await parsedContentHash(file2) });
     await refreshIndexCache(file2, opts);
   }
 }
@@ -60185,6 +60208,7 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
     const before = await Promise.all(files.map(snapshot));
+    const pinBefore = opts.scope === "project" && !opts.leaveUntrusted ? await trustEntryOf(target, opts) : void 0;
     try {
       const result = await installLoadedPack(pack, entry.ref, opts);
       await writeCache(entry.ref, bytes, opts);
@@ -60204,10 +60228,7 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
           if (before[i] === void 0) await import_node_fs10.promises.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i].toString("utf8"));
         }
-        if (opts.scope === "project" && !opts.leaveUntrusted) {
-          if (before[0] !== void 0) await refreshTrust(target, opts);
-          else await untrustProject(target, opts);
-        }
+        if (opts.scope === "project" && !opts.leaveUntrusted) await restoreTrustEntry(target, pinBefore, opts);
       } catch (rollback) {
         throw new AggregateError([err, rollback], "registry install failed and rollback was incomplete");
       }
