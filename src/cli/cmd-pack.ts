@@ -613,6 +613,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
       return 0;
     }
     const reports: { ref: string; status: string; from?: string; to?: string; added?: number | string[]; merged?: number; dropped?: string[]; error?: string }[] = [];
+    let unconfirmed = 0;
     for (const [source, group] of byIndex) {
       const previews = await previewRegistryUpdates(group, source, storeOpts, deps.registry);
       for (const preview of previews) {
@@ -646,8 +647,12 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           reports.push({ ...preview, status: 'preview' });
           continue;
         }
-        const ok = (await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, yesCommand('update', preview.ref, opts), opts, deps)) === 'yes';
-        if (!ok) {
+        const consent = await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, yesCommand('update', preview.ref, opts), opts, deps);
+        if (consent !== 'yes') {
+          // No terminal to ask on: the update needed a consent the run could
+          // not get, so the run exits 1 once every pack is reported, as
+          // `pack add` does. A no at the question is the user's answer.
+          if (consent === 'no-terminal') unconfirmed += 1;
           if (!opts.json) line(io, dim('  skipped; nothing written.'));
           reports.push({ ref: preview.ref, status: 'skipped', from: preview.from, to: preview.to });
           continue;
@@ -664,7 +669,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
     const failed = reports.some((report) => report.status === 'failed' || report.status === 'not-installed');
     // The report is the failure document too, so `ok` follows the exit code.
     if (opts.json) line(io, JSON.stringify({ ok: !failed, updates: reports }, null, 2));
-    return failed ? 1 : 0;
+    return failed || unconfirmed > 0 ? 1 : 0;
   } catch (err) {
     return fail(io, err, opts.json);
   }

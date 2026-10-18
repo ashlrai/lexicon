@@ -229,6 +229,23 @@ describe('pack update', () => {
   });
 });
 
+describe('pack update off a terminal', () => {
+  // Catches: off a terminal without --yes, `pack update` printed "skipped;
+  // nothing written." and exited 0, so a script read success for an update it
+  // never applied. `pack add` exits 1 in the same case.
+  it('without --yes reports every pack, writes nothing and exits 1', async () => {
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, makeIO())).toBe(0);
+    const before = readFileSync(globalPath, 'utf8');
+    const index2 = writeIndex('2', `${PACK}  - canonical: Stent\n    aliases: [stent]\n    category: product\n`);
+    const io = makeIO();
+    expect(await runPackUpdate([], { globalPath, registry: index2 }, io, { isInteractive: () => false })).toBe(1);
+    expect(io.out).toContain('example/cardiology: update available');
+    expect(io.out).toContain('skipped; nothing written.');
+    expect(io.err).toContain(`not a terminal, so nothing was written. Review the list above, then run: lexicon pack update example/cardiology --registry ${index2} --yes`);
+    expect(readFileSync(globalPath, 'utf8')).toBe(before);
+  });
+});
+
 describe('pack remove (community)', () => {
   it('removes via the cache without --registry', async () => {
     const io = makeIO();
