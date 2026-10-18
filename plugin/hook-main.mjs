@@ -19929,14 +19929,15 @@ async function loadMatcherIndex(loaded, opts = {}) {
   } catch {
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) {
-    try {
-      const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
-      await writeFileAtomic(cachePath, out, { mode: 384 });
-    } catch {
-    }
-  }
+  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
   return index;
+}
+async function writeIndexCache(cachePath, key, index) {
+  try {
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    await writeFileAtomic(cachePath, out, { mode: 384 });
+  } catch {
+  }
 }
 var HITS_FILE_NAME = "hits.json";
 function getHitsPath(opts = {}) {

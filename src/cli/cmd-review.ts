@@ -13,6 +13,7 @@ import {
   ProjectTrustError,
   TERM_CATEGORIES,
   addTerm,
+  addTerms,
   effectiveHits,
   emptyLexicon,
   isTrusted,
@@ -110,30 +111,54 @@ export async function runHarvestInteractive(
   let addAll = false;
   let quit = false;
 
+  const toTerm = (c: HarvestCandidate): Term => ({ canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source });
+  const report = (result: { term: Term; created: boolean }): void => {
+    if (result.created) created += 1;
+    else merged += 1;
+    line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
+  };
+  /** False after printing a ProjectTrustError (nothing in the call was written); any other error is thrown. */
+  const refused = (err: unknown): false => {
+    if (err instanceof ProjectTrustError) {
+      io.stderr(`lexicon: ${safeLines(err.message)}\n`);
+      return false;
+    }
+    throw err;
+  };
+
   const add = async (c: HarvestCandidate): Promise<boolean> => {
-    const term: Term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
     try {
-      const result = await addTerm(term, { ...store, scope: 'project' });
+      const result = await addTerm(toTerm(c), { ...store, scope: 'project' });
       filePath = result.file.path;
-      if (result.created) created += 1;
-      else merged += 1;
-      line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
+      report(result);
       return true;
     } catch (err) {
-      if (err instanceof ProjectTrustError) {
-        io.stderr(`lexicon: ${safeLines(err.message)}\n`);
-        return false;
-      }
-      throw err;
+      return refused(err);
     }
   };
 
-  for (let i = 0; i < work.length && !quit; i += 1) {
-    const c = work[i];
-    if (addAll) {
-      if (!(await add(c))) return 1;
-      continue;
+  /**
+   * The "a" key: this candidate and every one after it, in one read and one
+   * write of the project file (addTerms) instead of one per candidate. The
+   * first result is reported here; the rest are kept in `rest` and reported
+   * after the walk's blank line, which is where a write per candidate printed
+   * them. False after a refusal (nothing in the batch was written).
+   */
+  let rest: { term: Term; created: boolean }[] = [];
+  const addRest = async (from: number): Promise<boolean> => {
+    try {
+      const batch = await addTerms(work.slice(from).map(toTerm), { ...store, scope: 'project' });
+      filePath = batch.file.path;
+      report(batch.results[0]);
+      rest = batch.results.slice(1);
+      return true;
+    } catch (err) {
+      return refused(err);
     }
+  };
+
+  for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
+    const c = work[i];
     showCandidate(io, c, i, work.length);
     let decided = false;
     while (!decided) {
@@ -161,7 +186,7 @@ export async function runHarvestInteractive(
           break;
         case 'a':
           addAll = true;
-          if (!(await add(c))) return 1;
+          if (!(await addRest(i))) return 1;
           decided = true;
           break;
         case 'q':
@@ -175,6 +200,7 @@ export async function runHarvestInteractive(
     }
     line(io);
   }
+  for (const result of rest) report(result);
 
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
