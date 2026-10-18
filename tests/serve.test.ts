@@ -1119,22 +1119,32 @@ describe('limits and errors', () => {
     await new Promise<void>((resolve) => early.server.listen(0, '127.0.0.1', () => resolve()));
     try {
       const address = early.server.address() as net.AddressInfo;
-      const res = await new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
-        // Host names port 0: start() has not run, so that is the port the server believes it has.
-        const req = http.request({ host: '127.0.0.1', port: address.port, path: '/pair', headers: { Host: '127.0.0.1:0' } }, (r) => {
-          let body = '';
-          r.setEncoding('utf8');
-          r.on('data', (d: string) => {
-            body += d;
+      const get = (path: string, extra: Record<string, string> = {}) =>
+        new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+          // Host names port 0: start() has not run, so that is the port the server believes it has.
+          const req = http.request({ host: '127.0.0.1', port: address.port, path, headers: { Host: '127.0.0.1:0', ...extra } }, (r) => {
+            let body = '';
+            r.setEncoding('utf8');
+            r.on('data', (d: string) => {
+              body += d;
+            });
+            r.on('end', () => resolve({ status: r.statusCode ?? 0, body, headers: r.headers }));
           });
-          r.on('end', () => resolve({ status: r.statusCode ?? 0, body, headers: r.headers }));
+          req.on('error', reject);
+          req.end();
         });
-        req.on('error', reject);
-        req.end();
-      });
+      const res = await get('/pair');
       expect(res.status).toBe(503);
       expect(res.headers['retry-after']).toBe('1');
       expect(JSON.parse(res.body)).toEqual({ error: 'server is starting; retry after 1 second (Retry-After)' });
+      // Catches: a bearer route (and /health?cwd=) answered 401 "missing or
+      // invalid bearer token" here, though no token could be checked yet.
+      for (const path of ['/stats', `/health?cwd=${encodeURIComponent(env.cwd)}`]) {
+        const bearer = await get(path, { Authorization: `Bearer ${'0'.repeat(32)}` });
+        expect(bearer.status).toBe(503);
+        expect(bearer.headers['retry-after']).toBe('1');
+        expect(JSON.parse(bearer.body)).toEqual({ error: 'server is starting; retry after 1 second (Retry-After)' });
+      }
     } finally {
       await new Promise<void>((resolve) => {
         early.server.close(() => resolve());
