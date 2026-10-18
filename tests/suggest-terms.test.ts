@@ -7,7 +7,24 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Counts evidence snippets built (each one goes through sanitizeForDisplay
+ * once), so the performance suite can check a bucket's evidence is built only
+ * while the bucket still has room. Behaviour is unchanged.
+ */
+const snippets = vi.hoisted(() => ({ count: 0 }));
+vi.mock('../src/core/schema.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/schema.js')>();
+  return {
+    ...real,
+    sanitizeForDisplay: (s: string) => {
+      snippets.count += 1;
+      return real.sanitizeForDisplay(s);
+    },
+  };
+});
 import { runSuggest } from '../src/cli/cmd-suggest.js';
 import type { SuggestDeps } from '../src/cli/cmd-suggest.js';
 import type { PromptChoice, Prompter } from '../src/cli/prompt.js';
@@ -350,6 +367,22 @@ describe('suggestTerms: harvest (cwd)', () => {
 });
 
 describe('suggestTerms: performance', () => {
+  it('builds an evidence snippet only while its bucket has room for one', async () => {
+    // A garble left uncorrected on 400 distinct lines lands in one bucket
+    // that keeps 5 snippets. Building all 400 (sanitize, split into code
+    // points) was the single largest cost after matching, and it is what the
+    // 100 ms budget below ran out on under full-suite load.
+    const lexicon: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'], hits: 1, createdAt: OLD }] };
+    const history: VoiceHistoryEntry[] = [];
+    for (let i = 0; i < 400; i++) history.push(entry(`note ${i} for ashlur about the release`));
+    snippets.count = 0;
+    const out = await suggestTerms({ loaded: load(lexicon), history, now: NOW });
+    const alias = out.find((s) => s.kind === 'alias' && s.alias === 'ashlur');
+    expect(alias?.count).toBe(400);
+    expect(alias?.evidence).toHaveLength(5);
+    expect(snippets.count).toBeLessThan(50);
+  });
+
   it('handles 1000 history lines and 200 terms in under 100 ms', async () => {
     const terms: Term[] = [];
     for (let i = 0; i < 200; i++) {
