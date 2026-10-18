@@ -132,6 +132,14 @@ export interface NormalizeResponse extends NormalizeResult {
   summary: string;
   /** Present only when matching stopped at the time budget (`reasons: ['time']`). */
   incomplete?: NormalizeIncomplete;
+  /** As `/stats` gives it: set whenever a project file exists for `cwd`. */
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /**
+   * Path only: a project file that was not merged, so its names were not
+   * corrected. Without it an unchanged result in a repo whose lexicon is not
+   * trusted read exactly like text that needed no correction.
+   */
+  skippedProject?: string;
 }
 
 export interface LearnResponse {
@@ -732,6 +740,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       summary: result.replacements.length > 0 ? diffSummary(result) : '',
       // Without it a body cut short by the budget reads as fully corrected.
       ...(timedOut ? { incomplete: timeBudgetIncomplete(body.text.length, normalizeBudgetMs) } : {}),
+      // The same additive keys as /stats and MCP normalize_transcript.
+      ...(entry.loaded.projectTrust !== undefined ? { projectTrust: entry.loaded.projectTrust } : {}),
+      ...(entry.loaded.skippedProject !== undefined ? { skippedProject: entry.loaded.skippedProject.path } : {}),
     };
   }
 

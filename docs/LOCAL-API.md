@@ -71,7 +71,7 @@ included, and no body. Errors are
 |---|---|---|---|
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
-| POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start, and the response then adds `incomplete` (`{ reasons: ['time'], checkedChars?, totalChars, note }`; the unchecked rest is unchanged) |
+| POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start, and the response then adds `incomplete` (`{ reasons: ['time'], checkedChars?, totalChars, note }`; the unchecked rest is unchanged). Plus `projectTrust?` and `skippedProject?` (path only) as `/stats` gives them, so an unchanged result in a repo whose `.lexicon.yaml` was skipped says why its names were left alone |
 | POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict?, note?, untrustedProject? }` (`conflict`: another term that also holds `heard`, with `note` naming the command that drops the alias from that term's file, `lexicon remove "<canonical>" --alias "<alias>" --global` or `--project`, as `lexicon learn --json` gives it; `untrustedProject`: the untrusted project lexicon also claims it, path only) |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created, conflicts? }` (`conflicts`: `{ canonical, scope, as, spelling }` for each alias another term also holds, so it may still be corrected to that term, as MCP `add_term` reports it) |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
@@ -109,8 +109,8 @@ no-referrer`. Nothing else consumes it.
 
 `cwd` picks which project `.lexicon.yaml` is considered (body field on POST,
 `?cwd=` on GET). It defaults to the directory the server was started in. An
-untrusted project file is never merged; `/health` (with the token) and `/lexicon` report
-`projectTrust: "untrusted"` and `/lexicon` names the skipped file by path in
+untrusted project file is never merged; `/health` (with the token), `/normalize` and `/lexicon` report
+`projectTrust: "untrusted"`, and `/normalize`, `/lexicon`, `/stats` and `/packs` name the skipped file by path in
 `skippedProject`. `/lexicon` `paths` lists only the files merged into `lexicon` (as MCP
 `list_terms` does), so `paths.project` is present only for a trusted project file;
 `projectTrust` is set whenever a project file exists, trusted or not.

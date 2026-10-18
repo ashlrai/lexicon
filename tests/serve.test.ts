@@ -1034,9 +1034,18 @@ describe('trust gate', () => {
   it('never merges an untrusted project file and reports it by path only', async () => {
     const cwd = env.untrustedProject;
     const norm = await api('POST', '/normalize', { text: 'ping hostyle', cwd });
-    const body = (await norm.json()) as NormalizeResult;
+    const body = (await norm.json()) as NormalizeResult & { projectTrust?: string; skippedProject?: string };
     expect(body.output).toBe('ping hostyle');
     expect(body.changed).toBe(false);
+    // An unchanged result says why a repo name was left alone, as /stats and
+    // MCP normalize_transcript do: the repo lexicon was skipped, by path only.
+    expect(body.projectTrust).toBe('untrusted');
+    expect(body.skippedProject).toBe(path.join(cwd, '.lexicon.yaml'));
+    expect(JSON.stringify(body)).not.toContain('HostileCorp');
+    // No project file: neither key.
+    const plain = (await (await api('POST', '/normalize', { text: 'ping hostyle', cwd: env.cwd })).json()) as Record<string, unknown>;
+    expect(plain).not.toHaveProperty('projectTrust');
+    expect(plain).not.toHaveProperty('skippedProject');
 
     const health = await api('GET', `/health?cwd=${encodeURIComponent(cwd)}`);
     expect(((await health.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
