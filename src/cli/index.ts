@@ -166,6 +166,7 @@ program
   .option('--out <file>', 'write to a file instead of stdout')
   .option('--category <categories...>', 'only these categories')
   .option('--limit <n>', 'cap the number of terms', positiveInt)
+  .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
   .action(async (format: string | undefined, opts: ExportCliOptions) =>
     done(await runExport(format, withGlobals(opts), io)),
   );

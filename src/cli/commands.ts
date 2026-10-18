@@ -920,6 +920,20 @@ export interface ExportCliOptions extends CommonOptions {
   out?: string;
   category?: string[];
   limit?: string | number;
+  /**
+   * Print a JSON document instead of the bare export: `{ ok: true, format,
+   * terms, bytes, path }` after writing `--out`, `{ ok: true, format, terms,
+   * bytes, content }` (the export as a string) without it, and `{ ok: true,
+   * formats }` when no format is given.
+   */
+  json?: boolean;
+}
+
+/** One row of `lexicon export --json` with no format: what `lexicon export` lists. */
+export interface ExportFormatJson {
+  name: ExportFormat;
+  description: string;
+  ext: string;
 }
 
 function formatList(): string {
@@ -927,7 +941,17 @@ function formatList(): string {
   return `available formats:\n${renderTable(rows)}`;
 }
 
+function formatListJson(): ExportFormatJson[] {
+  return EXPORT_FORMATS.map((f) => ({ name: f, description: EXPORT_FORMAT_INFO[f].description, ext: EXPORT_FORMAT_INFO[f].ext }));
+}
+
+/** The nextStep of an export that named no format, or one that does not exist. */
+function exportFormatNextStep(): string {
+  return `run: lexicon export <format>, with one of: ${EXPORT_FORMATS.join(', ')} (lexicon export with no format describes each)`;
+}
+
 export async function runExport(requested: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
+  const json = opts.json === true;
   if (requested === undefined) {
     // `lexicon export --out lex.md` (format forgotten) printed the format list
     // and exited 0, so a script believed the file was written.
@@ -937,16 +961,24 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
       ...(opts.limit !== undefined ? ['--limit'] : []),
     ];
     if (given.length > 0) {
-      const code = refuse(io, false, `${given.join(', ')} ${given.length === 1 ? 'needs' : 'need'} a format; nothing was exported`, 'run: lexicon export <format> (formats below)');
+      const error = `${given.join(', ')} ${given.length === 1 ? 'needs' : 'need'} a format; nothing was exported`;
+      if (json) return refuse(io, true, error, exportFormatNextStep());
+      const code = refuse(io, false, error, 'run: lexicon export <format> (formats below)');
       io.stderr(formatList());
       return code;
     }
-    line(io, 'usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>]');
+    if (json) {
+      line(io, JSON.stringify(jsonOk({ formats: formatListJson() }), null, 2));
+      return 0;
+    }
+    line(io, 'usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>] [--json]');
     io.stdout(formatList());
     return 0;
   }
   const format = resolveExportFormat(requested);
   if (format === undefined) {
+    const error = `unknown export format "${requested}"`;
+    if (json) return refuse(io, true, error);
     io.stderr(`lexicon: unknown export format "${safe(requested)}"\n`);
     io.stderr(formatList());
     return 1;
@@ -964,17 +996,24 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   // stderr only: stdout (or --out) is the export, and it leaves the skipped file out.
   warnSkippedProject(loaded, io);
   const { merged } = loaded;
-  const text = exportLexicon(merged, format, exportOpts);
+  const text = ensureNewline(exportLexicon(merged, format, exportOpts));
+  // The terms actually exported: the same category filter and cap exportLexicon applies.
+  const terms = selectExportTerms(merged, exportOpts).length;
+  const bytes = Buffer.byteLength(text, 'utf8');
 
   if (opts.out) {
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
-    await fs.writeFile(outPath, ensureNewline(text), 'utf8');
-    // The terms actually written: the same category filter and cap exportLexicon applies.
-    const written = selectExportTerms(merged, exportOpts).length;
-    line(io, `wrote ${format} export (${plural(written, 'term')}) to ${safe(outPath)}`);
+    await fs.writeFile(outPath, text, 'utf8');
+    if (json) {
+      line(io, JSON.stringify(jsonOk({ format, terms, bytes, path: outPath, ...skippedProjectJson(loaded, 'Its terms are not in the export.') }), null, 2));
+    } else {
+      line(io, `wrote ${format} export (${plural(terms, 'term')}) to ${safe(outPath)}`);
+    }
+  } else if (json) {
+    line(io, JSON.stringify(jsonOk({ format, terms, bytes, content: text, ...skippedProjectJson(loaded, 'Its terms are not in the export.') }), null, 2));
   } else {
-    io.stdout(ensureNewline(text));
+    io.stdout(text);
   }
   return 0;
 }

@@ -30,6 +30,8 @@ lexicon export <format> --out <file>
 
 `lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count.
 
+`--json` prints one document instead, for scripts and agents: `{ ok: true, format, terms, bytes, path }` after writing `--out` (`terms` counts what `--category` and `--limit` kept), `{ ok: true, format, terms, bytes, content }` with the export as a string when there is no `--out`, and `{ ok: true, formats }` with no format. A failure is `{ ok: false, error, nextStep }`.
+
 Exporting into an STT engine's own biasing parameter (`whisper-prompt`, `deepgram`, `assemblyai`, `azure`, `google`) helps before the fact; the lexicon then fixes what the engine still got wrong. Both halves are measured in [BENCHMARK.md](BENCHMARK.md).
 
 ## Import the dictionary you already have

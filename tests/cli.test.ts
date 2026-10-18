@@ -882,6 +882,43 @@ describe('export', () => {
     expect(io.err).toContain('untrusted project lexicon skipped: /tmp/proj/.lexicon.yaml (run: lexicon trust)');
   });
 
+  // Catches: `lexicon export` had no --json, so `export claude-md --json` was a usage error.
+  describe('--json', () => {
+    it('with --out prints { ok, format, terms, bytes, path } and writes the file', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+      try {
+        const io = makeIO();
+        const out = path.join(dir, 'lex.md');
+        expect(await runExport('claude-md', { out, limit: 1, json: true }, io)).toBe(0);
+        expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'claude-md', terms: 1, bytes: 'export:claude-md\n'.length, path: out });
+        expect(await fs.readFile(out, 'utf8')).toBe('export:claude-md\n');
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('without --out embeds the export as content', async () => {
+      const io = makeIO();
+      expect(await runExport('wispr-flow', { json: true }, io)).toBe(0);
+      expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'wispr', terms: 2, bytes: 13, content: 'export:wispr\n' });
+    });
+
+    it('with no format lists the formats as JSON', async () => {
+      const io = makeIO();
+      expect(await runExport(undefined, { json: true }, io)).toBe(0);
+      const doc = JSON.parse(io.out);
+      expect(doc.ok).toBe(true);
+      expect(doc.formats).toContainEqual({ name: 'wispr', description: 'Wispr Flow dictionary CSV', ext: 'csv' });
+    });
+
+    it('a missing format answers { ok: false, error, nextStep } naming the formats', async () => {
+      const missing = makeIO();
+      expect(await runExport(undefined, { out: 'x.md', json: true }, missing)).toBe(1);
+      expect(JSON.parse(missing.out)).toMatchObject({ ok: false, error: '--out needs a format; nothing was exported' });
+      expect(JSON.parse(missing.out).nextStep).toContain('lexicon export <format>');
+    });
+  });
+
   it('accepts the product name for a format (wispr-flow, any case)', async () => {
     for (const name of ['wispr-flow', 'Wispr-Flow', 'wisprflow']) {
       const io = makeIO();
