@@ -17,7 +17,7 @@ tools below call the same handlers, so the two never drift.
 - **Ask, then act.** The tools are designed for a dialogue: `install_client`
   previews before it writes, `trust_project` shows the file before it trusts,
   `import_dictionary` has `dryRun`, `suggest_terms` proposes and
-  `apply_suggestion` applies one accepted item at a time.
+  `apply_suggestion` applies only the items the user accepted.
 - **Structured results, not screen scraping.** `lexicon_doctor` returns the
   same checks `lexicon doctor` prints, as data, so the model can explain the
   two lines that matter instead of pasting thirty.
@@ -189,7 +189,7 @@ dryRun, terms: [{ canonical, aliases, created }], skipped, counts }`.
 > **Agent:** *calls `import_dictionary { content }`*
 > Imported 23 into ~/.config/lexicon/lexicon.yaml.
 
-### `suggest_terms { cwd?, limit? }` and `apply_suggestion { suggestion, scope? }`
+### `suggest_terms { cwd?, limit? }` and `apply_suggestion { suggestion | suggestions, scope? }`
 
 `suggest_terms` reads the merged lexicon, the voice history and the repo and
 returns `TermSuggestion[]`: `{ kind: 'alias'|'term'|'never'|'stale',
@@ -204,13 +204,20 @@ a `scope` naming a file that does not hold the term is refused and nothing is
 written, since it would create a copy holding only that word (use `add_term`
 with that `scope` for a deliberate copy).
 
+When the user accepts several, pass them all in `suggestions` instead: one
+call, applied in order, with each run of adds bound for one file written in a
+single write. The result lists every applied one in `applied` (the result one
+`suggestion` would have returned, plus its `index`) and every refused one in
+`failures` (`{ index, kind, canonical, error }`); a refusal does not stop the
+rest.
+
 > **User:** how can I make dictation more accurate?
 > **Agent:** *calls `suggest_terms`*
 > Three ideas: add "ashlur" to Ashlr.AI (heard 4 times, never corrected);
 > stop rewriting "sauce" to SaaS (3 false hits); drop "Kubernetes", it has
 > never fired in 90 days. Which ones?
 > **User:** the first two
-> **Agent:** *calls `apply_suggestion` twice*
+> **Agent:** *calls `apply_suggestion` once, with both in `suggestions`*
 > Done: "ashlur" -> Ashlr.AI saved; "sauce" will never be rewritten to SaaS.
 
 ### `setup_lexicon { company?, person?, clients?, harvest?, serve?, apply? }`
