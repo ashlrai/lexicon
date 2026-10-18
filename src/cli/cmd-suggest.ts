@@ -12,7 +12,7 @@ import type { Command } from 'commander';
 import {
   AUTO_APPLY_CONFIDENCE,
   ProjectTrustError,
-  addTerm,
+  addTerms,
   loadLexicon,
   removeTerm,
   suggestAliases,
@@ -44,7 +44,8 @@ export interface SuggestCliOptions extends CommonOptions {
 export interface SuggestDeps {
   suggest?: (input: SuggestInput) => Promise<TermSuggestion[]>;
   loadLexicon?: typeof loadLexicon;
-  addTerm?: typeof addTerm;
+  /** Every add goes through it: a run of consecutive adds to one file is one call (one read, one write). */
+  addTerms?: typeof addTerms;
   removeTerm?: typeof removeTerm;
   prompter?: Prompter;
   /** Epoch milliseconds for the stale-term age check. */
@@ -105,74 +106,131 @@ export interface SuggestApplied {
   stillIn?: Array<{ scope: TermScope; path: string }>;
 }
 
-/**
- * Apply one suggestion through the store. Returns a one-line report and the
- * record `--json` prints. Throws ProjectTrustError (and any other store
- * error) to the caller.
- */
-async function applyOne(
-  s: TermSuggestion,
-  loaded: LoadedLexicon,
-  opts: SuggestCliOptions,
-  store: { cwd: string; globalPath?: string },
-  deps: Required<Pick<SuggestDeps, 'addTerm' | 'removeTerm'>>,
-): Promise<{ text: string; record: SuggestApplied }> {
-  const scope = scopeFor(s, loaded, opts);
-  const base = { kind: s.kind, canonical: s.canonical, ...(s.alias !== undefined ? { alias: s.alias } : {}) };
+type Writers = Required<Pick<SuggestDeps, 'addTerms' | 'removeTerm'>>;
+type StoreRef = { cwd: string; globalPath?: string };
+type Applied = { text: string; record: SuggestApplied };
+
+/** The term an alias, never or term suggestion adds; undefined for the kinds that do not add. */
+function termFor(s: TermSuggestion): Term | undefined {
   switch (s.kind) {
-    case 'alias': {
-      const result = await deps.addTerm({ canonical: s.canonical, aliases: s.alias ? [s.alias] : [] }, { ...store, scope });
-      return {
-        text: `alias ${safe(s.alias ?? '')} -> ${safe(result.term.canonical)} in ${safe(result.file.path)}`,
-        record: { ...base, scope: result.file.scope, action: result.created ? 'added' : 'merged', path: result.file.path },
-      };
-    }
-    case 'never': {
-      const result = await deps.addTerm(
-        { canonical: s.canonical, aliases: [], never: s.alias ? [s.alias] : [] },
-        { ...store, scope },
-      );
-      return {
-        text: `never ${safe(s.alias ?? '')} for ${safe(result.term.canonical)} in ${safe(result.file.path)}`,
-        record: { ...base, scope: result.file.scope, action: result.created ? 'added' : 'merged', path: result.file.path },
-      };
-    }
+    case 'alias':
+      return { canonical: s.canonical, aliases: s.alias ? [s.alias] : [] };
+    case 'never':
+      return { canonical: s.canonical, aliases: [], never: s.alias ? [s.alias] : [] };
     case 'term': {
-      const term: Term = {
-        canonical: s.canonical,
-        aliases: s.aliases ?? suggestAliases(s.canonical),
-        source: 'learned',
-      };
+      const term: Term = { canonical: s.canonical, aliases: s.aliases ?? suggestAliases(s.canonical), source: 'learned' };
       if (s.category) term.category = s.category;
-      const result = await deps.addTerm(term, { ...store, scope });
-      return {
-        text: `${result.created ? 'added' : 'merged'} ${safe(result.term.canonical)} in ${safe(result.file.path)}`,
-        record: { ...base, scope: result.file.scope, action: result.created ? 'added' : 'merged', path: result.file.path },
-      };
-    }
-    case 'stale': {
-      const removed = await deps.removeTerm(s.canonical, { ...store, scope });
-      if (!removed) return { text: `${safe(s.canonical)} was already gone`, record: { ...base, scope, action: 'already-gone' } };
-      // removeTerm edits only `scope`'s file. A copy in the other file keeps
-      // correcting, so name it and the command that removes it too.
-      const holders = termHolders(loaded, s.canonical);
-      const from = holders.find((h) => h.scope === scope);
-      const others = holders.filter((h) => h.scope !== scope);
-      const head = `removed ${safe(s.canonical)}${from ? ` from ${safe(from.path)}` : ''}`;
-      return {
-        text: [head, ...others.map((h) => stillInLine(s.canonical, h))].join('\n  '),
-        record: {
-          ...base,
-          scope,
-          action: 'removed',
-          ...(from ? { path: from.path } : {}),
-          ...(others.length > 0 ? { stillIn: others.map((h) => ({ scope: h.scope, path: h.path })) } : {}),
-        },
-      };
+      return term;
     }
     default:
-      return { text: `skipped ${safe(s.canonical)}`, record: { ...base, scope, action: 'skipped' } };
+      return undefined;
   }
+}
+
+function baseRecord(s: TermSuggestion): Pick<SuggestApplied, 'kind' | 'canonical' | 'alias'> {
+  return { kind: s.kind, canonical: s.canonical, ...(s.alias !== undefined ? { alias: s.alias } : {}) };
+}
+
+/** The report for one add, from what the store did with it. */
+function addedReport(s: TermSuggestion, result: { term: Term; created: boolean }, file: { path: string; scope: TermScope }): Applied {
+  const record: SuggestApplied = { ...baseRecord(s), scope: file.scope, action: result.created ? 'added' : 'merged', path: file.path };
+  switch (s.kind) {
+    case 'alias':
+      return { text: `alias ${safe(s.alias ?? '')} -> ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
+    case 'never':
+      return { text: `never ${safe(s.alias ?? '')} for ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
+    default:
+      return { text: `${result.created ? 'added' : 'merged'} ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
+  }
+}
+
+/** Apply a suggestion that does not add (a stale removal, or a kind this build does not know). */
+async function applyOther(s: TermSuggestion, scope: TermScope, loaded: LoadedLexicon, store: StoreRef, writers: Writers): Promise<Applied> {
+  const base = baseRecord(s);
+  if (s.kind !== 'stale') return { text: `skipped ${safe(s.canonical)}`, record: { ...base, scope, action: 'skipped' } };
+  const removed = await writers.removeTerm(s.canonical, { ...store, scope });
+  if (!removed) return { text: `${safe(s.canonical)} was already gone`, record: { ...base, scope, action: 'already-gone' } };
+  // removeTerm edits only `scope`'s file. A copy in the other file keeps
+  // correcting, so name it and the command that removes it too.
+  const holders = termHolders(loaded, s.canonical);
+  const from = holders.find((h) => h.scope === scope);
+  const others = holders.filter((h) => h.scope !== scope);
+  const head = `removed ${safe(s.canonical)}${from ? ` from ${safe(from.path)}` : ''}`;
+  return {
+    text: [head, ...others.map((h) => stillInLine(s.canonical, h))].join('\n  '),
+    record: {
+      ...base,
+      scope,
+      action: 'removed',
+      ...(from ? { path: from.path } : {}),
+      ...(others.length > 0 ? { stillIn: others.map((h) => ({ scope: h.scope, path: h.path })) } : {}),
+    },
+  };
+}
+
+/** A store error while applying `suggestions[index]`; nothing from that suggestion on was written. */
+class ApplyFailure extends Error {
+  constructor(
+    readonly index: number,
+    readonly failure: unknown,
+  ) {
+    super(failure instanceof Error ? failure.message : String(failure));
+  }
+}
+
+/**
+ * Apply `suggestions` in order through the store and hand each report to
+ * `onApplied` in that order. A run of consecutive adds bound for the same
+ * file is one `addTerms` call, so `suggest --yes` with 30 new aliases reads
+ * and writes the lexicon once instead of 30 times (each write re-parses the
+ * whole file). Adds to the other file and removals end a run, so every write
+ * happens in the order the suggestions came in. A store error throws an
+ * ApplyFailure naming the first suggestion that was not written: a refused
+ * run writes nothing, and the reports of everything before it have been
+ * handed out.
+ */
+async function applyInOrder(
+  suggestions: readonly TermSuggestion[],
+  loaded: LoadedLexicon,
+  opts: SuggestCliOptions,
+  store: StoreRef,
+  writers: Writers,
+  onApplied: (s: TermSuggestion, applied: Applied, index: number) => void,
+): Promise<void> {
+  let run: { index: number; s: TermSuggestion; term: Term }[] = [];
+  let runScope: TermScope = 'global';
+  const flush = async (): Promise<void> => {
+    if (run.length === 0) return;
+    const pending = run;
+    run = [];
+    let batch: Awaited<ReturnType<Writers['addTerms']>>;
+    try {
+      batch = await writers.addTerms(pending.map((p) => p.term), { ...store, scope: runScope });
+    } catch (err) {
+      throw new ApplyFailure(pending[0].index, err);
+    }
+    pending.forEach((p, k) => onApplied(p.s, addedReport(p.s, batch.results[k], batch.file), p.index));
+  };
+  for (let index = 0; index < suggestions.length; index += 1) {
+    const s = suggestions[index];
+    const scope = scopeFor(s, loaded, opts);
+    const term = termFor(s);
+    if (term) {
+      if (scope !== runScope) await flush();
+      runScope = scope;
+      run.push({ index, s, term });
+      continue;
+    }
+    await flush();
+    let applied: Applied;
+    try {
+      applied = await applyOther(s, scope, loaded, store, writers);
+    } catch (err) {
+      throw new ApplyFailure(index, err);
+    }
+    onApplied(s, applied, index);
+  }
+  await flush();
 }
 
 export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestDeps = {}): Promise<number> {
@@ -180,7 +238,7 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   const store = opts.globalPath ? { cwd, globalPath: opts.globalPath } : { cwd };
   const load = deps.loadLexicon ?? loadLexicon;
   const suggest = deps.suggest ?? suggestTerms;
-  const writers = { addTerm: deps.addTerm ?? addTerm, removeTerm: deps.removeTerm ?? removeTerm };
+  const writers: Writers = { addTerms: deps.addTerms ?? addTerms, removeTerm: deps.removeTerm ?? removeTerm };
 
   // An explicit --cwd or --harvest turns the repo harvest on; a bare `lexicon suggest` only reads the history.
   let harvestDir: string | undefined;
@@ -227,31 +285,45 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     return 0;
   }
 
-  const apply = async (s: TermSuggestion): Promise<boolean> => {
+  /**
+   * applyInOrder for the text modes: true, or false once a ProjectTrustError
+   * is on stderr; any other store error is thrown. `onFailed` gets the index
+   * (in `list`) of the suggestion that was not written, before either.
+   */
+  const applyText = async (
+    list: readonly TermSuggestion[],
+    onApplied: (s: TermSuggestion, applied: Applied, index: number) => void,
+    onFailed: (index: number) => void,
+  ): Promise<boolean> => {
     try {
-      line(io, `  ${(await applyOne(s, loaded, opts, store, writers)).text}`);
+      await applyInOrder(list, loaded, opts, store, writers, onApplied);
       return true;
     } catch (err) {
-      if (err instanceof ProjectTrustError) {
-        io.stderr(`lexicon: ${safeLines(err.message)}\n`);
+      if (!(err instanceof ApplyFailure)) throw err;
+      onFailed(err.index);
+      if (err.failure instanceof ProjectTrustError) {
+        io.stderr(`lexicon: ${safeLines(err.failure.message)}\n`);
         return false;
       }
-      throw err;
+      throw err.failure;
     }
   };
 
   if (opts.yes) {
+    const confident = suggestions.filter((s) => s.confidence >= AUTO_APPLY_CONFIDENCE);
+    const skipped = suggestions.length - confident.length;
+    const head = (s: TermSuggestion): void => line(io, `${describe(s)}  ${dim(`${s.confidence.toFixed(2)}, seen ${s.count}x`)}`);
     let applied = 0;
-    let skipped = 0;
-    for (const s of suggestions) {
-      if (s.confidence < AUTO_APPLY_CONFIDENCE) {
-        skipped += 1;
-        continue;
-      }
-      line(io, `${describe(s)}  ${dim(`${s.confidence.toFixed(2)}, seen ${s.count}x`)}`);
-      if (!(await apply(s))) return 1;
-      applied += 1;
-    }
+    const ok = await applyText(
+      confident,
+      (s, done) => {
+        head(s);
+        line(io, `  ${done.text}`);
+        applied += 1;
+      },
+      (index) => head(confident[index]),
+    );
+    if (!ok) return 1;
     line(io, `applied ${plural(applied, 'suggestion')}, skipped ${skipped} below ${AUTO_APPLY_CONFIDENCE.toFixed(2)}${skipped > 0 ? ' (run `lexicon suggest --apply` to review them)' : ''}`);
     return 0;
   }
@@ -289,8 +361,32 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
         all = true;
         key = 'y';
       }
+      if (key === 'y' && all && s.kind !== 'stale') {
+        // "all": this suggestion and every one up to the next stale removal
+        // (which is still asked about), applied together; each is shown and
+        // reported as it was when they were applied one at a time.
+        let end = i + 1;
+        while (end < suggestions.length && suggestions[end].kind !== 'stale') end += 1;
+        const sweep = suggestions.slice(i, end);
+        const at = i;
+        const ok = await applyText(
+          sweep,
+          (swept, done, k) => {
+            if (k > 0) showSuggestion(io, swept, at + k, suggestions.length);
+            line(io, `  ${done.text}`);
+            line(io);
+            applied += 1;
+          },
+          (k) => {
+            if (k > 0) showSuggestion(io, sweep[k], at + k, suggestions.length);
+          },
+        );
+        if (!ok) return 1;
+        i = end - 1;
+        continue;
+      }
       if (key === 'y') {
-        if (!(await apply(s))) return 1;
+        if (!(await applyText([s], (_, done) => line(io, `  ${done.text}`), () => undefined))) return 1;
         applied += 1;
       } else {
         skipped += 1;
@@ -317,26 +413,26 @@ async function applyAllJson(
   suggestions: readonly TermSuggestion[],
   loaded: LoadedLexicon,
   opts: SuggestCliOptions,
-  store: { cwd: string; globalPath?: string },
-  writers: Required<Pick<SuggestDeps, 'addTerm' | 'removeTerm'>>,
+  store: StoreRef,
+  writers: Writers,
   io: IO,
 ): Promise<number> {
   const applied: SuggestApplied[] = [];
   const skipped = suggestions.filter((s) => s.confidence < AUTO_APPLY_CONFIDENCE);
-  for (const s of suggestions) {
-    if (s.confidence < AUTO_APPLY_CONFIDENCE) continue;
-    try {
-      applied.push((await applyOne(s, loaded, opts, store, writers)).record);
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      const nextStep =
-        err instanceof ProjectTrustError
-          ? 'review the project lexicon and run lexicon trust, or drop --project to write new terms to the global lexicon, then run lexicon suggest --yes --json again'
-          : 'fix the problem in error, then run lexicon suggest --yes --json again';
-      io.stderr(`lexicon: ${safeLines(error)}\n`);
-      line(io, JSON.stringify({ ok: false, error, nextStep, applied }, null, 2));
-      return 1;
-    }
+  const confident = suggestions.filter((s) => s.confidence >= AUTO_APPLY_CONFIDENCE);
+  try {
+    await applyInOrder(confident, loaded, opts, store, writers, (_, done) => applied.push(done.record));
+  } catch (failure) {
+    if (!(failure instanceof ApplyFailure)) throw failure;
+    const err = failure.failure;
+    const error = err instanceof Error ? err.message : String(err);
+    const nextStep =
+      err instanceof ProjectTrustError
+        ? 'review the project lexicon and run lexicon trust, or drop --project to write new terms to the global lexicon, then run lexicon suggest --yes --json again'
+        : 'fix the problem in error, then run lexicon suggest --yes --json again';
+    io.stderr(`lexicon: ${safeLines(error)}\n`);
+    line(io, JSON.stringify({ ok: false, error, nextStep, applied }, null, 2));
+    return 1;
   }
   line(io, JSON.stringify({ ok: true, threshold: AUTO_APPLY_CONFIDENCE, applied, skipped }, null, 2));
   return 0;

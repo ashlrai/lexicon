@@ -528,12 +528,14 @@ const FIXED: TermSuggestion[] = [
 interface MockStore {
   deps: SuggestDeps;
   added: Array<{ term: Term; scope: string | undefined }>;
+  /** One entry per addTerms call (one read and one write of a lexicon file): the canonicals it added. */
+  writes: string[][];
   removed: Array<{ canonical: string; scope: string | undefined }>;
   inputs: SuggestInput[];
 }
 
 function mockStore(suggestions: TermSuggestion[] = FIXED, lexicon = makeLexicon()): MockStore {
-  const store: MockStore = { added: [], removed: [], inputs: [], deps: {} };
+  const store: MockStore = { added: [], writes: [], removed: [], inputs: [], deps: {} };
   const loaded = load(lexicon, '/tmp/mock/lexicon.yaml');
   store.deps = {
     loadLexicon: async () => loaded,
@@ -541,9 +543,11 @@ function mockStore(suggestions: TermSuggestion[] = FIXED, lexicon = makeLexicon(
       store.inputs.push(input);
       return suggestions;
     },
-    addTerm: async (term, opts) => {
-      store.added.push({ term, scope: opts?.scope });
-      return { file: loaded.global, term: { ...term, scope: opts?.scope ?? 'global' }, created: term.canonical === 'Siobhan Reilly' };
+    addTerms: async (terms, opts) => {
+      store.writes.push(terms.map((t) => t.canonical));
+      for (const term of terms) store.added.push({ term, scope: opts?.scope });
+      const results = terms.map((term) => ({ term: { ...term, scope: opts?.scope ?? 'global' }, created: term.canonical === 'Siobhan Reilly' }));
+      return { file: loaded.global, results };
     },
     removeTerm: async (canonical, opts) => {
       store.removed.push({ canonical, scope: opts?.scope });
@@ -602,10 +606,10 @@ describe('runSuggest', () => {
 
     // A refused write stops the run: still one document, with what was written before it.
     const refused = mockStore();
-    const real = refused.deps.addTerm;
-    refused.deps.addTerm = async (term, opts) => {
-      if (term.canonical === 'Siobhan Reilly') throw new ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted');
-      return (real as NonNullable<typeof real>)(term, opts);
+    const real = refused.deps.addTerms;
+    refused.deps.addTerms = async (terms, opts) => {
+      if (terms.some((t) => t.canonical === 'Siobhan Reilly')) throw new ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted');
+      return (real as NonNullable<typeof real>)(terms, opts);
     };
     const io2 = makeIO();
     expect(await runSuggest({ json: true, yes: true, project: true }, io2, refused.deps)).toBe(1);
@@ -673,6 +677,46 @@ describe('runSuggest', () => {
     expect(io.out).toContain('alias versal -> Vercel in /tmp/mock/lexicon.yaml');
     expect(io.out).toContain('added Siobhan Reilly');
     expect(io.out).toContain('applied 2 suggestions, skipped 3 below 0.80');
+  });
+
+  // Catches: --yes, --yes --json and the --apply "all" sweep wrote the lexicon once per suggestion.
+  it('applies consecutive adds to one file in one write, with the same output, and splits runs at a file change or a removal', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    expect(await runSuggest({ yes: true }, io, store.deps)).toBe(0);
+    expect(store.writes).toEqual([['Vercel', 'Siobhan Reilly']]);
+    // Each suggestion's line and its report, in order, as one write each printed them.
+    const lines = io.out.split('\n');
+    expect(lines[0]).toMatch(/^add alias versal to Vercel {2}0\.90, seen 3x$/);
+    expect(lines[1]).toBe('  alias versal -> Vercel in /tmp/mock/lexicon.yaml');
+    expect(lines[2]).toMatch(/^new term Siobhan Reilly .*0\.85, seen 5x$/);
+    expect(lines[3]).toBe('  added Siobhan Reilly in /tmp/mock/lexicon.yaml');
+    expect(lines[4]).toBe('applied 2 suggestions, skipped 3 below 0.80 (run `lexicon suggest --apply` to review them)');
+
+    const json = mockStore();
+    expect(await runSuggest({ json: true, yes: true }, makeIO(), json.deps)).toBe(0);
+    expect(json.writes).toEqual([['Vercel', 'Siobhan Reilly']]);
+
+    // --project: Vercel stays in its own (global) file, Siobhan goes to the project one: two runs, in order.
+    const split = mockStore();
+    expect(await runSuggest({ yes: true, project: true }, makeIO(), split.deps)).toBe(0);
+    expect(split.writes).toEqual([['Vercel'], ['Siobhan Reilly']]);
+    expect(split.added.map((a) => a.scope)).toEqual(['global', 'project']);
+
+    // --apply: y writes one; a sweeps ashlur and the never in one write, then the stale removal is still asked.
+    const walk = mockStore();
+    const wio = makeIO();
+    const prompter = lenientPrompter(['y', 'n', 'a', 'y']);
+    expect(await runSuggest({ apply: true }, wio, { ...walk.deps, prompter })).toBe(0);
+    expect(walk.writes).toEqual([['Vercel'], ['Ashlr.AI', 'Locus']]);
+    expect(walk.removed).toEqual([{ canonical: 'Zebrafish Labs', scope: 'global' }]);
+    expect(prompter.asked).toHaveLength(4);
+    const out = wio.out;
+    const order = ['[3/5]', 'alias ashlur -> Ashlr.AI', '[4/5]', 'never lacks for Locus', '[5/5]', 'removed Zebrafish Labs', 'applied 4 suggestions, skipped 1'];
+    const at = order.map((needle) => out.indexOf(needle));
+    expect(at.every((n) => n >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(out).toContain('never lacks for Locus in /tmp/mock/lexicon.yaml\n\n');
   });
 
   it('--yes --project writes new terms to the project lexicon and aliases to the term\'s own file', async () => {
@@ -780,7 +824,7 @@ describe('runSuggest', () => {
     expect(io.err).toBe('lexicon: bad yaml \n');
 
     const store2 = mockStore();
-    store2.deps.addTerm = async () => {
+    store2.deps.addTerms = async () => {
       throw new ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted');
     };
     const io2 = makeIO();

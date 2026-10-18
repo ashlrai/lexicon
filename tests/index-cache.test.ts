@@ -248,6 +248,37 @@ describe('loadMatcherIndex', () => {
     await expect(fs.stat(cachePath())).rejects.toThrow();
   });
 
+  it('a global write refreshes an existing entry, so the next load reads it instead of rebuilding', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    await loadMatcherIndex(await load());
+    const before = await fs.readFile(cachePath(), 'utf8');
+
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS, [{ canonical: 'Vercel', aliases: ['versel'] }]));
+    const after = await fs.readFile(cachePath(), 'utf8');
+    expect(after).not.toBe(before);
+    const loaded = await load();
+    const entry = JSON.parse(after) as { version: number; key: string; index: unknown };
+    expect(entry.version).toBe(INDEX_FORMAT_VERSION);
+    expect(entry.key).toBe(indexKey(loaded.merged));
+    expect(deserializeIndex(entry.index, loaded.merged)).toEqual(buildIndex(loaded.merged));
+    if (process.platform !== 'win32') expect((await fs.stat(cachePath())).mode & 0o777).toBe(0o600);
+
+    // The hook's load is a hit: it neither rebuilds nor rewrites the entry.
+    const index = await loadMatcherIndex(loaded);
+    expect(normalizeWithIndex('deploy to versel', index).output).toBe('deploy to Vercel');
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(after);
+  });
+
+  it('a write creates no entry where none was, and a small lexicon leaves the entry alone', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    await expect(fs.stat(cachePath())).rejects.toThrow();
+
+    await loadMatcherIndex(await load());
+    const before = await fs.readFile(cachePath(), 'utf8');
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS - 1));
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(before);
+  });
+
   it('respects the trust gate and never writes into the project directory', async () => {
     await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
     const repo = path.join(tmp, 'repo');

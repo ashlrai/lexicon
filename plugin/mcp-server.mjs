@@ -54177,14 +54177,25 @@ async function loadMatcherIndex(loaded, opts = {}) {
   } catch {
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) {
-    try {
-      const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
-      await writeFileAtomic(cachePath, out, { mode: 384 });
-    } catch {
-    }
-  }
+  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
   return index;
+}
+async function writeIndexCache(cachePath, key, index) {
+  try {
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    await writeFileAtomic(cachePath, out, { mode: 384 });
+  } catch {
+  }
+}
+async function prebuildIndexCache(filePath, lexicon) {
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
+  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), INDEX_CACHE_FILE_NAME);
+  if (!(0, import_node_fs5.existsSync)(cachePath)) return;
+  try {
+    const merged = mergeLexicons(lexicon);
+    await writeIndexCache(cachePath, indexKey(merged), buildIndex(merged));
+  } catch {
+  }
 }
 async function writeLexiconFile(file2) {
   const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
@@ -54201,6 +54212,7 @@ ${(0, import_yaml.stringify)(ordered, { lineWidth: 0 })}`;
     if (file2.scope === "global") {
       const mode = await import_node_fs5.promises.stat(file2.path).then((st) => st.mode & 511, () => void 0);
       if (mode !== void 0) await writeParseCache(file2.path, text, readBack, mode);
+      await prebuildIndexCache(file2.path, readBack);
     }
   });
   file2.exists = true;

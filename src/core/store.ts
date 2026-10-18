@@ -360,16 +360,48 @@ export async function loadMatcherIndex(loaded: Pick<LoadedLexicon, 'merged' | 'g
     // missing, unreadable or damaged: rebuild below
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) {
-    try {
-      // `version` and `key` lead the object so the prefix check above works.
-      const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
-      await writeFileAtomic(cachePath, out, { mode: 0o600 });
-    } catch {
-      // a cache, not state
-    }
-  }
+  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
   return index;
+}
+
+/** Replace the index cache entry at `cachePath`. Best effort, never throws. */
+async function writeIndexCache(cachePath: string, key: string, index: MatcherIndex): Promise<void> {
+  try {
+    // `version` and `key` lead the object so loadMatcherIndex's prefix check works.
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    await writeFileAtomic(cachePath, out, { mode: 0o600 });
+  } catch {
+    // a cache, not state
+  }
+}
+
+/**
+ * Pre-build the index cache for a global lexicon file this module just wrote
+ * (`lexicon` is its parse), keyed for the merge `loadLexicon` produces when no
+ * trusted project file is in play. Without it, the first prompt after every
+ * write rebuilt and wrote the index inside the hook: about 55 ms of build
+ * plus the write, which put a 2000-term lexicon over the hook's 200 ms
+ * budget. A write that already holds the parse pays only the build and the
+ * write here, once, outside any prompt. A trusted project changes the merged
+ * key, so its first prompt still builds (as before); the entry is never
+ * written for a project file. Below INDEX_CACHE_MIN_TERMS nothing is written,
+ * matching loadMatcherIndex.
+ *
+ * It only refreshes an entry that is already there: one exists once the
+ * hook, `lexicon serve` or an MCP normalize has matched against a lexicon this
+ * size, so a user who never runs any of them does not pay a build (60 to
+ * 100 ms for 2000 terms in a fresh process) on every `add`.
+ */
+async function prebuildIndexCache(filePath: string, lexicon: Lexicon): Promise<void> {
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
+  const cachePath = path.join(path.dirname(filePath), INDEX_CACHE_FILE_NAME);
+  if (!existsSync(cachePath)) return;
+  try {
+    const merged = mergeLexicons(lexicon);
+    await writeIndexCache(cachePath, indexKey(merged), buildIndex(merged));
+  } catch {
+    // a cache, not state: the hook builds it instead
+  }
 }
 
 /**
@@ -412,6 +444,8 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
     if (file.scope === 'global') {
       const mode = await fs.stat(file.path).then((st) => st.mode & 0o777, () => undefined);
       if (mode !== undefined) await writeParseCache(file.path, text, readBack, mode);
+      // Same for the compiled matcher index the hook reads next.
+      await prebuildIndexCache(file.path, readBack);
     }
   });
   file.exists = true;
