@@ -185,6 +185,22 @@ export function incompleteNotice(inc: NormalizeIncomplete): string {
   return 'Stopped early at the time limit: later text was not checked.';
 }
 
+/**
+ * The Options > Test connection result for `s`. "Connected" is kept for a
+ * server that is up and holds a token it accepts: a server that is up with no
+ * token set does not serve this browser's corrections yet, so that line leads
+ * with what is true and then the step that pairs it.
+ */
+export function connectionTestLine(s: StatusReply): string {
+  if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}`;
+  if (s.server && !s.tokenSet) {
+    return `Server is up, not paired: lexicon ${s.server.version}, ${s.server.terms} terms. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
+  }
+  if (s.server) return `Connected: lexicon ${s.server.version}, ${s.server.terms} terms.`;
+  const why = s.serverError ?? 'no reply';
+  return `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
+}
+
 /** What the popup's status pill and line say for a status reply. */
 export interface StatusView {
   /** Pill text: `Local API`, `Embedded` or `Embedded (fallback)`. */
