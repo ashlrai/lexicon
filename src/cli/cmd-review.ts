@@ -27,7 +27,7 @@ import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } fro
 import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { CliRefusal, bold, dim, line, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
+import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -323,10 +323,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   if (!prompter && !isInteractive()) {
     throw new CliRefusal('review needs a terminal (stdin and stdout must be a TTY); nothing was changed', REVIEW_NON_INTERACTIVE_NEXT_STEP);
   }
-  const category = opts.category?.toLowerCase();
-  if (category !== undefined && !isCategory(category)) {
-    throw new Error(`unknown category "${opts.category}" (expected one of: ${TERM_CATEGORIES.join(', ')})`);
-  }
+  const category = parseCategory(opts.category);
 
   const file = await pickFile(opts, cwd);
   if (!file.exists) {

@@ -64209,7 +64209,7 @@ function parseSource(value) {
   }
   return value;
 }
-function parseCategory(value) {
+function parseCategory2(value) {
   if (value === void 0) return void 0;
   const lower = value.toLowerCase();
   if (!CATEGORIES.includes(lower)) {
@@ -64271,7 +64271,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
     return 1;
   }
   const source = parseSource(opts.source);
-  const category = parseCategory(opts.category);
+  const category = parseCategory2(opts.category);
   const cwd = import_node_path30.default.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
