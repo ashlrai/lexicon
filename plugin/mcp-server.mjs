@@ -64466,9 +64466,13 @@ function printNext(ctx) {
   const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
   const where = installed.includes("claude") ? "Claude Code" : installed[0] ?? "your agent";
   ctx.say();
-  ctx.say(
-    `${bold("Next:")} open ${safe(where)} and dictate a sentence with ${name ? `"${safe(name)}"` : "one of your names"} in it. That is the whole thing.`
-  );
+  if (!name && s.demo?.usedExample) {
+    ctx.say(`${bold("Next:")} add a name you dictate: lexicon add "Your Co" --suggest  (then open ${safe(where)} and say it in a sentence)`);
+  } else {
+    ctx.say(
+      `${bold("Next:")} open ${safe(where)} and dictate a sentence with ${name ? `"${safe(name)}"` : "one of your names"} in it. That is the whole thing.`
+    );
+  }
   ctx.say(dim("   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)"));
 }
 function printSummary(ctx) {

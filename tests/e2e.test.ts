@@ -1754,3 +1754,17 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: an empty lexicon 
     expect(norm.stderr).not.toContain('lexicon setup');
   });
 });
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: setup --yes with nothing to seed', () => {
+  // Catches: with no git user.name and no --person or --company, setup seeded nothing and
+  // still ended "Next: open your agent and dictate a sentence with one of your names in it".
+  it('ends by naming the add command, not a sentence with names it does not have', async () => {
+    const h = await freshHome('setup-empty');
+    const env = { ...h.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(h.home, 'no-gitconfig') };
+    const r = await runCli(['setup', '--yes', '--clients', 'none', '--no-harvest', '--app', 'none'], { env, cwd: h.repo });
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toContain('terms added: none');
+    expect(r.stdout).toContain('Next: add a name you dictate: lexicon add "Your Co" --suggest');
+    expect(r.stdout).not.toContain('one of your names');
+  });
+});
