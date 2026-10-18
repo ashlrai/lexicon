@@ -751,7 +751,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
     ]);
     expect(doctor.stdout).toContain('project lexicon content changed since trusted; not merged');
     expect(changed.stdout).toBe('sneak in\n');
-    expect(changed.stderr).toContain('changed since trusted project lexicon skipped');
+    // Catches: the line read "changed since trusted project lexicon skipped".
+    expect(changed.stderr).toContain(`project lexicon changed since you trusted it, so it was skipped: ${projectPath} (review it, then run: lexicon trust)`);
     expect(included.stdout).toBe('Sneaky in\n');
 
     // 6. untrust removes the pin.

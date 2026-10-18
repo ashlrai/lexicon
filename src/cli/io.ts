@@ -418,8 +418,15 @@ export function unreadableLexiconEdit(message: string): string | undefined {
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */
 export function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, io: IO): void {
   if (!loaded.skippedProject) return;
-  const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
-  io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
+  // "changed since trusted project lexicon skipped" did not parse as a
+  // sentence, and did not say the trust had been lost or that trusting again
+  // is the way back.
+  const where = safe(loaded.skippedProject.path);
+  io.stderr(
+    loaded.projectTrust === 'changed'
+      ? `lexicon: project lexicon changed since you trusted it, so it was skipped: ${where} (review it, then run: lexicon trust)\n`
+      : `lexicon: untrusted project lexicon skipped: ${where} (run: lexicon trust)\n`,
+  );
 }
 
 /**
