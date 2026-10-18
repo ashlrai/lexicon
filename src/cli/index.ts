@@ -42,7 +42,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { CliRefusal, argvRequestsJson, cwdOptionProblem, fail, jsonFlagsOf, line, optsRequestJson, refuse, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, fail, jsonFlagsOf, line, optsRequestJson, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -70,7 +70,21 @@ program
   .version(packageVersion(import.meta.url))
   .option('--cwd <dir>', 'directory used to find the project .lexicon.yaml; must exist (default: current directory)')
   .exitOverride()
-  .showHelpAfterError('(use --help for usage)');
+  .showHelpAfterError('(use --help for usage)')
+  // No leading spaces: the e2e --help sweep reads indented lines as commands.
+  .addHelpText(
+    'after',
+    '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor',
+  );
+
+// commander suggests by spelling alone; for names other tools use (`status`,
+// `version`, `config`) name the lexicon command that does that job instead.
+program.on('command:*', (operands: string[]) => {
+  const name = operands[0] ?? '';
+  const hint = unknownCommandHint(name);
+  if (hint) program.error(`error: unknown command '${name}'\n(${hint})`, { code: 'commander.unknownCommand' });
+  (program as unknown as { unknownCommand(): never }).unknownCommand();
+});
 
 /** Global options, merged into each command's own. */
 function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
@@ -105,6 +119,7 @@ program
     'words that must never be rewritten to this term even if they sound alike, e.g. --never sauce',
   )
   .option('--json', 'print the saved term, file path and whether it was created as JSON')
+  .showHelpAfterError('(e.g. lexicon add "Ashlr.AI" Ashler Ashlar; use lexicon add --help for usage)')
   .action(async (canonical: string, aliases: string[], opts: AddOptions) =>
     done(await runAdd(canonical, aliases, withGlobals(opts), io)),
   );
@@ -117,6 +132,7 @@ program
   .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
   .option('--project', 'only look in the project lexicon')
   .option('--global', 'only look in the global lexicon (not with --project)')
+  .showHelpAfterError('(e.g. lexicon remove "Ashlr.AI", or lexicon remove "Ashlr.AI" --alias Ashler; lexicon list shows the terms; use lexicon remove --help for usage)')
   .option('--json', 'print { ok: true, canonical, removed } as JSON (exit 1 when not found, with ok: false and error), plus stillIn when a copy is left in the other lexicon file and untrustedProject when the untrusted project lexicon has one; with --alias also alias, aliases and paths')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
@@ -307,14 +323,17 @@ program.hook('preAction', (_program, actionCommand) => {
   if (problem) throw problem;
 });
 
+// `-v` is the version flag in node, npm and most CLIs; commander only knows -V.
+const argv = process.argv.length === 3 && process.argv[2] === '-v' ? [...process.argv.slice(0, 2), '--version'] : process.argv;
+
 try {
-  await program.parseAsync(process.argv);
+  await program.parseAsync(argv);
 } catch (err) {
   if (err instanceof CommanderError) {
     // commander already printed help/version/usage errors on stderr; under
     // --json a usage error also gets its stdout document. Same exit code.
     const failed = usageErrorCommand.get(err) ?? program;
-    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2), jsonFlagsOf(failed))) {
+    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(argv.slice(2), jsonFlagsOf(failed))) {
       const where = commandPath(failed);
       // `voice --json` promises `code` (the exit code) on every failure, its
       // own refusals and commander's alike.

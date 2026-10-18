@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs @ashlr/lexicon and runs `lexicon setup`.
+# Installs @ashlr/lexicon and, on a terminal, runs `lexicon setup`.
 #
 #   curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 #
@@ -119,8 +119,10 @@ if [ -t 0 ] && [ -t 1 ]; then
   say ""
   # A failed client or serve install returns 1 but the lexicon is in place; do not abort the shell.
   lexicon setup || say "setup finished with warnings; rerun: lexicon setup"
-elif [ -t 1 ] && [ -r /dev/tty ]; then
-  # `curl | sh`: stdin is the pipe, but the terminal is still there.
+elif [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
+  # `curl | sh`: stdin is the pipe, but the terminal is still there. Open it to
+  # check: /dev/tty is mode 666, so `-r` holds even with no controlling
+  # terminal (setsid, some CI runners), where opening it fails.
   say ""
   lexicon setup </dev/tty || say "setup finished with warnings; rerun: lexicon setup"
 else

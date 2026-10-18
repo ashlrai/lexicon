@@ -88,6 +88,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
       mode: reply.mode,
       durationMs: deps.toastMs,
       ...(reply.incomplete ? { notice: incompleteNotice(reply.incomplete) } : {}),
+      ...(reply.fallback ? { fallback: reply.fallback } : {}),
       onUndo: () => {
         const current = readText(composer);
         if (current === reply.output) {
@@ -121,7 +122,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
       precheck = { text, changed: false };
       // Nothing to fix in the part that was checked, but the rest was not
       // looked at: say so rather than let it pass as clean.
-      if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete) });
+      if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete), ...(reply.fallback ? { fallback: reply.fallback } : {}) });
     }
     resend();
   }

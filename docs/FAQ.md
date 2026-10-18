@@ -11,7 +11,7 @@ Because the name is out-of-vocabulary. A speech recognizer scores candidate word
 
 ## How do I install Lexicon?
 
-One command: `curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`. It checks for Node 20 or newer, installs the `@ashlr/lexicon` CLI and then runs `lexicon setup`, which writes `~/.config/lexicon/lexicon.yaml`, asks how your company and your own name should be spelled, and registers the MCP server with every agent client it finds. `brew install ashlrai/tap/lexicon` and `npm i -g @ashlr/lexicon` install the same CLI, and `npx @ashlr/lexicon@latest setup` runs the wizard with no global install at all.
+One command: `curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`. It checks for Node 20 or newer, installs the `@ashlr/lexicon` CLI and, when it runs in a terminal, starts `lexicon setup`, which writes `~/.config/lexicon/lexicon.yaml`, asks how your company and your own name should be spelled, and registers the MCP server with every agent client it finds. Without a terminal (CI, a Dockerfile, an editor's task runner), under `sudo`, or with `LEXICON_NO_SETUP=1`, it installs only and prints `run lexicon setup` as the next step; run it yourself, as your own user. `brew install ashlrai/tap/lexicon` and `npm i -g @ashlr/lexicon` install the same CLI, and `npx @ashlr/lexicon@latest setup` runs the wizard with no global install at all.
 
 ## How do I fix a brand name in ChatGPT, Claude, Claude Code, Codex or Cursor?
 

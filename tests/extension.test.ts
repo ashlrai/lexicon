@@ -344,6 +344,45 @@ describe('toast', () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
     expect(document.getElementById(TOAST_ID)).toBeNull();
   });
+
+  // Catches: the toast showed nothing of why the local API was skipped, and a
+  // reason built for textContent would have shown its backticks literally.
+  it('shows the fallback reason with commands as <code>, never as markup', () => {
+    const corrections: Correction[] = [
+      { start: 0, end: 6, original: 'ashler', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 },
+    ];
+    showToast(document, corrections, {
+      mode: 'embedded',
+      durationMs: 60_000,
+      fallback: 'No API token set: run `lexicon serve --pair` to pair this browser <img src=x onerror=alert(1)>',
+    });
+    const root = document.getElementById(TOAST_ID)!.shadowRoot!;
+    const line = root.querySelector<HTMLElement>('.fallback')!;
+    expect(line.textContent).toBe('Local API not used: No API token set: run lexicon serve --pair to pair this browser <img src=x onerror=alert(1)>');
+    expect(line.textContent).not.toContain('`');
+    expect([...line.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['lexicon serve --pair']);
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.querySelector('.badge')!.textContent).toBe('embedded (fallback)');
+    // The code style lives in the shadow root, so the host page's own <code> is untouched.
+    expect(root.querySelector('style')!.textContent).toMatch(/\ncode \{/);
+    expect(document.head.querySelector('style')).toBeNull();
+  });
+
+  it('carries the fallback reason from a corrected send into the toast', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    const send = vi.fn(async (req: Request): Promise<NormalizeReply> => {
+      const reply = await fakeSend(req);
+      return reply.ok ? { ...reply, fallback: 'cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve`' } : reply;
+    });
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send, settings: { enabled: true, live: false } });
+    composer.addEventListener('keydown', (ev) => ev.preventDefault());
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    const line = document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLElement>('.fallback')!;
+    expect(line.textContent).toBe('Local API not used: cannot reach lexicon serve at http://127.0.0.1:41733; start it with lexicon serve');
+    expect(line.querySelector('code')!.textContent).toBe('lexicon serve');
+  });
 });
 
 // ---------------------------------------------------------------------------

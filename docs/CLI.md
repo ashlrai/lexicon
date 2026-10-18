@@ -76,6 +76,9 @@ Commands:
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
   pack                                    starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
+
+Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
+Check an install: lexicon doctor
 ```
 
 ## `lexicon init`
