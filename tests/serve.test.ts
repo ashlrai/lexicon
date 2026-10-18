@@ -2396,6 +2396,15 @@ describe('packs and aliases routes', () => {
     const hidden = (await (await api2('GET', `/aliases?canonical=Ashlr${zwsp}.AI`)).json()) as { canonical: string; aliases: string[] };
     expect(hidden).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
     expect(await (await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).json()).toEqual({ error: 'canonical must be at most 80 characters' });
+    // Catches: a control character inside the name (which NonEmptyWord
+    // refuses, so no term could hold it) was let through to suggestAliases.
+    for (const ctl of ['\n', '\t', '\u0007', '\u0085', ' ']) {
+      const res = await api2('GET', `/aliases?canonical=${encodeURIComponent(`Ashlr${ctl}AI`)}`);
+      expect(res.status, JSON.stringify(ctl)).toBe(400);
+      expect(await res.json()).toEqual({ error: 'canonical must not contain control characters or newlines' });
+    }
+    // Outer whitespace controls are trimmed, as the schema trims a canonical.
+    expect((await (await api2('GET', `/aliases?canonical=${encodeURIComponent('\tAshlr.AI\n')}`)).json())).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
     expect((await api2('POST', '/aliases', { canonical: 'x' })).status).toBe(405);
     expect((await fetch(`${info2.url}/aliases?canonical=x`)).status).toBe(401);
   });

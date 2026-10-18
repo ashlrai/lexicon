@@ -35,6 +35,7 @@ import {
   diffSummary,
   exportLexicon,
   findRegistryRecordMismatch,
+  hasControlChars,
   installPack,
   installedPacks,
   resolveExportFormat,
@@ -915,6 +916,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const canonical = stripInvisible(url.searchParams.get('canonical') ?? '').trim();
     if (!canonical) throw new HttpError(400, 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)');
     if (canonical.length > LIMITS.word) throw new HttpError(400, `canonical must be at most ${LIMITS.word} characters`);
+    // The schema's NonEmptyWord refuses these too, so no stored canonical
+    // could carry them; the aliases they would seed would never be accepted.
+    if (hasControlChars(canonical)) throw new HttpError(400, 'canonical must not contain control characters or newlines');
     return { canonical, aliases: suggestAliases(canonical) };
   }
 
