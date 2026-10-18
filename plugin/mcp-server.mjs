@@ -63897,7 +63897,12 @@ async function stepDemo(ctx) {
   if (summary) ctx.say(dim(`   fixed: ${summary}`));
   if (demo.usedExample) {
     ctx.say(dim("   (that used the built-in example terms: your lexicon has no misspellings recorded yet)"));
-    ctx.say(dim('   add one now: lexicon add "Your Co" --suggest'));
+    const own2 = (ctx.plan ? ctx.plan.wouldSeed : ctx.seeded)[0];
+    ctx.say(
+      dim(
+        own2 === void 0 ? '   add one now: lexicon add "Your Co" --suggest' : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own2))} "<misspelling>"`
+      )
+    );
   }
   const record2 = { heard: demo.heard, corrected: demo.corrected, terms: demo.terms, usedExample: demo.usedExample };
   if (ctx.plan) ctx.plan.demo = record2;

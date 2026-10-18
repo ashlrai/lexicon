@@ -911,6 +911,27 @@ describe('runSetup starter packs', () => {
     expect(real.summary.demo).toEqual(planned.plan?.demo);
   });
 
+  // Catches: when the seeded name had no misspelling to show, the demo fell
+  // back to the example terms and said `lexicon add "Your Co" --suggest`,
+  // a placeholder, though the user had just given the company name.
+  it('the example fallback names the term this run seeds, not a "Your Co" placeholder', async () => {
+    const opts = { yes: true, clients: 'none', company: 'Acme', harvest: false } as const;
+    for (const dryRun of [true, false]) {
+      // No git user.name, so Acme (which has no likely misspelling) is the only seed.
+      const noGitName = fakes({
+        exec: (file, args) => {
+          if (file === 'git' && args.includes('get-url')) return 'https://github.com/ashlrai/lexicon.git';
+          throw new Error(`no ${args.join(' ')}`);
+        },
+      });
+      await fs.rm(globalPath, { force: true });
+      const { io, plan, summary } = await run({ ...opts, dryRun }, noGitName);
+      expect((dryRun ? plan?.demo : summary.demo)?.usedExample, String(dryRun)).toBe(true);
+      expect(io.out).toContain('add one now, what speech-to-text writes for it: lexicon add "Acme" "<misspelling>"');
+      expect(io.out).not.toContain('Your Co');
+    }
+  });
+
   it('a dry run lists the defaults (or the --packs list) in wouldInstallPacks, installs nothing and keeps pack names out of wouldHarvest', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const f = fakes({

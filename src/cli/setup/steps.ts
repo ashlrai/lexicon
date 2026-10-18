@@ -697,7 +697,16 @@ export async function stepDemo(ctx: Ctx): Promise<void> {
   if (summary) ctx.say(dim(`   fixed: ${summary}`));
   if (demo.usedExample) {
     ctx.say(dim('   (that used the built-in example terms: your lexicon has no misspellings recorded yet)'));
-    ctx.say(dim('   add one now: lexicon add "Your Co" --suggest'));
+    // A name this run seeds has no misspelling yet (that is why the example
+    // stood in), so name it rather than a "Your Co" placeholder.
+    const own = (ctx.plan ? ctx.plan.wouldSeed : ctx.seeded)[0];
+    ctx.say(
+      dim(
+        own === undefined
+          ? '   add one now: lexicon add "Your Co" --suggest'
+          : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own))} "<misspelling>"`,
+      ),
+    );
   }
   const record = { heard: demo.heard, corrected: demo.corrected, terms: demo.terms, usedExample: demo.usedExample };
   if (ctx.plan) ctx.plan.demo = record;
