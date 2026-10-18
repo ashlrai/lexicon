@@ -27,7 +27,7 @@ import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } fro
 import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { bold, dim, line, plural, resolveCwd, safe, safeLines } from './io.js';
+import { CliRefusal, bold, dim, line, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -195,7 +195,20 @@ export interface ReviewOptions extends InteractiveOptions {
   global?: boolean;
   /** Only this category. */
   category?: string;
+  /** Refused: review is interactive. Prints `{ ok: false, error, nextStep }` naming the non-interactive commands. */
+  json?: boolean;
 }
+
+/**
+ * What a script or agent runs instead of `lexicon review`: it asks about each
+ * term, so it has no --json document to print.
+ */
+export const REVIEW_NON_INTERACTIVE_NEXT_STEP =
+  'read terms with lexicon list --json, delete with lexicon remove <canonical> [--alias <alias>], change with lexicon add <canonical> <aliases...>; MCP: list_terms, remove_term, add_term';
+
+/** What a script or agent runs instead of `lexicon edit`, which opens an editor. */
+export const EDIT_NON_INTERACTIVE_NEXT_STEP =
+  'change terms with lexicon add <canonical> <aliases...> and lexicon remove <canonical> [--alias <alias>], or edit the file lexicon path names; MCP: add_term, remove_term';
 
 const REVIEW_KEYS = ['k', 'd', 'e', 'p', 'n', 'q'] as const;
 const REVIEW_HELP = '[k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]uit';
@@ -304,10 +317,11 @@ async function pickFile(
 }
 
 export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter): Promise<number> {
+  if (opts.json) return refuse(io, true, 'review is interactive and has no --json output', REVIEW_NON_INTERACTIVE_NEXT_STEP);
   const cwd = resolveCwd(opts);
   const store = storeOpts(opts, cwd);
   if (!prompter && !isInteractive()) {
-    throw new Error('review needs a terminal (stdin and stdout must be a TTY); use `lexicon list` to print terms instead');
+    throw new CliRefusal('review needs a terminal (stdin and stdout must be a TTY); nothing was changed', REVIEW_NON_INTERACTIVE_NEXT_STEP);
   }
   const category = opts.category?.toLowerCase();
   if (category !== undefined && !isCategory(category)) {
@@ -470,6 +484,8 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
 export interface EditOptions extends InteractiveOptions {
   /** Open the project .lexicon.yaml instead of the global file. */
   project?: boolean;
+  /** Refused: edit opens an editor. Prints `{ ok: false, error, nextStep }` naming the non-interactive commands. */
+  json?: boolean;
 }
 
 /** Runs `command args... filePath` attached to the terminal and resolves with its exit code. */
@@ -502,6 +518,7 @@ export async function runEdit(
   spawnEditor: SpawnEditor = spawnEditorInherit,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<number> {
+  if (opts.json) return refuse(io, true, 'edit opens an editor and has no --json output', EDIT_NON_INTERACTIVE_NEXT_STEP);
   const cwd = resolveCwd(opts);
   const store = storeOpts(opts, cwd);
   const paths = resolvePaths(store);
@@ -581,11 +598,13 @@ export function registerReviewCommands(program: Command, io: IO): void {
     .option('--project', 'review the project .lexicon.yaml instead of the global file')
     .option('--global', 'review the global lexicon (the default)')
     .option('--category <category>', 'only this category')
+    .option('--json', 'refused (exit 1): review asks about each term; prints { ok: false, error, nextStep } naming list --json, remove and add, and the MCP tools')
     .action(async (opts: ReviewOptions) => done(await runReview({ ...opts, ...globals() }, io)));
 
   program
     .command('edit')
     .description('open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards')
     .option('--project', 'open the project .lexicon.yaml instead of the global file')
+    .option('--json', 'refused (exit 1): edit opens an editor; prints { ok: false, error, nextStep } naming add, remove and the MCP tools')
     .action(async (opts: EditOptions) => done(await runEdit({ ...opts, ...globals() }, io)));
 }
