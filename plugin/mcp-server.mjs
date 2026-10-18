@@ -60588,8 +60588,8 @@ var registerTermTools = (server, ctx) => {
       description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
-        categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include these categories."),
-        limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported.")
+        categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
+        limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.")
       }
     },
     async ({ format, categories, limit }) => guarded(async () => {
@@ -60768,7 +60768,7 @@ var registerHarvestTools = (server, ctx) => {
       description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
         cwd: external_exports.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: external_exports.number().int().positive().optional().describe("Max suggestions to return.")
+        limit: external_exports.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`)
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {

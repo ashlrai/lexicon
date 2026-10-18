@@ -472,8 +472,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
-        categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include these categories.'),
-        limit: z.number().int().positive().optional().describe('Cap the number of terms exported.'),
+        categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include terms in these categories. Omitted: every category.'),
+        limit: z.number().int().positive().optional().describe('Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.'),
       },
     },
     async ({ format, categories, limit }) =>
