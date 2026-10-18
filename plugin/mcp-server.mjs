@@ -54510,55 +54510,70 @@ async function projectWriteTrusted(opts = {}) {
   const status = await isTrusted({ path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true }, opts);
   return status === "trusted";
 }
+function prepareIncoming(term) {
+  const canonical = term.canonical.trim();
+  if (!canonical) throw new InputError("canonical must not be empty");
+  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+}
+function mergeTermInto(file2, incoming, scope, opts) {
+  const canonical = incoming.canonical;
+  const existing = findTerm(file2.lexicon, canonical);
+  if (existing && opts.merge !== false) {
+    existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
+    existing.phonetic ??= incoming.phonetic;
+    existing.category ??= incoming.category;
+    existing.notes ??= incoming.notes;
+    existing.caseSensitive ??= incoming.caseSensitive;
+    if (incoming.never?.length) {
+      existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
+    }
+    return { term: existing, created: false };
+  }
+  if (existing) {
+    const replaced = {
+      ...incoming,
+      scope,
+      source: incoming.source ?? "user",
+      createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const idx = file2.lexicon.terms.indexOf(existing);
+    file2.lexicon.terms[idx] = replaced;
+    return { term: replaced, created: false };
+  }
+  const created = {
+    ...incoming,
+    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
+    scope,
+    source: incoming.source ?? "user",
+    createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+  };
+  file2.lexicon.terms.push(created);
+  return { term: created, created: true };
+}
 async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
-  const write = opts.leaveUntrusted ? (f) => writeLexiconFile(f) : (f) => writeAndTrust(f, opts);
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new InputError("canonical must not be empty");
-  const incoming = {
-    ...term,
-    canonical,
-    aliases: dedupeAliases(term.aliases ?? [], canonical)
-  };
+  const incoming = prepareIncoming(term);
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFile(targetPath, scope);
-    const existing = findTerm(file2.lexicon, canonical);
-    if (existing && opts.merge !== false) {
-      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
-      existing.phonetic ??= incoming.phonetic;
-      existing.category ??= incoming.category;
-      existing.notes ??= incoming.notes;
-      existing.caseSensitive ??= incoming.caseSensitive;
-      if (incoming.never?.length) {
-        existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
-      }
-      await write(file2);
-      return { file: file2, term: existing, created: false };
-    }
-    if (existing) {
-      const replaced = {
-        ...incoming,
-        scope,
-        source: incoming.source ?? "user",
-        createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-      };
-      const idx = file2.lexicon.terms.indexOf(existing);
-      file2.lexicon.terms[idx] = replaced;
-      await write(file2);
-      return { file: file2, term: replaced, created: false };
-    }
-    const created = {
-      ...incoming,
-      ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
-      scope,
-      source: incoming.source ?? "user",
-      createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-    };
-    file2.lexicon.terms.push(created);
-    await write(file2);
-    return { file: file2, term: created, created: true };
+    const result = mergeTermInto(file2, incoming, scope, opts);
+    await writeAddedFile(file2, opts);
+    return { file: file2, ...result };
   });
+}
+async function addTerms(terms, opts = {}) {
+  const scope = opts.scope ?? "global";
+  const targetPath = await resolveScopeWritePath(scope, opts);
+  const incoming = terms.map(prepareIncoming);
+  return withLexiconLock(targetPath, async () => {
+    const file2 = await readLexiconFile(targetPath, scope);
+    const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
+    if (results.length > 0) await writeAddedFile(file2, opts);
+    return { file: file2, results };
+  });
+}
+function writeAddedFile(file2, opts) {
+  return opts.leaveUntrusted ? writeLexiconFile(file2) : writeAndTrust(file2, opts);
 }
 async function writeAndTrust(file2, opts) {
   await writeLexiconFile(file2);
@@ -59494,18 +59509,15 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
   const storeOpts2 = { ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {}, ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {} };
   const targetPath = await resolveScopeWritePath(scope, { ...storeOpts2, leaveUntrusted });
   return withLexiconLock(targetPath, async () => {
-    let added = 0;
-    let merged = 0;
-    let file2;
-    for (const term of pack.lexicon.terms) {
-      const incoming = { ...term, aliases: [...term.aliases], source: "pack" };
-      if (term.never) incoming.never = [...term.never];
-      const result = await addTerm(incoming, { ...storeOpts2, scope, leaveUntrusted });
-      file2 = result.file;
-      if (result.created) added += 1;
-      else merged += 1;
-    }
-    if (!file2) throw new Error(`pack "${pack.name}" has no terms`);
+    const incoming = pack.lexicon.terms.map((term) => {
+      const t = { ...term, aliases: [...term.aliases], source: "pack" };
+      if (term.never) t.never = [...term.never];
+      return t;
+    });
+    if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    const { file: file2, results } = await addTerms(incoming, { ...storeOpts2, scope, leaveUntrusted });
+    const added = results.filter((r) => r.created).length;
+    const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
     return { pack: info(pack), added, merged, path: file2.path, scope };
