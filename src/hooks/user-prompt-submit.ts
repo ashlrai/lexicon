@@ -651,7 +651,10 @@ function shownValue(value: unknown): string {
  */
 async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType<typeof loadLexicon>>; note?: string }> {
   try {
-    return { loaded: await loadLexicon({ cwd }) };
+    // parseSkipped: false checks trust before parsing the project file, so a
+    // repo lexicon nobody trusted costs no YAML parse; the hook only ever
+    // reports a skipped file by path.
+    return { loaded: await loadLexicon({ cwd, parseSkipped: false }) };
   } catch (err) {
     const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     // Only a store parse/validation error is a file to fix with `lexicon edit`;

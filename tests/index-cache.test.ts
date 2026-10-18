@@ -15,7 +15,7 @@ import { loadCorpus, loadLexicon as loadBenchLexicon } from '../bench/lib.js';
 import { buildIndex, findReplacements } from '../src/core/matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from '../src/core/matcher/serialize.js';
 import { normalize, normalizeWithIndex } from '../src/core/normalize.js';
-import { INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, addTerm, loadLexicon, loadMatcherIndex, removeAlias, removeTerm, writeLexiconFile } from '../src/core/store.js';
+import { INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, addTerm, cacheChecksum, loadLexicon, loadMatcherIndex, removeAlias, removeTerm, writeLexiconFile } from '../src/core/store.js';
 import { trustProject } from '../src/core/trust.js';
 import { installLoadedPack, uninstallLoadedPack } from '../src/core/packs.js';
 import type { Pack } from '../src/core/packs.js';
@@ -315,6 +315,81 @@ describe('loadMatcherIndex', () => {
 
     const repoFiles = await fs.readdir(repo);
     expect(repoFiles.sort()).toEqual(['.git', '.lexicon.yaml']);
+  });
+
+  // Catches: one entry only, so alternating between two repos rebuilt the
+  // index (about 55 ms for 2000 terms) on every switch.
+  it('keeps up to CACHE_ENTRIES merges, least recently used out, and switches back without a rebuild', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    const repos: { repo: string; projectPath: string }[] = [];
+    for (const name of ['a', 'b', 'c', 'd', 'e']) {
+      const repo = path.join(tmp, `repo-${name}`);
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      await writeLexiconFile({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [{ canonical: `Quux${name}`, aliases: [`kwux ${name}`] }] }, exists: false });
+      await trustProject(projectPath, { globalPath });
+      repos.push({ repo, projectPath });
+    }
+    const dir = path.dirname(globalPath);
+    const spills = async (): Promise<string[]> => (await fs.readdir(dir)).filter((n) => /^index-cache\.[0-9a-f]{8}\.json$/.test(n)).sort();
+    const spillOf = (projectPath: string): string => path.join(dir, `index-cache.${cacheChecksum(projectPath)}.json`);
+    const mainProject = async (): Promise<string | undefined> => (JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string }).project;
+    const prompt = async (i: number): Promise<void> => {
+      const index = await loadMatcherIndex(await load(repos[i].repo));
+      const name = 'abcde'[i];
+      expect(normalizeWithIndex(`ping kwux ${name}`, index).output).toBe(`ping Quux${name}`);
+      // Spill mtimes order the entries; keep them apart on a coarse clock.
+      await new Promise((r) => setTimeout(r, 25));
+    };
+
+    await prompt(0);
+    await prompt(1);
+    expect(await mainProject()).toBe(repos[1].projectPath);
+    expect(await spills()).toEqual([path.basename(spillOf(repos[0].projectPath))]);
+    const spilled = await fs.stat(spillOf(repos[0].projectPath));
+    const spilledText = await fs.readFile(spillOf(repos[0].projectPath), 'utf8');
+
+    // Back in repo a: its entry is renamed into place, not rebuilt (a rebuild writes a new file).
+    await prompt(0);
+    const main = await fs.stat(cachePath());
+    expect(main.ino).toBe(spilled.ino);
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(spilledText);
+    expect(await spills()).toEqual([path.basename(spillOf(repos[1].projectPath))]);
+
+    // Five repos: the least recently used (b, last used before c, d and e) is dropped.
+    await prompt(2);
+    await prompt(3);
+    await prompt(4);
+    expect(await mainProject()).toBe(repos[4].projectPath);
+    expect(await spills()).toEqual([repos[0], repos[2], repos[3]].map((r) => path.basename(spillOf(r.projectPath))).sort());
+    if (process.platform !== 'win32') {
+      for (const f of [cachePath(), ...(await spills()).map((n) => path.join(dir, n))]) expect((await fs.stat(f)).mode & 0o777).toBe(0o600);
+    }
+    // Nothing is ever written into a repo.
+    for (const { repo } of repos) expect((await fs.readdir(repo)).sort()).toEqual(['.git', '.lexicon.yaml']);
+  });
+
+  it('validates a spill entry like the main one: a stale or damaged one is rebuilt, never used', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    const repos: string[] = [];
+    for (const name of ['a', 'b']) {
+      const repo = path.join(tmp, `repo-${name}`);
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      await writeLexiconFile({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [{ canonical: `Quux${name}`, aliases: [`kwux ${name}`] }] }, exists: false });
+      await trustProject(projectPath, { globalPath });
+      repos.push(repo);
+    }
+    await loadMatcherIndex(await load(repos[0]));
+    await loadMatcherIndex(await load(repos[1]));
+    const spill = path.join(path.dirname(globalPath), `index-cache.${cacheChecksum(path.join(repos[0], '.lexicon.yaml'))}.json`);
+    const good = await fs.readFile(spill, 'utf8');
+    await fs.writeFile(spill, good.slice(0, Math.floor(good.length / 2)));
+    const loaded = await load(repos[0]);
+    expect(await loadMatcherIndex(loaded)).toEqual(buildIndex(loaded.merged));
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(good);
+    // The damaged spill is gone, superseded by the rebuilt main entry.
+    await expect(fs.stat(spill)).rejects.toThrow();
   });
 
   /** A repo with a trusted project lexicon, the way `lexicon trust` leaves it. */
