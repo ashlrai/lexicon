@@ -60112,13 +60112,19 @@ function renderTable(rows, header) {
 }
 function fail(io, err, json2) {
   const message = errorMessage(err);
-  const hint = unreadableLexiconHint(message);
+  const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
   if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0));
   io.stderr(`lexicon: ${safeLines(message)}
 `);
-  if (hint) io.stderr(`lexicon: ${hint}
+  if (hint) io.stderr(`lexicon: ${safeLines(hint)}
 `);
   return 1;
+}
+var PACK_NOT_FOUND_NEXT_STEP = "run lexicon pack list to see the starter packs; a community pack is <author>/<name> with --registry <index> (lexicon pack search finds one)";
+function ownNextStep(err) {
+  if (err instanceof CliRefusal) return err.nextStep;
+  if (err instanceof Error && err.name === "PackNotFoundError") return PACK_NOT_FOUND_NEXT_STEP;
+  return void 0;
 }
 var DEFAULT_NEXT_STEP = "fix what error names, then run the command again (its --help lists the flags)";
 var PROJECT_TRUST_NEXT_STEP = "review the project lexicon and run lexicon trust, then run the command again; or write to the global lexicon instead";
@@ -60132,6 +60138,14 @@ function printJsonError(io, error62, nextStep) {
   io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
 `);
 }
+var CliRefusal = class extends Error {
+  constructor(message, nextStep) {
+    super(message);
+    this.nextStep = nextStep;
+    this.name = "CliRefusal";
+  }
+  nextStep;
+};
 function unreadableLexiconHint(message) {
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : void 0;

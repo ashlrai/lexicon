@@ -508,6 +508,15 @@ describe('installPack / uninstallPack', () => {
     const badShow = makeIO();
     expect(await runPackShow('nope', { cwd }, badShow)).toBe(1);
     expect(badShow.err).toContain('unknown pack');
+    // Catches: an unknown pack under --json got the generic nextStep, not the pack list.
+    const badShowJson = makeIO();
+    expect(await runPackShow('nope', { cwd, json: true }, badShowJson)).toBe(1);
+    expect(JSON.parse(badShowJson.out)).toEqual({
+      ok: false,
+      error: expect.stringContaining('unknown pack "nope"'),
+      nextStep: expect.stringContaining('run lexicon pack list'),
+    });
+    expect(badShowJson.err).toContain('lexicon: run lexicon pack list');
     // A ref-shaped name routes to the registry flow instead of the filesystem.
     const refShow = makeIO();
     expect(await runPackShow('../x', { cwd }, refShow)).toBe(1);

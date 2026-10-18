@@ -97,6 +97,7 @@ import type {
 } from '../core/index.js';
 import {
   bold,
+  CliRefusal,
   conflictLine,
   dim,
   ensureNewline,
@@ -175,7 +176,10 @@ function parseCategory(value: string | undefined): TermCategory | undefined {
   if (value === undefined) return undefined;
   const lower = value.toLowerCase();
   if (!(TERM_CATEGORIES as readonly string[]).includes(lower)) {
-    throw new Error(`unknown category "${value}" (expected one of: ${TERM_CATEGORIES.join(', ')})`);
+    throw new CliRefusal(
+      `unknown category "${value}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
+      `pass one of ${TERM_CATEGORIES.join(', ')} to --category, or leave --category out`,
+    );
   }
   return lower as TermCategory;
 }
@@ -978,7 +982,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const format = resolveExportFormat(requested);
   if (format === undefined) {
     const error = `unknown export format "${requested}"`;
-    if (json) return refuse(io, true, error);
+    if (json) return refuse(io, true, error, exportFormatNextStep());
     io.stderr(`lexicon: unknown export format "${safe(requested)}"\n`);
     io.stderr(formatList());
     return 1;

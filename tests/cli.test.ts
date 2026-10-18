@@ -911,6 +911,17 @@ describe('export', () => {
       expect(doc.formats).toContainEqual({ name: 'wispr', description: 'Wispr Flow dictionary CSV', ext: 'csv' });
     });
 
+    // Catches: an unknown format under --json got the generic nextStep.
+    it('an unknown format answers { ok: false, error, nextStep } naming the formats', async () => {
+      const io = makeIO();
+      expect(await runExport('bogus', { json: true }, io)).toBe(1);
+      expect(JSON.parse(io.out)).toEqual({
+        ok: false,
+        error: 'unknown export format "bogus"',
+        nextStep: 'run: lexicon export <format>, with one of: wispr, superwhisper, claude-md, json (lexicon export with no format describes each)',
+      });
+    });
+
     it('a missing format answers { ok: false, error, nextStep } naming the formats', async () => {
       const missing = makeIO();
       expect(await runExport(undefined, { out: 'x.md', json: true }, missing)).toBe(1);
@@ -2325,9 +2336,15 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(JSON.parse(refused.stdout)).toEqual({ ok: false, error: expect.stringContaining(`project lexicon at ${projectPath} is untrusted`), nextStep: PROJECT_TRUST_NEXT_STEP });
       expect(refused.stderr).toContain('lexicon: project lexicon at');
 
+      // Catches: an unknown --category got the generic nextStep, not the categories to pass.
       const category = lexicon(['list', '--json', '--category', 'nope', '--cwd', tmp], globalPath);
       expect(category.status).toBe(1);
-      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"'), nextStep: expect.any(String) });
+      expect(JSON.parse(category.stdout)).toEqual({
+        ok: false,
+        error: expect.stringContaining('unknown category "nope"'),
+        nextStep: 'pass one of brand, person, product, acronym, identifier, place, other to --category, or leave --category out',
+      });
+      expect(category.stderr).toContain('lexicon: pass one of brand');
 
       const missing = lexicon(['import', path.join(tmp, 'nope.txt'), '--json', '--cwd', tmp], globalPath);
       expect(missing.status).toBe(1);
