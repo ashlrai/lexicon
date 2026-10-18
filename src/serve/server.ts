@@ -672,7 +672,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const now = Date.now();
     const hit = cache.get(cwd);
     if (hit && now - hit.at < reloadMs) return hit;
-    const loaded = await loadLexicon({ cwd, ...storeOpts });
+    // No route reads a skipped project file's terms (each names it by path
+    // only), so an untrusted or changed one is never parsed, as in the hook.
+    const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
     if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
@@ -721,7 +723,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (result.changed && !body.dryRun) {
       const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
       // Best effort, like the MCP server: a store hiccup never fails a normalize.
-      await recordHits(canonicals, { cwd, ...storeOpts }).catch(() => undefined);
+      // `loaded` spares recordHits re-reading (and re-parsing) both files.
+      await recordHits(canonicals, { cwd, ...storeOpts, loaded: entry.loaded }).catch(() => undefined);
       invalidate();
     }
     return {

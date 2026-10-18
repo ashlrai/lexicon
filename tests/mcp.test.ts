@@ -361,8 +361,10 @@ describe('lexicon MCP server', () => {
       expect(payload.changed).toBe(true);
       expect(payload.replacements).toHaveLength(1);
       expect(payload.summary).toContain('"Ashler" -> "Ashlr.AI"');
-      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
-      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/repo' });
+      // Trust before parse, as the prompt hook loads: the tool names a skipped
+      // project file by path only. `loaded` spares recordHits a second read.
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/repo', loaded });
     } finally {
       await close();
     }

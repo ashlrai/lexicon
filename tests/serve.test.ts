@@ -11,7 +11,27 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The real schema module with `parseLexicon` counted, so the trust gate tests
+ * can tell whether an untrusted project file was parsed at all. Behaviour is
+ * unchanged: every call goes to the real validator.
+ */
+const schemaParses = vi.hoisted(() => ({ canonicals: [] as string[] }));
+vi.mock('../src/core/schema.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/schema.js')>();
+  return {
+    ...real,
+    parseLexicon: (raw: unknown) => {
+      const terms = (raw as { terms?: unknown } | null)?.terms;
+      if (Array.isArray(terms)) {
+        for (const t of terms) if (typeof (t as { canonical?: unknown })?.canonical === 'string') schemaParses.canonicals.push((t as { canonical: string }).canonical);
+      }
+      return real.parseLexicon(raw);
+    },
+  };
+});
 import { EXPORT_FORMATS, addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
@@ -1027,6 +1047,24 @@ describe('trust gate', () => {
     expect(lexBody.skippedProject).toBe(path.join(cwd, '.lexicon.yaml'));
     expect(lexBody.lexicon.terms.map((t) => t.canonical)).not.toContain('HostileCorp');
     expect(JSON.stringify(lexBody)).not.toContain('hostyle');
+  });
+
+  it('never parses an untrusted project file, on a normalize that records hits or on a read', async () => {
+    const cwd = env.untrustedProject;
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['ashler'] }, { globalPath: env.globalPath });
+    schemaParses.canonicals.length = 0;
+    // Records a hit (so recordHits runs and the cache is dropped), then reloads.
+    const norm = await api('POST', '/normalize', { text: 'ping ashler and hostyle', cwd });
+    expect(norm.status).toBe(200);
+    const body = (await norm.json()) as NormalizeResult;
+    expect(body.output).toBe('ping Ashlr.AI and hostyle');
+    for (const route of ['/lexicon', '/stats', '/packs', '/export/csv']) {
+      expect((await api('GET', `${route}?cwd=${encodeURIComponent(cwd)}`)).status).toBe(200);
+    }
+    // The file is still reported by path; it was simply never read as YAML.
+    const lex = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(cwd)}`)).json()) as { skippedProject?: string };
+    expect(lex.skippedProject).toBe(path.join(cwd, '.lexicon.yaml'));
+    expect(schemaParses.canonicals).not.toContain('HostileCorp');
   });
 
   it('refuses a project-scope write into an untrusted file with 403', async () => {

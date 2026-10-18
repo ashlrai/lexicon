@@ -60637,7 +60637,7 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ text, dryRun, minConfidence }) => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const index = await loadMatcherIndex(loaded);
       const cut = normalizeCut(text, ctx.normalizeMaxChars);
       const head = cut < text.length ? text.slice(0, cut) : text;
@@ -60652,7 +60652,7 @@ var registerTermTools = (server, ctx) => {
       const result = tail ? { ...matched, input: text, output: matched.output + tail } : matched;
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
-        await recordHits(canonicals, { cwd: ctx.cwd }).catch(
+        await recordHits(canonicals, { cwd: ctx.cwd, loaded }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
@@ -65076,9 +65076,9 @@ function createServer2(opts = {}) {
   let cwd = explicit ?? process.cwd();
   let clientRoots = [];
   let rootsPending;
-  const load = async () => {
+  const load = async (loadOpts = {}) => {
     if (rootsPending) await rootsPending;
-    return loadLexicon({ cwd });
+    return loadLexicon({ cwd, ...loadOpts });
   };
   const server = new McpServer(
     { name: SERVER_NAME, version: readPackageVersion() },

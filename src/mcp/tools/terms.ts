@@ -162,7 +162,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ text, dryRun, minConfidence }) =>
       guarded(async () => {
-        const loaded = await load();
+        // parseSkipped: false, as the prompt hook loads: this tool names a
+        // skipped project file by path only, so an untrusted or changed one
+        // is never parsed on the way to leaving it out.
+        const loaded = await load({ parseSkipped: false });
         // Cached on disk for a large lexicon (index-cache.json, shared with the
         // hook and serve), so a call does not rebuild the matcher every time.
         const index = await loadMatcherIndex(loaded);
@@ -183,7 +186,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
           // Best effort: recordHits is contractually non-throwing, but guard anyway so
           // a store hiccup can never turn a successful normalize into an error.
-          await recordHits(canonicals, { cwd: ctx.cwd }).catch((err: unknown) =>
+          // `loaded` spares recordHits re-reading (and re-parsing) both files.
+          await recordHits(canonicals, { cwd: ctx.cwd, loaded }).catch((err: unknown) =>
             log('recordHits failed:', errorMessage(err)),
           );
         }
