@@ -129,6 +129,18 @@ function reportable(text: string): boolean {
   return text.length > 0 && text.length <= MAX_CLIPBOARD_CHARS && hasLetters(text);
 }
 
+/**
+ * Why `loaded` corrects nothing at all, ending in the step that fixes it, or
+ * undefined when it has terms. A first run with an empty lexicon answered
+ * every clipboard with a bare "no changes", which reads as "nothing to fix".
+ */
+export function emptyLexiconHint(loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>): string | undefined {
+  if (loaded.merged.terms.length > 0) return undefined;
+  return loaded.skippedProject
+    ? 'the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust`'
+    : 'the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>';
+}
+
 function formatSummary(result: NormalizeResult): string {
   const summary = diffSummary(result);
   return summary.endsWith('\n') || summary === '' ? summary : `${summary}\n`;
@@ -267,7 +279,21 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
         `lexicon daemon watching clipboard (${clipboard.name}) every ${intervalMs}ms${dryRun ? ' (dry-run)' : ''}; ctrl-C to stop\n`,
       );
     }
-    void tick();
+    // Said once at start: with no terms the daemon would watch in silence and
+    // never correct anything. A lexicon that fails to load is reported by
+    // the first poll instead.
+    const startTick = async (): Promise<void> => {
+      if (!quiet) {
+        try {
+          const hint = emptyLexiconHint(await currentLexicon());
+          if (hint) err(`[${timestamp()}] clipboard daemon: nothing will be corrected: ${hint}\n`);
+        } catch {
+          // the first poll reports it
+        }
+      }
+      await tick();
+    };
+    void startTick();
   });
 }
 
@@ -328,7 +354,8 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
         out(`${header}\n${formatSummary(normalized)}`);
       }
     } else if (!quiet) {
-      out('no changes\n');
+      const hint = emptyLexiconHint(loaded);
+      out(hint ? `no changes (${hint})\n` : 'no changes\n');
     }
   }
 

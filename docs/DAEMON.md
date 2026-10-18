@@ -32,7 +32,7 @@ An empty or non-text clipboard (an image, a file) is treated as no text and skip
 
 ## One-shot mode for a keyboard shortcut
 
-`lexicon daemon --once` reads the clipboard once, corrects it, writes it back if anything changed, prints the diff (or `no changes`) and exits 0. Bind it to a key: dictate, copy, press the key, paste. With `--paste` (macOS only) it also sends Cmd+V to the frontmost app, so the shortcut becomes "dictate, press the key".
+`lexicon daemon --once` reads the clipboard once, corrects it, writes it back if anything changed, prints the diff (or `no changes`) and exits 0. With no terms in the lexicon it says so, `no changes (the lexicon has no terms yet; run \`lexicon setup\`, or add one with: lexicon learn <heard> <meant>)`, and the watching daemon says it once when it starts. Bind it to a key: dictate, copy, press the key, paste. With `--paste` (macOS only) it also sends Cmd+V to the frontmost app, so the shortcut becomes "dictate, press the key".
 
 `--paste` uses `osascript` and needs Accessibility permission for whatever runs the shortcut (Raycast, Alfred, Keyboard Maestro, Terminal): System Settings > Privacy & Security > Accessibility. Nothing else in the daemon needs a permission. On Linux and Windows `--paste` prints a notice and leaves the corrected text on the clipboard. On macOS the [LexiconBar](MACOS-APP.md) app wraps the same command in a menu bar hotkey; [the Windows tray app](WINDOWS-APP.md) has its own equivalent, though nothing in it has been run on Windows yet. [PLATFORMS.md](PLATFORMS.md) has the full picture.
 

@@ -91,6 +91,31 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  // Catches: with no terms the daemon watched in silence and never said
+  // nothing would be corrected.
+  it('says once at start when the lexicon has no terms', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValue({ merged: empty, global: { path: '/g', scope: 'global', lexicon: empty, exists: false } });
+    try {
+      const out: string[] = [];
+      const err: string[] = [];
+      const controller = new AbortController();
+      const done = runClipboardDaemon({ intervalMs: 250, read: async () => 'meet Ashley', write: async () => undefined, signal: controller.signal, out: (s) => out.push(s), err: (s) => err.push(s) });
+      await vi.advanceTimersByTimeAsync(250 * 3);
+      const notes = err.filter((s) => s.includes('nothing will be corrected'));
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toMatch(/clipboard daemon: nothing will be corrected: the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>\n$/);
+      controller.abort();
+      await done;
+    } finally {
+      vi.mocked(core.loadLexicon).mockReset();
+      vi.mocked(core.loadLexicon).mockImplementation(async () => ({
+        merged: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] },
+        global: { path: '/g', scope: 'global', lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] }, exists: true },
+      }));
+    }
+  });
+
   it('records hits for the corrected canonicals after a write, and keeps polling when that fails', async () => {
     vi.mocked(core.recordHits).mockRejectedValueOnce(new Error('disk full'));
     const h = start('meet Ashler');
@@ -293,6 +318,25 @@ describe('runClipboardOnce', () => {
     expect(write).not.toHaveBeenCalled();
     expect(result).toEqual({ changed: false, written: false, corrections: 0, pasted: false });
     expect(h.out.join('')).toBe('no changes\n');
+  });
+
+  // Catches: with no terms every clipboard answered a bare "no changes",
+  // which reads as nothing to fix, naming no way to add a term.
+  it('says the lexicon has no terms, and how to add one, when it corrects nothing', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: '/g', scope: 'global', lexicon: empty, exists: false } });
+    const { h, read, write, out, err } = onceHarness('meet Ashley');
+    await runClipboardOnce({ read, write, out, err });
+    expect(h.out.join('')).toBe('no changes (the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>)\n');
+
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: empty,
+      global: { path: '/g', scope: 'global', lexicon: empty, exists: false },
+      skippedProject: { path: '/r/.lexicon.yaml', scope: 'project', lexicon: empty, exists: true },
+    });
+    const skipped = onceHarness('meet Ashley');
+    await runClipboardOnce({ read: skipped.read, write: skipped.write, out: skipped.out, err: skipped.err });
+    expect(skipped.h.out.join('')).toBe('no changes (the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust`)\n');
   });
 
   it('empty clipboard prints no changes and never normalizes', async () => {
