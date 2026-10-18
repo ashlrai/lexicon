@@ -395,7 +395,12 @@ describe('Host guard (DNS rebinding)', () => {
     const q = `/health?cwd=${encodeURIComponent(env.untrustedProject)}`;
     const anon = await fetch(`${info.url}${q}`);
     expect(anon.status).toBe(401);
-    expect(await anon.text()).not.toContain('projectTrust');
+    // Catches: this 401 named only `lexicon serve --show` after the main 401
+    // learned `--pair`, how an extension user gets the token.
+    expect(await anon.json()).toEqual({
+      error:
+        '/health?cwd= needs the bearer token, which plain /health does not (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
+    });
     const authed = await api('GET', q);
     expect(authed.status).toBe(200);
     expect(((await authed.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');

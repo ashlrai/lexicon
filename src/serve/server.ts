@@ -380,6 +380,18 @@ function learnUnchangedNote(heard: string, canonical: string): string {
 /** Seconds a 503 asks the client to wait (its `Retry-After`) before sending the same request again. */
 const BUSY_RETRY_AFTER_S = 1;
 
+/**
+ * Both ways to get the bearer token, for every 401: an extension user pairs
+ * (`--pair`), any other client copies it (`--show`). The `/health?cwd=` 401
+ * named only `--show` after the main one learned `--pair`.
+ */
+const TOKEN_SOURCES = 'pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show';
+
+/** The 401 for a request that needs the bearer token; `what` names what needed it. */
+function tokenRequired(what = 'missing or invalid bearer token'): HttpError {
+  return new HttpError(401, `${what} (${TOKEN_SOURCES})`);
+}
+
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
@@ -1112,7 +1124,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // and whether they are trusted.
       const cwdParam = url.searchParams.get('cwd');
       if (cwdParam !== null && (!config || !tokenMatches(req.headers.authorization, config.token))) {
-        throw new HttpError(401, '/health?cwd= needs the bearer token (see: lexicon serve --show); plain /health does not');
+        throw tokenRequired('/health?cwd= needs the bearer token, which plain /health does not');
       }
       return json(200, await health(await resolveCwd(cwdParam)));
     }
@@ -1122,12 +1134,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (!config || !tokenMatches(req.headers.authorization, config.token)) {
-      // Both ways to get the token: an extension user pairs (`--pair`), any
-      // other client copies it (`--show`). It named only `--show`.
-      throw new HttpError(
-        401,
-        'missing or invalid bearer token (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
-      );
+      throw tokenRequired();
     }
 
     if (pathname === '/normalize') {
