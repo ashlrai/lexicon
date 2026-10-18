@@ -66,6 +66,8 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 
 Neither prompt takes arguments (`prompts/list` gives `arguments: []`). Omit `arguments` or pass `{}`; an undeclared one is refused, as a tool refuses an unknown key, with JSON-RPC error -32602 naming it: `Invalid arguments for prompt onboard: unknown argument "scope" for prompt onboard: it takes no arguments; omit arguments or pass {}`.
 
+An untrusted or changed project `.lexicon.yaml` is never parsed by `normalize_transcript`, `list_terms`, `export_lexicon`, `suggest_canonical`, `lexicon_stats`, `list_packs`, the two resources or `voice-context`: they check trust first and name a skipped file by path only, so a large or broken repo file costs them nothing and cannot fail them. `remove_term` and `learn_correction` still parse it, because they report a copy of a term in it.
+
 A lexicon file that does not parse fails every tool, resource and prompt that reads it (`onboard` reads none) with the store's error, which names the file, and a second line with the fix: `lexicon edit` (`lexicon edit --project` for a `.lexicon.yaml`), then `lexicon doctor`. A tool returns it as an `isError` result; a resource or prompt as the JSON-RPC error message.
 
 ## Writes and previews

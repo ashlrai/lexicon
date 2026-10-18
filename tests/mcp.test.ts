@@ -678,7 +678,46 @@ describe('lexicon MCP server', () => {
       expect(result.isError).toBe(false);
       expect(JSON.parse(textOf(result))).toEqual(stats);
       expect(mocks.computeStats).toHaveBeenCalledWith(loaded);
-      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+    } finally {
+      await close();
+    }
+  });
+
+  it('the read-only tools, resources and prompts load without parsing a skipped project file, and still name it by path', async () => {
+    // What loadLexicon returns with parseSkipped: false for an untrusted file:
+    // its path and an empty stand-in lexicon, never its terms.
+    const skipped: LoadedLexicon = {
+      merged: fixtureLexicon,
+      global: loaded.global,
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/fake/repo/.lexicon.yaml', scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
+    };
+    mocks.loadLexicon.mockResolvedValue(skipped);
+    mocks.computeStats.mockReturnValue({ termCount: 2 });
+    mocks.suggestCanonicalFor.mockReturnValue([]);
+    mocks.listPacks.mockResolvedValue([]);
+    const { client, close } = await connect();
+    const allText = (r: unknown): string => ((r as { content?: { text?: string }[] }).content ?? []).map((c) => c.text ?? '').join('\n');
+    const reads: Array<[string, () => Promise<string>]> = [
+      ['list_terms', async () => allText(await client.callTool({ name: 'list_terms', arguments: {} }))],
+      ['export_lexicon', async () => allText(await client.callTool({ name: 'export_lexicon', arguments: { format: 'claude-md' } }))],
+      ['suggest_canonical', async () => allText(await client.callTool({ name: 'suggest_canonical', arguments: { heard: 'ashlur' } }))],
+      ['lexicon_stats', async () => allText(await client.callTool({ name: 'lexicon_stats', arguments: {} }))],
+      ['list_packs', async () => allText(await client.callTool({ name: 'list_packs', arguments: {} }))],
+      ['lexicon://me', async () => (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? c.text : '')).join('\n')],
+      ['lexicon://json', async () => (await client.readResource({ uri: 'lexicon://json' })).contents.map((c) => ('text' in c ? c.text : '')).join('\n')],
+      ['voice-context', async () => (await client.getPrompt({ name: 'voice-context' })).messages.map((m) => String((m.content as { text?: string }).text)).join('\n')],
+    ];
+    try {
+      for (const [name, read] of reads) {
+        mocks.loadLexicon.mockClear();
+        const text = await read();
+        expect(mocks.loadLexicon, name).toHaveBeenCalledTimes(1);
+        expect(mocks.loadLexicon, name).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+        // export_lexicon's note says the terms were left out; everything else names the path.
+        expect(text, name).toContain(name === 'export_lexicon' ? 'Its terms are not in this export.' : '/fake/repo/.lexicon.yaml');
+      }
     } finally {
       await close();
     }
@@ -1722,7 +1761,7 @@ describe('MCP roots pick the project directory', () => {
     try {
       await client.readResource({ uri: 'lexicon://me' });
       expect(asked()).toBe(1);
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA, parseSkipped: false });
       await client.callTool({ name: 'add_term', arguments: { canonical: 'Zed', aliases: ['zedd'] } });
       expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'Zed' }), { cwd: rootA });
     } finally {
@@ -1761,12 +1800,12 @@ describe('MCP roots pick the project directory', () => {
     const { client, close, asked } = await connectWithRoots(() => [{ uri: pathToFileURL(current).href }]);
     try {
       await client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA, parseSkipped: false });
       current = rootB;
       await client.sendRootsListChanged();
       await vi.waitFor(() => expect(asked()).toBe(2));
       await client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB, parseSkipped: false });
     } finally {
       await close();
     }
@@ -1777,7 +1816,7 @@ describe('MCP roots pick the project directory', () => {
     const viaOption = await connectWithRoots(() => [{ uri: pathToFileURL(rootA).href }], { cwd: '/fake/repo' });
     try {
       await viaOption.client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo', parseSkipped: false });
       expect(viaOption.asked()).toBe(0);
     } finally {
       await viaOption.close();
@@ -1786,7 +1825,7 @@ describe('MCP roots pick the project directory', () => {
     const viaEnv = await connectWithRoots(() => [{ uri: pathToFileURL(rootA).href }]);
     try {
       await viaEnv.client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB, parseSkipped: false });
       expect(viaEnv.asked()).toBe(0);
     } finally {
       await viaEnv.close();
@@ -1799,7 +1838,7 @@ describe('MCP roots pick the project directory', () => {
     const none = await connectWithRoots(() => [{ uri: pathToFileURL(path.join(rootA, 'gone')).href }]);
     try {
       await none.client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd(), parseSkipped: false });
     } finally {
       await none.close();
     }
@@ -1809,7 +1848,7 @@ describe('MCP roots pick the project directory', () => {
     try {
       const result = await failing.client.callTool({ name: 'list_terms', arguments: {} });
       expect(result.isError).toBe(false);
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd(), parseSkipped: false });
     } finally {
       await failing.close();
     }
@@ -1820,7 +1859,7 @@ describe('MCP roots pick the project directory', () => {
     const { client, close } = await connect();
     try {
       await client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo', parseSkipped: false });
     } finally {
       await close();
     }

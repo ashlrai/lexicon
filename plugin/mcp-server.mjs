@@ -60838,7 +60838,7 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ query, category }) => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const needle = query?.trim().toLowerCase();
       const terms = loaded.merged.terms.filter((t) => {
         if (category && t.category !== category) return false;
@@ -60873,7 +60873,7 @@ var registerTermTools = (server, ctx) => {
     async ({ format, categories, limit }) => guarded(async () => {
       const resolved2 = resolveExportFormat(format);
       if (!resolved2) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const opts = {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
@@ -60953,7 +60953,7 @@ var registerTermTools = (server, ctx) => {
           `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`
         );
       }
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
         canonical: s.term.canonical,
         confidence: Number(s.confidence.toFixed(3)),
@@ -60971,7 +60971,7 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {}
     },
     async () => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
     })
   );
@@ -64767,7 +64767,7 @@ var registerPackTools = (server, ctx) => {
       }
     },
     async ({ registry: registry2 }) => guarded(async () => {
-      const [packs, loaded] = await Promise.all([listPacks(), load()]);
+      const [packs, loaded] = await Promise.all([listPacks(), load({ parseSkipped: false })]);
       const installed = installedPacks(loaded);
       const mismatch = await findRegistryRecordMismatch(loaded, { cwd: ctx.cwd });
       const result = {
@@ -65144,7 +65144,7 @@ function createServer2(opts = {}) {
   for (const register of TOOL_REGISTRARS) register(server, ctx);
   const loadForContext = async () => {
     try {
-      return await load();
+      return await load({ parseSkipped: false });
     } catch (err) {
       const message = errorMessage(err);
       const fixed = withLexiconFix(message);

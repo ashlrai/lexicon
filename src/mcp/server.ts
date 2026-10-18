@@ -256,7 +256,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // the bare parse error; it now carries the fix, as a tool's error does.
   const loadForContext = async (): Promise<LoadedLexicon> => {
     try {
-      return await load();
+      // Resources and prompts name a skipped project file by path only
+      // (skippedProjectSuffix, skippedProjectFields), so it is never parsed.
+      return await load({ parseSkipped: false });
     } catch (err) {
       const message = errorMessage(err);
       const fixed = withLexiconFix(message);
