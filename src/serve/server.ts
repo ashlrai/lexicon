@@ -182,6 +182,14 @@ export interface InstallPackResponse extends InstallPackResult {
   summary: string;
 }
 
+/** DELETE /packs/:name: the uninstall result and one sentence saying what happened. */
+export interface UninstallPackResponse extends UninstallPackResult {
+  /** No lexicon file in that scope listed the pack, so nothing was written. Only then. */
+  notInstalled?: true;
+  /** `removed N terms of <name> from <files>` (and what was kept), or `<name> is not installed; nothing was removed` (`in the <scope> lexicon` with `?scope=`). */
+  summary: string;
+}
+
 export interface LexiconResponse {
   lexicon: LoadedLexicon['merged'];
   /** The files merged into `lexicon`; a skipped project file is in `skippedProject` instead. */
@@ -926,7 +934,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     };
   }
 
-  async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {
+  async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResponse> {
     // The query string is this route's body, so it is strict too: a typo such
     // as `?scop=project` was ignored and the pack came out of the default
     // (global) lexicon instead, still 200.
@@ -937,7 +945,16 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (scopeParam !== null && scope === undefined) throw new HttpError(400, `invalid scope "${sanitizeForDisplay(scopeParam)}" (global or project)`);
     const result = await uninstallPack(name, { cwd, ...storeOpts, ...(scope !== undefined ? { scope } : {}) });
     invalidateWritten(scopedFiles(cwd, result.files));
-    return result;
+    // No file listed the pack, so nothing was written: say so, as `lexicon
+    // pack remove` does, instead of a 200 with three empty arrays.
+    if (result.files.length === 0) {
+      return { ...result, notInstalled: true, summary: `${result.pack.name} is not installed${scope !== undefined ? ` in the ${scope} lexicon` : ''}; nothing was removed` };
+    }
+    const kept = result.kept.length > 0 ? `; kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${result.kept.join(', ')}` : '';
+    return {
+      ...result,
+      summary: `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${result.pack.name} from ${result.files.join(', ')}${kept}`,
+    };
   }
 
   /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */

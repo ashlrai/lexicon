@@ -2374,6 +2374,15 @@ describe('packs and aliases routes', () => {
     expect(body.removed).toHaveLength(installed.added - 3);
     expect(body.files).toEqual([globalPath2]);
     expect(((await (await api2('GET', '/packs')).json()) as { installed: string[] }).installed).toEqual([]);
+
+    // Catches: removing a pack no file lists answered 200 with three empty
+    // arrays and no word that nothing was removed.
+    expect((body as unknown as { summary: string }).summary).toMatch(new RegExp(`^removed ${installed.added - 3} terms of developer from .+; kept 3 you edited \\(hits, extra aliases or never-words\\): `));
+    expect(body).not.toHaveProperty('notInstalled');
+    const absent = await api2('DELETE', '/packs/developer');
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toMatchObject({ removed: [], files: [], notInstalled: true, summary: 'developer is not installed; nothing was removed' });
+    expect(await (await api2('DELETE', '/packs/developer?scope=global')).json()).toMatchObject({ notInstalled: true, summary: 'developer is not installed in the global lexicon; nothing was removed' });
   });
 
   it('404 for an unknown pack, 405 for GET on a pack, 400 for a bad scope or body', async () => {
