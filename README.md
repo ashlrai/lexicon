@@ -240,6 +240,10 @@ Non-goals: this is not a dictation app, and there are no hosted accounts and no 
 
 Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forward-deployed engineering company: [Phantom Secrets](https://github.com/ashlrai/phantom-secrets), [Locus](https://github.com/ashlrai/locus), [Ashlr Stack](https://github.com/ashlrai/ashlr-stack), [Ashlr Markdown](https://github.com/ashlrai/ashlr-md) and the [Ashlr plugin](https://github.com/ashlrai/ashlr-plugin).
 
+**Phantom:** [INTEGRATION.md](./INTEGRATION.md) is a sketch, written from Lexicon's side, of the contract Phantom would integrate against (the lexicon file, the trust gate, the normalize entry points). It changes nothing in Phantom core.
+
+**Post-quantum readiness:** [docs/PQ-READINESS.md](./docs/PQ-READINESS.md) records what Lexicon does with cryptography today (SHA-256 and SHA-512 hashes for integrity; no encryption, key exchange or signing in the shipped source) and what a migration would touch. It makes no claim that Lexicon is quantum-safe.
+
 ## Contributing
 
 Good first issues are [labelled and scoped](https://github.com/ashlrai/lexicon/labels/good%20first%20issue): a new starter pack, an exporter, an importer, a harvester source. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the test layout and a recipe for each.
