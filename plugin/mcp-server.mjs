@@ -59815,6 +59815,14 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
     await refreshIndexCache(file2, opts);
   }
 }
+async function readTextIfAny(file2) {
+  try {
+    return await import_node_fs9.promises.readFile(file2, "utf8");
+  } catch (err) {
+    if (isEnoent(err)) return void 0;
+    throw err;
+  }
+}
 async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";
   const leaveUntrusted = opts.leaveUntrusted === true;
@@ -59827,12 +59835,14 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
       return t;
     });
     if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    const before = await readTextIfAny(targetPath);
     const { file: file2, results } = await addTerms(incoming, { ...storeOpts2, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
-    return { pack: info(pack), added, merged, path: file2.path, scope };
+    const alreadyInstalled = before !== void 0 && before === await readTextIfAny(file2.path);
+    return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled };
   });
 }
 async function installPack(name, opts = {}) {

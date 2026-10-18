@@ -324,7 +324,7 @@ describe('installPack / uninstallPack', () => {
   it('adds every term with source pack, records the pack in settings, and is idempotent', async () => {
     const pack = await loadPack('developer');
     const first = await installPack('developer', { cwd, globalPath });
-    expect(first).toMatchObject({ added: pack.terms, merged: 0, path: globalPath, scope: 'global' });
+    expect(first).toMatchObject({ added: pack.terms, merged: 0, path: globalPath, scope: 'global', alreadyInstalled: false });
     expect(first.pack.name).toBe('developer');
     expect(first.pack).not.toHaveProperty('lexicon');
 
@@ -523,6 +523,20 @@ describe('installPack / uninstallPack', () => {
     expect(add.out).toMatch(/installed developer \(Developer tools\): \d+ added, 0 merged into /);
     expect(add.out).toMatch(/installed ai \(AI models and tools\): \d+ added, 0 merged/);
     expect(add.err).toBe('');
+    // Catches: a person at a shell was told about normalize_transcript, an MCP tool they cannot call.
+    expect(add.out).toContain('the terms are live: lexicon normalize, the prompt hook and lexicon serve use them from the next call');
+    expect(add.out).not.toContain('normalize_transcript');
+
+    // Catches: a reinstall that changed nothing printed "0 added, N merged" and "the terms are live".
+    const dev = await loadPack('developer');
+    const before = await fs.readFile(globalPath, 'utf8');
+    const again = makeIO();
+    expect(await runPackAdd(['developer'], { cwd }, again)).toBe(0);
+    expect(again.out).toBe(`developer is already installed in ${globalPath} (${dev.terms} terms, ${dev.aliases} aliases); nothing was added\n`);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+    const againJson = makeIO();
+    expect(await runPackAdd(['developer'], { cwd, json: true }, againJson)).toBe(0);
+    expect(JSON.parse(againJson.out)).toMatchObject([{ added: 0, alreadyInstalled: true }]);
 
     const list = makeIO();
     await runPackList({ cwd, json: true }, list);

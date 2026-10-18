@@ -68,6 +68,12 @@ export interface InstallPackResult {
   /** The lexicon file written. */
   path: string;
   scope: TermScope;
+  /**
+   * True when the install left the file byte for byte as it was: the pack was
+   * already recorded there and every term and alias was already in it.
+   * `installPack` and `installLoadedPack` always set it.
+   */
+  alreadyInstalled?: boolean;
 }
 
 export interface UninstallPackResult {
@@ -280,6 +286,15 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
   }
 }
 
+async function readTextIfAny(file: string): Promise<string | undefined> {
+  try {
+    return await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (isEnoent(err)) return undefined;
+    throw err;
+  }
+}
+
 /**
  * Install an already-loaded pack. `recordAs` is the name recorded in the
  * file's `settings.packs`: the plain pack name for the vendored four, the
@@ -320,12 +335,16 @@ export async function installLoadedPack(
       return t;
     });
     if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    // The bytes before and after say whether the install changed anything:
+    // `merged` counts every term the file already had, gained alias or not.
+    const before = await readTextIfAny(targetPath);
     const { file, results } = await addTerms(incoming, { ...storeOpts, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
     const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
     await writePacksSetting(file, packs, storeOpts, leaveUntrusted);
-    return { pack: info(pack), added, merged, path: file.path, scope };
+    const alreadyInstalled = before !== undefined && before === (await readTextIfAny(file.path));
+    return { pack: info(pack), added, merged, path: file.path, scope, alreadyInstalled };
   });
 }
 

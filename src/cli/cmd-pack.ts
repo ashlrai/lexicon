@@ -435,12 +435,22 @@ async function runPackAddRegistry(
     ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
   }, deps.registry);
   // Under --json runPackAdd prints the result, so stdout carries one document.
-  if (!opts.json) {
+  if (!opts.json && result.alreadyInstalled) {
+    line(io, alreadyInstalledLine(result.ref, result));
+  } else if (!opts.json) {
     line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
-    line(io, dim('  the terms are live: normalize_transcript, the hook and the local API pick them up on the next call'));
+    line(io, dim(`  ${TERMS_LIVE}`));
   }
   return { kind: 'installed', result };
+}
+
+/** After an install that wrote something: what picks the terms up, in words a person at a shell can run. */
+const TERMS_LIVE = 'the terms are live: lexicon normalize, the prompt hook and lexicon serve use them from the next call';
+
+/** A reinstall that left the file as it was: say so, with the pack's counts, instead of "0 added, N merged". */
+function alreadyInstalledLine(name: string, result: InstallPackResult): string {
+  return `${safe(name)} is already installed in ${safe(result.path)} (${plural(result.pack.terms, 'term')}, ${result.pack.aliases} ${result.pack.aliases === 1 ? 'alias' : 'aliases'}); nothing was added`;
 }
 
 /** The `--json` record of one community install. */
@@ -513,11 +523,13 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...deps });
         results.push(result);
         installed.push(result.pack.name);
-        vendored += 1;
+        if (!result.alreadyInstalled) vendored += 1;
         if (!opts.json) {
           line(
             io,
-            `installed ${safe(result.pack.name)} (${result.pack.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
+            result.alreadyInstalled
+              ? alreadyInstalledLine(result.pack.name, result)
+              : `installed ${safe(result.pack.name)} (${result.pack.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
           );
         }
       }
@@ -530,7 +542,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
     line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson | CommunityPreviewJson) : results, null, 2));
     return 0;
   }
-  if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  if (vendored > 0) line(io, TERMS_LIVE);
   // With several refs, one line that adds them up, so a decline is not read as "nothing was written" when another ref was.
   if (names.length > 1 && declined.length > 0) {
     line(io, `${plural(installed.length, 'pack')} installed${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
