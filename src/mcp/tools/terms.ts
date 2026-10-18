@@ -291,7 +291,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const shown = untrusted && !saved.created ? term : saved.term;
         // An alias another term already holds may keep being corrected to that
         // term; say so, as learn_correction does, instead of reporting success.
-        const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
+        // Merged terms only, so a skipped project file is never parsed for it.
+        const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
         const note = conflictNote(conflicts, 'mcp');
         return textResult({
           term: shown,

@@ -20,7 +20,7 @@
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
 import { timingSafeEqual } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as fs, realpathSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
@@ -35,6 +35,7 @@ import {
   diffSummary,
   exportLexicon,
   findRegistryRecordMismatch,
+  hasControlChars,
   installPack,
   installedPacks,
   resolveExportFormat,
@@ -44,6 +45,7 @@ import {
   loadMatcherIndex,
   normalizeWithIndex,
   recordHits,
+  resolvePaths,
   isProjectTrustError,
   sanitizeForDisplay,
   spellingConflicts,
@@ -491,6 +493,16 @@ async function readJson(req: http.IncomingMessage, cap: number, optional = false
   return parsed;
 }
 
+/** A file's path with symlinks resolved when it exists, so two spellings of one file compare equal. */
+function canonicalFile(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
 interface CachedLexicon {
   loaded: LoadedLexicon;
   at: number;
@@ -698,15 +710,39 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     return (await loadEntry(cwd)).loaded;
   }
 
-  function invalidate(): void {
-    cache.clear();
+  /**
+   * After a write to `written` (learn, add, pack install, pack uninstall). A
+   * global write can change every cwd's load, so it drops them all. A
+   * project-scope write drops only the cached loads that used that project
+   * file (merged or skipped), plus any load that had no project file while
+   * its cwd now resolves to the written one (the write created it). Every
+   * other cwd reads another `.lexicon.yaml` and the unchanged global file, so
+   * its load and matcher index are still exact.
+   */
+  function invalidateWritten(written: readonly { scope: TermScope; path: string }[]): void {
+    if (written.some((f) => f.scope === 'global')) {
+      cache.clear();
+      return;
+    }
+    const targets = new Set(written.map((f) => canonicalFile(f.path)));
+    if (targets.size === 0) return;
+    for (const [cwd, entry] of cache) {
+      const used = entry.loaded.project?.path ?? entry.loaded.skippedProject?.path ?? resolvePaths({ cwd, ...storeOpts }).project;
+      if (used !== undefined && targets.has(canonicalFile(used))) cache.delete(cwd);
+    }
+  }
+
+  /** The scope of each file `uninstallPack` rewrote: the global file by path, any other one a project file. */
+  function scopedFiles(cwd: string, files: readonly string[]): { scope: TermScope; path: string }[] {
+    const global = canonicalFile(resolvePaths({ cwd, ...storeOpts }).global);
+    return files.map((f) => ({ scope: canonicalFile(f) === global ? 'global' : 'project', path: f }));
   }
 
   /**
    * After `recordHits(canonicals)`: drops only the cached loads holding one of
    * those terms. A hit count is all that call writes, and only those terms'
    * `hits` can have moved, so every other cwd's load (and its matcher index)
-   * is still exact. `invalidate()` here made one normalize reload every cwd.
+   * is still exact. Clearing the whole cache here made one normalize reload every cwd.
    */
   function invalidateHits(canonicals: readonly string[]): void {
     const keys = new Set(canonicals.map((c) => c.trim().toLowerCase()));
@@ -768,7 +804,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       { heard: body.heard, meant: body.meant },
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
     );
-    invalidate();
+    invalidateWritten([result.file]);
     return {
       term: result.term,
       created: result.created,
@@ -801,7 +837,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
       ...(given ? {} : { defaultAliases: suggestAliases(body.canonical) }),
     });
-    invalidate();
+    invalidateWritten([saved.file]);
     // An alias another term already holds may keep being corrected to that
     // term: report it, as MCP add_term and `lexicon add --json` do, instead
     // of a bare success. Best effort: a reload that fails loses the report.
@@ -854,7 +890,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const body = parseBody(PackBody, raw);
     const cwd = await resolveCwd(body.cwd);
     const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
-    invalidate();
+    invalidateWritten([result]);
     return result;
   }
 
@@ -868,7 +904,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const scope = TERM_SCOPES.find((s) => s === scopeParam);
     if (scopeParam !== null && scope === undefined) throw new HttpError(400, `invalid scope "${sanitizeForDisplay(scopeParam)}" (global or project)`);
     const result = await uninstallPack(name, { cwd, ...storeOpts, ...(scope !== undefined ? { scope } : {}) });
-    invalidate();
+    invalidateWritten(scopedFiles(cwd, result.files));
     return result;
   }
 
@@ -880,6 +916,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const canonical = stripInvisible(url.searchParams.get('canonical') ?? '').trim();
     if (!canonical) throw new HttpError(400, 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)');
     if (canonical.length > LIMITS.word) throw new HttpError(400, `canonical must be at most ${LIMITS.word} characters`);
+    // The schema's NonEmptyWord refuses these too, so no stored canonical
+    // could carry them; the aliases they would seed would never be accepted.
+    if (hasControlChars(canonical)) throw new HttpError(400, 'canonical must not contain control characters or newlines');
     return { canonical, aliases: suggestAliases(canonical) };
   }
 

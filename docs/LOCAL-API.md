@@ -79,7 +79,7 @@ included, and no body. Errors are
 | GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }`; `installed` includes community refs (`author/name`) the lexicon files record. Plus `registryMismatch { fileOnly, recordOnly }` when those files and the registry records disagree, and `projectTrust` and `skippedProject` (path only) when a project file was not loaded, as MCP `list_packs` reports them. A registry index is never read: list its community packs with `lexicon pack list --registry <index>` or MCP `list_packs` |
 | POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope }`; an unknown pack is 404 |
 | DELETE | `/packs/:name` | | `{ pack, removed, kept, files }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone |
-| GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form. `canonical` loses invisible characters and outer spaces first, as a stored canonical does, and is then at most 80 characters (400 otherwise) |
+| GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form. `canonical` loses invisible characters and outer spaces first, as a stored canonical does, and is then at most 80 characters with no control character or newline left inside it (400 otherwise, as for a stored canonical) |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit`; an unknown format is a 404 whose `error` lists the formats |
 
 Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
@@ -115,7 +115,7 @@ untrusted project file is never merged; `/health` (with the token), `/normalize`
 `list_terms` does), so `paths.project` is present only for a trusted project file;
 `projectTrust` is set whenever a project file exists, trusted or not.
 
-The server keeps each `cwd`'s loaded lexicon for 2 s, so an edit made outside it shows within two seconds. A write through the API drops that cache at once; a `/normalize` that counts hits drops it only for the `cwd`s whose lexicon holds a term it matched, since nothing else changed.
+The server keeps each `cwd`'s loaded lexicon for 2 s, so an edit made outside it shows within two seconds. A write through the API drops that cache at once: a write to the global lexicon for every `cwd`, a write to a repo's `.lexicon.yaml` only for the `cwd`s that read that file (or, when the write created it, now find it), and a `/normalize` that counts hits only for the `cwd`s whose lexicon holds a term it matched, since nothing else changed.
 
 Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,
 `deepgram`, `assemblyai`, `azure`, `google`) -> `application/json`,

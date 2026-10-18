@@ -1413,6 +1413,24 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: suggest_terms and add_term's conflict check read only the
+    // merged files, yet parsed an untrusted project .lexicon.yaml to skip it.
+    it('suggest_terms and the add_term conflict check load without parsing a skipped project file', async () => {
+      const { client, close } = await connect();
+      try {
+        mocks.loadLexicon.mockClear();
+        expect((await client.callTool({ name: 'suggest_terms', arguments: {} })).isError).toBe(false);
+        expect(mocks.loadLexicon).toHaveBeenCalledTimes(1);
+        expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+        mocks.loadLexicon.mockClear();
+        expect((await client.callTool({ name: 'add_term', arguments: { canonical: 'Zed', aliases: ['zedd'] } })).isError).toBe(false);
+        expect(mocks.loadLexicon).toHaveBeenCalledTimes(1);
+        expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+      } finally {
+        await close();
+      }
+    });
+
     it('apply_suggestion merges an alias, adds a term, records a never-word and removes a stale term', async () => {
       const { client, close } = await connect();
       try {
