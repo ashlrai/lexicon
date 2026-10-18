@@ -123,6 +123,7 @@ npm run bench:hook -- --hook /tmp/old.mjs   # compare another build of the hook
 npm run bench:hook -- --after-write          # the first prompt after each lexicon add
 npm run bench:hook -- --project-terms 200 --after-write project  # with a trusted repo lexicon, after add --project
 npm run bench:hook -- --project-terms 200 --untrusted  # with a repo lexicon nobody trusted
+npm run bench:hook -- --project-terms 200 --alternate  # switching between two trusted repos on every prompt
 ```
 
 Spawns a fresh `node` per run, as Claude Code does, against a lexicon in a temp
@@ -134,6 +135,8 @@ best-of-N between builds on the same machine: the numbers move with load.
 `--project-terms N` adds a `.lexicon.yaml` of N terms to the prompt's repo and
 trusts it with `lexicon trust --yes`, so the hook matches the global and project
 merge; with `--untrusted` the file is left untrusted, so the hook skips it.
+`--alternate` adds a second trusted repo and alternates the warm prompts
+between the two.
 `--after-write` times, for each run, the first prompt after a
 `lexicon add` (with `--after-write project`, `lexicon add --project`, which
 needs `--project-terms`) and the add's own wall time: a first prompt slower

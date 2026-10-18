@@ -7,7 +7,7 @@
  * real home is read or written).
  *
  *   npm run bench:hook -- [--terms 2000] [--runs 5] [--hook plugin/hook.mjs]
- *                         [--project-terms N [--untrusted]] [--after-write [global|project]]
+ *                         [--project-terms N [--untrusted | --alternate]] [--after-write [global|project]]
  *
  * Prints best-of-N and median for a short UserPromptSubmit prompt (cold: the
  * first run after the lexicon is written; warm: every later run) and for
@@ -18,6 +18,8 @@
  * prompt's repo (trusted with `lexicon trust --yes`), so the hook matches
  * against the global and project merge. With `--untrusted` the file is left
  * untrusted, so the hook skips it: the cost of a repo lexicon nobody approved.
+ * With `--alternate` a second trusted repo of N other terms is added and the
+ * warm prompts alternate between the two repos, the cost of switching.
  *
  * `--after-write` adds the "after a CLI write" mode: each of the N runs first
  * adds one term with `lexicon add` (into the global lexicon, or with
@@ -44,6 +46,8 @@ const HOOK = resolve(root, flag('hook', 'plugin/hook.mjs'));
 const PROJECT_TERMS = Number(flag('project-terms', '0'));
 const UNTRUSTED = args.includes('--untrusted');
 if (UNTRUSTED && PROJECT_TERMS === 0) throw new Error('--untrusted needs --project-terms N');
+const ALTERNATE = args.includes('--alternate');
+if (ALTERNATE && (PROJECT_TERMS === 0 || UNTRUSTED)) throw new Error('--alternate needs --project-terms N and no --untrusted');
 const afterWriteAt = args.indexOf('--after-write');
 const AFTER_WRITE = afterWriteAt === -1 ? undefined : args[afterWriteAt + 1] === 'project' ? 'project' : 'global';
 if (AFTER_WRITE === 'project' && PROJECT_TERMS === 0) throw new Error('--after-write project needs --project-terms N');
@@ -102,13 +106,22 @@ try {
     writeFileSync(join(project, '.lexicon.yaml'), lexiconYaml(PROJECT_TERMS + 1, 7, 'P').replace(/^ {2}- canonical: Ashlr\.AI\n {4}aliases: \[Ashler, Ashlar\]\n/m, ''));
     if (!UNTRUSTED) cli(['trust', '--yes', '--cwd', project], env);
   }
-  const prompt = JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: project, prompt: 'ping ashler about the deploy and the release notes' });
+  const project2 = join(dir, 'project2');
+  if (ALTERNATE) {
+    mkdirSync(join(project2, '.git'), { recursive: true });
+    writeFileSync(join(project2, '.lexicon.yaml'), lexiconYaml(PROJECT_TERMS + 1, 11, 'Q').replace(/^ {2}- canonical: Ashlr\.AI\n {4}aliases: \[Ashler, Ashlar\]\n/m, ''));
+    cli(['trust', '--yes', '--cwd', project2], env);
+  }
+  const promptIn = (cwd) => JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd, prompt: 'ping ashler about the deploy and the release notes' });
+  const prompt = promptIn(project);
   const session = JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd: project });
 
   const cold = time(prompt, env);
   if (!cold.stdout.includes('Ashlr.AI')) throw new Error(`hook did not correct the prompt: ${cold.stdout}`);
   const warm = [];
-  for (let i = 0; i < RUNS; i++) warm.push(time(prompt, env).ms);
+  // With --alternate, prime the second repo's caches once, then switch on every prompt.
+  if (ALTERNATE) time(promptIn(project2), env);
+  for (let i = 0; i < RUNS; i++) warm.push(time(ALTERNATE && i % 2 === 0 ? promptIn(project2) : prompt, env).ms);
   const ss = [];
   for (let i = 0; i < RUNS; i++) ss.push(time(session, env).ms);
   const afterWrite = [];
@@ -123,7 +136,7 @@ try {
     }
   }
   process.stdout.write(
-    `hook ${relative(root, HOOK)}, ${TERMS} terms${PROJECT_TERMS > 0 ? ` + ${PROJECT_TERMS} in ${UNTRUSTED ? 'an untrusted' : 'a trusted'} project lexicon` : ''}, ${RUNS} runs\n` +
+    `hook ${relative(root, HOOK)}, ${TERMS} terms${PROJECT_TERMS > 0 ? ` + ${PROJECT_TERMS} in ${UNTRUSTED ? 'an untrusted' : 'a trusted'} project lexicon` : ''}${ALTERNATE ? ', alternating between two repos' : ''}, ${RUNS} runs\n` +
       `  UserPromptSubmit cold  ${cold.ms.toFixed(1)} ms\n` +
       `  UserPromptSubmit warm  ${stats(warm)}\n` +
       `  SessionStart           ${stats(ss)}\n` +

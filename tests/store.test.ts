@@ -1257,6 +1257,65 @@ describe('project parse cache', () => {
     expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('changed');
   });
 
+  // Catches: one entry only, so alternating between two trusted repos
+  // parsed the YAML and loaded node:crypto on every switch.
+  it('keeps up to CACHE_ENTRIES project files, least recently used out, each validated byte for byte', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
+    const dir = path.dirname(globalPath);
+    const spillOf = (projectPath: string): string => path.join(dir, `project-parse-cache.${cacheChecksum(projectPath)}.json`);
+    const spills = async (): Promise<string[]> => (await fs.readdir(dir)).filter((n) => /^project-parse-cache\.[0-9a-f]{8}\.json$/.test(n)).sort();
+    const repos: { root: string; projectPath: string }[] = [];
+    for (const name of ['a', 'b', 'c', 'd', 'e']) {
+      const root = path.join(tmp, `repo-${name}`);
+      await fs.mkdir(path.join(root, '.git'), { recursive: true });
+      const projectPath = path.join(root, '.lexicon.yaml');
+      await fs.writeFile(projectPath, `${PAD}version: 1\nterms:\n  - canonical: P${name}\n    aliases: [pee]\n`);
+      await trustProject(projectPath, { globalPath });
+      repos.push({ root, projectPath });
+    }
+    const visit = async (i: number) => {
+      const loaded = await loadLexicon({ cwd: repos[i].root, globalPath });
+      expect(loaded.projectTrust).toBe('trusted');
+      await new Promise((r) => setTimeout(r, 25));
+      return loaded;
+    };
+
+    await visit(0);
+    await visit(1);
+    expect((await readEntry()).path).toBe(repos[1].projectPath);
+    expect(await spills()).toEqual([path.basename(spillOf(repos[0].projectPath))]);
+    if (process.platform !== 'win32') expect((await fs.stat(spillOf(repos[0].projectPath))).mode & 0o777).toBe(0o600);
+
+    // Proof repo a's spilled entry is what gets read: doctor it, keeping its checksum.
+    const entry = JSON.parse(await fs.readFile(spillOf(repos[0].projectPath), 'utf8')) as Entry;
+    const lexicon = JSON.stringify({ version: 1, terms: [{ canonical: 'Pa', aliases: ['from-spill'] }] });
+    await fs.writeFile(spillOf(repos[0].projectPath), JSON.stringify({ ...entry, lexicon, sum: cacheChecksum(`${entry.sha256}${lexicon}`) }), { mode: 0o600 });
+    expect(findTerm((await visit(0)).merged, 'Pa')?.aliases).toEqual(['from-spill']);
+    // ...and it is the main entry again, with b's moved aside.
+    expect((await readEntry()).path).toBe(repos[0].projectPath);
+    expect(await spills()).toEqual([path.basename(spillOf(repos[1].projectPath))]);
+
+    // Five repos: the least recently used (b) is dropped.
+    for (const i of [2, 3, 4]) await visit(i);
+    expect((await readEntry()).path).toBe(repos[4].projectPath);
+    expect(await spills()).toEqual([repos[0], repos[2], repos[3]].map((r) => path.basename(spillOf(r.projectPath))).sort());
+    if (process.platform !== 'win32') {
+      for (const n of await spills()) expect((await fs.stat(path.join(dir, n))).mode & 0o777).toBe(0o600);
+    }
+
+    // A spill entry is reused for byte-identical content only: 0xFE decodes like 0xFF, its bytes do not.
+    const body = (bad: number): Buffer =>
+      Buffer.concat([Buffer.from(`${PAD}# `), Buffer.from([bad]), Buffer.from('\nversion: 1\nterms:\n  - canonical: Pc\n    aliases: [pee]\n')]);
+    await fs.writeFile(repos[2].projectPath, body(0xff));
+    await trustProject(repos[2].projectPath, { globalPath });
+    await visit(2);
+    await visit(3);
+    expect(await spills()).toContain(path.basename(spillOf(repos[2].projectPath)));
+    await fs.writeFile(repos[2].projectPath, body(0xfe));
+    expect((await loadLexicon({ cwd: repos[2].root, globalPath })).projectTrust).toBe('changed');
+  });
+
   it('is never written for an untrusted project file or a small one', async () => {
     const { root } = await makeRepo();
     await fs.mkdir(path.dirname(globalPath), { recursive: true });

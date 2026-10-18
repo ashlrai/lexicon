@@ -336,6 +336,68 @@ async function writeParseCache(filePath: string, text: string, lexicon: Lexicon,
 }
 
 /**
+ * Entries the project parse cache and the index cache each keep, the main
+ * file included. The main file (`project-parse-cache.json`,
+ * `index-cache.json`) holds the entry used last, so a prompt in the same repo
+ * reads one file exactly as before; up to CACHE_ENTRIES - 1 others wait in
+ * spill files beside it (`<name>.<8 hex>.json`, the hex a `cacheChecksum`
+ * of the project path), so switching between a few repos does not rebuild
+ * each time. Moving an entry between the main file and a spill file is a
+ * rename, so it keeps its 0600 mode and is never rewritten; a spill file's
+ * mtime is when it was last the main entry, and the oldest past the limit is
+ * deleted. Every entry is validated exactly as the main one was, wherever it
+ * is read from; a checksum collision only costs a miss.
+ */
+export const CACHE_ENTRIES = 4;
+
+/** The spill file beside `mainPath` for the entry identified by `id` (a project path, or '' for the global lexicon alone). */
+function cacheSpillPath(mainPath: string, id: string): string {
+  return `${mainPath.replace(/\.json$/, '')}.${cacheChecksum(id)}.json`;
+}
+
+/**
+ * Move the main entry at `mainPath` (identified by `mainId`) to its spill
+ * file, mark it used now, then delete the least recently used spill files
+ * past CACHE_ENTRIES - 1. Best effort, never throws.
+ */
+async function spillCacheEntry(mainPath: string, mainId: string): Promise<void> {
+  const spill = cacheSpillPath(mainPath, mainId);
+  try {
+    await fs.rename(mainPath, spill);
+    const now = new Date();
+    await fs.utimes(spill, now, now);
+  } catch {
+    return;
+  }
+  try {
+    const dir = path.dirname(mainPath);
+    const stem = path.basename(mainPath).replace(/\.json$/, '');
+    const names = (await fs.readdir(dir)).filter((n) => n.length === stem.length + 14 && n.startsWith(`${stem}.`) && /\.[0-9a-f]{8}\.json$/.test(n));
+    if (names.length <= CACHE_ENTRIES - 1) return;
+    const aged: { name: string; mtime: number }[] = [];
+    for (const name of names) {
+      const st = await fs.stat(path.join(dir, name)).catch(() => undefined);
+      if (st) aged.push({ name, mtime: st.mtimeMs });
+    }
+    aged.sort((a, b) => a.mtime - b.mtime);
+    for (const { name } of aged.slice(0, Math.max(0, aged.length - (CACHE_ENTRIES - 1)))) {
+      await fs.unlink(path.join(dir, name)).catch(() => undefined);
+    }
+  } catch {
+    // a cache, not state: a spill file too many costs only disk
+  }
+}
+
+/**
+ * Make the spill entry for `id` the main one, spilling the current main entry
+ * (identified by `mainId`, when there is one) first. Best effort, never throws.
+ */
+async function promoteCacheEntry(mainPath: string, id: string, mainId: string | undefined): Promise<void> {
+  if (mainId !== undefined && mainId !== id) await spillCacheEntry(mainPath, mainId);
+  await fs.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => undefined);
+}
+
+/**
  * The parse of the last trusted project lexicon `loadLexicon` merged, kept
  * beside the global lexicon (`project-parse-cache.json`, mode 0600) with the
  * exact text it came from and the sha256 of those bytes.
@@ -357,9 +419,10 @@ async function writeParseCache(filePath: string, text: string, lexicon: Lexicon,
  * gate just found trusted, and only in the global config directory, where
  * `trust.json` itself lives: anyone able to forge the entry could equally
  * edit the registry, so it adds no new way in. `sum` (see `cacheChecksum`)
- * catches a damaged entry, not a forged one. A single entry, like the index
- * cache: alternating between two repos costs the parse, as before, and files
- * under PARSE_CACHE_MIN_BYTES are not cached.
+ * catches a damaged entry, not a forged one. Up to CACHE_ENTRIES entries,
+ * one per project file, least recently used out (see CACHE_ENTRIES), so
+ * alternating between a few repos does not parse each time; files under
+ * PARSE_CACHE_MIN_BYTES are not cached.
  */
 export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
 
@@ -378,6 +441,10 @@ interface ProjectBytes {
   text: string;
   bytes: Buffer;
   cached?: { lexicon: Lexicon; sha256: string };
+  /** The cached parse came from a spill file, not the main entry (see CACHE_ENTRIES). */
+  fromSpill?: boolean;
+  /** The project path the main entry is for, when it is one this version reads. */
+  mainId?: string;
 }
 
 /** Read a project file and look its bytes up in the project parse cache; undefined when it does not exist. */
@@ -386,27 +453,54 @@ async function readProjectBytes(filePath: string, globalPath: string): Promise<P
   if (read === undefined) return undefined;
   const out: ProjectBytes = { text: read.text, bytes: read.bytes };
   if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
-    try {
-      const cached: unknown = JSON.parse(await fs.readFile(path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME), 'utf8'));
-      if (
-        isPlainObject(cached) &&
-        cached.version === PROJECT_PARSE_CACHE_VERSION &&
-        cached.path === path.resolve(filePath) &&
-        cached.text === read.text &&
-        typeof cached.sha256 === 'string' &&
-        /^[0-9a-f]{64}$/.test(cached.sha256) &&
-        typeof cached.lexicon === 'string' &&
-        cached.sum === cacheChecksum(`${cached.sha256}${cached.lexicon}`) &&
-        Buffer.from(cached.text, 'utf8').equals(read.bytes)
-      ) {
-        const lexicon: unknown = JSON.parse(cached.lexicon);
-        if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) out.cached = { lexicon: lexicon as unknown as Lexicon, sha256: cached.sha256 };
+    const key = path.resolve(filePath);
+    const mainPath = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const main = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
+    out.mainId = main.id;
+    if (main.hit) out.cached = main.hit;
+    else if (main.id !== key) {
+      const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
+      if (spill.hit) {
+        out.cached = spill.hit;
+        out.fromSpill = true;
       }
-    } catch {
-      // missing, unreadable or damaged: parse for real
     }
   }
   return out;
+}
+
+/**
+ * One project parse cache entry at `cachePath`: which project path it is for
+ * (`id`, when its version is this one), and its parse and sha256 when it is
+ * for `key` and its text, encoded as UTF-8, is byte for byte `bytes`.
+ */
+async function readProjectCacheEntry(
+  cachePath: string,
+  key: string,
+  bytes: Buffer,
+  text: string,
+): Promise<{ id?: string; hit?: { lexicon: Lexicon; sha256: string } }> {
+  try {
+    const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    if (!isPlainObject(cached) || cached.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached.path !== 'string') return {};
+    const id = cached.path;
+    if (
+      cached.path === key &&
+      cached.text === text &&
+      typeof cached.sha256 === 'string' &&
+      /^[0-9a-f]{64}$/.test(cached.sha256) &&
+      typeof cached.lexicon === 'string' &&
+      cached.sum === cacheChecksum(`${cached.sha256}${cached.lexicon}`) &&
+      Buffer.from(cached.text, 'utf8').equals(bytes)
+    ) {
+      const lexicon: unknown = JSON.parse(cached.lexicon);
+      if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon: lexicon as unknown as Lexicon, sha256: cached.sha256 } };
+    }
+    return { id };
+  } catch {
+    // missing, unreadable or damaged: parse for real
+    return {};
+  }
 }
 
 /**
@@ -435,17 +529,21 @@ function projectFileOf(filePath: string, read: ProjectBytes | undefined): Projec
  * Record `file` (just parsed from `text`, and just found trusted) as the
  * project parse cache entry. Best effort, never throws.
  */
-async function writeProjectParseCache(file: LexiconFile, text: string, globalPath: string): Promise<void> {
+async function writeProjectParseCache(file: LexiconFile, text: string, globalPath: string, mainId: string | undefined): Promise<void> {
   if (Buffer.byteLength(text, 'utf8') < PARSE_CACHE_MIN_BYTES) return;
   try {
     const sha256 = await recalledParsedHash(file);
     if (sha256 === undefined) return;
     const lexiconJson = JSON.stringify(file.lexicon);
+    const mainPath = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const key = path.resolve(file.path);
+    // Another repo's entry moves aside rather than being overwritten (see CACHE_ENTRIES).
+    if (mainId !== undefined && mainId !== key) await spillCacheEntry(mainPath, mainId);
     await writeFileAtomic(
-      path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME),
+      mainPath,
       JSON.stringify({
         version: PROJECT_PARSE_CACHE_VERSION,
-        path: path.resolve(file.path),
+        path: key,
         sha256,
         text,
         sum: cacheChecksum(`${sha256}${lexiconJson}`),
@@ -453,6 +551,8 @@ async function writeProjectParseCache(file: LexiconFile, text: string, globalPat
       }),
       { mode: 0o600 },
     );
+    // A stale spill entry for this file is superseded by the main one.
+    if (mainId !== key) await fs.unlink(cacheSpillPath(mainPath, key)).catch(() => undefined);
   } catch {
     // a cache, not state: the next load parses again
   }
@@ -461,7 +561,10 @@ async function writeProjectParseCache(file: LexiconFile, text: string, globalPat
 /**
  * The compiled matcher index of the last lexicon the prompt hook matched
  * against, kept beside the global lexicon (`index-cache.json`) so a fresh
- * hook process does not rebuild it (about 55 ms for 2000 terms).
+ * hook process does not rebuild it (about 55 ms for 2000 terms). The indexes
+ * of up to CACHE_ENTRIES - 1 other merges (another repo's project file, or
+ * the global lexicon alone) wait in spill files beside it, least recently
+ * used out, so switching repos does not rebuild each time.
  *
  * The entry is keyed by `indexKey(lexicon)`: everything `buildIndex` reads
  * from the lexicon (canonicals, aliases, never-words, caseSensitive, the
@@ -495,24 +598,54 @@ export async function loadMatcherIndex(
   const cachePath = path.join(path.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
   const project = loaded.project ? path.resolve(loaded.project.path) : undefined;
+  // Which merge an entry is for: the project path, or '' for the global lexicon alone (see CACHE_ENTRIES).
+  const id = project ?? '';
+  const head = indexCacheHead(key, project);
+  let mainId: string | undefined;
   try {
     const text = await fs.readFile(cachePath, 'utf8');
-    // Cheap rejections first: the key is a prefix of the file (see below), so
-    // a different lexicon is told apart before anything is parsed.
-    const head = indexCacheHead(key, project);
-    if (text.startsWith(head)) {
-      const cached: unknown = JSON.parse(text);
-      if (isPlainObject(cached) && cached.version === INDEX_FORMAT_VERSION && cached.key === key) {
-        const index = deserializeIndex(cached.index, lexicon);
-        if (index) return index;
-      }
-    }
+    const mainProject = indexHeadProject(text);
+    mainId = mainProject === null ? '' : mainProject;
+    const index = indexFromEntry(text, head, key, lexicon);
+    if (index) return index;
   } catch {
-    // missing, unreadable or damaged: rebuild below
+    // missing or unreadable: look further, then rebuild below
+  }
+  const write = opts.write !== false;
+  if (mainId !== id) {
+    // Another merge's entry is the main one: this one may be waiting in a spill file.
+    try {
+      const index = indexFromEntry(await fs.readFile(cacheSpillPath(cachePath, id), 'utf8'), head, key, lexicon);
+      if (index) {
+        if (write) await promoteCacheEntry(cachePath, id, mainId);
+        return index;
+      }
+    } catch {
+      // no spill entry for this merge
+    }
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index, project);
+  if (write) {
+    if (mainId !== undefined && mainId !== id) await spillCacheEntry(cachePath, mainId);
+    await writeIndexCache(cachePath, key, index, project);
+    // A stale spill entry for this merge is superseded by the main one.
+    if (mainId !== id) await fs.unlink(cacheSpillPath(cachePath, id)).catch(() => undefined);
+  }
   return index;
+}
+
+/**
+ * The index an entry's JSON `text` holds, when it was built for exactly `key`
+ * (and the merge `head` names) and deserializes; else undefined. Throws for
+ * JSON that does not parse.
+ */
+function indexFromEntry(text: string, head: string, key: string, lexicon: Lexicon): MatcherIndex | undefined {
+  // Cheap rejections first: the key is a prefix of the file (see below), so
+  // a different lexicon is told apart before anything is parsed.
+  if (!text.startsWith(head)) return undefined;
+  const cached: unknown = JSON.parse(text);
+  if (!isPlainObject(cached) || cached.version !== INDEX_FORMAT_VERSION || cached.key !== key) return undefined;
+  return deserializeIndex(cached.index, lexicon) ?? undefined;
 }
 
 /**
@@ -555,7 +688,21 @@ async function indexCacheProject(cachePath: string): Promise<string | null | und
     handle = await fs.open(cachePath, 'r');
     const buf = Buffer.alloc(INDEX_CACHE_HEAD_BYTES);
     const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
-    const head = buf.toString('utf8', 0, bytesRead);
+    return indexHeadProject(buf.toString('utf8', 0, bytesRead));
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/**
+ * The merge an index cache entry's JSON (or its first bytes) is for, from its
+ * head: the project path, `null` for the global lexicon alone, `undefined`
+ * when the head is not one this version writes.
+ */
+function indexHeadProject(head: string): string | null | undefined {
+  try {
     const m = /^\{"version":(\d+),(?:"project":("(?:[^"\\]|\\.)*"),)?"key":/.exec(head);
     if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return undefined;
     if (m[2] === undefined) return null;
@@ -563,8 +710,6 @@ async function indexCacheProject(cachePath: string): Promise<string | null | und
     return typeof project === 'string' && path.isAbsolute(project) ? project : undefined;
   } catch {
     return undefined;
-  } finally {
-    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -576,9 +721,11 @@ const INDEX_CACHE_HEAD_BYTES = 8192;
  * the merge the next prompt will match against, so it reads the entry instead
  * of building the index (about 55 ms for 2000 terms, plus writing it back).
  *
- * The entry is single: the merge the hook (or `lexicon serve`, or an MCP
- * normalize) matched last, the global lexicon alone or with one trusted
- * project file. A write to the global file rebuilds it for that same merge,
+ * The entry rebuilt is the main one: the merge the hook (or `lexicon serve`,
+ * or an MCP normalize) matched last, the global lexicon alone or with one
+ * trusted project file. Spill entries for other merges (see CACHE_ENTRIES)
+ * are left as they are; one a global write made stale costs its repo one
+ * rebuild on its next prompt, as before. A write to the global file rebuilds it for that same merge,
  * reading the project path the entry records; a write to a project file
  * rebuilds it for the global lexicon merged with that file, since its repo is
  * where the next prompt is likely to be. Both go through `loadLexicon` and
@@ -1143,8 +1290,9 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   let project: LexiconFile;
   let fresh: ProjectRead['fresh'];
   let projectTrust: TrustStatus | undefined;
+  let read: ProjectBytes | undefined;
   try {
-    const read = await readProjectBytes(paths.project, paths.global);
+    read = await readProjectBytes(paths.project, paths.global);
     if (gateFirst && read !== undefined) {
       const probe: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
       rememberProjectBytes(probe, read);
@@ -1165,7 +1313,10 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   }
 
   projectTrust ??= await isTrusted(project, opts);
-  if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global);
+  if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (projectTrust === 'trusted' && read?.fromSpill) {
+    await promoteCacheEntry(path.join(path.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), path.resolve(paths.project), read.mainId);
+  }
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
     await hydrateHits(merged, project, opts);
