@@ -132,6 +132,14 @@ export interface NormalizeResponse extends NormalizeResult {
   summary: string;
   /** Present only when matching stopped at the time budget (`reasons: ['time']`). */
   incomplete?: NormalizeIncomplete;
+  /** As `/stats` gives it: set whenever a project file exists for `cwd`. */
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /**
+   * Path only: a project file that was not merged, so its names were not
+   * corrected. Without it an unchanged result in a repo whose lexicon is not
+   * trusted read exactly like text that needed no correction.
+   */
+  skippedProject?: string;
 }
 
 export interface LearnResponse {
@@ -672,7 +680,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const now = Date.now();
     const hit = cache.get(cwd);
     if (hit && now - hit.at < reloadMs) return hit;
-    const loaded = await loadLexicon({ cwd, ...storeOpts });
+    // No route reads a skipped project file's terms (each names it by path
+    // only), so an untrusted or changed one is never parsed, as in the hook.
+    const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
     if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
@@ -721,7 +731,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (result.changed && !body.dryRun) {
       const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
       // Best effort, like the MCP server: a store hiccup never fails a normalize.
-      await recordHits(canonicals, { cwd, ...storeOpts }).catch(() => undefined);
+      // `loaded` spares recordHits re-reading (and re-parsing) both files.
+      await recordHits(canonicals, { cwd, ...storeOpts, loaded: entry.loaded }).catch(() => undefined);
       invalidate();
     }
     return {
@@ -729,6 +740,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       summary: result.replacements.length > 0 ? diffSummary(result) : '',
       // Without it a body cut short by the budget reads as fully corrected.
       ...(timedOut ? { incomplete: timeBudgetIncomplete(body.text.length, normalizeBudgetMs) } : {}),
+      // The same additive keys as /stats and MCP normalize_transcript.
+      ...(entry.loaded.projectTrust !== undefined ? { projectTrust: entry.loaded.projectTrust } : {}),
+      ...(entry.loaded.skippedProject !== undefined ? { skippedProject: entry.loaded.skippedProject.path } : {}),
     };
   }
 

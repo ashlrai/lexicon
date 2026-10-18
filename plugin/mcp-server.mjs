@@ -54745,7 +54745,25 @@ async function projectWriteTrusted(opts = {}) {
 function prepareIncoming(term) {
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError("canonical must not be empty");
-  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  const prepared = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  assertTermFields(prepared);
+  return prepared;
+}
+function assertTermFields(term) {
+  try {
+    parseLexicon({ version: 1, terms: [term] });
+  } catch (err) {
+    const issues = errorMessage(err).split("\n").map((line2) => /^\s*-\s*terms\[0\]\.(.*)$/.exec(line2)?.[1]).filter((issue2) => issue2 !== void 0).map((issue2) => {
+      const at = /^(aliases|never)\[(\d+)\]/.exec(issue2);
+      const value = at ? (term[at[1]] ?? [])[Number(at[2])] : void 0;
+      if (value === void 0) return issue2;
+      const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+      return issue2.replace(/^[^:]+/, (field) => `${field} (${shown})`);
+    });
+    if (issues.length === 0) throw err;
+    const fix = issues.length === 1 ? "fix that field" : "fix those fields";
+    throw new InputError(`term not added: ${issues.join("; ")}. Nothing was written; ${fix} and try again.`);
+  }
 }
 function mergeTermInto(file2, incoming, scope, opts) {
   const canonical = incoming.canonical;
@@ -60637,7 +60655,7 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ text, dryRun, minConfidence }) => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const index = await loadMatcherIndex(loaded);
       const cut = normalizeCut(text, ctx.normalizeMaxChars);
       const head = cut < text.length ? text.slice(0, cut) : text;
@@ -60652,7 +60670,7 @@ var registerTermTools = (server, ctx) => {
       const result = tail ? { ...matched, input: text, output: matched.output + tail } : matched;
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
-        await recordHits(canonicals, { cwd: ctx.cwd }).catch(
+        await recordHits(canonicals, { cwd: ctx.cwd, loaded }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
@@ -65076,9 +65094,9 @@ function createServer2(opts = {}) {
   let cwd = explicit ?? process.cwd();
   let clientRoots = [];
   let rootsPending;
-  const load = async () => {
+  const load = async (loadOpts = {}) => {
     if (rootsPending) await rootsPending;
-    return loadLexicon({ cwd });
+    return loadLexicon({ cwd, ...loadOpts });
   };
   const server = new McpServer(
     { name: SERVER_NAME, version: readPackageVersion() },
