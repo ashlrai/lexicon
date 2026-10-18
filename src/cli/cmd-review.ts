@@ -20,6 +20,7 @@ import {
   readLexiconFile,
   readHitsFor,
   withLexiconLock,
+  refreshIndexCache,
   refreshTrust,
   resolvePaths,
   writeLexiconFile,
@@ -493,7 +494,12 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       await writeLexiconFile(file);
     });
     // The user's own edit must not flip a trusted project file to 'changed'.
-    if (file.scope === 'project') await refreshTrust(file.path, store);
+    // Then the cached matcher index the hook reads next (a no-op where there
+    // is none); writeLexiconFile already refreshed it for a global file.
+    if (file.scope === 'project') {
+      await refreshTrust(file.path, store);
+      await refreshIndexCache(file, store);
+    }
   }
   if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
   line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
@@ -598,6 +604,9 @@ export async function runEdit(
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }
   }
+  // The editor wrote the file behind writeLexiconFile's back: refresh the
+  // cached index the hook reads next, through the same trust check.
+  await refreshIndexCache({ scope, path: target }, store);
   return 0;
 }
 

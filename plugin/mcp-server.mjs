@@ -54264,6 +54264,12 @@ async function refreshIndexCache(written, opts = {}) {
     const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), INDEX_CACHE_FILE_NAME);
     if (!(0, import_node_fs5.existsSync)(cachePath)) return;
     const project = written.scope === "project" ? import_node_path5.default.resolve(written.path) : await indexCacheProject(cachePath);
+    if (project === null) {
+      const global = await readGlobalLexiconCached(globalPath);
+      const merged = mergeLexicons(global.lexicon);
+      if (merged.terms.length >= INDEX_CACHE_MIN_TERMS) await loadMatcherIndex({ merged, global });
+      return;
+    }
     if (typeof project !== "string") return;
     const loaded = await loadLexicon({
       globalPath,
@@ -59624,7 +59630,10 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
   if (Object.keys(settings).length > 0) file2.lexicon.settings = settings;
   else delete file2.lexicon.settings;
   await writeLexiconFile(file2);
-  if (file2.scope === "project" && !leaveUntrusted) await refreshTrust(file2.path, opts);
+  if (file2.scope === "project" && !leaveUntrusted) {
+    await refreshTrust(file2.path, opts);
+    await refreshIndexCache(file2, opts);
+  }
 }
 async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";

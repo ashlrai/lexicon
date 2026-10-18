@@ -539,13 +539,29 @@ const INDEX_CACHE_HEAD_BYTES = 8192;
  * untrusted changes nothing. An entry already keyed for the result is left as
  * it is. Nothing happens where there is no entry, so a user who never runs
  * the hook does not pay a build on every write. Best effort, never throws.
+ *
+ * Exported for the writers outside this module that replace a lexicon file
+ * themselves or re-pin its trust afterwards (pack install and uninstall,
+ * and so the registry's install, update and removal, `lexicon review` and
+ * `lexicon edit`): they call it
+ * once the file and its trust entry are final, as `addTerm` does. For a
+ * global write whose entry indexes the global lexicon alone it rebuilds that
+ * entry from the file on disk (and so refreshes the parse cache too), which
+ * covers a file another program rewrote, such as the user's editor.
  */
-async function refreshIndexCache(written: { scope: TermScope; path: string }, opts: StoreOptions = {}): Promise<void> {
+export async function refreshIndexCache(written: { scope: TermScope; path: string }, opts: StoreOptions = {}): Promise<void> {
   try {
     const globalPath = written.scope === 'global' ? written.path : resolvePaths(opts).global;
     const cachePath = path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
     if (!existsSync(cachePath)) return;
     const project = written.scope === 'project' ? path.resolve(written.path) : await indexCacheProject(cachePath);
+    if (project === null) {
+      const global = await readGlobalLexiconCached(globalPath);
+      const merged = mergeLexicons(global.lexicon);
+      // Below the threshold an entry is never written: leave the old one alone, as prebuildIndexCache does.
+      if (merged.terms.length >= INDEX_CACHE_MIN_TERMS) await loadMatcherIndex({ merged, global });
+      return;
+    }
     if (typeof project !== 'string') return;
     const loaded = await loadLexicon({
       globalPath,
