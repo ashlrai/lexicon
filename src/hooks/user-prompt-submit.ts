@@ -654,7 +654,13 @@ function emit(hookEventName: HookEventName, parts: readonly string[]): string {
 }
 
 async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<string> {
-  const prompt = payload.prompt;
+  const prompt: unknown = payload.prompt;
+  if (prompt !== undefined && typeof prompt !== 'string') {
+    // Says the type only: the value may be a whole pasted document.
+    const kind = prompt === null ? 'null' : Array.isArray(prompt) ? 'an array' : typeof prompt === 'object' ? 'an object' : `a ${typeof prompt}`;
+    process.stderr.write(`[lexicon hook] the payload's prompt is ${kind}, not a string; nothing to do\n`);
+    return '';
+  }
   if (typeof prompt !== 'string' || prompt.trim() === '') return '';
 
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();

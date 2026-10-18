@@ -621,6 +621,28 @@ describe('runHook', () => {
     }
   });
 
+  it('says one stderr line, without the value, for a UserPromptSubmit prompt that is not a string', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const [prompt, kind] of [[42, 'a number'], [{ text: 'hi Ashler' }, 'an object'], [['hi Ashler'], 'an array'], [null, 'null'], [true, 'a boolean']] as const) {
+        stderr.mockClear();
+        const raw = JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: '/fake/repo', prompt });
+        expect(await runHook(raw)).toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        const line = String(stderr.mock.calls[0]?.[0]);
+        expect(line).toBe(`[lexicon hook] the payload's prompt is ${kind}, not a string; nothing to do\n`);
+        expect(line).not.toContain('Ashler');
+      }
+      stderr.mockClear();
+      expect(await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: '/fake/repo', prompt: '   ' }))).toBe('');
+      expect(stderr).not.toHaveBeenCalled();
+      expect(mocks.loadLexicon).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   describe('SessionStart', () => {
     it('emits the claude-md export of the merged lexicon as additionalContext', async () => {
       const { runHook } = await import('../src/hooks/user-prompt-submit.js');
