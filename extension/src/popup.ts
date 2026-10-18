@@ -1,6 +1,7 @@
 /// <reference types="chrome" />
 /** Popup: engine status, per-site switch, recent corrections, "learn" mini-form. */
 import { sendToBackground } from './chrome-store.js';
+import { setMessage } from './rich-text.js';
 import { coerceSettings, describeCorrection, hostKey, siteEnabled, STORAGE_KEYS } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
 
@@ -49,7 +50,7 @@ function renderStatus(s: StatusReply): void {
     else if (s.configuredMode === 'api' && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
     if (!s.tokenSet && s.configuredMode === 'api') parts.push(s.server ? `server up (lexicon ${s.server.version}), but no token set: run \`lexicon serve --pair\`` : 'no token set');
     if (s.embeddedError) parts.push('embedded YAML has errors');
-    ui.server.textContent = parts.join(' · ');
+    setMessage(ui.server, parts.join(' · '));
   }
 
   ui.recent.replaceChildren();
@@ -83,12 +84,12 @@ async function refresh(): Promise<void> {
     else {
       ui.mode.textContent = 'Error';
       ui.mode.className = 'pill warn';
-      ui.server.textContent = status.error;
+      setMessage(ui.server, status.error);
     }
   } catch (err) {
     ui.mode.textContent = 'Error';
     ui.mode.className = 'pill warn';
-    ui.server.textContent = err instanceof Error ? err.message : String(err);
+    setMessage(ui.server, err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -126,16 +127,16 @@ ui.learn.addEventListener('submit', (ev) => {
   void sendToBackground<LearnReply | Failure>({ type: 'learn', heard, meant })
     .then((reply) => {
       if (reply.ok) {
-        ui.learnMsg.textContent = `${reply.message} (${reply.mode === 'api' ? 'server' : 'embedded'})`;
+        setMessage(ui.learnMsg, `${reply.message} (${reply.mode === 'api' ? 'server' : 'embedded'})`);
         ui.meant.value = '';
         ui.heard.value = '';
         void refresh();
       } else {
-        ui.learnMsg.textContent = reply.error;
+        setMessage(ui.learnMsg, reply.error);
       }
     })
     .catch((err: unknown) => {
-      ui.learnMsg.textContent = err instanceof Error ? err.message : String(err);
+      setMessage(ui.learnMsg, err instanceof Error ? err.message : String(err));
     });
 });
 

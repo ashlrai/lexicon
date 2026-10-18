@@ -20,6 +20,7 @@ import { pairFromDocument } from '../extension/src/pair.js';
 import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
+import { setMessage } from '../extension/src/rich-text.js';
 
 // import.meta.url is an http: URL under the jsdom environment; resolve from the repo root instead.
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
@@ -1027,5 +1028,47 @@ describe('content: live mode keeps the caret where the user is typing', () => {
     expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
     const { caretOffset } = await import('../extension/src/editable.js');
     expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+// Catches: Options and the popup set every message with textContent, so a
+// command read "`lexicon serve --pair`" with the backticks shown literally.
+describe('popup and options messages render commands as <code>', () => {
+  it('turns backticked spans into <code> and keeps everything else as text', () => {
+    const el = document.createElement('p');
+    setMessage(el, 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.');
+    expect(el.textContent).toBe('No API token set: run lexicon serve --pair to pair this browser, or paste the token lexicon serve --show prints into Options.');
+    expect(Array.from(el.querySelectorAll('code'), (c) => c.textContent)).toEqual(['lexicon serve --pair', 'lexicon serve --show']);
+    expect(el.innerHTML).toBe('No API token set: run <code>lexicon serve --pair</code> to pair this browser, or paste the token <code>lexicon serve --show</code> prints into Options.');
+  });
+
+  it('never parses markup, inside or outside the backticks, and keeps an unpaired backtick', () => {
+    const el = document.createElement('p');
+    setMessage(el, 'API /learn: <img src=x onerror="alert(1)"> run `<b>x</b>` then ` dangling');
+    expect(el.querySelector('img, b')).toBeNull();
+    expect(el.querySelector('code')!.textContent).toBe('<b>x</b>');
+    expect(el.textContent).toBe('API /learn: <img src=x onerror="alert(1)"> run <b>x</b> then ` dangling');
+    setMessage(el, 'empty `` pair');
+    expect(el.textContent).toBe('empty `` pair');
+    expect(el.querySelector('code')).toBeNull();
+    setMessage(el, 'replaced');
+    expect(el.innerHTML).toBe('replaced');
+  });
+
+  it('options and popup route every command-bearing message through setMessage and never use innerHTML', () => {
+    for (const file of ['extension/src/options.ts', 'extension/src/popup.ts']) {
+      const src = readFileSync(resolve(process.cwd(), file), 'utf8');
+      expect(src).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML/);
+      // The YAML editor's parse error stays plain text: it quotes the user's YAML, backticks and all.
+      const plain = src.split('\n').filter((l) => /\.textContent\s*=/.test(l) && !l.includes('ui.yamlError.textContent = errorMessage(err)'));
+      expect(plain.length).toBeGreaterThan(10);
+      for (const line of plain) {
+        // A message assigned as plain text may not carry a backticked command
+        // or a string that came from the background (error/message fields).
+        expect(line, `${file}: ${line.trim()}`).not.toMatch(/`lexicon[^`$]*`|\.error\b|\.message\b|errorMessage\(|tokenError|parts\.join/);
+      }
+    }
   });
 });
