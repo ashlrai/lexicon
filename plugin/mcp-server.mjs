@@ -18851,7 +18851,6 @@ __export(util_exports, {
   required: () => required,
   safeExtend: () => safeExtend,
   shallowClone: () => shallowClone,
-  sizeCaps: () => sizeCaps,
   slugify: () => slugify,
   stringifyPrimitive: () => stringifyPrimitive,
   toZod: () => toZod,
@@ -19370,18 +19369,6 @@ function prefixIssues(path27, issues) {
 }
 function unwrapMessage(message) {
   return typeof message === "string" ? message : message?.message;
-}
-function sizeCaps(defChecks) {
-  const caps = [];
-  for (const ch of defChecks ?? []) {
-    const d = ch._zod.def;
-    if (!/_(length|size)$|_equals$/.test(d.check))
-      break;
-    const max = d.maximum ?? d.length ?? d.size;
-    if (max >= 0)
-      caps.push([max, ch]);
-  }
-  return caps;
 }
 function attachSchema(issues, start, inst) {
   var _a3;
@@ -20803,7 +20790,7 @@ ${content.join("\n")}
 var version = {
   major: 4,
   minor: 6,
-  patch: 7
+  patch: 5
 };
 
 // node_modules/zod/v4/core/schemas.js
@@ -21559,31 +21546,6 @@ var $ZodDate = /* @__PURE__ */ $constructor("$ZodDate", (inst, def) => {
     return payload;
   };
 });
-function capSize(inst, size) {
-  const caps = sizeCaps(inst._zod.def.checks);
-  if (!caps.length)
-    return;
-  const cap = Math.min(...caps.map((c) => c[0]));
-  const parse3 = inst._zod.parse;
-  inst._zod.parse = (payload, ctx) => {
-    const n = size(payload.value);
-    if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
-      for (const [max, ch] of sizeCaps(inst._zod.def.checks)) {
-        if (n > max && ch._zod.def.when(payload)) {
-          const start = payload.issues.length;
-          ch._zod.check(payload);
-          payload.issues[start].continue = false;
-          attachSchema(payload.issues, start, inst);
-          return payload;
-        }
-      }
-    }
-    return parse3(payload, ctx);
-  };
-}
-var arraySize = (input2) => Array.isArray(input2) ? input2.length : -1;
-var mapSize = (input2) => input2 instanceof Map ? input2.size : -1;
-var setSize = (input2) => input2 instanceof Set ? input2.size : -1;
 function handleArrayResult(result, final, index) {
   if (result.issues.length) {
     final.issues.push(...prefixIssues(index, result.issues));
@@ -21627,7 +21589,6 @@ var $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
     }
     return payload;
   };
-  capSize(inst, arraySize);
 });
 function handlePropertyResult(result, final, key, input2, optin, optout) {
   const isPresent = key in input2;
@@ -22584,7 +22545,6 @@ var $ZodMap = /* @__PURE__ */ $constructor("$ZodMap", (inst, def) => {
       return Promise.all(proms).then(() => payload);
     return payload;
   };
-  capSize(inst, mapSize);
 });
 function handleMapResult(keyResult, valueResult, final, key, input2, inst, ctx) {
   if (keyResult.issues.length) {
@@ -22651,7 +22611,6 @@ var $ZodSet = /* @__PURE__ */ $constructor("$ZodSet", (inst, def) => {
       return Promise.all(proms).then(() => payload);
     return payload;
   };
-  capSize(inst, setSize);
 });
 function handleSetResult(result, final) {
   if (result.issues.length) {
@@ -32182,15 +32141,9 @@ function generateNullableCheck(doc, ctx, schema, accessor, buildsValue = true) {
   doc.write(`}`);
   return outputVar;
 }
-function generateSizeGate(doc, schema, size) {
-  for (const [max, check2] of sizeCaps(schema._zod.def.checks)) {
-    doc.write(`if (${size} > ${numericOperand(max, check2._zod.def.check)}) return INVALID;`);
-  }
-}
 function generateArrayCheck(doc, ctx, schema, accessor, buildsValue = true) {
   const def = schema._zod.def;
   doc.write(`if (!Array.isArray(${accessor})) return INVALID;`);
-  generateSizeGate(doc, schema, `${accessor}.length`);
   const outputVar = buildsValue ? newVar(ctx) : null;
   const iVar = newVar(ctx);
   const elemVar = newVar(ctx);
@@ -32590,7 +32543,6 @@ function literalPropertyKey(ctx, key) {
 function generateMapCheck(doc, ctx, schema, accessor) {
   const def = schema._zod.def;
   doc.write(`if (!(${accessor} instanceof Map)) return INVALID;`);
-  generateSizeGate(doc, schema, `${accessor}.size`);
   const outputVar = newVar(ctx);
   const kVar = newVar(ctx);
   const valVar = newVar(ctx);
@@ -32607,7 +32559,6 @@ function generateMapCheck(doc, ctx, schema, accessor) {
 function generateSetCheck(doc, ctx, schema, accessor) {
   const def = schema._zod.def;
   doc.write(`if (!(${accessor} instanceof Set)) return INVALID;`);
-  generateSizeGate(doc, schema, `${accessor}.size`);
   const outputVar = newVar(ctx);
   const valVar = newVar(ctx);
   doc.write(`const ${outputVar} = new Set();`);
@@ -53956,9 +53907,25 @@ async function refreshTrust(projectPath, opts = {}) {
     if (!existing) return false;
     const sha256 = await hashFile(key);
     if (sha256 === void 0 || sha256 === existing.sha256) return false;
+    if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) return false;
     registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
     await writeTrustRegistry(registry2, opts);
     return true;
+  }, opts);
+}
+async function trustEntryOf(projectPath, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  const entry = (await readTrustRegistry(opts)).trusted[key];
+  return entry ? { ...entry } : void 0;
+}
+async function restoreTrustEntry(projectPath, entry, opts = {}) {
+  const key = await canonicalPath(projectPath);
+  await withTrustLock(async () => {
+    const registry2 = await readTrustRegistry(opts);
+    if (entry) registry2.trusted[key] = { ...entry };
+    else if (key in registry2.trusted) delete registry2.trusted[key];
+    else return;
+    await writeTrustRegistry(registry2, opts);
   }, opts);
 }
 async function untrustProject(projectPath, opts = {}) {
@@ -54516,6 +54483,11 @@ async function assertProjectWritable(projectPath, opts) {
   );
   if (status !== "trusted") throw new ProjectTrustError(projectPath, status);
 }
+async function assertParsedProjectWritable(file2, opts) {
+  if (file2.scope !== "project" || !file2.exists) return;
+  const status = await isTrusted(file2, opts);
+  if (status !== "trusted") throw new ProjectTrustError(file2.path, status);
+}
 async function projectWriteTrusted(opts = {}) {
   const projectPath = projectWritePath(opts);
   if (!(0, import_node_fs5.existsSync)(projectPath)) return false;
@@ -54568,6 +54540,7 @@ async function addTerm(term, opts = {}) {
   const incoming = prepareIncoming(term);
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFile(targetPath, scope);
+    if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
     return { file: file2, ...result };
@@ -54579,6 +54552,7 @@ async function addTerms(terms, opts = {}) {
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFile(targetPath, scope);
+    if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file2, opts);
     return { file: file2, results };
@@ -54598,11 +54572,11 @@ async function removeTerm(canonical, opts = {}) {
       if (!file2.exists) return false;
       const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file2.lexicon.terms.length) return false;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      await assertParsedProjectWritable(file2, opts);
       file2.lexicon.terms = remaining;
       await writeLexiconFile(file2);
       if (file2.scope === "project") {
-        await refreshTrust(file2.path, opts);
+        await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
         await dropProjectHits(file2.path, canonical, opts);
       } else {
         await dropGlobalHits(canonical, opts);
@@ -54649,10 +54623,10 @@ async function removeAlias(canonical, alias, opts = {}) {
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
+      await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
       await writeLexiconFile(file2);
-      if (file2.scope === "project") await refreshTrust(file2.path, opts);
+      if (file2.scope === "project") await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
       files.push(file2);
       firstTerm ??= term;
     });
@@ -59514,7 +59488,7 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
   if (Object.keys(settings).length > 0) file2.lexicon.settings = settings;
   else delete file2.lexicon.settings;
   await writeLexiconFile(file2);
-  if (file2.scope === "project" && !leaveUntrusted) await refreshTrust(file2.path, opts);
+  if (file2.scope === "project" && !leaveUntrusted) await refreshTrust(file2.path, { ...opts, expectedSha256: await parsedContentHash(file2) });
 }
 async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";
@@ -59928,6 +59902,7 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
     const before = await Promise.all(files.map(snapshot));
+    const pinBefore = opts.scope === "project" && !opts.leaveUntrusted ? await trustEntryOf(target, opts) : void 0;
     try {
       const result = await installLoadedPack(pack, entry.ref, opts);
       await writeCache(entry.ref, bytes, opts);
@@ -59947,10 +59922,7 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
           if (before[i] === void 0) await import_node_fs10.promises.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i].toString("utf8"));
         }
-        if (opts.scope === "project" && !opts.leaveUntrusted) {
-          if (before[0] !== void 0) await refreshTrust(target, opts);
-          else await untrustProject(target, opts);
-        }
+        if (opts.scope === "project" && !opts.leaveUntrusted) await restoreTrustEntry(target, pinBefore, opts);
       } catch (rollback) {
         throw new AggregateError([err, rollback], "registry install failed and rollback was incomplete");
       }

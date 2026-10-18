@@ -35,7 +35,7 @@ import { HARVEST_STOPLIST } from './harvest.js';
 import { PACK_NAME_RE, installLoadedPack, parsePackText, uninstallLoadedPack } from './packs.js';
 import type { InstallPackResult, Pack, UninstallPackResult } from './packs.js';
 import { defaultProjectPath, MAX_LEXICON_BYTES, resolvePaths, resolveScopeWritePath, withLexiconLock } from './store.js';
-import { refreshTrust, untrustProject } from './trust.js';
+import { restoreTrustEntry, trustEntryOf } from './trust.js';
 import { writeFileAtomic } from '../util/atomic.js';
 import type { StoreOptions } from './store.js';
 import type { LoadedLexicon, Term, TermScope } from './types.js';
@@ -659,6 +659,7 @@ async function commitPack(
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
     const before = await Promise.all(files.map(snapshot));
+    const pinBefore = opts.scope === 'project' && !opts.leaveUntrusted ? await trustEntryOf(target, opts) : undefined;
     try {
       const result = await installLoadedPack(pack, entry.ref, opts);
       await writeCache(entry.ref, bytes, opts);
@@ -678,10 +679,9 @@ async function commitPack(
         }
         // An unpinned install never touched the registry: restoring the bytes
         // restores the status, and a refresh would bless a changed file.
-        if (opts.scope === 'project' && !opts.leaveUntrusted) {
-          if (before[0] !== undefined) await refreshTrust(target, opts);
-          else await untrustProject(target, opts);
-        }
+        // The pin goes back to what it was, not to a hash of the restored
+        // bytes: those were never checked against it (see restoreTrustEntry).
+        if (opts.scope === 'project' && !opts.leaveUntrusted) await restoreTrustEntry(target, pinBefore, opts);
       } catch (rollback) {
         throw new AggregateError([err, rollback], 'registry install failed and rollback was incomplete');
       }
@@ -894,6 +894,7 @@ export async function uninstallRegistryPack(
     }
     const files = [target, cachedPackPath(parsed.ref, scoped), stateFile(scoped)];
     const before = await Promise.all(files.map(snapshot));
+    const pinBefore = scoped.scope === 'project' ? await trustEntryOf(target, scoped) : undefined;
     try {
       const result = await uninstallLoadedPack(pack, parsed.ref, scoped);
       delete state.packs[parsed.ref];
@@ -906,10 +907,7 @@ export async function uninstallRegistryPack(
           if (before[i] === undefined) await fs.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i]!.toString('utf8'));
         }
-        if (scoped.scope === 'project') {
-          if (before[0] !== undefined) await refreshTrust(target, scoped);
-          else await untrustProject(target, scoped);
-        }
+        if (scoped.scope === 'project') await restoreTrustEntry(target, pinBefore, scoped);
       } catch (rollback) {
         throw new AggregateError([err, rollback], 'registry removal failed and rollback was incomplete');
       }

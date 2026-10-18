@@ -1000,6 +1000,21 @@ async function assertProjectWritable(projectPath: string, opts: StoreOptions): P
 }
 
 /**
+ * The gate again, inside the write lock, on the very object about to be
+ * merged into and re-pinned: `isTrusted` hashes the bytes `readLexiconFile`
+ * parsed. `assertProjectWritable` runs before the lock and reads the file a
+ * second time, so a file rewritten in between (a `git pull`, a sync client,
+ * anyone else who can write the repo), or one created where there was none,
+ * was merged with the caller's edit and pinned as trusted. A file that does
+ * not exist is still writable (the caller is creating it).
+ */
+async function assertParsedProjectWritable(file: LexiconFile, opts: StoreOptions): Promise<void> {
+  if (file.scope !== 'project' || !file.exists) return;
+  const status = await isTrusted(file, opts);
+  if (status !== 'trusted') throw new ProjectTrustError(file.path, status);
+}
+
+/**
  * True when a project-scope write from `opts` would land in a project file
  * the user has already trusted: it exists and reads 'trusted' (registry
  * match, LEXICON_TRUST_ALL, or inside the global config dir). False for a
@@ -1104,6 +1119,7 @@ export async function addTerm(
   // top and take the new term with it.
   return withLexiconLock(targetPath, async () => {
     const file = await readLexiconFile(targetPath, scope);
+    if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
     return { file, ...result };
@@ -1128,6 +1144,7 @@ export async function addTerms(
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
     const file = await readLexiconFile(targetPath, scope);
+    if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
     const results = incoming.map((t) => mergeTermInto(file, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file, opts);
     return { file, results };
@@ -1169,12 +1186,12 @@ export async function removeTerm(
       if (!file.exists) return false;
       const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file.lexicon.terms.length) return false;
-      if (file.scope === 'project') await assertProjectWritable(file.path, opts);
+      await assertParsedProjectWritable(file, opts);
       file.lexicon.terms = remaining;
       await writeLexiconFile(file);
       if (file.scope === 'project') {
         // The user's own edit must not flip an already-trusted file to 'changed'.
-        await refreshTrust(file.path, opts);
+        await refreshTrust(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
         // The term is gone; so is this user's tally for it, or re-adding the
         // word later would inherit a count it never earned.
         await dropProjectHits(file.path, canonical, opts);
@@ -1291,11 +1308,11 @@ export async function removeAlias(
       termFound = true;
       const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
       if (remaining.length === term.aliases.length) return;
-      if (file.scope === 'project') await assertProjectWritable(file.path, opts);
+      await assertParsedProjectWritable(file, opts);
       term.aliases = remaining;
       await writeLexiconFile(file);
       // The user's own edit must not flip an already-trusted file to 'changed'.
-      if (file.scope === 'project') await refreshTrust(file.path, opts);
+      if (file.scope === 'project') await refreshTrust(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
       files.push(file);
       firstTerm ??= term;
     });
