@@ -67,7 +67,9 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ registry }) =>
       guarded(async () => {
-        const [packs, loaded] = await Promise.all([listPacks(), load()]);
+        // installedPacks and the mismatch read trusted files only, and the
+        // skipped one is named by path, so it is never parsed.
+        const [packs, loaded] = await Promise.all([listPacks(), load({ parseSkipped: false })]);
         const installed = installedPacks(loaded);
         // `lexicon pack list` and `pack search` report the same disagreement.
         const mismatch = await findRegistryRecordMismatch(loaded, { cwd: ctx.cwd });

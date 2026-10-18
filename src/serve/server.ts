@@ -28,6 +28,7 @@ import { z } from 'zod';
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
+  LIMITS,
   addTerm,
   computeStats,
   conflictNote,
@@ -46,6 +47,7 @@ import {
   isProjectTrustError,
   sanitizeForDisplay,
   spellingConflicts,
+  stripInvisible,
   suggestAliases,
   timeBudgetIncomplete,
   uninstallPack,
@@ -700,6 +702,19 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     cache.clear();
   }
 
+  /**
+   * After `recordHits(canonicals)`: drops only the cached loads holding one of
+   * those terms. A hit count is all that call writes, and only those terms'
+   * `hits` can have moved, so every other cwd's load (and its matcher index)
+   * is still exact. `invalidate()` here made one normalize reload every cwd.
+   */
+  function invalidateHits(canonicals: readonly string[]): void {
+    const keys = new Set(canonicals.map((c) => c.trim().toLowerCase()));
+    for (const [key, entry] of cache) {
+      if (entry.loaded.merged.terms.some((t) => keys.has(t.canonical.trim().toLowerCase()))) cache.delete(key);
+    }
+  }
+
   // ---- handlers ----------------------------------------------------------
 
   async function health(cwd: string): Promise<HealthResponse> {
@@ -733,7 +748,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // Best effort, like the MCP server: a store hiccup never fails a normalize.
       // `loaded` spares recordHits re-reading (and re-parsing) both files.
       await recordHits(canonicals, { cwd, ...storeOpts, loaded: entry.loaded }).catch(() => undefined);
-      invalidate();
+      invalidateHits(canonicals);
     }
     return {
       ...result,
@@ -860,9 +875,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */
   function handleAliases(url: URL): AliasesResponse {
     strictQuery(url, 'GET /aliases', ['canonical']);
-    const canonical = (url.searchParams.get('canonical') ?? '').trim();
+    // Cleaned as the schema cleans a canonical (stripInvisible, then trim), so
+    // a zero-width character neither counts toward the cap nor reaches the aliases.
+    const canonical = stripInvisible(url.searchParams.get('canonical') ?? '').trim();
     if (!canonical) throw new HttpError(400, 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)');
-    if (canonical.length > 80) throw new HttpError(400, 'canonical must be at most 80 characters');
+    if (canonical.length > LIMITS.word) throw new HttpError(400, `canonical must be at most ${LIMITS.word} characters`);
     return { canonical, aliases: suggestAliases(canonical) };
   }
 
