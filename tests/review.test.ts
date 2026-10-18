@@ -134,6 +134,24 @@ describe('harvest --interactive', () => {
     expect(io.out).not.toContain('[2/3]');
   });
 
+  // Catches: "a" wrote the project file once per remaining candidate (a full re-parse each).
+  it('a adds the rest in one write, printing the same lines a write per candidate printed', async () => {
+    const candidates = [candidate('One'), candidate('Two'), candidate('Three'), candidate('Four')];
+    const io = makeIO();
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, io, scripted(['y', 'a']))).toBe(0);
+    expect((await readYaml(projectPath)).terms.map((t) => t.canonical)).toEqual(['One', 'Two', 'Three', 'Four']);
+    // writeLexiconFile keeps the bytes it replaced at .bak: after one write
+    // for One and one for the batch, that is the file holding One alone.
+    expect((await readYaml(`${projectPath}.bak`)).terms.map((t) => t.canonical)).toEqual(['One']);
+    const lines = io.out.split('\n');
+    const from = lines.indexOf('  added Two');
+    expect(lines.slice(from, from + 5)).toEqual(['  added Two', '', '  added Three', '  added Four', `added 4 new terms, merged 0, skipped 0 in ${projectPath}`]);
+    expect(io.out).not.toContain('[3/4]');
+    expect(io.out).toContain(`project lexicon trusted (${projectPath})`);
+    // The batch re-pinned the file: a later walk writes to it without a refusal.
+    expect(await runHarvestInteractive([candidate('Five')], { cwd: repo, globalPath }, makeIO(), scripted(['y']))).toBe(0);
+  });
+
   it('merges into an existing trusted project term and counts it as merged', async () => {
     await writeLexiconFile({
       path: projectPath,
