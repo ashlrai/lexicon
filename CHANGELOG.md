@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The `curl | sh` installer run through `sudo` (its own fallback for an npm permissions error) installs and then skips `lexicon setup`, printing `skipping setup under sudo: it would configure root, not <user>; as <user>, without sudo, run: lexicon setup`. It ran setup as root, which wrote root's lexicon and agent configs instead of the user's.
 - The Homebrew formula's recommended voice dependency is `whisper-cpp`, the Homebrew formula name that `lexicon voice` and `lexicon doctor` tell you to `brew install`. It said `whisper.cpp`, which no formula is called. A test holds the formula's `depends_on` names to that install hint.
 - `npx tsc -p extension/tsconfig.json --noEmit` is clean: the extension's tsconfig sets `rootDir` to the repo root, since `extension/src` imports the browser-safe slice of `src/core`. It reported a TS6059 error for every such file. `npm run typecheck` now runs it after the package check, so CI catches extension type errors. The built extension is byte-for-byte unchanged.
 - The browser extension's Options page (**Test connection**, **Sync from local API**, **Any site**) and popup (server line, **Learn a word**) show a command such as `lexicon serve --pair` as code. They printed the backticks around it. Each message is built from text nodes and `<code>` elements only, never parsed as HTML, so a server's error string cannot inject markup.
