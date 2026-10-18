@@ -10,13 +10,19 @@ import { promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCorpus, loadLexicon as loadBenchLexicon } from '../bench/lib.js';
 import { buildIndex, findReplacements } from '../src/core/matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from '../src/core/matcher/serialize.js';
 import { normalize, normalizeWithIndex } from '../src/core/normalize.js';
 import { INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, addTerm, loadLexicon, loadMatcherIndex, removeAlias, removeTerm, writeLexiconFile } from '../src/core/store.js';
 import { trustProject } from '../src/core/trust.js';
+import { installLoadedPack, uninstallLoadedPack } from '../src/core/packs.js';
+import type { Pack } from '../src/core/packs.js';
+import { applyRegistryUpdate, findRegistryEntry, installRegistryPack, loadRegistryIndex, previewRegistryUpdates, sha256Hex, uninstallRegistryPack } from '../src/core/registry.js';
+import { runEdit, runReview } from '../src/cli/cmd-review.js';
+import type { SpawnEditor } from '../src/cli/cmd-review.js';
+import { makeIO, scripted } from './helpers.js';
 import type { Lexicon } from '../src/core/types.js';
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -390,6 +396,118 @@ describe('loadMatcherIndex', () => {
     await write(bigLexicon(INDEX_CACHE_MIN_TERMS, [{ canonical: 'Vercel', aliases: ['versel'] }]));
     expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string }).project).toBeUndefined();
     await expectHit(repo, 'ping kwuxly on versel', 'ping kwuxly on Vercel');
+  });
+});
+
+/**
+ * Writes outside store.ts (pack install and uninstall, which the registry's
+ * install, update and removal go through, `lexicon review` and `lexicon edit`)
+ * must leave the index cache refreshed for the merge the hook matches next,
+ * as addTerm does, so the first prompt after them is a hit.
+ */
+describe('index cache after writes outside store.ts', () => {
+  let tmp: string;
+  let globalPath: string;
+  let repo: string;
+  let projectPath: string;
+  const cachePath = (): string => path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+  const load = (cwd = repo) => loadLexicon({ cwd, globalPath, env: {} });
+
+  beforeEach(async () => {
+    tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-index-cache-writers-')));
+    globalPath = path.join(tmp, 'global', 'lexicon.yaml');
+    await writeLexiconFile({ path: globalPath, scope: 'global', lexicon: bigLexicon(INDEX_CACHE_MIN_TERMS), exists: false });
+    repo = path.join(tmp, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    projectPath = path.join(repo, '.lexicon.yaml');
+    await writeLexiconFile({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [{ canonical: 'Quuxly', aliases: ['kwuxly'] }] }, exists: false });
+    await trustProject(projectPath, { globalPath });
+    // The hook's first prompt in the repo: the entry now indexes the merge.
+    await loadMatcherIndex(await load());
+    expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string }).project).toBe(projectPath);
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  /** The next load in `cwd` is a hit (no rebuild, no rewrite), and corrects `text` to `output`. */
+  async function expectHit(text: string, output: string, cwd = repo): Promise<void> {
+    const before = await fs.readFile(cachePath(), 'utf8');
+    const loaded = await load(cwd);
+    expect((JSON.parse(before) as { key: string }).key).toBe(indexKey(loaded.merged));
+    expect(normalizeWithIndex(text, await loadMatcherIndex(loaded)).output).toBe(output);
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(before);
+  }
+
+  const PACK: Pack = {
+    name: 'cachetest',
+    title: 'Cache test',
+    description: 'One term.',
+    version: 1,
+    author: '',
+    homepage: '',
+    terms: 1,
+    aliases: 1,
+    path: '',
+    lexicon: { version: 1, terms: [{ canonical: 'Hetzner', aliases: ['hets ner'] }] },
+  };
+
+  it('pack install and uninstall into a trusted project file', async () => {
+    await installLoadedPack(PACK, 'cachetest', { cwd: repo, globalPath, scope: 'project' });
+    await expectHit('ping kwuxly on hets ner', 'ping Quuxly on Hetzner');
+    await uninstallLoadedPack(PACK, 'cachetest', { cwd: repo, globalPath, scope: 'project' });
+    await expectHit('ping kwuxly on hets ner', 'ping Quuxly on hets ner');
+  });
+
+  const PACK_YAML = (extra = ''): string =>
+    `name: cardiology\ntitle: Cardiology terms\ndescription: Heart words.\nversion: 1\nauthor: example\nhomepage: https://example.com/cardiology\nterms:\n  - canonical: Metoprolol\n    aliases: [metropolol]\n${extra}`;
+  async function registryIndex(packYaml: string, version: string): Promise<string> {
+    const packFile = path.join(tmp, 'cardiology.yaml');
+    await fs.writeFile(packFile, packYaml);
+    const indexPath = path.join(tmp, 'index.yaml');
+    await fs.writeFile(
+      indexPath,
+      `version: 1\npacks:\n  - author: example\n    name: cardiology\n    title: Cardiology terms\n    description: Heart words.\n    version: "${version}"\n    terms: 1\n    aliases: 1\n    checksum: ${sha256Hex(Buffer.from(packYaml))}\n    url: ./cardiology.yaml\n`,
+    );
+    return indexPath;
+  }
+
+  it('registry install, update and removal in a trusted project file', async () => {
+    const opts = { cwd: repo, globalPath, scope: 'project' as const };
+    const indexPath = await registryIndex(PACK_YAML(), '1');
+    const { index, base } = await loadRegistryIndex(indexPath);
+    await installRegistryPack(findRegistryEntry(index, 'example/cardiology'), base, indexPath, opts);
+    await expectHit('ping kwuxly about metropolol', 'ping Quuxly about Metoprolol');
+
+    const index2 = await registryIndex(PACK_YAML('  - canonical: Stent\n    aliases: [stint]\n'), '2');
+    const [preview] = await previewRegistryUpdates(['example/cardiology'], index2, opts);
+    expect((await applyRegistryUpdate(preview, index2, opts)).status).toBe('updated');
+    await expectHit('a stint for metropolol', 'a Stent for Metoprolol');
+
+    await uninstallRegistryPack('example/cardiology', undefined, opts);
+    await expectHit('a stint for metropolol', 'a stint for metropolol');
+  });
+
+  it('lexicon review --project', async () => {
+    const io = makeIO();
+    expect(await runReview({ cwd: repo, globalPath, project: true }, io, scripted(['d']))).toBe(0);
+    expect(io.out).toContain('deleted 1');
+    await expectHit('ping kwuxly', 'ping kwuxly');
+  });
+
+  it('lexicon edit, of the project file and of the global file', async () => {
+    const append = (extra: string): SpawnEditor => async (_cmd, _args, file) => {
+      await fs.appendFile(file, extra);
+      return 0;
+    };
+    expect(await runEdit({ cwd: repo, globalPath, project: true }, makeIO(), append('  - canonical: Hetzner\n    aliases: [hets ner]\n'), { EDITOR: 'fake' })).toBe(0);
+    await expectHit('ping kwuxly on hets ner', 'ping Quuxly on Hetzner');
+
+    // The global file, with the entry indexing the global lexicon alone.
+    await loadMatcherIndex(await load(tmp));
+    expect(await runEdit({ cwd: tmp, globalPath }, makeIO(), append('  - canonical: Vercel\n    aliases: [versel]\n'), { EDITOR: 'fake' })).toBe(0);
+    await expectHit('deploy to versel', 'deploy to Vercel', tmp);
   });
 });
 

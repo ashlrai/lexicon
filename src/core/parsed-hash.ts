@@ -36,6 +36,15 @@ export function rememberParsedBytes(file: LexiconFile, bytes: Uint8Array | strin
   entries.set(file, { bytes });
 }
 
+/**
+ * Remember `sha256` as the hash of the bytes `file` was parsed from, when the
+ * caller already holds it for exactly those bytes (the project parse cache in
+ * store.ts, whose entry is reused only for byte-identical content).
+ */
+export function rememberParsedHash(file: LexiconFile, sha256: string): void {
+  entries.set(file, { sha256 });
+}
+
 export async function recalledParsedHash(file: LexiconFile): Promise<string | undefined> {
   const entry = entries.get(file);
   if (!entry) return undefined;

@@ -27,7 +27,7 @@ import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
-import { recalledParsedHash, rememberParsedBytes } from './parsed-hash.js';
+import { recalledParsedHash, rememberParsedBytes, rememberParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
@@ -232,8 +232,10 @@ function parseLexiconText(text: string, filePath: string, scope: TermScope): Lex
  * read instead, which cost a 2000-term lexicon about 30 ms per prompt to
  * re-check a value this module had already validated before writing it.
  *
- * Only `loadLexicon`'s read of the global file uses it, and only once that
- * file reaches PARSE_CACHE_MIN_BYTES: a project file is someone else's,
+ * `loadLexicon`'s read of the global file uses it, and so do the reads the
+ * writers here make of the global file before they edit it (see
+ * readLexiconFileForWrite), only once that file reaches
+ * PARSE_CACHE_MIN_BYTES: a project file is someone else's,
  * usually small, and is hashed by the trust check anyway; a small global file
  * parses in a few milliseconds, and skipping it keeps a cache file from
  * appearing beside every hand-written lexicon a test or a script points at.
@@ -263,7 +265,20 @@ export function cacheChecksum(text: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
+/**
+ * `readLexiconFile` for the writers in this module: a global file comes from
+ * the parse cache when its text is the one cached (the same value the YAML
+ * parse would give; see readGlobalLexiconCached), a project file is read and
+ * parsed as before. A `lexicon add` on a 2000-term lexicon parsed the YAML
+ * twice before writing (the read it edits and pinCommittedHits' look at what
+ * is on disk), about half of its time. A miss is not written back: the write
+ * that follows refreshes the entry anyway.
+ */
+function readLexiconFileForWrite(filePath: string, scope: TermScope): Promise<LexiconFile> {
+  return scope === 'global' ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
+}
+
+async function readGlobalLexiconCached(filePath: string, opts: { writeBack?: boolean } = {}): Promise<LexiconFile> {
   const read = await readLexiconText(filePath);
   if (read === undefined) return { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, 'global');
@@ -288,7 +303,7 @@ async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
     // missing, unreadable or stale: parse for real below
   }
   const file = parseLexiconText(read.text, filePath, 'global');
-  await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
   return file;
 }
 
@@ -308,6 +323,104 @@ async function writeParseCache(filePath: string, text: string, lexicon: Lexicon,
     );
   } catch {
     // a cache, not state: the next read parses again
+  }
+}
+
+/**
+ * The parse of the last trusted project lexicon `loadLexicon` merged, kept
+ * beside the global lexicon (`project-parse-cache.json`, mode 0600) with the
+ * exact text it came from and the sha256 of those bytes.
+ *
+ * A trusted project file cost the prompt hook its YAML parse and schema
+ * validation (about 20 ms for 200 terms) and loading node:crypto to hash it
+ * for the trust check (about 10 ms more) on every prompt, which put a
+ * 2000-term global plus 200-term project lexicon over the 200 ms budget.
+ *
+ * Reuse is decided by the content, never by metadata: the entry is a hit
+ * only when its `text`, encoded as UTF-8, is byte for byte the file just read
+ * (comparing decoded text alone would let two byte strings that decode to
+ * the same replacement characters match). For those bytes the stored
+ * `sha256` is the value hashing them would give, so the trust check still
+ * compares the pinned hash with the hash of the bytes being merged; the
+ * cache only remembers a computation. It does not decide trust: the registry
+ * is read and compared on every load as before, so an untrust, a re-pin or a
+ * changed file is seen at once. The entry is only written for a file the
+ * gate just found trusted, and only in the global config directory, where
+ * `trust.json` itself lives: anyone able to forge the entry could equally
+ * edit the registry, so it adds no new way in. `sum` (see `cacheChecksum`)
+ * catches a damaged entry, not a forged one. A single entry, like the index
+ * cache: alternating between two repos costs the parse, as before, and files
+ * under PARSE_CACHE_MIN_BYTES are not cached.
+ */
+export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
+
+/** Entry format of PROJECT_PARSE_CACHE_FILE_NAME. */
+export const PROJECT_PARSE_CACHE_VERSION = 1;
+
+/** A project file read for `loadLexicon`, and whether its parse came from the cache. */
+interface ProjectRead {
+  file: LexiconFile;
+  /** The bytes read, when the parse did not come from the cache (so it may be written). */
+  fresh?: { text: string };
+}
+
+async function readProjectLexiconCached(filePath: string, globalPath: string): Promise<ProjectRead> {
+  const read = await readLexiconText(filePath);
+  if (read === undefined) return { file: { path: filePath, scope: 'project', lexicon: emptyLexicon(), exists: false } };
+  if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
+    try {
+      const cached: unknown = JSON.parse(await fs.readFile(path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME), 'utf8'));
+      if (
+        isPlainObject(cached) &&
+        cached.version === PROJECT_PARSE_CACHE_VERSION &&
+        cached.path === path.resolve(filePath) &&
+        cached.text === read.text &&
+        typeof cached.sha256 === 'string' &&
+        /^[0-9a-f]{64}$/.test(cached.sha256) &&
+        typeof cached.lexicon === 'string' &&
+        cached.sum === cacheChecksum(`${cached.sha256}${cached.lexicon}`) &&
+        Buffer.from(cached.text, 'utf8').equals(read.bytes)
+      ) {
+        const lexicon: unknown = JSON.parse(cached.lexicon);
+        if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
+          const file: LexiconFile = { path: filePath, scope: 'project', lexicon: lexicon as unknown as Lexicon, exists: true };
+          rememberParsedHash(file, cached.sha256);
+          return { file };
+        }
+      }
+    } catch {
+      // missing, unreadable or damaged: parse for real below
+    }
+  }
+  const file = parseLexiconText(read.text, filePath, 'project');
+  rememberParsedBytes(file, read.bytes);
+  return { file, fresh: { text: read.text } };
+}
+
+/**
+ * Record `file` (just parsed from `text`, and just found trusted) as the
+ * project parse cache entry. Best effort, never throws.
+ */
+async function writeProjectParseCache(file: LexiconFile, text: string, globalPath: string): Promise<void> {
+  if (Buffer.byteLength(text, 'utf8') < PARSE_CACHE_MIN_BYTES) return;
+  try {
+    const sha256 = await recalledParsedHash(file);
+    if (sha256 === undefined) return;
+    const lexiconJson = JSON.stringify(file.lexicon);
+    await writeFileAtomic(
+      path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME),
+      JSON.stringify({
+        version: PROJECT_PARSE_CACHE_VERSION,
+        path: path.resolve(file.path),
+        sha256,
+        text,
+        sum: cacheChecksum(`${sha256}${lexiconJson}`),
+        lexicon: lexiconJson,
+      }),
+      { mode: 0o600 },
+    );
+  } catch {
+    // a cache, not state: the next load parses again
   }
 }
 
@@ -441,13 +554,29 @@ const INDEX_CACHE_HEAD_BYTES = 8192;
  * untrusted changes nothing. An entry already keyed for the result is left as
  * it is. Nothing happens where there is no entry, so a user who never runs
  * the hook does not pay a build on every write. Best effort, never throws.
+ *
+ * Exported for the writers outside this module that replace a lexicon file
+ * themselves or re-pin its trust afterwards (pack install and uninstall,
+ * and so the registry's install, update and removal, `lexicon review` and
+ * `lexicon edit`): they call it
+ * once the file and its trust entry are final, as `addTerm` does. For a
+ * global write whose entry indexes the global lexicon alone it rebuilds that
+ * entry from the file on disk (and so refreshes the parse cache too), which
+ * covers a file another program rewrote, such as the user's editor.
  */
-async function refreshIndexCache(written: { scope: TermScope; path: string }, opts: StoreOptions = {}): Promise<void> {
+export async function refreshIndexCache(written: { scope: TermScope; path: string }, opts: StoreOptions = {}): Promise<void> {
   try {
     const globalPath = written.scope === 'global' ? written.path : resolvePaths(opts).global;
     const cachePath = path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
     if (!existsSync(cachePath)) return;
     const project = written.scope === 'project' ? path.resolve(written.path) : await indexCacheProject(cachePath);
+    if (project === null) {
+      const global = await readGlobalLexiconCached(globalPath);
+      const merged = mergeLexicons(global.lexicon);
+      // Below the threshold an entry is never written: leave the old one alone, as prebuildIndexCache does.
+      if (merged.terms.length >= INDEX_CACHE_MIN_TERMS) await loadMatcherIndex({ merged, global });
+      return;
+    }
     if (typeof project !== 'string') return;
     const loaded = await loadLexicon({
       globalPath,
@@ -641,7 +770,7 @@ function updateMap(doc: Document, node: YAMLMap, value: Record<string, unknown>,
 async function pinCommittedHits(file: LexiconFile): Promise<void> {
   const onDisk = new Map<string, number>();
   try {
-    const current = await readLexiconFile(file.path, file.scope);
+    const current = await readLexiconFileForWrite(file.path, file.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== undefined) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -973,8 +1102,9 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
 
   let project: LexiconFile;
+  let fresh: ProjectRead['fresh'];
   try {
-    project = await readLexiconFile(paths.project, 'project');
+    ({ file: project, fresh } = await readProjectLexiconCached(paths.project, paths.global));
   } catch (err) {
     const placeholder: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
     const trust = await isTrusted(placeholder, opts);
@@ -983,6 +1113,7 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   }
 
   const projectTrust = await isTrusted(project, opts);
+  if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global);
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
     await hydrateHits(merged, project, opts);
@@ -1203,7 +1334,7 @@ export async function addTerm(
   // file before this one wrote would otherwise rename its own copy over the
   // top and take the new term with it.
   return withLexiconLock(targetPath, async () => {
-    const file = await readLexiconFile(targetPath, scope);
+    const file = await readLexiconFileForWrite(targetPath, scope);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
     return { file, ...result };
@@ -1227,7 +1358,7 @@ export async function addTerms(
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
-    const file = await readLexiconFile(targetPath, scope);
+    const file = await readLexiconFileForWrite(targetPath, scope);
     const results = incoming.map((t) => mergeTermInto(file, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file, opts);
     return { file, results };
@@ -1269,7 +1400,7 @@ export async function removeTerm(
 ): Promise<boolean> {
   for (const target of candidatePaths(opts, opts.scope)) {
     const removed = await withLexiconLock(target.path, async () => {
-      const file = await readLexiconFile(target.path, target.scope);
+      const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return false;
       const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file.lexicon.terms.length) return false;
@@ -1389,7 +1520,7 @@ export async function removeAlias(
   const files: LexiconFile[] = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
-      const file = await readLexiconFile(target.path, target.scope);
+      const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return;
       const term = findTerm(file.lexicon, wanted);
       if (!term) return;

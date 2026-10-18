@@ -43,6 +43,8 @@ import {
   PARSE_CACHE_FILE_NAME,
   PARSE_CACHE_MIN_BYTES,
   PARSE_CACHE_VERSION,
+  PROJECT_PARSE_CACHE_FILE_NAME,
+  PROJECT_PARSE_CACHE_VERSION,
   cacheChecksum,
   readGlobalHits,
   readHitsFor,
@@ -56,7 +58,7 @@ import {
   untrustedTermHolder,
   writeLexiconFile,
 } from '../src/core/store.js';
-import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject } from '../src/core/trust.js';
+import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject, untrustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
 import { xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
 
@@ -1130,6 +1132,45 @@ describe('global parse cache', () => {
     expect(JSON.parse(entry.lexicon)).toEqual(fresh.lexicon);
   });
 
+  it('serves the reads of a global add and remove, which then write exactly what the uncached path writes', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const body = `# my notes\n${PAD}version: 1\nterms:\n  - canonical: G\n    aliases: [gee] # inline\n    hits: 3\n  - canonical: H\n    aliases: [aitch]\n`;
+    const uncached = path.join(tmp, 'uncached', 'lexicon.yaml');
+    for (const p of [globalPath, uncached]) {
+      await fs.mkdir(path.dirname(p), { recursive: true });
+      await fs.writeFile(p, body);
+    }
+    // Only globalPath has an entry; it is the exact parse, so the edits must agree byte for byte.
+    await loadLexicon({ cwd: tmp, globalPath });
+    await expect(fs.stat(cachePath())).resolves.toBeDefined();
+    const term: Term = { canonical: 'Added', aliases: ['addd'], createdAt: '2026-01-01T00:00:00.000Z' };
+    await addTerm(term, { cwd: tmp, globalPath });
+    await addTerm(term, { cwd: tmp, globalPath: uncached });
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(await fs.readFile(uncached, 'utf8'));
+    await removeTerm('H', { cwd: tmp, globalPath });
+    await removeTerm('H', { cwd: tmp, globalPath: uncached });
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(await fs.readFile(uncached, 'utf8'));
+    expect(await fs.readFile(globalPath, 'utf8')).toContain('# inline');
+    expect(await fs.readFile(globalPath, 'utf8')).toContain('hits: 3');
+
+    // Proof the entry is what the add read: doctored (key kept), its alias reaches the write.
+    const entry = await readEntry();
+    const doctoredLexicon = JSON.parse(entry.lexicon) as Lexicon;
+    doctoredLexicon.terms[0].aliases = ['from-cache'];
+    const lexicon = JSON.stringify(doctoredLexicon);
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon, sum: cacheChecksum(lexicon) }));
+    await addTerm({ canonical: 'Second', aliases: [] }, { cwd: tmp, globalPath });
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.aliases).toEqual(['from-cache']);
+
+    // A hand edit since the entry was written: the YAML is read, as before.
+    await fs.appendFile(globalPath, '  - canonical: Hand\n    aliases: [hnd]\n');
+    await addTerm({ canonical: 'Third', aliases: [] }, { cwd: tmp, globalPath });
+    const after = (await readLexiconFile(globalPath, 'global')).lexicon;
+    expect(findTerm(after, 'Hand')?.aliases).toEqual(['hnd']);
+    expect(findTerm(after, 'Third')).toBeDefined();
+  });
+
   it('is not written for a project file', async () => {
     const projectPath = path.join(tmp, '.lexicon.yaml');
     await fs.writeFile(projectPath, `${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: []\n`);
@@ -1137,6 +1178,98 @@ describe('global parse cache', () => {
     file.lexicon.terms.push({ canonical: 'Q', aliases: [] });
     await writeLexiconFile(file);
     await expect(fs.stat(path.join(tmp, PARSE_CACHE_FILE_NAME))).rejects.toThrow();
+  });
+});
+
+describe('project parse cache', () => {
+  const cachePath = (): string => path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const PAD = `${'# padding\n'.repeat(Math.ceil(PARSE_CACHE_MIN_BYTES / 10))}`;
+  interface Entry {
+    version: number;
+    path: string;
+    sha256: string;
+    text: string;
+    sum: string;
+    lexicon: string;
+  }
+  const readEntry = async (): Promise<Entry> => JSON.parse(await fs.readFile(cachePath(), 'utf8')) as Entry;
+  async function trustedRepo(body: string | Buffer): Promise<{ root: string; projectPath: string }> {
+    const { root } = await makeRepo();
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await fs.writeFile(projectPath, body);
+    await trustProject(projectPath, { globalPath });
+    return { root, projectPath };
+  }
+
+  it('caches a trusted project with the sha256 of its bytes and reuses it for identical bytes only', async () => {
+    const { root, projectPath } = await trustedRepo(`${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: [pee]\n`);
+    const first = await loadLexicon({ cwd: root, globalPath });
+    expect(first.projectTrust).toBe('trusted');
+    const entry = await readEntry();
+    expect(entry.version).toBe(PROJECT_PARSE_CACHE_VERSION);
+    expect(entry.path).toBe(projectPath);
+    expect(entry.sha256).toBe(await hashFile(projectPath));
+    expect(entry.sum).toBe(cacheChecksum(`${entry.sha256}${entry.lexicon}`));
+    if (process.platform !== 'win32') expect((await fs.stat(cachePath())).mode & 0o777).toBe(0o600);
+
+    // Proof the entry is what gets read: doctor it, keeping its key and checksum.
+    const lexicon = JSON.stringify({ version: 1, terms: [{ canonical: 'P', aliases: ['from-cache'] }] });
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon, sum: cacheChecksum(`${entry.sha256}${lexicon}`) }));
+    const second = await loadLexicon({ cwd: root, globalPath });
+    expect(second.projectTrust).toBe('trusted');
+    expect(findTerm(second.merged, 'P')?.aliases).toEqual(['from-cache']);
+
+    // A damaged entry (checksum mismatch) falls back to the YAML.
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon }));
+    expect(findTerm((await loadLexicon({ cwd: root, globalPath })).merged, 'P')?.aliases).toEqual(['pee']);
+  });
+
+  it('still reads the registry: an untrusted or changed file is not merged however warm the cache is', async () => {
+    const { root, projectPath } = await trustedRepo(`${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: [pee]\n`);
+    await loadLexicon({ cwd: root, globalPath });
+    await expect(fs.stat(cachePath())).resolves.toBeDefined();
+
+    await untrustProject(projectPath, { globalPath });
+    const untrusted = await loadLexicon({ cwd: root, globalPath });
+    expect(untrusted.projectTrust).toBe('untrusted');
+    expect(findTerm(untrusted.merged, 'P')).toBeUndefined();
+
+    await trustProject(projectPath, { globalPath });
+    await fs.appendFile(projectPath, '  - canonical: Injected\n    aliases: [inj]\n');
+    const changed = await loadLexicon({ cwd: root, globalPath });
+    expect(changed.projectTrust).toBe('changed');
+    expect(findTerm(changed.merged, 'Injected')).toBeUndefined();
+    // The changed file was not trusted, so the entry still holds the old bytes.
+    expect((await readEntry()).text).not.toContain('Injected');
+  });
+
+  it('compares bytes, not decoded text: invalid UTF-8 that decodes the same is a different file', async () => {
+    const body = (bad: number): Buffer =>
+      Buffer.concat([Buffer.from(`${PAD}# `), Buffer.from([bad]), Buffer.from('\nversion: 1\nterms:\n  - canonical: P\n    aliases: [pee]\n')]);
+    const { root, projectPath } = await trustedRepo(body(0xff));
+    expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('trusted');
+    await expect(fs.stat(cachePath())).resolves.toBeDefined();
+    // 0xFE decodes to the same U+FFFD as 0xFF, so the text matches the entry; the bytes do not.
+    await fs.writeFile(projectPath, body(0xfe));
+    expect((await fs.readFile(projectPath, 'utf8')) === (await readEntry()).text).toBe(true);
+    expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('changed');
+  });
+
+  it('is never written for an untrusted project file or a small one', async () => {
+    const { root } = await makeRepo();
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
+    await fs.writeFile(path.join(root, '.lexicon.yaml'), `${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: []\n`);
+    expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('untrusted');
+    expect((await loadLexicon({ cwd: root, globalPath, includeUntrusted: true })).project).toBeDefined();
+    await expect(fs.stat(cachePath())).rejects.toThrow();
+
+    await fs.writeFile(path.join(root, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: P\n    aliases: []\n');
+    await trustProject(path.join(root, '.lexicon.yaml'), { globalPath });
+    expect((await loadLexicon({ cwd: root, globalPath })).projectTrust).toBe('trusted');
+    await expect(fs.stat(cachePath())).rejects.toThrow();
   });
 });
 
