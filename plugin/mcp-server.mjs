@@ -64298,7 +64298,7 @@ async function stepClients(ctx) {
       const failure2 = lastLine(captured.err) || detail || `exit ${code}`;
       ctx.summary.clients.push({ name: client, status: "failed", detail: failure2 });
       ctx.warn(`   ${client}: failed ${safe(failure2)}`);
-      ctx.warn(`   (retry with: lexicon install ${client} --apply)`);
+      ctx.warn(ctx.opts.forAgent ? `   (retry with: install_client with client: "${client}" and apply: true)` : `   (retry with: lexicon install ${client} --apply)`);
     }
   }
 }
@@ -64370,7 +64370,7 @@ async function stepServe(ctx) {
   } else {
     ctx.summary.serve = "failed";
     ctx.warn(`   failed ${safe(lastLine(captured.err) || lastLine(captured.out))}`);
-    ctx.warn("   (retry with: lexicon serve --install)");
+    ctx.warn(ctx.opts.forAgent ? "   (retry with: setup_lexicon with apply: true and serve: true)" : "   (retry with: lexicon serve --install)");
   }
 }
 async function stepExport(ctx) {
@@ -64484,7 +64484,8 @@ function printNext(ctx) {
   const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
   const where = installed.includes("claude") ? "Claude Code" : installed[0] ?? "your agent";
   ctx.say();
-  if (!name && s.demo?.usedExample) {
+  const addName = !name && s.demo?.usedExample === true;
+  if (addName) {
     ctx.say(`${bold("Next:")} add a name you dictate: lexicon add "Your Co" --suggest  (then open ${safe(where)} and say it in a sentence)`);
   } else {
     ctx.say(
@@ -64492,6 +64493,8 @@ function printNext(ctx) {
     );
   }
   ctx.say(dim("   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)"));
+  const quoted = name ? JSON.stringify(name) : void 0;
+  s.nextStep = ctx.opts.forAgent ? addName ? "Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it." : `Ask the user to dictate a sentence with ${quoted ?? "one of their names"} in it${installed.length > 0 ? ` in ${where}` : ""}.` : addName ? `add a name you dictate: lexicon add "Your Co" --suggest (then open ${where} and say it in a sentence)` : `open ${where} and dictate a sentence with ${quoted ?? "one of your names"} in it`;
 }
 function printSummary(ctx) {
   const s = ctx.summary;
@@ -64522,6 +64525,7 @@ async function runSetup(opts, io, deps = {}) {
   const ownPrompter = interactive && !deps.createPrompter;
   const prompter = interactive ? (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))() : void 0;
   const say = (s = "") => {
+    if (opts.forAgent) return;
     if (opts.json) io.stderr(`${s}
 `);
     else io.stdout(`${s}
@@ -64693,6 +64697,9 @@ var registerSetupTools = (server, ctx) => {
         // for them to trust: the model relaying a yes is not the user
         // reviewing the names. An already-trusted file stays trusted.
         harvestUntrusted: true,
+        // No progress text naming CLI flags (--packs, --harvest): the plan and the summary
+        // carry the facts, and summary.nextStep names add_term.
+        forAgent: true,
         ...applied ? {} : { dryRun: true }
       };
       const { code, summary, plan } = await runSetup(options, io, cliDir !== void 0 ? { cliDir } : {});
@@ -64705,12 +64712,16 @@ var registerSetupTools = (server, ctx) => {
         });
       }
       const untrusted = summary.untrustedProject;
+      const steps = [
+        ...untrusted !== void 0 ? [untrustedWriteFields(untrusted, "The repo names", true).nextStep] : [],
+        ...summary.nextStep !== void 0 ? [summary.nextStep] : []
+      ];
       return textResult({
         ok: code === 0,
         applied: true,
         summary,
         ...stderr ? { stderr } : {},
-        ...untrusted !== void 0 ? { nextStep: untrustedWriteFields(untrusted, "The repo names", true).nextStep } : {}
+        ...steps.length > 0 ? { nextStep: steps.join(" Then: ") } : {}
       });
     })
   );

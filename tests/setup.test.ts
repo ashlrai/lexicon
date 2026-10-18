@@ -471,12 +471,52 @@ describe('runSetup --yes', () => {
     // Catches: the success document had no `ok`, while the refusal is `{ ok: false, error }`.
     expect(parsed).toEqual({ ok: true, ...summary });
     expect(Object.keys(parsed)[0]).toBe('ok');
-    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'ok', 'packs', 'serve', 'termsAdded']);
+    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'nextStep', 'ok', 'packs', 'serve', 'termsAdded']);
     expect(io.err).toContain('lexicon setup');
     expect(io.err).toContain('claude: installed');
     // The run ends in a correction the caller can show, not just a file list.
     expect(parsed.demo?.corrected).toContain('Ashlr.AI');
     expect(parsed.demo?.heard).not.toBe(parsed.demo?.corrected);
+  });
+
+  // Catches: the Next line went to stderr under --json and the summary had no
+  // nextStep, so an agent reading stdout never saw the "add a name" step.
+  it('--json carries the Next line as nextStep, and forAgent names add_term with no CLI flags', async () => {
+    const noName = (): Fakes =>
+      fakes({
+        exec: (file) => {
+          if (file === 'git') throw new Error('exit 1');
+          throw new Error(`unexpected exec: ${file}`);
+        },
+      });
+    const json = await run({ yes: true, json: true, clients: 'none', packs: false, harvest: false }, noName());
+    expect(json.io.err).toContain('Next: add a name you dictate: lexicon add "Your Co" --suggest');
+    expect((JSON.parse(json.io.out) as SetupSummary).nextStep).toBe('add a name you dictate: lexicon add "Your Co" --suggest (then open your agent and say it in a sentence)');
+
+    const named = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, fakes());
+    expect(named.summary.nextStep).toBe('open Claude Code and dictate a sentence with "Ashlr.AI" in it');
+    // The text output has the same step on its Next line.
+    const text = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI' }, fakes());
+    expect(text.io.out).toContain('Next: open Claude Code and dictate a sentence with "Ashlr.AI" in it');
+    expect(text.summary.nextStep).toBe(named.summary.nextStep);
+
+    await fs.rm(globalPath, { force: true });
+    const agent = await run({ yes: true, json: true, clients: 'none', harvest: false, forAgent: true }, noName());
+    expect(agent.summary.nextStep).toBe(
+      'Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it.',
+    );
+    // The progress (with its `add --packs developer,ai,voice-tools` hint) is not written for an agent.
+    expect(agent.io.err).toBe('');
+    expect(agent.io.out).not.toMatch(/--packs|--harvest|--serve/);
+    expect(JSON.parse(agent.io.out)).toMatchObject({ ok: true, nextStep: agent.summary.nextStep });
+    const plan = await run({ yes: true, json: true, dryRun: true, clients: 'none', forAgent: true }, noName());
+    expect(plan.io.err).toBe('');
+    // A failure still reaches stderr, with the retry as a tool call.
+    const failing = fakes({ installClient: async () => 1, installServe: async () => 1 });
+    const failed = await run({ yes: true, json: true, clients: 'claude', serve: true, company: 'Ashlr.AI', forAgent: true }, failing);
+    expect(failed.io.err).toContain('(retry with: install_client with client: "claude" and apply: true)');
+    expect(failed.io.err).toContain('(retry with: setup_lexicon with apply: true and serve: true)');
+    expect(failed.io.err).not.toContain('lexicon install');
   });
 
   it('takes the defaults off a terminal without --yes and says so', async () => {

@@ -236,7 +236,9 @@ if they want the repo names in `wouldHarvest` added to the project
 asks them to run `lexicon trust`; `harvest_repo` previews the same names), and `serve: true` only if they want the local API installed as a
 login service. The apply call runs `lexicon setup` non-interactively (`yes`,
 `json`) and returns `{ ok, applied: true, summary: { lexiconPath, termsAdded,
-clients: [{ name, status, detail? }], serve, exports } }`; `detail` is the
+clients: [{ name, status, detail? }], serve, exports, nextStep }, nextStep }`
+(`nextStep`, what to relay next, names `add_term` when the user has no name of
+their own in the lexicon yet); `detail` is the
 config file the installer wrote (`~/.cursor/mcp.json`, `~/.claude/settings.json
 (unchanged)`).
 

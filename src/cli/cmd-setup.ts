@@ -174,7 +174,8 @@ function printNext(ctx: Ctx): void {
   // The demonstration fell back to the example terms: the lexicon has no
   // misspelling of the user's own to show, so "dictate one of your names"
   // would test nothing. Adding one is the next thing to do.
-  if (!name && s.demo?.usedExample) {
+  const addName = !name && s.demo?.usedExample === true;
+  if (addName) {
     ctx.say(`${bold('Next:')} add a name you dictate: lexicon add "Your Co" --suggest  (then open ${safe(where)} and say it in a sentence)`);
   } else {
     ctx.say(
@@ -182,6 +183,16 @@ function printNext(ctx: Ctx): void {
     );
   }
   ctx.say(dim('   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)'));
+  // The same step for `--json` (where the line above went to stderr) and, in
+  // tool terms, for an agent: the agent cannot run `lexicon add`.
+  const quoted = name ? JSON.stringify(name) : undefined;
+  s.nextStep = ctx.opts.forAgent
+    ? addName
+      ? 'Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it.'
+      : `Ask the user to dictate a sentence with ${quoted ?? 'one of their names'} in it${installed.length > 0 ? ` in ${where}` : ''}.`
+    : addName
+      ? `add a name you dictate: lexicon add "Your Co" --suggest (then open ${where} and say it in a sentence)`
+      : `open ${where} and dictate a sentence with ${quoted ?? 'one of your names'} in it`;
 }
 
 /** Step h: the summary card. */
@@ -233,6 +244,8 @@ export async function runSetup(
     : undefined;
 
   const say = (s = ''): void => {
+    // An agent gets the summary or plan instead: the progress names CLI flags it cannot pass.
+    if (opts.forAgent) return;
     if (opts.json) io.stderr(`${s}\n`);
     else io.stdout(`${s}\n`);
   };

@@ -533,7 +533,7 @@ export async function stepClients(ctx: Ctx): Promise<void> {
       const failure = lastLine(captured.err) || detail || `exit ${code}`;
       ctx.summary.clients.push({ name: client, status: 'failed', detail: failure });
       ctx.warn(`   ${client}: failed ${safe(failure)}`);
-      ctx.warn(`   (retry with: lexicon install ${client} --apply)`);
+      ctx.warn(ctx.opts.forAgent ? `   (retry with: install_client with client: "${client}" and apply: true)` : `   (retry with: lexicon install ${client} --apply)`);
     }
   }
 }
@@ -616,7 +616,7 @@ export async function stepServe(ctx: Ctx): Promise<void> {
   } else {
     ctx.summary.serve = 'failed';
     ctx.warn(`   failed ${safe(lastLine(captured.err) || lastLine(captured.out))}`);
-    ctx.warn('   (retry with: lexicon serve --install)');
+    ctx.warn(ctx.opts.forAgent ? '   (retry with: setup_lexicon with apply: true and serve: true)' : '   (retry with: lexicon serve --install)');
   }
 }
 
