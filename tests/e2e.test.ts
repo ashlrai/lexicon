@@ -1660,3 +1660,32 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add --json w
     expect(docs[1]).toMatchObject({ preview: false, ref: 'example/cardiology' });
   });
 });
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add refusals name the next step', () => {
+  // Catches: pack add printed only the error for a mistyped pack name (stderr had no
+  // next step, --json the generic one) and for a community ref given without --registry.
+  it('an unknown pack points at pack list, a community ref without --registry at the flag', async () => {
+    const h = await freshHome('pack-refuse');
+    const typo = await runCli(['pack', 'add', 'developr'], { env: h.env });
+    expect(typo.code).toBe(1);
+    expect(typo.stderr).toContain('lexicon: developr: unknown pack "developr"');
+    expect(typo.stderr).toContain('lexicon: run lexicon pack list to see the starter packs');
+    const typoJson = await runCli(['pack', 'add', 'developr', '--json'], { env: h.env });
+    expect(typoJson.code).toBe(1);
+    expect(JSON.parse(typoJson.stdout)).toEqual({
+      ok: false,
+      ref: 'developr',
+      error: expect.stringContaining('unknown pack'),
+      nextStep: expect.stringContaining('run lexicon pack list'),
+    });
+
+    const noRegistry = await runCli(['pack', 'add', 'example/cardiology', '--json'], { env: h.env });
+    expect(noRegistry.code).toBe(1);
+    expect(JSON.parse(noRegistry.stdout)).toMatchObject({
+      ok: false,
+      ref: 'example/cardiology',
+      nextStep: expect.stringContaining('lexicon pack add example/cardiology --registry <index>'),
+    });
+    expect(noRegistry.stderr).toContain('lexicon: run: lexicon pack add example/cardiology --registry <index>');
+  });
+});

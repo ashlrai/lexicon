@@ -40,7 +40,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -463,7 +463,12 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
-        if (!opts.registry) throw new Error(NEED_REGISTRY);
+        if (!opts.registry) {
+          throw new CliRefusal(
+            NEED_REGISTRY,
+            `run: lexicon pack add ${name} --registry <index> (lexicon pack search <query> --registry <index> lists the index's packs)`,
+          );
+        }
         const outcome = await runPackAddRegistry(name, opts, io, deps);
         if (outcome.kind === 'preview') {
           results.push(outcome.preview);
@@ -522,7 +527,12 @@ function failPackAdd(
 ): number {
   const ref = names[at]!;
   const message = errorMessage(err);
-  const hint = unreadableLexiconHint(message);
+  // The refusal's own next step (a community ref without --registry), or the
+  // pack list for a name that is no pack at all: `fail` gives every other
+  // command both, and without them `pack add` left a typo with no way on.
+  const hint =
+    unreadableLexiconHint(message) ??
+    (err instanceof CliRefusal ? err.nextStep : err instanceof Error && err.name === 'PackNotFoundError' ? PACK_NOT_FOUND_NEXT_STEP : undefined);
   if (opts.json) {
     const { ok, ...detail } = jsonError(message, hint);
     const entry: PackAddFailureJson = { ref, ok, ...detail };
@@ -531,7 +541,7 @@ function failPackAdd(
     line(io, JSON.stringify(doc, null, 2));
   }
   io.stderr(`lexicon: ${safe(ref)}: ${safeLines(message)}\n`);
-  if (hint) io.stderr(`lexicon: ${hint}\n`);
+  if (hint) io.stderr(`lexicon: ${safeLines(hint)}\n`);
   const after = names.slice(at + 1);
   if (after.length > 0) io.stderr(`lexicon: not attempted: ${after.map(safe).join(', ')}\n`);
   return 1;
