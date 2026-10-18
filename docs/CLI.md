@@ -443,7 +443,8 @@ Options:
   --json         print the listening info (or the --show, --status, --pair,
                  --install or --uninstall result) as JSON, led by ok (for
                  --status, ok equals up)
-  --quiet        do not log requests
+  --quiet        do not log requests (only when running the server; refused with
+                 --show, --status, --pair, --install, --uninstall)
   --show         print the URL and bearer token (for the extension options page)
                  and exit
   --status       check whether the server is up and exit

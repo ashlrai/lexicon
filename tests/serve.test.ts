@@ -1154,6 +1154,22 @@ describe('lexicon serve (CLI)', () => {
     expect(JSON.parse(install.out.join(''))).toEqual({ ok: false, error, nextStep: 'pass only one of --install, --uninstall (see lexicon serve --help)' });
   });
 
+  // Catches: `serve --status --quiet` (and every other one-shot mode) dropped
+  // --quiet without a word, as if it did something there.
+  it('refuses --quiet with a one-shot mode, naming the mode, with and without --json', async () => {
+    const io = memIO();
+    expect(await runServe({ status: true, quiet: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
+    expect(JSON.parse(io.out.join(''))).toEqual({
+      ok: false,
+      error: '--quiet only applies to a running server; --status logs no requests',
+      nextStep: 'drop --quiet, or run lexicon serve --quiet to start the server without request logs',
+    });
+    const text = memIO();
+    expect(await runServe({ show: true, quiet: true, globalPath: env.globalPath }, text)).toBe(1);
+    expect(text.out.join('')).toBe('');
+    expect(text.err.join('')).toContain('lexicon: --quiet only applies to a running server; --show logs no requests');
+  });
+
   // Catches: `serve --install --json` and `--uninstall --json` printed the
   // prose transcript on stdout, so a script that asked for JSON parsed text.
   it('--install --json and --uninstall --json print one document, success or failure', async () => {
