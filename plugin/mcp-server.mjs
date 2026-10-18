@@ -54164,10 +54164,11 @@ async function loadMatcherIndex(loaded, opts = {}) {
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
+  const project = loaded.project ? import_node_path5.default.resolve(loaded.project.path) : void 0;
   try {
     const text = await import_node_fs5.promises.readFile(cachePath, "utf8");
-    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
-    if (text.startsWith(head.slice(0, -1))) {
+    const head = indexCacheHead(key, project);
+    if (text.startsWith(head)) {
       const cached2 = JSON.parse(text);
       if (isPlainObject3(cached2) && cached2.version === INDEX_FORMAT_VERSION && cached2.key === key) {
         const index2 = deserializeIndex(cached2.index, lexicon);
@@ -54177,20 +54178,63 @@ async function loadMatcherIndex(loaded, opts = {}) {
   } catch {
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
+  if (opts.write !== false) await writeIndexCache(cachePath, key, index, project);
   return index;
 }
-async function writeIndexCache(cachePath, key, index) {
+function indexCacheHead(key, project) {
+  const head = JSON.stringify(project === void 0 ? { version: INDEX_FORMAT_VERSION, key } : { version: INDEX_FORMAT_VERSION, project, key });
+  return head.slice(0, -1);
+}
+async function writeIndexCache(cachePath, key, index, project) {
   try {
-    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, ...project !== void 0 ? { project } : {}, key, index: serializeIndex(index) });
     await writeFileAtomic(cachePath, out, { mode: 384 });
   } catch {
   }
 }
+async function indexCacheProject(cachePath) {
+  let handle;
+  try {
+    handle = await import_node_fs5.promises.open(cachePath, "r");
+    const buf = Buffer.alloc(INDEX_CACHE_HEAD_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    const head = buf.toString("utf8", 0, bytesRead);
+    const m = /^\{"version":(\d+),(?:"project":("(?:[^"\\]|\\.)*"),)?"key":/.exec(head);
+    if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return void 0;
+    if (m[2] === void 0) return null;
+    const project = JSON.parse(m[2]);
+    return typeof project === "string" && import_node_path5.default.isAbsolute(project) ? project : void 0;
+  } catch {
+    return void 0;
+  } finally {
+    await handle?.close().catch(() => void 0);
+  }
+}
+var INDEX_CACHE_HEAD_BYTES = 8192;
+async function refreshIndexCache(written, opts = {}) {
+  try {
+    const globalPath = written.scope === "global" ? written.path : resolvePaths(opts).global;
+    const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+    if (!(0, import_node_fs5.existsSync)(cachePath)) return;
+    const project = written.scope === "project" ? import_node_path5.default.resolve(written.path) : await indexCacheProject(cachePath);
+    if (typeof project !== "string") return;
+    const loaded = await loadLexicon({
+      globalPath,
+      cwd: import_node_path5.default.dirname(project),
+      ...opts.env !== void 0 ? { env: opts.env } : {},
+      ...opts.home !== void 0 ? { home: opts.home } : {}
+    });
+    if (written.scope === "project" && (loaded.project === void 0 || import_node_path5.default.resolve(loaded.project.path) !== project)) return;
+    await loadMatcherIndex(loaded);
+  } catch {
+  }
+}
 async function prebuildIndexCache(filePath, lexicon) {
-  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), INDEX_CACHE_FILE_NAME);
   if (!(0, import_node_fs5.existsSync)(cachePath)) return;
+  const project = await indexCacheProject(cachePath);
+  if (typeof project === "string") return refreshIndexCache({ scope: "global", path: filePath });
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   try {
     const merged = mergeLexicons(lexicon);
     await writeIndexCache(cachePath, indexKey(merged), buildIndex(merged));
@@ -54465,10 +54509,17 @@ async function loadLexicon(opts = {}) {
 function mergeLexicons(global, project) {
   const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
   if (project) {
+    const firstByKey = /* @__PURE__ */ new Map();
+    terms.forEach((t, i) => {
+      const k = canonicalKey2(t.canonical);
+      if (!firstByKey.has(k)) firstByKey.set(k, i);
+    });
     for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const key = canonicalKey2(pt.canonical);
+      const idx = firstByKey.get(key) ?? -1;
       const replacement = { ...pt, scope: pt.scope ?? "project" };
       if (idx === -1) {
+        firstByKey.set(key, terms.length);
         terms.push({ ...replacement, aliases: [...pt.aliases] });
       } else {
         replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
@@ -54589,7 +54640,10 @@ function writeAddedFile(file2, opts) {
 }
 async function writeAndTrust(file2, opts) {
   await writeLexiconFile(file2);
-  if (file2.scope === "project") await trustProject(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
+  if (file2.scope === "project") {
+    await trustProject(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
+    await refreshIndexCache(file2, opts);
+  }
 }
 async function removeTerm(canonical, opts = {}) {
   for (const target of candidatePaths(opts, opts.scope)) {
@@ -54604,6 +54658,7 @@ async function removeTerm(canonical, opts = {}) {
       if (file2.scope === "project") {
         await refreshTrust(file2.path, opts);
         await dropProjectHits(file2.path, canonical, opts);
+        await refreshIndexCache(file2, opts);
       } else {
         await dropGlobalHits(canonical, opts);
       }
@@ -54652,7 +54707,10 @@ async function removeAlias(canonical, alias, opts = {}) {
       if (file2.scope === "project") await assertProjectWritable(file2.path, opts);
       term.aliases = remaining;
       await writeLexiconFile(file2);
-      if (file2.scope === "project") await refreshTrust(file2.path, opts);
+      if (file2.scope === "project") {
+        await refreshTrust(file2.path, opts);
+        await refreshIndexCache(file2, opts);
+      }
       files.push(file2);
       firstTerm ??= term;
     });
@@ -54738,8 +54796,11 @@ function candidatePaths(opts, scope) {
   targets.push({ path: paths.global, scope: "global" });
   return targets;
 }
+function canonicalKey2(canonical) {
+  return canonical.trim().toLowerCase();
+}
 function sameCanonical(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return canonicalKey2(a) === canonicalKey2(b);
 }
 function dedupeAliases(aliases, canonical) {
   const canon = canonical.trim().toLowerCase();

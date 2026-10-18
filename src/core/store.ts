@@ -339,17 +339,21 @@ export const INDEX_CACHE_MIN_TERMS = 150;
  * past INDEX_CACHE_MIN_TERMS, written back best-effort). Never throws for a
  * cache problem; `write: false` skips the write-back.
  */
-export async function loadMatcherIndex(loaded: Pick<LoadedLexicon, 'merged' | 'global'>, opts: { write?: boolean } = {}): Promise<MatcherIndex> {
+export async function loadMatcherIndex(
+  loaded: Pick<LoadedLexicon, 'merged' | 'global'> & { project?: Pick<LexiconFile, 'path'> },
+  opts: { write?: boolean } = {},
+): Promise<MatcherIndex> {
   const lexicon = loaded.merged;
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
   const cachePath = path.join(path.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
+  const project = loaded.project ? path.resolve(loaded.project.path) : undefined;
   try {
     const text = await fs.readFile(cachePath, 'utf8');
     // Cheap rejections first: the key is a prefix of the file (see below), so
     // a different lexicon is told apart before anything is parsed.
-    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
-    if (text.startsWith(head.slice(0, -1))) {
+    const head = indexCacheHead(key, project);
+    if (text.startsWith(head)) {
       const cached: unknown = JSON.parse(text);
       if (isPlainObject(cached) && cached.version === INDEX_FORMAT_VERSION && cached.key === key) {
         const index = deserializeIndex(cached.index, lexicon);
@@ -360,15 +364,31 @@ export async function loadMatcherIndex(loaded: Pick<LoadedLexicon, 'merged' | 'g
     // missing, unreadable or damaged: rebuild below
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
+  if (opts.write !== false) await writeIndexCache(cachePath, key, index, project);
   return index;
 }
 
-/** Replace the index cache entry at `cachePath`. Best effort, never throws. */
-async function writeIndexCache(cachePath: string, key: string, index: MatcherIndex): Promise<void> {
+/**
+ * The start of an entry's JSON up to and including its key:
+ * `{"version":N,"project":"<path>","key":"..."` for a merge with a trusted
+ * project file, `{"version":N,"key":"..."` for the global lexicon alone.
+ */
+function indexCacheHead(key: string, project: string | undefined): string {
+  const head = JSON.stringify(project === undefined ? { version: INDEX_FORMAT_VERSION, key } : { version: INDEX_FORMAT_VERSION, project, key });
+  return head.slice(0, -1);
+}
+
+/**
+ * Replace the index cache entry at `cachePath`. `project` is the absolute
+ * path of the trusted project file merged into the indexed lexicon, if any,
+ * so a later write can rebuild the entry for the same merge (see
+ * refreshIndexCache). Best effort, never throws.
+ */
+async function writeIndexCache(cachePath: string, key: string, index: MatcherIndex, project?: string): Promise<void> {
   try {
-    // `version` and `key` lead the object so loadMatcherIndex's prefix check works.
-    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    // `version`, `project` and `key` lead the object so loadMatcherIndex's
+    // prefix check works and indexCacheProject reads the project from the head.
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, ...(project !== undefined ? { project } : {}), key, index: serializeIndex(index) });
     await writeFileAtomic(cachePath, out, { mode: 0o600 });
   } catch {
     // a cache, not state
@@ -376,16 +396,83 @@ async function writeIndexCache(cachePath: string, key: string, index: MatcherInd
 }
 
 /**
+ * Which merge the entry at `cachePath` indexes, read from the first bytes of
+ * the file only (the whole entry is about 700 KB for 2000 terms, and parsing
+ * it costs a write about 20 ms): the absolute path of the project file merged
+ * in, `null` for the global lexicon alone, `undefined` when there is no entry
+ * or its head is not one this version writes.
+ */
+async function indexCacheProject(cachePath: string): Promise<string | null | undefined> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(cachePath, 'r');
+    const buf = Buffer.alloc(INDEX_CACHE_HEAD_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    const head = buf.toString('utf8', 0, bytesRead);
+    const m = /^\{"version":(\d+),(?:"project":("(?:[^"\\]|\\.)*"),)?"key":/.exec(head);
+    if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return undefined;
+    if (m[2] === undefined) return null;
+    const project: unknown = JSON.parse(m[2]);
+    return typeof project === 'string' && path.isAbsolute(project) ? project : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/** Bytes of an index cache entry indexCacheProject reads: past any project path. */
+const INDEX_CACHE_HEAD_BYTES = 8192;
+
+/**
+ * After a write to a lexicon file, rebuild an existing index cache entry for
+ * the merge the next prompt will match against, so it reads the entry instead
+ * of building the index (about 55 ms for 2000 terms, plus writing it back).
+ *
+ * The entry is single: the merge the hook (or `lexicon serve`, or an MCP
+ * normalize) matched last, the global lexicon alone or with one trusted
+ * project file. A write to the global file rebuilds it for that same merge,
+ * reading the project path the entry records; a write to a project file
+ * rebuilds it for the global lexicon merged with that file, since its repo is
+ * where the next prompt is likely to be. Both go through `loadLexicon` and
+ * `loadMatcherIndex`, exactly the hook's path, so the trust gate decides what
+ * is merged: a project file that is not trusted (or no longer exists) is left
+ * out, as the hook would leave it out, and a project-scope write left
+ * untrusted changes nothing. An entry already keyed for the result is left as
+ * it is. Nothing happens where there is no entry, so a user who never runs
+ * the hook does not pay a build on every write. Best effort, never throws.
+ */
+async function refreshIndexCache(written: { scope: TermScope; path: string }, opts: StoreOptions = {}): Promise<void> {
+  try {
+    const globalPath = written.scope === 'global' ? written.path : resolvePaths(opts).global;
+    const cachePath = path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+    if (!existsSync(cachePath)) return;
+    const project = written.scope === 'project' ? path.resolve(written.path) : await indexCacheProject(cachePath);
+    if (typeof project !== 'string') return;
+    const loaded = await loadLexicon({
+      globalPath,
+      cwd: path.dirname(project),
+      ...(opts.env !== undefined ? { env: opts.env } : {}),
+      ...(opts.home !== undefined ? { home: opts.home } : {}),
+    });
+    // A project write the trust gate leaves out of the merge changed nothing the hook matches.
+    if (written.scope === 'project' && (loaded.project === undefined || path.resolve(loaded.project.path) !== project)) return;
+    await loadMatcherIndex(loaded);
+  } catch {
+    // a cache, not state: the hook builds it instead
+  }
+}
+
+/**
  * Pre-build the index cache for a global lexicon file this module just wrote
- * (`lexicon` is its parse), keyed for the merge `loadLexicon` produces when no
- * trusted project file is in play. Without it, the first prompt after every
- * write rebuilt and wrote the index inside the hook: about 55 ms of build
- * plus the write, which put a 2000-term lexicon over the hook's 200 ms
- * budget. A write that already holds the parse pays only the build and the
- * write here, once, outside any prompt. A trusted project changes the merged
- * key, so its first prompt still builds (as before); the entry is never
- * written for a project file. Below INDEX_CACHE_MIN_TERMS nothing is written,
- * matching loadMatcherIndex.
+ * (`lexicon` is its parse). Without it, the first prompt after every write
+ * rebuilt and wrote the index inside the hook: about 55 ms of build plus the
+ * write, which put a 2000-term lexicon over the hook's 200 ms budget. A write
+ * that already holds the parse pays only the build and the write here, once,
+ * outside any prompt. When the entry there indexes the global lexicon merged
+ * with a trusted project file, refreshIndexCache rebuilds it for that merge
+ * instead; the entry is never written into a project directory. Below
+ * INDEX_CACHE_MIN_TERMS nothing is written, matching loadMatcherIndex.
  *
  * It only refreshes an entry that is already there: one exists once the
  * hook, `lexicon serve` or an MCP normalize has matched against a lexicon this
@@ -393,9 +480,11 @@ async function writeIndexCache(cachePath: string, key: string, index: MatcherInd
  * 100 ms for 2000 terms in a fresh process) on every `add`.
  */
 async function prebuildIndexCache(filePath: string, lexicon: Lexicon): Promise<void> {
-  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   const cachePath = path.join(path.dirname(filePath), INDEX_CACHE_FILE_NAME);
   if (!existsSync(cachePath)) return;
+  const project = await indexCacheProject(cachePath);
+  if (typeof project === 'string') return refreshIndexCache({ scope: 'global', path: filePath });
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   try {
     const merged = mergeLexicons(lexicon);
     await writeIndexCache(cachePath, indexKey(merged), buildIndex(merged));
@@ -915,10 +1004,21 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
 export function mergeLexicons(global: Lexicon, project?: Lexicon): Lexicon {
   const terms: Term[] = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? 'global' }));
   if (project) {
+    // The first term holding each canonical (sameCanonical's key), so a
+    // project term finds its global counterpart without a scan: a findIndex
+    // per project term cost a 2000-term global and 200-term project merge
+    // about 40 ms of every prompt, plus the garbage of the lowercased copies.
+    const firstByKey = new Map<string, number>();
+    terms.forEach((t, i) => {
+      const k = canonicalKey(t.canonical);
+      if (!firstByKey.has(k)) firstByKey.set(k, i);
+    });
     for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const key = canonicalKey(pt.canonical);
+      const idx = firstByKey.get(key) ?? -1;
       const replacement: Term = { ...pt, scope: pt.scope ?? 'project' };
       if (idx === -1) {
+        firstByKey.set(key, terms.length);
         terms.push({ ...replacement, aliases: [...pt.aliases] });
       } else {
         replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
@@ -1150,7 +1250,11 @@ async function writeAndTrust(file: LexiconFile, opts: StoreOptions): Promise<voi
   await writeLexiconFile(file);
   // Pin the bytes this write produced; a file rewritten by someone else since
   // is left unpinned (and so untrusted) rather than blessed.
-  if (file.scope === 'project') await trustProject(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
+  if (file.scope === 'project') {
+    await trustProject(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
+    // Now that the trust entry says what the hook will merge.
+    await refreshIndexCache(file, opts);
+  }
 }
 
 /**
@@ -1178,6 +1282,7 @@ export async function removeTerm(
         // The term is gone; so is this user's tally for it, or re-adding the
         // word later would inherit a count it never earned.
         await dropProjectHits(file.path, canonical, opts);
+        await refreshIndexCache(file, opts);
       } else {
         await dropGlobalHits(canonical, opts);
       }
@@ -1295,7 +1400,10 @@ export async function removeAlias(
       term.aliases = remaining;
       await writeLexiconFile(file);
       // The user's own edit must not flip an already-trusted file to 'changed'.
-      if (file.scope === 'project') await refreshTrust(file.path, opts);
+      if (file.scope === 'project') {
+        await refreshTrust(file.path, opts);
+        await refreshIndexCache(file, opts);
+      }
       files.push(file);
       firstTerm ??= term;
     });
@@ -1440,8 +1548,13 @@ function candidatePaths(opts: StoreOptions, scope?: TermScope): { path: string; 
   return targets;
 }
 
+/** What sameCanonical compares: two canonicals are the same term when their keys are equal. */
+function canonicalKey(canonical: string): string {
+  return canonical.trim().toLowerCase();
+}
+
 function sameCanonical(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return canonicalKey(a) === canonicalKey(b);
 }
 
 /** Trim, drop empties and anything equal to the canonical, dedupe case-insensitively (first spelling wins). */
