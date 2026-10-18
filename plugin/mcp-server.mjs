@@ -60620,12 +60620,18 @@ var registerTermTools = (server, ctx) => {
       title: "Learn from a spelling correction",
       description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
-        meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
+        heard: external_exports.string().min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
+        meant: external_exports.string().min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default; or wherever the term already lives) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
     async ({ heard, meant, scope }) => guarded(async () => {
+      const tooLong = [...heard.trim().replace(/\s+/g, " ").length > MAX_CORRECTION_LENGTH ? ["heard"] : [], ...meant.trim().replace(/\s+/g, " ").length > MAX_CORRECTION_LENGTH ? ["meant"] : []];
+      if (tooLong.length > 0) {
+        throw new Error(
+          `${tooLong.join(" and ")} must be at most ${MAX_CORRECTION_LENGTH} characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.`
+        );
+      }
       const writeOpts = await mcpWriteOpts(ctx);
       const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {}, ...writeOpts });
       const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === "project";
