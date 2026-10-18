@@ -177,6 +177,16 @@ export function siteEnabled(settings: Pick<Settings, 'sites'>, hostname: string)
   return settings.sites[hostKey(hostname)] !== false;
 }
 
+/** `1 term`, `2 terms`, `1 alias`, `2 aliases`: a count with its noun in the right number. */
+export function countOf(n: number, noun: string, plural = `${noun}s`): string {
+  return `${n} ${n === 1 ? noun : plural}`;
+}
+
+/** The Options line after a sync from the local API (`SyncReply`). */
+export function syncedLine(reply: SyncReply): string {
+  return `Synced ${countOf(reply.terms, 'term')} from the local API.`;
+}
+
 /** The one line the toast shows when matching stopped before the end of the text. */
 export function incompleteNotice(inc: NormalizeIncomplete): string {
   if (inc.reasons.includes('length') && inc.checkedChars !== undefined) {
