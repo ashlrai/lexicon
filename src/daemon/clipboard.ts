@@ -173,7 +173,9 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     const now = Date.now();
     if (!lexicon || now - lexiconLoadedAt >= LEXICON_RELOAD_MS) {
       try {
-        lexicon = (await loadLexicon({ cwd })).merged;
+        // parseSkipped: false: only the merged terms are used, so an untrusted
+        // or changed project file is never parsed, on this or any reload.
+        lexicon = (await loadLexicon({ cwd, parseSkipped: false })).merged;
         lexiconLoadedAt = now;
       } catch (e) {
         // Keep serving the previous lexicon (if any) while the file is broken.
@@ -307,7 +309,8 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
       out(`no changes (${why})\n`);
     }
   } else {
-    const lexicon = (await loadLexicon({ cwd })).merged;
+    // Only the merged terms are used: an untrusted project file is never parsed.
+    const lexicon = (await loadLexicon({ cwd, parseSkipped: false })).merged;
     const normalized = normalize(text, lexicon);
     result.changed = normalized.changed;
     result.corrections = normalized.replacements.length;

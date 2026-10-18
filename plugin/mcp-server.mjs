@@ -63927,7 +63927,7 @@ async function stepPacks(ctx) {
   const explicit = typeof ctx.opts.packs === "string" ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : void 0;
   let installed = [];
   try {
-    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd, parseSkipped: false }));
   } catch {
   }
   const defaults = DEFAULT_PACKS.filter((name) => byName.has(name) && !installed.includes(name));
@@ -64254,7 +64254,7 @@ async function stepExport(ctx) {
     );
     return;
   }
-  const loaded = await loadLexicon({ cwd: ctx.cwd });
+  const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const text = exportLexicon(loaded.merged, format);
   await import_node_fs27.promises.mkdir(dir, { recursive: true });
   await import_node_fs27.promises.writeFile(file2, text, "utf8");
@@ -64266,7 +64266,7 @@ async function stepDemo(ctx) {
   stepHeading(ctx, 7, "Does it work?");
   let merged;
   try {
-    merged = (await loadLexicon({ cwd: ctx.cwd })).merged;
+    merged = (await loadLexicon({ cwd: ctx.cwd, parseSkipped: false })).merged;
   } catch {
     merged = { version: 1, terms: [] };
   }

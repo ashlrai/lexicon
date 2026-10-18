@@ -278,7 +278,9 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   // user has is noise at best and a confusing second install at worst.
   let installed: string[] = [];
   try {
-    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+    // installedPacks reads the global file and a trusted project file only,
+    // so an untrusted one need not be parsed.
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd, parseSkipped: false }));
   } catch {
     // an unreadable lexicon is reported by the steps that write it
   }
@@ -657,7 +659,8 @@ export async function stepExport(ctx: Ctx): Promise<void> {
     );
     return;
   }
-  const loaded = await loadLexicon({ cwd: ctx.cwd });
+  // The export is of the merged terms only: an untrusted project file is never parsed.
+  const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const text = exportLexicon(loaded.merged, format);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(file, text, 'utf8');
@@ -684,7 +687,7 @@ export async function stepDemo(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 7, 'Does it work?');
   let merged;
   try {
-    merged = (await loadLexicon({ cwd: ctx.cwd })).merged;
+    merged = (await loadLexicon({ cwd: ctx.cwd, parseSkipped: false })).merged;
   } catch {
     merged = { version: 1 as const, terms: [] };
   }
