@@ -2505,6 +2505,17 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  // Catches: the pack card showed the server summary, which names the full
+  // lexicon file path, in one fixed-height line with no truncation or `~`.
+  // No Swift toolchain runs here, so this pins the view's source.
+  it('the menu bar pack card shortens the summary path and keeps it to one line', async () => {
+    const swift = await fs.readFile(path.join(process.cwd(), 'apps/macos/LexiconBar/Sources/LexiconBar/Onboarding/OnboardingViews.swift'), 'utf8');
+    const card = swift.slice(swift.indexOf('private struct PackCard'), swift.indexOf('private var symbol: String'));
+    expect(card).toContain('Text(Self.homeShortened(summary))');
+    expect(card).toMatch(/\.lineLimit\(1\)\.truncationMode\(\.middle\)\s*\.help\(summary\)/);
+    expect(card).toContain('summary.replacingOccurrences(of: home + "/", with: "~/")');
+  });
+
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {
     const first = await api2('POST', '/packs/developer');
     expect(first.status).toBe(200);

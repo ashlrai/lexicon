@@ -607,7 +607,12 @@ private struct PackCard: View {
                         .font(.caption2).foregroundStyle(.tertiary)
                     if let summary = model.packSummaries[pack.name] {
                         Text("\u{00B7}").font(.caption2).foregroundStyle(.tertiary)
-                        Text(summary).font(.caption2).foregroundStyle(.green)
+                        // One fixed-height line, and the server's summary
+                        // names the lexicon file: home as ~, the middle cut
+                        // when it still does not fit, the whole text on hover.
+                        Text(Self.homeShortened(summary)).font(.caption2).foregroundStyle(.green)
+                            .lineLimit(1).truncationMode(.middle)
+                            .help(summary)
                     }
                 }
                 // Reserved so the card does not grow when the summary lands.
@@ -631,6 +636,12 @@ private struct PackCard: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
+    }
+
+    /// `summary` with the home directory written as `~`, as the paths it names are printed elsewhere.
+    static func homeShortened(_ summary: String, home: String = NSHomeDirectory()) -> String {
+        guard home.count > 1 else { return summary }
+        return summary.replacingOccurrences(of: home + "/", with: "~/")
     }
 
     private var symbol: String {
