@@ -27,7 +27,7 @@ import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
-import { recalledParsedHash, rememberParsedBytes } from './parsed-hash.js';
+import { recalledParsedHash, rememberParsedBytes, rememberParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
@@ -308,6 +308,104 @@ async function writeParseCache(filePath: string, text: string, lexicon: Lexicon,
     );
   } catch {
     // a cache, not state: the next read parses again
+  }
+}
+
+/**
+ * The parse of the last trusted project lexicon `loadLexicon` merged, kept
+ * beside the global lexicon (`project-parse-cache.json`, mode 0600) with the
+ * exact text it came from and the sha256 of those bytes.
+ *
+ * A trusted project file cost the prompt hook its YAML parse and schema
+ * validation (about 20 ms for 200 terms) and loading node:crypto to hash it
+ * for the trust check (about 10 ms more) on every prompt, which put a
+ * 2000-term global plus 200-term project lexicon over the 200 ms budget.
+ *
+ * Reuse is decided by the content, never by metadata: the entry is a hit
+ * only when its `text`, encoded as UTF-8, is byte for byte the file just read
+ * (comparing decoded text alone would let two byte strings that decode to
+ * the same replacement characters match). For those bytes the stored
+ * `sha256` is the value hashing them would give, so the trust check still
+ * compares the pinned hash with the hash of the bytes being merged; the
+ * cache only remembers a computation. It does not decide trust: the registry
+ * is read and compared on every load as before, so an untrust, a re-pin or a
+ * changed file is seen at once. The entry is only written for a file the
+ * gate just found trusted, and only in the global config directory, where
+ * `trust.json` itself lives: anyone able to forge the entry could equally
+ * edit the registry, so it adds no new way in. `sum` (see `cacheChecksum`)
+ * catches a damaged entry, not a forged one. A single entry, like the index
+ * cache: alternating between two repos costs the parse, as before, and files
+ * under PARSE_CACHE_MIN_BYTES are not cached.
+ */
+export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
+
+/** Entry format of PROJECT_PARSE_CACHE_FILE_NAME. */
+export const PROJECT_PARSE_CACHE_VERSION = 1;
+
+/** A project file read for `loadLexicon`, and whether its parse came from the cache. */
+interface ProjectRead {
+  file: LexiconFile;
+  /** The bytes read, when the parse did not come from the cache (so it may be written). */
+  fresh?: { text: string };
+}
+
+async function readProjectLexiconCached(filePath: string, globalPath: string): Promise<ProjectRead> {
+  const read = await readLexiconText(filePath);
+  if (read === undefined) return { file: { path: filePath, scope: 'project', lexicon: emptyLexicon(), exists: false } };
+  if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
+    try {
+      const cached: unknown = JSON.parse(await fs.readFile(path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME), 'utf8'));
+      if (
+        isPlainObject(cached) &&
+        cached.version === PROJECT_PARSE_CACHE_VERSION &&
+        cached.path === path.resolve(filePath) &&
+        cached.text === read.text &&
+        typeof cached.sha256 === 'string' &&
+        /^[0-9a-f]{64}$/.test(cached.sha256) &&
+        typeof cached.lexicon === 'string' &&
+        cached.sum === cacheChecksum(`${cached.sha256}${cached.lexicon}`) &&
+        Buffer.from(cached.text, 'utf8').equals(read.bytes)
+      ) {
+        const lexicon: unknown = JSON.parse(cached.lexicon);
+        if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
+          const file: LexiconFile = { path: filePath, scope: 'project', lexicon: lexicon as unknown as Lexicon, exists: true };
+          rememberParsedHash(file, cached.sha256);
+          return { file };
+        }
+      }
+    } catch {
+      // missing, unreadable or damaged: parse for real below
+    }
+  }
+  const file = parseLexiconText(read.text, filePath, 'project');
+  rememberParsedBytes(file, read.bytes);
+  return { file, fresh: { text: read.text } };
+}
+
+/**
+ * Record `file` (just parsed from `text`, and just found trusted) as the
+ * project parse cache entry. Best effort, never throws.
+ */
+async function writeProjectParseCache(file: LexiconFile, text: string, globalPath: string): Promise<void> {
+  if (Buffer.byteLength(text, 'utf8') < PARSE_CACHE_MIN_BYTES) return;
+  try {
+    const sha256 = await recalledParsedHash(file);
+    if (sha256 === undefined) return;
+    const lexiconJson = JSON.stringify(file.lexicon);
+    await writeFileAtomic(
+      path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME),
+      JSON.stringify({
+        version: PROJECT_PARSE_CACHE_VERSION,
+        path: path.resolve(file.path),
+        sha256,
+        text,
+        sum: cacheChecksum(`${sha256}${lexiconJson}`),
+        lexicon: lexiconJson,
+      }),
+      { mode: 0o600 },
+    );
+  } catch {
+    // a cache, not state: the next load parses again
   }
 }
 
@@ -973,8 +1071,9 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
 
   let project: LexiconFile;
+  let fresh: ProjectRead['fresh'];
   try {
-    project = await readLexiconFile(paths.project, 'project');
+    ({ file: project, fresh } = await readProjectLexiconCached(paths.project, paths.global));
   } catch (err) {
     const placeholder: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
     const trust = await isTrusted(placeholder, opts);
@@ -983,6 +1082,7 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   }
 
   const projectTrust = await isTrusted(project, opts);
+  if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global);
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
     await hydrateHits(merged, project, opts);
