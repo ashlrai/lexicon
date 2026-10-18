@@ -205,7 +205,7 @@ The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the t
                                                  scripts       hotkeys run `lexicon voice --toggle --json` / `lexicon daemon --once`
 ```
 
-`lexicon serve` is the bridge for everything that has neither hooks nor MCP. It is `node:http` only, binds loopback, needs a bearer token stored next to the global lexicon with mode 0600, and answers CORS only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (or exact origins in `serve.json.allowedOrigins`). Every endpoint goes through `loadLexicon()`, so the trust gate and hit counters are the same as the CLI; the lexicon is cached per `cwd` for 2 s and dropped after every write. `--install` registers it as a launchd LaunchAgent, a systemd user unit or a Windows Scheduled Task so it is up at login.
+`lexicon serve` is the bridge for everything that has neither hooks nor MCP. It is `node:http` only, binds loopback, needs a bearer token stored next to the global lexicon with mode 0600, and answers CORS only to `chrome-extension://`, `moz-extension://` and `safari-web-extension://` origins (or exact origins in `serve.json.allowedOrigins`). Every endpoint goes through `loadLexicon()`, so the trust gate and hit counters are the same as the CLI; the lexicon is cached per `cwd` for 2 s and dropped after every write (after a `/normalize` that counts hits, only for the cwds whose lexicon holds a matched term). `--install` registers it as a launchd LaunchAgent, a systemd user unit or a Windows Scheduled Task so it is up at login.
 
 The extension's content script intercepts Enter and the send button in the capture phase, asks the background worker for the correction, writes it back through the editor's own `insertText` path (ProseMirror, Lexical, Quill) or the React-safe setter (textareas), shows a toast with Undo, then re-dispatches the original event. The token lives in the worker only. When the API is down the worker falls back to an embedded copy of the lexicon compiled from YAML in extension storage, so a send is never blocked. Details in [EXTENSION.md](EXTENSION.md) and [LOCAL-API.md](LOCAL-API.md).
 
@@ -251,7 +251,7 @@ Setup never re-implements an installer: each step calls the same handler the sta
 
 `loadLexicon()` merges the two. On a canonical collision (case-insensitive) the project term wins; aliases from both sides are unioned. Settings follow the same precedence. New project files are created at the git root (`defaultProjectPath()`).
 
-Every entry point (`mcp`, `hook`, `cli`, `daemon`, `voice`) reads the file fresh on each call. The local API is the one exception: it caches the loaded lexicon per `cwd` for 2 s and drops the cache after every write, so an edit is visible within two seconds.
+Every entry point (`mcp`, `hook`, `cli`, `daemon`, `voice`) reads the file fresh on each call. The local API is the one exception: it caches the loaded lexicon per `cwd` for 2 s and drops the cache after every write (a hit count drops only the cwds holding the matched terms), so an edit is visible within two seconds.
 
 The config directory next to the global lexicon also holds `trust.json`, `serve.json`, `onboard-note.json`, `voice/` (history and toggle state) and `models/` (whisper models).
 

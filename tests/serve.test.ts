@@ -1039,6 +1039,57 @@ async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
 // trust gate
 // ---------------------------------------------------------------------------
 
+describe('the load cache after POST /normalize records hits', () => {
+  // Catches: a hit-counting /normalize called invalidate(), which dropped the
+  // cached load (and matcher index) of every cwd, though only the hit counts
+  // of the terms it matched had changed.
+  it('drops only the cached loads holding a matched term', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-hitcache-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repo = path.join(dir, 'repo');
+    const other = path.join(dir, 'other');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.mkdir(other, { recursive: true });
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['ashler'] }, { globalPath, cwd: other });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Projy\n    aliases: [projee]\n');
+    await trustProject(path.join(repo, '.lexicon.yaml'), { globalPath });
+    // A long reload interval: only an invalidation makes the server re-read.
+    const srv = createServer({ port: 0, cwd: other, globalPath, quiet: true, reloadMs: 60_000 });
+    const started = await srv.start();
+    const call = async (method: string, route: string, body?: unknown): Promise<Response> =>
+      fetch(`${started.url}${route}`, {
+        method,
+        headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const stats = async (cwd: string): Promise<LexiconStats> => (await (await call('GET', `/stats?cwd=${encodeURIComponent(cwd)}`)).json()) as LexiconStats;
+    try {
+      expect((await stats(other)).termCount).toBe(1);
+      expect((await stats(repo)).termCount).toBe(2);
+      // Behind the server's back: a reload of either cwd would now see a third term.
+      await addTerm({ canonical: 'Laterly', aliases: ['laterlee'] }, { globalPath, cwd: other });
+
+      // A hit on the repo's own term: only the repo's load holds it.
+      const first = await call('POST', '/normalize', { text: 'ping projee', cwd: repo });
+      expect(((await first.json()) as NormalizeResult).output).toBe('ping Projy');
+      expect((await stats(other)).termCount).toBe(1);
+      const repoStats = await stats(repo);
+      expect(repoStats.termCount).toBe(3);
+      expect(repoStats.topTerms).toEqual([{ canonical: 'Projy', hits: 1 }]);
+
+      // A hit on a global term every load holds: both are re-read.
+      await call('POST', '/normalize', { text: 'ping ashler', cwd: repo });
+      const otherStats = await stats(other);
+      expect(otherStats.termCount).toBe(2);
+      expect(otherStats.topTerms).toEqual([{ canonical: 'Ashlr.AI', hits: 1 }]);
+      expect((await stats(repo)).totalHits).toBe(2);
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});
+
 describe('trust gate', () => {
   it('never merges an untrusted project file and reports it by path only', async () => {
     const cwd = env.untrustedProject;

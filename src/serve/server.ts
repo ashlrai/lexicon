@@ -700,6 +700,19 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     cache.clear();
   }
 
+  /**
+   * After `recordHits(canonicals)`: drops only the cached loads holding one of
+   * those terms. A hit count is all that call writes, and only those terms'
+   * `hits` can have moved, so every other cwd's load (and its matcher index)
+   * is still exact. `invalidate()` here made one normalize reload every cwd.
+   */
+  function invalidateHits(canonicals: readonly string[]): void {
+    const keys = new Set(canonicals.map((c) => c.trim().toLowerCase()));
+    for (const [key, entry] of cache) {
+      if (entry.loaded.merged.terms.some((t) => keys.has(t.canonical.trim().toLowerCase()))) cache.delete(key);
+    }
+  }
+
   // ---- handlers ----------------------------------------------------------
 
   async function health(cwd: string): Promise<HealthResponse> {
@@ -733,7 +746,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // Best effort, like the MCP server: a store hiccup never fails a normalize.
       // `loaded` spares recordHits re-reading (and re-parsing) both files.
       await recordHits(canonicals, { cwd, ...storeOpts, loaded: entry.loaded }).catch(() => undefined);
-      invalidate();
+      invalidateHits(canonicals);
     }
     return {
       ...result,

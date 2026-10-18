@@ -115,6 +115,8 @@ untrusted project file is never merged; `/health` (with the token), `/normalize`
 `list_terms` does), so `paths.project` is present only for a trusted project file;
 `projectTrust` is set whenever a project file exists, trusted or not.
 
+The server keeps each `cwd`'s loaded lexicon for 2 s, so an edit made outside it shows within two seconds. A write through the API drops that cache at once; a `/normalize` that counts hits drops it only for the `cwd`s whose lexicon holds a term it matched, since nothing else changed.
+
 Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,
 `deepgram`, `assemblyai`, `azure`, `google`) -> `application/json`,
 `claude-md` and `markdown` -> `text/markdown`, `text`, `whisper-prompt`,
