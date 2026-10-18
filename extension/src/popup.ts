@@ -46,8 +46,8 @@ function renderStatus(s: StatusReply): void {
     ui.mode.className = s.configuredMode === 'embedded' ? 'pill' : 'pill warn';
     const parts: string[] = [`${s.embeddedTerms} embedded terms`];
     if (s.configuredMode === 'api' && s.tokenError) parts.push(s.tokenError);
-    else if (s.configuredMode === 'api') parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
-    if (!s.tokenSet && s.configuredMode === 'api') parts.push('no token set');
+    else if (s.configuredMode === 'api' && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
+    if (!s.tokenSet && s.configuredMode === 'api') parts.push(s.server ? `server up (lexicon ${s.server.version}), but no token set: run \`lexicon serve --pair\`` : 'no token set');
     if (s.embeddedError) parts.push('embedded YAML has errors');
     ui.server.textContent = parts.join(' · ');
   }

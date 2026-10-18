@@ -256,7 +256,9 @@ export function createBackground(deps: BackgroundDeps): Background {
         if (err instanceof TokenRejectedError) tokenError = err.message;
       }
     }
-    const activeMode: Mode = settings.mode === 'api' && h.health && !tokenError ? 'api' : 'embedded';
+    // No token means every /normalize falls back (fetchJson refuses a bearer
+    // route without one), so the popup must not read "Local API" then either.
+    const activeMode: Mode = settings.mode === 'api' && h.health && settings.token && !tokenError ? 'api' : 'embedded';
     const embeddedError = embedded.load(settings.yaml);
     return {
       ok: true,

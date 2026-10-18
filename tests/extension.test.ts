@@ -609,6 +609,15 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(bad.activeMode).toBe('embedded');
     expect(bad.tokenError).toMatch(/rejected the token \(401\)/);
 
+    // Catches: with no token stored, status said "Local API" while every
+    // /normalize fell back to the embedded lexicon.
+    await bg.saveSettings({ token: '' });
+    const none = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(none.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(none.tokenSet).toBe(false);
+    expect(none.activeMode).toBe('embedded');
+    expect(((await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true }).mode).toBe('embedded');
+
     token = 'right-token';
     await bg.saveSettings({ token });
     const good = (await bg.handle({ type: 'status' })) as StatusReply;
