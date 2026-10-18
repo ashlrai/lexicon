@@ -15,7 +15,7 @@ import { loadCorpus, loadLexicon as loadBenchLexicon } from '../bench/lib.js';
 import { buildIndex, findReplacements } from '../src/core/matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from '../src/core/matcher/serialize.js';
 import { normalize, normalizeWithIndex } from '../src/core/normalize.js';
-import { INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, loadLexicon, loadMatcherIndex, writeLexiconFile } from '../src/core/store.js';
+import { INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, addTerm, loadLexicon, loadMatcherIndex, removeAlias, removeTerm, writeLexiconFile } from '../src/core/store.js';
 import { trustProject } from '../src/core/trust.js';
 import type { Lexicon } from '../src/core/types.js';
 
@@ -309,6 +309,87 @@ describe('loadMatcherIndex', () => {
 
     const repoFiles = await fs.readdir(repo);
     expect(repoFiles.sort()).toEqual(['.git', '.lexicon.yaml']);
+  });
+
+  /** A repo with a trusted project lexicon, the way `lexicon trust` leaves it. */
+  async function trustedRepo(terms: Lexicon['terms'] = [{ canonical: 'Quuxly', aliases: ['kwuxly'] }]): Promise<{ repo: string; projectPath: string }> {
+    const repo = path.join(tmp, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await writeLexiconFile({ path: projectPath, scope: 'project', lexicon: { version: 1, terms }, exists: false });
+    await trustProject(projectPath, { globalPath });
+    return { repo, projectPath };
+  }
+
+  /** The hook's load in `cwd` is a hit: it neither rebuilds nor rewrites the entry. */
+  async function expectHit(cwd: string, text: string, output?: string): Promise<void> {
+    const before = await fs.readFile(cachePath(), 'utf8');
+    const loaded = await load(cwd);
+    const entry = JSON.parse(before) as { key: string; index: unknown; project?: string };
+    expect(entry.key).toBe(indexKey(loaded.merged));
+    expect(deserializeIndex(entry.index, loaded.merged)).toEqual(buildIndex(loaded.merged));
+    const index = await loadMatcherIndex(loaded);
+    if (output !== undefined) expect(normalizeWithIndex(text, index).output).toBe(output);
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(before);
+  }
+
+  // Catches: the entry was refreshed for the global lexicon alone, so with a
+  // trusted project lexicon the first prompt after every write still rebuilt
+  // the index (and the refresh had thrown the merged entry away for nothing).
+  it('a global write refreshes an entry built with a trusted project for the same merge', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    const { repo, projectPath } = await trustedRepo();
+    await loadMatcherIndex(await load(repo));
+    expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string }).project).toBe(projectPath);
+
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS, [{ canonical: 'Vercel', aliases: ['versel'] }]));
+    const entry = JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string };
+    expect(entry.project).toBe(projectPath);
+    await expectHit(repo, 'ping kwuxly on versel', 'ping Quuxly on Vercel');
+    expect(await fs.readdir(repo)).toEqual(expect.arrayContaining(['.git', '.lexicon.yaml']));
+    expect((await fs.readdir(repo)).length).toBe(2);
+  });
+
+  it('a project write rebuilds the entry for the global lexicon merged with that file', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    await loadMatcherIndex(await load());
+    const { repo, projectPath } = await trustedRepo();
+    // trustedRepo's write came before the trust, so the entry is still global-only.
+    await addTerm({ canonical: 'Hetzner', aliases: ['hets ner'] }, { cwd: repo, globalPath, env: {}, scope: 'project' });
+    expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string }).project).toBe(projectPath);
+    await expectHit(repo, 'ping kwuxly on hets ner', 'ping Quuxly on Hetzner');
+
+    await removeAlias('Hetzner', 'hets ner', { cwd: repo, globalPath, env: {}, scope: 'project' });
+    await expectHit(repo, 'ping kwuxly');
+    expect((await load(repo)).merged.terms.find((t) => t.canonical === 'Hetzner')?.aliases).toEqual([]);
+    await removeTerm('Quuxly', { cwd: repo, globalPath, env: {}, scope: 'project' });
+    await expectHit(repo, 'ping kwuxly', 'ping kwuxly');
+  });
+
+  it('leaves the entry alone for a project write the trust gate keeps out of the merge, and creates none', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    const repo = path.join(tmp, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    // No entry yet: a project write creates none.
+    await addTerm({ canonical: 'Quuxly', aliases: ['kwuxly'] }, { cwd: repo, globalPath, env: {}, scope: 'project' });
+    await expect(fs.stat(cachePath())).rejects.toThrow();
+
+    await loadMatcherIndex(await load());
+    const before = await fs.readFile(cachePath(), 'utf8');
+    // Changed since it was trusted: the next write to it is left untrusted and out of the merge.
+    await fs.appendFile(path.join(repo, '.lexicon.yaml'), '# edited\n');
+    await addTerm({ canonical: 'Hetzner', aliases: ['hets ner'] }, { cwd: repo, globalPath, env: {}, scope: 'project', leaveUntrusted: true });
+    expect(await fs.readFile(cachePath(), 'utf8')).toBe(before);
+  });
+
+  it('a global write after the project lost its trust indexes the global lexicon alone', async () => {
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS));
+    const { repo, projectPath } = await trustedRepo();
+    await loadMatcherIndex(await load(repo));
+    await fs.appendFile(projectPath, '# edited\n');
+    await write(bigLexicon(INDEX_CACHE_MIN_TERMS, [{ canonical: 'Vercel', aliases: ['versel'] }]));
+    expect((JSON.parse(await fs.readFile(cachePath(), 'utf8')) as { project?: string }).project).toBeUndefined();
+    await expectHit(repo, 'ping kwuxly on versel', 'ping kwuxly on Vercel');
   });
 });
 

@@ -699,8 +699,14 @@ describe('runHook', () => {
     });
 
     describe('empty lexicon', () => {
+      const dirs: string[] = [];
+      afterEach(async () => {
+        await Promise.all(dirs.splice(0).map((d) => fs.rm(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })));
+      });
+
       async function emptyLexiconIn(): Promise<{ dir: string; globalPath: string }> {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-onboard-'));
+        dirs.push(dir);
         const globalPath = path.join(dir, 'lexicon.yaml');
         const empty: Lexicon = { version: 1, terms: [] };
         mocks.loadLexicon.mockResolvedValue({

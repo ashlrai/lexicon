@@ -63,9 +63,10 @@ Decide what to do from the arguments:
 
 10. **`suggest`** - call `suggest_terms` (pass `limit` if the user gave a
     number). Show each suggestion on one line: kind, canonical, alias, reason,
-    count, and the file applying it would write (its `scope` and `path`). Ask which to apply; for each accepted one call `apply_suggestion`
-    with the suggestion object exactly as returned. Report what was written
-    and skip the rest. With no suggestions, say the lexicon looks healthy.
+    count, and the file applying it would write (its `scope` and `path`). Ask which to apply; call `apply_suggestion` once
+    with every accepted suggestion object, exactly as returned, in `suggestions`.
+    Report what was written (`applied`) and anything refused (`failures`), and
+    skip the rest. With no suggestions, say the lexicon looks healthy.
 
 11. **`trust [path]`** - call `trust_project { action: 'status', path? }` and
     show the user the file path, its status and the summary (term, alias and

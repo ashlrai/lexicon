@@ -3,7 +3,7 @@
  * verification, publish validation and the install/update/remove round trip,
  * all against fixture indexes in a temp dir (no network).
  */
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, promises as fs } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -102,7 +102,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  // tmpdir() is ephemeral; no cleanup needed.
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function entryFor(index: RegistryIndex): RegistryIndexEntry {

@@ -19916,10 +19916,11 @@ async function loadMatcherIndex(loaded, opts = {}) {
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
+  const project = loaded.project ? import_node_path5.default.resolve(loaded.project.path) : void 0;
   try {
     const text = await import_node_fs5.promises.readFile(cachePath, "utf8");
-    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
-    if (text.startsWith(head.slice(0, -1))) {
+    const head = indexCacheHead(key, project);
+    if (text.startsWith(head)) {
       const cached2 = JSON.parse(text);
       if (isPlainObject2(cached2) && cached2.version === INDEX_FORMAT_VERSION && cached2.key === key) {
         const index2 = deserializeIndex(cached2.index, lexicon);
@@ -19929,12 +19930,16 @@ async function loadMatcherIndex(loaded, opts = {}) {
   } catch {
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
+  if (opts.write !== false) await writeIndexCache(cachePath, key, index, project);
   return index;
 }
-async function writeIndexCache(cachePath, key, index) {
+function indexCacheHead(key, project) {
+  const head = JSON.stringify(project === void 0 ? { version: INDEX_FORMAT_VERSION, key } : { version: INDEX_FORMAT_VERSION, project, key });
+  return head.slice(0, -1);
+}
+async function writeIndexCache(cachePath, key, index, project) {
   try {
-    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, ...project !== void 0 ? { project } : {}, key, index: serializeIndex(index) });
     await writeFileAtomic(cachePath, out, { mode: 384 });
   } catch {
   }
@@ -20030,10 +20035,17 @@ async function loadLexicon(opts = {}) {
 function mergeLexicons(global, project) {
   const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
   if (project) {
+    const firstByKey = /* @__PURE__ */ new Map();
+    terms.forEach((t, i) => {
+      const k = canonicalKey(t.canonical);
+      if (!firstByKey.has(k)) firstByKey.set(k, i);
+    });
     for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const key = canonicalKey(pt.canonical);
+      const idx = firstByKey.get(key) ?? -1;
       const replacement = { ...pt, scope: pt.scope ?? "project" };
       if (idx === -1) {
+        firstByKey.set(key, terms.length);
         terms.push({ ...replacement, aliases: [...pt.aliases] });
       } else {
         replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
@@ -20112,8 +20124,8 @@ async function recordHits(canonicals, opts = {}) {
   } catch {
   }
 }
-function sameCanonical(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+function canonicalKey(canonical) {
+  return canonical.trim().toLowerCase();
 }
 function dedupeAliases(aliases, canonical) {
   const canon = canonical.trim().toLowerCase();

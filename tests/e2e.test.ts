@@ -96,11 +96,25 @@ function runNode(script: string, args: readonly string[], opts: RunOptions = {})
   });
 }
 
-/** The real CLI. `--cwd` is appended when `opts.cwd` is set so project discovery follows it. */
-function runCli(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
-  // Always pin --cwd so the repo's own .lexicon.yaml (a real project lexicon we dogfood)
-  // never leaks into a test that did not ask for a project.
-  const full = [...args, '--cwd', opts.cwd ?? os.tmpdir()];
+/**
+ * A brand-new, empty directory holding only a `.git` dir, removed in afterAll.
+ * The `.git` ends the project-file walk there: without it the walk goes up to
+ * `/`, so a stray `.lexicon.yaml` in the root of os.tmpdir() (a past run left
+ * one) became every such run's project lexicon.
+ */
+async function isolatedCwd(): Promise<string> {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-e2e-cwd-')));
+  created.push(dir);
+  await fs.mkdir(path.join(dir, '.git'));
+  return dir;
+}
+
+/** The real CLI. `--cwd` is always passed so project discovery follows it. */
+async function runCli(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
+  // Always pin --cwd so neither the repo's own .lexicon.yaml (a real project
+  // lexicon we dogfood) nor anything in the shared temp dir leaks into a test
+  // that did not ask for a project: a run without a cwd gets its own.
+  const full = [...args, '--cwd', opts.cwd ?? (await isolatedCwd())];
   return runNode(CLI, full, { ...opts, cwd: REPO_ROOT });
 }
 
@@ -782,6 +796,23 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doct
     expect(r.stdout).toBe(`global: ${shared.globalPath}\nproject: (none)\n`);
   });
 
+  // Catches: runCli defaulted --cwd to os.tmpdir() itself, so a stray
+  // .lexicon.yaml in the shared temp dir became the project lexicon of every
+  // run that named no cwd. Each such run now gets its own directory.
+  it('a run that names no cwd sees no project lexicon and gets a cwd of its own', async () => {
+    const [a, b] = await Promise.all([runCli(['path'], { env: shared.env }), runCli(['path', '--json'], { env: shared.env })]);
+    expect(a.code, a.stderr).toBe(0);
+    expect(a.stdout).toBe(`global: ${shared.globalPath}\nproject: (none)\n`);
+    expect(b.code, b.stderr).toBe(0);
+    expect(JSON.parse(b.stdout)).toMatchObject({ ok: true, project: null });
+    const cwds = await Promise.all([isolatedCwd(), isolatedCwd()]);
+    expect(cwds[0]).not.toBe(cwds[1]);
+    for (const dir of cwds) {
+      expect(path.dirname(dir)).toBe(await fs.realpath(os.tmpdir()));
+      expect(await fs.readdir(dir)).toEqual(['.git']);
+    }
+  });
+
   it('doctor exits 0 with a parsable global lexicon and 1 when it is missing', async () => {
     // PATH without `claude` so the check is deterministic on every machine.
     const noBin = path.join(shared.home, 'empty-bin');
@@ -1343,7 +1374,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a closed stdout p
   it('ends quietly when the reader goes away', async () => {
     const h = await freshHome('epipe');
     const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, [...nodeArgs(CLI), 'pack', 'show', 'developer', '--cwd', os.tmpdir()], {
+      const child = spawn(process.execPath, [...nodeArgs(CLI), 'pack', 'show', 'developer', '--cwd', h.repo], {
         cwd: REPO_ROOT,
         env: h.env,
         stdio: ['ignore', 'pipe', 'pipe'],
