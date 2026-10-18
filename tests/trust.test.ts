@@ -492,7 +492,7 @@ describe('lexicon trust / untrust --json refusals', () => {
 
     const un = makeIO();
     expect(await runUntrust(undefined, { cwd: empty, json: true }, un)).toBe(1);
-    expect(JSON.parse(un.out)).toMatchObject({ action: 'untrust', error: `no project .lexicon.yaml found from ${empty}`, nextStep: 'pass a path' });
+    expect(JSON.parse(un.out)).toMatchObject({ action: 'untrust', error: `no project .lexicon.yaml found from ${empty}`, nextStep: 'pass the path of the .lexicon.yaml to untrust (lexicon trust --list shows the trusted ones)' });
   });
 
   it('prints an error object when the file changes during the question', async () => {
@@ -572,6 +572,6 @@ describe('lexicon trust / untrust --json lead with ok', () => {
     const un = makeIO();
     expect(await runUntrust(undefined, { cwd: empty, json: true }, un)).toBe(1);
     expect(first(un.out)).toEqual(['ok', false]);
-    expect(JSON.parse(un.out)).toEqual({ ok: false, action: 'untrust', error: `no project .lexicon.yaml found from ${empty}`, nextStep: 'pass a path' });
+    expect(JSON.parse(un.out)).toEqual({ ok: false, action: 'untrust', error: `no project .lexicon.yaml found from ${empty}`, nextStep: 'pass the path of the .lexicon.yaml to untrust (lexicon trust --list shows the trusted ones)' });
   });
 });

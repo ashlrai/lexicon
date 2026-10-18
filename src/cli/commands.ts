@@ -795,7 +795,9 @@ export async function runHarvest(
   const target = path.resolve(cwd, root ?? '.');
   // --full is --json with one object on stdout instead of the bare array.
   const json = opts.json === true || opts.full === true;
-  if (!existsSync(target)) throw new Error(`harvest: path does not exist: ${safe(target)}`);
+  if (!existsSync(target)) {
+    return refuse(io, json, `harvest: path does not exist: ${target}`, 'pass a directory that exists, or leave the path out to harvest the current directory');
+  }
 
   const tty = (deps.isInteractive ?? isInteractive)();
   if (opts.interactive && !tty) {

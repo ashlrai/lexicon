@@ -2203,7 +2203,12 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
 
       const missing = lexicon(['harvest', path.join(tmp, 'no-such-dir'), '--full', '--cwd', tmp], globalPath);
       expect(missing.status).toBe(1);
-      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('path does not exist'), nextStep: expect.any(String) });
+      expect(JSON.parse(missing.stdout)).toEqual({
+        ok: false,
+        error: expect.stringContaining('path does not exist'),
+        nextStep: 'pass a directory that exists, or leave the path out to harvest the current directory',
+      });
+      expect(missing.stderr).toContain('lexicon: pass a directory that exists');
 
       // A command without --full keeps an empty stdout for it: there it is just an unknown option.
       const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);

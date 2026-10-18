@@ -214,7 +214,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
 export async function runUntrust(target: string | undefined, opts: CommonOptions & { json?: boolean }, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
-  if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass a path');
+  if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass the path of the .lexicon.yaml to untrust (lexicon trust --list shows the trusted ones)');
   const removed = await untrustProject(filePath, { cwd });
   if (opts.json) {
     // `ok: true`, then the object MCP trust_project returns for action 'untrust'.
