@@ -29,6 +29,22 @@ vi.mock('../src/core/schema.js', () => ({
   emptyLexicon: (): Lexicon => ({ version: 1, terms: [] }),
 }));
 
+/**
+ * A passthrough for util/bounded-read.ts that records every path it reads, so a
+ * test can tell whether a file's bytes were read at all, not only parsed.
+ */
+const boundedReads = vi.hoisted(() => ({ paths: [] as string[] }));
+vi.mock('../src/util/bounded-read.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/util/bounded-read.js')>();
+  return {
+    ...real,
+    readBoundedRegularFile: (filePath: string, maxBytes: number) => {
+      boundedReads.paths.push(path.resolve(filePath));
+      return real.readBoundedRegularFile(filePath, maxBytes);
+    },
+  };
+});
+
 import {
   ProjectTrustError,
   addTerm,
@@ -1406,6 +1422,49 @@ describe('loadLexicon parseSkipped: false (the prompt hook)', () => {
     expect(changed.parses).toBe(0);
     expect(changed.result.projectTrust).toBe('changed');
     expect(findTerm(changed.result.merged, 'PInjected')).toBeUndefined();
+  });
+
+  // Catches: with no registry entry for the path the result is 'untrusted'
+  // whatever the bytes are, yet the load read them (up to 2 MB) and the
+  // project parse cache before deciding.
+  it('reads neither the bytes nor the parse cache of a file the registry has no entry for', async () => {
+    const { root, projectPath } = await repoWith(BODY);
+    const cacheFile = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const reads = vi.spyOn(fs, 'readFile');
+    try {
+      boundedReads.paths.length = 0;
+      const result = await loadLexicon({ cwd: root, globalPath, parseSkipped: false });
+      expect(result.projectTrust).toBe('untrusted');
+      expect(result.skippedProject).toEqual({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true });
+      expect(result.merged.terms.map((t) => t.canonical)).toEqual(['G']);
+      expect(boundedReads.paths).not.toContain(path.resolve(projectPath));
+      expect(boundedReads.paths).toContain(path.resolve(globalPath));
+      const readPaths = reads.mock.calls.map((c) => path.resolve(String(c[0])));
+      expect(readPaths.some((p) => p === cacheFile || p.startsWith(`${cacheFile}.`))).toBe(false);
+
+      // A file that could not be read at all (not a regular file) is named the same way.
+      await fs.rm(projectPath);
+      await fs.mkdir(projectPath);
+      const dir = await loadLexicon({ cwd: root, globalPath, parseSkipped: false });
+      expect(dir.projectTrust).toBe('untrusted');
+      expect(dir.skippedProject?.path).toBe(projectPath);
+      await fs.rm(projectPath, { recursive: true });
+      await fs.writeFile(projectPath, BODY);
+
+      // With an entry the bytes are read and hashed, once, as before.
+      await trustProject(projectPath, { globalPath });
+      await fs.appendFile(projectPath, '# edited\n');
+      boundedReads.paths.length = 0;
+      expect((await loadLexicon({ cwd: root, globalPath, parseSkipped: false })).projectTrust).toBe('changed');
+      expect(boundedReads.paths.filter((p) => p === path.resolve(projectPath))).toHaveLength(1);
+      // The default load still reads and parses the file for its terms.
+      await untrustProject(projectPath, { globalPath });
+      boundedReads.paths.length = 0;
+      expect((await loadLexicon({ cwd: root, globalPath })).skippedProject?.lexicon.terms.map((t) => t.canonical)).toEqual(['Proj']);
+      expect(boundedReads.paths).toContain(path.resolve(projectPath));
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('leaves the default unchanged: a skipped file is parsed so learn and remove can name it', async () => {

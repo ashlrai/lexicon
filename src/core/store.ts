@@ -26,7 +26,7 @@ import { emptyLexicon, parseLexicon } from './schema.js';
 import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
-import { isTrusted, refreshTrust, trustProject } from './trust.js';
+import { isTrusted, refreshTrust, trustProject, untrustedByPath } from './trust.js';
 import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
@@ -516,6 +516,20 @@ async function readProjectCacheEntry(
 function rememberProjectBytes(file: LexiconFile, read: ProjectBytes): void {
   if (read.cached) rememberParsedHash(file, read.cached.sha256);
   else rememberParsedBytes(file, read.bytes);
+}
+
+/**
+ * False only when nothing is at `filePath` (ENOENT, as `readLexiconText` reads
+ * it), so a file removed since the walk found it still loads as no project
+ * file. Anything else there, readable or not, is a file the gate must name.
+ */
+async function projectFileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.stat(filePath);
+    return true;
+  } catch (err) {
+    return !isEnoent(err);
+  }
 }
 
 /** The project `LexiconFile` for `read`: the cached parse, or the YAML parsed now (which throws for a bad file). */
@@ -1296,6 +1310,14 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   let fresh: ProjectRead['fresh'];
   let projectTrust: TrustStatus | undefined;
   let read: ProjectBytes | undefined;
+  // With no registry entry for the path the answer is 'untrusted' whatever the
+  // bytes are, so neither they (up to MAX_LEXICON_BYTES) nor the parse caches
+  // are read: the file is reported by path, as it would be after the read.
+  // With an entry, the gate below hashes the bytes it read, never a second read.
+  if (gateFirst && (await untrustedByPath(paths.project, opts)) && (await projectFileExists(paths.project))) {
+    const probe: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
+    return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: 'untrusted', skippedProject: probe };
+  }
   try {
     read = await readProjectBytes(paths.project, paths.global);
     if (gateFirst && read !== undefined) {
