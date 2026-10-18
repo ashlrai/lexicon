@@ -39,4 +39,29 @@ describe('first run of the lexicon CLI', () => {
     // A command's own help does not repeat it.
     expect(lexicon(['add', '--help']).stdout).not.toContain('Start here');
   }, 30_000);
+
+  // Catches: `lexicon status` answered "Did you mean stats?" (term counts),
+  // and `lexicon version` got no hint at all.
+  it('another tool\'s name for a command points at the lexicon command that does that job', () => {
+    const status = lexicon(['status', '--cwd', home]);
+    expect(status.status).toBe(1);
+    expect(status.stderr).toContain("error: unknown command 'status'\n(Did you mean doctor? It checks the setup; stats counts terms and hits)");
+    expect(status.stderr).not.toContain('(Did you mean stats?)');
+    expect(status.stdout).toBe('');
+    const version = lexicon(['version']);
+    expect(version.status).toBe(1);
+    expect(version.stderr).toContain('(the version is: lexicon --version)');
+    const json = lexicon(['config', '--json', '--cwd', home]);
+    expect(json.status).toBe(1);
+    expect(JSON.parse(json.stdout)).toEqual({
+      ok: false,
+      error: expect.stringContaining('lexicon path prints where the lexicon files are'),
+      nextStep: 'see the usage: lexicon --help',
+    });
+    // A typo still gets commander's spelling suggestion, and a stranger nothing.
+    expect(lexicon(['stauts']).stderr).toContain('(Did you mean stats?)');
+    const nope = lexicon(['definitely-not-a-command']);
+    expect(nope.status).toBe(1);
+    expect(nope.stderr).toContain("error: unknown command 'definitely-not-a-command'\n(use --help for usage)");
+  }, 60_000);
 });

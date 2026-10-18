@@ -42,7 +42,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { CliRefusal, argvRequestsJson, cwdOptionProblem, fail, jsonFlagsOf, line, optsRequestJson, refuse, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, fail, jsonFlagsOf, line, optsRequestJson, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -76,6 +76,15 @@ program
     'after',
     '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor',
   );
+
+// commander suggests by spelling alone; for names other tools use (`status`,
+// `version`, `config`) name the lexicon command that does that job instead.
+program.on('command:*', (operands: string[]) => {
+  const name = operands[0] ?? '';
+  const hint = unknownCommandHint(name);
+  if (hint) program.error(`error: unknown command '${name}'\n(${hint})`, { code: 'commander.unknownCommand' });
+  (program as unknown as { unknownCommand(): never }).unknownCommand();
+});
 
 /** Global options, merged into each command's own. */
 function withGlobals<T extends object>(opts: T): T & { cwd?: string } {

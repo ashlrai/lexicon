@@ -342,6 +342,29 @@ export function usageErrorJson(message: string, commandPath: string): JsonError 
 }
 
 /**
+ * Names a first-time user tries that are not lexicon commands, mapped to the
+ * command that does that job. commander's own suggestion goes by spelling
+ * alone, so `status` got `stats` (term counts) instead of `doctor`.
+ */
+const OTHER_COMMAND_NAMES: Readonly<Record<string, string>> = {
+  status: 'Did you mean doctor? It checks the setup; stats counts terms and hits',
+  check: 'Did you mean doctor? It checks the lexicon files and the agent integration',
+  version: 'the version is: lexicon --version',
+  config: 'lexicon path prints where the lexicon files are; lexicon edit opens the global one',
+  show: 'Did you mean list? It prints the terms',
+  delete: 'Did you mean remove? e.g. lexicon remove "Ashlr.AI"',
+};
+
+/**
+ * The hint for an unknown command `name` that is another tool's name for a
+ * lexicon command (`status`, `version`, `config`), or undefined to keep
+ * commander's spelling suggestion.
+ */
+export function unknownCommandHint(name: string): string | undefined {
+  return Object.hasOwn(OTHER_COMMAND_NAMES, name) ? OTHER_COMMAND_NAMES[name] : undefined;
+}
+
+/**
  * A refusal that is not an exception: the `lexicon: <error>` line (and a
  * `lexicon: <nextStep>` line) on stderr and, under --json, the `JsonError`
  * document on stdout. Exit code 1.
