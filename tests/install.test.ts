@@ -405,6 +405,29 @@ describe('generic, claude and the commander wiring', () => {
     await expect(run('emacs')).rejects.toThrow(/unknown client "emacs"/);
   });
 
+  // Catches: `lexicon install --apply` with no client printed the generic
+  // snippet ("add --apply to write the config"), wrote nothing and exited 0.
+  it('refuses --apply or --project with no client, naming the client to pass, and writes nothing', async () => {
+    const io = makeIO();
+    await expect(runInstall(undefined, { home, cwd, apply: true }, io, baseDeps())).rejects.toMatchObject({
+      name: 'CliRefusal',
+      message: '--apply needs a client: with none named, lexicon install only prints the generic configuration and writes nothing',
+      nextStep: 'name the client to write, e.g. lexicon install cursor --apply (one of: claude, codex, cursor, windsurf, gemini, claude-desktop, vscode)',
+    });
+    expect(io.out).toBe('');
+    await expect(run('generic', { project: true })).rejects.toThrow(/^--project needs a client/);
+    const doc = await run('generic', { apply: true, project: true, json: true });
+    expect(doc.code).toBe(1);
+    expect(JSON.parse(doc.io.out)).toEqual({
+      ok: false,
+      error: '--apply --project needs a client: with none named, lexicon install only prints the generic configuration and writes nothing',
+      nextStep: 'name the client to write, e.g. lexicon install cursor --apply --project (one of: claude, codex, cursor, windsurf, gemini, claude-desktop, vscode)',
+    });
+    expect(await fs.readdir(home)).toEqual([]);
+    expect(await fs.readdir(cwd)).toEqual([]);
+    expect((await run('generic')).io.out).toContain('name a client and add --apply to write its config');
+  });
+
   // Catches: install had no --json, so an unknown client reached a script only as stderr text.
   describe('--json', () => {
     it('prints { ok: false, error, nextStep } for an unknown client or scope', async () => {

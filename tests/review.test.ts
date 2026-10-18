@@ -439,6 +439,16 @@ describe('review', () => {
     );
     await expect(runReview({ globalPath }, makeIO())).rejects.toThrow(/needs a terminal/);
   });
+
+  // Catches: review checked --category itself with a plain Error, so it had
+  // none of the nextStep list, add and export give through parseCategory.
+  it('an unknown --category carries the same nextStep as list, add and export', async () => {
+    await expect(runReview({ globalPath, category: 'nope' }, makeIO(), scripted([]))).rejects.toMatchObject({
+      name: 'CliRefusal',
+      message: 'unknown category "nope" (expected one of: brand, person, product, acronym, identifier, place, other)',
+      nextStep: 'pass one of brand, person, product, acronym, identifier, place, other to --category, or leave --category out',
+    });
+  });
 });
 
 // Catches: `review --json` and `edit --json` were commander usage errors whose

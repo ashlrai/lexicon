@@ -168,9 +168,10 @@ ui.test.addEventListener('click', () => {
     if (status.server && status.tokenError) {
       ui.testResult.textContent = `Reachable (lexicon ${status.server.version}), but ${status.tokenError}`;
     } else if (status.server) {
-      ui.testResult.textContent = `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set; /normalize will fall back to embedded)'}.`;
+      ui.testResult.textContent = `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set: corrections use the embedded lexicon until you run `lexicon serve --pair`)'}.`;
     } else {
-      ui.testResult.textContent = `Unreachable: ${status.serverError ?? 'unknown error'}. Start it with \`lexicon serve\`.`;
+      const why = status.serverError ?? 'no reply';
+      ui.testResult.textContent = `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
     }
   })().catch((err: unknown) => {
     ui.testResult.textContent = errorMessage(err);

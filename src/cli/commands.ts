@@ -105,6 +105,7 @@ import {
   jsonError,
   jsonOk,
   line,
+  parseCategory,
   plural,
   PROJECT_TRUST_NEXT_STEP,
   refuse,
@@ -170,18 +171,6 @@ function parseIntOption(value: string | number | undefined, flag: string): numbe
   const n = typeof value === 'number' ? value : Number.parseInt(value, 10);
   if (!Number.isFinite(n) || n < 0) throw new Error(`${flag} must be a non-negative integer`);
   return n;
-}
-
-function parseCategory(value: string | undefined): TermCategory | undefined {
-  if (value === undefined) return undefined;
-  const lower = value.toLowerCase();
-  if (!(TERM_CATEGORIES as readonly string[]).includes(lower)) {
-    throw new CliRefusal(
-      `unknown category "${value}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
-      `pass one of ${TERM_CATEGORIES.join(', ')} to --category, or leave --category out`,
-    );
-  }
-  return lower as TermCategory;
 }
 
 /** Like parseCategory but returns undefined instead of throwing (interactive re-ask loops). */

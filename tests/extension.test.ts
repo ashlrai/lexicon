@@ -470,6 +470,31 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(status.recent[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
   });
 
+  // Catches: a refused connection reached the popup, Test connection and
+  // Sync as the bare "Failed to fetch", with no word of where or what to run.
+  it('a server that is not running is named with the URL and the command that starts it', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'a'.repeat(64) } }), defaultYaml: EXAMPLE_YAML });
+    const expected = 'cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve` (or `lexicon serve --install` to start it at login)';
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.serverError).toBe(expected);
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: expected });
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply;
+    expect(reply.ok && reply.fallback).toBe(expected);
+  });
+
+  // Catches: with no token stored, learn and sync said only to paste the
+  // `lexicon serve --show` token, never `lexicon serve --pair`, the one-step fix.
+  it('a missing token names lexicon serve --pair first, then the manual paste', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: '1', terms: 1 }) }) as unknown as Response);
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore(), defaultYaml: EXAMPLE_YAML });
+    const expected = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
+    expect(await bg.handle({ type: 'learn', heard: 'Ashlur', meant: 'Ashlr.AI' })).toEqual({ ok: false, error: expected });
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: expected });
+  });
+
   it('uses the local API with the bearer token when /health is ok, and learn/sync hit the right routes', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const json = (body: unknown, status = 200): Response =>

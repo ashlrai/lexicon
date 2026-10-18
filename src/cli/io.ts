@@ -10,8 +10,8 @@
  */
 import { statSync } from 'node:fs';
 import path from 'node:path';
-import { conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
-import type { LearnConflict, LoadedLexicon, TermHolder } from '../core/index.js';
+import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
+import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -277,6 +277,23 @@ export class CliRefusal extends Error {
     super(message);
     this.name = 'CliRefusal';
   }
+}
+
+/**
+ * A `--category` value, lowercased; undefined when the flag is absent. An
+ * unknown one is a CliRefusal naming the categories, so every command that
+ * takes `--category` (list, add, export, review) gives the same next step.
+ */
+export function parseCategory(value: string | undefined): TermCategory | undefined {
+  if (value === undefined) return undefined;
+  const lower = value.toLowerCase();
+  if (!(TERM_CATEGORIES as readonly string[]).includes(lower)) {
+    throw new CliRefusal(
+      `unknown category "${value}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
+      `pass one of ${TERM_CATEGORIES.join(', ')} to --category, or leave --category out`,
+    );
+  }
+  return lower as TermCategory;
 }
 
 /**

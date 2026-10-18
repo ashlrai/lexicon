@@ -30,6 +30,7 @@ import {
   untrustedAliasHolder,
   untrustedTermHolder,
   isProjectTrustError,
+  LIMITS,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
@@ -233,7 +234,12 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
         'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.',
       inputSchema: {
-        canonical: z.string().min(1).describe('The correct spelling, exactly as the user wants it written.'),
+        canonical: z
+          .string()
+          .min(1)
+          .describe(
+            `The correct spelling, exactly as the user wants it written. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`,
+          ),
         aliases: z
           .array(z.string())
           .optional()

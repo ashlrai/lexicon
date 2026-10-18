@@ -20,7 +20,7 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { xdgConfigHome } from '../util/xdg.js';
-import { bold, dim, green, indent, jsonError, line, red, safe, safeLines, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -534,7 +534,7 @@ function printGeneric(io: IO, serverPath: string, env: Record<string, string> | 
     line(io, `   lexicon install ${c}`);
   }
   line(io);
-  line(io, dim('add --apply to write the config, --project for the repo-level file where the client supports one'));
+  line(io, dim('name a client and add --apply to write its config, --project for the repo-level file where the client supports one'));
   line(io);
   printExportHint(io, 1, 'generic');
 }
@@ -595,11 +595,14 @@ async function runInstallJson(client: string | undefined, opts: InstallOptions, 
     code = await installText(client, { ...opts, json: false }, buffer, { ...deps, onWritten });
   } catch (e) {
     const message = errorMessage(e);
-    const nextStep = !isInstallClient(name)
-      ? `name one of: ${INSTALL_CLIENTS.join(', ')} (e.g. lexicon install cursor --json)`
-      : /--scope must be/.test(message)
-        ? 'pass --scope user or --scope project'
-        : `fix the problem in error, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`;
+    const nextStep =
+      e instanceof CliRefusal && e.nextStep
+        ? e.nextStep
+        : !isInstallClient(name)
+          ? `name one of: ${INSTALL_CLIENTS.join(', ')} (e.g. lexicon install cursor --json)`
+          : /--scope must be/.test(message)
+            ? 'pass --scope user or --scope project'
+            : `fix the problem in error, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`;
     print(jsonError(message, nextStep));
     return 1;
   }
@@ -643,6 +646,17 @@ async function installText(
   }
 
   if (name === 'generic') {
+    // There is no generic config file, so --apply or --project with no client
+    // would print the snippet and write nothing, exit 0, though the printout
+    // said "add --apply to write the config".
+    if (opts.apply || project) {
+      const flags = [opts.apply ? '--apply' : '', project ? '--project' : ''].filter(Boolean).join(' ');
+      const clients = INSTALL_CLIENTS.filter((c) => c !== 'generic');
+      throw new CliRefusal(
+        `${flags} needs a client: with none named, lexicon install only prints the generic configuration and writes nothing`,
+        `name the client to write, e.g. lexicon install cursor ${flags} (one of: ${clients.join(', ')})`,
+      );
+    }
     printGeneric(io, serverPath, lexiconServerEnv(env, cwd));
     return 0;
   }

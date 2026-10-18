@@ -60427,7 +60427,9 @@ var registerTermTools = (server, ctx) => {
       title: "Add a lexicon term",
       description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): relay `nextStep`, since the term applies only after the user runs " + cliCommand("trust") + ". WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.",
       inputSchema: {
-        canonical: external_exports.string().min(1).describe("The correct spelling, exactly as the user wants it written."),
+        canonical: external_exports.string().min(1).describe(
+          `The correct spelling, exactly as the user wants it written. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`
+        ),
         aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none."),
         phonetic: external_exports.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
         category: external_exports.enum(TERM_CATEGORIES).optional(),
@@ -60967,7 +60969,11 @@ var registerTrustTools = (server, ctx) => {
       } catch (err) {
         throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? "")}`);
       }
-      if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
+      if (!file2.exists) {
+        throw new Error(
+          `file does not exist: ${safePath}. Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, then pass the path of an existing .lexicon.yaml or the repo directory holding it; if the repo has none yet, ask the user to create one with ${cliCommand("init --project")} in that repo.`
+        );
+      }
       const shownSha = await parsedContentHash(file2) ?? await hashFile(filePath);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {
@@ -61812,7 +61818,7 @@ function printGeneric(io, serverPath, env) {
     line(io, `   lexicon install ${c}`);
   }
   line(io);
-  line(io, dim("add --apply to write the config, --project for the repo-level file where the client supports one"));
+  line(io, dim("name a client and add --apply to write its config, --project for the repo-level file where the client supports one"));
   line(io);
   printExportHint(io, 1, "generic");
 }
@@ -61844,7 +61850,7 @@ async function runInstallJson(client, opts, io, deps) {
     code = await installText(client, { ...opts, json: false }, buffer, { ...deps, onWritten });
   } catch (e) {
     const message = errorMessage(e);
-    const nextStep = !isInstallClient(name) ? `name one of: ${INSTALL_CLIENTS.join(", ")} (e.g. lexicon install cursor --json)` : /--scope must be/.test(message) ? "pass --scope user or --scope project" : `fix the problem in error, then run lexicon install ${name}${opts.apply ? " --apply" : ""} --json again`;
+    const nextStep = e instanceof CliRefusal && e.nextStep ? e.nextStep : !isInstallClient(name) ? `name one of: ${INSTALL_CLIENTS.join(", ")} (e.g. lexicon install cursor --json)` : /--scope must be/.test(message) ? "pass --scope user or --scope project" : `fix the problem in error, then run lexicon install ${name}${opts.apply ? " --apply" : ""} --json again`;
     print(jsonError(message, nextStep));
     return 1;
   }
@@ -61879,6 +61885,14 @@ async function installText(client, opts, io, deps) {
     );
   }
   if (name === "generic") {
+    if (opts.apply || project) {
+      const flags = [opts.apply ? "--apply" : "", project ? "--project" : ""].filter(Boolean).join(" ");
+      const clients = INSTALL_CLIENTS.filter((c) => c !== "generic");
+      throw new CliRefusal(
+        `${flags} needs a client: with none named, lexicon install only prints the generic configuration and writes nothing`,
+        `name the client to write, e.g. lexicon install cursor ${flags} (one of: ${clients.join(", ")})`
+      );
+    }
     printGeneric(io, serverPath, lexiconServerEnv(env, cwd));
     return 0;
   }
@@ -63883,7 +63897,12 @@ async function stepDemo(ctx) {
   if (summary) ctx.say(dim(`   fixed: ${summary}`));
   if (demo.usedExample) {
     ctx.say(dim("   (that used the built-in example terms: your lexicon has no misspellings recorded yet)"));
-    ctx.say(dim('   add one now: lexicon add "Your Co" --suggest'));
+    const own2 = (ctx.plan ? ctx.plan.wouldSeed : ctx.seeded)[0];
+    ctx.say(
+      dim(
+        own2 === void 0 ? '   add one now: lexicon add "Your Co" --suggest' : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own2))} "<misspelling>"`
+      )
+    );
   }
   const record2 = { heard: demo.heard, corrected: demo.corrected, terms: demo.terms, usedExample: demo.usedExample };
   if (ctx.plan) ctx.plan.demo = record2;
@@ -64205,7 +64224,7 @@ function parseSource(value) {
   }
   return value;
 }
-function parseCategory(value) {
+function parseCategory2(value) {
   if (value === void 0) return void 0;
   const lower = value.toLowerCase();
   if (!CATEGORIES.includes(lower)) {
@@ -64267,7 +64286,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
     return 1;
   }
   const source = parseSource(opts.source);
-  const category = parseCategory(opts.category);
+  const category = parseCategory2(opts.category);
   const cwd = import_node_path30.default.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
@@ -64405,7 +64424,9 @@ var registerPackTools = (server, ctx) => {
       title: "Install a starter term pack",
       description: "Install one starter pack from list_packs into the global lexicon (or the project .lexicon.yaml with scope: project; a project file that is not trusted yet is left untrusted, `trusted: false`: relay `nextStep`). Adds the pack's terms with source \"pack\"; a term the user already has keeps its own spelling and aliases and only gains the pack's. Idempotent. A pack adds dozens of terms (list_packs gives each pack's `terms` count), so name the pack and its size and ask before calling this. Remove one later with " + cliCommand("pack remove <name>") + ". For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. A vendored pack installs directly: registry, previewDigest or confirm: false with one is refused and nothing is written. Community installs pin the checksum, so " + cliCommand("pack update") + " re-checks it later.",
       inputSchema: {
-        name: external_exports.string().describe("Pack name from list_packs (e.g. developer) or a community ref like example/cardiology."),
+        name: external_exports.string().describe(
+          "Pack name from list_packs (e.g. developer) or a community ref like example/cardiology. A pack name is 1 to 64 lowercase letters, digits and dashes, starting with a letter or digit; a community ref is <author>/<name>, the author 1 to 39 of the same characters, optionally followed by @<version> (up to 32 characters). Anything else is refused."
+        ),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
         registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC + " Required for community refs."),
         confirm: external_exports.boolean().optional().describe("Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing. A vendored pack has no preview: confirm: false with one is refused."),
