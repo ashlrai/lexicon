@@ -108,4 +108,15 @@ describe('first run of the lexicon CLI', () => {
     expect(second.stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
     expect(JSON.parse(lexicon(['init', '--json', '--cwd', home]).stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: false });
   }, 30_000);
+
+  // Catches: the add/remove example also followed `unknown option '--bogus'`,
+  // where an example of the right call answers nothing.
+  it('an unknown option on add or remove names --help, not the example', () => {
+    for (const cmd of ['add', 'remove']) {
+      const r = lexicon([cmd, '--bogus', 'x', '--cwd', home]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`error: unknown option '--bogus'\n(use lexicon ${cmd} --help for usage)`);
+      expect(r.stderr).not.toContain('e.g.');
+    }
+  }, 30_000);
 });
