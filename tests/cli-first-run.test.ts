@@ -76,4 +76,21 @@ describe('first run of the lexicon CLI', () => {
     expect(after.status).toBe(1);
     expect(after.stderr).toContain("unknown option '-v'");
   }, 30_000);
+
+  // Catches: `lexicon add` with no term said only "missing required argument
+  // 'canonical'", a word the user had never seen, with no example.
+  it('add and remove with nothing to act on show an example command', () => {
+    const add = lexicon(['add', '--cwd', home]);
+    expect(add.status).toBe(1);
+    expect(add.stderr).toContain("error: missing required argument 'canonical'\n(e.g. lexicon add \"Ashlr.AI\" Ashler Ashlar; use lexicon add --help for usage)");
+    const remove = lexicon(['remove', '--cwd', home]);
+    expect(remove.status).toBe(1);
+    expect(remove.stderr).toContain('(e.g. lexicon remove "Ashlr.AI", or lexicon remove "Ashlr.AI" --alias Ashler; lexicon list shows the terms');
+    // The --json document is unchanged.
+    expect(JSON.parse(lexicon(['add', '--json', '--cwd', home]).stdout)).toEqual({
+      ok: false,
+      error: "missing required argument 'canonical'",
+      nextStep: 'see the usage: lexicon add --help',
+    });
+  }, 30_000);
 });

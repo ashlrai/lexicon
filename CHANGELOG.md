@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon add` and `lexicon remove` with no term, or with an option they do not take, follow the usage error with an example: `(e.g. lexicon add "Ashlr.AI" Ashler Ashlar; use lexicon add --help for usage)`, and for remove the `--alias` form and `lexicon list`. They said only `missing required argument 'canonical'` and `(use --help for usage)`. The `--json` document is unchanged.
 - `lexicon -v` prints the version, as `lexicon --version` does (the short flag of node, npm and most CLIs). It failed with `unknown option '-v'`. Only on its own: `lexicon list -v` is still an unknown option.
 - `lexicon status` and `lexicon check` say `(Did you mean doctor? ...)`, `lexicon version` names `lexicon --version`, `lexicon config` names `lexicon path` and `lexicon edit`, `lexicon show` names `list` and `lexicon delete` names `remove`. commander suggested by spelling alone, so `status` got `(Did you mean stats?)`, the term counts, and the others got no hint. A typo such as `stauts` still gets the spelling suggestion; the exit code and the `--json` document are unchanged.
 - `lexicon --help`, and the help `lexicon` prints with no command, end with `Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.` and `Check an install: lexicon doctor`. They listed 25 commands and never said which one a new user runs first.

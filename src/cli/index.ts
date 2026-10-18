@@ -119,6 +119,7 @@ program
     'words that must never be rewritten to this term even if they sound alike, e.g. --never sauce',
   )
   .option('--json', 'print the saved term, file path and whether it was created as JSON')
+  .showHelpAfterError('(e.g. lexicon add "Ashlr.AI" Ashler Ashlar; use lexicon add --help for usage)')
   .action(async (canonical: string, aliases: string[], opts: AddOptions) =>
     done(await runAdd(canonical, aliases, withGlobals(opts), io)),
   );
@@ -131,6 +132,7 @@ program
   .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
   .option('--project', 'only look in the project lexicon')
   .option('--global', 'only look in the global lexicon (not with --project)')
+  .showHelpAfterError('(e.g. lexicon remove "Ashlr.AI", or lexicon remove "Ashlr.AI" --alias Ashler; lexicon list shows the terms; use lexicon remove --help for usage)')
   .option('--json', 'print { ok: true, canonical, removed } as JSON (exit 1 when not found, with ok: false and error), plus stillIn when a copy is left in the other lexicon file and untrustedProject when the untrusted project lexicon has one; with --alias also alias, aliases and paths')
   .action(async (canonical: string, opts: RemoveOptions) => done(await runRemove(canonical, withGlobals(opts), io)));
 
