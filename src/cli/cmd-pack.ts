@@ -40,7 +40,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -672,33 +672,42 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
     .option('--project', 'list community packs installed in this project')
     .action(async (opts: PackRegistryCliOptions) => done(await runPackList({ ...opts, ...globals() }, io, deps)));
 
-  pack
-    .command('add')
-    .description('install one or more packs into the global lexicon (existing terms only gain aliases); <author>/<name> installs a community pack after a preview')
-    .argument('<name...>', 'pack names, e.g. developer ai, or community refs like example/cardiology')
-    .option('--project', 'install into the project .lexicon.yaml instead')
-    .option('--registry <index>', 'registry index for community pack refs (local path, file:// or https:// URL)')
-    .option('-y, --yes', 'accept the community-pack preview without prompting (required off a terminal)')
-    .option('--json', 'print the results as JSON')
-    .action(async (names: string[], opts: PackRegistryCliOptions) => done(await runPackAdd(names, { ...opts, ...globals() }, io, deps)));
+  exampleAfterMissingArgument(
+    pack
+      .command('add')
+      .description('install one or more packs into the global lexicon (existing terms only gain aliases); <author>/<name> installs a community pack after a preview')
+      .argument('<name...>', 'pack names, e.g. developer ai, or community refs like example/cardiology')
+      .option('--project', 'install into the project .lexicon.yaml instead')
+      .option('--registry <index>', 'registry index for community pack refs (local path, file:// or https:// URL)')
+      .option('-y, --yes', 'accept the community-pack preview without prompting (required off a terminal)')
+      .option('--json', 'print the results as JSON')
+      .action(async (names: string[], opts: PackRegistryCliOptions) => done(await runPackAdd(names, { ...opts, ...globals() }, io, deps))),
+    '(e.g. lexicon pack add developer; lexicon pack list shows the packs; use lexicon pack add --help for usage)',
+  );
 
-  pack
-    .command('remove')
-    .alias('rm')
-    .description('remove a pack; terms you edited since (hits, extra aliases) are kept')
-    .argument('<name>', 'pack name or community ref (author/name)')
-    .option('--project', 'only look in the project .lexicon.yaml')
-    .option('--registry <index>', 'registry index to re-fetch a community pack whose cache is gone')
-    .option('--json', 'print the result as JSON')
-    .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackRemove(name, { ...opts, ...globals() }, io, deps)));
+  exampleAfterMissingArgument(
+    pack
+      .command('remove')
+      .alias('rm')
+      .description('remove a pack; terms you edited since (hits, extra aliases) are kept')
+      .argument('<name>', 'pack name or community ref (author/name)')
+      .option('--project', 'only look in the project .lexicon.yaml')
+      .option('--registry <index>', 'registry index to re-fetch a community pack whose cache is gone')
+      .option('--json', 'print the result as JSON')
+      .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackRemove(name, { ...opts, ...globals() }, io, deps))),
+    '(e.g. lexicon pack remove developer; lexicon pack list shows which are installed; use lexicon pack remove --help for usage)',
+  );
 
-  pack
-    .command('show')
-    .description('print the terms and aliases a pack contains')
-    .argument('<name>', 'pack name or community ref (author/name, needs --registry)')
-    .option('--registry <index>', 'registry index for community pack refs')
-    .option('--json', 'print the pack as JSON')
-    .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackShow(name, { ...opts, ...globals() }, io, deps)));
+  exampleAfterMissingArgument(
+    pack
+      .command('show')
+      .description('print the terms and aliases a pack contains')
+      .argument('<name>', 'pack name or community ref (author/name, needs --registry)')
+      .option('--registry <index>', 'registry index for community pack refs')
+      .option('--json', 'print the pack as JSON')
+      .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackShow(name, { ...opts, ...globals() }, io, deps))),
+    '(e.g. lexicon pack show developer; lexicon pack list shows the packs; use lexicon pack show --help for usage)',
+  );
 
   pack
     .command('search')

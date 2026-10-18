@@ -9,6 +9,7 @@
  * used to carry its own copy of `line`, `safe` and `resolveCwd`.
  */
 import { statSync } from 'node:fs';
+import type { Command } from 'commander';
 import path from 'node:path';
 import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
@@ -470,4 +471,21 @@ export function conflictLine(c: LearnConflict): string {
   return c.as === 'alias'
     ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: ${conflictRemoveCommand(c, safe)}`
     : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; to drop that term: lexicon remove ${JSON.stringify(safe(c.canonical))} --${c.scope}`;
+}
+
+/**
+ * After a missing-argument error, print `example`; after any other usage
+ * error (an unknown option, say), only where the usage is. An example of the
+ * right call does not answer `unknown option '--bogus'`.
+ */
+export function exampleAfterMissingArgument(cmd: Command, example: string): Command {
+  const names: string[] = [];
+  for (let c: Command | null = cmd; c; c = c.parent) names.unshift(c.name());
+  const usage = `(use ${names.join(' ')} --help for usage)`;
+  const error = cmd.error.bind(cmd);
+  cmd.error = (message, errorOptions) => {
+    cmd.showHelpAfterError(errorOptions?.code === 'commander.missingArgument' ? example : usage);
+    return error(message, errorOptions);
+  };
+  return cmd;
 }

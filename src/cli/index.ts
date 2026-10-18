@@ -42,7 +42,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { CliRefusal, argvRequestsJson, cwdOptionProblem, fail, jsonFlagsOf, line, optsRequestJson, refuse, unknownCommandHint, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -90,21 +90,6 @@ program.on('command:*', (operands: string[]) => {
 function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
   const { cwd } = program.opts<{ cwd?: string }>();
   return cwd ? { ...opts, cwd } : opts;
-}
-
-/**
- * After a missing-argument error, print `example`; after any other usage
- * error (an unknown option, say), only where the usage is. An example of the
- * right call does not answer `unknown option '--bogus'`.
- */
-function exampleAfterMissingArgument(cmd: Command, example: string): Command {
-  const usage = `(use ${cmd.parent ? `${cmd.parent.name()} ` : ''}${cmd.name()} --help for usage)`;
-  const error = cmd.error.bind(cmd);
-  cmd.error = (message, errorOptions) => {
-    cmd.showHelpAfterError(errorOptions?.code === 'commander.missingArgument' ? example : usage);
-    return error(message, errorOptions);
-  };
-  return cmd;
 }
 
 function done(code: number): void {
