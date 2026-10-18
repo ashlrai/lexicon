@@ -60113,15 +60113,17 @@ function renderTable(rows, header) {
 function fail(io, err, json2) {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message);
-  if (json2) printJsonError(io, message, hint);
+  if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0));
   io.stderr(`lexicon: ${safeLines(message)}
 `);
   if (hint) io.stderr(`lexicon: ${hint}
 `);
   return 1;
 }
+var DEFAULT_NEXT_STEP = "fix what error names, then run the command again (its --help lists the flags)";
+var PROJECT_TRUST_NEXT_STEP = "review the project lexicon and run lexicon trust, then run the command again; or write to the global lexicon instead";
 function jsonError(error62, nextStep) {
-  return { ok: false, error: error62, ...nextStep ? { nextStep } : {} };
+  return { ok: false, error: error62, nextStep: nextStep || DEFAULT_NEXT_STEP };
 }
 function jsonOk(doc) {
   return { ok: true, ...doc };

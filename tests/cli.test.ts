@@ -120,7 +120,7 @@ import {
   runRemove,
   runHarvest,
 } from '../src/cli/commands.js';
-import { fail } from '../src/cli/io.js';
+import { DEFAULT_NEXT_STEP, PROJECT_TRUST_NEXT_STEP, fail } from '../src/cli/io.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
 import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
@@ -467,7 +467,11 @@ describe('add / remove / path', () => {
   it('remove --project --global --json prints { ok: false, error }', async () => {
     const io = makeIO();
     expect(await runRemove('Ashlr.AI', { project: true, global: true, json: true }, io)).toBe(1);
-    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('--project and --global cannot be combined') });
+    expect(JSON.parse(io.out)).toEqual({
+      ok: false,
+      error: '--project and --global cannot be combined',
+      nextStep: 'pass one of --project or --global, or omit both to try the project lexicon, then the global one',
+    });
     expect(io.err).toContain('lexicon: --project and --global cannot be combined');
   });
 
@@ -487,11 +491,11 @@ describe('add / remove / path', () => {
     expect(term.err).toContain('lexicon: run lexicon list to see the exact canonical spellings');
     const alias = makeIO();
     expect(await runRemove('Nope', { json: true, alias: 'x' }, alias)).toBe(1);
-    expect(JSON.parse(alias.out)).toEqual({ ok: false, error: 'no term "Nope" in the global or project lexicon', canonical: 'Nope', alias: 'x', removed: false });
+    expect(JSON.parse(alias.out)).toEqual({ ok: false, error: 'no term "Nope" in the global or project lexicon', nextStep: DEFAULT_NEXT_STEP, canonical: 'Nope', alias: 'x', removed: false });
     vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
     const trust = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, trust)).toBe(1);
-    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), canonical: 'Ashlr.AI', removed: false });
+    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), nextStep: `run lexicon remove "Ashlr.AI" --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}`, canonical: 'Ashlr.AI', removed: false });
     // Success leads with ok: true (it had no ok key, so `ok` only told failures apart).
     const ok = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
@@ -515,7 +519,7 @@ describe('add / remove / path', () => {
     // index.ts routes a thrown error through fail(io, err, json), so do the same here.
     const code = await runHarvest(repo, { add: true, yes: true, json: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err, true));
     expect(code).toBe(1);
-    expect(JSON.parse(io.out)).toEqual({ ok: false, error: 'disk full', added: 1, created: 1, merged: 0, path: '/tmp/proj/.lexicon.yaml' });
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: 'disk full', nextStep: DEFAULT_NEXT_STEP, added: 1, created: 1, merged: 0, path: '/tmp/proj/.lexicon.yaml' });
     expect(io.err).toContain('lexicon: disk full');
     expect(io.err).toContain('added 1 new term, merged 0 before the failure');
 
@@ -885,6 +889,22 @@ describe('export', () => {
       expect(io.out).toBe('export:wispr\n');
     }
     expect(core.exportLexicon).toHaveBeenLastCalledWith(expect.anything(), 'wispr', {});
+  });
+});
+
+// Catches: a --json failure from a store error or a refusal with no hint of
+// its own printed { ok: false, error } with no nextStep, while the rest
+// carried one, so a script could not rely on the three keys.
+describe('--json failure documents', () => {
+  it('fail() always carries nextStep: the unreadable-lexicon hint, the trust step, else the default', () => {
+    const plain = makeIO();
+    expect(fail(plain, new Error('disk full'), true)).toBe(1);
+    expect(JSON.parse(plain.out)).toEqual({ ok: false, error: 'disk full', nextStep: 'fix what error names, then run the command again (its --help lists the flags)' });
+    // The generic step stays off stderr: it says nothing the error line does not.
+    expect(plain.err).toBe('lexicon: disk full\n');
+    const trust = makeIO();
+    fail(trust, new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'), true);
+    expect(JSON.parse(trust.out)).toEqual({ ok: false, error: expect.stringContaining('is untrusted'), nextStep: expect.stringContaining('run lexicon trust') });
   });
 });
 
@@ -2179,11 +2199,11 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
 
       const category = lexicon(['list', '--full', '--category', 'nope', '--cwd', tmp], globalPath);
       expect(category.status).toBe(1);
-      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"') });
+      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"'), nextStep: expect.any(String) });
 
       const missing = lexicon(['harvest', path.join(tmp, 'no-such-dir'), '--full', '--cwd', tmp], globalPath);
       expect(missing.status).toBe(1);
-      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('path does not exist') });
+      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('path does not exist'), nextStep: expect.any(String) });
 
       // A command without --full keeps an empty stdout for it: there it is just an unknown option.
       const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);
@@ -2217,10 +2237,10 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       });
       expect(wrong.stderr).toContain('lexicon: it is an alias of "Kubectl" in the global lexicon');
 
-      // An alias no file has keeps the bare error.
+      // An alias no file has gets the generic next step only.
       const nowhere = lexicon(['remove', 'Kubectl', '--alias', 'nope', '--global', '--json', '--cwd', repo], globalPath);
       expect(nowhere.status).toBe(1);
-      expect(JSON.parse(nowhere.stdout)).not.toHaveProperty('nextStep');
+      expect(JSON.parse(nowhere.stdout).nextStep).toBe(DEFAULT_NEXT_STEP);
 
       const ok = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--global', '--json', '--cwd', repo], globalPath);
       expect(ok.status).toBe(0);
@@ -2230,7 +2250,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   }, 30_000);
 
   // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
-  it('a --json command that throws prints { ok: false, error, nextStep? } on stdout with exit 1', async () => {
+  it('a --json command that throws prints { ok: false, error, nextStep } on stdout with exit 1', async () => {
     const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
     try {
       const repo = path.join(tmp, 'repo');
@@ -2241,16 +2261,16 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
 
       const refused = lexicon(['add', 'Foo', '--project', '--json', '--cwd', repo], globalPath);
       expect(refused.status).toBe(1);
-      expect(JSON.parse(refused.stdout)).toEqual({ ok: false, error: expect.stringContaining(`project lexicon at ${projectPath} is untrusted`) });
+      expect(JSON.parse(refused.stdout)).toEqual({ ok: false, error: expect.stringContaining(`project lexicon at ${projectPath} is untrusted`), nextStep: PROJECT_TRUST_NEXT_STEP });
       expect(refused.stderr).toContain('lexicon: project lexicon at');
 
       const category = lexicon(['list', '--json', '--category', 'nope', '--cwd', tmp], globalPath);
       expect(category.status).toBe(1);
-      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"') });
+      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"'), nextStep: expect.any(String) });
 
       const missing = lexicon(['import', path.join(tmp, 'nope.txt'), '--json', '--cwd', tmp], globalPath);
       expect(missing.status).toBe(1);
-      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('file not found') });
+      expect(JSON.parse(missing.stdout)).toEqual({ ok: false, error: expect.stringContaining('file not found'), nextStep: expect.any(String) });
 
       // A lexicon file that does not parse: nextStep is the command that fixes it.
       await fs.mkdir(path.dirname(globalPath), { recursive: true });

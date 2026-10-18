@@ -529,7 +529,7 @@ Options:
   --home <dir>        treat <dir> as the home directory (mainly for tests)
   --json              print a machine-readable summary on stdout, led by ok
                       (progress goes to stderr; a refusal prints { ok: false,
-                      error })
+                      error, nextStep })
   -h, --help          display help for command
 ```
 

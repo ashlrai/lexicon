@@ -10,7 +10,7 @@
  */
 import { statSync } from 'node:fs';
 import path from 'node:path';
-import { conflictRemoveCommand, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
+import { conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -184,14 +184,15 @@ export function renderTable(rows: readonly (readonly string[])[], header?: reado
 /**
  * The house style for a failed command: one `lexicon: <message>` line on
  * stderr, exit code 1. With `json` true (the command's `--json`) the
- * `{ ok: false, error, nextStep? }` document goes to stdout as well, `nextStep`
- * being the unreadable-lexicon hint when there is one. Handlers `return fail(io, err)` rather than throwing, so
+ * `{ ok: false, error, nextStep }` document goes to stdout as well, `nextStep`
+ * being the unreadable-lexicon hint when there is one, PROJECT_TRUST_NEXT_STEP
+ * for a refused project write, else DEFAULT_NEXT_STEP. Handlers `return fail(io, err)` rather than throwing, so
  * the commander wiring in index.ts stays a thin pass-through of exit codes.
  */
 export function fail(io: IO, err: unknown, json?: boolean): number {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message);
-  if (json) printJsonError(io, message, hint);
+  if (json) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : undefined));
   io.stderr(`lexicon: ${safeLines(message)}\n`);
   if (hint) io.stderr(`lexicon: ${hint}\n`);
   return 1;
@@ -199,19 +200,28 @@ export function fail(io: IO, err: unknown, json?: boolean): number {
 
 /**
  * The stdout document of a `--json` command that failed: `{ ok: false, error,
- * nextStep? }`, as `setup --json` prints it. Under --json stdout is the one
+ * nextStep }`, as `setup --json` prints it. Under --json stdout is the one
  * thing a script reads, so a refusal that only went to stderr left it with an
  * empty document to parse. The text is unsanitized (it is JSON, not a
- * terminal line), like every other `--json` field.
+ * terminal line), like every other `--json` field. `nextStep` is always
+ * there: the caller's, else DEFAULT_NEXT_STEP, so a script reads the same
+ * three keys from every failure (a store error, an unknown flag, a refusal).
  */
 export interface JsonError {
   ok: false;
   error: string;
-  nextStep?: string;
+  nextStep: string;
 }
 
+/** The `nextStep` of a failure that has no more specific one. */
+export const DEFAULT_NEXT_STEP = 'fix what error names, then run the command again (its --help lists the flags)';
+
+/** The `nextStep` of a write the store refused because the project lexicon is not trusted. */
+export const PROJECT_TRUST_NEXT_STEP =
+  'review the project lexicon and run lexicon trust, then run the command again; or write to the global lexicon instead';
+
 export function jsonError(error: string, nextStep?: string): JsonError {
-  return { ok: false, error, ...(nextStep ? { nextStep } : {}) };
+  return { ok: false, error, nextStep: nextStep || DEFAULT_NEXT_STEP };
 }
 
 /**

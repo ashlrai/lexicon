@@ -294,7 +294,7 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
 });
 
 // The command whose action is running, so an error it throws can be reported
-// in the form its flags asked for: under --json, a `{ ok: false, error }`
+// in the form its flags asked for: under --json, a `{ ok: false, error, nextStep }`
 // document on stdout as well as the stderr line.
 let active: Command | undefined;
 program.hook('preAction', (_program, actionCommand) => {

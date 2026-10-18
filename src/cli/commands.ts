@@ -105,6 +105,7 @@ import {
   jsonOk,
   line,
   plural,
+  PROJECT_TRUST_NEXT_STEP,
   refuse,
   renderTable,
   resolveCwd,
@@ -247,7 +248,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   // first, and an add landing between the write and the append is renamed away
   // by nothing but read back without the comment. The lock is re-entrant, so
   // the writeLexiconFile inside takes it again for free.
-  // A failure throws to the CLI entry, which prints `{ ok: false, error }` under --json.
+  // A failure throws to the CLI entry, which prints `{ ok: false, error, nextStep }` under --json.
   const created = await createLexiconFile(target, scope);
   // The user asked for this file; that is the approval `lexicon trust` records.
   if (created && scope === 'project') await trustProject(target, { cwd });
@@ -430,7 +431,7 @@ export interface RemoveOptions extends CommonOptions {
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   if (opts.project && opts.global) {
-    return refuse(io, opts.json, '--project and --global cannot be combined (omit both to try the project lexicon, then the global one)');
+    return refuse(io, opts.json, '--project and --global cannot be combined', 'pass one of --project or --global, or omit both to try the project lexicon, then the global one');
   }
   const scope: TermScope | undefined = opts.project ? 'project' : opts.global ? 'global' : undefined;
   if (opts.alias !== undefined) return runRemoveAlias(canonical, opts.alias, opts, scope, cwd, io);
@@ -451,7 +452,8 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // the global copy is still removable on its own.
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err)), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
+      const nextStep = global ? `run lexicon remove ${JSON.stringify(canonical)} --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
     io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --global\n`);
@@ -814,7 +816,7 @@ export async function runHarvest(
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json) line(io, JSON.stringify({ ...jsonError(message), added: false, path: projectPath, projectTrust: status }, null, 2));
+        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
         io.stderr(`lexicon: ${safeLines(message)}\n`);
         return 1;
       }

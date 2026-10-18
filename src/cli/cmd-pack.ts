@@ -263,7 +263,7 @@ function printPackTerms(io: IO, pack: { name: string; title: string; description
 export async function runPackSearch(query: string, opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   try {
     if (!opts.registry) {
-      return refuse(io, opts.json, 'pack search needs --registry <index> (a local path, file:// or https:// URL)');
+      return refuse(io, opts.json, 'pack search needs --registry <index> (a local path, file:// or https:// URL)', 'pass --registry <index>, or run lexicon pack list for the built-in packs');
     }
     const { index } = await loadRegistryIndex(opts.registry, deps.registry);
     const hits = searchRegistryIndex(index, query);
@@ -315,7 +315,7 @@ const NEED_REGISTRY = 'community packs need --registry <index> (a local path, fi
 
 function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   if (!opts.registry) {
-    refuse(io, opts.json, NEED_REGISTRY);
+    refuse(io, opts.json, NEED_REGISTRY, 'pass --registry <index>, or run lexicon pack list for the built-in packs');
     return false;
   }
   return true;

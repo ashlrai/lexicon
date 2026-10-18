@@ -68,13 +68,13 @@ describe('runImportGuided', () => {
   it('prints { ok: false, error } under --json when it refuses', async () => {
     const io = makeIO();
     expect(await runImportGuided({ json: true, globalPath }, io, fakeDeps())).toBe(1);
-    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('--yes needs --sources') });
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('--yes needs --sources'), nextStep: expect.any(String) });
     const bad = makeIO();
     expect(await runImportGuided({ json: true, sources: 'carrier-pigeon', globalPath }, bad, fakeDeps())).toBe(1);
-    expect(JSON.parse(bad.out)).toEqual({ ok: false, error: expect.stringContaining('unknown import source') });
+    expect(JSON.parse(bad.out)).toEqual({ ok: false, error: expect.stringContaining('unknown import source'), nextStep: expect.any(String) });
     const limit = makeIO();
     expect(await runImportGuided({ json: true, sources: 'github', limit: '-1', globalPath }, limit, fakeDeps())).toBe(1);
-    expect(JSON.parse(limit.out)).toEqual({ ok: false, error: '--limit must be a non-negative integer, got "-1"' });
+    expect(JSON.parse(limit.out)).toEqual({ ok: false, error: '--limit must be a non-negative integer, got "-1"', nextStep: expect.any(String) });
   });
 
   it('rejects an unknown source', async () => {
