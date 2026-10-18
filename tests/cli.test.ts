@@ -412,18 +412,24 @@ describe('add / remove / path', () => {
       expect.objectContaining({ scope: 'project', defaultAliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }),
     );
     expect(io.out).toContain('created');
-    expect(io.out).toContain('suggested aliases: Ashler, Ashlar, Ashlr AI');
+    // Catches: the suggestions printed twice, `suggested aliases: ...` and then `aliases: ...`.
+    expect(io.out).toContain('aliases: Ashler, Ashlar, Ashlr AI (suggested)');
+    expect(io.out.match(/Ashler, Ashlar, Ashlr AI/g)).toHaveLength(1);
     expect(io.out).toContain('/tmp/proj/.lexicon.yaml');
   });
 
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();
-    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true }, makeIO());
+    const io = makeIO();
+    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true }, io);
     expect(core.addTerm).toHaveBeenLastCalledWith(
       expect.objectContaining({ aliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }),
       expect.anything(),
     );
+    // Given and suggested aliases on one line, the suggested ones named.
+    expect(io.out).toContain('aliases: Ashler, Ashlar, Ashlr AI (suggested: Ashlar, Ashlr AI)');
+    expect(io.out).not.toContain('suggested aliases:');
   });
 
   // Catches: `lexicon add Other Ashler` printed plain success while "Ashler" kept going to Ashlr.AI (MCP add_term said so).
@@ -1404,6 +1410,22 @@ describe('runDoctorReport', () => {
       expect(report.summary).toMatch(/configured.*integration declared/i);
       expect(report.nextStep).toMatch(/Nothing to fix/);
       expect(report.nextStep).not.toBe('');
+    });
+
+    // Catches: after `lexicon setup` wired a client but seeded nothing (no git
+    // user.name, no --person), doctor said "Run: lexicon setup" again, a loop.
+    it('names lexicon add, not setup again, when an agent is wired up but there are no terms', async () => {
+      vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+      await fs.writeFile(path.join(dir, 'claude'), '');
+      const deps = { platform: 'linux' as const, env: { PATH: dir }, exec: () => 'lexicon: connected' };
+      const report = await runDoctorReport({}, deps);
+      expect(report.ready).toBe(false);
+      expect(report.summary).toBe('Lexicon is wired up to an agent but has no terms yet, so nothing will be corrected.');
+      expect(report.nextStep).toBe('Add a term: lexicon add "Ashlr.AI" Ashler  (or lexicon setup --person "Your Name" --company "Your Co" to seed your own names)');
+      const mcp = await runDoctorReport({ audience: 'mcp' }, deps);
+      expect(mcp.nextStep).toContain('call add_term');
+      expect(mcp.nextStep).not.toContain('setup_lexicon');
     });
 
     it('is not ready, and names `lexicon setup`, when the lexicon has no terms', async () => {

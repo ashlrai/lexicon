@@ -108,4 +108,27 @@ describe('first run of the lexicon CLI', () => {
     expect(second.stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
     expect(JSON.parse(lexicon(['init', '--json', '--cwd', home]).stdout)).toEqual({ ok: true, scope: 'global', path: globalPath, created: false });
   }, 30_000);
+
+  // Catches: the add/remove example also followed `unknown option '--bogus'`,
+  // where an example of the right call answers nothing.
+  it('an unknown option on add or remove names --help, not the example', () => {
+    for (const cmd of ['add', 'remove']) {
+      const r = lexicon([cmd, '--bogus', 'x', '--cwd', home]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`error: unknown option '--bogus'\n(use lexicon ${cmd} --help for usage)`);
+      expect(r.stderr).not.toContain('e.g.');
+    }
+  }, 30_000);
+
+  // Catches: `lexicon pack add` with no name said only "missing required
+  // argument 'name'" and "(use --help for usage)", not which names exist.
+  it('pack add, remove and show with no name show an example and lexicon pack list', () => {
+    for (const cmd of ['add', 'remove', 'show']) {
+      const r = lexicon(['pack', cmd, '--cwd', home]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`error: missing required argument 'name'\n(e.g. lexicon pack ${cmd} developer; lexicon pack list shows`);
+    }
+    const unknown = lexicon(['pack', 'add', '--bogus', '--cwd', home]);
+    expect(unknown.stderr).toContain("error: unknown option '--bogus'\n(use lexicon pack add --help for usage)");
+  }, 30_000);
 });

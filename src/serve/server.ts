@@ -847,7 +847,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   function handleAliases(url: URL): AliasesResponse {
     strictQuery(url, 'GET /aliases', ['canonical']);
     const canonical = (url.searchParams.get('canonical') ?? '').trim();
-    if (!canonical) throw new HttpError(400, 'canonical query parameter is required');
+    if (!canonical) throw new HttpError(400, 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)');
     if (canonical.length > 80) throw new HttpError(400, 'canonical must be at most 80 characters');
     return { canonical, aliases: suggestAliases(canonical) };
   }

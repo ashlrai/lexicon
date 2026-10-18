@@ -2196,7 +2196,10 @@ describe('packs and aliases routes', () => {
     expect(body.canonical).toBe('Ashlr.AI');
     expect(body.aliases).toEqual(suggestAliases('Ashlr.AI'));
     expect(body.aliases).toContain('Ashler');
-    expect((await api2('GET', '/aliases')).status).toBe(400);
+    // Catches: the 400 named the parameter but not how to pass it.
+    const missing = await api2('GET', '/aliases');
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({ error: 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)' });
     expect((await api2('GET', '/aliases?canonical=%20')).status).toBe(400);
     expect((await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).status).toBe(400);
     expect((await api2('POST', '/aliases', { canonical: 'x' })).status).toBe(405);

@@ -126,5 +126,5 @@ elif [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then
   say ""
   lexicon setup </dev/tty || say "setup finished with warnings; rerun: lexicon setup"
 else
-  say "next: run  lexicon setup"
+  say "no terminal to ask the setup questions on; run: lexicon setup"
 fi

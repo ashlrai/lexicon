@@ -62345,6 +62345,13 @@ function summarize(checks, state, audience = "cli") {
       nextStep: mcp ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ""))} (setup_lexicon will not repair this). The file is ${first.path}` : `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
     };
   }
+  if (state.terms === 0 && state.wired) {
+    return {
+      ready: false,
+      summary: "Lexicon is wired up to an agent but has no terms yet, so nothing will be corrected.",
+      nextStep: mcp ? "Ask the user how their company, product and own name are spelled, then call add_term for each (list_packs offers starter packs of common names)" : 'Add a term: lexicon add "Ashlr.AI" Ashler  (or lexicon setup --person "Your Name" --company "Your Co" to seed your own names)'
+    };
+  }
   if (state.terms === 0) {
     return {
       ready: false,
