@@ -1709,3 +1709,28 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a long path does 
     expect(doctor.stdout).not.toContain('…');
   });
 });
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: doctor in a repo whose only terms are untrusted', () => {
+  // Catches: with an empty global lexicon and an untrusted repo .lexicon.yaml, doctor
+  // said "not set up yet ... Run: lexicon setup", which leaves the repo's terms unmerged,
+  // and its trust next step named the MCP tool trust_project to a terminal user.
+  it('names lexicon trust, not lexicon setup, as the next step', async () => {
+    const h = await freshHome('doctor-untrusted');
+    expect((await runCli(['init'], { env: h.env })).code).toBe(0);
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    const r = await runCli(['doctor', '--json'], { env: h.env, cwd: h.repo });
+    const report = JSON.parse(r.stdout) as { ready: boolean; summary: string; nextStep: string };
+    expect(report.ready).toBe(false);
+    expect(report.summary).toContain('project lexicon (1 term) is not trusted');
+    expect(report.summary).not.toMatch(/not set up yet/);
+    expect(report.nextStep).toContain('lexicon trust');
+    expect(report.nextStep).not.toContain('lexicon setup');
+    expect(report.nextStep).not.toContain('trust_project');
+
+    // Once it is trusted the terms count and the next step moves on.
+    expect((await runCli(['trust', '--yes'], { env: h.env, cwd: h.repo })).code).toBe(0);
+    const after = JSON.parse((await runCli(['doctor', '--json'], { env: h.env, cwd: h.repo })).stdout) as { summary: string; nextStep: string };
+    expect(after.summary).not.toContain('is not trusted');
+    expect(after.nextStep).not.toContain('lexicon trust');
+  });
+});

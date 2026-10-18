@@ -62817,6 +62817,8 @@ function mcpRunHints(message) {
     (_all, paren, inline, bare) => paren !== void 0 ? `(${mcpCommandHint(paren)})` : inline !== void 0 ? mcpCommandHint(inline) : `: ${cliCommand((bare ?? "").replace(/^lexicon /, ""))}`
   );
 }
+var TRUST_NEXT_STEP_CLI = "Review the project lexicon and trust it: lexicon trust  (it lists the terms and asks before it pins the file)";
+var TRUST_NEXT_STEP_MCP = `Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", which asks the user directly, or ask them to run ${cliCommand("trust")} in a terminal in that repo`;
 function summarize(checks, state, audience = "cli") {
   const mcp = audience === "mcp";
   const fails = checks.filter((c) => c.level === "fail");
@@ -62833,6 +62835,14 @@ function summarize(checks, state, audience = "cli") {
       // characters and an absolute path can use most of that, so what gets
       // cut has to be the part the check list already showed.
       nextStep: mcp ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ""))} (setup_lexicon will not repair this). The file is ${first.path}` : `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
+    };
+  }
+  if (state.terms === 0 && state.untrustedProject && state.skippedProjectTerms > 0) {
+    const skipped = `${state.skippedProjectTerms} term${state.skippedProjectTerms === 1 ? "" : "s"}`;
+    return {
+      ready: false,
+      summary: `Lexicon has no terms it applies: this repo's project lexicon (${skipped}) is not trusted, so it is not merged and nothing will be corrected.`,
+      nextStep: mcp ? TRUST_NEXT_STEP_MCP : TRUST_NEXT_STEP_CLI
     };
   }
   if (state.terms === 0 && state.wired) {
@@ -62870,7 +62880,7 @@ function summarize(checks, state, audience = "cli") {
     return {
       ready: true,
       summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
-      nextStep: mcp ? `Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", which asks the user directly, or ask them to run ${cliCommand("trust")} in a terminal in that repo` : 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
+      nextStep: mcp ? TRUST_NEXT_STEP_MCP : TRUST_NEXT_STEP_CLI
     };
   }
   return {
@@ -62891,6 +62901,7 @@ async function runDoctorReport(opts, deps = {}) {
   };
   let wired = false;
   let untrustedProject = false;
+  let skippedProjectTerms = 0;
   const unreadable = [];
   const paths = resolvePaths({ cwd, env, home });
   const files = [];
@@ -62917,9 +62928,11 @@ async function runDoctorReport(opts, deps = {}) {
         files.push(p);
       } else if (trust === "changed") {
         untrustedProject = true;
+        skippedProjectTerms = p.lexicon.terms.length;
         push2("warn", `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
       } else {
         untrustedProject = true;
+        skippedProjectTerms = p.lexicon.terms.length;
         push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
@@ -63069,7 +63082,7 @@ async function runDoctorReport(opts, deps = {}) {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
   if (opts.audience === "mcp") for (const check2 of checks) check2.message = mcpRunHints(check2.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
   const firstFail = checks.find((c) => c.level === "fail");
   return {
     ok: firstFail === void 0,
