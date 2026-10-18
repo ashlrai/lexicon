@@ -12,7 +12,7 @@ class Lexicon < Formula
   depends_on "node"
   # `lexicon voice` (local push-to-talk) needs both; everything else works without them.
   depends_on "ffmpeg" => :recommended
-  depends_on "whisper.cpp" => :recommended
+  depends_on "whisper-cpp" => :recommended
 
   def install
     # The tarball ships TypeScript sources only: install the dev toolchain,
