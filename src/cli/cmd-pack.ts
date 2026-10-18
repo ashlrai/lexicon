@@ -106,7 +106,9 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
   const storeOpts = { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
   try {
     const packs = await listPacks(deps);
-    const loaded = await loadLexicon(storeOpts);
+    // installedPacks and the mismatch read only the merged files: a skipped
+    // project file is named by path, so it is never parsed.
+    const loaded = await loadLexicon({ ...storeOpts, parseSkipped: false });
     // installedPacks reads trusted files only: a pack the skipped project file
     // records shows as not installed, so name that file (stderr, path only).
     warnSkippedProject(loaded, io);
@@ -268,7 +270,7 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
     const { index } = await loadRegistryIndex(opts.registry, deps.registry);
     const hits = searchRegistryIndex(index, query);
     const cwd = resolveCwd(opts);
-    const loaded = await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) });
+    const loaded = await loadLexicon({ cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), parseSkipped: false });
     warnSkippedProject(loaded, io);
     const installed = installedPacks(loaded);
     // The same report as `pack list`, over every file the flags come from.

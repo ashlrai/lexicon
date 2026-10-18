@@ -158,7 +158,9 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
     async ({ cwd: cwdArg, limit }) =>
       guarded(async () => {
         const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord(dir)}`) : ctx.cwd;
-        const loaded = await loadLexicon({ cwd: root });
+        // suggestTerms reads the merged files only (merged, global, project),
+        // so a skipped project file is never parsed.
+        const loaded = await loadLexicon({ cwd: root, parseSkipped: false });
         const history: VoiceHistoryEntry[] = await loadVoiceHistory(loaded.global.path).catch((err: unknown) => {
           log('loadVoiceHistory failed:', errorMessage(err));
           return [];

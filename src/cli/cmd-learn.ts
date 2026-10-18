@@ -200,7 +200,7 @@ export function renderStats(stats: LexiconStats): string {
 export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
-    const loaded = await loadLexicon({ cwd });
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
     // The counts leave a skipped project file out; say so, as lexicon_stats does.
     warnSkippedProject(loaded, io);
     const stats = computeStats(loaded);

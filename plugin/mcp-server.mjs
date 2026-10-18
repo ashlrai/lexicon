@@ -60738,7 +60738,7 @@ var registerTermTools = (server, ctx) => {
       });
       const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
       const shown = untrusted && !saved.created ? term : saved.term;
-      const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
+      const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
       const note = conflictNote(conflicts, "mcp");
       return textResult({
         term: shown,
@@ -61074,7 +61074,7 @@ var registerHarvestTools = (server, ctx) => {
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
       const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord(dir)}`) : ctx.cwd;
-      const loaded = await loadLexicon({ cwd: root });
+      const loaded = await loadLexicon({ cwd: root, parseSkipped: false });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
         return [];
