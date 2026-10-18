@@ -91,7 +91,9 @@ write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
 503 more than 64 requests in flight.
 
 400 always means the request itself is wrong: fix the input and do not retry
-as is. 500 means the request was fine and the server could not serve it: the
+as is. A 400 about a POST body (empty, not JSON, not an object, or a field that is
+missing, mistyped or unknown) ends with the fields that route takes, such as
+`(POST /normalize takes { text, dryRun?, minConfidence?, cwd? })`. 500 means the request was fine and the server could not serve it: the
 lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
 <path>: ...`), a lock on it is still held after its timeout, or the file
 cannot be read or written. The message names the cause and the file, so fix

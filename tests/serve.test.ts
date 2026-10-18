@@ -917,6 +917,29 @@ describe('limits and errors', () => {
     expect(list.status).toBe(400);
   });
 
+  // Catches: a body 400 named what was wrong but not the fields the route
+  // takes: `{}` to /normalize read "text: Invalid input: expected string,
+  // received undefined", an empty body only "must be a JSON object", so a
+  // first request built by guesswork had to go read the docs.
+  it('every body 400 names the fields its route takes', async () => {
+    const cases: [string, unknown, string][] = [
+      ['/normalize', {}, 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/normalize', '{"text": ', 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/learn', '[1]', 'POST /learn takes { heard, meant, scope?, cwd? }'],
+      ['/learn', { heard: 'x' }, 'POST /learn takes { heard, meant, scope?, cwd? }'],
+      ['/add', { name: 'Zed' }, 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }'],
+      ['/packs/developer', { scop: 'project' }, 'POST /packs/:name takes { scope?, cwd? } or an empty body'],
+    ];
+    for (const [route, body, takes] of cases) {
+      const res = await api('POST', route, body);
+      expect(res.status, route).toBe(400);
+      expect(((await res.json()) as { error: string }).error, route).toContain(`(${takes})`);
+    }
+    const empty = await fetch(`${info.url}/normalize`, { method: 'POST', headers: { Authorization: `Bearer ${info.token}` } });
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toEqual({ error: 'request body must be a JSON object (POST /normalize takes { text, dryRun?, minConfidence?, cwd? })' });
+  });
+
   /**
    * Catches: every plain Error mapped to 400. A broken lexicon file or a lock
    * that never frees is the server's problem, not the request's, and a 400

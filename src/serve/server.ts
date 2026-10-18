@@ -341,6 +341,22 @@ const ROUTES: readonly string[] = [
   'GET /export/:format',
 ];
 
+/**
+ * What each POST route's body holds, as docs/LOCAL-API.md lists it. Every
+ * body 400 (empty, not JSON, not an object, a missing, mistyped or unknown
+ * field) ends with it, so a first request built by guesswork learns the
+ * real field names from the answer. Without it `{}` to /normalize read only
+ * `text: Invalid input: expected string, received undefined`, and a typo
+ * only `Unrecognized key`.
+ */
+const BODY_SHAPES = {
+  '/normalize': 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }',
+  '/learn': 'POST /learn takes { heard, meant, scope?, cwd? }',
+  '/add': 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }',
+  '/packs/:name': 'POST /packs/:name takes { scope?, cwd? } or an empty body',
+} as const;
+type BodyRoute = keyof typeof BODY_SHAPES;
+
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
@@ -437,9 +453,9 @@ function issuesMessage(err: z.ZodError): string {
   return err.issues.map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message)).join('; ');
 }
 
-function parseBody<T>(schema: z.ZodType<T>, raw: unknown): T {
+function parseBody<T>(schema: z.ZodType<T>, raw: unknown, route: BodyRoute): T {
   const result = schema.safeParse(raw);
-  if (!result.success) throw new HttpError(400, `invalid request body: ${issuesMessage(result.error)}`);
+  if (!result.success) throw new HttpError(400, `invalid request body: ${issuesMessage(result.error)} (${BODY_SHAPES[route]})`);
   return result.data;
 }
 
@@ -496,21 +512,25 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
   });
 }
 
-/** Parse a JSON object body. With `optional`, an empty body reads as `{}` (routes whose fields are all optional). */
-async function readJson(req: http.IncomingMessage, cap: number, optional = false): Promise<unknown> {
+/**
+ * Parse a JSON object body for `route`, whose fields the 400s name. With
+ * `optional`, an empty body reads as `{}` (routes whose fields are all optional).
+ */
+async function readJson(req: http.IncomingMessage, cap: number, route: BodyRoute, optional = false): Promise<unknown> {
   const text = await readBody(req, cap);
+  const takes = BODY_SHAPES[route];
   if (text.trim() === '') {
     if (optional) return {};
-    throw new HttpError(400, 'request body must be a JSON object');
+    throw new HttpError(400, `request body must be a JSON object (${takes})`);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new HttpError(400, 'request body is not valid JSON');
+    throw new HttpError(400, `request body is not valid JSON (${takes})`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new HttpError(400, 'request body must be a JSON object');
+    throw new HttpError(400, `request body must be a JSON object (${takes})`);
   }
   return parsed;
 }
@@ -787,7 +807,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleNormalize(raw: unknown): Promise<NormalizeResponse> {
-    const body = parseBody(NormalizeBody, raw);
+    const body = parseBody(NormalizeBody, raw, '/normalize');
     const cwd = await resolveCwd(body.cwd);
     const entry = await loadEntry(cwd);
     // From index-cache.json when the hook (or an earlier load) already built
@@ -820,7 +840,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleLearn(raw: unknown): Promise<LearnResponse> {
-    const body = parseBody(LearnBody, raw);
+    const body = parseBody(LearnBody, raw, '/learn');
     const cwd = await resolveCwd(body.cwd);
     const result = await learnCorrection(
       { heard: body.heard, meant: body.meant },
@@ -838,7 +858,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleAdd(raw: unknown): Promise<AddResponse> {
-    const body = parseBody(AddBody, raw);
+    const body = parseBody(AddBody, raw, '/add');
     const cwd = await resolveCwd(body.cwd);
     // Generated aliases only when this creates the term (see addTerm's defaultAliases).
     const aliases = body.aliases ?? [];
@@ -918,7 +938,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResponse> {
-    const body = parseBody(PackBody, raw);
+    const body = parseBody(PackBody, raw, '/packs/:name');
     const cwd = await resolveCwd(body.cwd);
     const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
     invalidateWritten([result]);
@@ -1037,15 +1057,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
     if (pathname === '/normalize') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES)));
+      return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES, '/normalize')));
     }
     if (pathname === '/learn') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES)));
+      return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES, '/learn')));
     }
     if (pathname === '/add') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES)));
+      return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES, '/add')));
     }
     if (pathname === '/lexicon') {
       if (method !== 'GET') throw notGet();
@@ -1064,7 +1084,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
     if (packMatch) {
-      if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, true)));
+      if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, '/packs/:name', true)));
       if (method === 'DELETE') {
         // Options travel in the query string. A body was ignored, so
         // `{ "scope": "project" }` removed the pack from the global lexicon.
