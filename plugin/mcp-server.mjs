@@ -54128,7 +54128,10 @@ function cacheChecksum(text) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
-async function readGlobalLexiconCached(filePath) {
+function readLexiconFileForWrite(filePath, scope) {
+  return scope === "global" ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
+}
+async function readGlobalLexiconCached(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
@@ -54145,7 +54148,7 @@ async function readGlobalLexiconCached(filePath) {
   } catch {
   }
   const file2 = parseLexiconText(read.text, filePath, "global");
-  await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
   return file2;
 }
 async function writeParseCache(filePath, text, lexicon, mode) {
@@ -54375,7 +54378,7 @@ function updateMap(doc, node2, value, keep) {
 async function pinCommittedHits(file2) {
   const onDisk = /* @__PURE__ */ new Map();
   try {
-    const current = await readLexiconFile(file2.path, file2.scope);
+    const current = await readLexiconFileForWrite(file2.path, file2.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -54673,7 +54676,7 @@ async function addTerm(term, opts = {}) {
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = prepareIncoming(term);
   return withLexiconLock(targetPath, async () => {
-    const file2 = await readLexiconFile(targetPath, scope);
+    const file2 = await readLexiconFileForWrite(targetPath, scope);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
     return { file: file2, ...result };
@@ -54684,7 +54687,7 @@ async function addTerms(terms, opts = {}) {
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
-    const file2 = await readLexiconFile(targetPath, scope);
+    const file2 = await readLexiconFileForWrite(targetPath, scope);
     const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file2, opts);
     return { file: file2, results };
@@ -54703,7 +54706,7 @@ async function writeAndTrust(file2, opts) {
 async function removeTerm(canonical, opts = {}) {
   for (const target of candidatePaths(opts, opts.scope)) {
     const removed = await withLexiconLock(target.path, async () => {
-      const file2 = await readLexiconFile(target.path, target.scope);
+      const file2 = await readLexiconFileForWrite(target.path, target.scope);
       if (!file2.exists) return false;
       const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file2.lexicon.terms.length) return false;
@@ -54752,7 +54755,7 @@ async function removeAlias(canonical, alias, opts = {}) {
   const files = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
-      const file2 = await readLexiconFile(target.path, target.scope);
+      const file2 = await readLexiconFileForWrite(target.path, target.scope);
       if (!file2.exists) return;
       const term = findTerm(file2.lexicon, wanted);
       if (!term) return;

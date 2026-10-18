@@ -1132,6 +1132,45 @@ describe('global parse cache', () => {
     expect(JSON.parse(entry.lexicon)).toEqual(fresh.lexicon);
   });
 
+  it('serves the reads of a global add and remove, which then write exactly what the uncached path writes', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const body = `# my notes\n${PAD}version: 1\nterms:\n  - canonical: G\n    aliases: [gee] # inline\n    hits: 3\n  - canonical: H\n    aliases: [aitch]\n`;
+    const uncached = path.join(tmp, 'uncached', 'lexicon.yaml');
+    for (const p of [globalPath, uncached]) {
+      await fs.mkdir(path.dirname(p), { recursive: true });
+      await fs.writeFile(p, body);
+    }
+    // Only globalPath has an entry; it is the exact parse, so the edits must agree byte for byte.
+    await loadLexicon({ cwd: tmp, globalPath });
+    await expect(fs.stat(cachePath())).resolves.toBeDefined();
+    const term: Term = { canonical: 'Added', aliases: ['addd'], createdAt: '2026-01-01T00:00:00.000Z' };
+    await addTerm(term, { cwd: tmp, globalPath });
+    await addTerm(term, { cwd: tmp, globalPath: uncached });
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(await fs.readFile(uncached, 'utf8'));
+    await removeTerm('H', { cwd: tmp, globalPath });
+    await removeTerm('H', { cwd: tmp, globalPath: uncached });
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(await fs.readFile(uncached, 'utf8'));
+    expect(await fs.readFile(globalPath, 'utf8')).toContain('# inline');
+    expect(await fs.readFile(globalPath, 'utf8')).toContain('hits: 3');
+
+    // Proof the entry is what the add read: doctored (key kept), its alias reaches the write.
+    const entry = await readEntry();
+    const doctoredLexicon = JSON.parse(entry.lexicon) as Lexicon;
+    doctoredLexicon.terms[0].aliases = ['from-cache'];
+    const lexicon = JSON.stringify(doctoredLexicon);
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon, sum: cacheChecksum(lexicon) }));
+    await addTerm({ canonical: 'Second', aliases: [] }, { cwd: tmp, globalPath });
+    expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.aliases).toEqual(['from-cache']);
+
+    // A hand edit since the entry was written: the YAML is read, as before.
+    await fs.appendFile(globalPath, '  - canonical: Hand\n    aliases: [hnd]\n');
+    await addTerm({ canonical: 'Third', aliases: [] }, { cwd: tmp, globalPath });
+    const after = (await readLexiconFile(globalPath, 'global')).lexicon;
+    expect(findTerm(after, 'Hand')?.aliases).toEqual(['hnd']);
+    expect(findTerm(after, 'Third')).toBeDefined();
+  });
+
   it('is not written for a project file', async () => {
     const projectPath = path.join(tmp, '.lexicon.yaml');
     await fs.writeFile(projectPath, `${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: []\n`);

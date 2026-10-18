@@ -19880,7 +19880,7 @@ function cacheChecksum(text) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
-async function readGlobalLexiconCached(filePath) {
+async function readGlobalLexiconCached(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
@@ -19897,7 +19897,7 @@ async function readGlobalLexiconCached(filePath) {
   } catch {
   }
   const file = parseLexiconText(read.text, filePath, "global");
-  await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
   return file;
 }
 async function writeParseCache(filePath, text, lexicon, mode) {

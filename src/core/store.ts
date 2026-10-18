@@ -232,8 +232,10 @@ function parseLexiconText(text: string, filePath: string, scope: TermScope): Lex
  * read instead, which cost a 2000-term lexicon about 30 ms per prompt to
  * re-check a value this module had already validated before writing it.
  *
- * Only `loadLexicon`'s read of the global file uses it, and only once that
- * file reaches PARSE_CACHE_MIN_BYTES: a project file is someone else's,
+ * `loadLexicon`'s read of the global file uses it, and so do the reads the
+ * writers here make of the global file before they edit it (see
+ * readLexiconFileForWrite), only once that file reaches
+ * PARSE_CACHE_MIN_BYTES: a project file is someone else's,
  * usually small, and is hashed by the trust check anyway; a small global file
  * parses in a few milliseconds, and skipping it keeps a cache file from
  * appearing beside every hand-written lexicon a test or a script points at.
@@ -263,7 +265,20 @@ export function cacheChecksum(text: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
+/**
+ * `readLexiconFile` for the writers in this module: a global file comes from
+ * the parse cache when its text is the one cached (the same value the YAML
+ * parse would give; see readGlobalLexiconCached), a project file is read and
+ * parsed as before. A `lexicon add` on a 2000-term lexicon parsed the YAML
+ * twice before writing (the read it edits and pinCommittedHits' look at what
+ * is on disk), about half of its time. A miss is not written back: the write
+ * that follows refreshes the entry anyway.
+ */
+function readLexiconFileForWrite(filePath: string, scope: TermScope): Promise<LexiconFile> {
+  return scope === 'global' ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
+}
+
+async function readGlobalLexiconCached(filePath: string, opts: { writeBack?: boolean } = {}): Promise<LexiconFile> {
   const read = await readLexiconText(filePath);
   if (read === undefined) return { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, 'global');
@@ -288,7 +303,7 @@ async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
     // missing, unreadable or stale: parse for real below
   }
   const file = parseLexiconText(read.text, filePath, 'global');
-  await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
   return file;
 }
 
@@ -755,7 +770,7 @@ function updateMap(doc: Document, node: YAMLMap, value: Record<string, unknown>,
 async function pinCommittedHits(file: LexiconFile): Promise<void> {
   const onDisk = new Map<string, number>();
   try {
-    const current = await readLexiconFile(file.path, file.scope);
+    const current = await readLexiconFileForWrite(file.path, file.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== undefined) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -1319,7 +1334,7 @@ export async function addTerm(
   // file before this one wrote would otherwise rename its own copy over the
   // top and take the new term with it.
   return withLexiconLock(targetPath, async () => {
-    const file = await readLexiconFile(targetPath, scope);
+    const file = await readLexiconFileForWrite(targetPath, scope);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
     return { file, ...result };
@@ -1343,7 +1358,7 @@ export async function addTerms(
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
-    const file = await readLexiconFile(targetPath, scope);
+    const file = await readLexiconFileForWrite(targetPath, scope);
     const results = incoming.map((t) => mergeTermInto(file, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file, opts);
     return { file, results };
@@ -1385,7 +1400,7 @@ export async function removeTerm(
 ): Promise<boolean> {
   for (const target of candidatePaths(opts, opts.scope)) {
     const removed = await withLexiconLock(target.path, async () => {
-      const file = await readLexiconFile(target.path, target.scope);
+      const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return false;
       const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file.lexicon.terms.length) return false;
@@ -1505,7 +1520,7 @@ export async function removeAlias(
   const files: LexiconFile[] = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
-      const file = await readLexiconFile(target.path, target.scope);
+      const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return;
       const term = findTerm(file.lexicon, wanted);
       if (!term) return;
