@@ -70,7 +70,12 @@ program
   .version(packageVersion(import.meta.url))
   .option('--cwd <dir>', 'directory used to find the project .lexicon.yaml; must exist (default: current directory)')
   .exitOverride()
-  .showHelpAfterError('(use --help for usage)');
+  .showHelpAfterError('(use --help for usage)')
+  // No leading spaces: the e2e --help sweep reads indented lines as commands.
+  .addHelpText(
+    'after',
+    '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor',
+  );
 
 /** Global options, merged into each command's own. */
 function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
