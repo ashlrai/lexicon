@@ -797,6 +797,24 @@ describe('tool and resource descriptions agree with what the code does', () => {
     expect(long.text).toContain('heard must be at most 60 characters; nothing was written. Pass only the misspelled name as heard');
     await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
   });
+
+  // Catches: add_term `canonical` and add_pack `name` stated no bound, though
+  // the file schema caps a canonical at 80 characters and a pack name is
+  // PACK_NAME_RE (64) or an <author>/<name> registry ref.
+  it('add_term canonical and add_pack name state the bound that is enforced', async () => {
+    const { tools } = await listed();
+    const props = (name: string): Record<string, { description?: string }> =>
+      (tools.find((t) => t.name === name) as { inputSchema?: { properties?: Record<string, { description?: string }> } } | undefined)?.inputSchema?.properties ?? {};
+    expect(props('add_term').canonical?.description).toContain('At most 80 characters');
+    expect(props('add_pack').name?.description).toContain('1 to 64 lowercase letters, digits and dashes');
+    expect(props('add_pack').name?.description).toContain('the author 1 to 39');
+    const long = await call('add_term', { canonical: 'K'.repeat(81), aliases: [] });
+    expect(long.isError).toBe(true);
+    expect(long.text).toContain('at most 80 characters');
+    await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+    expect((await call('add_term', { canonical: 'K'.repeat(80), aliases: [] })).isError).toBe(false);
+    expect((await call('add_pack', { name: 'a'.repeat(65) })).isError).toBe(true);
+  });
 });
 
 describe('list_packs with an untrusted project lexicon', () => {
