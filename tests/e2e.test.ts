@@ -1734,3 +1734,22 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: doctor in a repo 
     expect(after.nextStep).not.toContain('lexicon trust');
   });
 });
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: an empty lexicon next to an untrusted repo file', () => {
+  // Catches: list said "no terms yet. Try: lexicon add" and normalize "run `lexicon setup`"
+  // to a team member whose terms are all in the repo's untrusted .lexicon.yaml.
+  it('list and normalize point at lexicon trust', async () => {
+    const h = await freshHome('empty-untrusted');
+    expect((await runCli(['init'], { env: h.env })).code).toBe(0);
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    const list = await runCli(['list'], { env: h.env, cwd: h.repo });
+    expect(list.code).toBe(0);
+    expect(list.stdout).toContain('Review it and run: lexicon trust');
+    expect(list.stdout).not.toContain('Try: lexicon add');
+    const norm = await runCli(['normalize', 'deploy to head sner'], { env: h.env, cwd: h.repo });
+    expect(norm.code).toBe(0);
+    expect(norm.stdout).toBe('deploy to head sner\n');
+    expect(norm.stderr).toContain('review it and run `lexicon trust` to use them');
+    expect(norm.stderr).not.toContain('lexicon setup');
+  });
+});
