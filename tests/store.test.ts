@@ -32,6 +32,7 @@ vi.mock('../src/core/schema.js', () => ({
 import {
   ProjectTrustError,
   addTerm,
+  addTerms,
   defaultProjectPath,
   effectiveHits,
   findTerm,
@@ -707,6 +708,36 @@ describe('addTerm', () => {
   it('names the problem, not the internal function, in its errors', async () => {
     const err = await addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
     expect((err as Error).message).toBe('canonical must not be empty');
+  });
+});
+
+describe('addTerms', () => {
+  const batch: Term[] = [
+    { canonical: 'Ashlr.AI', aliases: ['Ashler'], createdAt: '2020-01-01T00:00:00.000Z' },
+    { canonical: 'Vercel', aliases: ['Versal'], createdAt: '2020-01-01T00:00:00.000Z' },
+    { canonical: 'ashlr.ai', aliases: ['Ashlar'], never: ['ashes'], createdAt: '2020-01-01T00:00:00.000Z' },
+  ];
+
+  it('writes what one addTerm per term would, applying each term to the previous result', async () => {
+    const otherPath = path.join(tmp, 'other', 'lexicon.yaml');
+    await addTerm({ canonical: 'Vercel', aliases: ['Vercell'], notes: 'mine', createdAt: '2019-01-01T00:00:00.000Z' }, { cwd: tmp, globalPath });
+    await addTerm({ canonical: 'Vercel', aliases: ['Vercell'], notes: 'mine', createdAt: '2019-01-01T00:00:00.000Z' }, { cwd: tmp, globalPath: otherPath });
+
+    const { file, results } = await addTerms(batch, { cwd: tmp, globalPath });
+    for (const t of batch) await addTerm(t, { cwd: tmp, globalPath: otherPath });
+
+    expect(results.map((r) => r.created)).toEqual([true, false, false]);
+    expect(file.path).toBe(globalPath);
+    const a = await readLexiconFile(globalPath, 'global');
+    const b = await readLexiconFile(otherPath, 'global');
+    expect(a.lexicon).toEqual(b.lexicon);
+    expect(findTerm(a.lexicon, 'Ashlr.AI')).toMatchObject({ aliases: ['Ashler', 'Ashlar'], never: ['ashes'] });
+    expect(findTerm(a.lexicon, 'Vercel')).toMatchObject({ aliases: ['Vercell', 'Versal'], notes: 'mine' });
+  });
+
+  it('checks every canonical before it writes anything', async () => {
+    await expect(addTerms([batch[0]!, { canonical: ' ', aliases: [] }], { cwd: tmp, globalPath })).rejects.toThrow('canonical must not be empty');
+    expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
   });
 });
 

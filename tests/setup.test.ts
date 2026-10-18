@@ -511,6 +511,8 @@ describe('runSetup --dry-run', () => {
       lexiconExists: false,
       wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],
       wouldInstallPacks: ['developer', 'ai', 'voice-tools'],
+      packsOnOffer: ['developer', 'ai', 'voice-tools'],
+      packsToInstall: [],
       wouldHarvest: [],
       detectedClients: ['claude', 'codex', 'cursor'],
       wouldInstallClients: ['claude', 'codex', 'cursor'],
@@ -957,6 +959,34 @@ describe('runSetup starter packs', () => {
     expect(off.plan?.wouldInstallPacks).toEqual([]);
     expect(off.io.out).toContain('skipped (--no-packs)');
     expect(off.io.out).toContain('starter packs: none');
+  });
+
+  it('a dry run says in packsToInstall what the same call installs, agreeing with its would install line', async () => {
+    // wouldInstallPacks is the set on offer: under --yes it named three packs
+    // while the line said `would install: none`, and an agent reading the
+    // JSON told the user they were on their way in.
+    const f = fakes();
+    const defaults = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(defaults.plan?.packsOnOffer).toEqual(['developer', 'ai', 'voice-tools']);
+    expect(defaults.plan?.packsToInstall).toEqual([]);
+    expect(defaults.io.out).toContain('would install: none (pass --packs developer,ai,voice-tools');
+
+    const picked = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'business' }, f);
+    expect(picked.plan?.packsToInstall).toEqual(['business']);
+    expect(picked.plan?.packsOnOffer).toEqual(['business']);
+    expect(picked.io.out).toContain('would install: business');
+
+    const none = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'none' }, f);
+    expect(none.plan?.packsToInstall).toEqual([]);
+
+    const off = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: false }, f);
+    expect(off.plan?.packsOnOffer).toEqual([]);
+    expect(off.plan?.packsToInstall).toEqual([]);
+
+    // On a terminal, Enter at the checklist installs the checked defaults.
+    const asked = await run({ dryRun: true, clients: 'none', company: 'Ashlr.AI' }, fakes({ isInteractive: () => true }));
+    expect(asked.plan?.wouldAsk).toContain('packs');
+    expect(asked.plan?.packsToInstall).toEqual(['developer', 'ai', 'voice-tools']);
   });
 
   it('a rerun leaves installed packs out of the plan and reports them instead', async () => {

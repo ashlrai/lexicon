@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, PAIR_META } from '../extension/src/shared.js';
+import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -523,6 +523,28 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: expected });
     const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply;
     expect(reply.ok && reply.fallback).toBe(expected);
+  });
+
+  // Catches: with the server stopped, Learn wrote the embedded YAML and said
+  // only "(embedded)", although the next Sync from local API replaces that
+  // YAML and drops the word; the server-up fallbacks already said so.
+  it('learn with the server stopped says the word went to the embedded lexicon only and how to start the server', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const store = memoryStore({ settings: { token: 'a'.repeat(64) } });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    const learn = (await bg.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' })) as LearnReply;
+    expect(learn).toMatchObject({ ok: true, mode: 'embedded' });
+    expect(learn.message).toContain(
+      "Saved to the embedded lexicon only, not the server's: cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve` (or `lexicon serve --install` to start it at login). A later Sync from local API replaces the embedded lexicon, so learn it again once the server is running.",
+    );
+    expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Quorbyx' });
+    // The Embedded mode never meant to use the server: nothing to warn about.
+    const embedded = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { mode: 'embedded' } }), defaultYaml: EXAMPLE_YAML });
+    const quiet = (await embedded.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' })) as LearnReply;
+    expect(quiet).toMatchObject({ ok: true, mode: 'embedded' });
+    expect(quiet.message).not.toContain('embedded lexicon only');
   });
 
   // Catches: with no token stored, learn and sync said only to paste the
@@ -1074,6 +1096,55 @@ describe('content: live mode keeps the caret where the user is typing', () => {
 
 // Catches: Options and the popup set every message with textContent, so a
 // command read "`lexicon serve --pair`" with the backticks shown literally.
+describe('popup status line', () => {
+  const base: StatusReply = {
+    ok: true,
+    configuredMode: 'api',
+    activeMode: 'embedded',
+    server: null,
+    serverError: 'cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve` (or `lexicon serve --install` to start it at login)',
+    tokenSet: false,
+    embeddedTerms: 12,
+    recent: [],
+    live: false,
+    anySite: false,
+  };
+
+  // Catches: a first run (no server, no token) ended the line with a bare
+  // "no token set", so starting the server looked like the whole fix and the
+  // popup still read Embedded (fallback) afterwards.
+  it('a first run with no server and no token names starting the server and then pairing', () => {
+    expect(statusView(base)).toEqual({
+      mode: 'Embedded (fallback)',
+      warn: true,
+      line:
+        '12 embedded terms · server: cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve` (or `lexicon serve --install` to start it at login) · no token set: once the server is running, run `lexicon serve --pair`',
+    });
+  });
+
+  it('names the fix for each other state the API is not used in', () => {
+    expect(statusView({ ...base, server: { ok: true, version: '1.2.3', terms: 4 }, serverError: undefined }).line).toBe(
+      '12 embedded terms · server up (lexicon 1.2.3), but no token set: run `lexicon serve --pair`',
+    );
+    const rejected = 'API rejected the token (401). Re-copy it from `lexicon serve --show`, or run `lexicon serve --pair`.';
+    expect(statusView({ ...base, server: { ok: true, version: '1', terms: 1 }, serverError: undefined, tokenSet: true, tokenError: rejected }).line).toBe(`12 embedded terms · ${rejected}`);
+    // Catches: "embedded YAML has errors" with no word of where to fix it.
+    expect(statusView({ ...base, configuredMode: 'embedded', embeddedError: 'bad indent' })).toEqual({
+      mode: 'Embedded',
+      warn: false,
+      line: '12 embedded terms · embedded YAML has errors: fix it under Options > Embedded lexicon',
+    });
+    expect(statusView({ ...base, activeMode: 'api', tokenSet: true, server: { ok: true, version: '1.2.3', terms: 4 } })).toEqual({ mode: 'Local API', warn: false, line: 'lexicon 1.2.3, 4 terms' });
+  });
+
+  it('renders through setMessage, so a server error string stays text', () => {
+    const el = document.createElement('p');
+    setMessage(el, statusView({ ...base, serverError: '<img src=x onerror="alert(1)">' }).line);
+    expect(el.querySelector('img')).toBeNull();
+    expect(Array.from(el.querySelectorAll('code'), (c) => c.textContent)).toEqual(['lexicon serve --pair']);
+  });
+});
+
 describe('popup and options messages render commands as <code>', () => {
   it('turns backticked spans into <code> and keeps everything else as text', () => {
     const el = document.createElement('p');

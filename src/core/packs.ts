@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import * as z from 'zod';
 import { parseLexicon } from './schema.js';
-import { ProjectTrustError, addTerm, effectiveHits, readHitsFor, readLexiconFile, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
+import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
 import { isTrusted, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
@@ -295,27 +295,29 @@ export async function installLoadedPack(
   const leaveUntrusted = opts.leaveUntrusted === true;
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
 
-  // One lock around the whole install, not one per term. Each `addTerm` takes
+  // One lock around the whole install, not one per term. `addTerms` takes
   // the same lock and the lock is re-entrant, so this costs nothing extra and
-  // closes the window that mattered: `file` below is the snapshot the last
-  // `addTerm` wrote, and `writePacksSetting` rewrites the whole document from
-  // it. A term another writer added in between was read by nobody here and
-  // would be renamed away by that final write, with the pack still reporting
+  // closes the window that mattered: `file` below is the snapshot `addTerms`
+  // wrote, and `writePacksSetting` rewrites the whole document from it. A
+  // term another writer added in between was read by nobody here and would
+  // be renamed away by that final write, with the pack still reporting
   // success. The trust gate runs in `resolveScopeWritePath`, ahead of the lock.
+  //
+  // `addTerms` rather than one `addTerm` per term: each write re-parses the
+  // whole file twice (to edit it in place and to check it reads back), so a
+  // per-term loop was quadratic in the file size and an 82-term pack took
+  // seconds. One read and one write give the same document.
   const targetPath = await resolveScopeWritePath(scope, { ...storeOpts, leaveUntrusted });
   return withLexiconLock(targetPath, async () => {
-    let added = 0;
-    let merged = 0;
-    let file: LexiconFile | undefined;
-    for (const term of pack.lexicon.terms) {
-      const incoming: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
-      if (term.never) incoming.never = [...term.never];
-      const result = await addTerm(incoming, { ...storeOpts, scope, leaveUntrusted });
-      file = result.file;
-      if (result.created) added += 1;
-      else merged += 1;
-    }
-    if (!file) throw new Error(`pack "${pack.name}" has no terms`);
+    const incoming = pack.lexicon.terms.map((term) => {
+      const t: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
+      if (term.never) t.never = [...term.never];
+      return t;
+    });
+    if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    const { file, results } = await addTerms(incoming, { ...storeOpts, scope, leaveUntrusted });
+    const added = results.filter((r) => r.created).length;
+    const merged = results.length - added;
     const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
     await writePacksSetting(file, packs, storeOpts, leaveUntrusted);
     return { pack: info(pack), added, merged, path: file.path, scope };

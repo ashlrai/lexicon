@@ -185,6 +185,42 @@ export function incompleteNotice(inc: NormalizeIncomplete): string {
   return 'Stopped early at the time limit: later text was not checked.';
 }
 
+/** What the popup's status pill and line say for a status reply. */
+export interface StatusView {
+  /** Pill text: `Local API`, `Embedded` or `Embedded (fallback)`. */
+  mode: string;
+  /** True when the pill should read as a warning (the configured API is not in use). */
+  warn: boolean;
+  /** The line under it; backticked spans render as <code> (setMessage). */
+  line: string;
+}
+
+/**
+ * The popup's status for `s`. Every reason the local API is not in use ends
+ * with the step that fixes it: the popup is where a first run, a missing or
+ * rejected token and a stopped server all show up first.
+ */
+export function statusView(s: StatusReply): StatusView {
+  if (s.activeMode === 'api' && s.server) {
+    return { mode: 'Local API', warn: false, line: `lexicon ${s.server.version}, ${s.server.terms} terms` };
+  }
+  const api = s.configuredMode === 'api';
+  const parts: string[] = [`${s.embeddedTerms} embedded terms`];
+  if (api && s.tokenError) parts.push(s.tokenError);
+  else if (api && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable; start it with `lexicon serve`');
+  if (api && !s.tokenSet) {
+    parts.push(
+      s.server
+        ? `server up (lexicon ${s.server.version}), but no token set: run \`lexicon serve --pair\``
+        : // A first run has neither: starting the server is not enough, the
+          // browser still has to pair, so name that step too.
+          'no token set: once the server is running, run `lexicon serve --pair`',
+    );
+  }
+  if (s.embeddedError) parts.push('embedded YAML has errors: fix it under Options > Embedded lexicon');
+  return { mode: api ? 'Embedded (fallback)' : 'Embedded', warn: api, line: parts.join(' · ') };
+}
+
 export function describeCorrection(c: Pick<Correction, 'original' | 'replacement'>): string {
   return `${c.original} → ${c.replacement}`;
 }

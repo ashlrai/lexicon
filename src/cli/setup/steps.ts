@@ -288,8 +288,13 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   if (ctx.plan) {
     const chosen = explicit !== undefined ? offered(explicit) : [...defaults];
     ctx.plan.wouldInstallPacks = chosen;
+    ctx.plan.packsOnOffer = [...chosen];
     if (installed.length > 0) ctx.plan.alreadyInstalledPacks = [...installed];
     const asks = explicit === undefined && ctx.plan.interactive;
+    // What the same call installs: an explicit list, or the checklist's
+    // defaults when Enter is pressed; with neither (--yes, no terminal, MCP
+    // without packs) nothing, which is what the text below says.
+    ctx.plan.packsToInstall = explicit !== undefined || asks ? [...chosen] : [];
     if (asks) ctx.plan.wouldAsk.push('packs');
     if (chosen.length === 0) {
       ctx.say(dim('   would install: none'));

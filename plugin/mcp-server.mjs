@@ -54510,55 +54510,70 @@ async function projectWriteTrusted(opts = {}) {
   const status = await isTrusted({ path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true }, opts);
   return status === "trusted";
 }
+function prepareIncoming(term) {
+  const canonical = term.canonical.trim();
+  if (!canonical) throw new InputError("canonical must not be empty");
+  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+}
+function mergeTermInto(file2, incoming, scope, opts) {
+  const canonical = incoming.canonical;
+  const existing = findTerm(file2.lexicon, canonical);
+  if (existing && opts.merge !== false) {
+    existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
+    existing.phonetic ??= incoming.phonetic;
+    existing.category ??= incoming.category;
+    existing.notes ??= incoming.notes;
+    existing.caseSensitive ??= incoming.caseSensitive;
+    if (incoming.never?.length) {
+      existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
+    }
+    return { term: existing, created: false };
+  }
+  if (existing) {
+    const replaced = {
+      ...incoming,
+      scope,
+      source: incoming.source ?? "user",
+      createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const idx = file2.lexicon.terms.indexOf(existing);
+    file2.lexicon.terms[idx] = replaced;
+    return { term: replaced, created: false };
+  }
+  const created = {
+    ...incoming,
+    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
+    scope,
+    source: incoming.source ?? "user",
+    createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+  };
+  file2.lexicon.terms.push(created);
+  return { term: created, created: true };
+}
 async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
-  const write = opts.leaveUntrusted ? (f) => writeLexiconFile(f) : (f) => writeAndTrust(f, opts);
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new InputError("canonical must not be empty");
-  const incoming = {
-    ...term,
-    canonical,
-    aliases: dedupeAliases(term.aliases ?? [], canonical)
-  };
+  const incoming = prepareIncoming(term);
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFile(targetPath, scope);
-    const existing = findTerm(file2.lexicon, canonical);
-    if (existing && opts.merge !== false) {
-      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
-      existing.phonetic ??= incoming.phonetic;
-      existing.category ??= incoming.category;
-      existing.notes ??= incoming.notes;
-      existing.caseSensitive ??= incoming.caseSensitive;
-      if (incoming.never?.length) {
-        existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
-      }
-      await write(file2);
-      return { file: file2, term: existing, created: false };
-    }
-    if (existing) {
-      const replaced = {
-        ...incoming,
-        scope,
-        source: incoming.source ?? "user",
-        createdAt: existing.createdAt ?? incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-      };
-      const idx = file2.lexicon.terms.indexOf(existing);
-      file2.lexicon.terms[idx] = replaced;
-      await write(file2);
-      return { file: file2, term: replaced, created: false };
-    }
-    const created = {
-      ...incoming,
-      ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
-      scope,
-      source: incoming.source ?? "user",
-      createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
-    };
-    file2.lexicon.terms.push(created);
-    await write(file2);
-    return { file: file2, term: created, created: true };
+    const result = mergeTermInto(file2, incoming, scope, opts);
+    await writeAddedFile(file2, opts);
+    return { file: file2, ...result };
   });
+}
+async function addTerms(terms, opts = {}) {
+  const scope = opts.scope ?? "global";
+  const targetPath = await resolveScopeWritePath(scope, opts);
+  const incoming = terms.map(prepareIncoming);
+  return withLexiconLock(targetPath, async () => {
+    const file2 = await readLexiconFile(targetPath, scope);
+    const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
+    if (results.length > 0) await writeAddedFile(file2, opts);
+    return { file: file2, results };
+  });
+}
+function writeAddedFile(file2, opts) {
+  return opts.leaveUntrusted ? writeLexiconFile(file2) : writeAndTrust(file2, opts);
 }
 async function writeAndTrust(file2, opts) {
   await writeLexiconFile(file2);
@@ -58877,7 +58892,7 @@ function blankSkipped(text) {
 }
 function tokenize2(text) {
   const blanked = /[`/@:]/.test(text) ? blankSkipped(text) : text;
-  const draft = [];
+  const toks = [];
   TOKEN_RE2.lastIndex = 0;
   let m;
   while ((m = TOKEN_RE2.exec(blanked)) !== null) {
@@ -58887,9 +58902,10 @@ function tokenize2(text) {
     const end = start + raw.length;
     const base = POSSESSIVE_RE2.test(raw) && raw.length > 2 ? raw.slice(0, -2) : raw;
     const lower = fold(base);
-    const prev = draft[draft.length - 1];
+    const prev = toks[toks.length - 1];
     const gap = prev ? blanked.slice(prev.end, start) : "";
-    draft.push({
+    if (prev) prev.joinsNext = /^\s+$/.test(gap);
+    toks.push({
       text: raw,
       base,
       lower,
@@ -58897,13 +58913,11 @@ function tokenize2(text) {
       end,
       stop: STOPLIST.has(lower),
       fn: FUNCTION_WORDS2.has(lower),
-      sentenceStart: !prev || /[.!?\n]/.test(gap)
+      sentenceStart: !prev || /[.!?\n]/.test(gap),
+      joinsNext: false
     });
   }
-  return draft.map((t, i) => {
-    const next = draft[i + 1];
-    return { ...t, joinsNext: next !== void 0 && /^\s+$/.test(blanked.slice(t.end, next.start)) };
-  });
+  return toks;
 }
 function pushTo(map2, key, value) {
   const list = map2.get(key);
@@ -59061,7 +59075,10 @@ function bump2(map2, canonical, word, count, evidence, confidence = 0, still = f
   b.count += count;
   b.confidenceSum += confidence * count;
   b.still = b.still || still;
-  if (b.evidence.length < MAX_EVIDENCE2 && !b.evidence.includes(evidence)) b.evidence.push(evidence);
+  if (b.evidence.length < MAX_EVIDENCE2) {
+    const ev = evidence();
+    if (!b.evidence.includes(ev)) b.evidence.push(ev);
+  }
 }
 function dedupeKey(s) {
   return `${s.kind}\0${fold(s.canonical)}\0${fold(s.alias ?? "")}`;
@@ -59145,18 +59162,18 @@ async function suggestTerms(input2) {
       taken.push({ start: win.start, end: win.end });
       if (covered(reps, win.start, win.end)?.reason === "alias") continue;
       if (!outputLower.includes(win.lower)) continue;
-      bump2(aliasBuckets, hit.canonical, win.text, line2.count, snippet(line2.raw, win.start, win.end), hit.score);
+      bump2(aliasBuckets, hit.canonical, win.text, line2.count, () => snippet(line2.raw, win.start, win.end), hit.score);
     }
     for (const r of reps) {
       if (r.reason === "alias") continue;
-      bump2(promoteBuckets, r.canonical, r.original, line2.count, snippet(line2.raw, r.start, r.end), r.confidence);
+      bump2(promoteBuckets, r.canonical, r.original, line2.count, () => snippet(line2.raw, r.start, r.end), r.confidence);
     }
+    const outToks = changed ? tokenize2(line2.output) : rawToks;
     if (changed) {
-      const outToks2 = tokenize2(line2.output);
-      if (rawToks.length <= MAX_DIFF_TOKENS && outToks2.length <= MAX_DIFF_TOKENS) {
+      if (rawToks.length <= MAX_DIFF_TOKENS && outToks.length <= MAX_DIFF_TOKENS) {
         const { hunks, pairs } = diffTokens(
           rawToks.map((t) => t.lower),
-          outToks2.map((t) => t.lower)
+          outToks.map((t) => t.lower)
         );
         for (const h of hunks) {
           if (h.a1 <= h.a0 || h.b1 <= h.b0) continue;
@@ -59168,12 +59185,12 @@ async function suggestTerms(input2) {
               const a1 = h.a1 + r;
               const b0 = h.b0 - l;
               const b1 = h.b1 + r;
-              if (a0 < 0 || b0 < 0 || a1 > rawToks.length || b1 > outToks2.length) continue;
+              if (a0 < 0 || b0 < 0 || a1 > rawToks.length || b1 > outToks.length) continue;
               let aligned = true;
               for (let x = 1; x <= l && aligned; x++) aligned = pairs.get(h.a0 - x) === h.b0 - x;
               for (let x = 0; x < r && aligned; x++) aligned = pairs.get(h.a1 + x) === h.b1 + x;
               if (!aligned) continue;
-              const outText = line2.output.slice(outToks2[b0].start, outToks2[b1 - 1].end);
+              const outText = line2.output.slice(outToks[b0].start, outToks[b1 - 1].end);
               const term = cat.canonicalByForm.get(fold(outText)) ?? cat.canonicalByForm.get(collapse2(outText));
               if (term) found = { term, a0, a1 };
             }
@@ -59187,7 +59204,7 @@ async function suggestTerms(input2) {
           const current = reps.find((r) => r.start < end && start < r.end && fold(r.canonical) === fold(found.term.canonical));
           if (current?.reason === "alias") continue;
           const still = current !== void 0;
-          const ev = snippet(line2.raw, start, end);
+          const ev = () => snippet(line2.raw, start, end);
           if (found.a1 - found.a0 === 1 && isOrdinaryWord(originalLower)) {
             bump2(neverBuckets, found.term.canonical, original, line2.count, ev, 0, still);
           } else if (!still) {
@@ -59196,9 +59213,8 @@ async function suggestTerms(input2) {
         }
       }
     }
-    const outToks = changed ? tokenize2(line2.output) : rawToks;
     for (const t of outToks) seenTokens.add(t.lower);
-    const qualifies = (t) => looksCapitalized(t.base) && !t.stop && !t.fn && !HARVEST_STOPLIST.has(t.base) && !cat.known.has(t.lower) && !cat.known.has(t.lower.replace(/[^\p{L}\p{N}]+/gu, ""));
+    const qualifies = (t) => !t.stop && !t.fn && looksCapitalized(t.base) && !HARVEST_STOPLIST.has(t.base) && !cat.known.has(t.lower) && !cat.known.has(t.lower.replace(/[^\p{L}\p{N}]+/gu, ""));
     for (let i = 0; i < outToks.length; ) {
       if (!qualifies(outToks[i])) {
         i++;
@@ -59216,7 +59232,7 @@ async function suggestTerms(input2) {
       if (alphaOnly2(phraseLower).length < 4) continue;
       if (cat.known.has(phraseLower) || cat.known.has(collapse2(phrase))) continue;
       if (nearest(cat, phraseLower)) continue;
-      bump2(termBuckets, phrase, "", line2.count, snippet(line2.output, first.start, last.end));
+      bump2(termBuckets, phrase, "", line2.count, () => snippet(line2.output, first.start, last.end));
     }
   }
   const suggestions = [];
@@ -59494,18 +59510,15 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
   const storeOpts2 = { ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {}, ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {} };
   const targetPath = await resolveScopeWritePath(scope, { ...storeOpts2, leaveUntrusted });
   return withLexiconLock(targetPath, async () => {
-    let added = 0;
-    let merged = 0;
-    let file2;
-    for (const term of pack.lexicon.terms) {
-      const incoming = { ...term, aliases: [...term.aliases], source: "pack" };
-      if (term.never) incoming.never = [...term.never];
-      const result = await addTerm(incoming, { ...storeOpts2, scope, leaveUntrusted });
-      file2 = result.file;
-      if (result.created) added += 1;
-      else merged += 1;
-    }
-    if (!file2) throw new Error(`pack "${pack.name}" has no terms`);
+    const incoming = pack.lexicon.terms.map((term) => {
+      const t = { ...term, aliases: [...term.aliases], source: "pack" };
+      if (term.never) t.never = [...term.never];
+      return t;
+    });
+    if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    const { file: file2, results } = await addTerms(incoming, { ...storeOpts2, scope, leaveUntrusted });
+    const added = results.filter((r) => r.created).length;
+    const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
     return { pack: info(pack), added, merged, path: file2.path, scope };
@@ -63565,8 +63578,10 @@ async function stepPacks(ctx) {
   if (ctx.plan) {
     const chosen2 = explicit !== void 0 ? offered(explicit) : [...defaults];
     ctx.plan.wouldInstallPacks = chosen2;
+    ctx.plan.packsOnOffer = [...chosen2];
     if (installed.length > 0) ctx.plan.alreadyInstalledPacks = [...installed];
     const asks = explicit === void 0 && ctx.plan.interactive;
+    ctx.plan.packsToInstall = explicit !== void 0 || asks ? [...chosen2] : [];
     if (asks) ctx.plan.wouldAsk.push("packs");
     if (chosen2.length === 0) {
       ctx.say(dim("   would install: none"));
@@ -64028,6 +64043,8 @@ async function runSetup(opts, io, deps = {}) {
       lexiconExists: false,
       wouldSeed: [],
       wouldInstallPacks: [],
+      packsOnOffer: [],
+      packsToInstall: [],
       wouldHarvest: [],
       detectedClients: [],
       wouldInstallClients: [],
@@ -64127,12 +64144,12 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (wouldInstallPacks in the plan is the default set to offer; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
       inputSchema: {
         company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
         person: external_exports.string().optional().describe("The user's own name as they write it."),
         clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
-        packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in wouldInstallPacks so you can ask)."),
+        packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in packsOnOffer so you can ask)."),
         harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml; a file the user already trusted stays trusted, any other is left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
         serve: external_exports.boolean().optional().describe("true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.")

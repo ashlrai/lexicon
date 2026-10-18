@@ -278,12 +278,20 @@ export function createBackground(deps: BackgroundDeps): Background {
 
   async function learnReq(heard: string, meant: string): Promise<LearnReply | Failure> {
     const settings = await getSettings();
-    const useApi = settings.mode === 'api' && (await health(settings)).health !== null;
+    const h = settings.mode === 'api' ? await health(settings) : undefined;
+    const useApi = h !== undefined && h.health !== null;
     // Why the API was skipped although the server answers /health. Normalize
     // falls back to the embedded lexicon for a missing or rejected token, so
     // Learn does the same (the popup promises it writes the embedded YAML
     // whenever the API is not usable), and says so: the server never saw it.
     let skipped: string | undefined;
+    // The API mode with the server down: the word goes to the embedded copy,
+    // which the next Sync from local API replaces, so say that as well.
+    let again = 'once paired';
+    if (h && !h.health) {
+      skipped = h.error ?? 'local API unreachable';
+      again = 'once the server is running';
+    }
     if (useApi && !settings.token) skipped = NO_TOKEN_MESSAGE;
     if (useApi && skipped === undefined) {
       try {
@@ -314,7 +322,7 @@ export function createBackground(deps: BackgroundDeps): Background {
     try {
       const out = learnIntoYaml(settings.yaml, heard, meant);
       await saveSettings({ yaml: out.yaml });
-      return { ok: true, mode: 'embedded', message: out.message + (skipped ? embeddedOnlyNote(skipped) : '') };
+      return { ok: true, mode: 'embedded', message: out.message + (skipped ? embeddedOnlyNote(skipped, again) : '') };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
@@ -390,12 +398,14 @@ export function createBackground(deps: BackgroundDeps): Background {
 }
 
 /**
- * What a Learn that went to the embedded YAML while the server is up must
- * add: the server's lexicon did not get it, why, and that Sync from local API
- * replaces the embedded YAML. Exported for tests.
+ * What a Learn in API mode that went to the embedded YAML must add (the
+ * server is down, or up without a usable token): the server's lexicon did not
+ * get it, why, and that Sync from local API replaces the embedded YAML.
+ * Exported for tests.
  */
-export function embeddedOnlyNote(reason: string): string {
-  return ` Saved to the embedded lexicon only, not the server's: ${reason} A later Sync from local API replaces the embedded lexicon, so learn it again once paired.`;
+export function embeddedOnlyNote(reason: string, again = 'once paired'): string {
+  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  return ` Saved to the embedded lexicon only, not the server's: ${sentence} A later Sync from local API replaces the embedded lexicon, so learn it again ${again}.`;
 }
 
 /**

@@ -2,7 +2,7 @@
 /** Popup: engine status, per-site switch, recent corrections, "learn" mini-form. */
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
-import { coerceSettings, describeCorrection, hostKey, siteEnabled, STORAGE_KEYS } from './shared.js';
+import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusView, STORAGE_KEYS } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -38,20 +38,10 @@ async function activeHostname(): Promise<string> {
 }
 
 function renderStatus(s: StatusReply): void {
-  if (s.activeMode === 'api' && s.server) {
-    ui.mode.textContent = 'Local API';
-    ui.mode.className = 'pill';
-    ui.server.textContent = `lexicon ${s.server.version}, ${s.server.terms} terms`;
-  } else {
-    ui.mode.textContent = s.configuredMode === 'embedded' ? 'Embedded' : 'Embedded (fallback)';
-    ui.mode.className = s.configuredMode === 'embedded' ? 'pill' : 'pill warn';
-    const parts: string[] = [`${s.embeddedTerms} embedded terms`];
-    if (s.configuredMode === 'api' && s.tokenError) parts.push(s.tokenError);
-    else if (s.configuredMode === 'api' && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
-    if (!s.tokenSet && s.configuredMode === 'api') parts.push(s.server ? `server up (lexicon ${s.server.version}), but no token set: run \`lexicon serve --pair\`` : 'no token set');
-    if (s.embeddedError) parts.push('embedded YAML has errors');
-    setMessage(ui.server, parts.join(' · '));
-  }
+  const view = statusView(s);
+  ui.mode.textContent = view.mode;
+  ui.mode.className = view.warn ? 'pill warn' : 'pill';
+  setMessage(ui.server, view.line);
 
   ui.recent.replaceChildren();
   if (s.recent.length === 0) {

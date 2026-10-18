@@ -985,89 +985,123 @@ export async function projectWriteTrusted(opts: StoreOptions = {}): Promise<bool
   return status === 'trusted';
 }
 
+/** Options `addTerm` and `addTerms` share. */
+export type AddTermOptions = StoreOptions & {
+  scope?: TermScope;
+  merge?: boolean;
+  /**
+   * Aliases for a term this call creates with none of its own (the callers'
+   * `suggestAliases` fallback). Ignored when the term already exists, so
+   * adding a never word, phonetic, category or notes appends nothing.
+   */
+  defaultAliases?: readonly string[];
+  /**
+   * Write a project file without registering it as trusted, for a write
+   * the user has not reviewed (an MCP tool writing a project file that is
+   * not trusted yet, where a model chose the names). Nothing is pinned, so the trust gate has nothing to protect and
+   * an existing untrusted or changed file may be written too; a file that
+   * was trusted reads as 'changed' afterwards. Either way it is merged only
+   * after the user runs `lexicon trust`. Ignored for the global file.
+   */
+  leaveUntrusted?: boolean;
+};
+
+/** `term` with a trimmed canonical and deduped aliases; throws on an empty canonical. */
+function prepareIncoming(term: Term): Term {
+  const canonical = term.canonical.trim();
+  if (!canonical) throw new InputError('canonical must not be empty');
+  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+}
+
+/** Apply one prepared term to the in-memory `file` exactly as `addTerm` does; no IO. */
+function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts: AddTermOptions): { term: Term; created: boolean } {
+  const canonical = incoming.canonical;
+  const existing = findTerm(file.lexicon, canonical);
+  if (existing && opts.merge !== false) {
+    existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
+    existing.phonetic ??= incoming.phonetic;
+    existing.category ??= incoming.category;
+    existing.notes ??= incoming.notes;
+    existing.caseSensitive ??= incoming.caseSensitive;
+    if (incoming.never?.length) {
+      existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
+    }
+    return { term: existing, created: false };
+  }
+
+  if (existing) {
+    // merge === false: replace outright, keeping the original creation time.
+    const replaced: Term = {
+      ...incoming,
+      scope,
+      source: incoming.source ?? 'user',
+      createdAt: existing.createdAt ?? incoming.createdAt ?? new Date().toISOString(),
+    };
+    const idx = file.lexicon.terms.indexOf(existing);
+    file.lexicon.terms[idx] = replaced;
+    return { term: replaced, created: false };
+  }
+
+  const created: Term = {
+    ...incoming,
+    ...(incoming.aliases.length === 0 && opts.defaultAliases?.length
+      ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) }
+      : {}),
+    scope,
+    source: incoming.source ?? 'user',
+    createdAt: incoming.createdAt ?? new Date().toISOString(),
+  };
+  file.lexicon.terms.push(created);
+  return { term: created, created: true };
+}
+
 export async function addTerm(
   term: Term,
-  opts: StoreOptions & {
-    scope?: TermScope;
-    merge?: boolean;
-    /**
-     * Aliases for a term this call creates with none of its own (the callers'
-     * `suggestAliases` fallback). Ignored when the term already exists, so
-     * adding a never word, phonetic, category or notes appends nothing.
-     */
-    defaultAliases?: readonly string[];
-    /**
-     * Write a project file without registering it as trusted, for a write
-     * the user has not reviewed (an MCP tool writing a project file that is
-     * not trusted yet, where a model chose the names). Nothing is pinned, so the trust gate has nothing to protect and
-     * an existing untrusted or changed file may be written too; a file that
-     * was trusted reads as 'changed' afterwards. Either way it is merged only
-     * after the user runs `lexicon trust`. Ignored for the global file.
-     */
-    leaveUntrusted?: boolean;
-  } = {},
+  opts: AddTermOptions = {},
 ): Promise<{ file: LexiconFile; term: Term; created: boolean }> {
   const scope: TermScope = opts.scope ?? 'global';
   // The trust gate stays ahead of every other check, as it was when this
   // resolved the file rather than the path.
   const targetPath = await resolveScopeWritePath(scope, opts);
-  const write = opts.leaveUntrusted ? (f: LexiconFile) => writeLexiconFile(f) : (f: LexiconFile) => writeAndTrust(f, opts);
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new InputError('canonical must not be empty');
-
-  const incoming: Term = {
-    ...term,
-    canonical,
-    aliases: dedupeAliases(term.aliases ?? [], canonical),
-  };
+  const incoming = prepareIncoming(term);
 
   // Read, edit and write inside one lock: a concurrent add that read the same
   // file before this one wrote would otherwise rename its own copy over the
   // top and take the new term with it.
   return withLexiconLock(targetPath, async () => {
     const file = await readLexiconFile(targetPath, scope);
-
-    const existing = findTerm(file.lexicon, canonical);
-    if (existing && opts.merge !== false) {
-      existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
-      existing.phonetic ??= incoming.phonetic;
-      existing.category ??= incoming.category;
-      existing.notes ??= incoming.notes;
-      existing.caseSensitive ??= incoming.caseSensitive;
-      if (incoming.never?.length) {
-        existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
-      }
-      await write(file);
-      return { file, term: existing, created: false };
-    }
-
-    if (existing) {
-      // merge === false: replace outright, keeping the original creation time.
-      const replaced: Term = {
-        ...incoming,
-        scope,
-        source: incoming.source ?? 'user',
-        createdAt: existing.createdAt ?? incoming.createdAt ?? new Date().toISOString(),
-      };
-      const idx = file.lexicon.terms.indexOf(existing);
-      file.lexicon.terms[idx] = replaced;
-      await write(file);
-      return { file, term: replaced, created: false };
-    }
-
-    const created: Term = {
-      ...incoming,
-      ...(incoming.aliases.length === 0 && opts.defaultAliases?.length
-        ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) }
-        : {}),
-      scope,
-      source: incoming.source ?? 'user',
-      createdAt: incoming.createdAt ?? new Date().toISOString(),
-    };
-    file.lexicon.terms.push(created);
-    await write(file);
-    return { file, term: created, created: true };
+    const result = mergeTermInto(file, incoming, scope, opts);
+    await writeAddedFile(file, opts);
+    return { file, ...result };
   });
+}
+
+/**
+ * `addTerm` for several terms into one file: the same trust gate, merge rules
+ * and lock, but one read and one write for the whole batch. Each term is
+ * applied in order to the document the previous one produced, so the result
+ * is what calling `addTerm` once per term would have written. Every canonical
+ * is checked before anything is written. Used by `installLoadedPack`: one
+ * read-parse-write per term made an 82-term pack take seconds, since each
+ * write re-parses the whole file to edit it in place and to check it reads back.
+ */
+export async function addTerms(
+  terms: readonly Term[],
+  opts: AddTermOptions = {},
+): Promise<{ file: LexiconFile; results: { term: Term; created: boolean }[] }> {
+  const scope: TermScope = opts.scope ?? 'global';
+  const targetPath = await resolveScopeWritePath(scope, opts);
+  const incoming = terms.map(prepareIncoming);
+  return withLexiconLock(targetPath, async () => {
+    const file = await readLexiconFile(targetPath, scope);
+    const results = incoming.map((t) => mergeTermInto(file, t, scope, opts));
+    if (results.length > 0) await writeAddedFile(file, opts);
+    return { file, results };
+  });
+}
+
+function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
+  return opts.leaveUntrusted ? writeLexiconFile(file) : writeAndTrust(file, opts);
 }
 
 /**

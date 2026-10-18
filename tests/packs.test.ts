@@ -7,7 +7,28 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Pass-through wrappers that count YAML parses, so the install-cost test can
+ * check that a pack is installed with a bounded number of reads and writes
+ * rather than one read-parse-write per term. Behaviour is unchanged.
+ */
+const yamlParses = vi.hoisted(() => ({ count: 0 }));
+vi.mock('yaml', async (importOriginal) => {
+  const real = await importOriginal<typeof import('yaml')>();
+  return {
+    ...real,
+    parse: (...args: Parameters<typeof real.parse>) => {
+      yamlParses.count += 1;
+      return real.parse(...args);
+    },
+    parseDocument: (...args: Parameters<typeof real.parseDocument>) => {
+      yamlParses.count += 1;
+      return real.parseDocument(...args);
+    },
+  };
+});
 import {
   DEFAULT_PACKS,
   PACK_NAME_RE,
@@ -332,6 +353,23 @@ describe('installPack / uninstallPack', () => {
     const loaded = await loadLexicon({ cwd, globalPath });
     expect(normalize('deploy to cuban eats on versal with superbase', loaded.merged).output).toBe('deploy to Kubernetes on Vercel with Supabase');
     expect(normalize('ask and tropic about em see pee', loaded.merged).output).toBe('ask Anthropic about MCP');
+  });
+
+  it('installs a pack with a bounded number of YAML parses, not a read and write per term', async () => {
+    // Each write re-parses the whole file to edit it in place and to check it
+    // reads back, so one addTerm per term was quadratic: the 82-term developer
+    // pack parsed the growing file about 250 times and took seconds, enough
+    // to hit this suite's timeout under full-suite load.
+    const pack = await loadPack('developer');
+    yamlParses.count = 0;
+    await installPack('developer', { cwd, globalPath });
+    const fresh = yamlParses.count;
+    yamlParses.count = 0;
+    await installPack('developer', { cwd, globalPath });
+    const again = yamlParses.count;
+    expect(pack.terms).toBeGreaterThan(50);
+    expect(fresh).toBeLessThan(15);
+    expect(again).toBeLessThan(15);
   });
 
   it('merges into a term the user already has without touching their aliases, source or phonetic', async () => {
