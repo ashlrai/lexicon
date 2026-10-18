@@ -16,6 +16,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon trust` asks `trust <path>? [y/N]` on a terminal after the preview, and `--yes` skips the question. It pinned the file straight after printing the preview, so the only way to say no was ctrl-C. Off a terminal it still trusts without asking, so existing scripts keep working (see docs/TRUST.md for why that is the choice). A file that changes while the question is open is not trusted.
 - `lexicon remove --global` removes only the global copy of a term, mirroring `--project` (the two together exit 1). With `--alias` it limits the alias removal to the global file too. The `warn:` line naming a copy left in the other file now gives `lexicon remove "<canonical>" --global` or `--project`, and `--project` on a term only the global file holds points at `--global`.
 
+### Internal
+
+- Add matcher regression coverage for explicit aliases containing straight and curly apostrophes, full replacement offsets, real possessives, code/URL spans, and never entries. These cases already work without phonetic or fuzzy matching.
+
 ### Fixed
 
 - Project writes (`add --project`, `harvest --add`, `review`, `suggest`, `setup`, pack install, MCP `add_term`, `harvest_repo` and `learn_correction`, serve `/add`) check trust on the file they merge, inside the lexicon lock. The trust check ran before the lock, and the write then re-read the file and pinned what it wrote, so a trusted `.lexicon.yaml` rewritten (or created) between the check and the locked read had its unreviewed terms merged and trusted. `remove` re-checks the parsed file too, `refreshTrust` takes the expected hash, and a failed pack install or uninstall puts the earlier trust entry back instead of trusting the restored snapshot.
