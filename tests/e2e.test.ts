@@ -1689,3 +1689,23 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add refusals
     expect(noRegistry.stderr).toContain('lexicon: run: lexicon pack add example/cardiology --registry <index>');
   });
 });
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a long path does not cut the next step off', () => {
+  // Catches: errors and doctor checks were capped at 200 characters, so in a deep
+  // repo the command after the path was cut ("or write to the global le…").
+  it('add --project and doctor in a deep repo still print the whole command', async () => {
+    const h = await freshHome('deep-path');
+    const deep = path.join(h.repo, 'projects', 'a-fairly-long-organisation-name', 'and-a-fairly-long-repository-name', 'packages', 'service');
+    await fs.mkdir(deep, { recursive: true });
+    // The project file sits in the deep directory, so the messages that name it run past 200 characters.
+    await fs.writeFile(path.join(deep, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    expect(path.join(deep, '.lexicon.yaml').length).toBeGreaterThan(130);
+    const add = await runCli(['add', 'Foo', '--project'], { env: h.env, cwd: deep });
+    expect(add.code).toBe(1);
+    expect(add.stderr).toContain('or write to the global lexicon instead');
+    expect(add.stderr).not.toContain('…');
+    const doctor = await runCli(['doctor'], { env: h.env, cwd: deep });
+    expect(doctor.stdout).toContain('(review it, then run: lexicon trust)');
+    expect(doctor.stdout).not.toContain('…');
+  });
+});

@@ -38,7 +38,7 @@ import {
   serveLabel,
   systemdUnitPath,
 } from './serve-paths.js';
-import { dim, green, line, plural, red, resolveCwd, safeLines, yellow } from './io.js';
+import { dim, green, line, plural, red, resolveCwd, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** Obvious English words that make terrible aliases (they'd fire constantly). */
@@ -180,7 +180,7 @@ export type DoctorLevel = 'ok' | 'fail' | 'warn' | 'info';
 
 export interface DoctorCheck {
   level: DoctorLevel;
-  /** Unsanitized: quotes paths, canonicals, aliases and error text. Renderers apply `safeLines`. */
+  /** Unsanitized: quotes paths, canonicals, aliases and error text. Renderers apply `safeMessage`. */
   message: string;
 }
 
@@ -502,7 +502,7 @@ function summarize(
 
 /** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
 function renderCheck(c: DoctorCheck): string {
-  const message = safeLines(c.message);
+  const message = safeMessage(c.message);
   switch (c.level) {
     case 'ok':
       return `${green('✓')} ${message}`;
@@ -524,12 +524,12 @@ export function renderDoctorReport(report: DoctorReport, io: IO): number {
   // The two lines that matter, after the thirty that might: the same
   // `summary` and `nextStep` the MCP tool hands a model, so the terminal and
   // the agent never tell the user different things.
-  line(io, safeLines(report.summary));
+  line(io, safeMessage(report.summary));
   // nextStep quotes check messages, which quote paths, canonicals and aliases
   // from a project file this user may not have written, so it is sanitized
   // like everything else. Each nextStep leads with its command for that
   // reason: the cap can only eat the detail, never the fix.
-  const nextStep = safeLines(report.nextStep);
+  const nextStep = safeMessage(report.nextStep);
   line(io, report.ready && failures === 0 ? dim(nextStep) : yellow(nextStep));
   return failures === 0 ? 0 : 1;
 }

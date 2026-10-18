@@ -60451,6 +60451,10 @@ var safe = sanitizeForDisplay;
 function safeLines(s) {
   return s.split("\n").map(safe).join("\n");
 }
+var ERROR_LINE_MAX_CHARS = 4096;
+function safeMessage(s) {
+  return s.split("\n").map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS)).join("\n");
+}
 function plural2(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -60485,9 +60489,9 @@ function fail(io, err, json2) {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
   if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0));
-  io.stderr(`lexicon: ${safeLines(message)}
+  io.stderr(`lexicon: ${safeMessage(message)}
 `);
-  if (hint) io.stderr(`lexicon: ${safeLines(hint)}
+  if (hint) io.stderr(`lexicon: ${safeMessage(hint)}
 `);
   return 1;
 }

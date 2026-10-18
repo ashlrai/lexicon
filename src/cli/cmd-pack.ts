@@ -40,7 +40,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -540,8 +540,8 @@ function failPackAdd(
     const doc = names.length === 1 ? { ok, ref, ...detail } : [...results, entry];
     line(io, JSON.stringify(doc, null, 2));
   }
-  io.stderr(`lexicon: ${safe(ref)}: ${safeLines(message)}\n`);
-  if (hint) io.stderr(`lexicon: ${safeLines(hint)}\n`);
+  io.stderr(`lexicon: ${safe(ref)}: ${safeMessage(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${safeMessage(hint)}\n`);
   const after = names.slice(at + 1);
   if (after.length > 0) io.stderr(`lexicon: not attempted: ${after.map(safe).join(', ')}\n`);
   return 1;
