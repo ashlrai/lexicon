@@ -174,11 +174,23 @@ export function resolveIntegrationPaths(cliDir?: string): IntegrationPaths {
 const NPX_CACHE_SEGMENT = /[\\/]_npx[\\/]/;
 
 /**
- * True when `p` lives in an npx cache, i.e. this process was started by
- * `npx @ashlr/lexicon ...` and nothing on this machine owns the files.
+ * Claude Code's plugin cache: `<config dir>/plugins/cache/<marketplace>/lexicon/<version>/...`,
+ * where the plugin's MCP server runs from. Each plugin update installs a new
+ * version directory and retires the old one, so a client config or a hook
+ * written with a path into it runs the old version until that directory is
+ * removed, and then nothing at all.
+ */
+const PLUGIN_CACHE_SEGMENT = /[\\/]plugins[\\/]cache[\\/][^\\/]+[\\/]lexicon[\\/]/;
+
+/**
+ * True when `p` lives in a cache another program deletes or replaces: npm's
+ * npx cache (this process was started by `npx @ashlr/lexicon ...` and nothing
+ * on this machine owns the files) or Claude Code's per-version plugin cache
+ * (this is the plugin's MCP server, e.g. `install_client` or `setup_lexicon`
+ * called from a plugin session).
  */
 export function isVolatileEntry(p: string): boolean {
-  return NPX_CACHE_SEGMENT.test(p);
+  return NPX_CACHE_SEGMENT.test(p) || PLUGIN_CACHE_SEGMENT.test(p);
 }
 
 /** A command and its arguments, as a client config or a hook line needs them. */

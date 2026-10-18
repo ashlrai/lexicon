@@ -69,6 +69,16 @@ export interface SetupOptions extends CommonOptions {
    */
   harvest?: boolean;
   /**
+   * Write the harvest without trusting the project file unless the user
+   * already trusted it (MCP setup_lexicon: a model must not be the one that
+   * trusts it). A file that is already trusted takes the names and stays
+   * trusted, as for every MCP write; a new, untrusted or changed one then
+   * applies only after the user runs `lexicon trust`, and the summary names
+   * it in `untrustedProject`. Not a CLI flag: a human running setup trusts
+   * the file by asking for the harvest.
+   */
+  harvestUntrusted?: boolean;
+  /**
    * `--serve` / `--no-serve`: install the local API login service. With a
    * prompter, undefined asks (default yes); without one (`--yes`, no TTY,
    * MCP) undefined skips it: a login service is never created silently.
@@ -81,7 +91,8 @@ export interface SetupOptions extends CommonOptions {
    * checklist on a terminal (developer, ai, voice-tools checked) and installs
    * nothing without one (`--yes`, no TTY, MCP): a pack is a hundred-odd terms
    * and is never added silently. A dry run lists the defaults in
-   * `wouldInstallPacks` unless `packs === false`.
+   * `wouldInstallPacks` and `packsOnOffer` unless `packs === false`, and what
+   * it would actually install in `packsToInstall`.
    */
   packs?: string | false;
   /** Run detection and suggestions only; write nothing and fill in `SetupPlan`. */
@@ -138,6 +149,8 @@ export interface SetupSummary {
   exports: { format: string; path: string }[];
   /** The correction the run ended by demonstrating. Absent only if the step threw. */
   demo?: SetupDemo;
+  /** The project lexicon a `harvestUntrusted` harvest wrote without pinning it (it was not trusted before); untrusted until the user runs `lexicon trust`. */
+  untrustedProject?: string;
 }
 
 /**
@@ -173,6 +186,16 @@ export interface SetupPlan {
    * list or by saying yes to the checklist, so read it with `wouldAsk`.
    */
   wouldInstallPacks: string[];
+  /** The same list as `wouldInstallPacks`, under a name that says what it is: the packs to offer. */
+  packsOnOffer: string[];
+  /**
+   * The starter packs the same call without the dry run installs: the
+   * `--packs` list, or on a terminal the checklist's checked defaults (Enter
+   * installs them); empty when nothing would be installed without one
+   * (`--yes`, no terminal, MCP `setup_lexicon` without `packs`). This is the
+   * field that agrees with the plan's `would install` line.
+   */
+  packsToInstall: string[];
   /**
    * Starter packs the global lexicon already has. They are left out of
    * `wouldInstallPacks` and the checklist, so a rerun does not offer them
@@ -191,6 +214,12 @@ export interface SetupPlan {
   wouldInstallClients: string[];
   /** True when the login service would be installed, including by a yes at the prompt (its default). */
   wouldInstallServe: boolean;
+  /**
+   * Why the login service would be refused if it were asked for (this copy runs
+   * from an npx or plugin cache, or its CLI entry is missing), with the fix;
+   * `wouldInstallServe` is false then. Absent when it would install or was not asked for.
+   */
+  serveBlocked?: string;
   /** Files a real run would write for the dictation app, including the one the prompt defaults to. */
   wouldExport: { format: string; path: string }[];
   /** The correction a real run would end by demonstrating (computed, never written). */
@@ -226,6 +255,11 @@ export interface SetupDeps {
    * otherwise and refuses a path that does not exist).
    */
   installServe?: (opts: ServeOptions, io: IO, deps: ServeDeps) => Promise<number>;
+  /**
+   * Why the login service install would be refused, checked by the plan with the
+   * same `deps` installServe gets. Default serveInstallBlocker.
+   */
+  serveBlocker?: (deps: ServeDeps) => Promise<string | undefined>;
   /** Repo scanner. Default harvestRepo. */
   harvest?: (root: string, opts: HarvestOptions) => Promise<HarvestCandidate[]>;
   /** The starter packs on offer. Default listPacks (the package's packs/). */

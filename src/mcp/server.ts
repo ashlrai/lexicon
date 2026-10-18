@@ -17,14 +17,17 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon } from '../core/index.js';
-import type { LoadedLexicon } from '../core/index.js';
-import { SERVER_NAME, log, readPackageVersion } from './shared.js';
+import { exportLexicon, loadLexicon, neutralizeMarkup, pathForModel } from '../core/index.js';
+import type { LoadOptions, LoadedLexicon } from '../core/index.js';
+import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
+import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
+import { cliCommand } from '../util/cli-hint.js';
 
 export interface ServerOptions {
   /**
@@ -35,6 +38,44 @@ export interface ServerOptions {
   cwd?: string;
   /** How long to wait for the client's `roots/list` answer. Default ROOTS_TIMEOUT_MS. */
   rootsTimeoutMs?: number;
+  /** normalize_transcript's matching budget per call. Default MCP_NORMALIZE_BUDGET_MS. */
+  normalizeBudgetMs?: number;
+  /** Characters of `text` normalize_transcript matches. Default MCP_NORMALIZE_MAX_CHARS. */
+  normalizeMaxChars?: number;
+}
+
+/**
+ * A tool config whose raw `inputSchema` shape is replaced by a strict
+ * z.object of the same shape, so undeclared arguments are refused instead of
+ * silently dropped. A schema that is already a zod type is left alone.
+ */
+export function strictInput(config: unknown): unknown {
+  if (typeof config !== 'object' || config === null) return config;
+  const shape = (config as { inputSchema?: unknown }).inputSchema;
+  if (shape === undefined || shape instanceof z.ZodType) return config;
+  return { ...config, inputSchema: z.object(shape as z.ZodRawShape).strict() };
+}
+
+/**
+ * A prompt's `argsSchema`: strict, so an undeclared argument is refused with
+ * -32602 (the SDK's InvalidParams) and a message naming it and the arguments
+ * the prompt does take, the way a tool refuses an unknown key. Without one the
+ * SDK passed nothing through and never looked, so `voice-context` with
+ * `{ "scope": "project" }` answered as if the argument had been applied.
+ * Omitted arguments and `{}` still pass.
+ */
+export function strictPromptArgs(name: string, shape: z.ZodRawShape = {}): z.ZodObject {
+  const declared = Object.keys(shape);
+  const takes =
+    declared.length > 0
+      ? `it takes only ${declared.map((k) => JSON.stringify(k)).join(', ')}`
+      : 'it takes no arguments; omit arguments or pass {}';
+  return z.strictObject(shape, {
+    error: (iss) =>
+      iss.code === 'unrecognized_keys'
+        ? `unknown argument${iss.keys.length === 1 ? '' : 's'} ${iss.keys.map((k) => JSON.stringify(k)).join(', ')} for prompt ${name}: ${takes}`
+        : undefined,
+  });
 }
 
 /** Upper bound on one `roots/list` round trip; past it the server keeps the directory it has. */
@@ -50,32 +91,47 @@ export const ROOTS_TIMEOUT_MS = 2000;
  * directory is taken; anything else is ignored. Exported for tests.
  */
 export function cwdFromRoots(roots: ReadonlyArray<{ uri: string }>): string | undefined {
+  return dirsFromRoots(roots)[0];
+}
+
+/** Every `file://` root that names an existing directory, in order. Exported for tests. */
+export function dirsFromRoots(roots: ReadonlyArray<{ uri: string }>): string[] {
+  const dirs: string[] = [];
   for (const root of roots) {
     if (typeof root?.uri !== 'string' || !root.uri.startsWith('file:')) continue;
     try {
       const dir = fileURLToPath(root.uri);
-      if (statSync(dir).isDirectory()) return dir;
+      if (statSync(dir).isDirectory()) dirs.push(dir);
     } catch {
       // not a usable local path; try the next root
     }
   }
-  return undefined;
+  return dirs;
 }
 
 const VOICE_CONTEXT_INSTRUCTION =
   'Apply these canonical spellings to everything I say for the rest of this session. ' +
   'If you see a word that looks like a garbled version of one of them, use the canonical form without asking.';
 
+/**
+ * What `voice-context` and `lexicon://me` say when the merged lexicon has no
+ * terms: an empty table under "apply these spellings" read as a lexicon that
+ * was loaded and simply had nothing to correct.
+ */
+const EMPTY_LEXICON_NOTE =
+  'Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. ' +
+  'If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).';
+
 /** The `onboard` prompt: a user-role script that drives the model through first-run setup. */
 const ONBOARD_PROMPT = [
   'Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:',
   '1. Ask for my company or product names, spelled exactly as they should appear (capitalization and punctuation included), and how I pronounce each one.',
-  '2. Ask for the names of teammates or people I mention often, spelled the way they write them.',
+  '2. Ask for my own name as I write it, then for the names of teammates or people I mention often, spelled the way they write them.',
   '3. Ask which agent clients I use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI or VS Code.',
   '4. Call setup_lexicon with my company, my name and those clients, show me its plan, and apply it only after I say yes. Tell me what it installed and where the lexicon file lives.',
-  '5. For every other name I gave you, call add_term without aliases so likely misspellings are generated, then show each term with its aliases on one line so I can veto any.',
+  '5. For every other name I gave you, call add_term with aliases omitted, which generates likely misspellings when it can. It often generates none (the aliases in the result are empty), so show each term with its aliases on one line so I can veto any, and for a term with no aliases propose two or three spellings speech-to-text is likely to write from how I pronounce it, or ask me what it writes. Add the ones I accept with add_term and aliases.',
   '6. Offer the starter packs once (list_packs; say in one line what each contains) and add only the ones I pick.',
-  '7. Finish by proving it works: take one of my names, write the sentence I can dictate to test it containing two of the names, and run normalize_transcript on that sentence spelled the way speech-to-text would mangle it, so I can see the before and after. Then tell me to try it in a new session.',
+  '7. Finish by proving it works: write one test sentence I can dictate that contains two of my names, then run normalize_transcript on that same sentence with those names spelled the way speech-to-text gets them wrong (use their aliases), so I can see the before and after. Then tell me to try it in a new session.',
   'Never install anything or trust a project file without telling me first. If a step fails, show me the error and continue with the rest.',
 ].join('\n');
 
@@ -109,7 +165,7 @@ const SERVER_INSTRUCTIONS = [
   'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
   PROACTIVE_OFFER,
   'setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.',
-  'Starter packs (list_packs: developer, ai, business, voice-tools) give a new user sixty-odd curated names each; offer them once, name what a pack contains, and call add_pack only for the packs the user picked.',
+  'Starter packs (list_packs: developer, ai, business, voice-tools) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.',
   'When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.',
   'Preview install_client before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name.',
 ].join('\n');
@@ -119,11 +175,14 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // writes) always wins; otherwise the client's roots may replace the default.
   const explicit = opts.cwd ?? (process.env.LEXICON_CWD?.trim() || undefined);
   let cwd = explicit ?? process.cwd();
+  // Every usable directory the client named as a root: tools that read a
+  // model-chosen path (harvest_repo, suggest_terms, trust_project, import_dictionary) may read inside these.
+  let clientRoots: string[] = [];
   let rootsPending: Promise<void> | undefined;
-  const load = async (): Promise<LoadedLexicon> => {
+  const load = async (loadOpts: Pick<LoadOptions, 'parseSkipped'> = {}): Promise<LoadedLexicon> => {
     // A call that races the first roots/list answer waits for it (bounded by the timeout).
     if (rootsPending) await rootsPending;
-    return loadLexicon({ cwd });
+    return loadLexicon({ cwd, ...loadOpts });
   };
 
   const server = new McpServer(
@@ -136,7 +195,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const pending = server.server
         .listRoots(undefined, { timeout: opts.rootsTimeoutMs ?? ROOTS_TIMEOUT_MS })
         .then(({ roots }) => {
-          const dir = cwdFromRoots(roots);
+          clientRoots = dirsFromRoots(roots);
+          const dir = clientRoots[0];
           if (dir !== undefined && dir !== cwd) {
             cwd = dir;
             log('project directory from MCP roots:', dir);
@@ -162,9 +222,16 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // Every tool waits for an in-flight roots/list too, not only the ones that
   // call load(): a handler that resolved the project path before the answer
   // and named it after would describe two different directories.
+  //
+  // Each tool's argument shape is also made strict here. The SDK wraps a raw
+  // shape in a stripping z.object, so a misspelt key (`alias` for `aliases`,
+  // `txt` for `text`) was dropped without a word and the call went ahead as if
+  // the argument had never been given: add_term then auto-suggested aliases the
+  // agent did not ask for. A strict object refuses the unknown key by name and
+  // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
   const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, config as never, (async (...args: unknown[]) => {
+    registerTool(name, strictInput(config) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);
@@ -175,9 +242,31 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     get cwd(): string {
       return cwd;
     },
+    get roots(): readonly string[] {
+      return clientRoots;
+    },
     load,
+    normalizeBudgetMs: opts.normalizeBudgetMs ?? MCP_NORMALIZE_BUDGET_MS,
+    normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS,
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
+
+  // Resources and prompts have no isError result: a thrown error becomes the
+  // JSON-RPC error message. For a lexicon file that does not parse, that was
+  // the bare parse error; it now carries the fix, as a tool's error does.
+  const loadForContext = async (): Promise<LoadedLexicon> => {
+    try {
+      // Resources and prompts name a skipped project file by path only
+      // (skippedProjectSuffix, skippedProjectFields), so it is never parsed.
+      return await load({ parseSkipped: false });
+    } catch (err) {
+      const message = errorMessage(err);
+      const fixed = withLexiconFix(message);
+      if (fixed === message) throw err;
+      log('lexicon unreadable:', message);
+      throw new Error(fixed);
+    }
+  };
 
   server.registerResource(
     'Personal voice lexicon',
@@ -189,12 +278,10 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       mimeType: 'text/markdown',
     },
     async (uri) => {
-      const loaded = await load();
-      let text = exportLexicon(loaded.merged, 'claude-md');
-      if (loaded.skippedProject) {
-        // Surface only the path, never the untrusted file's contents.
-        text += `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${loaded.skippedProject.path} that was not loaded. The user can review it and run \`lexicon trust\`.`;
-      }
+      const loaded = await loadForContext();
+      // neutralizeMarkup over the export: this text is read as context,
+      // so `<` / `>` in a canonical or note must not open or close a tag.
+      const text = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -206,21 +293,31 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     'lexicon://json',
     {
       title: 'Lexicon JSON',
-      description: 'The merged lexicon (global + project) as raw JSON.',
+      description:
+        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.',
       mimeType: 'application/json',
     },
     async (uri) => {
-      const loaded = await load();
+      const loaded = await loadForContext();
+      // Additive keys, present only when a project file was skipped (path
+      // only, never its contents), as list_terms and lexicon_stats report it.
+      // The lexicon JSON importer strips unknown keys, so the text still imports.
+      const skipped = skippedProjectFields(loaded);
+      const text =
+        Object.keys(skipped).length > 0
+          ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}\n`
+          : exportLexicon(loaded.merged, 'json');
       return {
-        contents: [
-          { uri: uri.href, mimeType: 'application/json', text: exportLexicon(loaded.merged, 'json') },
-        ],
+        contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };
     },
   );
 
   // -------------------------------------------------------------- prompts
 
+  // registerPrompt takes a raw shape and wraps it in a stripping z.object, so
+  // the strict schema goes on the registered prompt itself (as the SDK stores
+  // it). With a schema the callback gets (args, extra); both ignore them.
   server.registerPrompt(
     'voice-context',
     {
@@ -229,18 +326,22 @@ export function createServer(opts: ServerOptions = {}): McpServer {
         "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session.",
     },
     async () => {
-      const loaded = await load();
-      const snippet = exportLexicon(loaded.merged, 'claude-md');
+      const loaded = await loadForContext();
+      // The same path-only note lexicon://me carries, so the session knows the
+      // repo's own spellings are missing and why.
+      const snippet = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd() + skippedProjectSuffix(loaded);
+      // Nothing to apply: say so instead of asking the model to apply an empty table.
+      const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
           {
             role: 'user',
-            content: { type: 'text', text: `${snippet.trimEnd()}\n\n${VOICE_CONTEXT_INSTRUCTION}` },
+            content: { type: 'text', text: `${snippet}\n\n${instruction}` },
           },
         ],
       };
     },
-  );
+  ).argsSchema = strictPromptArgs('voice-context');
 
   server.registerPrompt(
     'onboard',
@@ -252,9 +353,28 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     async () => ({
       messages: [{ role: 'user', content: { type: 'text', text: ONBOARD_PROMPT } }],
     }),
-  );
+  ).argsSchema = strictPromptArgs('onboard');
 
   return server;
+}
+
+/**
+ * A path-only note on a skipped project lexicon, never its contents; '' when
+ * none was skipped. The path goes through `pathForModel`, as in the hook's
+ * note: this text is raw markdown (no JSON escaping), and the directory is
+ * named by whoever published the repo, so an escape sequence, a bidi
+ * override, a fake tag or kilobytes of text in it would otherwise reach the
+ * conversation verbatim.
+ */
+function skippedProjectSuffix(loaded: LoadedLexicon): string {
+  if (!loaded.skippedProject) return '';
+  const where = pathForModel(loaded.skippedProject.path);
+  return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run ${cliCommand('trust')}.`;
+}
+
+/** `EMPTY_LEXICON_NOTE` after a blank line when the merged lexicon has no terms, else ''. */
+function emptyLexiconSuffix(loaded: LoadedLexicon): string {
+  return loaded.merged.terms.length === 0 ? `\n${EMPTY_LEXICON_NOTE}\n` : '';
 }
 
 export async function main(): Promise<void> {
@@ -280,9 +400,26 @@ function isMainModule(): boolean {
   }
 }
 
+/**
+ * Answers `--version` / `-v` and `--help` / `-h` without starting the stdio
+ * server. Returns the text to print, or undefined when the server should run.
+ */
+export function cliFlagOutput(argv: readonly string[]): string | undefined {
+  if (argv.includes('--version') || argv.includes('-v')) return readPackageVersion();
+  if (argv.includes('--help') || argv.includes('-h')) {
+    return 'Usage: lexicon-mcp [--version] [--help]  (stdio MCP server for the personal lexicon; run it from an MCP client)';
+  }
+  return undefined;
+}
+
 if (isMainModule()) {
-  main().catch((err: unknown) => {
-    log('fatal:', errorMessage(err));
-    process.exit(1);
-  });
+  const flagOutput = cliFlagOutput(process.argv.slice(2));
+  if (flagOutput !== undefined) {
+    process.stdout.write(`${flagOutput}\n`);
+  } else {
+    main().catch((err: unknown) => {
+      log('fatal:', errorMessage(err));
+      process.exit(1);
+    });
+  }
 }

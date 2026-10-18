@@ -3,10 +3,10 @@
  * temp global lexicon. The github source is faked at the exec seam; nothing
  * touches the real machine.
  */
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runImportGuided } from '../src/cli/cmd-import-guided.js';
 import type { ImportGuidedDeps } from '../src/cli/cmd-import-guided.js';
 import type { ImportSourceDeps } from '../src/core/index.js';
@@ -30,6 +30,10 @@ let globalPath: string;
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'lexicon-guided-test-'));
   globalPath = path.join(dir, 'lexicon.yaml');
+});
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function fakeDeps(overrides: Partial<ImportSourceDeps & ImportGuidedDeps> = {}): ImportGuidedDeps & { isInteractive: () => boolean } {
@@ -62,6 +66,19 @@ describe('runImportGuided', () => {
     const code = await runImportGuided({ yes: true, globalPath }, io, fakeDeps());
     expect(code).toBe(1);
     expect(io.err).toContain('--yes needs --sources');
+  });
+
+  // Catches: --json refusals went to stderr only, leaving stdout empty for the script that asked for JSON.
+  it('prints { ok: false, error } under --json when it refuses', async () => {
+    const io = makeIO();
+    expect(await runImportGuided({ json: true, globalPath }, io, fakeDeps())).toBe(1);
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('--yes needs --sources'), nextStep: expect.any(String) });
+    const bad = makeIO();
+    expect(await runImportGuided({ json: true, sources: 'carrier-pigeon', globalPath }, bad, fakeDeps())).toBe(1);
+    expect(JSON.parse(bad.out)).toEqual({ ok: false, error: expect.stringContaining('unknown import source'), nextStep: expect.any(String) });
+    const limit = makeIO();
+    expect(await runImportGuided({ json: true, sources: 'github', limit: '-1', globalPath }, limit, fakeDeps())).toBe(1);
+    expect(JSON.parse(limit.out)).toEqual({ ok: false, error: '--limit must be a non-negative integer, got "-1"', nextStep: expect.any(String) });
   });
 
   it('rejects an unknown source', async () => {

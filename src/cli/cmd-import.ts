@@ -4,7 +4,7 @@
  * file) into the global or project lexicon in one command. The handler lives in
  * runImport so it is unit-testable; registerImportCommands only wires commander.
  */
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
 import {
@@ -20,7 +20,7 @@ import {
 } from '../core/index.js';
 import type { ImportFormat, ImportResult, Term, TermCategory, TermScope, TermSource } from '../core/index.js';
 import { TERM_SOURCES } from '../core/index.js';
-import { renderTable, safe } from './io.js';
+import { jsonOk, printJsonError, refuse, renderTable, safe } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { runImportGuided } from './cmd-import-guided.js';
 import type { ImportGuidedOptions } from './cmd-import-guided.js';
@@ -38,13 +38,27 @@ export interface ImportCliOptions extends CommonOptions {
   category?: string;
   /** Print the result as JSON. */
   json?: boolean;
+  /**
+   * Not a CLI flag: write a project file without registering it as trusted
+   * (addTerm's `leaveUntrusted`), for MCP import_dictionary on a project file
+   * the user has not trusted. The report then lists each term as imported,
+   * not as merged, so nothing already in that file is read back out. With
+   * `dryRun` the project file is not read at all: the report sets
+   * `untrustedTarget` and leaves out each row's `created`, since telling new
+   * from merged would be a read of the untrusted file's terms.
+   */
+  leaveUntrusted?: boolean;
 }
 
 export interface ImportedTermReport {
   canonical: string;
   aliases: string[];
-  /** true when the term did not exist in the target lexicon before. */
-  created: boolean;
+  /**
+   * true when the term did not exist in the target lexicon before. Absent
+   * only in a `leaveUntrusted` dry run against an existing project file
+   * (`ImportReport.untrustedTarget`), which is not read.
+   */
+  created?: boolean;
 }
 
 export interface ImportReport {
@@ -52,6 +66,11 @@ export interface ImportReport {
   scope: TermScope;
   path?: string;
   dryRun: boolean;
+  /**
+   * A `leaveUntrusted` dry run whose project file exists: it is not trusted,
+   * so its terms were not read and no row says new or merged.
+   */
+  untrustedTarget?: true;
   terms: ImportedTermReport[];
   skipped: ImportResult['skipped'];
   counts: { total: number; created: number; merged: number; skipped: number };
@@ -148,6 +167,8 @@ export async function runImport(
 ): Promise<number> {
   const format = opts.format ?? 'auto';
   if (!isImportFormat(format)) {
+    // Under --json stdout carries the failure too, as every other refusal here does.
+    if (opts.json) printJsonError(io, `unknown import format "${format}"`, `pass one of: ${IMPORT_FORMATS.join(', ')} (or leave it out to detect the format)`);
     io.stderr(`lexicon: unknown import format "${safe(format)}"\n`);
     io.stderr(formatList());
     return 1;
@@ -184,24 +205,35 @@ export async function runImport(
     // Preview against the target file so "new" vs "merge" is accurate without writing.
     const paths = resolvePaths({ cwd });
     const target = scope === 'project' ? paths.project : paths.global;
-    const existing = target ? (await readLexiconFile(target, scope)).lexicon : undefined;
+    // An untrusted project file is not read, not even for one new-or-merged
+    // bit per term (the MCP caller is a model, and those bits spell out
+    // which of its names the file already holds).
+    const blind = opts.leaveUntrusted === true && scope === 'project' && target !== undefined && existsSync(target);
+    const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : undefined;
     if (target) report.path = target;
+    if (blind) report.untrustedTarget = true;
     for (const term of result.terms) {
+      if (blind) {
+        report.terms.push({ canonical: term.canonical, aliases: term.aliases });
+        continue;
+      }
       const created = !existing || findTerm(existing, term.canonical) === undefined;
       report.terms.push({ canonical: term.canonical, aliases: term.aliases, created });
     }
   } else {
     for (const term of result.terms) {
-      const added = await addTerm(term as Term, { scope, cwd });
+      const added = await addTerm(term as Term, { scope, cwd, ...(opts.leaveUntrusted ? { leaveUntrusted: true } : {}) });
       report.path ??= added.file.path;
-      report.terms.push({ canonical: added.term.canonical, aliases: added.term.aliases, created: added.created });
+      // A merge into an untrusted file returns that file's copy of the term.
+      const shown = opts.leaveUntrusted && scope === 'project' ? { canonical: term.canonical, aliases: term.aliases } : added.term;
+      report.terms.push({ canonical: shown.canonical, aliases: shown.aliases, created: added.created });
     }
   }
-  report.counts.created = report.terms.filter((t) => t.created).length;
-  report.counts.merged = report.terms.length - report.counts.created;
+  report.counts.created = report.terms.filter((t) => t.created === true).length;
+  report.counts.merged = report.terms.filter((t) => t.created === false).length;
 
   if (opts.json) {
-    io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
   } else {
     printReport(report, io);
   }
@@ -214,7 +246,7 @@ function printReport(report: ImportReport, io: IO): void {
     const rows = report.terms.map((t) => [
       t.canonical,
       t.aliases.length > 0 ? t.aliases.join(', ') : '(none)',
-      t.created ? 'new' : 'merged',
+      t.created === undefined ? 'untrusted file' : t.created ? 'new' : 'merged',
     ]);
     io.stdout(renderTable(rows, ['canonical', 'aliases', 'status']));
   }
@@ -230,6 +262,49 @@ function printReport(report: ImportReport, io: IO): void {
   for (const s of report.skipped) {
     io.stderr(`lexicon: skipped line ${s.line}: ${safe(s.reason)}\n`);
   }
+}
+
+/** Options that only `--guided` reads, by flag. */
+const GUIDED_ONLY_FLAGS = [
+  ['sources', '--sources'],
+  ['limit', '--limit'],
+  ['yes', '--yes'],
+  ['previewId', '--preview-id'],
+  ['accept', '--accept'],
+  ['home', '--home'],
+] as const;
+/** Options that only a file import reads, by flag. */
+const FILE_ONLY_FLAGS = [
+  ['source', '--source'],
+  ['category', '--category'],
+  ['format', '--format'],
+] as const;
+
+/**
+ * Why this `lexicon import` command line cannot run as given, or undefined.
+ * The two modes share one command, and each ignored the other's options: a
+ * file import with `--sources` or `--yes`, or `--guided` with `--category`,
+ * ran as if they were not there. A format given both as the positional
+ * argument and as `--format` with different values silently used the
+ * positional one.
+ */
+export function importOptionConflict(formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions): string | undefined {
+  if (formatArg !== undefined && opts.format !== undefined && formatArg !== opts.format) {
+    return `the format is given twice ("${formatArg}" and --format "${opts.format}"); pass one of them`;
+  }
+  const given = (flags: readonly (readonly [keyof (ImportCliOptions & ImportGuidedOptions), string])[]): string[] =>
+    flags.filter(([key]) => opts[key] !== undefined).map(([, flag]) => flag);
+  if (opts.guided) {
+    const stray = given(FILE_ONLY_FLAGS);
+    if (formatArg !== undefined && !stray.includes('--format')) stray.push('the format argument');
+    if (stray.length > 0) return `${stray.join(', ')} ${stray.length === 1 ? 'applies' : 'apply'} to a file import, not to --guided; drop ${stray.length === 1 ? 'it' : 'them'}`;
+    return undefined;
+  }
+  const stray = given(GUIDED_ONLY_FLAGS);
+  if (stray.length > 0) {
+    return `${stray.join(', ')} ${stray.length === 1 ? 'applies' : 'apply'} only with --guided; add --guided, or drop ${stray.length === 1 ? 'it' : 'them'} to import a file`;
+  }
+  return undefined;
 }
 
 export function registerImportCommands(program: Command, io: IO): void {
@@ -253,6 +328,11 @@ export function registerImportCommands(program: Command, io: IO): void {
     .option('--json', 'print the result as JSON')
     .action(async (file: string | undefined, formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();
+      const conflict = importOptionConflict(formatArg, opts);
+      if (conflict !== undefined) {
+        process.exitCode = refuse(io, opts.json, conflict, 'see the usage: lexicon import --help');
+        return;
+      }
       const merged: ImportCliOptions & ImportGuidedOptions = {
         ...opts,
         ...(formatArg !== undefined ? { format: formatArg } : {}),
@@ -260,8 +340,7 @@ export function registerImportCommands(program: Command, io: IO): void {
       };
       if (merged.guided) {
         if (file !== undefined) {
-          io.stderr('lexicon: --guided takes no file argument (it harvests from your sources instead)\n');
-          process.exitCode = 1;
+          process.exitCode = refuse(io, merged.json, '--guided takes no file argument (it harvests from your sources instead)');
           return;
         }
         const code = await runImportGuided(merged, io);
@@ -269,8 +348,7 @@ export function registerImportCommands(program: Command, io: IO): void {
         return;
       }
       if (file === undefined) {
-        io.stderr('lexicon: pass a file to import, - for stdin, or --guided for the vocabulary import wizard\n');
-        process.exitCode = 1;
+        process.exitCode = refuse(io, merged.json, 'pass a file to import, - for stdin, or --guided for the vocabulary import wizard');
         return;
       }
       const code = await runImport(file, merged, io);

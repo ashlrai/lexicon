@@ -19,10 +19,21 @@ const NAMED_ENTITIES: Record<string, string> = {
   apos: "'",
 };
 
+/**
+ * Decode the five named entities and numeric character references. A numeric
+ * reference XML does not allow (NUL, a surrogate, past U+10FFFF) is left as
+ * written, like an unknown named entity: `String.fromCodePoint` throws a bare
+ * RangeError on the out-of-range ones, which ended the whole import on one
+ * bad entry.
+ */
 export function xmlUnescape(value: string): string {
   return value.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, body: string) => {
-    if (body.startsWith('#x') || body.startsWith('#X')) return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-    if (body.startsWith('#')) return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
+    if (body.startsWith('#')) {
+      const hex = body[1] === 'x' || body[1] === 'X';
+      const code = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+      const allowed = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+      return allowed ? String.fromCodePoint(code) : whole;
+    }
     return NAMED_ENTITIES[body] ?? whole;
   });
 }

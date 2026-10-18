@@ -36,7 +36,9 @@
  *
  * **A mention inside its own quotation marks is named, not used.** `"Ashler"`,
  * `'ashlur'`, `` `Ashlr AI` ``: the use-mention convention of written English,
- * and the only rule here that reads no vocabulary at all. That is why it is the
+ * and the only rule here that reads no vocabulary at all. Its anchor is the
+ * whole paragraph (to the nearest blank lines), not just the block and the one
+ * above, because the quotation marks already carry the evidence. That is why it is the
  * one that holds for the project's own documentation, where the words around
  * the quote - "pronounced", "generates likely STT misspellings", "you write" -
  * are ordinary English no word list is going to contain.
@@ -448,6 +450,143 @@ function leadContrasts(text: string, blockFrom: number, first: Point, second: Po
   return last === undefined || !DETERMINERS.has(last);
 }
 
+/** A line holding only spaces, tabs or a carriage return. */
+function isBlankLine(text: string, from: number, to: number): boolean {
+  for (let i = from; i < to; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== 0x20 && c !== 0x09 && c !== 0x0d) return false;
+  }
+  return true;
+}
+
+/** Index of the last entry of sorted `xs` that is <= `x`, or -1. */
+function lastAtMost(xs: readonly number[], x: number): number {
+  let lo = 0;
+  let hi = xs.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= x) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
+
+/** One paragraph, folded once: `folded` plus the folded length before each offset. */
+interface FoldedParagraph {
+  folded: string;
+  /** `before[i]` is the folded length of `text.slice(from, from + i)`. */
+  before: Uint32Array;
+  /** Start offsets in `folded` of every (overlapping) match, per folded canonical. */
+  matches: Map<string, number[]>;
+}
+
+/** Index of the first value in ascending `sorted` that is at least `min`. */
+function firstAtOrAfter(sorted: readonly number[], min: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sorted[mid] < min) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Answers `holds` for any span of the text in time proportional to the
+ * canonical, after one linear pass per paragraph. Recomputing the paragraph
+ * per quoted mention (walking back to the blank line, folding the paragraph)
+ * made a long paragraph of quoted aliases quadratic.
+ *
+ * Folding is per code point, on both the text and the canonical, so a slice
+ * folds to the same string as the matching stretch of the paragraph's fold.
+ */
+class ParagraphIndex {
+  /** Newline offsets that end a blank line (a paragraph starts after one). */
+  private readonly blankEnds: number[] = [];
+  /** Newline offsets followed by a blank line that is itself newline-terminated. */
+  private readonly breaks: number[] = [];
+  private readonly cache = new Map<number, FoldedParagraph>();
+
+  constructor(private readonly text: string) {
+    let lineStart = 0;
+    let prevNewline = -1;
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+      if (isBlankLine(text, lineStart, i)) {
+        if (i > 0) this.blankEnds.push(i);
+        if (prevNewline >= 0) this.breaks.push(prevNewline);
+      }
+      prevNewline = i;
+      lineStart = i + 1;
+    }
+  }
+
+  /**
+   * True when the canonical stands (in any folded spelling) somewhere in the
+   * paragraph around `start..end`, outside the span itself. A paragraph runs
+   * from just after the nearest blank line above to the nearest blank line
+   * below.
+   */
+  holds(start: number, end: number, canonical: string): boolean {
+    const above = lastAtMost(this.blankEnds, start - 1);
+    const from = above < 0 ? 0 : this.blankEnds[above] + 1;
+    const belowAt = lastAtMost(this.breaks, end - 1) + 1;
+    const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
+
+    const para = this.paragraph(from, to);
+    const needle = foldPerCodePoint(canonical);
+    if (needle.length === 0) return false;
+    let found = para.matches.get(needle);
+    if (!found) {
+      found = [];
+      for (let at = para.folded.indexOf(needle); at >= 0; at = para.folded.indexOf(needle, at + 1)) found.push(at);
+      para.matches.set(needle, found);
+    }
+    const k1 = para.before[start - from];
+    const k2 = para.before[end - from];
+    // Wholly before the span, or wholly after it.
+    if (found.length > 0 && found[0] + needle.length <= k1) return true;
+    if (found.length > 0 && found[found.length - 1] >= k2) return true;
+    // Folding drops the quotation marks, so the text either side of the span
+    // can join into the canonical once the span is taken out.
+    const n = needle.length - 1;
+    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
+    return joined.includes(needle);
+  }
+
+  private paragraph(from: number, to: number): FoldedParagraph {
+    const cached = this.cache.get(from);
+    if (cached) return cached;
+    const before = new Uint32Array(to - from + 1);
+    const parts: string[] = [];
+    let length = 0;
+    let i = from;
+    while (i < to) {
+      const cp = this.text.codePointAt(i)!;
+      const width = cp > 0xffff ? 2 : 1;
+      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      before[i - from] = length;
+      if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
+      parts.push(piece);
+      length += piece.length;
+      i += width;
+    }
+    before[to - from] = length;
+    const para = { folded: parts.join(''), before, matches: new Map<string, number[]>() };
+    this.cache.set(from, para);
+    return para;
+  }
+}
+
+function foldPerCodePoint(value: string): string {
+  let out = '';
+  for (const ch of value) out += foldSpelling(ch);
+  return out;
+}
+
 /**
  * Drop the rewrites that would flatten a passage which is quoting spellings.
  * Pure, and order-preserving for everything it keeps.
@@ -457,6 +596,7 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
 
   const declined = new Set<number>();
   const occurrences = new Map<string, number[]>();
+  let paragraphs: ParagraphIndex | null = null;
   // Both lists are sorted by offset, so one pointer walks the spans once across
   // all blocks. Rescanning every span per block made this quadratic: a 1 MB
   // document, which is what the local API accepts, took seconds.
@@ -496,9 +636,16 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
         bare = wordOccurrences(text, result);
         occurrences.set(result, bare);
       }
-      for (const at of bare) {
-        if (at < from || at + result.length > to) continue;
-        if (here.some(({ span }) => at < span.end && span.start < at + result.length)) continue;
+      // `bare` is in offset order and `here` holds sorted, non-overlapping
+      // spans, so both walk forward from this block's start. Scanning every
+      // occurrence in the text per block, and every span per occurrence, made
+      // a long paste full of hits quadratic after the time budget had ended.
+      let span = 0;
+      for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
+        const at = bare[o];
+        if (at + result.length > to) break;
+        while (span < here.length && here[span].span.end <= at) span++;
+        if (span < here.length && here[span].span.start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
 
@@ -510,16 +657,25 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
         // Folded, like every other test for the canonical here: the paragraph
         // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
         (previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result)));
-      if (!anchored) continue;
 
       // A mention inside its own quotation marks is named, not used, and that
       // is true whatever the rest of the sentence says. It is the one rule here
       // that consults no vocabulary, which is why it holds for the sentences
       // the vocabulary will never cover: `suggestAliases("Ashlr.AI") -> "Ashler"`,
       // `pronounced "ashler"`, `you write "Ashler", they say it's Ashlr.AI`.
+      //
+      // Its anchor reaches the whole paragraph, not only this sentence and the
+      // one above: a changelog bullet or README paragraph names the canonical,
+      // spends two sentences on something else and then quotes the alias. The
+      // quotation marks are the evidence, so the wider anchor costs dictation
+      // nothing; linking below still uses the narrow one.
       for (const p of points) {
-        if (p.index !== null && isTightQuoted(text, p.start, p.end)) declined.add(p.index);
+        if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
+        if (anchored || (paragraphs ??= new ParagraphIndex(text)).holds(p.start, p.end, result)) {
+          declined.add(p.index);
+        }
       }
+      if (!anchored) continue;
 
       points.sort((a, b) => a.start - b.start);
       const links: Link[] = [];

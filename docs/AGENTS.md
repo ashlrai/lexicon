@@ -34,7 +34,10 @@ curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 ```
 
 Checks for Node 20+, installs the `@ashlr/lexicon` CLI, then runs
-`lexicon setup`. On a machine where you should not install globally:
+`lexicon setup` if it has a terminal. Run by an agent with no terminal, under
+`sudo` or with `LEXICON_NO_SETUP=1`, it only installs and ends with a line
+that says why, then `run: lexicon setup`; run `lexicon setup --yes` (or the `setup_lexicon`
+tool) after. On a machine where you should not install globally:
 
 ```bash
 npx @ashlr/lexicon@latest setup
@@ -52,7 +55,23 @@ lexicon setup --yes --packs developer,ai --json
 under `--yes`, because each writes a lot or installs a service. `--dry-run`
 prints the plan and writes nothing; run that first and show it to your user.
 `--clients none` installs into no client. `--json` gives you a `SetupSummary`
-instead of prose.
+(or the `SetupPlan` under `--dry-run`) instead of prose, led by `ok` (false
+when a client or the login service failed, exit 1); a refusal is
+`{ ok: false, error, nextStep }`.
+
+Any other `--json` command that fails without a result of its own to print
+(an unknown flag value, a missing file, an untrusted project lexicon, a lexicon
+file that does not parse) prints `{ ok: false, error, nextStep }` on stdout as
+well as the `lexicon:` line on stderr, and exits non-zero. `nextStep` is always
+there: the command that fixes it when there is one (`lexicon edit` for a file
+that does not parse, `lexicon trust` for an untrusted project lexicon), else
+`fix what error names, then run the command again (its --help lists the flags)`.
+Only `lexicon voice` adds `code` (its exit code, which can be 1, 2 or 3). A command line that does not parse
+(an unknown option or command, a missing argument, an invalid `--port`) does the
+same whenever `--json` is on it before any `--`: commander's message as `error`,
+`nextStep` naming that command's `--help`, and commander's exit code (1).
+`lexicon voice --json` is the exception:
+its failures are on stderr with exit codes 1 to 3.
 
 ## Register the MCP server
 
@@ -87,7 +106,9 @@ One command per client, each writing that client's own config file:
 | Anything else | `lexicon install generic` prints the block to paste |
 
 Drop `--apply` to print the diff without writing. Do that first when your user
-has not seen what you are about to change. From inside an MCP session you have
+has not seen what you are about to change. Add `--json` for one document:
+`{ ok: true, client, scope, applied, written, output }`, or
+`{ ok: false, error, nextStep }` for an unknown client or scope. From inside an MCP session you have
 the same thing as a tool: `install_client { client, apply? }`.
 
 In Claude Code, `lexicon install claude --apply` also merges a `SessionStart`
@@ -134,9 +155,12 @@ tell your user what will change, and wait for a yes.
 
 Project-scope writes are gated. A repository's `.lexicon.yaml` is untrusted until
 the user reviews it, because its contents reach model context and a hostile
-repository could use that. If a write is refused with "project lexicon at
+repository could use that. Over MCP, a project-scope write to a file that is
+not trusted yet is saved but left untrusted: the result says `trusted: false`,
+so relay its `nextStep` instead of reporting the terms as active. From the CLI
+the same write is refused. If a write is refused with "project lexicon at
 &lt;path&gt; is untrusted", do not work around it: call
-`trust_project { action: 'status' }`, show your user the sanitized preview, and
+`trust_project { action: 'status' }`, show your user the sanitized summary (they see the full preview with `lexicon trust` in a terminal), and
 let them decide. Never set `LEXICON_TRUST_ALL=1` on a user's behalf.
 
 ## Verify it worked
@@ -201,10 +225,12 @@ publication, installation or authenticated-import acceptance.
 
 ## Where the machine-readable files are in this repository
 
-- `.mcp.json` - the server block Claude Code reads when this repository is the
-  plugin root. It runs `plugin/mcp-server.mjs`, a committed single-file bundle
-  with every dependency inlined, so a plugin install needs no `npm install` and
-  no build step.
+- `.claude-plugin/plugin.json` - declares the server block Claude Code runs for
+  the installed plugin (`node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs`). It
+  runs `plugin/mcp-server.mjs`, a committed single-file bundle with every
+  dependency inlined, so a plugin install needs no `npm install` and no build
+  step. `.mcp.json` runs the same bundle by relative path when this repository
+  is opened as a project.
 - `.claude-plugin/marketplace.json` - the Claude Code marketplace manifest, which
   is what `claude plugin marketplace add ashlrai/lexicon` reads.
 - `.claude-plugin/plugin.json`, `hooks/hooks.json`, `skills/lexicon/SKILL.md`,

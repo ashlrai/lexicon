@@ -12,20 +12,20 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 |---|---|
 | [`lexicon init [options]`](#lexicon-init) | create the lexicon file (global by default) if it does not exist |
 | [`lexicon add [options] <canonical> [aliases...]`](#lexicon-add) | add a term, or merge aliases into an existing one |
-| [`lexicon remove\|rm [options] <canonical>`](#lexicon-remove) | remove a term (project lexicon first, then global) |
+| [`lexicon remove\|rm [options] <canonical>`](#lexicon-remove) | remove a term (project lexicon first, then global), or one alias of it with --alias |
 | [`lexicon list\|ls [options]`](#lexicon-list) | list terms from the merged global + project lexicon |
 | [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read |
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
 | [`lexicon export [options] [format]`](#lexicon-export) | export the merged lexicon for another tool (run without a format to list them) |
-| [`lexicon path`](#lexicon-path) | print the resolved global and project lexicon paths |
-| [`lexicon doctor`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
+| [`lexicon path [options]`](#lexicon-path) | print the resolved global and project lexicon paths |
+| [`lexicon doctor [options]`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
-| [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit hook (reads JSON from stdin) |
+| [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
 | [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
-| [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview first) |
-| [`lexicon untrust [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
+| [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal) |
+| [`lexicon untrust [options] [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
 | [`lexicon learn [options] [words...]`](#lexicon-learn) | record a spelling correction: what STT heard and what you meant |
 | [`lexicon stats [options]`](#lexicon-stats) | show term/alias counts, most-used terms and terms that never fired |
 | [`lexicon serve [options]`](#lexicon-serve) | run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps |
@@ -46,26 +46,26 @@ agent sees them.
 
 Options:
   -V, --version                           output the version number
-  --cwd <dir>                             directory used to find the project .lexicon.yaml (default: current directory)
+  --cwd <dir>                             directory used to find the project .lexicon.yaml; must exist (default: current directory)
   -h, --help                              display help for command
 
 Commands:
   init [options]                          create the lexicon file (global by default) if it does not exist
   add [options] <canonical> [aliases...]  add a term, or merge aliases into an existing one
-  remove|rm [options] <canonical>         remove a term (project lexicon first, then global)
+  remove|rm [options] <canonical>         remove a term (project lexicon first, then global), or one alias of it with --alias
   list|ls [options]                       list terms from the merged global + project lexicon
   normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
-  path                                    print the resolved global and project lexicon paths
-  doctor                                  check lexicon files, term conflicts and the Claude Code integration
+  path [options]                          print the resolved global and project lexicon paths
+  doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
-  hook                                    run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
+  hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
-  trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview first)
-  untrust [path]                          revoke approval for a project .lexicon.yaml
+  trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)
+  untrust [options] [path]                revoke approval for a project .lexicon.yaml
   learn [options] [words...]              record a spelling correction: what STT heard and what you meant
   stats [options]                         show term/alias counts, most-used terms and terms that never fired
   serve [options]                         run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps
@@ -76,6 +76,9 @@ Commands:
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
   pack                                    starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
+
+Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
+Check an install: lexicon doctor
 ```
 
 ## `lexicon init`
@@ -87,6 +90,8 @@ create the lexicon file (global by default) if it does not exist
 
 Options:
   --project   create a project .lexicon.yaml at the git root (or cwd) instead
+  --json      print { ok: true, scope, path, created } as JSON (plus trust for
+              --project)
   -h, --help  display help for command
 ```
 
@@ -112,6 +117,8 @@ Options:
                          phonetic hint and category
   --never <word...>      words that must never be rewritten to this term even if
                          they sound alike, e.g. --never sauce
+  --json                 print the saved term, file path and whether it was
+                         created as JSON
   -h, --help             display help for command
 ```
 
@@ -120,11 +127,20 @@ Options:
 ```text
 Usage: lexicon remove|rm [options] <canonical>
 
-remove a term (project lexicon first, then global)
+remove a term (project lexicon first, then global), or one alias of it with
+--alias
 
 Options:
-  --project   only look in the project lexicon
-  -h, --help  display help for command
+  --alias <alias>  remove only this alias from the term and keep the term (exit
+                   1 when the term or alias is unknown)
+  --project        only look in the project lexicon
+  --global         only look in the global lexicon (not with --project)
+  --json           print { ok: true, canonical, removed } as JSON (exit 1 when
+                   not found, with ok: false and error), plus stillIn when a
+                   copy is left in the other lexicon file and untrustedProject
+                   when the untrusted project lexicon has one; with --alias also
+                   alias, aliases and paths
+  -h, --help       display help for command
 ```
 
 ## `lexicon list`
@@ -135,7 +151,11 @@ Usage: lexicon list|ls [options]
 list terms from the merged global + project lexicon
 
 Options:
-  --json                 print terms as JSON
+  --json                 print terms as JSON (a bare array)
+  --full                 print { ok: true, terms, counts, paths } as JSON, ok
+                         and then the object MCP list_terms returns, plus
+                         projectTrust, skippedProject and note when an untrusted
+                         project lexicon was left out (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
   -h, --help             display help for command
@@ -150,9 +170,17 @@ correct dictated text (from arguments, or stdin when omitted); stdout always
 round-trips the input, exit 1 if the lexicon could not be read
 
 Options:
-  --json                print the full NormalizeResult as JSON
-  --diff                print a summary of replacements to stderr
-  --dry-run             report replacements without applying them
+  --json                print ok: true and the full NormalizeResult as JSON ({
+                        ok: false, error, nextStep } and the unchanged input
+                        when the lexicon fails to load; { ok: false, error,
+                        nextStep } alone for a bad --min-confidence), plus
+                        example: true when the built-in example terms stood in
+                        and projectTrust, skippedProject and note when an
+                        untrusted project lexicon was left out
+  --diff                print a summary of replacements to stderr (with --json
+                        too)
+  --dry-run             print the replacement summary to stderr and the text
+                        unchanged to stdout
   --min-confidence <n>  minimum confidence (0..1) for fuzzy/phonetic matches
   --no-phonetic         disable phonetic matching
   --no-fuzzy            disable fuzzy (edit-distance) matching
@@ -181,7 +209,13 @@ Options:
   --yes              with --add: add every candidate without prompting
   --symbols          also propose names seen only as a code symbol (off: they
                      are what you type, not what you say)
-  --json             print candidates as JSON
+  --json             print candidates as JSON (a bare array; with --add it is
+                     printed after the writes, the add summary goes to stderr,
+                     and a failed write prints only { ok: false, error, added,
+                     created, merged, path })
+  --full             print { ok: true, root, candidates, count } as JSON, the
+                     keys MCP harvest_repo returns, plus added, created, merged
+                     and path with --add (implies --json)
   -h, --help         display help for command
 ```
 
@@ -196,6 +230,12 @@ Options:
   --out <file>                write to a file instead of stdout
   --category <categories...>  only these categories
   --limit <n>                 cap the number of terms
+  --json                      print { ok: true, format, terms, bytes, path }
+                              after writing --out, or { ok: true, format, terms,
+                              bytes, content } with the export as a string
+                              without it; { ok: true, formats } with no format
+                              (plus projectTrust, skippedProject and note when
+                              an untrusted project lexicon was left out)
   -h, --help                  display help for command
 ```
 
@@ -207,6 +247,8 @@ Usage: lexicon path [options]
 print the resolved global and project lexicon paths
 
 Options:
+  --json      print { ok: true, global, project } as JSON (project is null when
+              there is no project lexicon)
   -h, --help  display help for command
 ```
 
@@ -218,6 +260,9 @@ Usage: lexicon doctor [options]
 check lexicon files, term conflicts and the Claude Code integration
 
 Options:
+  --json      print the report as JSON ({ ok, ready, summary, nextStep, checks,
+              ... } plus error, the first failing check, when ok is false; as
+              the lexicon_doctor MCP tool returns it)
   -h, --help  display help for command
 ```
 
@@ -237,7 +282,8 @@ Options:
 ```text
 Usage: lexicon hook [options]
 
-run as a Claude Code UserPromptSubmit hook (reads JSON from stdin)
+run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON
+from stdin)
 
 Options:
   -h, --help  display help for command
@@ -318,6 +364,9 @@ Options:
   --scope <scope>  user|project (project = the repo-level config file)
   --project        same as --scope project
   --home <dir>     treat <dir> as the home directory (mainly for tests)
+  --json           print { ok: true, client, scope, applied, written, output }
+                   as JSON ({ ok: false, error, nextStep } for an unknown client
+                   or scope)
   -h, --help       display help for command
 ```
 
@@ -326,7 +375,8 @@ Options:
 ```text
 Usage: lexicon trust [options] [path]
 
-approve a project .lexicon.yaml so its terms are merged (shows a preview first)
+approve a project .lexicon.yaml so its terms are merged (shows a preview, then
+asks on a terminal)
 
 Arguments:
   path        lexicon file or project directory (default: the project
@@ -334,6 +384,10 @@ Arguments:
 
 Options:
   --list      list trusted project lexicons and whether they still match
+  -y, --yes   trust without asking (off a terminal it never asks)
+  --json      print the result as JSON: ok, then the object MCP trust_project
+              returns, with the full preview where MCP has a summary (with
+              --list: { ok, registry, trustAll, trusted })
   -h, --help  display help for command
 ```
 
@@ -349,6 +403,8 @@ Arguments:
               .lexicon.yaml for the current directory)
 
 Options:
+  --json      print { ok, action, path, removed, registry, summary } as JSON, as
+              MCP trust_project returns it plus ok
   -h, --help  display help for command
 ```
 
@@ -394,8 +450,11 @@ Options:
   --port <n>     port to listen on (default 41733; 0 picks a free port)
   --host <host>  interface to bind (default 127.0.0.1; anything else is exposed
                  to the network)
-  --json         print the listening info (or --show/--status result) as JSON
-  --quiet        do not log requests
+  --json         print the listening info (or the --show, --status, --pair,
+                 --install or --uninstall result) as JSON, led by ok (for
+                 --status, ok equals up)
+  --quiet        do not log requests (only when running the server; refused with
+                 --show, --status, --pair, --install, --uninstall)
   --show         print the URL and bearer token (for the extension options page)
                  and exit
   --status       check whether the server is up and exit
@@ -434,8 +493,12 @@ Options:
   --copy                 also put the corrected text on the clipboard
   --paste                copy and paste into the frontmost app (macOS; needs
                          Accessibility permission)
-  --json                 print { raw, output, replacements, summary, model,
-                         seconds, ms } as JSON
+  --json                 print { ok: true, raw, output, replacements, summary,
+                         model, seconds, ms } as JSON (with --toggle, a press
+                         that starts prints {"status":"recording"}); every
+                         failure prints { ok: false, error, nextStep?, code }
+                         with code the exit code (over the result when there is
+                         text, e.g. nothing heard or a failed --paste)
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```
@@ -471,11 +534,12 @@ Options:
   --no-serve          skip installing the local API login service (no prompt)
   --dry-run           detect and suggest only; write nothing and print what a
                       run would do
-  --reseed            seed person/company terms even if the lexicon already has
-                      terms
+  --reseed            also seed the guessed person/company (git user.name,
+                      package scope) when the lexicon already has terms
   --home <dir>        treat <dir> as the home directory (mainly for tests)
-  --json              print a machine-readable summary on stdout (progress goes
-                      to stderr)
+  --json              print a machine-readable summary on stdout, led by ok
+                      (progress goes to stderr; a refusal prints { ok: false,
+                      error, nextStep })
   -h, --help          display help for command
 ```
 
@@ -487,7 +551,8 @@ Usage: lexicon suggest [options]
 suggest aliases, new terms, never-words and stale terms from your voice history
 
 Options:
-  --json           print the suggestions as JSON
+  --json           print the suggestions as JSON; with --yes, one document
+                   naming what was applied and the file each went to
   --apply          walk the suggestions one by one: y apply, n skip, a apply all
                    remaining, q quit
   --yes            apply every suggestion at or above 0.80 confidence without
@@ -513,6 +578,9 @@ Options:
                          file
   --global               review the global lexicon (the default)
   --category <category>  only this category
+  --json                 refused (exit 1): review asks about each term; prints {
+                         ok: false, error, nextStep } naming list --json, remove
+                         and add, and the MCP tools
   -h, --help             display help for command
 ```
 
@@ -526,6 +594,8 @@ afterwards
 
 Options:
   --project   open the project .lexicon.yaml instead of the global file
+  --json      refused (exit 1): edit opens an editor; prints { ok: false, error,
+              nextStep } naming add, remove and the MCP tools
   -h, --help  display help for command
 ```
 

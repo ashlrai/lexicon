@@ -87,7 +87,7 @@ npm i -g @ashlr/lexicon                                        # or npm (Node 20
 
 Then open Claude Code and say a sentence with your company name in it. Done.
 
-The install script runs `lexicon setup` for you (`LEXICON_NO_SETUP=1` skips it); after a Homebrew or npm install, run it yourself. Every step is optional and safe to rerun, and `lexicon setup --dry-run` writes nothing while describing the run you would get from the same command without it: the steps it would perform, and the ones it would stop and ask about, with the answer pressing Enter gives each.
+The install script runs `lexicon setup` for you when it has a terminal to ask questions on; without one (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1` it installs only and tells you to run `lexicon setup` yourself, as after a Homebrew or npm install. Every step is optional and safe to rerun, and `lexicon setup --dry-run` writes nothing while describing the run you would get from the same command without it: the steps it would perform, and the ones it would stop and ask about, with the answer pressing Enter gives each.
 
 With Homebrew, always use the full tap name `ashlrai/tap/lexicon`. Plain `brew install lexicon` installs [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), an unrelated DNS tool in homebrew-core.
 
@@ -154,6 +154,8 @@ Cursor (`~/.cursor/mcp.json`):
 ```json
 { "mcpServers": { "lexicon": { "command": "npx", "args": ["-y", "-p", "@ashlr/lexicon", "lexicon-mcp"] } } }
 ```
+
+The environment variables the server reads (`LEXICON_PATH`, `LEXICON_HARVEST_ROOTS`, `LEXICON_REGISTRIES` and the rest) are listed in [docs/MCP.md](docs/MCP.md#environment-variables).
 
 ## Why
 
@@ -237,6 +239,10 @@ Non-goals: this is not a dictation app, and there are no hosted accounts and no 
 ## Part of the Ashlr ecosystem
 
 Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forward-deployed engineering company: [Phantom Secrets](https://github.com/ashlrai/phantom-secrets), [Locus](https://github.com/ashlrai/locus), [Ashlr Stack](https://github.com/ashlrai/ashlr-stack), [Ashlr Markdown](https://github.com/ashlrai/ashlr-md) and the [Ashlr plugin](https://github.com/ashlrai/ashlr-plugin).
+
+**Phantom:** [INTEGRATION.md](./INTEGRATION.md) is a sketch, written from Lexicon's side, of the contract Phantom would integrate against (the lexicon file, the trust gate, the normalize entry points). It changes nothing in Phantom core.
+
+**Post-quantum readiness:** [docs/PQ-READINESS.md](./docs/PQ-READINESS.md) records what Lexicon does with cryptography today (SHA-256 and SHA-512 hashes for integrity; no encryption, key exchange or signing in the shipped source) and what a migration would touch. It makes no claim that Lexicon is quantum-safe.
 
 ## Contributing
 

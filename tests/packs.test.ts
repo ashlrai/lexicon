@@ -7,7 +7,28 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Pass-through wrappers that count YAML parses, so the install-cost test can
+ * check that a pack is installed with a bounded number of reads and writes
+ * rather than one read-parse-write per term. Behaviour is unchanged.
+ */
+const yamlParses = vi.hoisted(() => ({ count: 0 }));
+vi.mock('yaml', async (importOriginal) => {
+  const real = await importOriginal<typeof import('yaml')>();
+  return {
+    ...real,
+    parse: (...args: Parameters<typeof real.parse>) => {
+      yamlParses.count += 1;
+      return real.parse(...args);
+    },
+    parseDocument: (...args: Parameters<typeof real.parseDocument>) => {
+      yamlParses.count += 1;
+      return real.parseDocument(...args);
+    },
+  };
+});
 import {
   DEFAULT_PACKS,
   PACK_NAME_RE,
@@ -28,6 +49,8 @@ import {
   readGlobalHits,
   readLexiconFile,
   recordHits,
+  isTrusted,
+  trustProject,
   uninstallPack,
 } from '../src/core/index.js';
 import { STOPLIST } from '../src/core/stoplist.js';
@@ -332,6 +355,23 @@ describe('installPack / uninstallPack', () => {
     expect(normalize('ask and tropic about em see pee', loaded.merged).output).toBe('ask Anthropic about MCP');
   });
 
+  it('installs a pack with a bounded number of YAML parses, not a read and write per term', async () => {
+    // Each write re-parses the whole file to edit it in place and to check it
+    // reads back, so one addTerm per term was quadratic: the 82-term developer
+    // pack parsed the growing file about 250 times and took seconds, enough
+    // to hit this suite's timeout under full-suite load.
+    const pack = await loadPack('developer');
+    yamlParses.count = 0;
+    await installPack('developer', { cwd, globalPath });
+    const fresh = yamlParses.count;
+    yamlParses.count = 0;
+    await installPack('developer', { cwd, globalPath });
+    const again = yamlParses.count;
+    expect(pack.terms).toBeGreaterThan(50);
+    expect(fresh).toBeLessThan(15);
+    expect(again).toBeLessThan(15);
+  });
+
   it('merges into a term the user already has without touching their aliases, source or phonetic', async () => {
     await addTerm(
       { canonical: 'kubernetes', aliases: ['kube', 'k8s'], phonetic: 'my way', category: 'other', notes: 'mine', never: ['cubes'] },
@@ -424,6 +464,27 @@ describe('installPack / uninstallPack', () => {
     expect(after.lexicon.terms.map((t) => t.canonical)).toEqual(['Superwhisper']);
   });
 
+  // Catches: with leaveUntrusted the terms were written unpinned, but the
+  // settings.packs rewrite then ran refreshTrust, which re-pinned a file
+  // that had changed since it was trusted: the side door the flag closes.
+  it('with leaveUntrusted creates a new project file untrusted and leaves a changed one changed', async () => {
+    const repo = path.join(home, 'repo-unpinned');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const opts = { cwd: repo, globalPath, scope: 'project' as const, leaveUntrusted: true };
+    const status = async () => isTrusted(await readLexiconFile(projectPath, 'project'), { cwd: repo, globalPath });
+
+    await installPack('voice-tools', opts);
+    expect(await status()).toBe('untrusted');
+
+    await trustProject(projectPath, { cwd: repo, globalPath });
+    await fs.appendFile(projectPath, '# edited after trust\n');
+    expect(await status()).toBe('changed');
+    await installPack('developer', opts);
+    expect(await status()).toBe('changed');
+    expect((await readLexiconFile(projectPath, 'project')).lexicon.settings?.packs).toEqual(['voice-tools', 'developer']);
+  });
+
   it('installs into a project lexicon (created and trusted) and removes from it under the trust gate', async () => {
     const repo = path.join(home, 'repo');
     await fs.mkdir(path.join(repo, '.git'), { recursive: true });
@@ -485,6 +546,15 @@ describe('installPack / uninstallPack', () => {
     const badShow = makeIO();
     expect(await runPackShow('nope', { cwd }, badShow)).toBe(1);
     expect(badShow.err).toContain('unknown pack');
+    // Catches: an unknown pack under --json got the generic nextStep, not the pack list.
+    const badShowJson = makeIO();
+    expect(await runPackShow('nope', { cwd, json: true }, badShowJson)).toBe(1);
+    expect(JSON.parse(badShowJson.out)).toEqual({
+      ok: false,
+      error: expect.stringContaining('unknown pack "nope"'),
+      nextStep: expect.stringContaining('run lexicon pack list'),
+    });
+    expect(badShowJson.err).toContain('lexicon: run lexicon pack list');
     // A ref-shaped name routes to the registry flow instead of the filesystem.
     const refShow = makeIO();
     expect(await runPackShow('../x', { cwd }, refShow)).toBe(1);

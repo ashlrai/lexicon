@@ -1,7 +1,7 @@
 /**
  * Starter term packs: curated lexicons shipped in `packs/*.yaml` at the
  * package root (developer, ai, business, voice-tools) that a new user installs
- * with one command instead of typing sixty names. A pack is a plain lexicon
+ * with one command instead of typing dozens of names. A pack is a plain lexicon
  * file plus `name`, `title` and `description`; its terms are added with
  * `addTerm` and `source: 'pack'`, so a term the user already has keeps its own
  * spelling, aliases and source and only gains the pack's aliases. The names of
@@ -20,9 +20,9 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import * as z from 'zod';
 import { parseLexicon } from './schema.js';
-import { ProjectTrustError, addTerm, effectiveHits, readHitsFor, readLexiconFile, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
+import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, refreshIndexCache, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
-import { isTrusted, refreshTrust } from './trust.js';
+import { isTrusted, parsedContentHash, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord } from '../util/json.js';
@@ -146,13 +146,13 @@ async function packNames(dir: string): Promise<string[]> {
     .sort();
 }
 
-function parsePack(raw: unknown, file: string, expectedName: string): Pack {
+function parsePack(raw: unknown, file: string, expectedName?: string): Pack {
   const head = PackFileSchema.safeParse(raw);
   if (!head.success) {
     const lines = head.error.issues.map((i) => `  - ${i.path.length > 0 ? i.path.join('.') : '(root)'}: ${i.message}`);
     throw new Error(`Invalid pack at ${file}:\n${lines.join('\n')}`);
   }
-  if (head.data.name !== expectedName) {
+  if (expectedName !== undefined && head.data.name !== expectedName) {
     throw new Error(`Invalid pack at ${file}: name "${head.data.name}" does not match the file name "${expectedName}"`);
   }
   let lexicon: Lexicon;
@@ -197,10 +197,11 @@ export async function loadPackFile(file: string, expectedName?: string): Promise
 
 /**
  * Parse and validate pack text that is already in hand (a downloaded file,
- * an editor buffer). `file` names the source in errors; `expectedName` must
- * match the pack's `name`.
+ * an editor buffer). `file` names the source in errors; `expectedName`, when
+ * given, must match the pack's `name` (omit it to validate a pack file under
+ * any file name, as `lexicon pack validate` does).
  */
-export function parsePackText(text: string, file: string, expectedName: string): Pack {
+export function parsePackText(text: string, file: string, expectedName?: string): Pack {
   let raw: unknown;
   try {
     raw = parseYaml(text, { prettyErrors: false }); // see readLexiconFile: never quote the source line back
@@ -260,9 +261,11 @@ export function installedPacks(loaded: LoadedLexicon): string[] {
  * Rewrite a file's `settings.packs`. Empty lists (the parser's `protectedWords: []`
  * default, an emptied `packs`) are dropped, and so is an empty `settings`, so a
  * file that only ever held packs goes back to how it looked before.
- * Re-pins a project file's trust.
+ * Re-pins a project file's trust and refreshes the index cache for it, unless
+ * `leaveUntrusted` (the install left the file unpinned, and refreshTrust
+ * would bless a changed file).
  */
-async function writePacksSetting(file: LexiconFile, packs: string[], opts: StoreOptions): Promise<void> {
+async function writePacksSetting(file: LexiconFile, packs: string[], opts: StoreOptions, leaveUntrusted = false): Promise<void> {
   const settings: Record<string, unknown> = { ...(file.lexicon.settings ?? {}), packs };
   for (const [key, value] of Object.entries(settings)) {
     if (value === undefined || (Array.isArray(value) && value.length === 0)) delete settings[key];
@@ -270,7 +273,11 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
   if (Object.keys(settings).length > 0) file.lexicon.settings = settings as LexiconFile['lexicon']['settings'];
   else delete file.lexicon.settings;
   await writeLexiconFile(file);
-  if (file.scope === 'project') await refreshTrust(file.path, opts);
+  if (file.scope === 'project' && !leaveUntrusted) {
+    await refreshTrust(file.path, { ...opts, expectedSha256: await parsedContentHash(file) });
+    // Now that the trust entry says what the hook will merge (see addTerm).
+    await refreshIndexCache(file, opts);
+  }
 }
 
 /**
@@ -283,34 +290,41 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
 export async function installLoadedPack(
   pack: Pack,
   recordAs: string,
-  opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
+  opts: StoreOptions & PackOptions & {
+    scope?: TermScope;
+    /** Write a project file without registering it as trusted (addTerm's `leaveUntrusted`); nothing is pinned or re-pinned. */
+    leaveUntrusted?: boolean;
+  } = {},
 ): Promise<InstallPackResult> {
   const scope: TermScope = opts.scope ?? 'global';
+  const leaveUntrusted = opts.leaveUntrusted === true;
   const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
 
-  // One lock around the whole install, not one per term. Each `addTerm` takes
+  // One lock around the whole install, not one per term. `addTerms` takes
   // the same lock and the lock is re-entrant, so this costs nothing extra and
-  // closes the window that mattered: `file` below is the snapshot the last
-  // `addTerm` wrote, and `writePacksSetting` rewrites the whole document from
-  // it. A term another writer added in between was read by nobody here and
-  // would be renamed away by that final write, with the pack still reporting
+  // closes the window that mattered: `file` below is the snapshot `addTerms`
+  // wrote, and `writePacksSetting` rewrites the whole document from it. A
+  // term another writer added in between was read by nobody here and would
+  // be renamed away by that final write, with the pack still reporting
   // success. The trust gate runs in `resolveScopeWritePath`, ahead of the lock.
-  const targetPath = await resolveScopeWritePath(scope, storeOpts);
+  //
+  // `addTerms` rather than one `addTerm` per term: each write re-parses the
+  // whole file twice (to edit it in place and to check it reads back), so a
+  // per-term loop was quadratic in the file size and an 82-term pack took
+  // seconds. One read and one write give the same document.
+  const targetPath = await resolveScopeWritePath(scope, { ...storeOpts, leaveUntrusted });
   return withLexiconLock(targetPath, async () => {
-    let added = 0;
-    let merged = 0;
-    let file: LexiconFile | undefined;
-    for (const term of pack.lexicon.terms) {
-      const incoming: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
-      if (term.never) incoming.never = [...term.never];
-      const result = await addTerm(incoming, { ...storeOpts, scope });
-      file = result.file;
-      if (result.created) added += 1;
-      else merged += 1;
-    }
-    if (!file) throw new Error(`pack "${pack.name}" has no terms`);
+    const incoming = pack.lexicon.terms.map((term) => {
+      const t: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
+      if (term.never) t.never = [...term.never];
+      return t;
+    });
+    if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    const { file, results } = await addTerms(incoming, { ...storeOpts, scope, leaveUntrusted });
+    const added = results.filter((r) => r.created).length;
+    const merged = results.length - added;
     const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
-    await writePacksSetting(file, packs, storeOpts);
+    await writePacksSetting(file, packs, storeOpts, leaveUntrusted);
     return { pack: info(pack), added, merged, path: file.path, scope };
   });
 }
@@ -325,7 +339,7 @@ export async function installLoadedPack(
  */
 export async function installPack(
   name: string,
-  opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
+  opts: StoreOptions & PackOptions & { scope?: TermScope; leaveUntrusted?: boolean } = {},
 ): Promise<InstallPackResult> {
   return installLoadedPack(await loadPack(name, opts), name, opts);
 }

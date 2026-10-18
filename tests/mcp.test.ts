@@ -30,10 +30,14 @@ const loaded: LoadedLexicon = {
 
 const mocks = vi.hoisted(() => ({
   loadLexicon: vi.fn(),
-  normalize: vi.fn(),
+  loadMatcherIndex: vi.fn(),
+  normalizeWithIndex: vi.fn(),
   diffSummary: vi.fn(),
   recordHits: vi.fn(),
   addTerm: vi.fn(),
+  addTerms: vi.fn(),
+  // true: the project file is trusted, so writes keep today's arguments
+  projectWriteTrusted: vi.fn(),
   removeTerm: vi.fn(),
   harvestRepo: vi.fn(),
   exportLexicon: vi.fn(),
@@ -64,6 +68,7 @@ const mocks = vi.hoisted(() => ({
   verifyPackChecksum: vi.fn(),
   parsePackText: vi.fn(),
   installRegistryPack: vi.fn(),
+  assertUserRegistry: vi.fn(),
   // import_vocabulary
   listImportSources: vi.fn(),
   getImportSource: vi.fn(),
@@ -78,6 +83,7 @@ const cli = vi.hoisted(() => ({
   runImport: vi.fn(),
   runInstall: vi.fn(),
   runSetup: vi.fn(),
+  serveInstallBlocker: vi.fn(),
 }));
 
 // The functions are faked; the core's plain data (the TERM_CATEGORIES /
@@ -92,6 +98,7 @@ vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport 
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
 vi.mock('../src/cli/cmd-install.js', () => ({ runInstall: cli.runInstall }));
 vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
+vi.mock('../src/cli/cmd-serve.js', () => ({ serveInstallBlocker: cli.serveInstallBlocker }));
 
 const doctorReport: DoctorReport = {
   ok: false,
@@ -142,6 +149,8 @@ const setupPlan: SetupPlan = {
   wouldInstallClients: ['claude', 'cursor'],
   wouldInstallServe: false,
   wouldInstallPacks: ['developer', 'ai'],
+  packsOnOffer: ['developer', 'ai'],
+  packsToInstall: [],
   wouldExport: [],
 };
 
@@ -179,19 +188,27 @@ function fakeNormalize(text: string, _lexicon: Lexicon, opts?: { dryRun?: boolea
 
 beforeEach(() => {
   mocks.loadLexicon.mockResolvedValue(loaded);
-  mocks.normalize.mockImplementation(fakeNormalize);
+  mocks.loadMatcherIndex.mockImplementation(async (l: LoadedLexicon) => ({ lexicon: l.merged }));
+  mocks.normalizeWithIndex.mockImplementation((text: string, index: { lexicon: Lexicon }, opts?: { dryRun?: boolean }) =>
+    fakeNormalize(text, index.lexicon, opts),
+  );
   mocks.diffSummary.mockImplementation(
     (r: NormalizeResult) =>
       r.replacements.map((x) => `"${x.original}" -> "${x.replacement}" (${x.reason}, ${x.confidence.toFixed(2)})`).join('\n'),
   );
   mocks.recordHits.mockResolvedValue(undefined);
   mocks.suggestAliases.mockImplementation((c: string) => [`${c} heard`, c.toLowerCase()]);
-  mocks.addTerm.mockImplementation(async (term: Term, opts?: { scope?: string }) => ({
+  mocks.addTerm.mockImplementation(async (term: Term, opts?: { scope?: string; defaultAliases?: string[] }) => ({
     file: { path: opts?.scope === 'project' ? '/fake/repo/.lexicon.yaml' : '/fake/global/lexicon.yaml', scope: opts?.scope ?? 'global', lexicon: fixtureLexicon, exists: true },
-    term,
+    term: term.aliases.length === 0 && opts?.defaultAliases ? { ...term, aliases: opts.defaultAliases } : term,
     created: true,
   }));
+  mocks.addTerms.mockImplementation(async (terms: Term[], opts?: { scope?: string }) => ({
+    file: { path: opts?.scope === 'project' ? '/fake/repo/.lexicon.yaml' : '/fake/global/lexicon.yaml', scope: opts?.scope ?? 'global', lexicon: fixtureLexicon, exists: true },
+    results: terms.map((term) => ({ term, created: true })),
+  }));
   mocks.removeTerm.mockResolvedValue(true);
+  mocks.projectWriteTrusted.mockResolvedValue(true);
   mocks.harvestRepo.mockResolvedValue([
     { canonical: 'FooBar', category: 'identifier', source: 'harvest:repo', evidence: ['src/a.ts'], count: 3, suggestedAliases: ['foo bar'] },
   ]);
@@ -344,8 +361,10 @@ describe('lexicon MCP server', () => {
       expect(payload.changed).toBe(true);
       expect(payload.replacements).toHaveLength(1);
       expect(payload.summary).toContain('"Ashler" -> "Ashlr.AI"');
-      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
-      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/repo' });
+      // Trust before parse, as the prompt hook loads: the tool names a skipped
+      // project file by path only. `loaded` spares recordHits a second read.
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/repo', loaded });
     } finally {
       await close();
     }
@@ -382,6 +401,27 @@ describe('lexicon MCP server', () => {
       expect(payload.path).toBe('/fake/repo/.lexicon.yaml');
       expect(payload.created).toBe(true);
       expect(mocks.suggestAliases).toHaveBeenCalledWith('Zoë');
+      // The suggestions go in as the fallback for a new term, never as aliases to merge.
+      expect(mocks.addTerm).toHaveBeenLastCalledWith(
+        { canonical: 'Zoë', aliases: [], source: 'user', category: 'person', scope: 'project' },
+        { cwd: '/fake/repo', scope: 'project', defaultAliases: ['Zoë heard', 'zoë'] },
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  it('add_term with aliases: [] generates none (an explicit empty list is not an omission)', async () => {
+    const { client, close } = await connect();
+    try {
+      const tool = (await client.listTools()).tools.find((t) => t.name === 'add_term');
+      expect(JSON.stringify(tool?.inputSchema)).toMatch(/\[\] adds none/);
+      const result = await client.callTool({ name: 'add_term', arguments: { canonical: 'Zoë', aliases: [] } });
+      expect(result.isError).toBe(false);
+      const payload = JSON.parse(textOf(result)) as { term: Term };
+      expect(payload.term.aliases).toEqual([]);
+      expect(mocks.suggestAliases).not.toHaveBeenCalled();
+      expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Zoë', aliases: [], source: 'user' }, { cwd: '/fake/repo' });
     } finally {
       await close();
     }
@@ -413,10 +453,50 @@ describe('lexicon MCP server', () => {
       expect(payload.count).toBe(1);
       expect(payload.added).toBe(1);
       expect(mocks.harvestRepo).toHaveBeenCalledWith('/fake/repo', {});
-      expect(mocks.addTerm).toHaveBeenCalledWith(
-        expect.objectContaining({ canonical: 'FooBar', aliases: ['foo bar'], scope: 'project', source: 'harvest:repo' }),
+      // One batch write for the candidates, not one addTerm each.
+      expect(mocks.addTerms).toHaveBeenCalledWith(
+        [expect.objectContaining({ canonical: 'FooBar', aliases: ['foo bar'], scope: 'project', source: 'harvest:repo' })],
         { cwd: '/fake/repo', scope: 'project' },
       );
+      expect(mocks.addTerm).not.toHaveBeenCalled();
+      expect(mocks.projectWriteTrusted).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+
+      // A project file that is not trusted yet is written unpinned.
+      mocks.projectWriteTrusted.mockResolvedValue(false);
+      const untrusted = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(JSON.parse(textOf(untrusted))).toMatchObject({ trusted: false });
+      expect(mocks.addTerms).toHaveBeenLastCalledWith([expect.objectContaining({ canonical: 'FooBar' })], { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
+    } finally {
+      await close();
+    }
+  });
+
+  // Catches: harvest_repo with add: true answered isError: false with
+  // added: 0 when every write failed, so an agent reported the candidates as added.
+  it('harvest_repo with add is an error when no candidate could be written, and notes a partial failure', async () => {
+    const { client, close } = await connect();
+    try {
+      // The batch fails, then the one-by-one retry names each candidate's own failure.
+      mocks.addTerms.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      const failed = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(failed.isError).toBe(true);
+      expect(JSON.parse(textOf(failed))).toMatchObject({
+        count: 1,
+        added: 0,
+        failures: [{ canonical: 'FooBar', error: 'EACCES: permission denied' }],
+        note: expect.stringContaining('1 of 1 candidates were not added'),
+      });
+
+      mocks.harvestRepo.mockResolvedValueOnce([
+        { canonical: 'FooBar', category: 'product', count: 2, evidence: [], suggestedAliases: ['foo bar'], source: 'harvest:repo' },
+        { canonical: 'BazQux', category: 'product', count: 2, evidence: [], suggestedAliases: [], source: 'harvest:repo' },
+      ]);
+      mocks.addTerms.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      const partial = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
+      expect(partial.isError).toBe(false);
+      expect(JSON.parse(textOf(partial))).toMatchObject({ added: 1, note: expect.stringContaining('1 of 2 candidates were not added') });
     } finally {
       await close();
     }
@@ -516,6 +596,27 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  it('learn_correction names an untrusted project lexicon that also claims heard, by path only', async () => {
+    mocks.learnCorrection.mockResolvedValue({
+      term: { canonical: 'Vercel', aliases: ['Versel'], scope: 'global' },
+      created: true,
+      aliasAdded: true,
+      file: { path: '/fake/global/lexicon.yaml', scope: 'global', lexicon: fixtureLexicon, exists: true },
+      untrustedProject: { path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' },
+    });
+    const { client, close } = await connect();
+    try {
+      const result = await client.callTool({ name: 'learn_correction', arguments: { heard: 'Versel', meant: 'Vercel' } });
+      const payload = JSON.parse(textOf(result)) as { untrustedProject?: unknown; summary: string };
+      expect(payload.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+      expect(payload.summary).toContain('/fake/repo/.lexicon.yaml is not trusted');
+      expect(payload.summary).toContain('`lexicon trust`');
+      expect(payload.summary).toContain('also claims "Versel"');
+    } finally {
+      await close();
+    }
+  });
+
   it('learn_correction passes scope through and reports refusals as isError', async () => {
     mocks.learnCorrection.mockRejectedValueOnce(new Error('"Ashler" and "ashler" are the same spelling; nothing to learn'));
     const { client, close } = await connect();
@@ -577,7 +678,46 @@ describe('lexicon MCP server', () => {
       expect(result.isError).toBe(false);
       expect(JSON.parse(textOf(result))).toEqual(stats);
       expect(mocks.computeStats).toHaveBeenCalledWith(loaded);
-      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+    } finally {
+      await close();
+    }
+  });
+
+  it('the read-only tools, resources and prompts load without parsing a skipped project file, and still name it by path', async () => {
+    // What loadLexicon returns with parseSkipped: false for an untrusted file:
+    // its path and an empty stand-in lexicon, never its terms.
+    const skipped: LoadedLexicon = {
+      merged: fixtureLexicon,
+      global: loaded.global,
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/fake/repo/.lexicon.yaml', scope: 'project', lexicon: { version: 1, terms: [] }, exists: true },
+    };
+    mocks.loadLexicon.mockResolvedValue(skipped);
+    mocks.computeStats.mockReturnValue({ termCount: 2 });
+    mocks.suggestCanonicalFor.mockReturnValue([]);
+    mocks.listPacks.mockResolvedValue([]);
+    const { client, close } = await connect();
+    const allText = (r: unknown): string => ((r as { content?: { text?: string }[] }).content ?? []).map((c) => c.text ?? '').join('\n');
+    const reads: Array<[string, () => Promise<string>]> = [
+      ['list_terms', async () => allText(await client.callTool({ name: 'list_terms', arguments: {} }))],
+      ['export_lexicon', async () => allText(await client.callTool({ name: 'export_lexicon', arguments: { format: 'claude-md' } }))],
+      ['suggest_canonical', async () => allText(await client.callTool({ name: 'suggest_canonical', arguments: { heard: 'ashlur' } }))],
+      ['lexicon_stats', async () => allText(await client.callTool({ name: 'lexicon_stats', arguments: {} }))],
+      ['list_packs', async () => allText(await client.callTool({ name: 'list_packs', arguments: {} }))],
+      ['lexicon://me', async () => (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? c.text : '')).join('\n')],
+      ['lexicon://json', async () => (await client.readResource({ uri: 'lexicon://json' })).contents.map((c) => ('text' in c ? c.text : '')).join('\n')],
+      ['voice-context', async () => (await client.getPrompt({ name: 'voice-context' })).messages.map((m) => String((m.content as { text?: string }).text)).join('\n')],
+    ];
+    try {
+      for (const [name, read] of reads) {
+        mocks.loadLexicon.mockClear();
+        const text = await read();
+        expect(mocks.loadLexicon, name).toHaveBeenCalledTimes(1);
+        expect(mocks.loadLexicon, name).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+        // export_lexicon's note says the terms were left out; everything else names the path.
+        expect(text, name).toContain(name === 'export_lexicon' ? 'Its terms are not in this export.' : '/fake/repo/.lexicon.yaml');
+      }
     } finally {
       await close();
     }
@@ -597,7 +737,7 @@ describe('lexicon MCP server', () => {
         const result = await client.callTool({ name: 'lexicon_doctor', arguments: {} });
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual(doctorReport);
-        expect(cli.runDoctorReport).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+        expect(cli.runDoctorReport).toHaveBeenCalledWith({ cwd: '/fake/repo', audience: 'mcp' });
       } finally {
         await close();
       }
@@ -635,6 +775,32 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: a preview that failed (exit 1) still said `next: call again with
+    // apply: true`, and scope 'project' for windsurf answered `drop --project`,
+    // a CLI flag the tool does not take.
+    it('install_client: a failed preview carries nextStep, not next, and a project scope it lacks names the tool call', async () => {
+      const { client, close } = await connect();
+      try {
+        cli.runInstall.mockImplementationOnce(async (_c: string, _o: unknown, io: { stderr: (s: string) => void }) => {
+          io.stderr('lexicon: claude mcp add failed\n');
+          return 1;
+        });
+        const failed = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'claude' } }))) as Record<string, unknown>;
+        expect(failed).toMatchObject({ ok: false, stderr: 'lexicon: claude mcp add failed' });
+        expect(failed.next).toBeUndefined();
+        expect(failed.nextStep).toContain('do not call again with apply: true');
+
+        cli.runInstall.mockRejectedValueOnce(new Error('windsurf has no project-level MCP config; drop --project'));
+        const scoped = await client.callTool({ name: 'install_client', arguments: { client: 'windsurf', scope: 'project' } });
+        expect(scoped.isError).toBe(true);
+        expect(textOf(scoped)).toBe('windsurf has no project-level MCP config, so nothing was written; call install_client again without scope to use its user-level config.');
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'install_client');
+        expect(tool?.description).toContain('Check `ok`');
+      } finally {
+        await close();
+      }
+    });
+
     it('install_client rejects clients outside the enum', async () => {
       const { client, close } = await connect();
       try {
@@ -646,7 +812,7 @@ describe('lexicon MCP server', () => {
       }
     });
 
-    it('trust_project status reports the state with a sanitized preview and never the notes', async () => {
+    it('trust_project status reports the state with a short sanitized summary and never the aliases or notes', async () => {
       const { client, close } = await connect();
       try {
         const tool = (await client.listTools()).tools.find((t) => t.name === 'trust_project');
@@ -662,17 +828,18 @@ describe('lexicon MCP server', () => {
           status: string;
           termCount: number;
           more: number;
-          preview: { canonical: string; firstAlias?: string; aliasCount: number; hasNotes: boolean }[];
+          sample: string[];
+          fullPreview: string;
           registry: string;
           trustAll: boolean;
           trusted: unknown[];
         };
-        expect(payload).toMatchObject({ action: 'status', path: '/fake/repo/.lexicon.yaml', status: 'untrusted', termCount: 2, more: 0, registry: '/fake/global/trust.json', trustAll: false, trusted: [] });
-        expect(payload.preview).toEqual([
-          { canonical: 'Kubernetes', firstAlias: 'cooper netties', aliasCount: 2, hasNotes: true },
-          { canonical: 'Entire.io', aliasCount: 0, hasNotes: false },
-        ]);
+        expect(payload).toMatchObject({ action: 'status', path: '/fake/repo/.lexicon.yaml', status: 'untrusted', termCount: 2, aliasCount: 2, termsWithNotes: 1, more: 0, registry: '/fake/global/trust.json', trustAll: false, trusted: [] });
+        expect(payload.sample).toEqual(['Kubernetes', 'Entire.io']);
+        expect(payload.fullPreview).toContain('`lexicon trust` in a terminal');
+        expect(payload).not.toHaveProperty('preview');
         expect(textOf(result)).not.toContain('ignore me');
+        expect(textOf(result)).not.toContain('cooper netties');
         expect(mocks.readLexiconFile).toHaveBeenCalledWith('/fake/repo/.lexicon.yaml', 'project');
         expect(mocks.trustProject).not.toHaveBeenCalled();
       } finally {
@@ -702,22 +869,24 @@ describe('lexicon MCP server', () => {
         return { action: 'accept', content: { trust: true } };
       });
       try {
-        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust', path: 'sub/.lexicon.yaml' } });
+        // The default path: an explicit one must exist inside the allowed roots (tests/mcp-workflows.test.ts).
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
         expect(result.isError).toBe(false);
         const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
         expect(payload).toMatchObject({
           action: 'trust',
-          path: path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'),
+          path: '/fake/repo/.lexicon.yaml',
           previousStatus: 'untrusted',
           status: 'trusted',
           result: 'trusted',
           sha256: 'abcdef012345',
           termCount: 2,
         });
-        expect((payload.preview as unknown[]).length).toBe(2);
-        expect(mocks.trustProject).toHaveBeenCalledWith(path.join(path.resolve('/fake/repo'), 'sub', '.lexicon.yaml'), { cwd: '/fake/repo' });
+        expect(payload.sample).toEqual(['Kubernetes', 'Entire.io']);
+        expect(payload).not.toHaveProperty('preview');
+        expect(mocks.trustProject).toHaveBeenCalledWith('/fake/repo/.lexicon.yaml', { cwd: '/fake/repo', expectedSha256: 'abcdef0123456789' });
         expect(asked).toHaveLength(1);
-        expect(asked[0]).toMatch(/Trust the project lexicon at .*sub.*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
+        expect(asked[0]).toMatch(/Trust the project lexicon at .*\.lexicon\.yaml\? Its 2 term\(s\) \(Kubernetes, Entire\.io\)/);
         expect(asked[0]).not.toContain('ignore me');
       } finally {
         await close();
@@ -833,9 +1002,11 @@ describe('lexicon MCP server', () => {
           expect.anything(),
           expect.any(Function),
         );
-        const withPath = await client.callTool({ name: 'import_dictionary', arguments: { path: 'dict.csv', format: 'wispr', scope: 'project' } });
+        // With content, path only names the file for format detection and is never read
+        // (a path that is read is held to the allowed roots: tests/mcp-workflows.test.ts).
+        const withPath = await client.callTool({ name: 'import_dictionary', arguments: { path: 'dict.csv', content: 'Ashlr.AI,Ashler\n', format: 'wispr', scope: 'project' } });
         expect(withPath.isError).toBe(false);
-        expect(cli.runImport).toHaveBeenLastCalledWith('dict.csv', { cwd: '/fake/repo', format: 'wispr', project: true, dryRun: false, json: true }, expect.anything(), undefined);
+        expect(cli.runImport).toHaveBeenLastCalledWith('dict.csv', { cwd: '/fake/repo', format: 'wispr', project: true, dryRun: false, json: true }, expect.anything(), expect.any(Function));
       } finally {
         await close();
       }
@@ -928,7 +1099,14 @@ describe('lexicon MCP server', () => {
           for (const arguments_ of [{ apply: true }, { apply: true, sources: ['github'] }]) {
             const result = await client.callTool({ name: 'import_vocabulary', arguments: arguments_ });
             expect(result.isError).toBe(true);
+            // Catches: the error named every argument without saying which was
+            // missing or that a preview call comes first.
+            expect(textOf(result)).toContain('Preview first: call without apply');
           }
+          const noSources = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true } });
+          expect(textOf(noSources)).toContain('sources, previewToken, approvedCandidateIds are missing');
+          const noToken = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], approvedCandidateIds: [] } });
+          expect(textOf(noToken)).toContain('previewToken is missing, so nothing was read or written');
           expect(mocks.harvestImportSources).not.toHaveBeenCalled();
           expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
         } finally { await close(); }
@@ -951,6 +1129,24 @@ describe('lexicon MCP server', () => {
         } finally { await close(); }
       });
 
+      // Catches: apply with scope: 'project' created and trusted the repo's .lexicon.yaml.
+      it('applies into a project file that is not trusted without trusting it', async () => {
+        mocks.projectWriteTrusted.mockResolvedValue(false);
+        mocks.applyImportCandidates.mockResolvedValue({ added: 1, merged: 0, skipped: 0, path: '/fake/repo/.lexicon.yaml' });
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'], scope: 'project' } })));
+          const result = await client.callTool({ name: 'import_vocabulary', arguments: {
+            apply: true, sources: ['github'], scope: 'project', previewToken: preview.previewToken, approvedCandidateIds: [preview.candidates[0].id],
+          } });
+          expect(result.isError).toBe(false);
+          const payload = JSON.parse(textOf(result)) as { trusted?: boolean; nextStep?: string };
+          expect(payload.trusted).toBe(false);
+          expect(payload.nextStep).toContain('/fake/repo/.lexicon.yaml, which is not trusted');
+          expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
+        } finally { await close(); }
+      });
+
       it('retains an approved preview when the snapshot cache is at capacity', async () => {
         const { client, close } = await connect();
         try {
@@ -965,6 +1161,27 @@ describe('lexicon MCP server', () => {
           } });
           expect(result.isError).toBe(false);
           expect(mocks.applyImportCandidates).toHaveBeenCalledWith([candidate], { cwd: '/fake/repo' });
+        } finally { await close(); }
+      });
+
+      // Catches: previewToken (or approvedCandidateIds) without apply: true was
+      // ignored: the call re-read the sources and returned a fresh preview, so
+      // a model that forgot apply believed it had imported the terms.
+      it('refuses a previewToken or approvedCandidateIds without apply and keeps the preview', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
+          const ids = [preview.candidates[0].id];
+          for (const extra of [{ previewToken: preview.previewToken }, { approvedCandidateIds: ids }, { previewToken: preview.previewToken, approvedCandidateIds: ids, apply: false }]) {
+            const result = await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'], ...extra } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/only used with apply: true, so nothing was read or written/);
+          }
+          expect(mocks.harvestImportSources).toHaveBeenCalledTimes(1);
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+          const applied = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], previewToken: preview.previewToken, approvedCandidateIds: ids } });
+          expect(applied.isError).toBe(false);
         } finally { await close(); }
       });
 
@@ -1000,6 +1217,7 @@ describe('lexicon MCP server', () => {
           { name: 'developer', title: 'Dev', description: 'd', version: 1, author: '', homepage: '', terms: 2, aliases: 3, path: '/fake/developer.yaml' },
         ]);
         mocks.loadLexicon.mockResolvedValue({ ...loaded, global: { ...loaded.global, lexicon: { version: 1, terms: [] } } });
+        mocks.assertUserRegistry.mockResolvedValue(undefined);
         mocks.loadRegistryIndex.mockResolvedValue({ index: { packs: [entry] }, base: '/fake' });
         mocks.findRegistryEntry.mockReturnValue(entry);
         mocks.downloadPack.mockResolvedValue(Buffer.from('pack-bytes'));
@@ -1086,6 +1304,33 @@ describe('lexicon MCP server', () => {
         } finally { await close(); }
       });
 
+      // Catches: add_pack with scope: 'project' created and trusted the repo's .lexicon.yaml.
+      it('add_pack into a project file that is not trusted leaves it untrusted', async () => {
+        mocks.projectWriteTrusted.mockResolvedValue(false);
+        mocks.installPack.mockResolvedValue({ pack: { name: 'developer', title: 'Dev' }, added: 2, merged: 0, path: '/fake/repo/.lexicon.yaml', scope: 'project' });
+        mocks.installRegistryPack.mockResolvedValue({
+          ref: 'example/cardiology', pack: { name: 'cardiology', title: 'Cardiology terms' }, added: 1, merged: 0, path: '/fake/repo/.lexicon.yaml', scope: 'project',
+        });
+        const { client, close } = await connect();
+        try {
+          const vendored = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', scope: 'project' } });
+          expect(vendored.isError).toBe(false);
+          expect(JSON.parse(textOf(vendored))).toMatchObject({ trusted: false, nextStep: expect.stringContaining('which is not trusted') });
+          expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
+
+          const args = { name: 'example/cardiology', registry: '/fake/index.yaml', scope: 'project' };
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'add_pack', arguments: args })));
+          const community = await client.callTool({ name: 'add_pack', arguments: { ...args, confirm: true, previewDigest: preview.previewDigest } });
+          expect(community.isError).toBe(false);
+          expect(JSON.parse(textOf(community))).toMatchObject({ trusted: false, nextStep: expect.stringContaining('which is not trusted') });
+          expect(mocks.installRegistryPack).toHaveBeenCalledWith(entry, '/fake', '/fake/index.yaml', {
+            cwd: '/fake/repo', leaveUntrusted: true, approvedBytes: Buffer.from('pack-bytes'), scope: 'project',
+          });
+        } finally {
+          await close();
+        }
+      });
+
       it('add_pack still installs vendored packs directly', async () => {
         const { client, close } = await connect();
         try {
@@ -1094,6 +1339,48 @@ describe('lexicon MCP server', () => {
           const payload = JSON.parse(textOf(result)) as { name: string };
           expect(payload.name).toBe('developer');
           expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
+      // Catches: a vendored name with registry, previewDigest or confirm: false
+      // (the community preview flow) was installed anyway, so a call asking
+      // for a preview wrote dozens of terms.
+      it('add_pack refuses community-only parameters with a vendored pack and writes nothing', async () => {
+        const { client, close } = await connect();
+        try {
+          for (const extra of [{ confirm: false }, { registry: '/fake/index.yaml' }, { previewDigest: 'a'.repeat(64) }, { registry: '/fake/index.yaml', confirm: false }]) {
+            const result = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', ...extra } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/"developer" is a vendored starter pack/);
+            expect(textOf(result)).toMatch(/Nothing was installed/);
+          }
+          expect(textOf(await client.callTool({ name: 'add_pack', arguments: { name: 'developer', registry: '/fake/index.yaml', confirm: false } }))).toMatch(/registry, confirm: false do not apply/);
+          expect(mocks.installPack).not.toHaveBeenCalled();
+          expect(mocks.loadRegistryIndex).not.toHaveBeenCalled();
+          // confirm: true is what the description asks for after a yes, so it still installs.
+          const ok = await client.callTool({ name: 'add_pack', arguments: { name: 'developer', confirm: true } });
+          expect(ok.isError).toBe(false);
+          expect(mocks.installPack).toHaveBeenCalledWith('developer', { cwd: '/fake/repo' });
+        } finally {
+          await close();
+        }
+      });
+
+      it('refuses a registry the user did not register before reading it', async () => {
+        mocks.assertUserRegistry.mockRejectedValue(new Error('registry "/etc/passwd" is not one the user registered, so it was not read.'));
+        const { client, close } = await connect();
+        try {
+          const listed = await client.callTool({ name: 'list_packs', arguments: { registry: '/etc/passwd' } });
+          expect(listed.isError).toBe(true);
+          expect(textOf(listed)).toMatch(/not one the user registered/);
+          const added = await client.callTool({ name: 'add_pack', arguments: { name: 'example/cardiology', registry: 'https://evil.example/index.yaml' } });
+          expect(added.isError).toBe(true);
+          expect(mocks.assertUserRegistry).toHaveBeenCalledWith('/etc/passwd', { cwd: '/fake/repo' });
+          expect(mocks.assertUserRegistry).toHaveBeenCalledWith('https://evil.example/index.yaml', { cwd: '/fake/repo' });
+          expect(mocks.loadRegistryIndex).not.toHaveBeenCalled();
+          expect(mocks.downloadPack).not.toHaveBeenCalled();
         } finally {
           await close();
         }
@@ -1126,13 +1413,43 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: suggest_terms and add_term's conflict check read only the
+    // merged files, yet parsed an untrusted project .lexicon.yaml to skip it.
+    it('suggest_terms and the add_term conflict check load without parsing a skipped project file', async () => {
+      const { client, close } = await connect();
+      try {
+        mocks.loadLexicon.mockClear();
+        expect((await client.callTool({ name: 'suggest_terms', arguments: {} })).isError).toBe(false);
+        expect(mocks.loadLexicon).toHaveBeenCalledTimes(1);
+        expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+        mocks.loadLexicon.mockClear();
+        expect((await client.callTool({ name: 'add_term', arguments: { canonical: 'Zed', aliases: ['zedd'] } })).isError).toBe(false);
+        expect(mocks.loadLexicon).toHaveBeenCalledTimes(1);
+        expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+      } finally {
+        await close();
+      }
+    });
+
     it('apply_suggestion merges an alias, adds a term, records a never-word and removes a stale term', async () => {
       const { client, close } = await connect();
       try {
         const alias = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
         expect(alias.isError).toBe(false);
         expect(JSON.parse(textOf(alias))).toMatchObject({ kind: 'alias', canonical: 'Ashlr.AI', path: '/fake/global/lexicon.yaml', summary: '"ashlur" -> "Ashlr.AI" saved' });
-        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Ashlr.AI', aliases: ['ashlur'], source: 'user' }, { cwd: '/fake/repo' });
+        // A scope naming a file the term is not in (Ashlr.AI is only global) is
+        // refused: writing there would create a copy holding just the alias.
+        mocks.addTerm.mockClear();
+        const elsewhere = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'project', path: '/fake/repo/.lexicon.yaml' } } });
+        expect(elsewhere.isError).toBe(true);
+        expect(textOf(elsewhere)).toContain('"Ashlr.AI" is in the global lexicon (/fake/global/lexicon.yaml), not the project one');
+        expect(mocks.addTerm).not.toHaveBeenCalled();
+        // The scope suggest_terms reported is honoured when passed back.
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { ...aliasSuggestion, scope: 'global', path: '/fake/global/lexicon.yaml' } } });
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'global' }), { cwd: '/fake/repo', scope: 'global' });
+        await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: aliasSuggestion } });
+        // No scope given: written where the term lives (Ashlr.AI is a global term).
+        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Ashlr.AI', aliases: ['ashlur'], source: 'user', scope: 'global' }, { cwd: '/fake/repo', scope: 'global' });
 
         const term = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'term', canonical: 'Supabase' }, scope: 'project' } });
         expect(term.isError).toBe(false);
@@ -1147,10 +1464,25 @@ describe('lexicon MCP server', () => {
         expect(harvested.isError).toBe(false);
         expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'tRPC', aliases: ['t r p c', 'trpc'], source: 'user', category: 'product' }, { cwd: '/fake/repo' });
 
-        const never = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'never', canonical: 'SaaS', alias: 'sauce' } } });
+        const never = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'never', canonical: 'Kubernetes', alias: 'cuber' } } });
         expect(never.isError).toBe(false);
-        expect(JSON.parse(textOf(never))).toMatchObject({ summary: '"sauce" will never be rewritten to "SaaS"' });
-        expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'SaaS', aliases: [], source: 'user', never: ['sauce'] }, { cwd: '/fake/repo' });
+        expect(JSON.parse(textOf(never))).toMatchObject({ summary: '"cuber" will never be rewritten to "Kubernetes"' });
+        // Written where the term lives (Kubernetes is a project term).
+        expect(mocks.addTerm).toHaveBeenLastCalledWith(
+          { canonical: 'Kubernetes', aliases: [], source: 'user', never: ['cuber'], scope: 'project' },
+          { cwd: '/fake/repo', scope: 'project' },
+        );
+
+        // Catches: an alias or never word for a term no longer in the lexicon
+        // created a new term holding only that word, reported as "saved".
+        mocks.addTerm.mockClear();
+        for (const gone of [{ kind: 'never', canonical: 'SaaS', alias: 'sauce' }, { kind: 'alias', canonical: 'Gone.io', alias: 'gone eye oh' }]) {
+          const res = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: gone } });
+          expect(res.isError).toBe(true);
+          expect(textOf(res)).toContain(`no term "${gone.canonical}" in the lexicon`);
+          expect(textOf(res)).toContain('nothing was written');
+        }
+        expect(mocks.addTerm).not.toHaveBeenCalled();
 
         const stale = await client.callTool({ name: 'apply_suggestion', arguments: { suggestion: { kind: 'stale', canonical: 'Kubernetes' } } });
         expect(JSON.parse(textOf(stale))).toMatchObject({ kind: 'stale', removed: true });
@@ -1175,6 +1507,7 @@ describe('lexicon MCP server', () => {
         expect(tool?.description).toMatch(/claude, claude-desktop, codex, cursor, windsurf, gemini, vscode/);
         expect(tool?.description).toMatch(/does not install clients that are not listed/);
         expect(tool?.description).toMatch(/does not harvest the repo unless harvest: true/);
+        expect(tool?.description).toMatch(/packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install/);
         expect(tool?.description).toMatch(/does not install the local API unless serve: true/);
         expect((tool?.inputSchema as { properties?: Record<string, unknown> }).properties).toHaveProperty('harvest');
         const result = await client.callTool({
@@ -1186,7 +1519,7 @@ describe('lexicon MCP server', () => {
         expect(body).toEqual({ ...setupPlan, next: expect.stringMatching(/Nothing was written.*apply: true/) });
         expect(body).not.toHaveProperty('summary');
         expect(cli.runSetup).toHaveBeenCalledWith(
-          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, dryRun: true },
+          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, harvestUntrusted: true, dryRun: true },
           expect.objectContaining({ stdout: expect.any(Function) }),
           expect.objectContaining({ cliDir: expect.any(String) }),
         );
@@ -1194,11 +1527,25 @@ describe('lexicon MCP server', () => {
         // apply: false is the same preview; omitted clients preview "none", never "all detected".
         // The plan lists wouldHarvest whether or not harvest is passed (only an apply needs it).
         await client.callTool({ name: 'setup_lexicon', arguments: { apply: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
         await client.callTool({ name: 'setup_lexicon', arguments: { harvest: true } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
         await client.callTool({ name: 'setup_lexicon', arguments: { harvest: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
+      } finally {
+        await close();
+      }
+    });
+
+    // Catches: a plugin install's plan promised a login service the apply then refused.
+    it('setup_lexicon relays serveBlocked and tells the agent not to offer serve: true', async () => {
+      const blocked = 'this copy is running from an npx or Claude Code plugin cache (/x), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install';
+      cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] }, plan: { ...setupPlan, serveBlocked: blocked } });
+      const { client, close } = await connect();
+      try {
+        const body = JSON.parse(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { serve: true } }))) as { serveBlocked?: string; next: string };
+        expect(body.serveBlocked).toBe(blocked);
+        expect(body.next).toMatch(/^The login service cannot be installed from this copy \(serveBlocked says why and how to fix it\); do not offer serve: true/);
       } finally {
         await close();
       }
@@ -1214,20 +1561,25 @@ describe('lexicon MCP server', () => {
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual({ ok: true, applied: true, summary: setupSummary });
         const [opts] = cli.runSetup.mock.calls.at(-1) as [SetupOptions];
-        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false });
+        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false, harvestUntrusted: true });
         expect(opts).not.toHaveProperty('dryRun');
 
         // apply without clients installs none; serve and harvest are off unless explicitly true.
         const bare = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true } });
         expect(bare.isError).toBe(false);
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true }, expect.anything(), expect.anything());
 
         await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: [], serve: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true }, expect.anything(), expect.anything());
 
         // harvest: true is the only way the apply writes the project lexicon.
-        await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'], harvest: true } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true }, expect.anything(), expect.anything());
+        // It is left untrusted: the result relays the trust step, with the npx form.
+        cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { ...setupSummary, untrustedProject: '/fake/repo/.lexicon.yaml' } });
+        const harvested = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'], harvest: true } });
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true, harvestUntrusted: true }, expect.anything(), expect.anything());
+        const body = JSON.parse(textOf(harvested)) as { nextStep?: string };
+        expect(body.nextStep).toContain('/fake/repo/.lexicon.yaml, which is not trusted');
+        expect(body.nextStep).toContain('`npx @ashlr/lexicon trust`');
       } finally {
         await close();
       }
@@ -1260,12 +1612,29 @@ describe('lexicon MCP server', () => {
         const down = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(down.isError).toBe(false);
         expect(JSON.parse(textOf(down))).toMatchObject({ up: false, error: 'ECONNREFUSED' });
+        expect(String(JSON.parse(textOf(down)).hint)).toContain('setup_lexicon with serve: true does the same');
+        expect(cli.serveInstallBlocker).toHaveBeenCalledWith({ cliPath: expect.stringMatching(/index\.js$/) });
+
+        // Catches: from a plugin copy the hint named `lexicon serve` (not installed) and
+        // setup_lexicon serve: true (refused there).
+        cli.serveInstallBlocker.mockResolvedValueOnce('this copy is running from an npx or Claude Code plugin cache (/p), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install');
+        fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+        const plugin = String(JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))).hint);
+        expect(plugin).toContain('Start it with `lexicon serve` (or `npx @ashlr/lexicon serve`)');
+        expect(plugin).toContain('npm i -g @ashlr/lexicon');
+        expect(plugin).not.toContain('setup_lexicon');
         expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:41733/health', expect.objectContaining({ signal: expect.anything() }));
         await expect(readFile(path.join(dir, 'serve.json'), 'utf8')).rejects.toThrow();
 
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, version: '0.3.0', terms: 36, port: 41733 }), { status: 200 }));
         const up = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(JSON.parse(textOf(up))).toEqual({ up: true, url: 'http://127.0.0.1:41733/health', ok: true, version: '0.3.0', terms: 36, port: 41733 });
+
+        // Catches: any 200 on the port read as up, though it was not lexicon serve.
+        fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'fine' }), { status: 200 }));
+        const foreign = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
+        expect(foreign).toMatchObject({ up: false, error: 'unexpected /health response (not lexicon serve)' });
+        expect(String(foreign.hint)).toContain('lexicon serve --port <n>');
 
         // `lexicon serve --port 41799` records its port in serve.json; status
         // must probe that port, as `serve --status` and desktop clients do.
@@ -1274,6 +1643,17 @@ describe('lexicon MCP server', () => {
         const custom = await client.callTool({ name: 'serve_status', arguments: {} });
         expect(JSON.parse(textOf(custom))).toMatchObject({ up: true, url: 'http://127.0.0.1:41799/health', port: 41799 });
         expect(fetchSpy).toHaveBeenLastCalledWith('http://127.0.0.1:41799/health', expect.objectContaining({ signal: expect.anything() }));
+
+        // Running but failing (a broken lexicon file): not "down", and the
+        // server's own message, which it gives in full to the token holder.
+        fetchSpy.mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: 'internal error: Failed to parse lexicon YAML at /x/lexicon.yaml: bad' }), { status: 500 }),
+        );
+        const failing = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
+        expect(failing).toMatchObject({ up: false, running: true, status: 500, error: expect.stringContaining('Failed to parse lexicon YAML') });
+        expect(String(failing.hint)).not.toContain('Start it');
+        const init = fetchSpy.mock.lastCall?.[1] as RequestInit | undefined;
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${'a'.repeat(32)}`);
       } finally {
         fetchSpy.mockRestore();
         await close();
@@ -1298,7 +1678,43 @@ describe('lexicon MCP server', () => {
         expect(text).toMatch(/teammates/i);
         expect(text).toMatch(/which agent clients/i);
         expect(text).toMatch(/sentence I can dictate/i);
+        // Regression: step 7 said "take one of my names" and then a sentence
+        // "containing two of the names", and step 5 promised add_term always
+        // generates misspellings, which it often does not.
+        expect(text).not.toMatch(/take one of my names/i);
+        expect(text).toMatch(/one test sentence I can dictate that contains two of my names/);
+        expect(text).not.toMatch(/without aliases so likely misspellings are generated/);
+        expect(text).toMatch(/often generates none/);
+        expect(text).toMatch(/propose two or three spellings/);
+        // Step 4 passes "my name" to setup_lexicon, so an earlier step asks for it.
+        expect(text.indexOf('Ask for my own name')).toBeGreaterThan(-1);
+        expect(text.indexOf('Ask for my own name')).toBeLessThan(text.indexOf('setup_lexicon'));
+        expect(text).not.toMatch(/[\u2013\u2014]/);
         expect(mocks.loadLexicon).not.toHaveBeenCalled();
+      } finally {
+        await close();
+      }
+    });
+
+    // Catches: both prompts were registered without an argsSchema, so the SDK
+    // never looked at `arguments` and an undeclared one (`{ scope: 'project' }`)
+    // answered as if it had been applied, while a tool refuses an unknown key.
+    it('refuses undeclared prompt arguments with -32602 and says what the prompt takes', async () => {
+      const { client, close } = await connect();
+      try {
+        for (const name of ['voice-context', 'onboard']) {
+          const err = await client.getPrompt({ name, arguments: { scope: 'project' } }).then(
+            () => undefined,
+            (e: unknown) => e as { code?: number; message?: string },
+          );
+          expect(err?.code, name).toBe(-32602);
+          expect(err?.message).toContain(`unknown argument "scope" for prompt ${name}: it takes no arguments; omit arguments or pass {}`);
+          // Omitted and {} are fine.
+          expect((await client.getPrompt({ name })).messages).toHaveLength(1);
+          expect((await client.getPrompt({ name, arguments: {} })).messages).toHaveLength(1);
+        }
+        const two = await client.getPrompt({ name: 'onboard', arguments: { a: '1', b: '2' } }).catch((e: unknown) => e as Error);
+        expect((two as Error).message).toContain('unknown arguments "a", "b" for prompt onboard');
       } finally {
         await close();
       }
@@ -1363,7 +1779,7 @@ describe('MCP roots pick the project directory', () => {
     try {
       await client.readResource({ uri: 'lexicon://me' });
       expect(asked()).toBe(1);
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA, parseSkipped: false });
       await client.callTool({ name: 'add_term', arguments: { canonical: 'Zed', aliases: ['zedd'] } });
       expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'Zed' }), { cwd: rootA });
     } finally {
@@ -1402,12 +1818,12 @@ describe('MCP roots pick the project directory', () => {
     const { client, close, asked } = await connectWithRoots(() => [{ uri: pathToFileURL(current).href }]);
     try {
       await client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootA, parseSkipped: false });
       current = rootB;
       await client.sendRootsListChanged();
       await vi.waitFor(() => expect(asked()).toBe(2));
       await client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB, parseSkipped: false });
     } finally {
       await close();
     }
@@ -1418,7 +1834,7 @@ describe('MCP roots pick the project directory', () => {
     const viaOption = await connectWithRoots(() => [{ uri: pathToFileURL(rootA).href }], { cwd: '/fake/repo' });
     try {
       await viaOption.client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo', parseSkipped: false });
       expect(viaOption.asked()).toBe(0);
     } finally {
       await viaOption.close();
@@ -1427,7 +1843,7 @@ describe('MCP roots pick the project directory', () => {
     const viaEnv = await connectWithRoots(() => [{ uri: pathToFileURL(rootA).href }]);
     try {
       await viaEnv.client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: rootB, parseSkipped: false });
       expect(viaEnv.asked()).toBe(0);
     } finally {
       await viaEnv.close();
@@ -1440,7 +1856,7 @@ describe('MCP roots pick the project directory', () => {
     const none = await connectWithRoots(() => [{ uri: pathToFileURL(path.join(rootA, 'gone')).href }]);
     try {
       await none.client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd(), parseSkipped: false });
     } finally {
       await none.close();
     }
@@ -1450,7 +1866,7 @@ describe('MCP roots pick the project directory', () => {
     try {
       const result = await failing.client.callTool({ name: 'list_terms', arguments: {} });
       expect(result.isError).toBe(false);
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd(), parseSkipped: false });
     } finally {
       await failing.close();
     }
@@ -1461,7 +1877,7 @@ describe('MCP roots pick the project directory', () => {
     const { client, close } = await connect();
     try {
       await client.readResource({ uri: 'lexicon://me' });
-      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: '/fake/repo', parseSkipped: false });
     } finally {
       await close();
     }

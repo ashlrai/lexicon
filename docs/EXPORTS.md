@@ -30,6 +30,8 @@ lexicon export <format> --out <file>
 
 `lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count.
 
+`--json` prints one document instead, for scripts and agents: `{ ok: true, format, terms, bytes, path }` after writing `--out` (`terms` counts what `--category` and `--limit` kept), `{ ok: true, format, terms, bytes, content }` with the export as a string when there is no `--out`, and `{ ok: true, formats }` with no format. A failure is `{ ok: false, error, nextStep }`.
+
 Exporting into an STT engine's own biasing parameter (`whisper-prompt`, `deepgram`, `assemblyai`, `azure`, `google`) helps before the fact; the lexicon then fixes what the engine still got wrong. Both halves are measured in [BENCHMARK.md](BENCHMARK.md).
 
 ## Import the dictionary you already have
@@ -51,7 +53,7 @@ lexicon import CLAUDE.md --dry-run                        # the ## Voice lexicon
 | `macos` | Text Replacement `.plist` (`shortcut` = alias, `phrase` = canonical) | Drag entries out of System Settings > Keyboard > Text Replacements |
 | `espanso` | `matches:` YAML (`trigger` = alias, `replace` = canonical; templates with `vars`, regex or multi-line replacements are skipped) | `~/.config/espanso/match/*.yml` |
 | `markdown` | The `\| Canonical \| ... \|` table under `## Voice lexicon` (only that section is read), or `- **Canonical** (category): alias1, alias2` bullets | `lexicon export claude-md` / `lexicon export markdown`, or a CLAUDE.md / AGENTS.md you kept by hand |
-| `text` | One term per line: `Canonical`, `Canonical: alias1, alias2` or `Canonical = alias1 \| alias2`; `#` comments | Anything you typed by hand, or `lexicon export text` |
+| `text` | One term per line: `Canonical`, `Canonical: alias1, alias2` or `Canonical = alias1 \| alias2` (`Canonical =` alone for a canonical with a colon and no aliases); `#` comments, `\#Canonical` for a canonical that starts with `#`; a backslash escapes a separator inside a name (`A \= B` is the canonical "A = B", `a\\|b` and `a\,b` an alias holding `\|` or `,`, `\\` a backslash) | Anything you typed by hand, or `lexicon export text` |
 | `csv` | `canonical,alias,category,phonetic` (columns matched by header) | `lexicon export csv` |
 | `json` | A lexicon JSON or YAML file | `lexicon export json`, another machine's `lexicon.yaml` |
 

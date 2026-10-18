@@ -11,8 +11,9 @@
 #   2. Run `lexicon pack validate <file>`: the ordinary-word guard and the
 #      schema, the same bar CI should enforce on the pack's own repo.
 #   3. Add an entry below. `checksum` is the sha256 of the pack FILE bytes:
-#      `shasum -a 256 cardiology.yaml`. `url` may be absolute (https:// or
-#      file://) or relative to this index file.
+#      `shasum -a 256 cardiology.yaml`. `url` may be an absolute https:// URL
+#      or relative to this index file (file:// and absolute local paths only
+#      in an index read from a local path, never one fetched over https).
 #
 # Updates key on checksum, not on `version`: when the file changes, its entry's
 # checksum changes, and `lexicon pack update` offers the new file for review.

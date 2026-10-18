@@ -3,6 +3,7 @@
  * Rendered inside a shadow root so the host page's CSS cannot restyle it and
  * ours cannot leak out.
  */
+import { setMessage } from './rich-text.js';
 import { describeCorrection, TOAST_MS } from './shared.js';
 import type { Correction, Mode } from './shared.js';
 
@@ -14,6 +15,13 @@ export interface ToastOptions {
   mode?: Mode;
   /** Shown instead of the corrections list (errors). */
   message?: string;
+  /** A short line under the corrections, e.g. that matching stopped early. */
+  notice?: string;
+  /**
+   * Why the local API was not used and the embedded lexicon corrected this
+   * send. Backticked spans (`lexicon serve --pair`) render as <code>.
+   */
+  fallback?: string;
 }
 
 const STYLE = `
@@ -41,6 +49,11 @@ button {
 }
 button:hover, button:focus-visible { background: rgba(159, 216, 207, .15); outline: none; }
 .msg { color: #ffd9a8; }
+.fallback { color: #c0c8cf; font-size: 12px; }
+code {
+  font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: inherit; background: rgba(255, 255, 255, .08); border-radius: 3px; padding: 0 3px;
+}
 `;
 
 export function showToast(doc: Document, corrections: readonly Correction[], opts: ToastOptions = {}): HTMLElement {
@@ -60,12 +73,12 @@ export function showToast(doc: Document, corrections: readonly Correction[], opt
   const title = doc.createElement('div');
   title.className = 'title';
   const heading = doc.createElement('span');
-  heading.textContent = opts.message ? 'Lexicon' : `Lexicon fixed ${corrections.length} ${corrections.length === 1 ? 'word' : 'words'}`;
+  heading.textContent = opts.message || corrections.length === 0 ? 'Lexicon' : `Lexicon fixed ${corrections.length} ${corrections.length === 1 ? 'word' : 'words'}`;
   title.appendChild(heading);
   if (opts.mode) {
     const badge = doc.createElement('span');
     badge.className = 'badge';
-    badge.textContent = opts.mode === 'api' ? 'local API' : 'embedded';
+    badge.textContent = opts.mode === 'api' ? 'local API' : opts.fallback ? 'embedded (fallback)' : 'embedded';
     title.appendChild(badge);
   }
   box.appendChild(title);
@@ -73,7 +86,7 @@ export function showToast(doc: Document, corrections: readonly Correction[], opt
   if (opts.message) {
     const msg = doc.createElement('div');
     msg.className = 'msg';
-    msg.textContent = opts.message;
+    setMessage(msg, opts.message);
     box.appendChild(msg);
   } else {
     const list = doc.createElement('ul');
@@ -95,7 +108,20 @@ export function showToast(doc: Document, corrections: readonly Correction[], opt
       li.append(from, arrow, to, reason);
       list.appendChild(li);
     }
-    box.appendChild(list);
+    if (corrections.length > 0) box.appendChild(list);
+  }
+  if (opts.notice) {
+    const notice = doc.createElement('div');
+    notice.className = 'msg notice';
+    setMessage(notice, opts.notice);
+    box.appendChild(notice);
+  }
+  if (opts.fallback) {
+    const fallback = doc.createElement('div');
+    fallback.className = 'fallback';
+    // Text nodes and <code> only: the reason can carry a server's error string.
+    setMessage(fallback, `Local API not used: ${opts.fallback}`);
+    box.appendChild(fallback);
   }
 
   const row = doc.createElement('div');

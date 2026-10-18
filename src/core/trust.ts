@@ -17,11 +17,14 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { resolvePaths } from './store.js';
+import { MAX_LEXICON_BYTES, resolvePaths } from './store.js';
 import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import { readBoundedRegularFile } from '../util/bounded-read.js';
+import { recalledParsedHash } from './parsed-hash.js';
 import { formatJson } from '../util/json.js';
+import { neutralizeMarkup, sanitizeForDisplay, sanitizeForDisplayMax } from './schema.js';
 
 export type TrustStatus = 'trusted' | 'untrusted' | 'changed';
 
@@ -68,10 +71,15 @@ async function canonicalPath(filePath: string): Promise<string> {
   }
 }
 
-/** Hex sha256 of a file's bytes, or undefined when it cannot be read. */
+/**
+ * Hex sha256 of a file's bytes, or undefined when it cannot be read. Only a
+ * regular file of at most MAX_LEXICON_BYTES is hashed (anything larger could
+ * never be loaded): the path is a repository's, and a symlink to a device
+ * such as `/dev/zero` must not turn a trust check into an unbounded read.
+ */
 export async function hashFile(filePath: string): Promise<string | undefined> {
   try {
-    const bytes = await fs.readFile(filePath);
+    const { bytes } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     // Loaded on first use: node:crypto costs the prompt hook several ms to
     // load, and the hook only hashes when a project lexicon exists.
     const { createHash } = await import('node:crypto');
@@ -186,16 +194,52 @@ export async function isTrusted(projectFile: LexiconFile, opts: StoreOptions = {
   const registry = await readTrustRegistry(opts);
   const entry = registry.trusted[key];
   if (!entry) return 'untrusted';
-  const sha = await hashFile(key);
+  // The bytes that were parsed, when this object came from readLexiconFile:
+  // a second read could see a different file than the one being merged.
+  const sha = (await recalledParsedHash(projectFile)) ?? (await hashFile(key));
   if (sha === undefined) return 'untrusted';
   return sha === entry.sha256 ? 'trusted' : 'changed';
 }
 
-/** Register (or re-pin) `projectPath` at its current content hash. The file must exist. */
-export async function trustProject(projectPath: string, opts: StoreOptions = {}): Promise<TrustEntry> {
+/**
+ * The sha256 of the bytes `readLexiconFile` parsed for this object (project
+ * scope), or undefined for an object it did not produce (a copy, a literal).
+ * Pass it to `trustProject` as `expectedSha256` to pin exactly what a preview
+ * showed.
+ */
+export function parsedContentHash(file: LexiconFile): Promise<string | undefined> {
+  return recalledParsedHash(file);
+}
+
+/** Thrown by `trustProject` when the file no longer has the `expectedSha256` content. Nothing was pinned. */
+export class TrustContentChangedError extends Error {
+  readonly path: string;
+
+  constructor(projectPath: string) {
+    super(`${projectPath} changed since it was read; nothing was trusted`);
+    this.name = 'TrustContentChangedError';
+    this.path = projectPath;
+  }
+}
+
+/** True for a `TrustContentChangedError` (duck-typed by name). */
+export function isTrustContentChangedError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'TrustContentChangedError';
+}
+
+/**
+ * Register (or re-pin) `projectPath` at its current content hash. The file must exist.
+ * With `expectedSha256`, refuses (`TrustContentChangedError`, nothing written)
+ * unless the file still holds exactly those bytes.
+ */
+export async function trustProject(
+  projectPath: string,
+  opts: StoreOptions & { expectedSha256?: string } = {},
+): Promise<TrustEntry> {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
-  if (sha256 === undefined) throw new Error(`trustProject: cannot read ${projectPath}`);
+  if (sha256 === undefined) throw new Error(`cannot read the project lexicon at ${projectPath}`);
+  if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
     const registry = await readTrustRegistry(opts);
     const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
@@ -210,7 +254,10 @@ export async function trustProject(projectPath: string, opts: StoreOptions = {})
  * through this tool, so their own edit does not flip it to 'changed'). Does
  * nothing for unregistered files. Returns true when an entry was updated.
  */
-export async function refreshTrust(projectPath: string, opts: StoreOptions = {}): Promise<boolean> {
+export async function refreshTrust(
+  projectPath: string,
+  opts: StoreOptions & { expectedSha256?: string } = {},
+): Promise<boolean> {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
     const registry = await readTrustRegistry(opts);
@@ -218,9 +265,42 @@ export async function refreshTrust(projectPath: string, opts: StoreOptions = {})
     if (!existing) return false;
     const sha256 = await hashFile(key);
     if (sha256 === undefined || sha256 === existing.sha256) return false;
+    // With `expectedSha256` (the bytes the caller just wrote), a file
+    // rewritten by someone else since is left on its old pin, so it reads
+    // 'changed', rather than having their bytes pinned as the user's edit.
+    if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) return false;
     registry.trusted[key] = { sha256, trustedAt: existing.trustedAt };
     await writeTrustRegistry(registry, opts);
     return true;
+  }, opts);
+}
+
+/**
+ * The registry entry for `projectPath` as it stands, for a caller that may
+ * have to roll a write back (`restoreTrustEntry`). Not exported from the
+ * package: the pack registry's install and removal are the users.
+ */
+export async function trustEntryOf(projectPath: string, opts: StoreOptions = {}): Promise<TrustEntry | undefined> {
+  const key = await canonicalPath(projectPath);
+  const entry = (await readTrustRegistry(opts)).trusted[key];
+  return entry ? { ...entry } : undefined;
+}
+
+/**
+ * Put `projectPath`'s registry entry back to `entry` (or remove it), after a
+ * failed operation restored the file's bytes. Re-hashing the restored file
+ * instead (`refreshTrust`) pinned whatever the snapshot held, which is not
+ * necessarily what the user had trusted: a file rewritten before the
+ * operation took its lock was snapshotted, restored and blessed.
+ */
+export async function restoreTrustEntry(projectPath: string, entry: TrustEntry | undefined, opts: StoreOptions = {}): Promise<void> {
+  const key = await canonicalPath(projectPath);
+  await withTrustLock(async () => {
+    const registry = await readTrustRegistry(opts);
+    if (entry) registry.trusted[key] = { ...entry };
+    else if (key in registry.trusted) delete registry.trusted[key];
+    else return;
+    await writeTrustRegistry(registry, opts);
   }, opts);
 }
 
@@ -247,4 +327,88 @@ export async function listTrusted(opts: StoreOptions = {}): Promise<TrustListEnt
     out.push({ path: filePath, ...entry, status });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Terms listed in a trust preview before "... and N more". */
+export const TRUST_PREVIEW_ROWS = 25;
+
+/** One row of `trustPreview`: display-safe, notes reported as present only. */
+export interface TrustPreviewRow {
+  canonical: string;
+  firstAlias?: string;
+  aliasCount: number;
+  hasNotes: boolean;
+}
+
+/** `trustPreview(file)`: the term count, the first TRUST_PREVIEW_ROWS rows and how many more there are. */
+export interface TrustPreview {
+  termCount: number;
+  preview: TrustPreviewRow[];
+  more: number;
+}
+
+/**
+ * Compact, display-safe view of a project lexicon for the trust dialogue:
+ * canonicals and the first alias only, sanitized, capped. Notes are reported
+ * as present, never quoted: the file is untrusted input until the user says so.
+ * MCP `trust_project` and `lexicon trust --json` both return it.
+ */
+export function trustPreview(file: LexiconFile): TrustPreview {
+  const terms = file.lexicon.terms;
+  const preview = terms.slice(0, TRUST_PREVIEW_ROWS).map((t): TrustPreviewRow => ({
+    canonical: sanitizeForDisplay(t.canonical),
+    ...(t.aliases.length > 0 ? { firstAlias: sanitizeForDisplay(t.aliases[0]) } : {}),
+    aliasCount: t.aliases.length,
+    hasNotes: typeof t.notes === 'string' && t.notes.trim() !== '',
+  }));
+  return { termCount: terms.length, preview, more: Math.max(0, terms.length - TRUST_PREVIEW_ROWS) };
+}
+
+/** Canonicals `trustSummaryForModel` names, at most. */
+export const TRUST_MODEL_SAMPLE_ROWS = 3;
+
+/** Longest canonical `trustSummaryForModel` names (ellipsis included). */
+export const TRUST_MODEL_SAMPLE_MAX_CHARS = 40;
+
+/** `trustSummaryForModel(file)`: counts, a few short canonicals and where the full preview is. */
+export interface TrustModelSummary {
+  termCount: number;
+  aliasCount: number;
+  termsWithNotes: number;
+  /** At most TRUST_MODEL_SAMPLE_ROWS canonicals, each display-sanitized, neutralized and capped. */
+  sample: string[];
+  /** Terms not named in `sample`. */
+  more: number;
+  /** One sentence telling the model the full preview is for the user, in a terminal. */
+  fullPreview: string;
+}
+
+/** What `trustSummaryForModel` says about the full preview. */
+export const TRUST_FULL_PREVIEW_NOTE =
+  'This is a summary. The full preview (every canonical and its first alias) is for the user, not for you: ' +
+  'ask them to run `lexicon trust` in a terminal in that repo, which shows it and asks before trusting.';
+
+/**
+ * What MCP `trust_project` hands the model about a file it is being asked to
+ * trust: counts, at most TRUST_MODEL_SAMPLE_ROWS canonicals (each through
+ * `sanitizeForDisplayMax(_, TRUST_MODEL_SAMPLE_MAX_CHARS)` and
+ * `neutralizeMarkup`), and a pointer to `lexicon trust` for the full preview.
+ * `trustPreview` put 25 canonicals and first aliases, about 2 KB of the file's
+ * own text, into the very exchange where the model is asked whether to trust
+ * it. Aliases and notes are never quoted here. The CLI preview
+ * (`trustPreview`) is unchanged.
+ */
+export function trustSummaryForModel(file: LexiconFile): TrustModelSummary {
+  const terms = file.lexicon.terms;
+  const sample = terms
+    .slice(0, TRUST_MODEL_SAMPLE_ROWS)
+    .map((t) => neutralizeMarkup(sanitizeForDisplayMax(t.canonical, TRUST_MODEL_SAMPLE_MAX_CHARS)));
+  return {
+    termCount: terms.length,
+    aliasCount: terms.reduce((n, t) => n + t.aliases.length, 0),
+    termsWithNotes: terms.filter((t) => typeof t.notes === 'string' && t.notes.trim() !== '').length,
+    sample,
+    more: Math.max(0, terms.length - sample.length),
+    fullPreview: TRUST_FULL_PREVIEW_NOTE,
+  };
 }

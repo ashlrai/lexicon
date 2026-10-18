@@ -4,7 +4,8 @@
  * run it under jsdom with a fake server.
  */
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
-import { parseLexicon } from './core.js';
+import { conflictNote, parseLexicon } from './core.js';
+import type { NormalizeIncomplete } from './core.js';
 import {
   coerceSettings,
   errorMessage,
@@ -62,6 +63,14 @@ interface ApiNormalize {
   changed: boolean;
   replacements: Correction[];
   summary?: string;
+  incomplete?: unknown;
+}
+
+/** A well-formed `incomplete` field from the API (src/serve/server.ts), ignoring anything else. */
+function isIncomplete(value: unknown): value is NormalizeIncomplete {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Partial<NormalizeIncomplete>;
+  return Array.isArray(v.reasons) && typeof v.totalChars === 'number' && typeof v.note === 'string';
 }
 
 /** A 401 from the API: the server is up but the stored token is not its token. */
@@ -70,6 +79,14 @@ class TokenRejectedError extends Error {
     super('API rejected the token (401). Re-copy it from `lexicon serve --show`, or run `lexicon serve --pair`.');
     this.name = 'TokenRejectedError';
   }
+}
+
+/** A bearer route with no token stored. Pairing is the one-command fix; pasting is the fallback. */
+export const NO_TOKEN_MESSAGE = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
+
+/** What a request that never reached the server says: where it went and how to start the server. */
+export function unreachableMessage(baseUrl: string): string {
+  return `cannot reach lexicon serve at ${baseUrl}; start it with \`lexicon serve\` (or \`lexicon serve --install\` to start it at login)`;
 }
 
 /** The `error` string of a failed API reply (`{ error }`, see src/serve/server.ts), or undefined. */
@@ -121,10 +138,19 @@ export function createBackground(deps: BackgroundDeps): Background {
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (init.body !== undefined) headers['Content-Type'] = 'application/json';
       if (init.auth !== false) {
-        if (!settings.token) throw new Error('No API token set (run `lexicon serve --show` and paste it in Options).');
+        if (!settings.token) throw new Error(NO_TOKEN_MESSAGE);
         headers.Authorization = `Bearer ${settings.token}`;
       }
-      const res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
+      let res: Response;
+      try {
+        res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
+      } catch (err) {
+        // A refused connection is a bare TypeError ("Failed to fetch" in
+        // Chromium, "NetworkError when attempting to fetch resource." in
+        // Firefox), which the popup, Test connection and Sync showed as is.
+        if (err instanceof TypeError) throw new Error(unreachableMessage(settings.baseUrl));
+        throw err;
+      }
       // Only 401 means the token. The server also answers 403 for an untrusted
       // project lexicon and 400 for bad input, each with an `{ error }` body
       // that says what to fix, so pass that through instead of a bare status.
@@ -162,7 +188,16 @@ export function createBackground(deps: BackgroundDeps): Background {
     const err = embedded.load(settings.yaml);
     if (err) return { ok: false, error: `Embedded lexicon does not parse: ${err}` };
     const r = embedded.normalize(text, dryRun);
-    return { ok: true, input: r.input, output: r.output, changed: r.changed, replacements: r.replacements, mode: 'embedded', fallback };
+    return {
+      ok: true,
+      input: r.input,
+      output: r.output,
+      changed: r.changed,
+      replacements: r.replacements,
+      mode: 'embedded',
+      fallback,
+      ...(r.incomplete ? { incomplete: r.incomplete } : {}),
+    };
   }
 
   async function apiNormalize(settings: Settings, text: string, dryRun: boolean): Promise<NormalizeReply> {
@@ -180,6 +215,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       changed: raw.changed === true,
       replacements: raw.replacements,
       mode: 'api',
+      ...(isIncomplete(raw.incomplete) ? { incomplete: raw.incomplete } : {}),
     };
   }
 
@@ -220,7 +256,9 @@ export function createBackground(deps: BackgroundDeps): Background {
         if (err instanceof TokenRejectedError) tokenError = err.message;
       }
     }
-    const activeMode: Mode = settings.mode === 'api' && h.health && !tokenError ? 'api' : 'embedded';
+    // No token means every /normalize falls back (fetchJson refuses a bearer
+    // route without one), so the popup must not read "Local API" then either.
+    const activeMode: Mode = settings.mode === 'api' && h.health && settings.token && !tokenError ? 'api' : 'embedded';
     const embeddedError = embedded.load(settings.yaml);
     return {
       ok: true,
@@ -240,14 +278,30 @@ export function createBackground(deps: BackgroundDeps): Background {
 
   async function learnReq(heard: string, meant: string): Promise<LearnReply | Failure> {
     const settings = await getSettings();
-    const useApi = settings.mode === 'api' && (await health(settings)).health !== null;
-    if (useApi) {
+    const h = settings.mode === 'api' ? await health(settings) : undefined;
+    const useApi = h !== undefined && h.health !== null;
+    // Why the API was skipped although the server answers /health. Normalize
+    // falls back to the embedded lexicon for a missing or rejected token, so
+    // Learn does the same (the popup promises it writes the embedded YAML
+    // whenever the API is not usable), and says so: the server never saw it.
+    let skipped: string | undefined;
+    // The API mode with the server down: the word goes to the embedded copy,
+    // which the next Sync from local API replaces, so say that as well.
+    let again = 'once paired';
+    if (h && !h.health) {
+      skipped = h.error ?? 'local API unreachable';
+      again = 'once the server is running';
+    }
+    if (useApi && !settings.token) skipped = NO_TOKEN_MESSAGE;
+    if (useApi && skipped === undefined) {
       try {
-        // Server reply: { term, created, aliasAdded, path } (src/serve/server.ts LearnResponse).
+        // Server reply: { term, created, aliasAdded, path, conflict?, untrustedProject? } (src/serve/server.ts LearnResponse).
         const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }) })) as {
           term?: { canonical?: string };
           created?: boolean;
           aliasAdded?: boolean;
+          conflict?: unknown;
+          untrustedProject?: unknown;
         };
         healthCache = null; // term count changed
         const canonical = raw?.term?.canonical ?? meant;
@@ -256,15 +310,19 @@ export function createBackground(deps: BackgroundDeps): Background {
           : raw?.aliasAdded
             ? `Added "${heard}" as an alias of ${canonical}.`
             : `"${heard}" is already an alias of ${canonical}.`;
-        return { ok: true, mode: 'api', message };
+        return { ok: true, mode: 'api', message: message + learnWarnings(heard, raw?.conflict, raw?.untrustedProject) };
       } catch (err) {
-        return { ok: false, error: errorMessage(err) };
+        // Only a rejected token falls back; a 400 or 403 is the server refusing
+        // this correction, which the embedded copy must not quietly accept.
+        if (!(err instanceof TokenRejectedError)) return { ok: false, error: errorMessage(err) };
+        healthCache = null;
+        skipped = err.message;
       }
     }
     try {
       const out = learnIntoYaml(settings.yaml, heard, meant);
       await saveSettings({ yaml: out.yaml });
-      return { ok: true, mode: 'embedded', message: out.message };
+      return { ok: true, mode: 'embedded', message: out.message + (skipped ? embeddedOnlyNote(skipped, again) : '') };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
@@ -337,4 +395,41 @@ export function createBackground(deps: BackgroundDeps): Background {
   }
 
   return { handle, getSettings, saveSettings };
+}
+
+/**
+ * What a Learn in API mode that went to the embedded YAML must add (the
+ * server is down, or up without a usable token): the server's lexicon did not
+ * get it, why, and that Sync from local API replaces the embedded YAML.
+ * Exported for tests.
+ */
+export function embeddedOnlyNote(reason: string, again = 'once paired'): string {
+  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  return ` Saved to the embedded lexicon only, not the server's: ${sentence} A later Sync from local API replaces the embedded lexicon, so learn it again ${again}.`;
+}
+
+/**
+ * What a /learn success must still say: another term that also holds `heard`
+ * (`conflict`), so a transcript may keep going to it, and an untrusted project
+ * lexicon that claims it too (`untrustedProject`, path only). The popup showed
+ * a bare "Added ..." for both, so the user believed a correction that may not
+ * win. Fields of an unexpected shape are ignored. Exported for tests.
+ */
+export function learnWarnings(heard: string, conflict: unknown, untrustedProject: unknown): string {
+  let out = '';
+  const c = conflict as { canonical?: unknown; scope?: unknown; as?: unknown; spelling?: unknown } | null | undefined;
+  if (c && typeof c.canonical === 'string' && (c.scope === 'global' || c.scope === 'project')) {
+    const spelling = typeof c.spelling === 'string' ? c.spelling : heard;
+    out +=
+      c.as === 'alias'
+        ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: lexicon remove ${JSON.stringify(c.canonical)} --alias ${JSON.stringify(spelling)} --${c.scope}).`
+        : // The core's sentence (CLI audience), so the popup names the same
+          // remove step as learn --json, add --json and serve POST /learn.
+          ` But ${conflictNote([{ canonical: c.canonical, scope: c.scope, as: 'canonical', spelling }])}.`;
+  }
+  const u = untrustedProject as { path?: unknown; trust?: unknown } | null | undefined;
+  if (u && typeof u.path === 'string') {
+    out += ` The project lexicon ${u.path} is ${u.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'} and also claims "${heard}"; once it is trusted its term wins (review it with: lexicon trust).`;
+  }
+  return out;
 }

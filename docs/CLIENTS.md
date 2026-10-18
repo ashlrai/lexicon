@@ -23,12 +23,12 @@ Or inside a Claude Code session: `/plugin marketplace add ashlrai/lexicon` then 
 
 The plugin ships:
 
-- `.mcp.json`: the `lexicon` MCP server.
+- `.claude-plugin/plugin.json`: the manifest, which declares the `lexicon` MCP server (`node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs`).
 - `hooks/hooks.json`: a `SessionStart` hook that hands the model your lexicon once per session and a `UserPromptSubmit` hook that corrects each dictated prompt. Both are described under [What the hooks do](#what-the-hooks-do).
 - `skills/lexicon/SKILL.md`: tells Claude when to normalize, when to save a correction, when to ask "did you mean", and how to run setup, doctor and suggestions.
 - `commands/lexicon.md`: the `/lexicon` command (`/lexicon`, `/lexicon add X as Y, Z`, `/lexicon learn Y -> X`, `/lexicon harvest`, `/lexicon export <format>`, `/lexicon remove X`, `/lexicon stats`, `/lexicon setup`, `/lexicon doctor`, `/lexicon suggest`, `/lexicon trust [path]`).
 
-The plugin is self-contained. `.mcp.json` and `hooks/hooks.json` run `plugin/mcp-server.mjs` and `plugin/hook.mjs`, two single-file bundles committed to the repo with every dependency inlined. A plugin install is a bare clone with no `npm install` and no build step, and that is all it needs: the only runtime requirement is Node 20 or newer on your `PATH`. The bundles are produced by `npm run build:bundle` and CI fails when they are out of date with `src/`.
+The plugin is self-contained. `.claude-plugin/plugin.json` and `hooks/hooks.json` run `plugin/mcp-server.mjs` and `plugin/hook.mjs` (which loads `plugin/hook-main.mjs`), bundles committed to the repo with every dependency inlined. A plugin install is a bare clone with no `npm install` and no build step, and that is all it needs: the only runtime requirement is Node 20 or newer on your `PATH`. The bundles are produced by `npm run build:bundle` and CI fails when they are out of date with `src/`.
 
 ### b. Manual
 
@@ -45,7 +45,7 @@ Without `--apply` it prints the three steps. With `--apply` it performs the firs
 2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json`. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](../examples/claude-settings.hook.json).
 3. Reminds you to add "Read the `lexicon://me` resource before interpreting dictated text" to your `CLAUDE.md`.
 
-Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place.
+Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place. With the plugin installed (listed in `~/.claude/plugins/installed_plugins.json` or enabled in `settings.json`), a user-scope `lexicon install claude` (and `install_client` or `setup_lexicon` for `claude`) changes nothing and says so, because the plugin already runs the server and both hooks and a second copy would add every hook note twice; `--scope project` still writes the repo's config.
 
 Manual installs do not load `skills/lexicon/SKILL.md`; the hook notes and the tool descriptions carry the instructions. Install the plugin (option a) to get the skill and the `/lexicon` command.
 
@@ -69,11 +69,11 @@ Corrected prompt:
 tell Ashlr.AI to ship it to Hetzner
 ```
 
-The model starts the turn already knowing that "Ashler" means "Ashlr.AI". When nothing changed it prints nothing. It always exits 0, logs errors to stderr only, and measures about 100ms end to end including Node startup (budget 200ms), so a broken lexicon never blocks a prompt. It also bumps each matched term's `hits` counter in the background, so `lexicon stats` counts hook matches from any session, including headless and scripted ones.
+The model starts the turn already knowing that "Ashler" means "Ashlr.AI". A prompt over 8000 characters is not repeated back, and a list of corrections over about 4000 characters merges repeats into one line with a count and ends with how many more were left out. When nothing changed it prints nothing. It always exits 0, logs errors to stderr only, and measures about 100ms end to end including Node startup (budget 200ms), so a broken lexicon never blocks a prompt. It also bumps each matched term's `hits` counter in the background, so `lexicon stats` counts hook matches from any session, including headless and scripted ones.
 
-When the prompt itself is a correction ("it's Ashlr.AI, not Ashlar", "Ashlar -> Ashlr.AI", "replace Ashlar with Ashlr.AI", "it's Ashlr.AI not Ashlar. remember that.") the hook adds one more line asking the model to call `learn_correction` with `heard: "Ashlar", meant: "Ashlr.AI"`. On a correction prompt the hook does not normalize the words being corrected: "Ashlar" is left as the user wrote it, is not counted as a hit, and the rest of the prompt is still corrected. The hook never writes to the lexicon; the model makes the call, so a false positive costs nothing.
+When the prompt itself is a correction ("it's Ashlr.AI, not Ashlar", "Ashlar -> Ashlr.AI", "replace Ashlar with Ashlr.AI", "it's Ashlr.AI not Ashlar. remember that.") the hook adds one more line asking the model to call `learn_correction` with `heard: "Ashlar", meant: "Ashlr.AI"`. A message with several corrections ("it's Vercel not versel. Also it's Supabase not super base.") gets one such line for each, up to five. On a correction prompt the hook does not normalize the words being corrected: "Ashlar" is left as the user wrote it, is not counted as a hit, and the rest of the prompt is still corrected. The hook never writes to the lexicon; the model makes the call, so a false positive costs nothing.
 
-The same file runs as the `SessionStart` hook (startup, resume, clear and compact). It emits the `claude-md` export of your merged lexicon as `additionalContext`, so the spellings reach the model once per session even if it never reads `lexicon://me`. The context is capped at about 4000 characters; longer tables end with "... N more terms; read the lexicon://me resource for the full list." An empty lexicon emits a short onboarding note instead, at most once a day, asking the model to offer `setup_lexicon`. An untrusted project file adds one line naming its path, never its contents (see [TRUST.md](TRUST.md)).
+The same file runs as the `SessionStart` hook (startup, resume, clear and compact). It emits the `claude-md` export of your merged lexicon as `additionalContext`, so the spellings reach the model once per session even if it never reads `lexicon://me`. The context is capped at about 4000 characters; longer tables end with "... N more terms; read the lexicon://me resource for the full list." An empty lexicon emits a short onboarding note instead, at most once a day, asking the model to offer `setup_lexicon`. An untrusted project file adds one line naming its path, never its contents (see [TRUST.md](TRUST.md)); the table gives up room for that line, so the whole context stays within the cap.
 
 ### Headless and scripted use
 
@@ -132,7 +132,7 @@ Four clients have a discovery rule this command cannot check for you, so it prin
 
 ### Running without installing anything
 
-`npx @ashlr/lexicon@latest setup` works, and installs nothing globally. When the CLI notices it is running from an npx cache (a directory npm deletes on its own schedule) it writes `npx -y @ashlr/lexicon@<version> mcp` into each client config instead of an absolute path, so the config keeps working after the cache is cleared. The Claude Code hook gets the same treatment with a wider timeout, because npx adds about a second per prompt. `npm i -g @ashlr/lexicon` and a rerun replaces both with direct paths and makes it instant. `lexicon serve --install` refuses to create a login service from an npx cache at all, since a launchd or systemd unit pointing into one would crash-loop.
+`npx @ashlr/lexicon@latest setup` works, and installs nothing globally. When the CLI notices it is running from an npx cache (a directory npm deletes on its own schedule) it writes `npx -y @ashlr/lexicon@<version> mcp` into each client config instead of an absolute path, so the config keeps working after the cache is cleared. The Claude Code hook gets the same treatment with a wider timeout, because npx adds about a second per prompt. `npm i -g @ashlr/lexicon` and a rerun replaces both with direct paths and makes it instant. `lexicon serve --install` refuses to create a login service from an npx cache at all, since a launchd or systemd unit pointing into one would crash-loop. Claude Code's plugin cache (`~/.claude/plugins/cache/<marketplace>/lexicon/<version>/`, where the plugin's MCP server runs) counts as a cache too: each plugin update moves to a new version directory, so `install_client` or `setup_lexicon` called from a plugin session writes the same pinned `npx` command rather than a path into it.
 
 ## Any MCP client
 

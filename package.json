@@ -23,11 +23,14 @@
   "exports": {
     ".": {
       "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
-    }
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "plugin",
     "packs",
     "skills",
@@ -38,7 +41,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "check:crypto": "node --test scripts/check-crypto.test.mjs && node scripts/check-crypto.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
     "build:bundle": "node scripts/build-bundle.mjs",
     "prepare": "npm run build && npm run build:bundle",
     "check:bundle": "npm run build:bundle && git diff --exit-code --stat -- plugin",
@@ -46,11 +50,12 @@
     "test": "vitest run",
     "test:e2e": "vitest run tests/e2e.test.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "mcp": "node dist/mcp/server.js",
     "bench": "node --import tsx bench/run.ts",
     "bench:audio": "node --import tsx bench/audio/run.ts",
+    "bench:hook": "node bench/hook-latency.mjs",
     "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
     "check:links": "node scripts/check-links.mjs",
     "check:server-json": "node scripts/check-server-json.mjs",

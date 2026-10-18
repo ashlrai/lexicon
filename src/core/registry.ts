@@ -35,12 +35,13 @@ import { HARVEST_STOPLIST } from './harvest.js';
 import { PACK_NAME_RE, installLoadedPack, parsePackText, uninstallLoadedPack } from './packs.js';
 import type { InstallPackResult, Pack, UninstallPackResult } from './packs.js';
 import { defaultProjectPath, MAX_LEXICON_BYTES, resolvePaths, resolveScopeWritePath, withLexiconLock } from './store.js';
-import { refreshTrust, untrustProject } from './trust.js';
+import { restoreTrustEntry, trustEntryOf } from './trust.js';
 import { writeFileAtomic } from '../util/atomic.js';
 import type { StoreOptions } from './store.js';
-import type { Term, TermScope } from './types.js';
+import type { LoadedLexicon, Term, TermScope } from './types.js';
 import { STOPLIST } from './stoplist.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
+import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 
 /** `author/name`, with an optional `@version` pin for installs. */
 export const REGISTRY_REF_RE = /^([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9][a-z0-9-]{0,63})(?:@([A-Za-z0-9][A-Za-z0-9._-]{0,31}))?$/;
@@ -122,29 +123,129 @@ export interface RegistryDeps {
   fetchBytes?: (url: string) => Promise<Buffer>;
 }
 
-async function defaultFetchText(url: string): Promise<string> {
-  const res = await fetch(url);
+/**
+ * Largest registry index or community pack file read, from the network or
+ * from disk. A pack over MAX_LEXICON_BYTES could never be installed anyway,
+ * and an index that size lists thousands of packs. Without it a hostile or
+ * broken registry streamed into memory until the process died.
+ */
+// A literal, not `= MAX_LEXICON_BYTES`: this module is evaluated inside an
+// import cycle with store.ts, where that binding is not initialized yet.
+// tests/registry.test.ts checks the two agree.
+export const MAX_REGISTRY_FILE_BYTES = 2 * 1024 * 1024;
+
+/** How long one registry request may take before it is abandoned. */
+export const REGISTRY_FETCH_TIMEOUT_MS = 30_000;
+
+function tooLargeError(what: string): Error {
+  return new Error(`registry: ${what} exceeds the ${MAX_REGISTRY_FILE_BYTES} byte limit (refusing to read it)`);
+}
+
+/**
+ * Throw unless `url` is https://, or plain http:// to this machine (a registry
+ * served from a local checkout). The index is the only thing that vouches
+ * for a pack's checksum, so an index or pack fetched over plain http from
+ * anywhere else can be rewritten in transit, checksum and all, into any
+ * terms an on-path attacker likes; those terms then reach the model on
+ * every prompt.
+ */
+export function assertSecureRegistryUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`registry: not a valid URL: ${url}`);
+  }
+  if (parsed.protocol === 'https:') return;
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const loopback = host === 'localhost' || host === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+  if (parsed.protocol === 'http:' && loopback) return;
+  throw new Error(
+    `registry: refusing ${parsed.protocol}//${parsed.host}: a registry index or pack file is fetched over https:// only (plain http:// only from this machine), because the index is what vouches for each pack's checksum`,
+  );
+}
+
+/** GET `url`, reading at most MAX_REGISTRY_FILE_BYTES of the body. */
+async function boundedFetch(url: string): Promise<Buffer> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  // fetch follows redirects, including an https -> http downgrade.
+  if (res.url) {
+    try {
+      assertSecureRegistryUrl(res.url);
+    } catch (err) {
+      await res.body?.cancel().catch(() => undefined);
+      throw err;
+    }
+  }
   if (!res.ok) throw new Error(`registry: GET ${url} failed (HTTP ${res.status})`);
-  return res.text();
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
+    await res.body?.cancel().catch(() => undefined);
+    throw tooLargeError(`GET ${url}`);
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_REGISTRY_FILE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLargeError(`GET ${url}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function defaultFetchText(url: string): Promise<string> {
+  return (await boundedFetch(url)).toString('utf8');
 }
 
 async function defaultFetchBytes(url: string): Promise<Buffer> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`registry: GET ${url} failed (HTTP ${res.status})`);
-  return Buffer.from(await res.arrayBuffer());
+  return boundedFetch(url);
+}
+
+/** A local index or pack file: a regular file of at most MAX_REGISTRY_FILE_BYTES (never a device or FIFO). */
+async function readLocalRegistryFile(file: string, what: string): Promise<Buffer> {
+  try {
+    return (await readBoundedRegularFile(file, MAX_REGISTRY_FILE_BYTES)).bytes;
+  } catch (err) {
+    if (isBoundedReadError(err)) {
+      if (err.reason === 'not-regular') throw new Error(`registry: ${what} at ${file} is not a regular file (refusing to read it)`);
+      throw tooLargeError(`${what} at ${file}`);
+    }
+    throw err;
+  }
 }
 
 function resolvedDeps(deps: RegistryDeps): Required<RegistryDeps> {
+  // An injected fetcher is held to the same cap after the fact.
   return {
-    fetchText: deps.fetchText ?? defaultFetchText,
-    fetchBytes: deps.fetchBytes ?? defaultFetchBytes,
+    fetchText: async (url) => {
+      assertSecureRegistryUrl(url);
+      const text = await (deps.fetchText ?? defaultFetchText)(url);
+      if (Buffer.byteLength(text, 'utf8') > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
+      return text;
+    },
+    fetchBytes: async (url) => {
+      assertSecureRegistryUrl(url);
+      const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url);
+      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
+      return bytes;
+    },
   };
 }
 
 function parseIndexYaml(text: string, source: string): RegistryIndex {
   let raw: unknown;
   try {
-    raw = parseYaml(text);
+    // No source excerpt in the message (see store.ts parseLexiconText): the
+    // index path can come from an MCP call, and a YAML error on an arbitrary
+    // local file must not quote that file back into the conversation.
+    raw = parseYaml(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`invalid registry index at ${source}: ${errorMessage(err)}`);
   }
@@ -187,7 +288,7 @@ export async function loadRegistryIndex(source: string, deps: RegistryDeps = {})
   const abs = path.resolve(file);
   let text: string;
   try {
-    text = await fs.readFile(abs, 'utf8');
+    text = (await readLocalRegistryFile(abs, 'index')).toString('utf8');
   } catch (err) {
     if (isEnoent(err)) throw new Error(`registry index not found: ${abs}`);
     throw err;
@@ -195,10 +296,29 @@ export async function loadRegistryIndex(source: string, deps: RegistryDeps = {})
   return { index: parseIndexYaml(text, abs), base: path.dirname(abs) + path.sep };
 }
 
-/** Resolve an entry's `url` against the index base. Returns an https:// URL or an absolute path. */
+/**
+ * Resolve an entry's `url` against the index base. Returns an https:// URL or an absolute path.
+ *
+ * A remote index names remote files only: an absolute http(s) URL or a path
+ * relative to the index. An absolute local path (or any other scheme) in an
+ * index fetched over the network would have this machine read a file of the
+ * index author's choosing: `/dev/stdin` hangs the MCP server on its own
+ * protocol stream, `/dev/zero` reads forever, and a checksum mismatch on any
+ * other file reports that file's sha256. Only a local index may name local
+ * files.
+ */
 export function resolvePackUrl(entry: RegistryIndexEntry, base: string): string {
-  if (/^https?:\/\//i.test(entry.url) || path.isAbsolute(entry.url)) return entry.url;
-  if (/^https?:\/\//i.test(base)) return base + entry.url.replace(/^\.\//, '');
+  if (/^https?:\/\//i.test(entry.url)) return entry.url;
+  if (/^https?:\/\//i.test(base)) {
+    if (path.isAbsolute(entry.url) || path.win32.isAbsolute(entry.url) || /^[a-z][a-z0-9+.-]*:/i.test(entry.url)) {
+      throw new Error(
+        `registry entry ${entry.ref} names a local file or a non-http URL; a remote index may only name https:// URLs or paths relative to itself (refusing to install)`,
+      );
+    }
+    return base + entry.url.replace(/^\.\//, '');
+  }
+  if (entry.url.startsWith('file://')) return entry.url.slice('file://'.length);
+  if (path.isAbsolute(entry.url)) return entry.url;
   return path.resolve(base, entry.url);
 }
 
@@ -349,6 +469,126 @@ export async function installedRegistryPacks(opts: RegistryStoreOptions = {}): P
   return Object.keys((await readRegistryState(opts)).packs).sort();
 }
 
+/** Environment variable a human sets (in the MCP server's env) to allow extra registry indexes, comma or newline separated. */
+export const REGISTRIES_ENV = 'LEXICON_REGISTRIES';
+
+/**
+ * Canonical spelling of a registry source for allowlist comparison: an
+ * http(s) URL as `URL.href`, a `file://` URL or absolute path as a resolved
+ * path. A relative path names a different file from every working directory,
+ * so it never matches (undefined).
+ */
+export function canonicalRegistrySource(source: string): string | undefined {
+  const s = source.trim();
+  if (!s) return undefined;
+  if (/^https?:\/\//i.test(s)) {
+    try { return new URL(s).href; } catch { return undefined; }
+  }
+  const file = s.startsWith('file://') ? s.slice('file://'.length) : s;
+  return path.isAbsolute(file) ? path.resolve(file) : undefined;
+}
+
+/**
+ * Registry indexes the user chose, which is all an agent surface may read:
+ * every index a recorded community pack was installed from (global scope, and
+ * the project scope of `opts.cwd`), plus `$LEXICON_REGISTRIES`. Canonical
+ * spellings, sorted. A scope whose state cannot be read contributes nothing.
+ */
+export async function userRegistrySources(opts: StoreOptions = {}): Promise<string[]> {
+  const out = new Set<string>();
+  const env = opts.env ?? process.env;
+  for (const raw of (env[REGISTRIES_ENV] ?? '').split(/[,\n]/)) {
+    const c = canonicalRegistrySource(raw);
+    if (c) out.add(c);
+  }
+  for (const scope of ['global', 'project'] as const) {
+    let state: RegistryState;
+    try { state = await readRegistryState({ ...opts, scope }); } catch { continue; }
+    for (const p of Object.values(state.packs)) {
+      const c = typeof p?.indexSource === 'string' ? canonicalRegistrySource(p.indexSource) : undefined;
+      if (c) out.add(c);
+    }
+  }
+  return [...out].sort();
+}
+
+/**
+ * Fail closed unless `source` is one of `userRegistrySources`: a model-chosen
+ * registry would otherwise make Lexicon read an arbitrary local file or fetch
+ * from an arbitrary host. Human CLI flags (`--registry`) do not go through
+ * this gate.
+ */
+export async function assertUserRegistry(source: string, opts: StoreOptions = {}): Promise<void> {
+  const allowed = await userRegistrySources(opts);
+  const c = canonicalRegistrySource(source);
+  if (c && allowed.includes(c)) return;
+  const shown = JSON.stringify(source.length > 200 ? `${source.slice(0, 200)}...` : source);
+  throw new Error(
+    `registry ${shown} is not one the user registered, so it was not read. ` +
+      (allowed.length > 0 ? `Registered: ${allowed.join(', ')}. ` : 'No registry is registered. ') +
+      `A registry counts once the user installs a pack from it themselves (lexicon pack add <author>/<name> --registry <index>, or npx @ashlr/lexicon pack add ...) or lists it in ${REGISTRIES_ENV} in the MCP server's environment.`,
+  );
+}
+
+/**
+ * Where a registry pack is recorded, when the two records disagree: the
+ * lexicon file's `settings.packs` (what the matcher and every `installed`
+ * flag read) and the registry state file (what `pack update` and `pack
+ * remove` use).
+ */
+export interface RegistryRecordMismatch {
+  /** In the lexicon file, with no registry record: `pack update` will not check it. */
+  fileOnly: string[];
+  /** Recorded in the registry state but not in the lexicon file: listed as not installed. */
+  recordOnly: string[];
+}
+
+/**
+ * Compare one scope's loaded file with that scope's registry records (state is
+ * kept per scope). A skipped project file is never read: `loaded.project` is
+ * set only when it was merged. Undefined when they agree or the file is absent.
+ */
+export function registryRecordMismatch(
+  loaded: Pick<LoadedLexicon, 'global' | 'project'>,
+  scope: TermScope,
+  recorded: readonly string[],
+): RegistryRecordMismatch | undefined {
+  const file = scope === 'project' ? loaded.project : loaded.global;
+  if (!file) return undefined;
+  const inFile = (file.lexicon.settings?.packs ?? []).filter((p) => isRegistryRef(p));
+  const fileOnly = inFile.filter((r) => !recorded.includes(r));
+  const recordOnly = recorded.filter((r) => !inFile.includes(r));
+  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : undefined;
+}
+
+/**
+ * The mismatch across every loaded scope (global, and the project file when it
+ * was merged), for surfaces that list packs from both files at once (`pack
+ * search`, MCP `list_packs`). Best effort: a scope whose registry state cannot
+ * be read is left out rather than failing the listing.
+ */
+export async function findRegistryRecordMismatch(
+  loaded: Pick<LoadedLexicon, 'global' | 'project'>,
+  opts: StoreOptions = {},
+): Promise<RegistryRecordMismatch | undefined> {
+  const fileOnly: string[] = [];
+  const recordOnly: string[] = [];
+  for (const scope of ['global', 'project'] as const) {
+    if (scope === 'project' && !loaded.project) continue;
+    let recorded: string[];
+    try {
+      recorded = await installedRegistryPacks({ ...opts, scope });
+    } catch {
+      continue;
+    }
+    const m = registryRecordMismatch(loaded, scope, recorded);
+    if (!m) continue;
+    for (const r of m.fileOnly) if (!fileOnly.includes(r)) fileOnly.push(r);
+    for (const r of m.recordOnly) if (!recordOnly.includes(r)) recordOnly.push(r);
+  }
+  return fileOnly.length > 0 || recordOnly.length > 0 ? { fileOnly, recordOnly } : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Download, install, update, remove
 // ---------------------------------------------------------------------------
@@ -365,7 +605,7 @@ export async function downloadPack(
 ): Promise<Buffer> {
   const d = resolvedDeps(deps);
   const url = resolvePackUrl(entry, base);
-  const bytes = /^https?:\/\//i.test(url) ? await d.fetchBytes(url) : await fs.readFile(url);
+  const bytes = /^https?:\/\//i.test(url) ? await d.fetchBytes(url) : await readLocalRegistryFile(url, 'pack file');
   verifyPackChecksum(bytes, entry.checksum, entry.ref);
   return bytes;
 }
@@ -382,6 +622,8 @@ export interface InstallRegistryOptions extends RegistryStoreOptions {
   pinnedVersion?: string;
   /** Exact reviewed bytes. Copied and checksum-verified before any write. */
   approvedBytes?: Uint8Array;
+  /** Write a project file without registering it as trusted (see `installLoadedPack`). */
+  leaveUntrusted?: boolean;
 }
 
 function validatedPack(bytes: Buffer, entry: RegistryIndexEntry): Pack {
@@ -417,6 +659,7 @@ async function commitPack(
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
     const before = await Promise.all(files.map(snapshot));
+    const pinBefore = opts.scope === 'project' && !opts.leaveUntrusted ? await trustEntryOf(target, opts) : undefined;
     try {
       const result = await installLoadedPack(pack, entry.ref, opts);
       await writeCache(entry.ref, bytes, opts);
@@ -434,10 +677,11 @@ async function commitPack(
           if (before[i] === undefined) await fs.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i]!.toString('utf8'));
         }
-        if (opts.scope === 'project') {
-          if (before[0] !== undefined) await refreshTrust(target, opts);
-          else await untrustProject(target, opts);
-        }
+        // An unpinned install never touched the registry: restoring the bytes
+        // restores the status, and a refresh would bless a changed file.
+        // The pin goes back to what it was, not to a hash of the restored
+        // bytes: those were never checked against it (see restoreTrustEntry).
+        if (opts.scope === 'project' && !opts.leaveUntrusted) await restoreTrustEntry(target, pinBefore, opts);
       } catch (rollback) {
         throw new AggregateError([err, rollback], 'registry install failed and rollback was incomplete');
       }
@@ -650,6 +894,7 @@ export async function uninstallRegistryPack(
     }
     const files = [target, cachedPackPath(parsed.ref, scoped), stateFile(scoped)];
     const before = await Promise.all(files.map(snapshot));
+    const pinBefore = scoped.scope === 'project' ? await trustEntryOf(target, scoped) : undefined;
     try {
       const result = await uninstallLoadedPack(pack, parsed.ref, scoped);
       delete state.packs[parsed.ref];
@@ -662,10 +907,7 @@ export async function uninstallRegistryPack(
           if (before[i] === undefined) await fs.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i]!.toString('utf8'));
         }
-        if (scoped.scope === 'project') {
-          if (before[0] !== undefined) await refreshTrust(target, scoped);
-          else await untrustProject(target, scoped);
-        }
+        if (scoped.scope === 'project') await restoreTrustEntry(target, pinBefore, scoped);
       } catch (rollback) {
         throw new AggregateError([err, rollback], 'registry removal failed and rollback was incomplete');
       }

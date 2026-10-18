@@ -4,15 +4,16 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
+import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { fail, line, renderTable, resolveCwd, safe } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
+/** On stderr: it follows an error, and stdout must stay parseable under --json. */
 function usageHint(io: IO): void {
-  line(io, 'usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI');
-  line(io, '       lexicon learn --from "<sentence>"  supported phrasings:');
-  for (const example of CORRECTION_EXAMPLES) line(io, `         ${example}`);
+  io.stderr('usage: lexicon learn <heard> <meant>      e.g. lexicon learn Ashler Ashlr.AI\n');
+  io.stderr('       lexicon learn --from "<sentence>"  supported phrasings:\n');
+  for (const example of CORRECTION_EXAMPLES) io.stderr(`         ${example}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -38,20 +39,64 @@ export function correctionFromArgs(words: readonly string[], from: string | unde
   return parseCorrection(words.join(' '));
 }
 
+/**
+ * A word that reads as a command-line option (`--dry-run`, `-n`, `--scope=project`).
+ * `learn` allows unknown options so a bare `->` passes as a word, which also let
+ * a mistyped or unsupported flag through as the heard spelling: `lexicon learn
+ * --dry-run Ashlr.AI` saved `--dry-run` as an alias. No STT spelling starts with
+ * a dash followed by a letter; the arrows (`->`, `=>`) do not match.
+ */
+export function optionLikeWord(words: readonly string[]): string | undefined {
+  return words.find((w) => /^--?[\p{L}]/u.test(w));
+}
+
 export async function runLearn(words: readonly string[], opts: LearnOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
+  const option = optionLikeWord(words);
+  if (option !== undefined) {
+    const error = `unknown option '${option}'; nothing was learned`;
+    const nextStep = 'see the usage: lexicon learn --help (learn takes --from, --project and --json)';
+    if (opts.json) printJsonError(io, error, nextStep);
+    io.stderr(`lexicon: unknown option '${safe(option)}'; nothing was learned\n`);
+    io.stderr(`lexicon: ${nextStep}\n`);
+    return 1;
+  }
   const correction = correctionFromArgs(words, opts.from);
   if (!correction) {
     const source = opts.from ?? words.join(' ');
+    if (opts.json) {
+      printJsonError(io, source ? `could not find a correction in "${source}"` : 'nothing to learn', 'run: lexicon learn <heard> <meant>, or lexicon learn --from "<sentence>"');
+    }
     io.stderr(source ? `lexicon: could not find a correction in "${safe(source)}"\n` : 'lexicon: nothing to learn\n');
     usageHint(io);
     return 1;
   }
   if (!correction.heard) {
+    if (opts.json) {
+      printJsonError(
+        io,
+        `"${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard`,
+        `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`,
+      );
+    }
     io.stderr(
       `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
-    line(io, `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`);
+    io.stderr(`run: lexicon learn <heard> ${JSON.stringify(correction.meant)}\n`);
+    return 1;
+  }
+  // The same spelling twice: learnCorrection refuses it with only an error, so
+  // `--json` left a script without the step every other learn refusal names.
+  // Normalized as learnCorrection does (trim, collapse whitespace); the error
+  // text is the core's.
+  const heardNorm = correction.heard.trim().replace(/\s+/g, ' ');
+  const meantNorm = correction.meant.trim().replace(/\s+/g, ' ');
+  if (meantNorm && heardNorm === meantNorm) {
+    const error = `"${heardNorm}" and "${meantNorm}" are the same spelling; nothing to learn`;
+    const nextStep = `run: lexicon learn <heard> ${JSON.stringify(meantNorm)}, where <heard> is the misspelling STT wrote`;
+    if (opts.json) printJsonError(io, error, nextStep);
+    io.stderr(`lexicon: ${safe(error)}\n`);
+    io.stderr(`lexicon: ${safe(nextStep)}\n`);
     return 1;
   }
 
@@ -59,7 +104,27 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   try {
     const result = await learnCorrection(correction, { cwd, ...(scope !== undefined ? { scope } : {}) });
     if (opts.json) {
-      line(io, JSON.stringify({ ...result, heard: correction.heard, meant: correction.meant }, null, 2));
+      // The keys MCP learn_correction returns, plus heard and meant. `file`
+      // keeps only its path and scope: the whole file's terms do not belong
+      // in a one-correction result.
+      // A conflict comes with the `note` naming the scoped remove command, as
+      // `add --json` and the MCP summary do.
+      const { file, ...rest } = result;
+      line(
+        io,
+        JSON.stringify(
+          jsonOk({
+            ...rest,
+            path: file.path,
+            file: { path: file.path, scope: file.scope },
+            heard: correction.heard,
+            meant: correction.meant,
+            ...(result.conflict ? { note: conflictNote([result.conflict]) } : {}),
+          }),
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     const what = result.created
@@ -69,9 +134,18 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
         : 'already known';
     line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
+    if (result.conflict) line(io, conflictLine(result.conflict));
+    const u = result.untrustedProject;
+    if (u) {
+      line(
+        io,
+        `warn: the ${u.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon ${safe(u.path)} also claims ${safe(correction.heard)} for another term; ` +
+          'once trusted it wins over this correction. Review it with: lexicon trust',
+      );
+    }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 
@@ -111,8 +185,9 @@ export function renderStats(stats: LexiconStats): string {
   }
   out.push('');
 
-  out.push(`never hit (${stats.neverHit.length}${stats.neverHit.length >= 20 ? '+' : ''})`);
-  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}` : '  (none)');
+  out.push(`never hit (${stats.neverHitCount})`);
+  const more = stats.neverHitCount - stats.neverHit.length;
+  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}${more > 0 ? `, and ${more} more` : ''}` : '  (none)');
   out.push('');
 
   out.push('files');
@@ -125,15 +200,18 @@ export function renderStats(stats: LexiconStats): string {
 export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
-    const stats = computeStats(await loadLexicon({ cwd }));
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    // The counts leave a skipped project file out; say so, as lexicon_stats does.
+    warnSkippedProject(loaded, io);
+    const stats = computeStats(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(stats, null, 2));
+      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded) }), null, 2));
     } else {
       io.stdout(renderStats(stats));
     }
     return 0;
   } catch (err) {
-    return fail(io, err);
+    return fail(io, err, opts.json);
   }
 }
 

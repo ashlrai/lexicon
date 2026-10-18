@@ -878,7 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } else {
                 let alert = NSAlert()
                 alert.messageText = "No lexicon file yet"
-                alert.informativeText = "Expected at \(global). Run `lexicon add <term>` or `lexicon harvest` to create it."
+                alert.informativeText = "Expected at \(global). Run `lexicon init` to create it, or `lexicon add <term>` to create it with a first term."
                 NSApp.activate(ignoringOtherApps: true)
                 alert.runModal()
             }

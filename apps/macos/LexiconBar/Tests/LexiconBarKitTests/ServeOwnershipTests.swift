@@ -110,7 +110,8 @@ final class ServeOwnershipTests: XCTestCase {
     func testForeignStrings() {
         let status = resolve(launchd: false, plist: false, api: true, child: false)
         XCTAssertEqual(status.title, "Local API: reachable (not managed by this app)")
-        XCTAssertTrue(status.detail.hasPrefix("Something else is already listening on 127.0.0.1:41733"), status.detail)
+        XCTAssertEqual(status.detail,
+                       "Something else is already listening on 127.0.0.1:41733, most likely a `lexicon serve` you started by hand.")
         XCTAssertEqual(status.hint, "Find it with `lsof -nP -iTCP:41733 -sTCP:LISTEN`")
     }
 

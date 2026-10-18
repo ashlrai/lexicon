@@ -134,6 +134,24 @@ describe('harvest --interactive', () => {
     expect(io.out).not.toContain('[2/3]');
   });
 
+  // Catches: "a" wrote the project file once per remaining candidate (a full re-parse each).
+  it('a adds the rest in one write, printing the same lines a write per candidate printed', async () => {
+    const candidates = [candidate('One'), candidate('Two'), candidate('Three'), candidate('Four')];
+    const io = makeIO();
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, io, scripted(['y', 'a']))).toBe(0);
+    expect((await readYaml(projectPath)).terms.map((t) => t.canonical)).toEqual(['One', 'Two', 'Three', 'Four']);
+    // writeLexiconFile keeps the bytes it replaced at .bak: after one write
+    // for One and one for the batch, that is the file holding One alone.
+    expect((await readYaml(`${projectPath}.bak`)).terms.map((t) => t.canonical)).toEqual(['One']);
+    const lines = io.out.split('\n');
+    const from = lines.indexOf('  added Two');
+    expect(lines.slice(from, from + 5)).toEqual(['  added Two', '', '  added Three', '  added Four', `added 4 new terms, merged 0, skipped 0 in ${projectPath}`]);
+    expect(io.out).not.toContain('[3/4]');
+    expect(io.out).toContain(`project lexicon trusted (${projectPath})`);
+    // The batch re-pinned the file: a later walk writes to it without a refusal.
+    expect(await runHarvestInteractive([candidate('Five')], { cwd: repo, globalPath }, makeIO(), scripted(['y']))).toBe(0);
+  });
+
   it('merges into an existing trusted project term and counts it as merged', async () => {
     await writeLexiconFile({
       path: projectPath,
@@ -157,6 +175,54 @@ describe('harvest --interactive', () => {
     expect(io.err).toMatch(/is untrusted; review it and run `lexicon trust` first/);
     expect(p.asked).toEqual([]);
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
+  });
+
+  // Catches: `harvest --add --yes` printed the candidate table (or the --json
+  // array) and only then hit the trust gate, so the output read as a success.
+  it('runHarvest --add --yes refuses an untrusted project lexicon before printing candidates', async () => {
+    await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n', 'utf8');
+    const io = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, minCount: 1, globalPath }, io, { isInteractive: () => false })).toBe(1);
+    expect(io.out).toBe('');
+    expect(io.err).toMatch(/is untrusted; review it and run `lexicon trust` first/);
+
+    const json = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true, minCount: 1, globalPath }, json, { isInteractive: () => false })).toBe(1);
+    expect(JSON.parse(json.out)).toEqual({ ok: false, added: false, path: projectPath, projectTrust: 'untrusted', error: expect.stringContaining('is untrusted'), nextStep: `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again` });
+    expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
+
+    // Without --add nothing is written, so the scan still prints.
+    const scan = makeIO();
+    expect(await runHarvest(repo, { minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);
+    expect(scan.out).toContain('quokkatron');
+  });
+
+  // Catches: `harvest --add --json` reported what it wrote on stderr only; stdout had just the candidates.
+  // Catches: the --full success object had no `ok`, though its failure leads with `ok: false`.
+  it('runHarvest --full prints one object with the add result; --json keeps the bare array', async () => {
+    await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    const scan = makeIO();
+    expect(await runHarvest(repo, { full: true, minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);
+    const scanned = JSON.parse(scan.out) as { root: string; candidates: { canonical: string }[]; count: number };
+    expect(Object.keys(scanned)).toEqual(['ok', 'root', 'candidates', 'count']);
+    expect(scanned.root).toBe(repo);
+    expect(scanned.count).toBe(scanned.candidates.length);
+    expect(scanned.candidates.map((c) => c.canonical.toLowerCase())).toContain('quokkatron');
+
+    const added = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, full: true, minCount: 1, globalPath }, added, { isInteractive: () => true })).toBe(0);
+    const result = JSON.parse(added.out) as { count: number; added: number; created: number; merged: number; path: string };
+    expect(Object.keys(result)[0]).toBe('ok');
+    expect(result).toMatchObject({ ok: true, added: result.count, created: result.count, merged: 0, path: projectPath });
+    expect(added.err).toMatch(/added \d+ new term/);
+    expect((await readYaml(projectPath)).terms.length).toBe(result.count);
+
+    // The documented --json shape is unchanged: the bare array, the summary on stderr.
+    const plain = makeIO();
+    expect(await runHarvest(repo, { add: true, yes: true, json: true, minCount: 1, globalPath }, plain, { isInteractive: () => false })).toBe(0);
+    expect(Array.isArray(JSON.parse(plain.out))).toBe(true);
+    expect(plain.err).toMatch(/added 0 new terms, merged \d+/);
   });
 
   it('runHarvest --interactive without a terminal errors before scanning', async () => {
@@ -217,6 +283,7 @@ describe('add --interactive', () => {
     expect(term.aliases).toHaveLength(3);
     expect(io.out).toContain('created Ashlr.AI (global)');
     expect(io.out).not.toContain('suggested aliases:');
+    expect(io.out).not.toContain('(suggested');
     // The caller owns the prompter; runAdd must not close it.
     expect(p.closed).toBe(false);
   });
@@ -390,6 +457,43 @@ describe('review', () => {
       /mutually exclusive/,
     );
     await expect(runReview({ globalPath }, makeIO())).rejects.toThrow(/needs a terminal/);
+  });
+
+  // Catches: review checked --category itself with a plain Error, so it had
+  // none of the nextStep list, add and export give through parseCategory.
+  it('an unknown --category carries the same nextStep as list, add and export', async () => {
+    await expect(runReview({ globalPath, category: 'nope' }, makeIO(), scripted([]))).rejects.toMatchObject({
+      name: 'CliRefusal',
+      message: 'unknown category "nope" (expected one of: brand, person, product, acronym, identifier, place, other)',
+      nextStep: 'pass one of brand, person, product, acronym, identifier, place, other to --category, or leave --category out',
+    });
+  });
+});
+
+// Catches: `review --json` and `edit --json` were commander usage errors whose
+// nextStep was only their --help, which names no way to do the same without a terminal.
+describe('review and edit under --json', () => {
+  it('review --json refuses with the non-interactive commands and MCP tools, touching nothing', async () => {
+    const io = makeIO();
+    expect(await runReview({ globalPath, json: true }, io, scripted([]))).toBe(1);
+    const doc = JSON.parse(io.out) as { ok: boolean; error: string; nextStep: string };
+    expect(doc).toMatchObject({ ok: false, error: 'review is interactive and has no --json output' });
+    for (const name of ['lexicon list --json', 'lexicon remove <canonical>', 'lexicon add <canonical>', 'list_terms', 'remove_term', 'add_term']) {
+      expect(doc.nextStep).toContain(name);
+    }
+    expect(io.err).toContain('lexicon: read terms with lexicon list --json');
+    expect(io.err).not.toContain('\u2026');
+  });
+
+  it('edit --json refuses with add, remove and the MCP tools, and creates no file', async () => {
+    const io = makeIO();
+    let spawned = false;
+    expect(await runEdit({ globalPath, json: true }, io, async () => { spawned = true; return 0; }, { EDITOR: 'x' })).toBe(1);
+    expect(spawned).toBe(false);
+    const doc = JSON.parse(io.out) as { ok: boolean; error: string; nextStep: string };
+    expect(doc).toMatchObject({ ok: false, error: 'edit opens an editor and has no --json output' });
+    for (const name of ['lexicon add', 'lexicon remove', 'add_term', 'remove_term']) expect(doc.nextStep).toContain(name);
+    await expect(fs.access(globalPath)).rejects.toThrow();
   });
 });
 

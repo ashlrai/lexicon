@@ -14,7 +14,14 @@ export function stripBom(content: string): string {
   return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
 }
 
-/** Parse CSV text into records. Blank lines are dropped. */
+/**
+ * Parse CSV text into records. Blank lines are dropped.
+ *
+ * Throws when a quoted field never closes. RFC 4180 has no reading for that,
+ * and the lenient one (the field runs to the end of the input) folded every
+ * row after a stray `"` into a single term, so a 300-row dictionary imported
+ * as one garbled canonical with no error.
+ */
 export function parseCsv(content: string): CsvRecord[] {
   const text = stripBom(content);
   const records: CsvRecord[] = [];
@@ -24,6 +31,7 @@ export function parseCsv(content: string): CsvRecord[] {
   let line = 1;
   let recordLine = 1;
   let sawQuote = false;
+  let quoteLine = 1;
 
   const endField = (): void => {
     fields.push(field);
@@ -56,6 +64,7 @@ export function parseCsv(content: string): CsvRecord[] {
     if (ch === '"' && field === '' && !sawQuote) {
       inQuotes = true;
       sawQuote = true;
+      quoteLine = line;
     } else if (ch === ',') {
       endField();
     } else if (ch === '\r') {
@@ -71,6 +80,12 @@ export function parseCsv(content: string): CsvRecord[] {
     } else {
       field += ch;
     }
+  }
+  if (inQuotes) {
+    throw new Error(
+      `the quoted field that opens on line ${quoteLine} never closes, so every line after it would be read as part of it; ` +
+        'close the quote (a quote inside a quoted field is written as "")',
+    );
   }
   if (field !== '' || fields.length > 0 || sawQuote) endRecord();
   return records;

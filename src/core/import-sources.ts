@@ -615,7 +615,8 @@ export interface ApplyImportResult {
  */
 export async function applyImportCandidates(
   candidates: readonly HarvestCandidate[],
-  opts: StoreOptions & { scope?: TermScope } = {},
+  /** `leaveUntrusted` is passed to `addTerm`: a project file written here is not registered as trusted. */
+  opts: StoreOptions & { scope?: TermScope; leaveUntrusted?: boolean } = {},
 ): Promise<ApplyImportResult> {
   const scope: TermScope = opts.scope ?? 'global';
   let added = 0;
