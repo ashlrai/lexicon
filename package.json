@@ -41,6 +41,7 @@
     "README.md"
   ],
   "scripts": {
+    "check:crypto": "node --test scripts/check-crypto.test.mjs && node scripts/check-crypto.mjs",
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
     "build:bundle": "node scripts/build-bundle.mjs",
     "prepare": "npm run build && npm run build:bundle",
