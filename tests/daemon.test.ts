@@ -423,7 +423,10 @@ describe('runDaemonCommand', () => {
   });
 
   it('--paste without --once is rejected', async () => {
-    await expect(runDaemonCommand({ paste: true, read: async () => '', write: async () => undefined })).rejects.toThrow(/--once/);
+    // Catches: the refusal named no command to run instead.
+    await expect(runDaemonCommand({ paste: true, read: async () => '', write: async () => undefined })).rejects.toThrow(
+      '--paste works only with --once (correct the clipboard once, then paste); run: lexicon daemon --once --paste',
+    );
   });
 });
 

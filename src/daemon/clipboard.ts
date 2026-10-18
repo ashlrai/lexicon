@@ -425,7 +425,9 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   }
 
   if (opts.paste && !opts.once) {
-    throw new Error('--paste only makes sense with --once');
+    // It named no way on: the watcher cannot paste (it would paste on every
+    // clipboard change), so say what --once does and the command to run.
+    throw new Error('--paste works only with --once (correct the clipboard once, then paste); run: lexicon daemon --once --paste');
   }
 
   if (opts.once) {
