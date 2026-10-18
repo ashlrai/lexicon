@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const installer = fileURLToPath(new URL('../scripts/install.sh', import.meta.url));
+const hasPython = process.platform !== 'win32' && spawnSync('python3', ['-c', 'import pty'], { stdio: 'ignore' }).status === 0;
 let home: string;
 let log: string;
 
@@ -136,6 +137,63 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     const user = run({ LEXICON_NO_SETUP: '0', SUDO_USER: 'alice', TEST_UID: '501' });
     expect(user.stdout).not.toContain('under sudo');
     expect(user.stdout).toContain('next: run  lexicon setup');
+  });
+
+  // Catches: a readable but unopenable /dev/tty (no controlling terminal, as
+  // under setsid or some CI runners) counted as a terminal, so the redirect
+  // failed and the run ended "setup finished with warnings" instead of
+  // skipping setup. stdout is a pty here, stdin a pipe, and the session has no
+  // controlling terminal, so `-r /dev/tty` holds but opening it fails.
+  it.skipIf(!hasPython)('skips setup when /dev/tty is readable but cannot be opened', () => {
+    const helper = [
+      'import os, subprocess, sys',
+      'master, slave = os.openpty()',
+      'p = subprocess.Popen(["/bin/sh", sys.argv[1]], stdin=subprocess.PIPE, stdout=slave, stderr=subprocess.PIPE, start_new_session=True)',
+      'os.close(slave)',
+      'p.stdin.close()',
+      'out = b""',
+      'while True:',
+      '    try:',
+      '        chunk = os.read(master, 4096)',
+      '    except OSError:',
+      '        break',
+      '    if not chunk:',
+      '        break',
+      '    out += chunk',
+      'err = p.stderr.read()',
+      'code = p.wait()',
+      'sys.stdout.write(out.decode())',
+      'sys.stderr.write(err.decode())',
+      'sys.exit(code)',
+    ].join('\n');
+    const result = spawnSync('python3', ['-c', helper, installer], {
+      encoding: 'utf8',
+      timeout: 10_000,
+      cwd: home,
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_CONFIG_HOME: path.join(home, 'config'),
+        LEXICON_PATH: path.join(home, 'config', 'lexicon.yaml'),
+        PATH: `${path.join(home, 'bin')}${path.delimiter}/usr/bin${path.delimiter}/bin`,
+        LEXICON_REF: '',
+        LEXICON_NO_SETUP: '0',
+        SUDO_USER: '',
+        TEST_NPM_LOG: log,
+        TEST_NODE_VERSION: 'v22.22.3',
+        TEST_NPM_CODE: '0',
+        TEST_NPM_VERSION: '0.5.4',
+        TEST_INSTALL_CODE: '0',
+        TEST_INSTALLED_VERSION: '0.5.4',
+        TEST_VERSION_CODE: '0',
+      },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('installed lexicon 0.5.4');
+    expect(result.stdout).toContain('next: run  lexicon setup');
+    expect(result.stdout).not.toContain('finished with warnings');
+    expect(result.stderr).not.toContain('unexpected setup');
   });
 
   it('reports a failed version probe before claiming success', () => {
