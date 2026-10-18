@@ -60967,7 +60967,11 @@ var registerTrustTools = (server, ctx) => {
       } catch (err) {
         throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? "")}`);
       }
-      if (!file2.exists) throw new Error(`file does not exist: ${safePath}`);
+      if (!file2.exists) {
+        throw new Error(
+          `file does not exist: ${safePath}. Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, then pass the path of an existing .lexicon.yaml or the repo directory holding it; if the repo has none yet, ask the user to create one with ${cliCommand("init --project")} in that repo.`
+        );
+      }
       const shownSha = await parsedContentHash(file2) ?? await hashFile(filePath);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {

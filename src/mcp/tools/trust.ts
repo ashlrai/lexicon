@@ -188,7 +188,14 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         } catch (err) {
           throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? '')}`);
         }
-        if (!file.exists) throw new Error(`file does not exist: ${safePath}`);
+        if (!file.exists) {
+          throw new Error(
+            `file does not exist: ${safePath}. ` +
+              "Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, " +
+              'then pass the path of an existing .lexicon.yaml or the repo directory holding it; ' +
+              `if the repo has none yet, ask the user to create one with ${cliCommand('init --project')} in that repo.`,
+          );
+        }
         const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));
         const before = await isTrusted(file, { cwd: ctx.cwd });
 

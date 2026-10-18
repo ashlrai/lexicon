@@ -76,6 +76,19 @@ describe('trust_project with a directory path', () => {
     expect(payload.termCount).toBe(1);
     expect(status.text).not.toContain('EISDIR');
   });
+
+  // Catches: 'trust' on a missing file answered only "file does not exist:
+  // <path>", with nothing the agent could do next.
+  it("'trust' on a missing file names the next step: status, an existing path or init --project", async () => {
+    for (const target of [path.join(repo, 'nope.yaml'), repo]) {
+      const res = await call('trust_project', { action: 'trust', path: target });
+      expect(res.isError, target).toBe(true);
+      expect(res.text).toContain('file does not exist:');
+      expect(res.text).toContain("Call trust_project with action 'status' and no path");
+      expect(res.text).toContain('the repo directory holding it');
+      expect(res.text).toContain('`lexicon init --project` (or `npx @ashlr/lexicon init --project`)');
+    }
+  });
 });
 
 describe('remove_term', () => {
