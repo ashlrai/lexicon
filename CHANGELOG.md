@@ -227,6 +227,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `suggest_terms` (and `lexicon suggest --json`) gives each suggestion the `scope` and `path` of the lexicon file accepting it would write: where the term lives, or the global file for a new term. An agent could not tell the user which file a suggestion touches. MCP `apply_suggestion` honours a `scope` passed back on the suggestion.
 - `POST /normalize`, the extension's embedded engine and the Claude Code hook say when matching stopped at their time budget, as MCP `normalize_transcript` already did. Serve and the engine return `incomplete { reasons: ['time'], totalChars, note }` (the extension passes it on in its normalize reply); the hook adds one line telling the agent later parts of the prompt were not checked, even when nothing was corrected. Before, a long prompt cut short looked exactly like one with nothing left to fix.
 
+### Internal
+
+- The e2e project trust journey (`skips an untrusted project file, refuses to write to it, then merges it once trusted`) is four tests, one per stage, each with its own HOME and the stage before it re-run through the real CLI as setup, and the spawns within a stage that only read run together. As one test it ran 15 subprocesses one after another, about 12 s idle, and could hit the 30 s timeout under full-suite load; the longest stage now takes about 5 s. Every assertion is kept, and the timeout is unchanged.
+
 ## 0.5.6 (2026-10-16)
 
 ### Security

