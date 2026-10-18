@@ -239,7 +239,17 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         }
         if (apply === true) {
           if (sources === undefined || previewToken === undefined || approvedCandidateIds === undefined) {
-            throw new Error('apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview');
+            // Name what is missing and the call that produces it: an agent that
+            // jumped to apply had no preview to take a token from.
+            const missing = [
+              ...(sources === undefined ? ['sources'] : []),
+              ...(previewToken === undefined ? ['previewToken'] : []),
+              ...(approvedCandidateIds === undefined ? ['approvedCandidateIds'] : []),
+            ];
+            throw new Error(
+              `apply: true needs sources, previewToken and approvedCandidateIds from a user-approved preview; ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing, so nothing was read or written. ` +
+                'Preview first: call without apply, with the sources the user agreed to read (and the same scope), show the candidates, then call again with apply: true, those sources, the returned previewToken and only the ids the user approved.',
+            );
           }
           const saved = imports.get(previewToken);
           if (!saved || saved.destination !== destination(scope) ||

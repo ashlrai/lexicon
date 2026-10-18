@@ -1020,7 +1020,14 @@ describe('lexicon MCP server', () => {
           for (const arguments_ of [{ apply: true }, { apply: true, sources: ['github'] }]) {
             const result = await client.callTool({ name: 'import_vocabulary', arguments: arguments_ });
             expect(result.isError).toBe(true);
+            // Catches: the error named every argument without saying which was
+            // missing or that a preview call comes first.
+            expect(textOf(result)).toContain('Preview first: call without apply');
           }
+          const noSources = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true } });
+          expect(textOf(noSources)).toContain('sources, previewToken, approvedCandidateIds are missing');
+          const noToken = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], approvedCandidateIds: [] } });
+          expect(textOf(noToken)).toContain('previewToken is missing, so nothing was read or written');
           expect(mocks.harvestImportSources).not.toHaveBeenCalled();
           expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
         } finally { await close(); }

@@ -64499,7 +64499,14 @@ var registerPackTools = (server, ctx) => {
       }
       if (apply === true) {
         if (sources === void 0 || previewToken === void 0 || approvedCandidateIds === void 0) {
-          throw new Error("apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview");
+          const missing = [
+            ...sources === void 0 ? ["sources"] : [],
+            ...previewToken === void 0 ? ["previewToken"] : [],
+            ...approvedCandidateIds === void 0 ? ["approvedCandidateIds"] : []
+          ];
+          throw new Error(
+            `apply: true needs sources, previewToken and approvedCandidateIds from a user-approved preview; ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} missing, so nothing was read or written. Preview first: call without apply, with the sources the user agreed to read (and the same scope), show the candidates, then call again with apply: true, those sources, the returned previewToken and only the ids the user approved.`
+          );
         }
         const saved = imports.get(previewToken);
         if (!saved || saved.destination !== destination(scope) || JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify(saved.sources)) {
