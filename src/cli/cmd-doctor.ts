@@ -441,6 +441,18 @@ function summarize(
           `(lexicon setup will not repair this). The file is ${first.path}`,
     };
   }
+  // Wired up but empty: setup already ran (with no git user.name and no
+  // --person or --company it seeds nothing), so sending the user back to
+  // setup goes round in a circle. Adding a term is what is missing.
+  if (state.terms === 0 && state.wired) {
+    return {
+      ready: false,
+      summary: 'Lexicon is wired up to an agent but has no terms yet, so nothing will be corrected.',
+      nextStep: mcp
+        ? 'Ask the user how their company, product and own name are spelled, then call add_term for each (list_packs offers starter packs of common names)'
+        : 'Add a term: lexicon add "Ashlr.AI" Ashler  (or lexicon setup --person "Your Name" --company "Your Co" to seed your own names)',
+    };
+  }
   if (state.terms === 0) {
     return {
       ready: false,
