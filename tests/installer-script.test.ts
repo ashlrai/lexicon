@@ -136,7 +136,7 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     // A plain user with a stale SUDO_USER in the environment is not root.
     const user = run({ LEXICON_NO_SETUP: '0', SUDO_USER: 'alice', TEST_UID: '501' });
     expect(user.stdout).not.toContain('under sudo');
-    expect(user.stdout).toContain('next: run  lexicon setup');
+    expect(user.stdout).toContain('no terminal to ask the setup questions on; run: lexicon setup');
   });
 
   // Catches: a readable but unopenable /dev/tty (no controlling terminal, as
@@ -191,7 +191,7 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('installed lexicon 0.5.4');
-    expect(result.stdout).toContain('next: run  lexicon setup');
+    expect(result.stdout).toContain('no terminal to ask the setup questions on; run: lexicon setup');
     expect(result.stdout).not.toContain('finished with warnings');
     expect(result.stderr).not.toContain('unexpected setup');
   });
@@ -214,5 +214,25 @@ describe('install docs describe when the script runs setup', () => {
     expect(text).toMatch(/terminal/);
     expect(text).toMatch(/`sudo`/);
     expect(text).toContain('LEXICON_NO_SETUP=1');
+  });
+});
+
+// Catches: the branches that skip setup told the user to run it in two forms,
+// `run: lexicon setup` (sudo, LEXICON_NO_SETUP) and `next: run  lexicon setup`
+// (no terminal, with two spaces), and the docs quoted a third, `run lexicon setup`.
+describe('every branch that skips setup names it the same way', () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  it('the script ends each skip line with run: lexicon setup', () => {
+    const script = readFileSync(installer, 'utf8');
+    const lines = script.split('\n').filter((l) => /^\s*say ".*lexicon setup"$/.test(l) && !/rerun/.test(l));
+    expect(lines.length).toBe(3);
+    for (const l of lines) expect(l).toMatch(/[;,] run: lexicon setup"$/);
+    expect(script).not.toContain('next: run');
+  });
+  it.each(['docs/FAQ.md', 'docs/AGENTS.md', 'web/lib/site.ts'])('%s quotes the line the script prints', (file) => {
+    const text = readFileSync(path.join(repo, file), 'utf8');
+    expect(text).toContain('`run: lexicon setup`');
+    expect(text).not.toContain('`run lexicon setup`');
+    expect(text).not.toContain('next: run');
   });
 });
