@@ -1024,7 +1024,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
    * localhost on the bound port (DNS rebinding arrives with another Host).
    */
   function pairPage(req: http.IncomingMessage): Response {
-    if (!config) throw new HttpError(503, 'server is starting');
+    // Only before start() has read serve.json (an embedder that listens on
+    // `server` itself): nothing is wrong with the request, so say when to
+    // send it again, as the busy 503 does.
+    if (!config) {
+      throw new HttpError(503, `server is starting; retry after ${BUSY_RETRY_AFTER_S} second (Retry-After)`, {
+        'Retry-After': String(BUSY_RETRY_AFTER_S),
+      });
+    }
     if (!isLoopbackAddress(req.socket.remoteAddress)) throw new HttpError(403, 'the pairing page is served on the loopback interface only');
     if (!isPairHost(req.headers.host, boundPort)) {
       throw new HttpError(403, `the pairing page is served for Host 127.0.0.1:${boundPort} or localhost:${boundPort} only`);

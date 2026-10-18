@@ -1041,6 +1041,37 @@ describe('limits and errors', () => {
     expect(post.headers.allow).toBe('POST');
   });
 
+  // Catches: /pair before start() had read serve.json answered 503 "server
+  // is starting" with no Retry-After and no word to retry.
+  it('503 while the server is starting carries Retry-After and says to retry', async () => {
+    const early = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    await new Promise<void>((resolve) => early.server.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      const address = early.server.address() as net.AddressInfo;
+      const res = await new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+        // Host names port 0: start() has not run, so that is the port the server believes it has.
+        const req = http.request({ host: '127.0.0.1', port: address.port, path: '/pair', headers: { Host: '127.0.0.1:0' } }, (r) => {
+          let body = '';
+          r.setEncoding('utf8');
+          r.on('data', (d: string) => {
+            body += d;
+          });
+          r.on('end', () => resolve({ status: r.statusCode ?? 0, body, headers: r.headers }));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(JSON.parse(res.body)).toEqual({ error: 'server is starting; retry after 1 second (Retry-After)' });
+    } finally {
+      await new Promise<void>((resolve) => {
+        early.server.close(() => resolve());
+        early.server.closeAllConnections();
+      });
+    }
+  });
+
   it('503 once the concurrency cap is reached', async () => {
     const tiny = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true, maxConcurrent: 0 });
     const t = await tiny.start();
