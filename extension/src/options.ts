@@ -170,7 +170,8 @@ ui.test.addEventListener('click', () => {
     } else if (status.server) {
       ui.testResult.textContent = `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set; /normalize will fall back to embedded)'}.`;
     } else {
-      ui.testResult.textContent = `Unreachable: ${status.serverError ?? 'unknown error'}. Start it with \`lexicon serve\`.`;
+      const why = status.serverError ?? 'no reply';
+      ui.testResult.textContent = `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
     }
   })().catch((err: unknown) => {
     ui.testResult.textContent = errorMessage(err);

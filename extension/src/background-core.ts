@@ -81,6 +81,11 @@ class TokenRejectedError extends Error {
   }
 }
 
+/** What a request that never reached the server says: where it went and how to start the server. */
+export function unreachableMessage(baseUrl: string): string {
+  return `cannot reach lexicon serve at ${baseUrl}; start it with \`lexicon serve\` (or \`lexicon serve --install\` to start it at login)`;
+}
+
 /** The `error` string of a failed API reply (`{ error }`, see src/serve/server.ts), or undefined. */
 async function apiErrorDetail(res: Response): Promise<string | undefined> {
   try {
@@ -133,7 +138,16 @@ export function createBackground(deps: BackgroundDeps): Background {
         if (!settings.token) throw new Error('No API token set (run `lexicon serve --show` and paste it in Options).');
         headers.Authorization = `Bearer ${settings.token}`;
       }
-      const res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
+      let res: Response;
+      try {
+        res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
+      } catch (err) {
+        // A refused connection is a bare TypeError ("Failed to fetch" in
+        // Chromium, "NetworkError when attempting to fetch resource." in
+        // Firefox), which the popup, Test connection and Sync showed as is.
+        if (err instanceof TypeError) throw new Error(unreachableMessage(settings.baseUrl));
+        throw err;
+      }
       // Only 401 means the token. The server also answers 403 for an untrusted
       // project lexicon and 400 for bad input, each with an `{ error }` body
       // that says what to fix, so pass that through instead of a bare status.
