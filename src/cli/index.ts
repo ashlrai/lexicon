@@ -42,7 +42,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { argvRequestsJson, fail, jsonFlagsOf, line, optsRequestJson, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, fail, jsonFlagsOf, line, optsRequestJson, refuse, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -68,7 +68,7 @@ program
   .name('lexicon')
   .description('Personal lexicon for voice-to-agents: fixes the words STT gets wrong before your agent sees them.')
   .version(packageVersion(import.meta.url))
-  .option('--cwd <dir>', 'directory used to find the project .lexicon.yaml (default: current directory)')
+  .option('--cwd <dir>', 'directory used to find the project .lexicon.yaml; must exist (default: current directory)')
   .exitOverride()
   .showHelpAfterError('(use --help for usage)');
 
@@ -299,6 +299,11 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
 let active: Command | undefined;
 program.hook('preAction', (_program, actionCommand) => {
   active = actionCommand;
+  // `hook` must always exit 0 and ignores --cwd (the payload names the
+  // directory); `mcp` takes its roots from the client.
+  if (actionCommand.name() === 'hook' || actionCommand.name() === 'mcp') return;
+  const problem = cwdOptionProblem(program.opts<{ cwd?: string }>().cwd);
+  if (problem) throw problem;
 });
 
 try {
@@ -316,6 +321,8 @@ try {
       line(io, JSON.stringify(doc, null, 2));
     }
     process.exitCode = err.exitCode;
+  } else if (err instanceof CliRefusal) {
+    process.exitCode = refuse(io, optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()), err.message, err.nextStep);
   } else {
     // fail() is the same `lexicon: <message>` line plus, for a lexicon file
     // that does not parse, the command that fixes it.

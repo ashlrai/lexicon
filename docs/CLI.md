@@ -46,7 +46,7 @@ agent sees them.
 
 Options:
   -V, --version                           output the version number
-  --cwd <dir>                             directory used to find the project .lexicon.yaml (default: current directory)
+  --cwd <dir>                             directory used to find the project .lexicon.yaml; must exist (default: current directory)
   -h, --help                              display help for command
 
 Commands:

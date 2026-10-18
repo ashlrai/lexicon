@@ -34,7 +34,12 @@ user can see, so it needs no permission.
 Skip the call when a `UserPromptSubmit` hook note titled "Voice lexicon
 corrections" is already present: the hook ran normalize for you; apply its
 corrected prompt. (With many MCP servers the first lexicon call also costs a
-ToolSearch turn, so this matters.)
+ToolSearch turn, so this matters.) The hook does not always check the whole
+prompt: past its first 50,000 characters it adds "Lexicon checked only the
+first N of this prompt's M characters", and when matching runs out of time
+"Lexicon stopped checking this prompt ... after its 100 ms budget". With
+either line, the rest was never looked at: if a name there looks garbled, call
+`normalize_transcript` on that part only.
 
 Mention a correction only when it changes what you are about to do. Never ask
 the user to confirm an exact alias match; on a low-confidence one just use the
@@ -129,8 +134,9 @@ note says a project file was skipped as untrusted or changed:
 ## Maintenance
 
 - **Improving corrections.** Weekly, or on request, `suggest_terms {}`. Present
-  each on one line ("add 'ashlur' to Ashlr.AI, heard 4 times"). Apply only
-  accepted ones, one `apply_suggestion { suggestion }` each, object as received.
+  each on one line ("add 'ashlur' to Ashlr.AI, heard 4 times") with the file
+  it would write (its `scope` and `path`). Apply only accepted ones, one
+  `apply_suggestion { suggestion }` each, object as received.
 - **New repo.** No `.lexicon.yaml`? `harvest_repo` without `add` previews
   candidates; add them with `add: true` only after a yes. The file it writes
   stays untrusted: relay its `nextStep` (the user runs `lexicon trust`).
@@ -143,12 +149,12 @@ note says a project file was skipped as untrusted or changed:
 
 | Need | Tool |
 | --- | --- |
-| Fix a dictated prompt | `normalize_transcript { text }` |
+| Fix a dictated prompt | `normalize_transcript { text, dryRun?, minConfidence? }` |
 | Record a correction the user just made | `learn_correction { heard, meant, scope? }` |
 | "Did you mean X?" for an unknown garble | `suggest_canonical { heard }` |
-| Add a new term with metadata | `add_term { canonical, aliases?, category?, never?, scope? }` |
-| Look something up | `list_terms { query? }` |
-| Seed from a repo | `harvest_repo { path?, add? }` |
+| Add a new term with metadata | `add_term { canonical, aliases?, phonetic?, category?, notes?, never?, scope? }` |
+| Look something up | `list_terms { query?, category? }` |
+| Seed from a repo | `harvest_repo { path?, limit?, minCount?, add? }` |
 | First-run onboarding (plan, then apply) | `setup_lexicon { company?, person?, clients?, packs?, harvest?, serve?, apply? }` |
 | "Is it set up?" / nothing gets corrected | `lexicon_doctor {}` |
 | Starter term packs | `list_packs { registry? }`, `add_pack { name, scope?, registry?, confirm?, previewDigest? }` (community packs preview first) |
@@ -158,8 +164,9 @@ note says a project file was skipped as untrusted or changed:
 | Names from the user's contacts, calendar or GitHub (preview, then apply) | `import_vocabulary { sources?, apply?, scope?, previewToken?, approvedCandidateIds? }` |
 | What should be added or removed | `suggest_terms { cwd?, limit? }` |
 | Apply one accepted suggestion | `apply_suggestion { suggestion, scope? }` |
-| Drop a spelling / usage report / is the API up | `remove_term`, `lexicon_stats`, `serve_status` |
-| Hand the list to another tool | `export_lexicon { format }` |
+| Drop a term or one alias (`foundIn` names the scope to retry with) | `remove_term { canonical, alias?, scope? }` |
+| Usage report / is the API up | `lexicon_stats {}`, `serve_status {}` |
+| Hand the list to another tool | `export_lexicon { format, categories?, limit? }` |
 
 `export_lexicon` formats: `claude-md`, `wispr`, `superwhisper`, `whisper-prompt`, `macos`, `deepgram`,
 `espanso`, `assemblyai`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`.

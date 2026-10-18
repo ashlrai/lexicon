@@ -49,6 +49,43 @@ export interface HookOptions {
 export const HOOK_MATCH_BUDGET_MS = 100;
 
 /**
+ * Characters of a prompt the UserPromptSubmit hook checks; the rest passes
+ * through unchecked and the note says so. The match budget bounds the token
+ * scan only: the work before it (code-span detection, tokenizing,
+ * correction parsing) is linear in the whole prompt, so a 2 MB paste took 2 s
+ * and a 10 MB one 49 s, far past the hook's 200 ms and the plugin's timeout.
+ * Dictation is a few thousand characters; this is a pasted file.
+ */
+export const HOOK_PROMPT_MAX_CHARS = 50_000;
+
+/**
+ * Where to cut `text` to at most `max` characters: after the last whitespace
+ * in the final 200 (so a word is not split), and never between the halves of
+ * a surrogate pair.
+ */
+function promptCut(text: string, max: number): number {
+  if (text.length <= max) return text.length;
+  let cut = max;
+  const code = text.charCodeAt(cut - 1);
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  for (let i = cut; i > 0 && i > cut - 200; i--) {
+    if (/\s/.test(text.charAt(i - 1))) return i;
+  }
+  return cut;
+}
+
+/**
+ * One line for a prompt longer than HOOK_PROMPT_MAX_CHARS, so the agent knows
+ * the rest was never looked at rather than found clean.
+ */
+export function formatLengthNote(checkedChars: number, totalChars: number): string {
+  return (
+    `Lexicon checked only the first ${checkedChars} of this prompt's ${totalChars} characters for misspelled names; the rest was not checked. ` +
+    'If a name further on looks garbled, call the lexicon normalize_transcript tool on that part.'
+  );
+}
+
+/**
  * Longest prompt the corrections note repeats back in full. Past this the
  * note carries only the list of corrections: echoing a pasted log doubled the
  * context the hook added for no benefit.
@@ -530,7 +567,17 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
 function parseInput(raw: string): HookInput {
   const trimmed = raw.trim();
   if (!trimmed) return {};
-  const parsed: unknown = JSON.parse(trimmed);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    // JSON.parse's message quotes the start of the input, which is the
+    // user's prompt when a caller pipes raw text, control characters and
+    // all; it reached stderr verbatim as `[lexicon hook] Unexpected token
+    // 'h', "hi Ashler ..." is not valid JSON`. Say what was wrong instead.
+    process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, 'utf8')} bytes); expected the Claude Code hook payload object, nothing to do\n`);
+    return {};
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     // Valid JSON that is not a payload: nothing to read, and saying so is the
     // only clue a person has that the caller sent the wrong thing.
@@ -618,7 +665,15 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
 
-  const parsed = parseCorrection(prompt);
+  // Everything below works on `head`; past the cap the tail is passed through
+  // unchecked (appended to the output so the offsets and the corrected
+  // prompt still describe the whole prompt).
+  const cut = promptCut(prompt, HOOK_PROMPT_MAX_CHARS);
+  const head = cut < prompt.length ? prompt.slice(0, cut) : prompt;
+  const tail = prompt.slice(head.length);
+  const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : '';
+
+  const parsed = parseCorrection(head);
   const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
   const correctionNote = correction ? formatCorrectionNote(correction) : '';
 
@@ -634,7 +689,8 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
   let timedOut = false;
   const shouldStop = (): boolean => (timedOut ||= process.hrtime.bigint() - started >= limit);
-  let result = index ? normalizeWithIndex(prompt, index, { shouldStop }) : undefined;
+  let result = index ? normalizeWithIndex(head, index, { shouldStop }) : undefined;
+  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : '';
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   if (result && correction) result = dropCorrectionSpans(result, correction);
@@ -643,10 +699,11 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
 
-  if (!changed && !skippedNote && !correctionNote && !budgetNote) return '';
+  if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote) return '';
 
   const parts: string[] = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
+  if (lengthNote) parts.push(lengthNote);
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);

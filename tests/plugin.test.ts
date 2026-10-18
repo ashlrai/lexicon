@@ -122,6 +122,103 @@ describe('plugin manifests agree with the package and the bundles', () => {
   });
 });
 
+/** Starts `bundle`, initializes, and returns each tool's input parameter names from tools/list. */
+function listBundleToolParams(bundle: string, env: NodeJS.ProcessEnv, cwd: string): Promise<Map<string, string[]>> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [bundle], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`no tools/list answer from ${bundle}; stderr: ${err}`));
+    }, 15_000);
+    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    child.stdout.on('data', (d: Buffer) => {
+      out += d.toString();
+      for (const line of out.split('\n')) {
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line) as { id?: number; result?: { tools?: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> } };
+        if (msg.id === 2) {
+          clearTimeout(timer);
+          child.kill();
+          resolve(new Map((msg.result?.tools ?? []).map((t) => [t.name, Object.keys(t.inputSchema?.properties ?? {})])));
+          return;
+        }
+      }
+    });
+    const send = (m: unknown): void => void child.stdin.write(`${JSON.stringify(m)}\n`);
+    send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+  });
+}
+
+/** The argument names in a doc's `tool { a, b? \| c?, d: 'x' \| 'y' }`: the identifier that starts each piece between commas and bars. */
+function docArgNames(inner: string): string[] {
+  return inner
+    .split(/[,|]/)
+    .map((piece) => /^\s*([A-Za-z]+)/.exec(piece)?.[1])
+    .filter((n): n is string => n !== undefined);
+}
+
+describe('skills and commands agree with the MCP tool schemas', () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), 'lexicon-plugin-docs-'));
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  const docs = (): string[] => [
+    ...readdirSync(path.join(REPO_ROOT, 'skills')).map((d) => path.join('skills', d, 'SKILL.md')),
+    ...readdirSync(path.join(REPO_ROOT, 'commands')).filter((f) => f.endsWith('.md')).map((f) => path.join('commands', f)),
+  ];
+
+  // Catches: the skill's cheat sheet showed `list_terms { query? }`,
+  // `harvest_repo { path?, add? }` and `export_lexicon { format }`, so an agent
+  // reading it never learned the category filter, the harvest limits or the
+  // export filters; an argument a tool does not take would be refused.
+  it('every `tool { args }` names only arguments the tool takes, and a cheat-sheet row names all of them', async () => {
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? '', HOME: tmp, USERPROFILE: tmp, XDG_CONFIG_HOME: path.join(tmp, '.config'), LEXICON_PATH: path.join(tmp, 'lexicon.yaml') };
+    const params = await listBundleToolParams(BUNDLE, env, tmp);
+    expect(params.size).toBeGreaterThan(0);
+    for (const doc of docs()) {
+      const text = readFileSync(path.join(REPO_ROOT, doc), 'utf8');
+      for (const line of text.split('\n')) {
+        for (const m of line.matchAll(/`([a-z]+_[a-z_]+) \{([^`]*)\}`/g)) {
+          const [, tool, inner] = m;
+          const known = params.get(tool);
+          expect(known, `${doc}: ${tool}`).toBeDefined();
+          const named = docArgNames(inner);
+          expect(named.filter((n) => !known?.includes(n)), `${doc}: ${m[0]}`).toEqual([]);
+          if (line.startsWith('|')) expect([...named].sort(), `${doc} cheat sheet: ${m[0]}`).toEqual([...(known ?? [])].sort());
+        }
+      }
+    }
+  }, 30_000);
+
+  // Catches: the skill said a "Voice lexicon corrections" note means the hook
+  // already normalized the prompt, so an agent never re-checked the part a
+  // huge prompt's length cap or the match budget left unchecked.
+  it('the skill names both notes that say the hook left part of a prompt unchecked', async () => {
+    const { formatBudgetNote, formatLengthNote } = await import('../src/hooks/user-prompt-submit.js');
+    const skill = readFileSync(path.join(REPO_ROOT, 'skills', 'lexicon', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(skill).toContain(formatLengthNote(1, 2).split(' 1 of ')[0]);
+    expect(skill).toContain(formatBudgetNote(100).split(' for misspelled')[0]);
+  });
+
+  // Catches: the suggest_terms description asks the agent to name the file a
+  // suggestion writes, but the skill and the /lexicon command never said so.
+  it('skills and commands that present suggest_terms name the file each suggestion writes', () => {
+    for (const doc of docs()) {
+      const text = readFileSync(path.join(REPO_ROOT, doc), 'utf8').replace(/\s+/g, ' ');
+      if (!text.includes('suggest_terms')) continue;
+      expect(text, doc).toMatch(/the file (?:it|applying it) would write \(its `scope` and `path`\)/);
+    }
+  });
+});
+
 /** Starts `bundle`, initializes, calls one tool, and returns the tool's text. */
 function callBundleTool(bundle: string, tool: string, env: NodeJS.ProcessEnv, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {

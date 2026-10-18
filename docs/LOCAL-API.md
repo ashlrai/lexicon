@@ -85,7 +85,8 @@ included, and no body. Errors are
 Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
-/ a cross-origin `Origin`, 404 unknown route or export format,
+/ a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
+`METHOD /path`) or export format,
 405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 500 a problem on the server's side,
 503 more than 64 requests in flight.
 

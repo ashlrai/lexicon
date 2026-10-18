@@ -831,6 +831,20 @@ describe('limits and errors', () => {
     expect(await res.json()).toEqual({ error: expect.stringContaining('no route') });
   });
 
+  it('the unknown-route 404 lists every route, method and path', async () => {
+    const res = await api('POST', '/normalise');
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    // Same shape as every other error: one `error` string.
+    expect(Object.keys(body)).toEqual(['error']);
+    // Catches: the 404 said only "no route for POST /normalise", so a client
+    // that guessed a path had to go read the docs for the real ones.
+    expect(body.error).toBe(
+      'no route for POST /normalise (routes: GET /health, GET /pair, POST /normalize, POST /learn, POST /add, ' +
+        'GET /lexicon, GET /stats, GET /packs, POST /packs/:name, DELETE /packs/:name, GET /aliases, GET /export/:format)',
+    );
+  });
+
   it('400 on bad JSON and on a non-object body', async () => {
     const bad = await api('POST', '/normalize', '{"text": ');
     expect(bad.status).toBe(400);
@@ -1126,15 +1140,18 @@ describe('requests that used to succeed while doing something else', () => {
 // ---------------------------------------------------------------------------
 
 describe('lexicon serve (CLI)', () => {
-  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty.
-  it('--json prints { ok: false, error } when two modes are combined', async () => {
+  // Catches: a refused `serve --json` printed its reason on stderr only, leaving stdout empty;
+  // then the document had no nextStep, unlike every other refusal, and never named the flags that collided.
+  it('--json prints { ok: false, error, nextStep } naming the flags when two modes are combined', async () => {
+    const error = 'use only one of --show, --status, --pair, --install, --uninstall';
     const io = memIO();
     expect(await runServe({ show: true, status: true, json: true, globalPath: env.globalPath }, io)).toBe(1);
-    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    expect(JSON.parse(io.out.join(''))).toEqual({ ok: false, error, nextStep: 'pass only one of --show, --status (see lexicon serve --help)' });
+    expect(io.err.join('')).toContain('lexicon: pass only one of --show, --status');
     // --install takes --json too, so its refusal is a document as well.
     const install = memIO();
     expect(await runServe({ install: true, uninstall: true, json: true, globalPath: env.globalPath }, install)).toBe(1);
-    expect(JSON.parse(install.out.join(''))).toEqual({ ok: false, error: 'use only one of --show, --status, --pair, --install, --uninstall' });
+    expect(JSON.parse(install.out.join(''))).toEqual({ ok: false, error, nextStep: 'pass only one of --install, --uninstall (see lexicon serve --help)' });
   });
 
   // Catches: `serve --install --json` and `--uninstall --json` printed the
@@ -1332,6 +1349,7 @@ describe('lexicon serve (CLI)', () => {
         reason: 'unexpected /health response',
         error: 'unexpected /health response (not lexicon serve)',
         hint: expect.stringContaining('lexicon serve --port <n>'),
+        nextStep: expect.stringContaining('lexicon serve --port <n>'),
       });
     } finally {
       await new Promise<void>((resolve) => other.close(() => resolve()));
@@ -1371,6 +1389,23 @@ describe('lexicon serve (CLI)', () => {
     expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
     expect(first(down.out.join(''))).toEqual(['ok', false]);
     expect(JSON.parse(down.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.any(String), hint: expect.any(String) });
+  });
+
+  // Catches: a failing --status --json had `hint` but no `nextStep`, the key
+  // every other failing --json document of the CLI uses for what to do next.
+  it('--status --json carries nextStep, equal to hint, whenever the server is not up', async () => {
+    const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    const c = await closed.start();
+    await closed.stop();
+    const down = memIO();
+    expect(await runServe({ status: true, json: true, port: c.port, globalPath: env.globalPath }, down)).toBe(1);
+    const d = JSON.parse(down.out.join('')) as Record<string, unknown>;
+    expect(d).toMatchObject({ ok: false, error: expect.any(String), nextStep: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.' });
+    expect(d.nextStep).toBe(d.hint);
+
+    const io = memIO();
+    expect(await runServe({ status: true, json: true, port: info.port, globalPath: env.globalPath }, io)).toBe(0);
+    expect(JSON.parse(io.out.join(''))).not.toHaveProperty('nextStep');
   });
 
   it('refuses two modes at once', async () => {

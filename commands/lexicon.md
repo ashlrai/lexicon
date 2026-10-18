@@ -1,6 +1,6 @@
 ---
 description: Show, add, harvest, export, set up, diagnose or improve the user's personal voice lexicon (STT spelling corrections).
-argument-hint: "[add <canonical> as <alias>, <alias> | remove <canonical> | learn <heard> -> <meant> | stats | harvest | export <format> | setup | doctor | suggest | trust [path]]"
+argument-hint: "[add <canonical> as <alias>, <alias> | remove <canonical> | remove <alias> from <canonical> | learn <heard> -> <meant> | stats | harvest [path] | export <format> | setup | doctor | suggest [n] | trust [path] | trust off [path]]"
 ---
 
 Manage the user's voice lexicon through the `lexicon` MCP server. Arguments: `$ARGUMENTS`
@@ -63,7 +63,7 @@ Decide what to do from the arguments:
 
 10. **`suggest`** - call `suggest_terms` (pass `limit` if the user gave a
     number). Show each suggestion on one line: kind, canonical, alias, reason,
-    count. Ask which to apply; for each accepted one call `apply_suggestion`
+    count, and the file applying it would write (its `scope` and `path`). Ask which to apply; for each accepted one call `apply_suggestion`
     with the suggestion object exactly as returned. Report what was written
     and skip the rest. With no suggestions, say the lexicon looks healthy.
 

@@ -168,6 +168,10 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     else if (probe.state === 'failing') rest = { running: true, status: probe.status, reason: probe.error, error: probe.error, hint: SERVE_STATUS_HINTS.failing };
     else if (foreign) rest = { reason: 'unexpected /health response', error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign };
     else rest = { reason: downError, error: downError, hint: SERVE_STATUS_HINTS.down };
+    // `nextStep` repeats `hint`: every other failing --json document of the
+    // CLI names what to do next under that key, so a script reading
+    // `{ ok: false, error, nextStep }` found nothing here.
+    if (typeof rest.hint === 'string') rest.nextStep = rest.hint;
     // `ok` equal to up (exit code 0) first, as every other --json document leads with it.
     line(io, JSON.stringify({ ok: up, up, url, ...rest, ...notConfigured }, null, 2));
     return up ? 0 : 1;
@@ -836,9 +840,13 @@ async function runServeServiceJson(action: 'install' | 'uninstall', opts: ServeO
 }
 
 export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
-  const modes = [opts.show, opts.status, opts.pair, opts.install, opts.uninstall].filter(Boolean).length;
+  const given = (['show', 'status', 'pair', 'install', 'uninstall'] as const).filter((m) => opts[m] === true).map((m) => `--${m}`);
   const json = opts.json === true;
-  if (modes > 1) return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall');
+  // The nextStep names the flags that collided, as `lexicon voice` does for its
+  // modes; the document had only `error`, unlike every other refusal.
+  if (given.length > 1) {
+    return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall', `pass only one of ${given.join(', ')} (see lexicon serve --help)`);
+  }
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);

@@ -560,6 +560,49 @@ describe('runHook', () => {
     }
   });
 
+  // Catches: the whole prompt reached the matcher; the pre-scan work is linear in
+  // it and outside the match budget, so a 10 MB paste kept the hook busy for 49 s.
+  it('checks only the first HOOK_PROMPT_MAX_CHARS of a huge prompt and says the rest was not checked', async () => {
+    const { runHook, HOOK_PROMPT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const prompt = 'hi Ashler ' + 'word '.repeat(HOOK_PROMPT_MAX_CHARS / 2);
+    const out = await runHook(payload(prompt));
+    const seen = String(mocks.normalize.mock.calls.at(-1)?.[0]);
+    expect(seen.length).toBeLessThanOrEqual(HOOK_PROMPT_MAX_CHARS);
+    expect(prompt.startsWith(seen)).toBe(true);
+    // Cut after whitespace, not inside a word.
+    expect(seen.endsWith(' ')).toBe(true);
+    const ctx = context(out);
+    expect(ctx).toContain('"Ashler" -> "Ashlr.AI"');
+    expect(ctx).toContain(`Lexicon checked only the first ${seen.length} of this prompt's ${prompt.length} characters`);
+  });
+
+  it('adds no length note to a prompt within HOOK_PROMPT_MAX_CHARS', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const ctx = context(await runHook(payload('hi Ashler')));
+    expect(ctx).not.toContain('checked only the first');
+    expect(String(mocks.normalize.mock.calls.at(-1)?.[0])).toBe('hi Ashler');
+  });
+
+  // Catches: malformed stdin threw out of runHook, and main echoed JSON.parse's
+  // message, which quotes the user's raw prompt (escape codes included), to stderr.
+  it('says one stderr line for stdin that is not JSON, without quoting it, and prints nothing', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const raw of ['hi Ashler\u001b[31m please', '{"prompt": "hi Ashler",}', '{bad']) {
+        stderr.mockClear();
+        await expect(runHook(raw)).resolves.toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        const line = String(stderr.mock.calls[0]?.[0]);
+        expect(line).toBe(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(raw, 'utf8')} bytes); expected the Claude Code hook payload object, nothing to do\n`);
+        expect(line).not.toContain('Ashler');
+      }
+      expect(mocks.loadLexicon).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it('says one stderr line for valid JSON that is not an object, prints nothing and does not throw', async () => {
     const { runHook } = await import('../src/hooks/user-prompt-submit.js');
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
