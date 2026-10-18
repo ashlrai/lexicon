@@ -799,7 +799,7 @@ describe('helpers', () => {
     const saved = process.exitCode;
     try {
       await program.parseAsync(['setup', '--yes', '--json', '--app', 'nope', '--clients', 'none', '--cwd', cwd], { from: 'user' });
-      expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('unknown app "nope"') });
+      expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('unknown app "nope"'), nextStep: expect.stringContaining('lexicon setup --json again') });
       expect(io.err).toContain('lexicon: unknown app "nope"');
       expect(process.exitCode).toBe(1);
       expect(existsSync(globalPath)).toBe(false);

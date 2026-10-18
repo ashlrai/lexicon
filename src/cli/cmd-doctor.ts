@@ -203,6 +203,12 @@ export interface DoctorReport {
    * `nextStep` has told them everything that matters.
    */
   nextStep: string;
+  /**
+   * Present exactly when `ok` is false: the message of the first `fail`
+   * check, so the report carries `ok`, `error` and `nextStep` like every
+   * other failing `--json` document.
+   */
+  error?: string;
   checks: DoctorCheck[];
   paths: {
     global: string;
@@ -765,11 +771,13 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   // `nextStep` does; `lexicon doctor` prints the checks unchanged.
   if (opts.audience === 'mcp') for (const check of checks) check.message = mcpRunHints(check.message);
   const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
+  const firstFail = checks.find((c) => c.level === 'fail');
   return {
-    ok: !checks.some((c) => c.level === 'fail'),
+    ok: firstFail === undefined,
     ready: verdict.ready,
     summary: verdict.summary,
     nextStep: verdict.nextStep,
+    ...(firstFail ? { error: firstFail.message } : {}),
     checks,
     paths: {
       global: paths.global,

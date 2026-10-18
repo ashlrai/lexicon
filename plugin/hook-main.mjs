@@ -20878,6 +20878,12 @@ function emit(hookEventName, parts) {
 }
 async function userPromptSubmit(payload, opts) {
   const prompt = payload.prompt;
+  if (prompt !== void 0 && typeof prompt !== "string") {
+    const kind = prompt === null ? "null" : Array.isArray(prompt) ? "an array" : typeof prompt === "object" ? "an object" : `a ${typeof prompt}`;
+    process.stderr.write(`[lexicon hook] the payload's prompt is ${kind}, not a string; nothing to do
+`);
+    return "";
+  }
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   const attempt = await loadOrExplain(cwd);

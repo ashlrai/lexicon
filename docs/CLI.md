@@ -252,7 +252,8 @@ check lexicon files, term conflicts and the Claude Code integration
 
 Options:
   --json      print the report as JSON ({ ok, ready, summary, nextStep, checks,
-              ... }, as the lexicon_doctor MCP tool returns it)
+              ... } plus error, the first failing check, when ok is false; as
+              the lexicon_doctor MCP tool returns it)
   -h, --help  display help for command
 ```
 
@@ -443,7 +444,8 @@ Options:
   --json         print the listening info (or the --show, --status, --pair,
                  --install or --uninstall result) as JSON, led by ok (for
                  --status, ok equals up)
-  --quiet        do not log requests
+  --quiet        do not log requests (only when running the server; refused with
+                 --show, --status, --pair, --install, --uninstall)
   --show         print the URL and bearer token (for the extension options page)
                  and exit
   --status       check whether the server is up and exit
@@ -528,7 +530,7 @@ Options:
   --home <dir>        treat <dir> as the home directory (mainly for tests)
   --json              print a machine-readable summary on stdout, led by ok
                       (progress goes to stderr; a refusal prints { ok: false,
-                      error })
+                      error, nextStep })
   -h, --help          display help for command
 ```
 
@@ -540,7 +542,8 @@ Usage: lexicon suggest [options]
 suggest aliases, new terms, never-words and stale terms from your voice history
 
 Options:
-  --json           print the suggestions as JSON
+  --json           print the suggestions as JSON; with --yes, one document
+                   naming what was applied and the file each went to
   --apply          walk the suggestions one by one: y apply, n skip, a apply all
                    remaining, q quit
   --yes            apply every suggestion at or above 0.80 confidence without

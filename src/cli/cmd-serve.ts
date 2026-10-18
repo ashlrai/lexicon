@@ -847,6 +847,12 @@ export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {})
   if (given.length > 1) {
     return refuse(io, json, 'use only one of --show, --status, --pair, --install, --uninstall', `pass only one of ${given.join(', ')} (see lexicon serve --help)`);
   }
+  // --quiet silences request logging, which only a running server does; the
+  // one-shot modes dropped it without a word, as voice --status dropped
+  // recording flags before it refused them.
+  if (given.length === 1 && opts.quiet === true) {
+    return refuse(io, json, `--quiet only applies to a running server; ${given[0]} logs no requests`, `drop --quiet, or run lexicon serve --quiet to start the server without request logs`);
+  }
   try {
     if (opts.show) return await runServeShow(opts, io, deps);
     if (opts.status) return await runServeStatus(opts, io, deps);
@@ -886,7 +892,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
     .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
     .option('--json', 'print the listening info (or the --show, --status, --pair, --install or --uninstall result) as JSON, led by ok (for --status, ok equals up)')
-    .option('--quiet', 'do not log requests')
+    .option('--quiet', 'do not log requests (only when running the server; refused with --show, --status, --pair, --install, --uninstall)')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')
     .option('--pair', `open http://127.0.0.1:${DEFAULT_PORT}/pair in your browser so the extension pairs itself, and exit`)

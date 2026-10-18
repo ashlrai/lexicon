@@ -117,6 +117,10 @@ candidates and stale removals never reach it.
 
 `lexicon suggest --json` prints the same list as JSON (`TermSuggestion[]`,
 see `CONTRACT.md` in this directory) for scripts and for the MCP tool.
+`lexicon suggest --yes --json` applies the safe ones and prints one document,
+`{ ok: true, threshold, applied, skipped }`, where each `applied` entry names
+the kind, canonical, alias, what the write did and the file (`path`) it went
+to. `--apply` asks a question per suggestion, so it refuses `--json`.
 
 ## Privacy
 

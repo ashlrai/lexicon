@@ -54,13 +54,16 @@ prints the plan and writes nothing; run that first and show it to your user.
 `--clients none` installs into no client. `--json` gives you a `SetupSummary`
 (or the `SetupPlan` under `--dry-run`) instead of prose, led by `ok` (false
 when a client or the login service failed, exit 1); a refusal is
-`{ ok: false, error }`.
+`{ ok: false, error, nextStep }`.
 
 Any other `--json` command that fails without a result of its own to print
 (an unknown flag value, a missing file, an untrusted project lexicon, a lexicon
-file that does not parse) prints `{ ok: false, error, nextStep? }` on stdout as
-well as the `lexicon:` line on stderr, and exits non-zero. `nextStep` names the
-command that fixes it when there is one. A command line that does not parse
+file that does not parse) prints `{ ok: false, error, nextStep }` on stdout as
+well as the `lexicon:` line on stderr, and exits non-zero. `nextStep` is always
+there: the command that fixes it when there is one (`lexicon edit` for a file
+that does not parse, `lexicon trust` for an untrusted project lexicon), else
+`fix what error names, then run the command again (its --help lists the flags)`.
+Only `lexicon voice` adds `code` (its exit code, which can be 1, 2 or 3). A command line that does not parse
 (an unknown option or command, a missing argument, an invalid `--port`) does the
 same whenever `--json` is on it before any `--`: commander's message as `error`,
 `nextStep` naming that command's `--help`, and commander's exit code (1).

@@ -77,7 +77,7 @@ describe('pack search', () => {
   it('prints { ok: false, error } under --json when it refuses or fails', async () => {
     const io = makeIO();
     expect(await runPackSearch('cardio', { globalPath, json: true }, io)).toBe(1);
-    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('needs --registry') });
+    expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('needs --registry'), nextStep: 'pass --registry <index>, or run lexicon pack list for the built-in packs' });
     const missing = makeIO();
     expect(await runPackSearch('cardio', { globalPath, json: true, registry: path.join(dir, 'nope.json') }, missing)).toBe(1);
     expect(JSON.parse(missing.out)).toMatchObject({ ok: false, error: expect.any(String) });
@@ -600,7 +600,7 @@ describe('pack add --json names the ref it stopped at', () => {
     const doc = JSON.parse(io.out) as Entry[];
     expect(doc).toHaveLength(2);
     expect(doc[0]).toMatchObject({ pack: { name: 'developer' } });
-    expect(doc[1]).toEqual({ ref: 'example/neurology', ok: false, error: expect.stringContaining('example/neurology') });
+    expect(doc[1]).toEqual({ ref: 'example/neurology', ok: false, error: expect.stringContaining('example/neurology'), nextStep: expect.any(String) });
     expect(Object.keys(doc[1]!)[0]).toBe('ref');
     expect(io.err).toContain('lexicon: example/neurology: ');
     expect(io.err).toContain('lexicon: not attempted: ai');
@@ -610,14 +610,14 @@ describe('pack add --json names the ref it stopped at', () => {
   it('reports an unknown vendored pack, a missing --registry and a failed fetch the same way', async () => {
     const unknown = makeIO();
     expect(await runPackAdd(['developer', 'nope'], { globalPath, cwd: dir, json: true }, unknown)).toBe(1);
-    expect((JSON.parse(unknown.out) as Entry[])[1]).toEqual({ ref: 'nope', ok: false, error: expect.stringContaining('unknown pack "nope"') });
+    expect((JSON.parse(unknown.out) as Entry[])[1]).toEqual({ ref: 'nope', ok: false, error: expect.stringContaining('unknown pack "nope"'), nextStep: expect.any(String) });
     expect(unknown.err).toContain('lexicon: nope: unknown pack "nope"');
 
     const noRegistry = makeIO();
     expect(await runPackAdd(['developer', 'example/cardiology'], { globalPath, cwd: dir, json: true }, noRegistry)).toBe(1);
     const noRegistryDoc = JSON.parse(noRegistry.out) as Entry[];
     expect(noRegistryDoc).toHaveLength(2);
-    expect(noRegistryDoc[1]).toEqual({ ref: 'example/cardiology', ok: false, error: expect.stringContaining('--registry') });
+    expect(noRegistryDoc[1]).toEqual({ ref: 'example/cardiology', ok: false, error: expect.stringContaining('--registry'), nextStep: expect.any(String) });
 
     rmSync(path.join(dir, 'cardiology.yaml'));
     const fetchFailed = makeIO();
@@ -630,13 +630,13 @@ describe('pack add --json names the ref it stopped at', () => {
   it('a list whose first ref fails is still an array; a single ref is the object', async () => {
     const first = makeIO();
     expect(await runPackAdd(['nope', 'developer'], { globalPath, cwd: dir, json: true }, first)).toBe(1);
-    expect(JSON.parse(first.out)).toEqual([{ ref: 'nope', ok: false, error: expect.stringContaining('unknown pack') }]);
+    expect(JSON.parse(first.out)).toEqual([{ ref: 'nope', ok: false, error: expect.stringContaining('unknown pack'), nextStep: expect.any(String) }]);
     expect(first.err).toContain('not attempted: developer');
     expect(existsSync(globalPath)).toBe(false);
 
     const single = makeIO();
     expect(await runPackAdd(['nope'], { globalPath, cwd: dir, json: true }, single)).toBe(1);
-    expect(JSON.parse(single.out)).toEqual({ ok: false, ref: 'nope', error: expect.stringContaining('unknown pack') });
+    expect(JSON.parse(single.out)).toEqual({ ok: false, ref: 'nope', error: expect.stringContaining('unknown pack'), nextStep: expect.any(String) });
     expect(single.err).not.toContain('not attempted');
   });
 });

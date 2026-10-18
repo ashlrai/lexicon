@@ -179,7 +179,7 @@ program
 program
   .command('doctor')
   .description('check lexicon files, term conflicts and the Claude Code integration')
-  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... }, as the lexicon_doctor MCP tool returns it)')
+  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... } plus error, the first failing check, when ok is false; as the lexicon_doctor MCP tool returns it)')
   .action(async (opts: DoctorCliOptions) => done(await runDoctor(withGlobals(opts), io)));
 
 program
@@ -294,7 +294,7 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
 });
 
 // The command whose action is running, so an error it throws can be reported
-// in the form its flags asked for: under --json, a `{ ok: false, error }`
+// in the form its flags asked for: under --json, a `{ ok: false, error, nextStep }`
 // document on stdout as well as the stderr line.
 let active: Command | undefined;
 program.hook('preAction', (_program, actionCommand) => {
