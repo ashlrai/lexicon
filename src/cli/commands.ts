@@ -58,6 +58,7 @@ import {
   TERM_CATEGORIES,
   EXPORT_FORMAT_INFO,
   addTerm,
+  addTerms,
   conflictNote,
   diffSummary,
   emptyLexicon,
@@ -876,29 +877,32 @@ export async function runHarvest(
   let filePath: string | undefined;
   if (opts.add && candidates.length > 0) {
     try {
-      for (const c of candidates) {
-        const term: Term = {
-          canonical: c.canonical,
-          aliases: c.suggestedAliases,
-          category: c.category,
-          source: c.source,
-        };
-        const result = await addTerm(term, { ...store, scope: 'project' });
-        filePath = result.file.path;
-        if (result.created) created += 1;
+      // One read and one write for the whole list: one addTerm per candidate
+      // re-parsed the growing file on every write, so 50 names took seconds.
+      // The batch is all or nothing, so a failure leaves nothing half-added.
+      const terms: Term[] = candidates.map((c) => ({
+        canonical: c.canonical,
+        aliases: c.suggestedAliases,
+        category: c.category,
+        source: c.source,
+      }));
+      const { file, results } = await addTerms(terms, { ...store, scope: 'project' });
+      filePath = file.path;
+      for (const r of results) {
+        if (r.created) created += 1;
         else merged += 1;
       }
     } catch (err) {
       if (!json) throw err;
-      // The one --json document for a write that failed partway: the error
-      // and what was written before it, never the candidate array as well.
+      // The one --json document for a write that failed: the error and the
+      // counts (0: the batch writes all or none), never the candidate array.
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
       const where = filePath ? { path: filePath } : {};
       line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
       io.stderr(`lexicon: ${safeLines(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
-      io.stderr(`lexicon: added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} before the failure${filePath ? ` in ${safe(filePath)}` : ''}\n`);
+      io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');
       return 1;
     }
     const where = filePath ? ` in ${safe(filePath)}` : '';

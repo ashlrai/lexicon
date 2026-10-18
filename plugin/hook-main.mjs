@@ -20663,6 +20663,31 @@ function formatCorrectionNote(correction) {
   const meant = JSON.stringify(neutralizeForModel(correction.meant).trim());
   return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
+var CORRECTION_NOTES_MAX = 5;
+var SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
+function parseCorrections(text) {
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  const add = (c) => {
+    if (!c || c.heard.trim() === "" || c.meant.trim() === "") return;
+    const key = `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(c);
+  };
+  add(parseCorrection(text));
+  if (!SENTENCE_BREAK_RE.test(text)) return found;
+  for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  return found;
+}
+function formatCorrectionNotes(corrections) {
+  const lines = corrections.slice(0, CORRECTION_NOTES_MAX).map(formatCorrectionNote);
+  const more = corrections.length - lines.length;
+  if (more > 0) {
+    lines.push(`... ${more} more spelling correction${more === 1 ? "" : "s"} in this message not listed; ask the user which to record before calling learn_correction for them.`);
+  }
+  return lines.join("\n");
+}
 function foldWithOffsets(text) {
   let folded = "";
   const starts = [];
@@ -20856,11 +20881,16 @@ Call the lexicon_doctor tool, or tell the user to run ` + cliCommand("doctor") +
     }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
-Tell the user to run ` + cliCommand("edit") + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
+Tell the user to run ` + cliCommand(unparseableEditCommand(message)) + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
     };
   }
 }
 var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+function unparseableEditCommand(message) {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  const file = m?.[1] ?? "";
+  return /(?:^|[\\/])\.lexicon\.yaml$/.test(file) ? "edit --project" : "edit";
+}
 function payloadCwd(payload) {
   const cwd = payload.cwd;
   if (typeof cwd === "string" && cwd.trim() !== "") return cwd;
@@ -20894,9 +20924,8 @@ async function userPromptSubmit(payload, opts) {
   const head = cut < prompt.length ? prompt.slice(0, cut) : prompt;
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : "";
-  const parsed = parseCorrection(head);
-  const correction = parsed && parsed.heard.trim() !== "" && parsed.meant.trim() !== "" ? parsed : void 0;
-  const correctionNote = correction ? formatCorrectionNote(correction) : "";
+  const corrections = parseCorrections(head);
+  const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : "";
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;
   const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
   const started = process.hrtime.bigint();
@@ -20906,7 +20935,7 @@ async function userPromptSubmit(payload, opts) {
   let result = index ? normalizeWithIndex(head, index, { shouldStop }) : void 0;
   if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : "";
-  if (result && correction) result = dropCorrectionSpans(result, correction);
+  for (const correction of corrections) if (result) result = dropCorrectionSpans(result, correction);
   if (result) result = dropDataBlockSpans(result);
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
@@ -21042,6 +21071,7 @@ if (isMainModule()) {
 export {
   CORRECTED_PROMPT_MAX_CHARS,
   CORRECTION_LIST_MAX_CHARS,
+  CORRECTION_NOTES_MAX,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
@@ -21056,11 +21086,13 @@ export {
   formatAdditionalContext,
   formatBudgetNote,
   formatCorrectionNote,
+  formatCorrectionNotes,
   formatLengthNote,
   formatSkippedProjectNote,
   hookFlagOutput,
   main,
   onboardNotePath,
+  parseCorrections,
   runHook,
   runSessionStartHook,
   runUserPromptSubmitHook,

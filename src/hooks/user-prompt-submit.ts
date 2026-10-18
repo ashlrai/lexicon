@@ -323,6 +323,51 @@ export function formatCorrectionNote(correction: Correction): string {
   );
 }
 
+/** Most spelling corrections one prompt gets a learn_correction line for; the rest get one closing line. */
+export const CORRECTION_NOTES_MAX = 5;
+
+/** A sentence end: `.`, `!` or `?` followed by whitespace (so "Ashlr.AI" is one sentence). */
+const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
+
+/**
+ * Every spelling correction in `text`. `parseCorrection` returns the first
+ * one only, so "it's Vercel not versel. Also it's Supabase not super base."
+ * flagged Vercel and the Supabase correction was lost: no learn_correction
+ * line, and its words were normalized like dictation. The whole text is
+ * parsed first, as before; then each sentence on its own, so a later
+ * sentence's correction is found too. Duplicates (same heard and meant,
+ * ignoring case) are dropped. Exported for tests.
+ */
+export function parseCorrections(text: string): Correction[] {
+  const found: Correction[] = [];
+  const seen = new Set<string>();
+  const add = (c: Correction | undefined): void => {
+    if (!c || c.heard.trim() === '' || c.meant.trim() === '') return;
+    const key = `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(c);
+  };
+  add(parseCorrection(text));
+  // Only a prompt with a second sentence can hold a second correction.
+  if (!SENTENCE_BREAK_RE.test(text)) return found;
+  for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  return found;
+}
+
+/**
+ * The learn_correction lines for `corrections`, one per correction up to
+ * CORRECTION_NOTES_MAX, then one line saying how many more were not listed.
+ */
+export function formatCorrectionNotes(corrections: readonly Correction[]): string {
+  const lines = corrections.slice(0, CORRECTION_NOTES_MAX).map(formatCorrectionNote);
+  const more = corrections.length - lines.length;
+  if (more > 0) {
+    lines.push(`... ${more} more spelling correction${more === 1 ? '' : 's'} in this message not listed; ask the user which to record before calling learn_correction for them.`);
+  }
+  return lines.join('\n');
+}
+
 /**
  * `text` lowercased one code point at a time, with `starts[i]` / `ends[i]`
  * the [start, end) offsets in `text` of the code point that produced unit `i`
@@ -621,7 +666,7 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
-        'Tell the user to run ' + cliCommand('edit') + ' and fix the parse error. Setup will not repair this, ' +
+        'Tell the user to run ' + cliCommand(unparseableEditCommand(message)) + ' and fix the parse error. Setup will not repair this, ' +
         'and lexicon_doctor will show the same thing.',
     };
   }
@@ -629,6 +674,19 @@ async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType
 
 /** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */
 const UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
+
+/**
+ * The `lexicon edit` arguments that open the file an unparseable-lexicon
+ * `message` names: `edit --project` for a repo's `.lexicon.yaml`, else `edit`
+ * (the global file), as src/cli/io.ts unreadableLexiconEdit does. A trusted
+ * project file that stopped parsing was reported with plain `lexicon edit`,
+ * which opens the global file and leaves the broken one as it was.
+ */
+function unparseableEditCommand(message: string): string {
+  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
+  const file = m?.[1] ?? '';
+  return /(?:^|[\\/])\.lexicon\.yaml$/.test(file) ? 'edit --project' : 'edit';
+}
 
 /**
  * The payload's `cwd` when it is a non-empty string, else undefined (the
@@ -679,9 +737,8 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : '';
 
-  const parsed = parseCorrection(head);
-  const correction = parsed && parsed.heard.trim() !== '' && parsed.meant.trim() !== '' ? parsed : undefined;
-  const correctionNote = correction ? formatCorrectionNote(correction) : '';
+  const corrections = parseCorrections(head);
+  const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : '';
 
   // The compiled index comes from index-cache.json when the lexicon has not
   // changed since a previous prompt built it (see loadMatcherIndex). The
@@ -699,7 +756,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : '';
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
-  if (result && correction) result = dropCorrectionSpans(result, correction);
+  for (const correction of corrections) if (result) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
   if (result) result = dropDataBlockSpans(result);
   const changed = result?.changed === true;

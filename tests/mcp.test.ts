@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   diffSummary: vi.fn(),
   recordHits: vi.fn(),
   addTerm: vi.fn(),
+  addTerms: vi.fn(),
   // true: the project file is trusted, so writes keep today's arguments
   projectWriteTrusted: vi.fn(),
   removeTerm: vi.fn(),
@@ -201,6 +202,10 @@ beforeEach(() => {
     file: { path: opts?.scope === 'project' ? '/fake/repo/.lexicon.yaml' : '/fake/global/lexicon.yaml', scope: opts?.scope ?? 'global', lexicon: fixtureLexicon, exists: true },
     term: term.aliases.length === 0 && opts?.defaultAliases ? { ...term, aliases: opts.defaultAliases } : term,
     created: true,
+  }));
+  mocks.addTerms.mockImplementation(async (terms: Term[], opts?: { scope?: string }) => ({
+    file: { path: opts?.scope === 'project' ? '/fake/repo/.lexicon.yaml' : '/fake/global/lexicon.yaml', scope: opts?.scope ?? 'global', lexicon: fixtureLexicon, exists: true },
+    results: terms.map((term) => ({ term, created: true })),
   }));
   mocks.removeTerm.mockResolvedValue(true);
   mocks.projectWriteTrusted.mockResolvedValue(true);
@@ -446,17 +451,19 @@ describe('lexicon MCP server', () => {
       expect(payload.count).toBe(1);
       expect(payload.added).toBe(1);
       expect(mocks.harvestRepo).toHaveBeenCalledWith('/fake/repo', {});
-      expect(mocks.addTerm).toHaveBeenCalledWith(
-        expect.objectContaining({ canonical: 'FooBar', aliases: ['foo bar'], scope: 'project', source: 'harvest:repo' }),
+      // One batch write for the candidates, not one addTerm each.
+      expect(mocks.addTerms).toHaveBeenCalledWith(
+        [expect.objectContaining({ canonical: 'FooBar', aliases: ['foo bar'], scope: 'project', source: 'harvest:repo' })],
         { cwd: '/fake/repo', scope: 'project' },
       );
+      expect(mocks.addTerm).not.toHaveBeenCalled();
       expect(mocks.projectWriteTrusted).toHaveBeenCalledWith({ cwd: '/fake/repo' });
 
       // A project file that is not trusted yet is written unpinned.
       mocks.projectWriteTrusted.mockResolvedValue(false);
       const untrusted = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
       expect(JSON.parse(textOf(untrusted))).toMatchObject({ trusted: false });
-      expect(mocks.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'FooBar' }), { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
+      expect(mocks.addTerms).toHaveBeenLastCalledWith([expect.objectContaining({ canonical: 'FooBar' })], { cwd: '/fake/repo', scope: 'project', leaveUntrusted: true });
     } finally {
       await close();
     }
@@ -467,6 +474,8 @@ describe('lexicon MCP server', () => {
   it('harvest_repo with add is an error when no candidate could be written, and notes a partial failure', async () => {
     const { client, close } = await connect();
     try {
+      // The batch fails, then the one-by-one retry names each candidate's own failure.
+      mocks.addTerms.mockRejectedValueOnce(new Error('EACCES: permission denied'));
       mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
       const failed = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
       expect(failed.isError).toBe(true);
@@ -481,6 +490,7 @@ describe('lexicon MCP server', () => {
         { canonical: 'FooBar', category: 'product', count: 2, evidence: [], suggestedAliases: ['foo bar'], source: 'harvest:repo' },
         { canonical: 'BazQux', category: 'product', count: 2, evidence: [], suggestedAliases: [], source: 'harvest:repo' },
       ]);
+      mocks.addTerms.mockRejectedValueOnce(new Error('EACCES: permission denied'));
       mocks.addTerm.mockRejectedValueOnce(new Error('EACCES: permission denied'));
       const partial = await client.callTool({ name: 'harvest_repo', arguments: { add: true } });
       expect(partial.isError).toBe(false);

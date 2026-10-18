@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { coerceSettings, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, PAIR_META } from '../extension/src/shared.js';
+import { coerceSettings, connectionTestLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -1142,6 +1142,35 @@ describe('popup status line', () => {
     setMessage(el, statusView({ ...base, serverError: '<img src=x onerror="alert(1)">' }).line);
     expect(el.querySelector('img')).toBeNull();
     expect(Array.from(el.querySelectorAll('code'), (c) => c.textContent)).toEqual(['lexicon serve --pair']);
+  });
+});
+
+describe('Options > Test connection result', () => {
+  const base: StatusReply = {
+    ok: true,
+    configuredMode: 'api',
+    activeMode: 'embedded',
+    server: { ok: true, version: '1.2.3', terms: 4 },
+    tokenSet: false,
+    embeddedTerms: 12,
+    recent: [],
+    live: false,
+    anySite: false,
+  };
+
+  // Catches: a server that was up with no token set read "Connected: ...",
+  // though this browser's corrections still used the embedded lexicon.
+  it('does not say Connected for a server that is up but not paired', () => {
+    const line = connectionTestLine(base);
+    expect(line.startsWith('Connected')).toBe(false);
+    expect(line).toBe('Server is up, not paired: lexicon 1.2.3, 4 terms. Corrections use the embedded lexicon until you run `lexicon serve --pair`.');
+  });
+
+  it('says Connected only with a token, and names the fix otherwise', () => {
+    expect(connectionTestLine({ ...base, tokenSet: true, activeMode: 'api' })).toBe('Connected: lexicon 1.2.3, 4 terms.');
+    expect(connectionTestLine({ ...base, tokenSet: true, tokenError: 'API rejected the token (401).' })).toBe('Reachable (lexicon 1.2.3), but API rejected the token (401).');
+    expect(connectionTestLine({ ...base, server: null, serverError: 'timeout' })).toBe('Unreachable: timeout. Start it with `lexicon serve`.');
+    expect(connectionTestLine({ ...base, server: null, serverError: 'start it with `lexicon serve`' })).toBe('Unreachable: start it with `lexicon serve`.');
   });
 });
 

@@ -4,7 +4,7 @@ import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { coerceSettings, errorMessage, pairUrl, STORAGE_KEYS } from './shared.js';
+import { coerceSettings, connectionTestLine, errorMessage, pairUrl, STORAGE_KEYS } from './shared.js';
 import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -166,14 +166,7 @@ ui.test.addEventListener('click', () => {
       setMessage(ui.testResult, status.error);
       return;
     }
-    if (status.server && status.tokenError) {
-      setMessage(ui.testResult, `Reachable (lexicon ${status.server.version}), but ${status.tokenError}`);
-    } else if (status.server) {
-      setMessage(ui.testResult, `Connected: lexicon ${status.server.version}, ${status.server.terms} terms${status.tokenSet ? '' : ' (no token set: corrections use the embedded lexicon until you run `lexicon serve --pair`)'}.`);
-    } else {
-      const why = status.serverError ?? 'no reply';
-      setMessage(ui.testResult, `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`);
-    }
+    setMessage(ui.testResult, connectionTestLine(status));
   })().catch((err: unknown) => {
     setMessage(ui.testResult, errorMessage(err));
   });

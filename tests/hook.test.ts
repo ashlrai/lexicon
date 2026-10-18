@@ -334,6 +334,37 @@ describe('runUserPromptSubmitHook', () => {
       expect(mocks.recordHits).not.toHaveBeenCalled();
     });
 
+    // Catches: only the first correction in a message was flagged ("it's X not
+    // Y. Also it's A not B" lost the second), and the second one's words were
+    // normalized like dictation and counted as a hit.
+    it('asks for every correction in the message and normalizes none of their words', async () => {
+      mocks.normalize.mockImplementation(phoneticNormalize);
+      const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runUserPromptSubmitHook(payload("it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white.")));
+      const lines = ctx.split('\n');
+      expect(lines).toEqual([
+        NOTE_ASHLAR,
+        'The user is correcting a spelling: "mason white" should be "Mason Wyatt". ' +
+          'Call the lexicon learn_correction tool with heard: "mason white", meant: "Mason Wyatt". ' +
+          'If "mason white" contains words that are not part of the misspelled name, pass only the name. ' +
+          'Then continue with the rest of the message.',
+      ]);
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+    });
+
+    it('lists at most CORRECTION_NOTES_MAX corrections and counts the rest', async () => {
+      const { runUserPromptSubmitHook, CORRECTION_NOTES_MAX, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      const names = ['Vercel', 'Supabase', 'Kubernetes', 'Postgres', 'Anthropic', 'Grafana', 'Datadog'];
+      const prompt = names.map((n) => `it's ${n} not ${n.toLowerCase()}x.`).join(' ');
+      expect(parseCorrections(prompt).map((c) => c.meant)).toEqual(names);
+      const lines = context(await runUserPromptSubmitHook(payload(prompt))).split('\n');
+      expect(lines).toHaveLength(CORRECTION_NOTES_MAX + 1);
+      expect(lines.slice(0, CORRECTION_NOTES_MAX).every((l) => l.startsWith('The user is correcting a spelling: '))).toBe(true);
+      expect(lines.at(-1)).toBe(`... ${names.length - CORRECTION_NOTES_MAX} more spelling corrections in this message not listed; ask the user which to record before calling learn_correction for them.`);
+      // One correction repeated is listed once.
+      expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
+    });
+
     it('still corrects an unrelated garble in the same prompt', async () => {
       mocks.normalize.mockImplementation(phoneticNormalize);
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
@@ -1000,6 +1031,22 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       expect(said).toContain('lexicon edit');
       // Whatever else happens, the hook never rewrites the prompt.
       expect(said).not.toContain('Ashlr.AI');
+    }
+  });
+
+  // Catches: a trusted repo .lexicon.yaml that stopped parsing was reported
+  // with plain `lexicon edit`, which opens the global file instead.
+  it('names lexicon edit --project when the file that does not parse is the repo one', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const cases: Array<[string, string]> = [
+      [path.join('/fake', 'repo', '.lexicon.yaml'), 'Tell the user to run `lexicon edit --project` (or `npx @ashlr/lexicon edit --project`)'],
+      ['C:\\Users\\me\\repo\\.lexicon.yaml', 'Tell the user to run `lexicon edit --project` (or `npx @ashlr/lexicon edit --project`)'],
+      [path.join('/fake', 'home', 'lexicon.yaml'), 'Tell the user to run `lexicon edit` (or `npx @ashlr/lexicon edit`)'],
+    ];
+    for (const [file, step] of cases) {
+      mocks.loadLexicon.mockRejectedValueOnce(new Error(`Invalid lexicon at ${file}: terms.0.canonical: Required`));
+      const said = context(await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'ping Ashler', cwd: '/fake/repo' })));
+      expect(said).toContain(step);
     }
   });
 });

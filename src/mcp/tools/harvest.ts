@@ -9,6 +9,7 @@ import {
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
+  addTerms,
   defaultProjectPath,
   harvestRepo,
   isProjectTrustError,
@@ -70,26 +71,37 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         // lexicon trust); a file the user already trusted takes them and stays
         // trusted, as for every other MCP write.
         const writeOpts = add ? await mcpWriteOpts({ cwd: root }) : {};
-        if (add) {
-          for (const c of candidates) {
-            try {
-              const saved = await addTerm(
-                {
-                  canonical: c.canonical,
-                  aliases: c.suggestedAliases,
-                  category: c.category,
-                  source: c.source,
-                  scope: 'project',
-                },
-                { cwd: root, scope: 'project', ...writeOpts },
-              );
-              written = saved.file.path;
-              added += 1;
-            } catch (err) {
-              // Every remaining candidate would fail the same way; surface it
-              // once as the tool error instead of N identical failure rows.
-              if (isProjectTrustError(err)) throw err;
-              failures.push({ canonical: c.canonical, error: errorMessage(err) });
+        if (add && candidates.length > 0) {
+          const terms: Term[] = candidates.map((c) => ({
+            canonical: c.canonical,
+            aliases: c.suggestedAliases,
+            category: c.category,
+            source: c.source,
+            scope: 'project',
+          }));
+          const opts = { cwd: root, scope: 'project' as const, ...writeOpts };
+          try {
+            // One read and one write for the whole list: one addTerm per
+            // candidate re-parsed the growing file on every write, so the
+            // default 50 names took seconds.
+            const saved = await addTerms(terms, opts);
+            written = saved.file.path;
+            added = saved.results.length;
+          } catch (err) {
+            // Every candidate would fail the same way; surface it once as the
+            // tool error instead of N identical failure rows.
+            if (isProjectTrustError(err)) throw err;
+            // The batch wrote nothing. Retry one by one so the candidates that
+            // can be written are, and each failure names its own candidate.
+            for (const term of terms) {
+              try {
+                const saved = await addTerm(term, opts);
+                written = saved.file.path;
+                added += 1;
+              } catch (inner) {
+                if (isProjectTrustError(inner)) throw inner;
+                failures.push({ canonical: term.canonical, error: errorMessage(inner) });
+              }
             }
           }
         }
