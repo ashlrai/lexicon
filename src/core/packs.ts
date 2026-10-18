@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import * as z from 'zod';
 import { parseLexicon } from './schema.js';
-import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
+import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, refreshIndexCache, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
 import { isTrusted, parsedContentHash, refreshTrust } from './trust.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
@@ -261,8 +261,9 @@ export function installedPacks(loaded: LoadedLexicon): string[] {
  * Rewrite a file's `settings.packs`. Empty lists (the parser's `protectedWords: []`
  * default, an emptied `packs`) are dropped, and so is an empty `settings`, so a
  * file that only ever held packs goes back to how it looked before.
- * Re-pins a project file's trust, unless `leaveUntrusted` (the install left
- * the file unpinned, and refreshTrust would bless a changed file).
+ * Re-pins a project file's trust and refreshes the index cache for it, unless
+ * `leaveUntrusted` (the install left the file unpinned, and refreshTrust
+ * would bless a changed file).
  */
 async function writePacksSetting(file: LexiconFile, packs: string[], opts: StoreOptions, leaveUntrusted = false): Promise<void> {
   const settings: Record<string, unknown> = { ...(file.lexicon.settings ?? {}), packs };
@@ -272,7 +273,11 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
   if (Object.keys(settings).length > 0) file.lexicon.settings = settings as LexiconFile['lexicon']['settings'];
   else delete file.lexicon.settings;
   await writeLexiconFile(file);
-  if (file.scope === 'project' && !leaveUntrusted) await refreshTrust(file.path, { ...opts, expectedSha256: await parsedContentHash(file) });
+  if (file.scope === 'project' && !leaveUntrusted) {
+    await refreshTrust(file.path, { ...opts, expectedSha256: await parsedContentHash(file) });
+    // Now that the trust entry says what the hook will merge (see addTerm).
+    await refreshIndexCache(file, opts);
+  }
 }
 
 /**

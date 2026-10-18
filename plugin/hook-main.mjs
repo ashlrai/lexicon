@@ -19677,6 +19677,13 @@ async function sha256OfBytes(bytes) {
 function rememberParsedBytes(file, bytes) {
   entries.set(file, { bytes });
 }
+function rememberParsedHash(file, sha256) {
+  entries.set(file, { sha256 });
+}
+function shareParsedHash(from, to) {
+  const entry = entries.get(from);
+  if (entry) entries.set(to, entry);
+}
 async function recalledParsedHash(file) {
   const entry = entries.get(file);
   if (!entry) return void 0;
@@ -19877,7 +19884,7 @@ function cacheChecksum(text) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
-async function readGlobalLexiconCached(filePath) {
+async function readGlobalLexiconCached(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
@@ -19894,7 +19901,7 @@ async function readGlobalLexiconCached(filePath) {
   } catch {
   }
   const file = parseLexiconText(read.text, filePath, "global");
-  await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
   return file;
 }
 async function writeParseCache(filePath, text, lexicon, mode) {
@@ -19909,6 +19916,113 @@ async function writeParseCache(filePath, text, lexicon, mode) {
   } catch {
   }
 }
+var CACHE_ENTRIES = 4;
+function cacheSpillPath(mainPath, id) {
+  return `${mainPath.replace(/\.json$/, "")}.${cacheChecksum(id)}.json`;
+}
+async function spillCacheEntry(mainPath, mainId) {
+  const spill = cacheSpillPath(mainPath, mainId);
+  try {
+    await import_node_fs5.promises.rename(mainPath, spill);
+    const now = /* @__PURE__ */ new Date();
+    await import_node_fs5.promises.utimes(spill, now, now);
+  } catch {
+    return;
+  }
+  try {
+    const dir = import_node_path5.default.dirname(mainPath);
+    const stem = import_node_path5.default.basename(mainPath).replace(/\.json$/, "");
+    const names = (await import_node_fs5.promises.readdir(dir)).filter((n) => n.length === stem.length + 14 && n.startsWith(`${stem}.`) && /\.[0-9a-f]{8}\.json$/.test(n));
+    if (names.length <= CACHE_ENTRIES - 1) return;
+    const aged = [];
+    for (const name of names) {
+      const st = await import_node_fs5.promises.stat(import_node_path5.default.join(dir, name)).catch(() => void 0);
+      if (st) aged.push({ name, mtime: st.mtimeMs });
+    }
+    aged.sort((a, b) => a.mtime - b.mtime);
+    for (const { name } of aged.slice(0, Math.max(0, aged.length - (CACHE_ENTRIES - 1)))) {
+      await import_node_fs5.promises.unlink(import_node_path5.default.join(dir, name)).catch(() => void 0);
+    }
+  } catch {
+  }
+}
+async function promoteCacheEntry(mainPath, id, mainId) {
+  if (mainId !== void 0 && mainId !== id) await spillCacheEntry(mainPath, mainId);
+  await import_node_fs5.promises.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => void 0);
+}
+var PROJECT_PARSE_CACHE_FILE_NAME = "project-parse-cache.json";
+var PROJECT_PARSE_CACHE_VERSION = 1;
+async function readProjectBytes(filePath, globalPath) {
+  const read = await readLexiconText(filePath);
+  if (read === void 0) return void 0;
+  const out = { text: read.text, bytes: read.bytes };
+  const key = import_node_path5.default.resolve(filePath);
+  const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const main2 = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
+  out.mainId = main2.id;
+  if (main2.hit) out.cached = main2.hit;
+  else if (main2.id !== key) {
+    const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
+    if (spill.hit) {
+      out.cached = spill.hit;
+      out.fromSpill = true;
+    }
+  }
+  return out;
+}
+async function readProjectCacheEntry(cachePath, key, bytes, text) {
+  try {
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
+    if (!isPlainObject2(cached2) || cached2.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached2.path !== "string") return {};
+    const id = cached2.path;
+    if (cached2.path === key && cached2.text === text && typeof cached2.sha256 === "string" && /^[0-9a-f]{64}$/.test(cached2.sha256) && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(`${cached2.sha256}${cached2.lexicon}`) && Buffer.from(cached2.text, "utf8").equals(bytes)) {
+      const lexicon = JSON.parse(cached2.lexicon);
+      if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon, sha256: cached2.sha256 } };
+    }
+    return { id };
+  } catch {
+    return {};
+  }
+}
+function rememberProjectBytes(file, read) {
+  if (read.cached) rememberParsedHash(file, read.cached.sha256);
+  else rememberParsedBytes(file, read.bytes);
+}
+function projectFileOf(filePath, read) {
+  if (read === void 0) return { file: { path: filePath, scope: "project", lexicon: emptyLexicon(), exists: false } };
+  if (read.cached) {
+    const file2 = { path: filePath, scope: "project", lexicon: read.cached.lexicon, exists: true };
+    rememberProjectBytes(file2, read);
+    return { file: file2 };
+  }
+  const file = parseLexiconText(read.text, filePath, "project");
+  rememberProjectBytes(file, read);
+  return { file, fresh: { text: read.text } };
+}
+async function writeProjectParseCache(file, text, globalPath, mainId) {
+  try {
+    const sha256 = await recalledParsedHash(file);
+    if (sha256 === void 0) return;
+    const lexiconJson = JSON.stringify(file.lexicon);
+    const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const key = import_node_path5.default.resolve(file.path);
+    if (mainId !== void 0 && mainId !== key) await spillCacheEntry(mainPath, mainId);
+    await writeFileAtomic(
+      mainPath,
+      JSON.stringify({
+        version: PROJECT_PARSE_CACHE_VERSION,
+        path: key,
+        sha256,
+        text,
+        sum: cacheChecksum(`${sha256}${lexiconJson}`),
+        lexicon: lexiconJson
+      }),
+      { mode: 384 }
+    );
+    if (mainId !== key) await import_node_fs5.promises.unlink(cacheSpillPath(mainPath, key)).catch(() => void 0);
+  } catch {
+  }
+}
 var INDEX_CACHE_FILE_NAME = "index-cache.json";
 var INDEX_CACHE_MIN_TERMS = 150;
 async function loadMatcherIndex(loaded, opts = {}) {
@@ -19916,27 +20030,63 @@ async function loadMatcherIndex(loaded, opts = {}) {
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
+  const project = loaded.project ? import_node_path5.default.resolve(loaded.project.path) : void 0;
+  const id = project ?? "";
+  const head = indexCacheHead(key, project);
+  let mainId;
   try {
     const text = await import_node_fs5.promises.readFile(cachePath, "utf8");
-    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
-    if (text.startsWith(head.slice(0, -1))) {
-      const cached2 = JSON.parse(text);
-      if (isPlainObject2(cached2) && cached2.version === INDEX_FORMAT_VERSION && cached2.key === key) {
-        const index2 = deserializeIndex(cached2.index, lexicon);
-        if (index2) return index2;
-      }
-    }
+    const mainProject = indexHeadProject(text);
+    mainId = mainProject === null ? "" : mainProject;
+    const index2 = indexFromEntry(text, head, key, lexicon);
+    if (index2) return index2;
   } catch {
   }
+  const write = opts.write !== false;
+  if (mainId !== id) {
+    try {
+      const index2 = indexFromEntry(await import_node_fs5.promises.readFile(cacheSpillPath(cachePath, id), "utf8"), head, key, lexicon);
+      if (index2) {
+        if (write) await promoteCacheEntry(cachePath, id, mainId);
+        return index2;
+      }
+    } catch {
+    }
+  }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
+  if (write) {
+    if (mainId !== void 0 && mainId !== id) await spillCacheEntry(cachePath, mainId);
+    await writeIndexCache(cachePath, key, index, project);
+    if (mainId !== id) await import_node_fs5.promises.unlink(cacheSpillPath(cachePath, id)).catch(() => void 0);
+  }
   return index;
 }
-async function writeIndexCache(cachePath, key, index) {
+function indexFromEntry(text, head, key, lexicon) {
+  if (!text.startsWith(head)) return void 0;
+  const cached2 = JSON.parse(text);
+  if (!isPlainObject2(cached2) || cached2.version !== INDEX_FORMAT_VERSION || cached2.key !== key) return void 0;
+  return deserializeIndex(cached2.index, lexicon) ?? void 0;
+}
+function indexCacheHead(key, project) {
+  const head = JSON.stringify(project === void 0 ? { version: INDEX_FORMAT_VERSION, key } : { version: INDEX_FORMAT_VERSION, project, key });
+  return head.slice(0, -1);
+}
+async function writeIndexCache(cachePath, key, index, project) {
   try {
-    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, ...project !== void 0 ? { project } : {}, key, index: serializeIndex(index) });
     await writeFileAtomic(cachePath, out, { mode: 384 });
   } catch {
+  }
+}
+function indexHeadProject(head) {
+  try {
+    const m = /^\{"version":(\d+),(?:"project":("(?:[^"\\]|\\.)*"),)?"key":/.exec(head);
+    if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return void 0;
+    if (m[2] === void 0) return null;
+    const project = JSON.parse(m[2]);
+    return typeof project === "string" && import_node_path5.default.isAbsolute(project) ? project : void 0;
+  } catch {
+    return void 0;
   }
 }
 var HITS_FILE_NAME = "hits.json";
@@ -20006,16 +20156,36 @@ async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
   const global = await readGlobalLexiconCached(paths.global);
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
+  const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
+  let fresh;
+  let projectTrust;
+  let read;
   try {
-    project = await readLexiconFile(paths.project, "project");
+    read = await readProjectBytes(paths.project, paths.global);
+    if (gateFirst && read !== void 0) {
+      const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+      rememberProjectBytes(probe, read);
+      projectTrust = await isTrusted(probe, opts);
+      if (projectTrust !== "trusted") {
+        return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: probe };
+      }
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+      shareParsedHash(probe, project);
+    } else {
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+    }
   } catch (err) {
     const placeholder = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
-    const trust = await isTrusted(placeholder, opts);
+    const trust = projectTrust ?? await isTrusted(placeholder, opts);
     if (trust === "trusted" || opts.includeUntrusted) throw err;
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
-  const projectTrust = await isTrusted(project, opts);
+  projectTrust ??= await isTrusted(project, opts);
+  if (projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (projectTrust === "trusted" && read?.fromSpill) {
+    await promoteCacheEntry(import_node_path5.default.join(import_node_path5.default.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), import_node_path5.default.resolve(paths.project), read.mainId);
+  }
   if (projectTrust === "trusted" || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
     await hydrateHits(merged, project, opts);
@@ -20030,10 +20200,17 @@ async function loadLexicon(opts = {}) {
 function mergeLexicons(global, project) {
   const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
   if (project) {
+    const firstByKey = /* @__PURE__ */ new Map();
+    terms.forEach((t, i) => {
+      const k = canonicalKey(t.canonical);
+      if (!firstByKey.has(k)) firstByKey.set(k, i);
+    });
     for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const key = canonicalKey(pt.canonical);
+      const idx = firstByKey.get(key) ?? -1;
       const replacement = { ...pt, scope: pt.scope ?? "project" };
       if (idx === -1) {
+        firstByKey.set(key, terms.length);
         terms.push({ ...replacement, aliases: [...pt.aliases] });
       } else {
         replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
@@ -20071,9 +20248,12 @@ async function recordHits(canonicals, opts = {}) {
     let projectFile;
     if (opts.loaded) {
       if (opts.loaded.project && opts.loaded.projectTrust === "trusted") projectFile = opts.loaded.project;
-    } else if (paths.project) {
-      const file = await readLexiconFile(paths.project, "project");
-      if (file.exists && await isTrusted(file, opts) === "trusted") projectFile = file;
+    } else if (paths.project && (0, import_node_fs5.existsSync)(paths.project)) {
+      const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+      if (await isTrusted(probe, opts) === "trusted") {
+        const file = await readLexiconFile(paths.project, "project");
+        if (file.exists && await isTrusted(file, opts) === "trusted") projectFile = file;
+      }
     }
     let project;
     if (projectFile) {
@@ -20112,8 +20292,8 @@ async function recordHits(canonicals, opts = {}) {
   } catch {
   }
 }
-function sameCanonical(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+function canonicalKey(canonical) {
+  return canonical.trim().toLowerCase();
 }
 function dedupeAliases(aliases, canonical) {
   const canon = canonical.trim().toLowerCase();
@@ -20871,7 +21051,7 @@ function shownValue(value) {
 }
 async function loadOrExplain(cwd) {
   try {
-    return { loaded: await loadLexicon({ cwd }) };
+    return { loaded: await loadLexicon({ cwd, parseSkipped: false }) };
   } catch (err) {
     const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     if (!UNPARSEABLE_LEXICON_RE.test(message)) {

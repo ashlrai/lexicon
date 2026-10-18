@@ -46,7 +46,12 @@ import { cliCommand } from '../../util/cli-hint.js';
 function explicitLexiconPath(ctx: Parameters<typeof containedPath>[0], path: string): string {
   const hint = (target: string): string => `trust ${shellWord(target)}`;
   const requested = resolve(ctx.cwd, path);
-  if (!existsSync(requested)) return join(containedPath(ctx, dirname(requested), hint), basename(requested));
+  if (!existsSync(requested)) {
+    // Not even its directory: name the path given, as harvest_repo does
+    // (containedPath throws `"<path>" does not exist ...`), not its parent.
+    if (!existsSync(dirname(requested))) return containedPath(ctx, path, hint);
+    return join(containedPath(ctx, dirname(requested), hint), basename(requested));
+  }
   const real = containedPath(ctx, requested, hint);
   if (!statSync(real).isDirectory()) return real;
   const inside = join(real, PROJECT_FILE_NAME);

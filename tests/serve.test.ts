@@ -11,7 +11,27 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The real schema module with `parseLexicon` counted, so the trust gate tests
+ * can tell whether an untrusted project file was parsed at all. Behaviour is
+ * unchanged: every call goes to the real validator.
+ */
+const schemaParses = vi.hoisted(() => ({ canonicals: [] as string[] }));
+vi.mock('../src/core/schema.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/schema.js')>();
+  return {
+    ...real,
+    parseLexicon: (raw: unknown) => {
+      const terms = (raw as { terms?: unknown } | null)?.terms;
+      if (Array.isArray(terms)) {
+        for (const t of terms) if (typeof (t as { canonical?: unknown })?.canonical === 'string') schemaParses.canonicals.push((t as { canonical: string }).canonical);
+      }
+      return real.parseLexicon(raw);
+    },
+  };
+});
 import { EXPORT_FORMATS, addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
@@ -476,6 +496,25 @@ describe('POST /learn and POST /add', () => {
     expect(body.path).toBe(env.globalPath);
     const check = await api('POST', '/normalize', { text: 'Ashlur rocks', dryRun: true });
     expect(((await check.json()) as NormalizeResult).replacements[0]?.reason).toBe('alias');
+  });
+
+  it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
+    const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: aliases\[0\] \("x{24}\.\.\."\): must be at most 80 characters\. Nothing was written/);
+    expect(error).not.toContain('terms[');
+    expect((await api('GET', '/stats')).status).toBe(200);
+  });
+
+  // Catches: over the 60-character cap the 400 said only the cap, though the
+  // usual cause is a whole phrase sent as heard (MCP learn_correction says so).
+  it('learn over the length cap is a 400 that says to send only the name', async () => {
+    const res = await api('POST', '/learn', { heard: 'so I was saying that we should deploy the thing to Hetsner tomorrow', meant: 'Hetzner' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      'heard must be at most 60 characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.',
+    );
   });
 
   it('learn rejects identical spellings with 400', async () => {
@@ -1010,13 +1049,140 @@ async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
 // trust gate
 // ---------------------------------------------------------------------------
 
+describe('the load cache after POST /normalize records hits', () => {
+  // Catches: a hit-counting /normalize called invalidate(), which dropped the
+  // cached load (and matcher index) of every cwd, though only the hit counts
+  // of the terms it matched had changed.
+  it('drops only the cached loads holding a matched term', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-hitcache-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repo = path.join(dir, 'repo');
+    const other = path.join(dir, 'other');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.mkdir(other, { recursive: true });
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['ashler'] }, { globalPath, cwd: other });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Projy\n    aliases: [projee]\n');
+    await trustProject(path.join(repo, '.lexicon.yaml'), { globalPath });
+    // A long reload interval: only an invalidation makes the server re-read.
+    const srv = createServer({ port: 0, cwd: other, globalPath, quiet: true, reloadMs: 60_000 });
+    const started = await srv.start();
+    const call = async (method: string, route: string, body?: unknown): Promise<Response> =>
+      fetch(`${started.url}${route}`, {
+        method,
+        headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const stats = async (cwd: string): Promise<LexiconStats> => (await (await call('GET', `/stats?cwd=${encodeURIComponent(cwd)}`)).json()) as LexiconStats;
+    try {
+      expect((await stats(other)).termCount).toBe(1);
+      expect((await stats(repo)).termCount).toBe(2);
+      // Behind the server's back: a reload of either cwd would now see a third term.
+      await addTerm({ canonical: 'Laterly', aliases: ['laterlee'] }, { globalPath, cwd: other });
+
+      // A hit on the repo's own term: only the repo's load holds it.
+      const first = await call('POST', '/normalize', { text: 'ping projee', cwd: repo });
+      expect(((await first.json()) as NormalizeResult).output).toBe('ping Projy');
+      expect((await stats(other)).termCount).toBe(1);
+      const repoStats = await stats(repo);
+      expect(repoStats.termCount).toBe(3);
+      expect(repoStats.topTerms).toEqual([{ canonical: 'Projy', hits: 1 }]);
+
+      // A hit on a global term every load holds: both are re-read.
+      await call('POST', '/normalize', { text: 'ping ashler', cwd: repo });
+      const otherStats = await stats(other);
+      expect(otherStats.termCount).toBe(2);
+      expect(otherStats.topTerms).toEqual([{ canonical: 'Ashlr.AI', hits: 1 }]);
+      expect((await stats(repo)).totalHits).toBe(2);
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});
+
+describe('the load cache after a write', () => {
+  // Catches: /learn, /add and pack install and uninstall cleared the cached
+  // load of every cwd, though a project-scope write changes only the loads
+  // that read that project file.
+  it('a project write drops only the loads that used that file; a global write drops them all', async () => {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-writecache-')));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const repoA = path.join(dir, 'a');
+    const repoB = path.join(dir, 'b');
+    const repoC = path.join(dir, 'c');
+    const subC = path.join(repoC, 'src');
+    const other = path.join(dir, 'other');
+    for (const r of [repoA, repoB, repoC]) await fs.mkdir(path.join(r, '.git'), { recursive: true });
+    await fs.mkdir(subC, { recursive: true });
+    await fs.mkdir(other, { recursive: true });
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['ashler'] }, { globalPath, cwd: other });
+    for (const [r, name] of [[repoA, 'Alpha'], [repoB, 'Bravo']] as const) {
+      await fs.writeFile(path.join(r, '.lexicon.yaml'), `version: 1\nterms:\n  - canonical: ${name}\n    aliases: [${name.toLowerCase()}o]\n`);
+      await trustProject(path.join(r, '.lexicon.yaml'), { globalPath });
+    }
+    // A long reload interval: only an invalidation makes the server re-read.
+    const srv = createServer({ port: 0, cwd: other, globalPath, quiet: true, reloadMs: 60_000 });
+    const started = await srv.start();
+    const call = async (method: string, route: string, body?: unknown): Promise<Response> =>
+      fetch(`${started.url}${route}`, {
+        method,
+        headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const count = async (cwd: string): Promise<number> =>
+      ((await (await call('GET', `/stats?cwd=${encodeURIComponent(cwd)}`)).json()) as LexiconStats).termCount;
+    const counts = async (): Promise<number[]> => [await count(repoA), await count(repoB), await count(subC), await count(other)];
+    const ok = async (res: Promise<Response>): Promise<void> => {
+      const r = await res;
+      expect(r.status, await r.clone().text()).toBe(200);
+    };
+    try {
+      expect(await counts()).toEqual([2, 2, 1, 1]);
+      // Behind the server's back: any reload now sees one more global term.
+      await addTerm({ canonical: 'Laterly', aliases: ['laterlee'] }, { globalPath, cwd: other });
+
+      await ok(call('POST', '/add', { canonical: 'Alpine', aliases: ['alpeen'], scope: 'project', cwd: repoA }));
+      expect(await counts()).toEqual([4, 2, 1, 1]);
+      await ok(call('POST', '/learn', { heard: 'bravvo', meant: 'Bravo', scope: 'project', cwd: repoB }));
+      expect(await counts()).toEqual([4, 3, 1, 1]);
+      const packTerms = (await (await call('POST', '/packs/voice-tools', { scope: 'project', cwd: repoA })).json()) as { added: number; path: string };
+      expect(packTerms.path).toBe(path.join(repoA, '.lexicon.yaml'));
+      expect(await count(repoA)).toBe(4 + packTerms.added);
+      expect((await counts()).slice(1)).toEqual([3, 1, 1]);
+      await ok(call('DELETE', `/packs/voice-tools?scope=project&cwd=${encodeURIComponent(repoA)}`));
+      expect(await counts()).toEqual([4, 3, 1, 1]);
+
+      // A write that creates a repo's .lexicon.yaml drops the loads of the
+      // cwds that now resolve to it, though their cached load had no project file.
+      await ok(call('POST', '/add', { canonical: 'Charlie', aliases: ['charlee'], scope: 'project', cwd: repoC }));
+      expect(await counts()).toEqual([4, 3, 3, 1]);
+
+      // A global write drops every load.
+      await ok(call('POST', '/add', { canonical: 'Globo', aliases: ['globoh'], cwd: other }));
+      expect(await counts()).toEqual([5, 4, 4, 3]);
+    } finally {
+      await srv.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});
+
 describe('trust gate', () => {
   it('never merges an untrusted project file and reports it by path only', async () => {
     const cwd = env.untrustedProject;
     const norm = await api('POST', '/normalize', { text: 'ping hostyle', cwd });
-    const body = (await norm.json()) as NormalizeResult;
+    const body = (await norm.json()) as NormalizeResult & { projectTrust?: string; skippedProject?: string };
     expect(body.output).toBe('ping hostyle');
     expect(body.changed).toBe(false);
+    // An unchanged result says why a repo name was left alone, as /stats and
+    // MCP normalize_transcript do: the repo lexicon was skipped, by path only.
+    expect(body.projectTrust).toBe('untrusted');
+    expect(body.skippedProject).toBe(path.join(cwd, '.lexicon.yaml'));
+    expect(JSON.stringify(body)).not.toContain('HostileCorp');
+    // No project file: neither key.
+    const plain = (await (await api('POST', '/normalize', { text: 'ping hostyle', cwd: env.cwd })).json()) as Record<string, unknown>;
+    expect(plain).not.toHaveProperty('projectTrust');
+    expect(plain).not.toHaveProperty('skippedProject');
 
     const health = await api('GET', `/health?cwd=${encodeURIComponent(cwd)}`);
     expect(((await health.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
@@ -1027,6 +1193,24 @@ describe('trust gate', () => {
     expect(lexBody.skippedProject).toBe(path.join(cwd, '.lexicon.yaml'));
     expect(lexBody.lexicon.terms.map((t) => t.canonical)).not.toContain('HostileCorp');
     expect(JSON.stringify(lexBody)).not.toContain('hostyle');
+  });
+
+  it('never parses an untrusted project file, on a normalize that records hits or on a read', async () => {
+    const cwd = env.untrustedProject;
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['ashler'] }, { globalPath: env.globalPath });
+    schemaParses.canonicals.length = 0;
+    // Records a hit (so recordHits runs and the cache is dropped), then reloads.
+    const norm = await api('POST', '/normalize', { text: 'ping ashler and hostyle', cwd });
+    expect(norm.status).toBe(200);
+    const body = (await norm.json()) as NormalizeResult;
+    expect(body.output).toBe('ping Ashlr.AI and hostyle');
+    for (const route of ['/lexicon', '/stats', '/packs', '/export/csv']) {
+      expect((await api('GET', `${route}?cwd=${encodeURIComponent(cwd)}`)).status).toBe(200);
+    }
+    // The file is still reported by path; it was simply never read as YAML.
+    const lex = (await (await api('GET', `/lexicon?cwd=${encodeURIComponent(cwd)}`)).json()) as { skippedProject?: string };
+    expect(lex.skippedProject).toBe(path.join(cwd, '.lexicon.yaml'));
+    expect(schemaParses.canonicals).not.toContain('HostileCorp');
   });
 
   it('refuses a project-scope write into an untrusted file with 403', async () => {
@@ -2202,6 +2386,25 @@ describe('packs and aliases routes', () => {
     expect(await missing.json()).toEqual({ error: 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)' });
     expect((await api2('GET', '/aliases?canonical=%20')).status).toBe(400);
     expect((await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).status).toBe(400);
+    // Catches: the cap was a literal 80 on the raw value, so invisible
+    // characters (which the schema strips from a canonical) counted toward
+    // it and reached the answer.
+    const zwsp = encodeURIComponent('\u200B\uFEFF');
+    const padded = await api2('GET', `/aliases?canonical=${zwsp}${'a'.repeat(80)}${zwsp}`);
+    expect(padded.status).toBe(200);
+    expect(((await padded.json()) as { canonical: string }).canonical).toBe('a'.repeat(80));
+    const hidden = (await (await api2('GET', `/aliases?canonical=Ashlr${zwsp}.AI`)).json()) as { canonical: string; aliases: string[] };
+    expect(hidden).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
+    expect(await (await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).json()).toEqual({ error: 'canonical must be at most 80 characters' });
+    // Catches: a control character inside the name (which NonEmptyWord
+    // refuses, so no term could hold it) was let through to suggestAliases.
+    for (const ctl of ['\n', '\t', '\u0007', '\u0085', ' ']) {
+      const res = await api2('GET', `/aliases?canonical=${encodeURIComponent(`Ashlr${ctl}AI`)}`);
+      expect(res.status, JSON.stringify(ctl)).toBe(400);
+      expect(await res.json()).toEqual({ error: 'canonical must not contain control characters or newlines' });
+    }
+    // Outer whitespace controls are trimmed, as the schema trims a canonical.
+    expect((await (await api2('GET', `/aliases?canonical=${encodeURIComponent('\tAshlr.AI\n')}`)).json())).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
     expect((await api2('POST', '/aliases', { canonical: 'x' })).status).toBe(405);
     expect((await fetch(`${info2.url}/aliases?canonical=x`)).status).toBe(401);
   });

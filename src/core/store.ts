@@ -27,7 +27,7 @@ import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
-import { recalledParsedHash, rememberParsedBytes } from './parsed-hash.js';
+import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
@@ -61,6 +61,15 @@ export interface LoadOptions extends StoreOptions {
    * `LoadedLexicon.skippedProject` and NOT merged.
    */
   includeUntrusted?: boolean;
+  /**
+   * Parse a project file the trust gate leaves out. Default true, so
+   * `skippedProject.lexicon` holds its terms (learn and remove name the
+   * skipped file when it claims a word). With `false` (the prompt hook) trust
+   * is checked first, against the registry and the sha256 of the bytes read,
+   * and an untrusted or changed file is never parsed: `skippedProject` then
+   * carries its path with an empty lexicon. Ignored with `includeUntrusted`.
+   */
+  parseSkipped?: boolean;
 }
 
 export const PROJECT_FILE_NAME = '.lexicon.yaml';
@@ -232,8 +241,10 @@ function parseLexiconText(text: string, filePath: string, scope: TermScope): Lex
  * read instead, which cost a 2000-term lexicon about 30 ms per prompt to
  * re-check a value this module had already validated before writing it.
  *
- * Only `loadLexicon`'s read of the global file uses it, and only once that
- * file reaches PARSE_CACHE_MIN_BYTES: a project file is someone else's,
+ * `loadLexicon`'s read of the global file uses it, and so do the reads the
+ * writers here make of the global file before they edit it (see
+ * readLexiconFileForWrite), only once that file reaches
+ * PARSE_CACHE_MIN_BYTES: a project file is someone else's,
  * usually small, and is hashed by the trust check anyway; a small global file
  * parses in a few milliseconds, and skipping it keeps a cache file from
  * appearing beside every hand-written lexicon a test or a script points at.
@@ -263,7 +274,20 @@ export function cacheChecksum(text: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
+/**
+ * `readLexiconFile` for the writers in this module: a global file comes from
+ * the parse cache when its text is the one cached (the same value the YAML
+ * parse would give; see readGlobalLexiconCached), a project file is read and
+ * parsed as before. A `lexicon add` on a 2000-term lexicon parsed the YAML
+ * twice before writing (the read it edits and pinCommittedHits' look at what
+ * is on disk), about half of its time. A miss is not written back: the write
+ * that follows refreshes the entry anyway.
+ */
+function readLexiconFileForWrite(filePath: string, scope: TermScope): Promise<LexiconFile> {
+  return scope === 'global' ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
+}
+
+async function readGlobalLexiconCached(filePath: string, opts: { writeBack?: boolean } = {}): Promise<LexiconFile> {
   const read = await readLexiconText(filePath);
   if (read === undefined) return { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, 'global');
@@ -288,7 +312,7 @@ async function readGlobalLexiconCached(filePath: string): Promise<LexiconFile> {
     // missing, unreadable or stale: parse for real below
   }
   const file = parseLexiconText(read.text, filePath, 'global');
-  await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
   return file;
 }
 
@@ -312,9 +336,240 @@ async function writeParseCache(filePath: string, text: string, lexicon: Lexicon,
 }
 
 /**
+ * Entries the project parse cache and the index cache each keep, the main
+ * file included. The main file (`project-parse-cache.json`,
+ * `index-cache.json`) holds the entry used last, so a prompt in the same repo
+ * reads one file exactly as before; up to CACHE_ENTRIES - 1 others wait in
+ * spill files beside it (`<name>.<8 hex>.json`, the hex a `cacheChecksum`
+ * of the project path), so switching between a few repos does not rebuild
+ * each time. Moving an entry between the main file and a spill file is a
+ * rename, so it keeps its 0600 mode and is never rewritten; a spill file's
+ * mtime is when it was last the main entry, and the oldest past the limit is
+ * deleted. Every entry is validated exactly as the main one was, wherever it
+ * is read from; a checksum collision only costs a miss.
+ */
+export const CACHE_ENTRIES = 4;
+
+/** The spill file beside `mainPath` for the entry identified by `id` (a project path, or '' for the global lexicon alone). */
+function cacheSpillPath(mainPath: string, id: string): string {
+  return `${mainPath.replace(/\.json$/, '')}.${cacheChecksum(id)}.json`;
+}
+
+/**
+ * Move the main entry at `mainPath` (identified by `mainId`) to its spill
+ * file, mark it used now, then delete the least recently used spill files
+ * past CACHE_ENTRIES - 1. Best effort, never throws.
+ */
+async function spillCacheEntry(mainPath: string, mainId: string): Promise<void> {
+  const spill = cacheSpillPath(mainPath, mainId);
+  try {
+    await fs.rename(mainPath, spill);
+    const now = new Date();
+    await fs.utimes(spill, now, now);
+  } catch {
+    return;
+  }
+  try {
+    const dir = path.dirname(mainPath);
+    const stem = path.basename(mainPath).replace(/\.json$/, '');
+    const names = (await fs.readdir(dir)).filter((n) => n.length === stem.length + 14 && n.startsWith(`${stem}.`) && /\.[0-9a-f]{8}\.json$/.test(n));
+    if (names.length <= CACHE_ENTRIES - 1) return;
+    const aged: { name: string; mtime: number }[] = [];
+    for (const name of names) {
+      const st = await fs.stat(path.join(dir, name)).catch(() => undefined);
+      if (st) aged.push({ name, mtime: st.mtimeMs });
+    }
+    aged.sort((a, b) => a.mtime - b.mtime);
+    for (const { name } of aged.slice(0, Math.max(0, aged.length - (CACHE_ENTRIES - 1)))) {
+      await fs.unlink(path.join(dir, name)).catch(() => undefined);
+    }
+  } catch {
+    // a cache, not state: a spill file too many costs only disk
+  }
+}
+
+/**
+ * Make the spill entry for `id` the main one, spilling the current main entry
+ * (identified by `mainId`, when there is one) first. Best effort, never throws.
+ */
+async function promoteCacheEntry(mainPath: string, id: string, mainId: string | undefined): Promise<void> {
+  if (mainId !== undefined && mainId !== id) await spillCacheEntry(mainPath, mainId);
+  await fs.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => undefined);
+}
+
+/**
+ * The parse of the last trusted project lexicon `loadLexicon` merged, kept
+ * beside the global lexicon (`project-parse-cache.json`, mode 0600) with the
+ * exact text it came from and the sha256 of those bytes.
+ *
+ * A trusted project file cost the prompt hook its YAML parse and schema
+ * validation (about 20 ms for 200 terms) and loading node:crypto to hash it
+ * for the trust check (about 10 ms more) on every prompt, which put a
+ * 2000-term global plus 200-term project lexicon over the 200 ms budget.
+ *
+ * Reuse is decided by the content, never by metadata: the entry is a hit
+ * only when its `text`, encoded as UTF-8, is byte for byte the file just read
+ * (comparing decoded text alone would let two byte strings that decode to
+ * the same replacement characters match). For those bytes the stored
+ * `sha256` is the value hashing them would give, so the trust check still
+ * compares the pinned hash with the hash of the bytes being merged; the
+ * cache only remembers a computation. It does not decide trust: the registry
+ * is read and compared on every load as before, so an untrust, a re-pin or a
+ * changed file is seen at once. The entry is only written for a file the
+ * gate just found trusted, and only in the global config directory, where
+ * `trust.json` itself lives: anyone able to forge the entry could equally
+ * edit the registry, so it adds no new way in. `sum` (see `cacheChecksum`)
+ * catches a damaged entry, not a forged one. Up to CACHE_ENTRIES entries,
+ * one per project file, least recently used out (see CACHE_ENTRIES), so
+ * alternating between a few repos does not parse each time.
+ *
+ * Every trusted project file is cached, whatever its size. A file under
+ * PARSE_CACHE_MIN_BYTES used to be left out, on the theory that a small file
+ * parses in a few milliseconds; measured, a 10-term file still cost the warm
+ * prompt about 30 to 45 ms and a 100-term one 55 to 65 ms (the YAML parse and
+ * schema validation on a cold process, plus loading node:crypto for the
+ * hash). Size plays no part in the argument above: reuse is still for
+ * identical bytes only, the entry is still written only for a file the gate
+ * just found trusted, and only in the global config directory.
+ */
+export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
+
+/** Entry format of PROJECT_PARSE_CACHE_FILE_NAME. */
+export const PROJECT_PARSE_CACHE_VERSION = 1;
+
+/** A project file read for `loadLexicon`, and whether its parse came from the cache. */
+interface ProjectRead {
+  file: LexiconFile;
+  /** The bytes read, when the parse did not come from the cache (so it may be written). */
+  fresh?: { text: string };
+}
+
+/** A project file's bytes as read for `loadLexicon`, and the cached parse of exactly those bytes, if any. */
+interface ProjectBytes {
+  text: string;
+  bytes: Buffer;
+  cached?: { lexicon: Lexicon; sha256: string };
+  /** The cached parse came from a spill file, not the main entry (see CACHE_ENTRIES). */
+  fromSpill?: boolean;
+  /** The project path the main entry is for, when it is one this version reads. */
+  mainId?: string;
+}
+
+/** Read a project file and look its bytes up in the project parse cache; undefined when it does not exist. */
+async function readProjectBytes(filePath: string, globalPath: string): Promise<ProjectBytes | undefined> {
+  const read = await readLexiconText(filePath);
+  if (read === undefined) return undefined;
+  const out: ProjectBytes = { text: read.text, bytes: read.bytes };
+  const key = path.resolve(filePath);
+  const mainPath = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const main = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
+  out.mainId = main.id;
+  if (main.hit) out.cached = main.hit;
+  else if (main.id !== key) {
+    const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
+    if (spill.hit) {
+      out.cached = spill.hit;
+      out.fromSpill = true;
+    }
+  }
+  return out;
+}
+
+/**
+ * One project parse cache entry at `cachePath`: which project path it is for
+ * (`id`, when its version is this one), and its parse and sha256 when it is
+ * for `key` and its text, encoded as UTF-8, is byte for byte `bytes`.
+ */
+async function readProjectCacheEntry(
+  cachePath: string,
+  key: string,
+  bytes: Buffer,
+  text: string,
+): Promise<{ id?: string; hit?: { lexicon: Lexicon; sha256: string } }> {
+  try {
+    const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    if (!isPlainObject(cached) || cached.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached.path !== 'string') return {};
+    const id = cached.path;
+    if (
+      cached.path === key &&
+      cached.text === text &&
+      typeof cached.sha256 === 'string' &&
+      /^[0-9a-f]{64}$/.test(cached.sha256) &&
+      typeof cached.lexicon === 'string' &&
+      cached.sum === cacheChecksum(`${cached.sha256}${cached.lexicon}`) &&
+      Buffer.from(cached.text, 'utf8').equals(bytes)
+    ) {
+      const lexicon: unknown = JSON.parse(cached.lexicon);
+      if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon: lexicon as unknown as Lexicon, sha256: cached.sha256 } };
+    }
+    return { id };
+  } catch {
+    // missing, unreadable or damaged: parse for real
+    return {};
+  }
+}
+
+/**
+ * Remember on `file` the hash of the bytes in `read`: the cached sha256 when
+ * the cache had those bytes, else the bytes themselves, hashed on demand.
+ */
+function rememberProjectBytes(file: LexiconFile, read: ProjectBytes): void {
+  if (read.cached) rememberParsedHash(file, read.cached.sha256);
+  else rememberParsedBytes(file, read.bytes);
+}
+
+/** The project `LexiconFile` for `read`: the cached parse, or the YAML parsed now (which throws for a bad file). */
+function projectFileOf(filePath: string, read: ProjectBytes | undefined): ProjectRead {
+  if (read === undefined) return { file: { path: filePath, scope: 'project', lexicon: emptyLexicon(), exists: false } };
+  if (read.cached) {
+    const file: LexiconFile = { path: filePath, scope: 'project', lexicon: read.cached.lexicon, exists: true };
+    rememberProjectBytes(file, read);
+    return { file };
+  }
+  const file = parseLexiconText(read.text, filePath, 'project');
+  rememberProjectBytes(file, read);
+  return { file, fresh: { text: read.text } };
+}
+
+/**
+ * Record `file` (just parsed from `text`, and just found trusted) as the
+ * project parse cache entry. Best effort, never throws.
+ */
+async function writeProjectParseCache(file: LexiconFile, text: string, globalPath: string, mainId: string | undefined): Promise<void> {
+  try {
+    const sha256 = await recalledParsedHash(file);
+    if (sha256 === undefined) return;
+    const lexiconJson = JSON.stringify(file.lexicon);
+    const mainPath = path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const key = path.resolve(file.path);
+    // Another repo's entry moves aside rather than being overwritten (see CACHE_ENTRIES).
+    if (mainId !== undefined && mainId !== key) await spillCacheEntry(mainPath, mainId);
+    await writeFileAtomic(
+      mainPath,
+      JSON.stringify({
+        version: PROJECT_PARSE_CACHE_VERSION,
+        path: key,
+        sha256,
+        text,
+        sum: cacheChecksum(`${sha256}${lexiconJson}`),
+        lexicon: lexiconJson,
+      }),
+      { mode: 0o600 },
+    );
+    // A stale spill entry for this file is superseded by the main one.
+    if (mainId !== key) await fs.unlink(cacheSpillPath(mainPath, key)).catch(() => undefined);
+  } catch {
+    // a cache, not state: the next load parses again
+  }
+}
+
+/**
  * The compiled matcher index of the last lexicon the prompt hook matched
  * against, kept beside the global lexicon (`index-cache.json`) so a fresh
- * hook process does not rebuild it (about 55 ms for 2000 terms).
+ * hook process does not rebuild it (about 55 ms for 2000 terms). The indexes
+ * of up to CACHE_ENTRIES - 1 other merges (another repo's project file, or
+ * the global lexicon alone) wait in spill files beside it, least recently
+ * used out, so switching repos does not rebuild each time.
  *
  * The entry is keyed by `indexKey(lexicon)`: everything `buildIndex` reads
  * from the lexicon (canonicals, aliases, never-words, caseSensitive, the
@@ -339,36 +594,86 @@ export const INDEX_CACHE_MIN_TERMS = 150;
  * past INDEX_CACHE_MIN_TERMS, written back best-effort). Never throws for a
  * cache problem; `write: false` skips the write-back.
  */
-export async function loadMatcherIndex(loaded: Pick<LoadedLexicon, 'merged' | 'global'>, opts: { write?: boolean } = {}): Promise<MatcherIndex> {
+export async function loadMatcherIndex(
+  loaded: Pick<LoadedLexicon, 'merged' | 'global'> & { project?: Pick<LexiconFile, 'path'> },
+  opts: { write?: boolean } = {},
+): Promise<MatcherIndex> {
   const lexicon = loaded.merged;
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
   const cachePath = path.join(path.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
+  const project = loaded.project ? path.resolve(loaded.project.path) : undefined;
+  // Which merge an entry is for: the project path, or '' for the global lexicon alone (see CACHE_ENTRIES).
+  const id = project ?? '';
+  const head = indexCacheHead(key, project);
+  let mainId: string | undefined;
   try {
     const text = await fs.readFile(cachePath, 'utf8');
-    // Cheap rejections first: the key is a prefix of the file (see below), so
-    // a different lexicon is told apart before anything is parsed.
-    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
-    if (text.startsWith(head.slice(0, -1))) {
-      const cached: unknown = JSON.parse(text);
-      if (isPlainObject(cached) && cached.version === INDEX_FORMAT_VERSION && cached.key === key) {
-        const index = deserializeIndex(cached.index, lexicon);
-        if (index) return index;
-      }
-    }
+    const mainProject = indexHeadProject(text);
+    mainId = mainProject === null ? '' : mainProject;
+    const index = indexFromEntry(text, head, key, lexicon);
+    if (index) return index;
   } catch {
-    // missing, unreadable or damaged: rebuild below
+    // missing or unreadable: look further, then rebuild below
+  }
+  const write = opts.write !== false;
+  if (mainId !== id) {
+    // Another merge's entry is the main one: this one may be waiting in a spill file.
+    try {
+      const index = indexFromEntry(await fs.readFile(cacheSpillPath(cachePath, id), 'utf8'), head, key, lexicon);
+      if (index) {
+        if (write) await promoteCacheEntry(cachePath, id, mainId);
+        return index;
+      }
+    } catch {
+      // no spill entry for this merge
+    }
   }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
+  if (write) {
+    if (mainId !== undefined && mainId !== id) await spillCacheEntry(cachePath, mainId);
+    await writeIndexCache(cachePath, key, index, project);
+    // A stale spill entry for this merge is superseded by the main one.
+    if (mainId !== id) await fs.unlink(cacheSpillPath(cachePath, id)).catch(() => undefined);
+  }
   return index;
 }
 
-/** Replace the index cache entry at `cachePath`. Best effort, never throws. */
-async function writeIndexCache(cachePath: string, key: string, index: MatcherIndex): Promise<void> {
+/**
+ * The index an entry's JSON `text` holds, when it was built for exactly `key`
+ * (and the merge `head` names) and deserializes; else undefined. Throws for
+ * JSON that does not parse.
+ */
+function indexFromEntry(text: string, head: string, key: string, lexicon: Lexicon): MatcherIndex | undefined {
+  // Cheap rejections first: the key is a prefix of the file (see below), so
+  // a different lexicon is told apart before anything is parsed.
+  if (!text.startsWith(head)) return undefined;
+  const cached: unknown = JSON.parse(text);
+  if (!isPlainObject(cached) || cached.version !== INDEX_FORMAT_VERSION || cached.key !== key) return undefined;
+  return deserializeIndex(cached.index, lexicon) ?? undefined;
+}
+
+/**
+ * The start of an entry's JSON up to and including its key:
+ * `{"version":N,"project":"<path>","key":"..."` for a merge with a trusted
+ * project file, `{"version":N,"key":"..."` for the global lexicon alone.
+ */
+function indexCacheHead(key: string, project: string | undefined): string {
+  const head = JSON.stringify(project === undefined ? { version: INDEX_FORMAT_VERSION, key } : { version: INDEX_FORMAT_VERSION, project, key });
+  return head.slice(0, -1);
+}
+
+/**
+ * Replace the index cache entry at `cachePath`. `project` is the absolute
+ * path of the trusted project file merged into the indexed lexicon, if any,
+ * so a later write can rebuild the entry for the same merge (see
+ * refreshIndexCache). Best effort, never throws.
+ */
+async function writeIndexCache(cachePath: string, key: string, index: MatcherIndex, project?: string): Promise<void> {
   try {
-    // `version` and `key` lead the object so loadMatcherIndex's prefix check works.
-    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    // `version`, `project` and `key` lead the object so loadMatcherIndex's
+    // prefix check works and indexCacheProject reads the project from the head.
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, ...(project !== undefined ? { project } : {}), key, index: serializeIndex(index) });
     await writeFileAtomic(cachePath, out, { mode: 0o600 });
   } catch {
     // a cache, not state
@@ -376,16 +681,113 @@ async function writeIndexCache(cachePath: string, key: string, index: MatcherInd
 }
 
 /**
+ * Which merge the entry at `cachePath` indexes, read from the first bytes of
+ * the file only (the whole entry is about 700 KB for 2000 terms, and parsing
+ * it costs a write about 20 ms): the absolute path of the project file merged
+ * in, `null` for the global lexicon alone, `undefined` when there is no entry
+ * or its head is not one this version writes.
+ */
+async function indexCacheProject(cachePath: string): Promise<string | null | undefined> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(cachePath, 'r');
+    const buf = Buffer.alloc(INDEX_CACHE_HEAD_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return indexHeadProject(buf.toString('utf8', 0, bytesRead));
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/**
+ * The merge an index cache entry's JSON (or its first bytes) is for, from its
+ * head: the project path, `null` for the global lexicon alone, `undefined`
+ * when the head is not one this version writes.
+ */
+function indexHeadProject(head: string): string | null | undefined {
+  try {
+    const m = /^\{"version":(\d+),(?:"project":("(?:[^"\\]|\\.)*"),)?"key":/.exec(head);
+    if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return undefined;
+    if (m[2] === undefined) return null;
+    const project: unknown = JSON.parse(m[2]);
+    return typeof project === 'string' && path.isAbsolute(project) ? project : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Bytes of an index cache entry indexCacheProject reads: past any project path. */
+const INDEX_CACHE_HEAD_BYTES = 8192;
+
+/**
+ * After a write to a lexicon file, rebuild an existing index cache entry for
+ * the merge the next prompt will match against, so it reads the entry instead
+ * of building the index (about 55 ms for 2000 terms, plus writing it back).
+ *
+ * The entry rebuilt is the main one: the merge the hook (or `lexicon serve`,
+ * or an MCP normalize) matched last, the global lexicon alone or with one
+ * trusted project file. Spill entries for other merges (see CACHE_ENTRIES)
+ * are left as they are; one a global write made stale costs its repo one
+ * rebuild on its next prompt, as before. A write to the global file rebuilds it for that same merge,
+ * reading the project path the entry records; a write to a project file
+ * rebuilds it for the global lexicon merged with that file, since its repo is
+ * where the next prompt is likely to be. Both go through `loadLexicon` and
+ * `loadMatcherIndex`, exactly the hook's path, so the trust gate decides what
+ * is merged: a project file that is not trusted (or no longer exists) is left
+ * out, as the hook would leave it out, and a project-scope write left
+ * untrusted changes nothing. An entry already keyed for the result is left as
+ * it is. Nothing happens where there is no entry, so a user who never runs
+ * the hook does not pay a build on every write. Best effort, never throws.
+ *
+ * Exported for the writers outside this module that replace a lexicon file
+ * themselves or re-pin its trust afterwards (pack install and uninstall,
+ * and so the registry's install, update and removal, `lexicon review` and
+ * `lexicon edit`): they call it
+ * once the file and its trust entry are final, as `addTerm` does. For a
+ * global write whose entry indexes the global lexicon alone it rebuilds that
+ * entry from the file on disk (and so refreshes the parse cache too), which
+ * covers a file another program rewrote, such as the user's editor.
+ */
+export async function refreshIndexCache(written: { scope: TermScope; path: string }, opts: StoreOptions = {}): Promise<void> {
+  try {
+    const globalPath = written.scope === 'global' ? written.path : resolvePaths(opts).global;
+    const cachePath = path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+    if (!existsSync(cachePath)) return;
+    const project = written.scope === 'project' ? path.resolve(written.path) : await indexCacheProject(cachePath);
+    if (project === null) {
+      const global = await readGlobalLexiconCached(globalPath);
+      const merged = mergeLexicons(global.lexicon);
+      // Below the threshold an entry is never written: leave the old one alone, as prebuildIndexCache does.
+      if (merged.terms.length >= INDEX_CACHE_MIN_TERMS) await loadMatcherIndex({ merged, global });
+      return;
+    }
+    if (typeof project !== 'string') return;
+    const loaded = await loadLexicon({
+      globalPath,
+      cwd: path.dirname(project),
+      ...(opts.env !== undefined ? { env: opts.env } : {}),
+      ...(opts.home !== undefined ? { home: opts.home } : {}),
+    });
+    // A project write the trust gate leaves out of the merge changed nothing the hook matches.
+    if (written.scope === 'project' && (loaded.project === undefined || path.resolve(loaded.project.path) !== project)) return;
+    await loadMatcherIndex(loaded);
+  } catch {
+    // a cache, not state: the hook builds it instead
+  }
+}
+
+/**
  * Pre-build the index cache for a global lexicon file this module just wrote
- * (`lexicon` is its parse), keyed for the merge `loadLexicon` produces when no
- * trusted project file is in play. Without it, the first prompt after every
- * write rebuilt and wrote the index inside the hook: about 55 ms of build
- * plus the write, which put a 2000-term lexicon over the hook's 200 ms
- * budget. A write that already holds the parse pays only the build and the
- * write here, once, outside any prompt. A trusted project changes the merged
- * key, so its first prompt still builds (as before); the entry is never
- * written for a project file. Below INDEX_CACHE_MIN_TERMS nothing is written,
- * matching loadMatcherIndex.
+ * (`lexicon` is its parse). Without it, the first prompt after every write
+ * rebuilt and wrote the index inside the hook: about 55 ms of build plus the
+ * write, which put a 2000-term lexicon over the hook's 200 ms budget. A write
+ * that already holds the parse pays only the build and the write here, once,
+ * outside any prompt. When the entry there indexes the global lexicon merged
+ * with a trusted project file, refreshIndexCache rebuilds it for that merge
+ * instead; the entry is never written into a project directory. Below
+ * INDEX_CACHE_MIN_TERMS nothing is written, matching loadMatcherIndex.
  *
  * It only refreshes an entry that is already there: one exists once the
  * hook, `lexicon serve` or an MCP normalize has matched against a lexicon this
@@ -393,9 +795,11 @@ async function writeIndexCache(cachePath: string, key: string, index: MatcherInd
  * 100 ms for 2000 terms in a fresh process) on every `add`.
  */
 async function prebuildIndexCache(filePath: string, lexicon: Lexicon): Promise<void> {
-  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   const cachePath = path.join(path.dirname(filePath), INDEX_CACHE_FILE_NAME);
   if (!existsSync(cachePath)) return;
+  const project = await indexCacheProject(cachePath);
+  if (typeof project === 'string') return refreshIndexCache({ scope: 'global', path: filePath });
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   try {
     const merged = mergeLexicons(lexicon);
     await writeIndexCache(cachePath, indexKey(merged), buildIndex(merged));
@@ -552,7 +956,7 @@ function updateMap(doc: Document, node: YAMLMap, value: Record<string, unknown>,
 async function pinCommittedHits(file: LexiconFile): Promise<void> {
   const onDisk = new Map<string, number>();
   try {
-    const current = await readLexiconFile(file.path, file.scope);
+    const current = await readLexiconFileForWrite(file.path, file.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== undefined) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -883,17 +1287,41 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   const global = await readGlobalLexiconCached(paths.global);
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
 
+  // With parseSkipped false the gate runs before the parse, on a stand-in
+  // carrying the bytes just read (or their cached sha256), so an untrusted or
+  // changed file costs no YAML parse. The parse that follows for a trusted
+  // file is of those same bytes, and shares their hash.
+  const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project: LexiconFile;
+  let fresh: ProjectRead['fresh'];
+  let projectTrust: TrustStatus | undefined;
+  let read: ProjectBytes | undefined;
   try {
-    project = await readLexiconFile(paths.project, 'project');
+    read = await readProjectBytes(paths.project, paths.global);
+    if (gateFirst && read !== undefined) {
+      const probe: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
+      rememberProjectBytes(probe, read);
+      projectTrust = await isTrusted(probe, opts);
+      if (projectTrust !== 'trusted') {
+        return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: probe };
+      }
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+      shareParsedHash(probe, project);
+    } else {
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+    }
   } catch (err) {
     const placeholder: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
-    const trust = await isTrusted(placeholder, opts);
+    const trust = projectTrust ?? (await isTrusted(placeholder, opts));
     if (trust === 'trusted' || opts.includeUntrusted) throw err;
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
 
-  const projectTrust = await isTrusted(project, opts);
+  projectTrust ??= await isTrusted(project, opts);
+  if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (projectTrust === 'trusted' && read?.fromSpill) {
+    await promoteCacheEntry(path.join(path.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), path.resolve(paths.project), read.mainId);
+  }
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
     await hydrateHits(merged, project, opts);
@@ -915,10 +1343,21 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
 export function mergeLexicons(global: Lexicon, project?: Lexicon): Lexicon {
   const terms: Term[] = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? 'global' }));
   if (project) {
+    // The first term holding each canonical (sameCanonical's key), so a
+    // project term finds its global counterpart without a scan: a findIndex
+    // per project term cost a 2000-term global and 200-term project merge
+    // about 40 ms of every prompt, plus the garbage of the lowercased copies.
+    const firstByKey = new Map<string, number>();
+    terms.forEach((t, i) => {
+      const k = canonicalKey(t.canonical);
+      if (!firstByKey.has(k)) firstByKey.set(k, i);
+    });
     for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const key = canonicalKey(pt.canonical);
+      const idx = firstByKey.get(key) ?? -1;
       const replacement: Term = { ...pt, scope: pt.scope ?? 'project' };
       if (idx === -1) {
+        firstByKey.set(key, terms.length);
         terms.push({ ...replacement, aliases: [...pt.aliases] });
       } else {
         replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
@@ -1059,7 +1498,38 @@ export type AddTermOptions = StoreOptions & {
 function prepareIncoming(term: Term): Term {
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError('canonical must not be empty');
-  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  const prepared: Term = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  assertTermFields(prepared);
+  return prepared;
+}
+
+/**
+ * Refuse a term the lexicon schema would refuse, naming the field the caller
+ * passed. The write checks the whole file it produces, so an 81-character
+ * alias used to fail there as `Refusing to write lexicon at <path>: Invalid
+ * lexicon: - terms[13].aliases[0]: must be at most 80 characters`, an index
+ * into the file the caller never saw and no word on what to change.
+ */
+function assertTermFields(term: Term): void {
+  try {
+    parseLexicon({ version: 1, terms: [term] });
+  } catch (err) {
+    const issues = errorMessage(err)
+      .split('\n')
+      .map((line) => /^\s*-\s*terms\[0\]\.(.*)$/.exec(line)?.[1])
+      .filter((issue): issue is string => issue !== undefined)
+      .map((issue) => {
+        // A list entry's index is into the deduplicated list, so name the entry too.
+        const at = /^(aliases|never)\[(\d+)\]/.exec(issue);
+        const value = at ? (term[at[1] as 'aliases' | 'never'] ?? [])[Number(at[2])] : undefined;
+        if (value === undefined) return issue;
+        const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+        return issue.replace(/^[^:]+/, (field) => `${field} (${shown})`);
+      });
+    if (issues.length === 0) throw err;
+    const fix = issues.length === 1 ? 'fix that field' : 'fix those fields';
+    throw new InputError(`term not added: ${issues.join('; ')}. Nothing was written; ${fix} and try again.`);
+  }
 }
 
 /** Apply one prepared term to the in-memory `file` exactly as `addTerm` does; no IO. */
@@ -1118,7 +1588,7 @@ export async function addTerm(
   // file before this one wrote would otherwise rename its own copy over the
   // top and take the new term with it.
   return withLexiconLock(targetPath, async () => {
-    const file = await readLexiconFile(targetPath, scope);
+    const file = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
@@ -1143,7 +1613,7 @@ export async function addTerms(
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
-    const file = await readLexiconFile(targetPath, scope);
+    const file = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
     const results = incoming.map((t) => mergeTermInto(file, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file, opts);
@@ -1167,7 +1637,11 @@ async function writeAndTrust(file: LexiconFile, opts: StoreOptions): Promise<voi
   await writeLexiconFile(file);
   // Pin the bytes this write produced; a file rewritten by someone else since
   // is left unpinned (and so untrusted) rather than blessed.
-  if (file.scope === 'project') await trustProject(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
+  if (file.scope === 'project') {
+    await trustProject(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
+    // Now that the trust entry says what the hook will merge.
+    await refreshIndexCache(file, opts);
+  }
 }
 
 /**
@@ -1182,7 +1656,7 @@ export async function removeTerm(
 ): Promise<boolean> {
   for (const target of candidatePaths(opts, opts.scope)) {
     const removed = await withLexiconLock(target.path, async () => {
-      const file = await readLexiconFile(target.path, target.scope);
+      const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return false;
       const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file.lexicon.terms.length) return false;
@@ -1195,6 +1669,7 @@ export async function removeTerm(
         // The term is gone; so is this user's tally for it, or re-adding the
         // word later would inherit a count it never earned.
         await dropProjectHits(file.path, canonical, opts);
+        await refreshIndexCache(file, opts);
       } else {
         await dropGlobalHits(canonical, opts);
       }
@@ -1301,7 +1776,7 @@ export async function removeAlias(
   const files: LexiconFile[] = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
-      const file = await readLexiconFile(target.path, target.scope);
+      const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return;
       const term = findTerm(file.lexicon, wanted);
       if (!term) return;
@@ -1312,7 +1787,10 @@ export async function removeAlias(
       term.aliases = remaining;
       await writeLexiconFile(file);
       // The user's own edit must not flip an already-trusted file to 'changed'.
-      if (file.scope === 'project') await refreshTrust(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
+      if (file.scope === 'project') {
+        await refreshTrust(file.path, { ...opts, expectedSha256: await recalledParsedHash(file) });
+        await refreshIndexCache(file, opts);
+      }
       files.push(file);
       firstTerm ??= term;
     });
@@ -1335,6 +1813,9 @@ export async function removeAlias(
  * counted under `global`, and only for a term the global file actually holds,
  * so a stray canonical (one from an unreviewed project file, say) is never
  * recorded as in use.
+ *
+ * Without `loaded` an untrusted or changed project file is never parsed:
+ * trust is checked from the registry and the file's sha256 first.
  *
  * Pass `loaded` (the `loadLexicon` result the canonicals came from) and
  * neither file is read again: the prompt hook does, because it calls this on
@@ -1360,12 +1841,17 @@ export async function recordHits(
     if (opts.loaded) {
       // Only a trusted project file was merged, so only it can have produced a hit.
       if (opts.loaded.project && opts.loaded.projectTrust === 'trusted') projectFile = opts.loaded.project;
-    } else if (paths.project) {
-      const file = await readLexiconFile(paths.project, 'project');
+    } else if (paths.project && existsSync(paths.project)) {
       // Hits only come from merged terms, so an untrusted project file cannot
       // have produced any; skip it silently (this function never throws, so it
-      // cannot use assertProjectWritable) and never auto-trust it here.
-      if (file.exists && (await isTrusted(file, opts)) === 'trusted') projectFile = file;
+      // cannot use assertProjectWritable) and never auto-trust it here. Trust
+      // is checked before the parse, so an untrusted or changed file is never
+      // parsed, then again on the bytes parsed, which may have changed since.
+      const probe: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
+      if ((await isTrusted(probe, opts)) === 'trusted') {
+        const file = await readLexiconFile(paths.project, 'project');
+        if (file.exists && (await isTrusted(file, opts)) === 'trusted') projectFile = file;
+      }
     }
     let project: { key: string; counts: Map<string, number> } | undefined;
     if (projectFile) {
@@ -1457,8 +1943,13 @@ function candidatePaths(opts: StoreOptions, scope?: TermScope): { path: string; 
   return targets;
 }
 
+/** What sameCanonical compares: two canonicals are the same term when their keys are equal. */
+function canonicalKey(canonical: string): string {
+  return canonical.trim().toLowerCase();
+}
+
 function sameCanonical(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return canonicalKey(a) === canonicalKey(b);
 }
 
 /** Trim, drop empties and anything equal to the canonical, dedupe case-insensitively (first spelling wins). */

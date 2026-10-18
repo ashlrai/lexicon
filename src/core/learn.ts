@@ -311,8 +311,13 @@ export async function learnCorrection(
       `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`,
     );
   }
-  if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
+  // The usual cause is a whole phrase passed as `heard`, so say what to pass
+  // (the words MCP learn_correction uses; POST /learn and the CLI show this).
+  const tooLong = [...(heard.length > MAX_CORRECTION_LENGTH ? ['heard'] : []), ...(meant.length > MAX_CORRECTION_LENGTH ? ['meant'] : [])];
+  if (tooLong.length > 0) {
+    throw new InputError(
+      `${tooLong.join(' and ')} must be at most ${MAX_CORRECTION_LENGTH} characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.`,
+    );
   }
   if (heard === meant) {
     throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);

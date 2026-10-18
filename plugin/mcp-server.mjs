@@ -53803,6 +53803,13 @@ async function sha256OfBytes(bytes) {
 function rememberParsedBytes(file2, bytes) {
   entries.set(file2, { bytes });
 }
+function rememberParsedHash(file2, sha256) {
+  entries.set(file2, { sha256 });
+}
+function shareParsedHash(from, to) {
+  const entry = entries.get(from);
+  if (entry) entries.set(to, entry);
+}
 async function recalledParsedHash(file2) {
   const entry = entries.get(file2);
   if (!entry) return void 0;
@@ -54141,7 +54148,10 @@ function cacheChecksum(text) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
-async function readGlobalLexiconCached(filePath) {
+function readLexiconFileForWrite(filePath, scope) {
+  return scope === "global" ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
+}
+async function readGlobalLexiconCached(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
@@ -54158,7 +54168,7 @@ async function readGlobalLexiconCached(filePath) {
   } catch {
   }
   const file2 = parseLexiconText(read.text, filePath, "global");
-  await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
+  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
   return file2;
 }
 async function writeParseCache(filePath, text, lexicon, mode) {
@@ -54173,6 +54183,113 @@ async function writeParseCache(filePath, text, lexicon, mode) {
   } catch {
   }
 }
+var CACHE_ENTRIES = 4;
+function cacheSpillPath(mainPath, id) {
+  return `${mainPath.replace(/\.json$/, "")}.${cacheChecksum(id)}.json`;
+}
+async function spillCacheEntry(mainPath, mainId) {
+  const spill = cacheSpillPath(mainPath, mainId);
+  try {
+    await import_node_fs5.promises.rename(mainPath, spill);
+    const now = /* @__PURE__ */ new Date();
+    await import_node_fs5.promises.utimes(spill, now, now);
+  } catch {
+    return;
+  }
+  try {
+    const dir = import_node_path5.default.dirname(mainPath);
+    const stem = import_node_path5.default.basename(mainPath).replace(/\.json$/, "");
+    const names = (await import_node_fs5.promises.readdir(dir)).filter((n) => n.length === stem.length + 14 && n.startsWith(`${stem}.`) && /\.[0-9a-f]{8}\.json$/.test(n));
+    if (names.length <= CACHE_ENTRIES - 1) return;
+    const aged = [];
+    for (const name of names) {
+      const st = await import_node_fs5.promises.stat(import_node_path5.default.join(dir, name)).catch(() => void 0);
+      if (st) aged.push({ name, mtime: st.mtimeMs });
+    }
+    aged.sort((a, b) => a.mtime - b.mtime);
+    for (const { name } of aged.slice(0, Math.max(0, aged.length - (CACHE_ENTRIES - 1)))) {
+      await import_node_fs5.promises.unlink(import_node_path5.default.join(dir, name)).catch(() => void 0);
+    }
+  } catch {
+  }
+}
+async function promoteCacheEntry(mainPath, id, mainId) {
+  if (mainId !== void 0 && mainId !== id) await spillCacheEntry(mainPath, mainId);
+  await import_node_fs5.promises.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => void 0);
+}
+var PROJECT_PARSE_CACHE_FILE_NAME = "project-parse-cache.json";
+var PROJECT_PARSE_CACHE_VERSION = 1;
+async function readProjectBytes(filePath, globalPath) {
+  const read = await readLexiconText(filePath);
+  if (read === void 0) return void 0;
+  const out = { text: read.text, bytes: read.bytes };
+  const key = import_node_path5.default.resolve(filePath);
+  const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const main2 = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
+  out.mainId = main2.id;
+  if (main2.hit) out.cached = main2.hit;
+  else if (main2.id !== key) {
+    const spill = await readProjectCacheEntry(cacheSpillPath(mainPath, key), key, read.bytes, read.text);
+    if (spill.hit) {
+      out.cached = spill.hit;
+      out.fromSpill = true;
+    }
+  }
+  return out;
+}
+async function readProjectCacheEntry(cachePath, key, bytes, text) {
+  try {
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
+    if (!isPlainObject3(cached2) || cached2.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached2.path !== "string") return {};
+    const id = cached2.path;
+    if (cached2.path === key && cached2.text === text && typeof cached2.sha256 === "string" && /^[0-9a-f]{64}$/.test(cached2.sha256) && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(`${cached2.sha256}${cached2.lexicon}`) && Buffer.from(cached2.text, "utf8").equals(bytes)) {
+      const lexicon = JSON.parse(cached2.lexicon);
+      if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon, sha256: cached2.sha256 } };
+    }
+    return { id };
+  } catch {
+    return {};
+  }
+}
+function rememberProjectBytes(file2, read) {
+  if (read.cached) rememberParsedHash(file2, read.cached.sha256);
+  else rememberParsedBytes(file2, read.bytes);
+}
+function projectFileOf(filePath, read) {
+  if (read === void 0) return { file: { path: filePath, scope: "project", lexicon: emptyLexicon(), exists: false } };
+  if (read.cached) {
+    const file3 = { path: filePath, scope: "project", lexicon: read.cached.lexicon, exists: true };
+    rememberProjectBytes(file3, read);
+    return { file: file3 };
+  }
+  const file2 = parseLexiconText(read.text, filePath, "project");
+  rememberProjectBytes(file2, read);
+  return { file: file2, fresh: { text: read.text } };
+}
+async function writeProjectParseCache(file2, text, globalPath, mainId) {
+  try {
+    const sha256 = await recalledParsedHash(file2);
+    if (sha256 === void 0) return;
+    const lexiconJson = JSON.stringify(file2.lexicon);
+    const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const key = import_node_path5.default.resolve(file2.path);
+    if (mainId !== void 0 && mainId !== key) await spillCacheEntry(mainPath, mainId);
+    await writeFileAtomic(
+      mainPath,
+      JSON.stringify({
+        version: PROJECT_PARSE_CACHE_VERSION,
+        path: key,
+        sha256,
+        text,
+        sum: cacheChecksum(`${sha256}${lexiconJson}`),
+        lexicon: lexiconJson
+      }),
+      { mode: 384 }
+    );
+    if (mainId !== key) await import_node_fs5.promises.unlink(cacheSpillPath(mainPath, key)).catch(() => void 0);
+  } catch {
+  }
+}
 var INDEX_CACHE_FILE_NAME = "index-cache.json";
 var INDEX_CACHE_MIN_TERMS = 150;
 async function loadMatcherIndex(loaded, opts = {}) {
@@ -54180,33 +54297,109 @@ async function loadMatcherIndex(loaded, opts = {}) {
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
+  const project = loaded.project ? import_node_path5.default.resolve(loaded.project.path) : void 0;
+  const id = project ?? "";
+  const head = indexCacheHead(key, project);
+  let mainId;
   try {
     const text = await import_node_fs5.promises.readFile(cachePath, "utf8");
-    const head = JSON.stringify({ version: INDEX_FORMAT_VERSION, key });
-    if (text.startsWith(head.slice(0, -1))) {
-      const cached2 = JSON.parse(text);
-      if (isPlainObject3(cached2) && cached2.version === INDEX_FORMAT_VERSION && cached2.key === key) {
-        const index2 = deserializeIndex(cached2.index, lexicon);
-        if (index2) return index2;
-      }
-    }
+    const mainProject = indexHeadProject(text);
+    mainId = mainProject === null ? "" : mainProject;
+    const index2 = indexFromEntry(text, head, key, lexicon);
+    if (index2) return index2;
   } catch {
   }
+  const write = opts.write !== false;
+  if (mainId !== id) {
+    try {
+      const index2 = indexFromEntry(await import_node_fs5.promises.readFile(cacheSpillPath(cachePath, id), "utf8"), head, key, lexicon);
+      if (index2) {
+        if (write) await promoteCacheEntry(cachePath, id, mainId);
+        return index2;
+      }
+    } catch {
+    }
+  }
   const index = buildIndex(lexicon);
-  if (opts.write !== false) await writeIndexCache(cachePath, key, index);
+  if (write) {
+    if (mainId !== void 0 && mainId !== id) await spillCacheEntry(cachePath, mainId);
+    await writeIndexCache(cachePath, key, index, project);
+    if (mainId !== id) await import_node_fs5.promises.unlink(cacheSpillPath(cachePath, id)).catch(() => void 0);
+  }
   return index;
 }
-async function writeIndexCache(cachePath, key, index) {
+function indexFromEntry(text, head, key, lexicon) {
+  if (!text.startsWith(head)) return void 0;
+  const cached2 = JSON.parse(text);
+  if (!isPlainObject3(cached2) || cached2.version !== INDEX_FORMAT_VERSION || cached2.key !== key) return void 0;
+  return deserializeIndex(cached2.index, lexicon) ?? void 0;
+}
+function indexCacheHead(key, project) {
+  const head = JSON.stringify(project === void 0 ? { version: INDEX_FORMAT_VERSION, key } : { version: INDEX_FORMAT_VERSION, project, key });
+  return head.slice(0, -1);
+}
+async function writeIndexCache(cachePath, key, index, project) {
   try {
-    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, key, index: serializeIndex(index) });
+    const out = JSON.stringify({ version: INDEX_FORMAT_VERSION, ...project !== void 0 ? { project } : {}, key, index: serializeIndex(index) });
     await writeFileAtomic(cachePath, out, { mode: 384 });
   } catch {
   }
 }
+async function indexCacheProject(cachePath) {
+  let handle;
+  try {
+    handle = await import_node_fs5.promises.open(cachePath, "r");
+    const buf = Buffer.alloc(INDEX_CACHE_HEAD_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return indexHeadProject(buf.toString("utf8", 0, bytesRead));
+  } catch {
+    return void 0;
+  } finally {
+    await handle?.close().catch(() => void 0);
+  }
+}
+function indexHeadProject(head) {
+  try {
+    const m = /^\{"version":(\d+),(?:"project":("(?:[^"\\]|\\.)*"),)?"key":/.exec(head);
+    if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return void 0;
+    if (m[2] === void 0) return null;
+    const project = JSON.parse(m[2]);
+    return typeof project === "string" && import_node_path5.default.isAbsolute(project) ? project : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var INDEX_CACHE_HEAD_BYTES = 8192;
+async function refreshIndexCache(written, opts = {}) {
+  try {
+    const globalPath = written.scope === "global" ? written.path : resolvePaths(opts).global;
+    const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+    if (!(0, import_node_fs5.existsSync)(cachePath)) return;
+    const project = written.scope === "project" ? import_node_path5.default.resolve(written.path) : await indexCacheProject(cachePath);
+    if (project === null) {
+      const global = await readGlobalLexiconCached(globalPath);
+      const merged = mergeLexicons(global.lexicon);
+      if (merged.terms.length >= INDEX_CACHE_MIN_TERMS) await loadMatcherIndex({ merged, global });
+      return;
+    }
+    if (typeof project !== "string") return;
+    const loaded = await loadLexicon({
+      globalPath,
+      cwd: import_node_path5.default.dirname(project),
+      ...opts.env !== void 0 ? { env: opts.env } : {},
+      ...opts.home !== void 0 ? { home: opts.home } : {}
+    });
+    if (written.scope === "project" && (loaded.project === void 0 || import_node_path5.default.resolve(loaded.project.path) !== project)) return;
+    await loadMatcherIndex(loaded);
+  } catch {
+  }
+}
 async function prebuildIndexCache(filePath, lexicon) {
-  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), INDEX_CACHE_FILE_NAME);
   if (!(0, import_node_fs5.existsSync)(cachePath)) return;
+  const project = await indexCacheProject(cachePath);
+  if (typeof project === "string") return refreshIndexCache({ scope: "global", path: filePath });
+  if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return;
   try {
     const merged = mergeLexicons(lexicon);
     await writeIndexCache(cachePath, indexKey(merged), buildIndex(merged));
@@ -54294,7 +54487,7 @@ function updateMap(doc, node2, value, keep) {
 async function pinCommittedHits(file2) {
   const onDisk = /* @__PURE__ */ new Map();
   try {
-    const current = await readLexiconFile(file2.path, file2.scope);
+    const current = await readLexiconFileForWrite(file2.path, file2.scope);
     for (const term of current.lexicon.terms) {
       if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
     }
@@ -54457,16 +54650,36 @@ async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
   const global = await readGlobalLexiconCached(paths.global);
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
+  const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
+  let fresh;
+  let projectTrust;
+  let read;
   try {
-    project = await readLexiconFile(paths.project, "project");
+    read = await readProjectBytes(paths.project, paths.global);
+    if (gateFirst && read !== void 0) {
+      const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+      rememberProjectBytes(probe, read);
+      projectTrust = await isTrusted(probe, opts);
+      if (projectTrust !== "trusted") {
+        return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: probe };
+      }
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+      shareParsedHash(probe, project);
+    } else {
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+    }
   } catch (err) {
     const placeholder = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
-    const trust = await isTrusted(placeholder, opts);
+    const trust = projectTrust ?? await isTrusted(placeholder, opts);
     if (trust === "trusted" || opts.includeUntrusted) throw err;
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
-  const projectTrust = await isTrusted(project, opts);
+  projectTrust ??= await isTrusted(project, opts);
+  if (projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (projectTrust === "trusted" && read?.fromSpill) {
+    await promoteCacheEntry(import_node_path5.default.join(import_node_path5.default.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), import_node_path5.default.resolve(paths.project), read.mainId);
+  }
   if (projectTrust === "trusted" || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
     await hydrateHits(merged, project, opts);
@@ -54481,10 +54694,17 @@ async function loadLexicon(opts = {}) {
 function mergeLexicons(global, project) {
   const terms = global.terms.map((t) => ({ ...t, aliases: [...t.aliases], scope: t.scope ?? "global" }));
   if (project) {
+    const firstByKey = /* @__PURE__ */ new Map();
+    terms.forEach((t, i) => {
+      const k = canonicalKey2(t.canonical);
+      if (!firstByKey.has(k)) firstByKey.set(k, i);
+    });
     for (const pt of project.terms) {
-      const idx = terms.findIndex((t) => sameCanonical(t.canonical, pt.canonical));
+      const key = canonicalKey2(pt.canonical);
+      const idx = firstByKey.get(key) ?? -1;
       const replacement = { ...pt, scope: pt.scope ?? "project" };
       if (idx === -1) {
+        firstByKey.set(key, terms.length);
         terms.push({ ...replacement, aliases: [...pt.aliases] });
       } else {
         replacement.aliases = dedupeAliases([...pt.aliases, ...terms[idx].aliases], pt.canonical);
@@ -54546,7 +54766,25 @@ async function projectWriteTrusted(opts = {}) {
 function prepareIncoming(term) {
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError("canonical must not be empty");
-  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  const prepared = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  assertTermFields(prepared);
+  return prepared;
+}
+function assertTermFields(term) {
+  try {
+    parseLexicon({ version: 1, terms: [term] });
+  } catch (err) {
+    const issues = errorMessage(err).split("\n").map((line2) => /^\s*-\s*terms\[0\]\.(.*)$/.exec(line2)?.[1]).filter((issue2) => issue2 !== void 0).map((issue2) => {
+      const at = /^(aliases|never)\[(\d+)\]/.exec(issue2);
+      const value = at ? (term[at[1]] ?? [])[Number(at[2])] : void 0;
+      if (value === void 0) return issue2;
+      const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+      return issue2.replace(/^[^:]+/, (field) => `${field} (${shown})`);
+    });
+    if (issues.length === 0) throw err;
+    const fix = issues.length === 1 ? "fix that field" : "fix those fields";
+    throw new InputError(`term not added: ${issues.join("; ")}. Nothing was written; ${fix} and try again.`);
+  }
 }
 function mergeTermInto(file2, incoming, scope, opts) {
   const canonical = incoming.canonical;
@@ -54588,7 +54826,7 @@ async function addTerm(term, opts = {}) {
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = prepareIncoming(term);
   return withLexiconLock(targetPath, async () => {
-    const file2 = await readLexiconFile(targetPath, scope);
+    const file2 = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
@@ -54600,7 +54838,7 @@ async function addTerms(terms, opts = {}) {
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
   return withLexiconLock(targetPath, async () => {
-    const file2 = await readLexiconFile(targetPath, scope);
+    const file2 = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file2, opts);
@@ -54612,12 +54850,15 @@ function writeAddedFile(file2, opts) {
 }
 async function writeAndTrust(file2, opts) {
   await writeLexiconFile(file2);
-  if (file2.scope === "project") await trustProject(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
+  if (file2.scope === "project") {
+    await trustProject(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
+    await refreshIndexCache(file2, opts);
+  }
 }
 async function removeTerm(canonical, opts = {}) {
   for (const target of candidatePaths(opts, opts.scope)) {
     const removed = await withLexiconLock(target.path, async () => {
-      const file2 = await readLexiconFile(target.path, target.scope);
+      const file2 = await readLexiconFileForWrite(target.path, target.scope);
       if (!file2.exists) return false;
       const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file2.lexicon.terms.length) return false;
@@ -54627,6 +54868,7 @@ async function removeTerm(canonical, opts = {}) {
       if (file2.scope === "project") {
         await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
         await dropProjectHits(file2.path, canonical, opts);
+        await refreshIndexCache(file2, opts);
       } else {
         await dropGlobalHits(canonical, opts);
       }
@@ -54665,7 +54907,7 @@ async function removeAlias(canonical, alias, opts = {}) {
   const files = [];
   for (const target of candidatePaths(opts, opts.scope)) {
     await withLexiconLock(target.path, async () => {
-      const file2 = await readLexiconFile(target.path, target.scope);
+      const file2 = await readLexiconFileForWrite(target.path, target.scope);
       if (!file2.exists) return;
       const term = findTerm(file2.lexicon, wanted);
       if (!term) return;
@@ -54675,7 +54917,10 @@ async function removeAlias(canonical, alias, opts = {}) {
       await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
       await writeLexiconFile(file2);
-      if (file2.scope === "project") await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
+      if (file2.scope === "project") {
+        await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
+        await refreshIndexCache(file2, opts);
+      }
       files.push(file2);
       firstTerm ??= term;
     });
@@ -54699,9 +54944,12 @@ async function recordHits(canonicals, opts = {}) {
     let projectFile;
     if (opts.loaded) {
       if (opts.loaded.project && opts.loaded.projectTrust === "trusted") projectFile = opts.loaded.project;
-    } else if (paths.project) {
-      const file2 = await readLexiconFile(paths.project, "project");
-      if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
+    } else if (paths.project && (0, import_node_fs5.existsSync)(paths.project)) {
+      const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+      if (await isTrusted(probe, opts) === "trusted") {
+        const file2 = await readLexiconFile(paths.project, "project");
+        if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
+      }
     }
     let project;
     if (projectFile) {
@@ -54761,8 +55009,11 @@ function candidatePaths(opts, scope) {
   targets.push({ path: paths.global, scope: "global" });
   return targets;
 }
+function canonicalKey2(canonical) {
+  return canonical.trim().toLowerCase();
+}
 function sameCanonical(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return canonicalKey2(a) === canonicalKey2(b);
 }
 function dedupeAliases(aliases, canonical) {
   const canon = canonical.trim().toLowerCase();
@@ -58654,8 +58905,11 @@ async function learnCorrection(c, opts = {}) {
       `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`
     );
   }
-  if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
+  const tooLong = [...heard.length > MAX_CORRECTION_LENGTH ? ["heard"] : [], ...meant.length > MAX_CORRECTION_LENGTH ? ["meant"] : []];
+  if (tooLong.length > 0) {
+    throw new InputError(
+      `${tooLong.join(" and ")} must be at most ${MAX_CORRECTION_LENGTH} characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.`
+    );
   }
   if (heard === meant) {
     throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
@@ -59537,7 +59791,10 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
   if (Object.keys(settings).length > 0) file2.lexicon.settings = settings;
   else delete file2.lexicon.settings;
   await writeLexiconFile(file2);
-  if (file2.scope === "project" && !leaveUntrusted) await refreshTrust(file2.path, { ...opts, expectedSha256: await parsedContentHash(file2) });
+  if (file2.scope === "project" && !leaveUntrusted) {
+    await refreshTrust(file2.path, { ...opts, expectedSha256: await parsedContentHash(file2) });
+    await refreshIndexCache(file2, opts);
+  }
 }
 async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";
@@ -60425,7 +60682,7 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ text, dryRun, minConfidence }) => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const index = await loadMatcherIndex(loaded);
       const cut = normalizeCut(text, ctx.normalizeMaxChars);
       const head = cut < text.length ? text.slice(0, cut) : text;
@@ -60440,7 +60697,7 @@ var registerTermTools = (server, ctx) => {
       const result = tail ? { ...matched, input: text, output: matched.output + tail } : matched;
       if (result.changed && !dryRun) {
         const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
-        await recordHits(canonicals, { cwd: ctx.cwd }).catch(
+        await recordHits(canonicals, { cwd: ctx.cwd, loaded }).catch(
           (err) => log("recordHits failed:", errorMessage(err))
         );
       }
@@ -60505,7 +60762,7 @@ var registerTermTools = (server, ctx) => {
       });
       const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
       const shown = untrusted && !saved.created ? term : saved.term;
-      const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
+      const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
       const note = conflictNote(conflicts, "mcp");
       return textResult({
         term: shown,
@@ -60608,7 +60865,7 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ query, category }) => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const needle = query?.trim().toLowerCase();
       const terms = loaded.merged.terms.filter((t) => {
         if (category && t.category !== category) return false;
@@ -60643,7 +60900,7 @@ var registerTermTools = (server, ctx) => {
     async ({ format, categories, limit }) => guarded(async () => {
       const resolved2 = resolveExportFormat(format);
       if (!resolved2) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const opts = {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
@@ -60723,7 +60980,7 @@ var registerTermTools = (server, ctx) => {
           `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`
         );
       }
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
         canonical: s.term.canonical,
         confidence: Number(s.confidence.toFixed(3)),
@@ -60741,7 +60998,7 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {}
     },
     async () => guarded(async () => {
-      const loaded = await load();
+      const loaded = await load({ parseSkipped: false });
       return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
     })
   );
@@ -60749,6 +61006,20 @@ var registerTermTools = (server, ctx) => {
 
 // src/mcp/tools/harvest.ts
 var import_node_path14 = __toESM(require_node_path());
+var APPLY_SUGGESTIONS_MAX = 100;
+var suggestionSchema = external_exports.object({
+  kind: external_exports.enum(SUGGESTION_KINDS),
+  canonical: nonBlank(),
+  alias: external_exports.string().optional(),
+  aliases: external_exports.array(external_exports.string()).optional(),
+  category: external_exports.enum(TERM_CATEGORIES).optional(),
+  reason: external_exports.string().optional(),
+  confidence: external_exports.number().optional(),
+  evidence: external_exports.array(external_exports.string()).optional(),
+  count: external_exports.number().optional(),
+  scope: external_exports.enum(TERM_SCOPES).optional(),
+  path: external_exports.string().optional()
+});
 function aliasCount(n) {
   return `${n} alias${n === 1 ? "" : "es"}`;
 }
@@ -60827,7 +61098,7 @@ var registerHarvestTools = (server, ctx) => {
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
       const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord(dir)}`) : ctx.cwd;
-      const loaded = await loadLexicon({ cwd: root });
+      const loaded = await loadLexicon({ cwd: root, parseSkipped: false });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
         return [];
@@ -60839,93 +61110,162 @@ var registerHarvestTools = (server, ctx) => {
   server.registerTool(
     "apply_suggestion",
     {
-      title: "Apply one suggestion",
-      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
+      title: "Apply suggestions",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. When the user accepted several, pass them all at once in `suggestions` instead of `suggestion` (one call, one write per lexicon file): they are applied in order, the result lists each applied one in `applied` (the single-suggestion result plus its `index`) and each refused one in `failures` (`index`, `kind`, `canonical`, `error`), and a refused one does not stop the rest. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
       inputSchema: {
-        suggestion: external_exports.object({
-          kind: external_exports.enum(SUGGESTION_KINDS),
-          canonical: nonBlank(),
-          alias: external_exports.string().optional(),
-          aliases: external_exports.array(external_exports.string()).optional(),
-          category: external_exports.enum(TERM_CATEGORIES).optional(),
-          reason: external_exports.string().optional(),
-          confidence: external_exports.number().optional(),
-          evidence: external_exports.array(external_exports.string()).optional(),
-          count: external_exports.number().optional(),
-          scope: external_exports.enum(TERM_SCOPES).optional(),
-          path: external_exports.string().optional()
-        }),
+        suggestion: suggestionSchema.optional().describe("One suggestion, as suggest_terms returned it. Pass this or `suggestions`, not both."),
+        suggestions: external_exports.array(suggestionSchema).min(1).max(APPLY_SUGGESTIONS_MAX).optional().describe(`1 to ${APPLY_SUGGESTIONS_MAX} suggestions, as suggest_terms returned them, applied in order. Pass this or \`suggestion\`, not both.`),
         scope: external_exports.enum(TERM_SCOPES).optional().describe(
-          "Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'. An 'alias' or 'never' scope must name a file that holds the term; one that does not is refused, as it would create a copy."
+          "Where to write: 'global' or 'project'. Omitted: where the term already lives for 'alias' and 'never', else 'global'. An 'alias' or 'never' scope must name a file that holds the term; one that does not is refused, as it would create a copy. Applies to every entry of `suggestions`."
         )
       }
     },
-    async ({ suggestion, scope }) => guarded(async () => {
-      const { kind, canonical } = suggestion;
-      const alias = suggestion.alias?.trim();
-      let target = scope ?? suggestion.scope;
-      if (kind === "alias" || kind === "never") {
-        const key = canonical.trim().toLowerCase();
-        const current = await load();
-        const existing = current.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
-        if (!existing) {
-          throw new Error(
-            `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
-          );
-        }
-        const holders = termHolders(current, canonical);
-        if (target !== void 0 && target !== existing.scope && !holders.some((h) => h.scope === target)) {
-          const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(" and ") || `${existing.scope} lexicon`;
-          throw new Error(
-            `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === "alias" ? "alias" : "never word"} would create a copy of the term there; nothing was written. Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`
-          );
-        }
-        target ??= existing.scope;
+    async ({ suggestion, suggestions, scope }) => guarded(async () => {
+      if (suggestion === void 0 === (suggestions === void 0)) {
+        throw new Error(
+          suggestion === void 0 ? "pass the accepted suggestion in `suggestion`, or several in `suggestions`; nothing was written" : "pass either `suggestion` or `suggestions`, not both; nothing was written"
+        );
       }
-      if (target === "project" && suggestion.path !== void 0) {
-        const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
-        if ((0, import_node_path14.resolve)(suggestion.path) !== (0, import_node_path14.resolve)(here)) {
-          throw new Error(
-            `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
-          );
-        }
+      if (suggestion !== void 0) {
+        const p = await prepareSuggestion(suggestion, scope, load);
+        if (p.kind === "stale") return textResult(await applyStale(p, load));
+        const writeOpts = await mcpWriteOpts(ctx);
+        return textResult(describeAdd(p, await addTerm(p.term, { ...p.storeOpts, ...writeOpts }), writeOpts));
       }
-      const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
-      if (kind === "stale") {
-        const before = termHolders(await load(), canonical);
-        const removed = await removeTerm(canonical, storeOpts2);
-        const after = termHolders(await load(), canonical);
-        const from = before.find((b) => !after.some((a) => a.path === b.path));
-        const stillIn = after.length > 0 ? { stillIn: after } : {};
-        const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ""}` : `"${canonical}" was not in the ${target ?? "global or project"} lexicon`;
-        const tail = after.map((h) => `; it is still in the ${h.scope} lexicon (${h.path}): ask the user, then call apply_suggestion again with scope "${h.scope}" to remove that copy too`).join("");
-        return textResult({ kind, canonical, removed, ...from ? { path: from.path } : {}, ...stillIn, summary: head + tail });
-      }
-      if (kind === "alias" && !alias) throw new Error('an "alias" suggestion needs an alias');
-      if (kind === "never" && !alias) throw new Error('a "never" suggestion needs an alias (the word to keep as written)');
-      const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
-      const aliases = kind === "never" ? [] : kind === "alias" && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
-      const term = {
-        canonical,
-        aliases,
-        source: "user",
-        ...kind === "term" && suggestion.category !== void 0 ? { category: suggestion.category } : {},
-        ...kind === "never" && alias ? { never: [alias] } : {},
-        ...target !== void 0 ? { scope: target } : {}
-      };
-      const writeOpts = await mcpWriteOpts(ctx);
-      const saved = await addTerm(term, { ...storeOpts2, ...writeOpts });
-      const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
-      const shown = untrusted && !saved.created ? term : saved.term;
-      const pending = untrusted ? untrustedWriteFields(saved.file.path, "It") : void 0;
-      const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : saved.created ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})` : (
-        // A 'term' whose canonical the lexicon already had merges into it; an
-        // untrusted file's copy is not read back, so it has no count then.
-        `merged into the existing "${shown.canonical}"${untrusted ? "" : ` (${aliasCount(shown.aliases.length)} now)`}`
-      )) + (pending ? `. ${pending.nextStep}` : "");
-      return textResult({ kind, canonical: shown.canonical, term: shown, path: saved.file.path, created: saved.created, ...pending ?? {}, summary });
+      return applyMany(suggestions ?? [], scope);
     })
   );
+  async function prepareSuggestion(suggestion, scope, current) {
+    const { kind, canonical } = suggestion;
+    const alias = suggestion.alias?.trim();
+    let target = scope ?? suggestion.scope;
+    if (kind === "alias" || kind === "never") {
+      const key = canonical.trim().toLowerCase();
+      const loaded = await current();
+      const existing = loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+      if (!existing) {
+        throw new Error(
+          `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
+        );
+      }
+      const holders = termHolders(loaded, canonical);
+      if (target !== void 0 && target !== existing.scope && !holders.some((h) => h.scope === target)) {
+        const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(" and ") || `${existing.scope} lexicon`;
+        throw new Error(
+          `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === "alias" ? "alias" : "never word"} would create a copy of the term there; nothing was written. Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`
+        );
+      }
+      target ??= existing.scope;
+    }
+    if (target === "project" && suggestion.path !== void 0) {
+      const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+      if ((0, import_node_path14.resolve)(suggestion.path) !== (0, import_node_path14.resolve)(here)) {
+        throw new Error(
+          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
+        );
+      }
+    }
+    const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
+    if (kind === "stale") return { kind, canonical, target, storeOpts: storeOpts2 };
+    if (kind === "alias" && !alias) throw new Error('an "alias" suggestion needs an alias');
+    if (kind === "never" && !alias) throw new Error('a "never" suggestion needs an alias (the word to keep as written)');
+    const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
+    const aliases = kind === "never" ? [] : kind === "alias" && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
+    const term = {
+      canonical,
+      aliases,
+      source: "user",
+      ...kind === "term" && suggestion.category !== void 0 ? { category: suggestion.category } : {},
+      ...kind === "never" && alias ? { never: [alias] } : {},
+      ...target !== void 0 ? { scope: target } : {}
+    };
+    return { kind, alias, term, storeOpts: storeOpts2 };
+  }
+  async function applyStale(p, current) {
+    const { kind, canonical, target } = p;
+    const before = termHolders(await current(), canonical);
+    const removed = await removeTerm(canonical, p.storeOpts);
+    const after = termHolders(await load(), canonical);
+    const from = before.find((b) => !after.some((a) => a.path === b.path));
+    const stillIn = after.length > 0 ? { stillIn: after } : {};
+    const head = removed ? `removed "${canonical}"${from ? ` from ${from.path}` : ""}` : `"${canonical}" was not in the ${target ?? "global or project"} lexicon`;
+    const tail = after.map((h) => `; it is still in the ${h.scope} lexicon (${h.path}): ask the user, then call apply_suggestion again with scope "${h.scope}" to remove that copy too`).join("");
+    return { kind, canonical, removed, ...from ? { path: from.path } : {}, ...stillIn, summary: head + tail };
+  }
+  function describeAdd(p, saved, writeOpts) {
+    const { kind, alias, term } = p;
+    const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
+    const shown = untrusted && !saved.created ? term : saved.term;
+    const pending = untrusted ? untrustedWriteFields(saved.file.path, "It") : void 0;
+    const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : saved.created ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})` : (
+      // A 'term' whose canonical the lexicon already had merges into it; an
+      // untrusted file's copy is not read back, so it has no count then.
+      `merged into the existing "${shown.canonical}"${untrusted ? "" : ` (${aliasCount(shown.aliases.length)} now)`}`
+    )) + (pending ? `. ${pending.nextStep}` : "");
+    return { kind, canonical: shown.canonical, term: structuredClone(shown), path: saved.file.path, created: saved.created, ...pending ?? {}, summary };
+  }
+  async function applyMany(list, scope) {
+    const writeOpts = await mcpWriteOpts(ctx);
+    const applied = [];
+    const failures = [];
+    const fail2 = (index, s, err) => failures.push({ index, kind: s.kind, canonical: s.canonical, error: errorMessage(err) });
+    let cached2;
+    const current = async () => cached2 ??= await load();
+    let run = [];
+    const flush = async () => {
+      if (run.length === 0) return;
+      const batch = run;
+      run = [];
+      cached2 = void 0;
+      const opts = { ...batch[0].p.storeOpts, ...writeOpts };
+      try {
+        const saved = await addTerms(
+          batch.map((b) => b.p.term),
+          opts
+        );
+        batch.forEach((b, i) => {
+          const r = saved.results[i];
+          applied.push({ index: b.index, ...describeAdd(b.p, { file: saved.file, term: r.term, created: r.created }, writeOpts) });
+        });
+      } catch {
+        for (const b of batch) {
+          try {
+            applied.push({ index: b.index, ...describeAdd(b.p, await addTerm(b.p.term, opts), writeOpts) });
+          } catch (err) {
+            fail2(b.index, b.s, err);
+          }
+        }
+      }
+    };
+    for (const [index, s] of list.entries()) {
+      try {
+        const key = s.canonical.trim().toLowerCase();
+        const sameTerm = (t) => t.canonical.trim().toLowerCase() === key;
+        if ((s.kind === "alias" || s.kind === "never") && run.some((b) => sameTerm(b.p.term)) && !(await current()).merged.terms.some(sameTerm)) {
+          await flush();
+        }
+        const p = await prepareSuggestion(s, scope, current);
+        if (p.kind === "stale") {
+          await flush();
+          applied.push({ index, ...await applyStale(p, current) });
+          cached2 = void 0;
+          continue;
+        }
+        const file2 = (q) => q.storeOpts.scope ?? "global";
+        if (run.length > 0 && file2(run[0].p) !== file2(p)) await flush();
+        run.push({ index, s, p });
+      } catch (err) {
+        fail2(index, s, err);
+      }
+    }
+    await flush();
+    applied.sort((a, b) => a.index - b.index);
+    failures.sort((a, b) => a.index - b.index);
+    const summary = `applied ${applied.length} of ${list.length} suggestion${list.length === 1 ? "" : "s"}` + (failures.length > 0 ? `; ${failures.length} not applied (first: ${failures[0]?.error}); see failures` : "");
+    const payload = { count: list.length, applied, failures, summary };
+    if (applied.length === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
+    return textResult(payload);
+  }
 };
 
 // src/mcp/tools/trust.ts
@@ -60934,7 +61274,10 @@ var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(ctx, path27) {
   const hint = (target) => `trust ${shellWord(target)}`;
   const requested = (0, import_node_path15.resolve)(ctx.cwd, path27);
-  if (!(0, import_node_fs14.existsSync)(requested)) return (0, import_node_path15.join)(containedPath(ctx, (0, import_node_path15.dirname)(requested), hint), (0, import_node_path15.basename)(requested));
+  if (!(0, import_node_fs14.existsSync)(requested)) {
+    if (!(0, import_node_fs14.existsSync)((0, import_node_path15.dirname)(requested))) return containedPath(ctx, path27, hint);
+    return (0, import_node_path15.join)(containedPath(ctx, (0, import_node_path15.dirname)(requested), hint), (0, import_node_path15.basename)(requested));
+  }
   const real = containedPath(ctx, requested, hint);
   if (!(0, import_node_fs14.statSync)(real).isDirectory()) return real;
   const inside = (0, import_node_path15.join)(real, PROJECT_FILE_NAME);
@@ -63608,7 +63951,7 @@ async function stepPacks(ctx) {
   const explicit = typeof ctx.opts.packs === "string" ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : void 0;
   let installed = [];
   try {
-    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd, parseSkipped: false }));
   } catch {
   }
   const defaults = DEFAULT_PACKS.filter((name) => byName.has(name) && !installed.includes(name));
@@ -63935,7 +64278,7 @@ async function stepExport(ctx) {
     );
     return;
   }
-  const loaded = await loadLexicon({ cwd: ctx.cwd });
+  const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const text = exportLexicon(loaded.merged, format);
   await import_node_fs27.promises.mkdir(dir, { recursive: true });
   await import_node_fs27.promises.writeFile(file2, text, "utf8");
@@ -63947,7 +64290,7 @@ async function stepDemo(ctx) {
   stepHeading(ctx, 7, "Does it work?");
   let merged;
   try {
-    merged = (await loadLexicon({ cwd: ctx.cwd })).merged;
+    merged = (await loadLexicon({ cwd: ctx.cwd, parseSkipped: false })).merged;
   } catch {
     merged = { version: 1, terms: [] };
   }
@@ -64454,7 +64797,7 @@ var registerPackTools = (server, ctx) => {
       }
     },
     async ({ registry: registry2 }) => guarded(async () => {
-      const [packs, loaded] = await Promise.all([listPacks(), load()]);
+      const [packs, loaded] = await Promise.all([listPacks(), load({ parseSkipped: false })]);
       const installed = installedPacks(loaded);
       const mismatch = await findRegistryRecordMismatch(loaded, { cwd: ctx.cwd });
       const result = {
@@ -64781,9 +65124,9 @@ function createServer2(opts = {}) {
   let cwd = explicit ?? process.cwd();
   let clientRoots = [];
   let rootsPending;
-  const load = async () => {
+  const load = async (loadOpts = {}) => {
     if (rootsPending) await rootsPending;
-    return loadLexicon({ cwd });
+    return loadLexicon({ cwd, ...loadOpts });
   };
   const server = new McpServer(
     { name: SERVER_NAME, version: readPackageVersion() },
@@ -64831,7 +65174,7 @@ function createServer2(opts = {}) {
   for (const register of TOOL_REGISTRARS) register(server, ctx);
   const loadForContext = async () => {
     try {
-      return await load();
+      return await load({ parseSkipped: false });
     } catch (err) {
       const message = errorMessage(err);
       const fixed = withLexiconFix(message);

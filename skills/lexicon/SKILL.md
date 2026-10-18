@@ -135,8 +135,9 @@ note says a project file was skipped as untrusted or changed:
 
 - **Improving corrections.** Weekly, or on request, `suggest_terms {}`. Present
   each on one line ("add 'ashlur' to Ashlr.AI, heard 4 times") with the file
-  it would write (its `scope` and `path`). Apply only accepted ones, one
-  `apply_suggestion { suggestion }` each, object as received.
+  it would write (its `scope` and `path`). Apply only accepted ones, all in
+  one `apply_suggestion { suggestions: [...] }`, objects as received; relay
+  any `failures`.
 - **New repo.** No `.lexicon.yaml`? `harvest_repo` without `add` previews
   candidates; add them with `add: true` only after a yes. The file it writes
   stays untrusted: relay its `nextStep` (the user runs `lexicon trust`).
@@ -163,7 +164,7 @@ note says a project file was skipped as untrusted or changed:
 | Bring in a Wispr/Superwhisper/macOS/espanso/CSV dictionary | `import_dictionary { path? \| content?, format?, scope?, dryRun? }` |
 | Names from the user's contacts, calendar or GitHub (preview, then apply) | `import_vocabulary { sources?, apply?, scope?, previewToken?, approvedCandidateIds? }` |
 | What should be added or removed | `suggest_terms { cwd?, limit? }` |
-| Apply one accepted suggestion | `apply_suggestion { suggestion, scope? }` |
+| Apply accepted suggestions (several in `suggestions`) | `apply_suggestion { suggestion?, suggestions?, scope? }` |
 | Drop a term or one alias (`foundIn` names the scope to retry with) | `remove_term { canonical, alias?, scope? }` |
 | Usage report / is the API up | `lexicon_stats {}`, `serve_status {}` |
 | Hand the list to another tool | `export_lexicon { format, categories?, limit? }` |

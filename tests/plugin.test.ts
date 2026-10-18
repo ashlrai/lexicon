@@ -135,7 +135,11 @@ function listBundleToolParams(bundle: string, env: NodeJS.ProcessEnv, cwd: strin
     child.stderr.on('data', (d: Buffer) => (err += d.toString()));
     child.stdout.on('data', (d: Buffer) => {
       out += d.toString();
-      for (const line of out.split('\n')) {
+      // A large reply (tools/list is tens of KB) can arrive in several chunks:
+      // parse only complete lines and keep the unterminated tail for the next chunk.
+      const lines = out.split('\n');
+      out = lines.pop() ?? '';
+      for (const line of lines) {
         if (!line.trim()) continue;
         const msg = JSON.parse(line) as { id?: number; result?: { tools?: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> } };
         if (msg.id === 2) {

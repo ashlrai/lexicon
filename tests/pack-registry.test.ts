@@ -5,7 +5,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   runPackAdd,
   runPackList,
@@ -61,6 +61,10 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'lexicon-pack-cli-test-'));
   globalPath = path.join(dir, 'lexicon.yaml');
   indexPath = writeIndex('1');
+});
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const baseOpts = () => ({ globalPath, registry: indexPath });

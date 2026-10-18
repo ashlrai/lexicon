@@ -120,6 +120,10 @@ recognizer and TTS voices.
 npm run bench:hook                          # plugin/hook.mjs, 2000 synthetic terms, best/median of 5
 npm run bench:hook -- --terms 500 --runs 9  # other sizes
 npm run bench:hook -- --hook /tmp/old.mjs   # compare another build of the hook
+npm run bench:hook -- --after-write          # the first prompt after each lexicon add
+npm run bench:hook -- --project-terms 200 --after-write project  # with a trusted repo lexicon, after add --project
+npm run bench:hook -- --project-terms 200 --untrusted  # with a repo lexicon nobody trusted
+npm run bench:hook -- --project-terms 200 --alternate  # switching between two trusted repos on every prompt
 ```
 
 Spawns a fresh `node` per run, as Claude Code does, against a lexicon in a temp
@@ -127,3 +131,14 @@ directory (HOME, XDG_CONFIG_HOME and LEXICON_PATH all point there). The cold run
 is the first one after the lexicon is written and includes writing the caches;
 warm runs read parse-cache.json, index-cache.json and the compile cache. Compare
 best-of-N between builds on the same machine: the numbers move with load.
+
+`--project-terms N` adds a `.lexicon.yaml` of N terms to the prompt's repo and
+trusts it with `lexicon trust --yes`, so the hook matches the global and project
+merge; with `--untrusted` the file is left untrusted, so the hook skips it.
+`--alternate` adds a second trusted repo and alternates the warm prompts
+between the two.
+`--after-write` times, for each run, the first prompt after a
+`lexicon add` (with `--after-write project`, `lexicon add --project`, which
+needs `--project-terms`) and the add's own wall time: a first prompt slower
+than the warm ones means the write left a cache stale for the hook to rebuild.
+The CLI is `dist/cli/index.js` when built, else `src/cli/index.ts` through tsx.

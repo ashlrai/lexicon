@@ -314,8 +314,9 @@ function installSteps(platform: NodeJS.Platform, which: { ffmpeg: boolean; whisp
   return [`install: ${hint}`, ...(vars.length > 0 ? [`(or set ${vars.join(' / ')} to the binary)`] : [])];
 }
 
+/** The merged terms only, so an untrusted or changed project file is never parsed (`parseSkipped: false`). */
 async function loadMerged(r: Resolved, opts: VoiceOptions): Promise<Lexicon> {
-  return (await loadLexicon({ cwd: r.cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) })).merged;
+  return (await loadLexicon({ cwd: r.cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), parseSkipped: false })).merged;
 }
 
 /** Wrap the voice exec as the daemon's ClipboardExec (non-zero exit rejects). */

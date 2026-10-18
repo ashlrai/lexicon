@@ -93,6 +93,23 @@ describe('trust_project with a directory path', () => {
   });
 });
 
+describe('trust_project with a path that does not exist', () => {
+  // Catches: with the file's directory missing too, the error named that
+  // parent directory, not the path the agent passed (harvest_repo names it).
+  it('names the path given, not its parent directory', async () => {
+    for (const action of ['status', 'trust'] as const) {
+      const res = await call('trust_project', { action, path: 'no-such-dir/.lexicon.yaml' });
+      expect(res.isError, action).toBe(true);
+      expect(res.text, action).toContain(`"no-such-dir/.lexicon.yaml" does not exist (resolved from ${repo}); nothing was read.`);
+      expect(res.text, action).not.toContain(`"${path.join(repo, 'no-such-dir')}"`);
+    }
+    // A missing file in a directory that exists is still 'missing' for status.
+    const status = await call('trust_project', { action: 'status', path: 'nope.yaml' });
+    expect(status.isError).toBe(false);
+    expect((JSON.parse(status.text) as { status: string }).status).toBe('missing');
+  });
+});
+
 describe('remove_term', () => {
   // Catches: a miss is isError:false while `lexicon remove` exits 1, and the
   // description did not say so, so an agent took a quiet miss for success.
@@ -318,6 +335,28 @@ describe('add_term errors', () => {
     const res = await call('add_term', { canonical: '   ' });
     expect(res.isError).toBe(true);
     expect(res.text).toBe('canonical must not be empty');
+  });
+
+  it('name the field that is over the schema cap, not an index into the lexicon file', async () => {
+    // Two terms already in the file, so a file-level error would say terms[2].
+    await call('add_term', { canonical: 'One', aliases: [] });
+    await call('add_term', { canonical: 'Two', aliases: [] });
+    const before = await fs.readFile(process.env.LEXICON_PATH as string, 'utf8');
+    const long = 'b'.repeat(81);
+    const alias = await call('add_term', { canonical: 'Zed', aliases: ['zedd', long] });
+    expect(alias.isError).toBe(true);
+    expect(alias.text).toBe(
+      'term not added: aliases[1] ("bbbbbbbbbbbbbbbbbbbbbbbb..."): must be at most 80 characters. Nothing was written; fix that field and try again.',
+    );
+    const canonical = await call('add_term', { canonical: 'c'.repeat(81), notes: 'two\nlines' });
+    expect(canonical.isError).toBe(true);
+    expect(canonical.text).toContain('canonical: must be at most 80 characters; notes: must not contain control characters or newlines');
+    expect(canonical.text).toContain('fix those fields');
+    for (const res of [alias, canonical]) {
+      expect(res.text).not.toContain('terms[');
+      expect(res.text).not.toContain('Refusing to write lexicon');
+    }
+    expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
   });
 });
 
@@ -1532,5 +1571,94 @@ describe('summaries', () => {
     };
     expect(added.created).toBe(true);
     expect(added.summary).toBe('added "Hetzner" (1 alias)');
+  });
+});
+
+describe('apply_suggestion with several suggestions', () => {
+  // Catches: an agent applying the suggestions a user accepted called
+  // apply_suggestion once per suggestion, and each call re-read and rewrote
+  // the whole lexicon file. `suggestions` applies them in one call, a run of
+  // adds for one file in one write, and still reports each refusal on its own.
+  it('writes a run of adds once, in order, and lists each applied and refused suggestion by index', async () => {
+    expect((await call('add_term', { canonical: 'Vercel', aliases: ['Versel'] })).isError).toBe(false);
+    const globalPath = process.env.LEXICON_PATH as string;
+    const before = await fs.readFile(globalPath, 'utf8');
+
+    const res = await call('apply_suggestion', {
+      suggestions: [
+        { kind: 'term', canonical: 'Hetzner', aliases: ['Hetsner'] },
+        { kind: 'alias', canonical: 'Vercel', alias: 'Vrcl' },
+        { kind: 'alias', canonical: 'Nowhere', alias: 'no where' },
+        { kind: 'never', canonical: 'vercel', alias: 'versatile' },
+        { kind: 'alias', canonical: 'Vercel' },
+      ],
+    });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as {
+      count: number;
+      applied: Array<{ index: number; kind: string; canonical: string; created: boolean; path: string; summary: string }>;
+      failures: Array<{ index: number; kind: string; canonical: string; error: string }>;
+      summary: string;
+    };
+    expect(payload.count).toBe(5);
+    expect(payload.applied.map((a) => [a.index, a.kind, a.canonical, a.created])).toEqual([
+      [0, 'term', 'Hetzner', true],
+      [1, 'alias', 'Vercel', false],
+      [3, 'never', 'Vercel', false],
+    ]);
+    expect(payload.applied.every((a) => a.path === globalPath)).toBe(true);
+    expect(payload.applied[0]?.summary).toBe('added "Hetzner" (1 alias)');
+    expect(payload.applied[1]?.summary).toBe('"Vrcl" -> "Vercel" saved');
+    expect(payload.failures.map((f) => [f.index, f.kind, f.canonical])).toEqual([
+      [2, 'alias', 'Nowhere'],
+      [4, 'alias', 'Vercel'],
+    ]);
+    expect(payload.failures[0]?.error).toContain('no term "Nowhere" in the lexicon');
+    expect(payload.failures[1]?.error).toContain('an "alias" suggestion needs an alias');
+    expect(payload.summary).toMatch(/^applied 3 of 5 suggestions; 2 not applied \(first: no term "Nowhere"/);
+
+    // One write for the three adds: the backup is the file as it was before the call.
+    expect(await fs.readFile(`${globalPath}.bak`, 'utf8')).toBe(before);
+    const list = JSON.parse((await call('list_terms', {})).text) as { terms: Array<{ canonical: string; aliases: string[]; never?: string[] }> };
+    expect(list.terms.find((t) => t.canonical === 'Hetzner')?.aliases).toEqual(['Hetsner']);
+    expect(list.terms.find((t) => t.canonical === 'Vercel')).toMatchObject({ aliases: ['Versel', 'Vrcl'], never: ['versatile'] });
+  });
+
+  it('sees a term an earlier suggestion of the same call added, and keeps a stale removal in order', async () => {
+    expect((await call('add_term', { canonical: 'Kubernetes', aliases: ['cooper netties'] })).isError).toBe(false);
+    const res = await call('apply_suggestion', {
+      suggestions: [
+        { kind: 'term', canonical: 'Hetzner', aliases: ['Hetsner'] },
+        { kind: 'alias', canonical: 'hetzner', alias: 'het sner' },
+        { kind: 'stale', canonical: 'Kubernetes' },
+        { kind: 'term', canonical: 'Kubernetes', aliases: ['kuber nettys'] },
+      ],
+    });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { applied: Array<{ index: number; removed?: boolean; created?: boolean }>; failures: unknown[] };
+    expect(payload.failures).toEqual([]);
+    expect(payload.applied.map((a) => a.index)).toEqual([0, 1, 2, 3]);
+    expect(payload.applied[2]?.removed).toBe(true);
+    // Re-added after the removal, so it is a new term with only the new alias.
+    expect(payload.applied[3]?.created).toBe(true);
+    const list = JSON.parse((await call('list_terms', {})).text) as { terms: Array<{ canonical: string; aliases: string[] }> };
+    expect(list.terms.find((t) => t.canonical === 'Hetzner')?.aliases).toEqual(['Hetsner', 'het sner']);
+    expect(list.terms.find((t) => t.canonical === 'Kubernetes')?.aliases).toEqual(['kuber nettys']);
+  });
+
+  it('is an error that writes nothing when every suggestion is refused, or when both or neither argument is given', async () => {
+    const none = await call('apply_suggestion', { suggestions: [{ kind: 'alias', canonical: 'Nowhere', alias: 'x' }] });
+    expect(none.isError).toBe(true);
+    expect(JSON.parse(none.text)).toMatchObject({ count: 1, applied: [], failures: [{ index: 0, canonical: 'Nowhere' }] });
+    const neither = await call('apply_suggestion', {});
+    expect(neither.isError).toBe(true);
+    expect(neither.text).toContain('pass the accepted suggestion in `suggestion`, or several in `suggestions`');
+    const both = await call('apply_suggestion', {
+      suggestion: { kind: 'term', canonical: 'Hetzner' },
+      suggestions: [{ kind: 'term', canonical: 'Hetzner' }],
+    });
+    expect(both.isError).toBe(true);
+    expect(both.text).toContain('not both');
+    await expect(fs.stat(process.env.LEXICON_PATH as string)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

@@ -392,7 +392,9 @@ export async function runAdd(
   // An alias another term already holds may keep being corrected to that
   // term; say so, as MCP add_term does, instead of plain success. Best
   // effort: a lexicon that will not load just loses the report.
-  const conflicts = await loadLexicon({ cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) }).then(
+  // The check reads the merged terms only, so a skipped (untrusted) project
+  // file is never parsed for it (parseSkipped: false).
+  const conflicts = await loadLexicon({ cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), parseSkipped: false }).then(
     (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
     () => [],
   );
@@ -579,7 +581,8 @@ export interface ListOptions extends CommonOptions {
 
 export async function runList(opts: ListOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
-  const loaded = await loadLexicon({ cwd });
+  // A skipped project file is named by path only, so it is never parsed.
+  const loaded = await loadLexicon({ cwd, parseSkipped: false });
   warnSkippedProject(loaded, io);
   let terms = loaded.merged.terms;
   const category = parseCategory(opts.category);
@@ -698,7 +701,9 @@ export async function runNormalize(
   }
 
   try {
-    const loaded = await loadLexicon({ cwd: resolveCwd(opts), includeUntrusted: opts.includeUntrusted === true });
+    // A skipped project file is named by path only, so it is never parsed;
+    // --include-untrusted merges it, and parseSkipped is ignored then.
+    const loaded = await loadLexicon({ cwd: resolveCwd(opts), includeUntrusted: opts.includeUntrusted === true, parseSkipped: false });
     warnSkippedProject(loaded, io);
     // `npx @ashlr/lexicon normalize "ping ashler"` with nothing set up is the
     // cheapest demo of the product, and with an empty lexicon it would print
@@ -1000,7 +1005,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   if (limit !== undefined) exportOpts.limit = limit;
 
   const cwd = resolveCwd(opts);
-  const loaded = await loadLexicon({ cwd });
+  const loaded = await loadLexicon({ cwd, parseSkipped: false });
   // stderr only: stdout (or --out) is the export, and it leaves the skipped file out.
   warnSkippedProject(loaded, io);
   const { merged } = loaded;

@@ -102,7 +102,7 @@ describe('runUserPromptSubmitHook', () => {
     expect(parsed.hookSpecificOutput.additionalContext).toContain('"Ashler" -> "Ashlr.AI" (alias, 1.00)');
     expect(parsed.hookSpecificOutput.additionalContext).toContain('Corrected prompt:\ndeploy Ashlr.AI tonight');
     expect(parsed.decision).toBeUndefined();
-    expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+    expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
   });
 
   it('returns an empty string when nothing changed', async () => {
@@ -121,7 +121,7 @@ describe('runUserPromptSubmitHook', () => {
   it('prefers an explicit cwd option over the payload cwd', async () => {
     const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
     await runUserPromptSubmitHook(payload('Ashler'), { cwd: '/override' });
-    expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/override' });
+    expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/override', parseSkipped: false });
   });
 
   describe('usage counters', () => {
@@ -687,7 +687,7 @@ describe('runHook', () => {
       expect(ctx.startsWith('## Voice lexicon')).toBe(true);
       expect(ctx).toContain('| Ashlr.AI | Ashler | brand |');
       expect(ctx.endsWith('If a word looks like a garbled proper noun and is not listed, ask rather than guess.')).toBe(true);
-      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo' });
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
       expect(mocks.normalize).not.toHaveBeenCalled();
     });
 
@@ -699,8 +699,14 @@ describe('runHook', () => {
     });
 
     describe('empty lexicon', () => {
+      const dirs: string[] = [];
+      afterEach(async () => {
+        await Promise.all(dirs.splice(0).map((d) => fs.rm(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })));
+      });
+
       async function emptyLexiconIn(): Promise<{ dir: string; globalPath: string }> {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-onboard-'));
+        dirs.push(dir);
         const globalPath = path.join(dir, 'lexicon.yaml');
         const empty: Lexicon = { version: 1, terms: [] };
         mocks.loadLexicon.mockResolvedValue({
@@ -1066,7 +1072,7 @@ describe('a payload cwd that is not a path, and a load error that is not a parse
         mocks.loadLexicon.mockClear();
         for (const event of ['UserPromptSubmit', 'SessionStart']) {
           const out = await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd }));
-          expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd() });
+          expect(mocks.loadLexicon).toHaveBeenLastCalledWith({ cwd: process.cwd(), parseSkipped: false });
           expect(context(out)).not.toContain('does not parse');
         }
       }

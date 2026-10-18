@@ -162,7 +162,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ text, dryRun, minConfidence }) =>
       guarded(async () => {
-        const loaded = await load();
+        // parseSkipped: false, as the prompt hook loads: this tool names a
+        // skipped project file by path only, so an untrusted or changed one
+        // is never parsed on the way to leaving it out.
+        const loaded = await load({ parseSkipped: false });
         // Cached on disk for a large lexicon (index-cache.json, shared with the
         // hook and serve), so a call does not rebuild the matcher every time.
         const index = await loadMatcherIndex(loaded);
@@ -183,7 +186,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
           // Best effort: recordHits is contractually non-throwing, but guard anyway so
           // a store hiccup can never turn a successful normalize into an error.
-          await recordHits(canonicals, { cwd: ctx.cwd }).catch((err: unknown) =>
+          // `loaded` spares recordHits re-reading (and re-parsing) both files.
+          await recordHits(canonicals, { cwd: ctx.cwd, loaded }).catch((err: unknown) =>
             log('recordHits failed:', errorMessage(err)),
           );
         }
@@ -287,7 +291,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const shown = untrusted && !saved.created ? term : saved.term;
         // An alias another term already holds may keep being corrected to that
         // term; say so, as learn_correction does, instead of reporting success.
-        const conflicts = spellingConflicts((await load()).merged, shown.aliases, shown.canonical);
+        // Merged terms only, so a skipped project file is never parsed for it.
+        const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
         const note = conflictNote(conflicts, 'mcp');
         return textResult({
           term: shown,
@@ -445,7 +450,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ query, category }) =>
       guarded(async () => {
-        const loaded = await load();
+        // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
+        const loaded = await load({ parseSkipped: false });
         const needle = query?.trim().toLowerCase();
         const terms = loaded.merged.terms.filter((t) => {
           if (category && t.category !== category) return false;
@@ -486,7 +492,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const resolved = resolveExportFormat(format);
         if (!resolved) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(', ')})`);
-        const loaded = await load();
+        // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
+        const loaded = await load({ parseSkipped: false });
         const opts = {
           ...(categories !== undefined ? { categories } : {}),
           ...(limit !== undefined ? { limit } : {}),
@@ -617,7 +624,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             `heard must be at most ${MAX_CORRECTION_LENGTH} characters: pass only the garbled word or name, not the sentence around it`,
           );
         }
-        const loaded = await load();
+        // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
+        const loaded = await load({ parseSkipped: false });
         const suggestions = suggestCanonicalFor(heard, loaded.merged).map((s) => ({
           canonical: s.term.canonical,
           confidence: Number(s.confidence.toFixed(3)),
@@ -642,7 +650,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     },
     async () =>
       guarded(async () => {
-        const loaded = await load();
+        // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
+        const loaded = await load({ parseSkipped: false });
         // Otherwise the counts silently leave out the repo's own terms.
         return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
       }),

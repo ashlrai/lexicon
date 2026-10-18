@@ -22,7 +22,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { exportLexicon, loadLexicon, neutralizeMarkup, pathForModel } from '../core/index.js';
-import type { LoadedLexicon } from '../core/index.js';
+import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
@@ -179,10 +179,10 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // model-chosen path (harvest_repo, suggest_terms, trust_project, import_dictionary) may read inside these.
   let clientRoots: string[] = [];
   let rootsPending: Promise<void> | undefined;
-  const load = async (): Promise<LoadedLexicon> => {
+  const load = async (loadOpts: Pick<LoadOptions, 'parseSkipped'> = {}): Promise<LoadedLexicon> => {
     // A call that races the first roots/list answer waits for it (bounded by the timeout).
     if (rootsPending) await rootsPending;
-    return loadLexicon({ cwd });
+    return loadLexicon({ cwd, ...loadOpts });
   };
 
   const server = new McpServer(
@@ -256,7 +256,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // the bare parse error; it now carries the fix, as a tool's error does.
   const loadForContext = async (): Promise<LoadedLexicon> => {
     try {
-      return await load();
+      // Resources and prompts name a skipped project file by path only
+      // (skippedProjectSuffix, skippedProjectFields), so it is never parsed.
+      return await load({ parseSkipped: false });
     } catch (err) {
       const message = errorMessage(err);
       const fixed = withLexiconFix(message);

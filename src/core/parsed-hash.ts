@@ -36,6 +36,25 @@ export function rememberParsedBytes(file: LexiconFile, bytes: Uint8Array | strin
   entries.set(file, { bytes });
 }
 
+/**
+ * Remember `sha256` as the hash of the bytes `file` was parsed from, when the
+ * caller already holds it for exactly those bytes (the project parse cache in
+ * store.ts, whose entry is reused only for byte-identical content).
+ */
+export function rememberParsedHash(file: LexiconFile, sha256: string): void {
+  entries.set(file, { sha256 });
+}
+
+/**
+ * Let `to` share `from`'s bytes and hash, hashed at most once between them:
+ * loadLexicon checks trust on a stand-in for a project file before parsing
+ * it, and the parse it then merges came from those same bytes.
+ */
+export function shareParsedHash(from: LexiconFile, to: LexiconFile): void {
+  const entry = entries.get(from);
+  if (entry) entries.set(to, entry);
+}
+
 export async function recalledParsedHash(file: LexiconFile): Promise<string | undefined> {
   const entry = entries.get(file);
   if (!entry) return undefined;

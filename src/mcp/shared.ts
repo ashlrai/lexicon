@@ -10,7 +10,7 @@ import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { projectWriteTrusted, resolvePaths } from '../core/index.js';
-import type { ImportFormat, LoadedLexicon, TermSuggestion } from '../core/index.js';
+import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
 import { errorMessage } from '../util/errors.js';
@@ -35,7 +35,12 @@ export interface ToolContext {
    * handler, as with `cwd`.
    */
   readonly roots: readonly string[];
-  load(): Promise<LoadedLexicon>;
+  /**
+   * The merged lexicon for `cwd`, re-read from disk. `parseSkipped: false`
+   * (LoadOptions) for a caller that names a skipped project file by path only:
+   * an untrusted or changed file is then never parsed.
+   */
+  load(opts?: Pick<LoadOptions, 'parseSkipped'>): Promise<LoadedLexicon>;
   /** normalize_transcript's matching budget in ms (MCP_NORMALIZE_BUDGET_MS unless overridden). */
   readonly normalizeBudgetMs: number;
   /** Characters of `text` normalize_transcript matches (MCP_NORMALIZE_MAX_CHARS unless overridden). */
