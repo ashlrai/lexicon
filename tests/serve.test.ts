@@ -2466,6 +2466,30 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  // Catches: LexiconBar's pack card (apps/macos LocalAPI.swift installPack)
+  // read only `added` and `merged`, so a reinstall read "64 terms merged"
+  // though the server said the pack was already installed and nothing was
+  // added. No Swift toolchain runs here, so this pins the keys it reads to
+  // the real response instead.
+  it('the menu bar app reads alreadyInstalled and summary from POST /packs/:name, keys the response has', async () => {
+    const swift = await fs.readFile(path.join(process.cwd(), 'apps/macos/LexiconBar/Sources/LexiconBar/LocalAPI.swift'), 'utf8');
+    const fn = swift.slice(swift.indexOf('func installPack('), swift.indexOf('func uninstallPack('));
+    expect(fn.length).toBeGreaterThan(0);
+    const keys = [...fn.matchAll(/\$0\["([A-Za-z]+)"\]/g)].map((m) => m[1]);
+    expect(keys).toEqual(expect.arrayContaining(['added', 'merged', 'alreadyInstalled', 'summary']));
+    expect(swift).toMatch(/if let serverSummary, !serverSummary\.isEmpty \{ return serverSummary \}/);
+    const res = await api2('POST', '/packs/voice-tools');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    try {
+      for (const key of keys) expect(body, key).toHaveProperty(key);
+      expect(typeof body.summary).toBe('string');
+      expect(typeof body.alreadyInstalled).toBe('boolean');
+    } finally {
+      expect((await api2('DELETE', '/packs/voice-tools')).status).toBe(200);
+    }
+  });
+
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {
     const first = await api2('POST', '/packs/developer');
     expect(first.status).toBe(200);
