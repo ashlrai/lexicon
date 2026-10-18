@@ -159,7 +159,9 @@ describe('a path that cannot hold a lock', () => {
   it('fails at once naming the file in the way, not another process', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-lock-notdir-'));
     try {
-      const blocker = path.join(dir, 'blocker');
+      // The lock names the real path: Windows' os.tmpdir() can carry a short
+      // (8.3) name such as RUNNER~1 that native realpath expands.
+      const blocker = path.join(await fs.realpath(dir), 'blocker');
       await fs.writeFile(blocker, 'not a directory', 'utf8');
       let entered = false;
       const started = Date.now();

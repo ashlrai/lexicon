@@ -13,6 +13,8 @@ import { createServer } from '../src/mcp/server.js';
 import { runList } from '../src/cli/commands.js';
 import { trustProject } from '../src/core/trust.js';
 import { conflictNote } from '../src/core/learn.js';
+import { pathForModel } from '../src/core/schema.js';
+import { shellWord } from '../src/mcp/shared.js';
 import { makeIO } from './helpers.js';
 
 let repo: string;
@@ -467,7 +469,7 @@ describe('lexicon_stats and voice-context with an untrusted project lexicon', ()
     try {
       const prompt = await client.getPrompt({ name: 'voice-context' });
       const text = prompt.messages.map((m) => (m.content.type === 'text' ? m.content.text : '')).join('\n');
-      expect(text).toContain(`untrusted project lexicon at ${path.join(repo, '.lexicon.yaml')} that was not loaded`);
+      expect(text).toContain(`untrusted project lexicon at ${pathForModel(path.join(repo, '.lexicon.yaml'))} that was not loaded`);
       expect(text).not.toContain('Fantom');
     } finally {
       await client.close();
@@ -1360,7 +1362,7 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     const res = await call('harvest_repo', { path: path.join(outside, 'other'), add: true });
     expect(res.isError).toBe(true);
     expect(res.text).toContain('outside the directories this server may read');
-    expect(res.text).toContain(`\`lexicon harvest ${path.join(outside, 'other')}\``);
+    expect(res.text).toContain(`\`lexicon harvest ${shellWord(path.join(outside, 'other'))}\``);
     expect(res.text).toContain('npx @ashlr/lexicon harvest');
     expect(res.text).toContain('LEXICON_HARVEST_ROOTS');
     await expect(fs.stat(path.join(outside, 'other', '.lexicon.yaml'))).rejects.toMatchObject({ code: 'ENOENT' });
