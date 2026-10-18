@@ -264,7 +264,10 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   let loaded: LoadedLexicon;
   let suggestions: TermSuggestion[];
   try {
-    loaded = await load(store);
+    // Suggestions read only the merged terms, the global file and a trusted
+    // project file, and a skipped file is named by path, so an untrusted or
+    // changed one is never parsed (as MCP suggest_terms loads).
+    loaded = await load({ ...store, parseSkipped: false });
     warnSkippedProject(loaded, io);
     const input: SuggestInput = { loaded };
     if (harvestDir !== undefined) input.cwd = harvestDir;

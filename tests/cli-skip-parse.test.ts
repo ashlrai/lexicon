@@ -36,6 +36,7 @@ import * as core from '../src/core/index.js';
 import { runAdd, runExport, runList, runNormalize } from '../src/cli/commands.js';
 import { runPackList, runPackSearch } from '../src/cli/cmd-pack.js';
 import { runStats } from '../src/cli/cmd-learn.js';
+import { runSuggest } from '../src/cli/cmd-suggest.js';
 import { makeIO } from './helpers.js';
 
 const PACK = 'name: cardiology\ntitle: Cardiology terms\ndescription: Heart words.\nversion: 1\nterms:\n  - canonical: Metoprolol\n    aliases: [metropolol]\n';
@@ -110,6 +111,22 @@ describe('read-only CLI commands and an untrusted project lexicon', () => {
     expect(vi.mocked(core.loadLexicon).mock.calls[0]?.[0]).toMatchObject({ cwd: repo, parseSkipped: false });
     expect(schemaParses.canonicals).toContain('Zed');
     expect(schemaParses.canonicals).not.toContain('Kubectl');
+  });
+
+  // Catches: suggest used the default load, so it parsed the untrusted file
+  // though it reads only the merged, global and trusted project files.
+  it('suggest loads with parseSkipped: false and names the skipped file by path', async () => {
+    for (const json of [true, false]) {
+      vi.mocked(core.loadLexicon).mockClear();
+      schemaParses.canonicals.length = 0;
+      const io = makeIO();
+      expect(await runSuggest({ cwd: repo, globalPath, json }, io), io.err).toBe(0);
+      expect(core.loadLexicon).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(core.loadLexicon).mock.calls[0]?.[0]).toMatchObject({ cwd: repo, globalPath, parseSkipped: false });
+      expect(schemaParses.canonicals).toContain('Ashlr.AI');
+      expect(schemaParses.canonicals).not.toContain('Kubectl');
+      expect(io.err).toContain(`untrusted project lexicon skipped: ${projectPath}`);
+    }
   });
 
   it('normalize --include-untrusted still merges the project file', async () => {
