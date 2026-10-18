@@ -12,7 +12,7 @@
  * injectable so the loop can be tested without touching a real clipboard.
  */
 import { diffSummary, loadLexicon, normalize, recordHits } from '../core/index.js';
-import type { Lexicon, NormalizeResult } from '../core/index.js';
+import type { LoadedLexicon, NormalizeResult } from '../core/index.js';
 import {
   checkClipboardBackend,
   createClipboardBackend,
@@ -139,10 +139,12 @@ function formatSummary(result: NormalizeResult): string {
  * for the write (a slow disk must not stall the poll loop or the --once exit).
  * recordHits is best-effort by contract; the catch covers a rejecting mock.
  */
-function recordHitsInBackground(result: NormalizeResult, cwd: string, err: (s: string) => void): void {
+function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: LoadedLexicon, err: (s: string) => void): void {
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
-  void recordHits(canonicals, { cwd }).catch((e: unknown) => {
+  // `loaded` (the load the corrections came from) spares recordHits reading
+  // both lexicon files again, and it holds a project file only when trusted.
+  void recordHits(canonicals, { cwd, loaded }).catch((e: unknown) => {
     err(`[${timestamp()}] clipboard daemon: recordHits: ${message(e)}\n`);
   });
 }
@@ -166,16 +168,16 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
   let lastSeen: string | undefined; // last raw clipboard value we looked at
   let lastInput: string | undefined; // the input that produced lastWritten
   let lastWritten: string | undefined; // what we last wrote (loop guard)
-  let lexicon: Lexicon | undefined;
+  let lexicon: LoadedLexicon | undefined;
   let lexiconLoadedAt = -Infinity;
 
-  async function currentLexicon(): Promise<Lexicon> {
+  async function currentLexicon(): Promise<LoadedLexicon> {
     const now = Date.now();
     if (!lexicon || now - lexiconLoadedAt >= LEXICON_RELOAD_MS) {
       try {
         // parseSkipped: false: only the merged terms are used, so an untrusted
         // or changed project file is never parsed, on this or any reload.
-        lexicon = (await loadLexicon({ cwd, parseSkipped: false })).merged;
+        lexicon = await loadLexicon({ cwd, parseSkipped: false });
         lexiconLoadedAt = now;
       } catch (e) {
         // Keep serving the previous lexicon (if any) while the file is broken.
@@ -196,7 +198,8 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     lastSeen = text;
     if (!reportable(text)) return;
 
-    const result = normalize(text, await currentLexicon());
+    const loaded = await currentLexicon();
+    const result = normalize(text, loaded.merged);
     if (!result.changed) return;
 
     if (!dryRun) {
@@ -204,7 +207,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       lastWritten = result.output;
       lastInput = text;
       lastSeen = result.output;
-      recordHitsInBackground(result, cwd, err);
+      recordHitsInBackground(result, cwd, loaded, err);
     }
     if (!quiet) {
       const header = `[${timestamp()}]${dryRun ? ' (dry-run)' : ''} ${result.replacements.length} correction${result.replacements.length === 1 ? '' : 's'}`;
@@ -310,15 +313,15 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
     }
   } else {
     // Only the merged terms are used: an untrusted project file is never parsed.
-    const lexicon = (await loadLexicon({ cwd, parseSkipped: false })).merged;
-    const normalized = normalize(text, lexicon);
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    const normalized = normalize(text, loaded.merged);
     result.changed = normalized.changed;
     result.corrections = normalized.replacements.length;
     if (normalized.changed) {
       if (!dryRun) {
         await write(normalized.output);
         result.written = true;
-        recordHitsInBackground(normalized, cwd, err);
+        recordHitsInBackground(normalized, cwd, loaded, err);
       }
       if (!quiet) {
         const header = `${dryRun ? '(dry-run) ' : ''}${normalized.replacements.length} correction${normalized.replacements.length === 1 ? '' : 's'}`;

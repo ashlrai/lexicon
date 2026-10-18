@@ -1797,6 +1797,9 @@ export async function removeAlias(
  * so a stray canonical (one from an unreviewed project file, say) is never
  * recorded as in use.
  *
+ * Without `loaded` an untrusted or changed project file is never parsed:
+ * trust is checked from the registry and the file's sha256 first.
+ *
  * Pass `loaded` (the `loadLexicon` result the canonicals came from) and
  * neither file is read again: the prompt hook does, because it calls this on
  * every matching prompt, and re-parsing (and, before this, rewriting and
@@ -1821,12 +1824,17 @@ export async function recordHits(
     if (opts.loaded) {
       // Only a trusted project file was merged, so only it can have produced a hit.
       if (opts.loaded.project && opts.loaded.projectTrust === 'trusted') projectFile = opts.loaded.project;
-    } else if (paths.project) {
-      const file = await readLexiconFile(paths.project, 'project');
+    } else if (paths.project && existsSync(paths.project)) {
       // Hits only come from merged terms, so an untrusted project file cannot
       // have produced any; skip it silently (this function never throws, so it
-      // cannot use assertProjectWritable) and never auto-trust it here.
-      if (file.exists && (await isTrusted(file, opts)) === 'trusted') projectFile = file;
+      // cannot use assertProjectWritable) and never auto-trust it here. Trust
+      // is checked before the parse, so an untrusted or changed file is never
+      // parsed, then again on the bytes parsed, which may have changed since.
+      const probe: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
+      if ((await isTrusted(probe, opts)) === 'trusted') {
+        const file = await readLexiconFile(paths.project, 'project');
+        if (file.exists && (await isTrusted(file, opts)) === 'trusted') projectFile = file;
+      }
     }
     let project: { key: string; counts: Map<string, number> } | undefined;
     if (projectFile) {

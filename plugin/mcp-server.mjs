@@ -54921,9 +54921,12 @@ async function recordHits(canonicals, opts = {}) {
     let projectFile;
     if (opts.loaded) {
       if (opts.loaded.project && opts.loaded.projectTrust === "trusted") projectFile = opts.loaded.project;
-    } else if (paths.project) {
-      const file2 = await readLexiconFile(paths.project, "project");
-      if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
+    } else if (paths.project && (0, import_node_fs5.existsSync)(paths.project)) {
+      const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+      if (await isTrusted(probe, opts) === "trusted") {
+        const file2 = await readLexiconFile(paths.project, "project");
+        if (file2.exists && await isTrusted(file2, opts) === "trusted") projectFile = file2;
+      }
     }
     let project;
     if (projectFile) {

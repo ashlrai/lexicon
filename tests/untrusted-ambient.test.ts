@@ -30,6 +30,7 @@ import { runClipboardDaemon, runClipboardOnce } from '../src/daemon/clipboard.js
 import { runVoice } from '../src/voice/voice.js';
 import type { ChildHandle, ExecResult, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
 import { runSetup } from '../src/cli/cmd-setup.js';
+import { getHitsPath, recordHits, trustProject } from '../src/core/index.js';
 import { makeIO } from './helpers.js';
 
 /** The untrusted project file's only canonical: seeing it in `schemaParses` means the file was parsed. */
@@ -82,6 +83,25 @@ describe('the clipboard daemon and an untrusted project lexicon', () => {
     expect(result.changed).toBe(true);
     expect(out.join('')).toContain('Ashlr.AI');
     expect(schemaParses.canonicals).toContain('Ashlr.AI');
+    expect(schemaParses.canonicals).not.toContain(MARKER);
+  });
+
+  // Catches: --once handed recordHits only the cwd, and recordHits read and
+  // parsed the untrusted project file to find which canonicals it owns.
+  it('--once records the hit without parsing the project file', async () => {
+    const written: string[] = [];
+    const result = await runClipboardOnce({
+      cwd: repo,
+      quiet: true,
+      read: async () => 'ping Ashler',
+      write: async (s) => void written.push(s),
+      out: () => undefined,
+      err: () => undefined,
+    });
+    expect(result.written).toBe(true);
+    expect(written).toEqual(['ping Ashlr.AI']);
+    const hits = await waitForHits();
+    expect(Object.values(hits.global ?? {})).toEqual([1]);
     expect(schemaParses.canonicals).not.toContain(MARKER);
   });
 
@@ -188,6 +208,38 @@ async function voiceDeps(transcript: string): Promise<{ deps: Parameters<typeof 
   };
 }
 
+/** hits.json once the background recordHits has written it. */
+async function waitForHits(): Promise<{ global?: Record<string, number>; projects?: Record<string, Record<string, number>> }> {
+  const file = getHitsPath({ globalPath });
+  for (let i = 0; i < 200; i++) {
+    try {
+      return JSON.parse(await fs.readFile(file, 'utf8')) as { global?: Record<string, number> };
+    } catch {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+  throw new Error(`no ${file}`);
+}
+
+describe('recordHits without a load and an untrusted project lexicon', () => {
+  // Catches: recordHits parsed the project file before asking whether it
+  // was trusted, on every call made without `loaded`.
+  it('checks trust before parsing, and still counts under a trusted project file', async () => {
+    await recordHits(['Ashlr.AI', MARKER], { cwd: repo, globalPath });
+    expect(schemaParses.canonicals).not.toContain(MARKER);
+    let hits = await waitForHits();
+    expect(hits.global).toEqual({ 'ashlr.ai': 1 });
+    expect(hits.projects ?? {}).toEqual({});
+
+    await trustProject(path.join(repo, '.lexicon.yaml'), { globalPath });
+    schemaParses.canonicals.length = 0;
+    await recordHits([MARKER], { cwd: repo, globalPath });
+    expect(schemaParses.canonicals).toContain(MARKER);
+    hits = await waitForHits();
+    expect(Object.values(hits.projects ?? {})).toEqual([{ untrustedmarker: 1 }]);
+  });
+});
+
 describe('lexicon voice and an untrusted project lexicon', () => {
   // Catches: loadMerged (the whisper prompt and the normalize) loaded with the
   // default parseSkipped and parsed the repo file it then left out.
@@ -197,6 +249,16 @@ describe('lexicon voice and an untrusted project lexicon', () => {
     expect(code, v.err.join('')).toBe(0);
     expect(v.out.join('')).toBe('hello there\n');
     expect(schemaParses.canonicals).toContain('Ashlr.AI');
+    expect(schemaParses.canonicals).not.toContain(MARKER);
+  });
+
+  // Catches: deliver's recordHits, given only the cwd, parsed the repo file.
+  it('records the hit of a correction without parsing the project file', async () => {
+    const v = await voiceDeps('ping Ashler');
+    const code = await runVoice({ cwd: repo, globalPath, quiet: true, history: false }, { stdout: (s) => v.out.push(s), stderr: (s) => v.err.push(s) }, v.deps);
+    expect(code, v.err.join('')).toBe(0);
+    expect(v.out.join('')).toBe('ping Ashlr.AI\n');
+    expect((await waitForHits()).global).toEqual({ 'ashlr.ai': 1 });
     expect(schemaParses.canonicals).not.toContain(MARKER);
   });
 });
