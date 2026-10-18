@@ -1264,7 +1264,12 @@ describe('trust gate', () => {
   it('refuses a project-scope write into an untrusted file with 403', async () => {
     const res = await api('POST', '/add', { canonical: 'Foo', aliases: ['fooo'], scope: 'project', cwd: env.untrustedProject });
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: string }).error).toContain('untrusted');
+    // Catches: the 403 ended "or write to the global lexicon instead", which
+    // says nothing about how a request does that.
+    expect(((await res.json()) as { error: string }).error).toBe(
+      `project lexicon at ${path.join(env.untrustedProject, '.lexicon.yaml')} is untrusted, so nothing was written. ` +
+        'Review it and run `lexicon trust`, then retry; or retry with "scope": "global" in the body to use the global lexicon instead',
+    );
   });
 });
 
@@ -2432,7 +2437,10 @@ describe('packs and aliases routes', () => {
     await fs.appendFile(path.join(repo, '.lexicon.yaml'), '# hand edit\n');
     const refused = await api2('POST', '/packs/ai', { scope: 'project', cwd: repo });
     expect(refused.status).toBe(403);
-    expect((await api2('DELETE', `/packs/voice-tools?cwd=${encodeURIComponent(repo)}`)).status).toBe(403);
+    expect(((await refused.json()) as { error: string }).error).toContain('has changed since it was trusted, so nothing was written.');
+    const removal = await api2('DELETE', `/packs/voice-tools?cwd=${encodeURIComponent(repo)}`);
+    expect(removal.status).toBe(403);
+    expect(((await removal.json()) as { error: string }).error).toContain('or retry with ?scope=global to use the global lexicon instead');
   });
 
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {

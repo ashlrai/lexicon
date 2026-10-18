@@ -378,6 +378,19 @@ export function errorStatus(err: unknown): number {
   return 500;
 }
 
+/**
+ * The 403 for a project-scope write into a `.lexicon.yaml` that is not
+ * trusted, in HTTP terms. Core's message ends `or write to the global lexicon
+ * instead`, which says nothing about how a request does that: here it is
+ * `"scope": "global"` in a POST body, or `?scope=global` on a DELETE.
+ */
+function projectTrustRefusal(err: Error & { path?: unknown; status?: unknown }, method: string): string {
+  const file = typeof err.path === 'string' ? err.path : 'this repo';
+  const why = err.status === 'changed' ? 'has changed since it was trusted' : 'is untrusted';
+  const global = method === 'DELETE' ? '?scope=global' : '"scope": "global" in the body';
+  return `project lexicon at ${file} ${why}, so nothing was written. Review it and run \`lexicon trust\`, then retry; or retry with ${global} to use the global lexicon instead`;
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -1199,7 +1212,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         // user needs to fix it, so a client holding the token gets it; an
         // anonymous caller (plain /health) gets only a pointer to the log.
         const authed = config !== undefined && tokenMatches(req.headers.authorization, config.token);
-        let message = errorMessage(err);
+        let message = isProjectTrustError(err) ? projectTrustRefusal(err as Error, method) : errorMessage(err);
         if (status === 500) {
           message = authed
             ? `internal error: ${message}`
