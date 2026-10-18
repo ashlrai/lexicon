@@ -521,6 +521,18 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       }),
   );
 
+  /**
+   * learn_correction with only one of heard and meant: the default zod text
+   * (`expected string, received undefined`) did not say that one spelling is
+   * not a correction. The same words `lexicon learn Ashler` gives.
+   */
+  const oneSpellingError =
+    (missing: 'heard' | 'meant') =>
+    (iss: { input?: unknown }): string | undefined =>
+      iss.input === undefined
+        ? `${missing} is missing: only one spelling was given; learn_correction needs heard (the spelling STT wrote) and meant (the one the user meant), so nothing was learned`
+        : undefined;
+
   server.registerTool(
     'learn_correction',
     {
@@ -538,8 +550,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
         'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: z.string().min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
-        meant: z.string().min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
+        heard: z.string({ error: oneSpellingError('heard') }).min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
+        meant: z.string({ error: oneSpellingError('meant') }).min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
         scope: z
           .enum(TERM_SCOPES)
           .optional()

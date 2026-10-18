@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -19,6 +19,24 @@ function usageHint(io: IO): void {
 // ---------------------------------------------------------------------------
 // learn
 // ---------------------------------------------------------------------------
+
+/** `word` as one shell word in a command to copy: bare when it needs no quotes. */
+function argWord(word: string): string {
+  return /^[\p{L}\p{N}_.@+:,/-]+$/u.test(word) ? word : JSON.stringify(word);
+}
+
+/**
+ * `lexicon learn Ashler`: the error and next step for a single spelling. The
+ * wording matches MCP learn_correction called with `heard` and no `meant`.
+ * Exported for tests.
+ */
+export function oneSpellingRefusal(word: string): [error: string, nextStep: string] {
+  const spelling = word.trim().replace(/\s+/g, ' ');
+  return [
+    `only one spelling was given ("${spelling}"); learn needs the spelling STT wrote and the one you meant, so nothing was learned`,
+    `run: lexicon learn ${argWord(spelling)} <meant>, where <meant> is the spelling you want`,
+  ];
+}
 
 export interface LearnOptions extends CommonOptions {
   /** Write to the project .lexicon.yaml instead of the global file / the term's current file. */
@@ -62,6 +80,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     return 1;
   }
   const correction = correctionFromArgs(words, opts.from);
+  if (!correction && opts.from === undefined && words.length === 1 && words[0].trim() !== '') {
+    // One word is one spelling, not a sentence that failed to parse: it said
+    // `could not find a correction in "Ashler"` and dumped the whole usage.
+    // MCP learn_correction without `meant` names the same missing half.
+    const [error, nextStep] = oneSpellingRefusal(words[0]);
+    return refuse(io, opts.json, error, nextStep);
+  }
   if (!correction) {
     const source = opts.from ?? words.join(' ');
     if (opts.json) {

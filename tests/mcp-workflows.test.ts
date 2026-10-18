@@ -689,6 +689,24 @@ describe('apply_suggestion stale on a term in both lexicon files', () => {
   });
 });
 
+describe('learn_correction given only one spelling', () => {
+  // Catches: learn_correction with heard and no meant answered only zod's
+  // `expected string, received undefined`, where `lexicon learn Ashler` says
+  // that one spelling was given and names the missing half.
+  it('says only one spelling was given, as lexicon learn does, and writes nothing', async () => {
+    for (const [args, missing] of [
+      [{ heard: 'Ashler' }, 'meant'],
+      [{ meant: 'Ashlr.AI' }, 'heard'],
+    ] as const) {
+      const res = await call('learn_correction', args);
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain(`${missing} is missing: only one spelling was given`);
+      expect(res.text).toContain('so nothing was learned');
+    }
+    await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
+});
+
 describe('learn_correction when another term already claims `heard`', () => {
   // Catches: "it's Vercel not Versel" while Versel is an alias of Verse.
   // The alias was added to Vercel and reported saved, but the next transcript

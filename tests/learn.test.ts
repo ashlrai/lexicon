@@ -519,6 +519,27 @@ describe('lexicon learn (CLI)', () => {
     expect(store.addTerm).toHaveBeenCalledWith(expect.anything(), { cwd: path.resolve('/fake/repo'), scope: 'project' });
   });
 
+  // Catches: `lexicon learn Ashler` said `could not find a correction in "Ashler"`
+  // and printed the whole usage block, though one word is one spelling.
+  it('says only one spelling was given and names the command with it, without the usage', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn(['Ashler'], { cwd: '/fake/repo' }, io)).toBe(1);
+    expect(err()).toBe(
+      'lexicon: only one spelling was given ("Ashler"); learn needs the spelling STT wrote and the one you meant, so nothing was learned\n' +
+        'lexicon: run: lexicon learn Ashler <meant>, where <meant> is the spelling you want\n',
+    );
+    expect(out()).toBe('');
+    const json = captureIO();
+    expect(await runLearn(['Mason White'], { json: true, cwd: '/fake/repo' }, json.io)).toBe(1);
+    expect(JSON.parse(json.out())).toEqual({
+      ok: false,
+      error: 'only one spelling was given ("Mason White"); learn needs the spelling STT wrote and the one you meant, so nothing was learned',
+      nextStep: 'run: lexicon learn "Mason White" <meant>, where <meant> is the spelling you want',
+    });
+    expect(json.err()).not.toContain('usage:');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
   it('prints the supported forms when nothing matched', async () => {
     const { io, out, err } = captureIO();
     const code = await runLearn([], { from: 'not sure it\'s ready' }, io);
