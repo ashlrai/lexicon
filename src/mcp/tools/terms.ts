@@ -472,8 +472,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
-        categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include these categories.'),
-        limit: z.number().int().positive().optional().describe('Cap the number of terms exported.'),
+        categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include terms in these categories. Omitted: every category.'),
+        limit: z.number().int().positive().optional().describe('Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.'),
       },
     },
     async ({ format, categories, limit }) =>
@@ -521,8 +521,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
         'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: z.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
-        meant: z.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
+        heard: z.string().min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
+        meant: z.string().min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
@@ -531,6 +531,14 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ heard, meant, scope }) =>
       guarded(async () => {
+        // learnCorrection refuses these too, but only with the cap; the usual
+        // cause is a whole phrase passed as `heard`, so say what to pass.
+        const tooLong = [...(heard.trim().replace(/\s+/g, ' ').length > MAX_CORRECTION_LENGTH ? ['heard'] : []), ...(meant.trim().replace(/\s+/g, ' ').length > MAX_CORRECTION_LENGTH ? ['meant'] : [])];
+        if (tooLong.length > 0) {
+          throw new Error(
+            `${tooLong.join(' and ')} must be at most ${MAX_CORRECTION_LENGTH} characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.`,
+          );
+        }
         const writeOpts = await mcpWriteOpts(ctx);
         const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...(scope !== undefined ? { scope } : {}), ...writeOpts });
         const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === 'project';

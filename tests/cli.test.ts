@@ -882,6 +882,54 @@ describe('export', () => {
     expect(io.err).toContain('untrusted project lexicon skipped: /tmp/proj/.lexicon.yaml (run: lexicon trust)');
   });
 
+  // Catches: `lexicon export` had no --json, so `export claude-md --json` was a usage error.
+  describe('--json', () => {
+    it('with --out prints { ok, format, terms, bytes, path } and writes the file', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+      try {
+        const io = makeIO();
+        const out = path.join(dir, 'lex.md');
+        expect(await runExport('claude-md', { out, limit: 1, json: true }, io)).toBe(0);
+        expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'claude-md', terms: 1, bytes: 'export:claude-md\n'.length, path: out });
+        expect(await fs.readFile(out, 'utf8')).toBe('export:claude-md\n');
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('without --out embeds the export as content', async () => {
+      const io = makeIO();
+      expect(await runExport('wispr-flow', { json: true }, io)).toBe(0);
+      expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'wispr', terms: 2, bytes: 13, content: 'export:wispr\n' });
+    });
+
+    it('with no format lists the formats as JSON', async () => {
+      const io = makeIO();
+      expect(await runExport(undefined, { json: true }, io)).toBe(0);
+      const doc = JSON.parse(io.out);
+      expect(doc.ok).toBe(true);
+      expect(doc.formats).toContainEqual({ name: 'wispr', description: 'Wispr Flow dictionary CSV', ext: 'csv' });
+    });
+
+    // Catches: an unknown format under --json got the generic nextStep.
+    it('an unknown format answers { ok: false, error, nextStep } naming the formats', async () => {
+      const io = makeIO();
+      expect(await runExport('bogus', { json: true }, io)).toBe(1);
+      expect(JSON.parse(io.out)).toEqual({
+        ok: false,
+        error: 'unknown export format "bogus"',
+        nextStep: 'run: lexicon export <format>, with one of: wispr, superwhisper, claude-md, json (lexicon export with no format describes each)',
+      });
+    });
+
+    it('a missing format answers { ok: false, error, nextStep } naming the formats', async () => {
+      const missing = makeIO();
+      expect(await runExport(undefined, { out: 'x.md', json: true }, missing)).toBe(1);
+      expect(JSON.parse(missing.out)).toMatchObject({ ok: false, error: '--out needs a format; nothing was exported' });
+      expect(JSON.parse(missing.out).nextStep).toContain('lexicon export <format>');
+    });
+  });
+
   it('accepts the product name for a format (wispr-flow, any case)', async () => {
     for (const name of ['wispr-flow', 'Wispr-Flow', 'wisprflow']) {
       const io = makeIO();
@@ -2288,9 +2336,15 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(JSON.parse(refused.stdout)).toEqual({ ok: false, error: expect.stringContaining(`project lexicon at ${projectPath} is untrusted`), nextStep: PROJECT_TRUST_NEXT_STEP });
       expect(refused.stderr).toContain('lexicon: project lexicon at');
 
+      // Catches: an unknown --category got the generic nextStep, not the categories to pass.
       const category = lexicon(['list', '--json', '--category', 'nope', '--cwd', tmp], globalPath);
       expect(category.status).toBe(1);
-      expect(JSON.parse(category.stdout)).toEqual({ ok: false, error: expect.stringContaining('unknown category "nope"'), nextStep: expect.any(String) });
+      expect(JSON.parse(category.stdout)).toEqual({
+        ok: false,
+        error: expect.stringContaining('unknown category "nope"'),
+        nextStep: 'pass one of brand, person, product, acronym, identifier, place, other to --category, or leave --category out',
+      });
+      expect(category.stderr).toContain('lexicon: pass one of brand');
 
       const missing = lexicon(['import', path.join(tmp, 'nope.txt'), '--json', '--cwd', tmp], globalPath);
       expect(missing.status).toBe(1);

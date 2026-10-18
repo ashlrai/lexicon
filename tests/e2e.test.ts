@@ -556,6 +556,17 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: export', () => {
     const parsed = JSON.parse(await fs.readFile(target, 'utf8')) as { terms: unknown[] };
     expect(parsed.terms).toHaveLength(2);
   });
+
+  // Catches: `export --json` was a commander usage error (unknown option).
+  it('--json with --out reports the write as a JSON document', async () => {
+    const h = await cloneOf(shared, 'export-json');
+    const target = path.join(h.home, 'lex.md');
+    const r = await runCli(['export', 'claude-md', '--out', target, '--json'], { env: h.env });
+    expect(r.code).toBe(0);
+    const doc = JSON.parse(r.stdout) as Record<string, unknown>;
+    expect(doc).toMatchObject({ ok: true, format: 'claude-md', terms: 2, path: target });
+    expect(doc.bytes).toBe((await fs.readFile(target)).length);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -191,11 +191,26 @@ export function renderTable(rows: readonly (readonly string[])[], header?: reado
  */
 export function fail(io: IO, err: unknown, json?: boolean): number {
   const message = errorMessage(err);
-  const hint = unreadableLexiconHint(message);
+  const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
   if (json) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : undefined));
   io.stderr(`lexicon: ${safeLines(message)}\n`);
-  if (hint) io.stderr(`lexicon: ${hint}\n`);
+  if (hint) io.stderr(`lexicon: ${safeLines(hint)}\n`);
   return 1;
+}
+
+/** The `nextStep` of a pack name that is neither a starter pack nor a community ref. */
+export const PACK_NOT_FOUND_NEXT_STEP =
+  'run lexicon pack list to see the starter packs; a community pack is <author>/<name> with --registry <index> (lexicon pack search finds one)';
+
+/**
+ * The next step an error carries itself: a `CliRefusal`'s (an unknown
+ * `--category` names the categories), or the pack list for an unknown pack.
+ */
+function ownNextStep(err: unknown): string | undefined {
+  if (err instanceof CliRefusal) return err.nextStep;
+  // By name, like isProjectTrustError, so it holds across a mocked core.
+  if (err instanceof Error && err.name === 'PackNotFoundError') return PACK_NOT_FOUND_NEXT_STEP;
+  return undefined;
 }
 
 /**

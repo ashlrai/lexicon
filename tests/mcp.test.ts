@@ -722,6 +722,32 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: a preview that failed (exit 1) still said `next: call again with
+    // apply: true`, and scope 'project' for windsurf answered `drop --project`,
+    // a CLI flag the tool does not take.
+    it('install_client: a failed preview carries nextStep, not next, and a project scope it lacks names the tool call', async () => {
+      const { client, close } = await connect();
+      try {
+        cli.runInstall.mockImplementationOnce(async (_c: string, _o: unknown, io: { stderr: (s: string) => void }) => {
+          io.stderr('lexicon: claude mcp add failed\n');
+          return 1;
+        });
+        const failed = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'claude' } }))) as Record<string, unknown>;
+        expect(failed).toMatchObject({ ok: false, stderr: 'lexicon: claude mcp add failed' });
+        expect(failed.next).toBeUndefined();
+        expect(failed.nextStep).toContain('do not call again with apply: true');
+
+        cli.runInstall.mockRejectedValueOnce(new Error('windsurf has no project-level MCP config; drop --project'));
+        const scoped = await client.callTool({ name: 'install_client', arguments: { client: 'windsurf', scope: 'project' } });
+        expect(scoped.isError).toBe(true);
+        expect(textOf(scoped)).toBe('windsurf has no project-level MCP config, so nothing was written; call install_client again without scope to use its user-level config.');
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'install_client');
+        expect(tool?.description).toContain('Check `ok`');
+      } finally {
+        await close();
+      }
+    });
+
     it('install_client rejects clients outside the enum', async () => {
       const { client, close } = await connect();
       try {
@@ -1020,7 +1046,14 @@ describe('lexicon MCP server', () => {
           for (const arguments_ of [{ apply: true }, { apply: true, sources: ['github'] }]) {
             const result = await client.callTool({ name: 'import_vocabulary', arguments: arguments_ });
             expect(result.isError).toBe(true);
+            // Catches: the error named every argument without saying which was
+            // missing or that a preview call comes first.
+            expect(textOf(result)).toContain('Preview first: call without apply');
           }
+          const noSources = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true } });
+          expect(textOf(noSources)).toContain('sources, previewToken, approvedCandidateIds are missing');
+          const noToken = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], approvedCandidateIds: [] } });
+          expect(textOf(noToken)).toContain('previewToken is missing, so nothing was read or written');
           expect(mocks.harvestImportSources).not.toHaveBeenCalled();
           expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
         } finally { await close(); }

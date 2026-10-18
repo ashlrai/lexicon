@@ -15,6 +15,7 @@ import {
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
 import { isRecord } from '../../util/json.js';
+import { errorMessage } from '../../util/errors.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
@@ -69,7 +70,9 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       description:
         "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. " +
         'Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. ' +
-        'Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone.',
+        'Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. ' +
+        'Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. ' +
+        "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: z.enum(INSTALL_CLIENT_VALUES).describe('Which client to configure.'),
         apply: z.boolean().optional().describe('false/omitted = preview only (default). true = write the config after the user confirmed.'),
@@ -83,21 +86,36 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const io = bufferIO();
         const cliDir = cliDirForInstall();
-        const code = await runInstall(
-          client,
-          { cwd: ctx.cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
-          io,
-          cliDir !== undefined ? { cliDir } : {},
-        );
+        let code: number;
+        try {
+          code = await runInstall(
+            client,
+            { cwd: ctx.cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
+            io,
+            cliDir !== undefined ? { cliDir } : {},
+          );
+        } catch (err) {
+          // The CLI's message says `drop --project`, a flag this tool does not take.
+          if (scope === 'project' && /has no project-level MCP config/.test(errorMessage(err))) {
+            throw new Error(`${client} has no project-level MCP config, so nothing was written; call install_client again without scope to use its user-level config.`);
+          }
+          throw err;
+        }
         const stderr = io.err().trim();
+        const ok = code === 0;
         return textResult({
           client,
           scope: scope ?? 'user',
           applied: apply === true,
-          ok: code === 0,
+          ok,
           output: io.out().trimEnd(),
           ...(stderr ? { stderr } : {}),
-          ...(apply === true ? {} : { next: 'Show this to the user; call again with apply: true once they confirm.' }),
+          // A failed preview is not one to confirm: `next` said to apply it anyway.
+          ...(!ok
+            ? { nextStep: `The ${apply === true ? 'install' : 'preview'} did not complete; output and stderr say which step failed. Tell the user what failed and do not call again with apply: true until it is fixed.` }
+            : apply === true
+              ? {}
+              : { next: 'Show this to the user; call again with apply: true once they confirm.' }),
         });
       }),
   );

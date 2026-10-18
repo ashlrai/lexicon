@@ -441,6 +441,33 @@ describe('review', () => {
   });
 });
 
+// Catches: `review --json` and `edit --json` were commander usage errors whose
+// nextStep was only their --help, which names no way to do the same without a terminal.
+describe('review and edit under --json', () => {
+  it('review --json refuses with the non-interactive commands and MCP tools, touching nothing', async () => {
+    const io = makeIO();
+    expect(await runReview({ globalPath, json: true }, io, scripted([]))).toBe(1);
+    const doc = JSON.parse(io.out) as { ok: boolean; error: string; nextStep: string };
+    expect(doc).toMatchObject({ ok: false, error: 'review is interactive and has no --json output' });
+    for (const name of ['lexicon list --json', 'lexicon remove <canonical>', 'lexicon add <canonical>', 'list_terms', 'remove_term', 'add_term']) {
+      expect(doc.nextStep).toContain(name);
+    }
+    expect(io.err).toContain('lexicon: read terms with lexicon list --json');
+    expect(io.err).not.toContain('\u2026');
+  });
+
+  it('edit --json refuses with add, remove and the MCP tools, and creates no file', async () => {
+    const io = makeIO();
+    let spawned = false;
+    expect(await runEdit({ globalPath, json: true }, io, async () => { spawned = true; return 0; }, { EDITOR: 'x' })).toBe(1);
+    expect(spawned).toBe(false);
+    const doc = JSON.parse(io.out) as { ok: boolean; error: string; nextStep: string };
+    expect(doc).toMatchObject({ ok: false, error: 'edit opens an editor and has no --json output' });
+    for (const name of ['lexicon add', 'lexicon remove', 'add_term', 'remove_term']) expect(doc.nextStep).toContain(name);
+    await expect(fs.access(globalPath)).rejects.toThrow();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // edit
 // ---------------------------------------------------------------------------

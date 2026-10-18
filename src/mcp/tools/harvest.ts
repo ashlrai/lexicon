@@ -5,6 +5,7 @@
 import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import {
+  SUGGEST_DEFAULT_LIMIT,
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
@@ -122,7 +123,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
         cwd: z.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: z.number().int().positive().optional().describe('Max suggestions to return.'),
+        limit: z.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`),
       },
     },
     async ({ cwd: cwdArg, limit }) =>

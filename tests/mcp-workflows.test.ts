@@ -760,6 +760,30 @@ describe('tool and resource descriptions agree with what the code does', () => {
     expect(recased.term.canonical).toBe('Openclaw');
     expect(description).toMatch(/case-only/);
   });
+
+  // Catches: suggest_terms' limit (default 20) and export_lexicon's limit and
+  // categories (omitted: everything) did not say what leaving them out does.
+  it('limit and categories descriptions state the default', async () => {
+    const { tools } = await listed();
+    const props = (name: string): Record<string, { description?: string }> =>
+      (tools.find((t) => t.name === name) as { inputSchema?: { properties?: Record<string, { description?: string }> } } | undefined)?.inputSchema?.properties ?? {};
+    expect(props('suggest_terms').limit?.description).toContain('(default 20)');
+    expect(props('export_lexicon').limit?.description).toContain('Omitted: every term.');
+    expect(props('export_lexicon').categories?.description).toContain('Omitted: every category.');
+  });
+
+  // Catches: the 60-character cap on heard and meant was in no schema
+  // description, and a whole phrase passed as heard got only the cap back.
+  it('learn_correction states the length cap and says to pass only the name when it is exceeded', async () => {
+    const { tools } = await listed();
+    const props = (tools.find((t) => t.name === 'learn_correction') as { inputSchema?: { properties?: Record<string, { description?: string }> } } | undefined)?.inputSchema?.properties ?? {};
+    expect(props.heard?.description).toContain('at most 60 characters');
+    expect(props.meant?.description).toContain('at most 60 characters');
+    const long = await call('learn_correction', { heard: 'so I was saying that we should deploy the thing to Hetsner tomorrow', meant: 'Hetzner' });
+    expect(long.isError).toBe(true);
+    expect(long.text).toContain('heard must be at most 60 characters; nothing was written. Pass only the misspelled name as heard');
+    await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
 });
 
 describe('list_packs with an untrusted project lexicon', () => {

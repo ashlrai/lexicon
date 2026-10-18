@@ -227,6 +227,12 @@ Options:
   --out <file>                write to a file instead of stdout
   --category <categories...>  only these categories
   --limit <n>                 cap the number of terms
+  --json                      print { ok: true, format, terms, bytes, path }
+                              after writing --out, or { ok: true, format, terms,
+                              bytes, content } with the export as a string
+                              without it; { ok: true, formats } with no format
+                              (plus projectTrust, skippedProject and note when
+                              an untrusted project lexicon was left out)
   -h, --help                  display help for command
 ```
 
@@ -569,6 +575,9 @@ Options:
                          file
   --global               review the global lexicon (the default)
   --category <category>  only this category
+  --json                 refused (exit 1): review asks about each term; prints {
+                         ok: false, error, nextStep } naming list --json, remove
+                         and add, and the MCP tools
   -h, --help             display help for command
 ```
 
@@ -582,6 +591,8 @@ afterwards
 
 Options:
   --project   open the project .lexicon.yaml instead of the global file
+  --json      refused (exit 1): edit opens an editor; prints { ok: false, error,
+              nextStep } naming add, remove and the MCP tools
   -h, --help  display help for command
 ```
 

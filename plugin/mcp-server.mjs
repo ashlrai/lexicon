@@ -60112,13 +60112,19 @@ function renderTable(rows, header) {
 }
 function fail(io, err, json2) {
   const message = errorMessage(err);
-  const hint = unreadableLexiconHint(message);
+  const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
   if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0));
   io.stderr(`lexicon: ${safeLines(message)}
 `);
-  if (hint) io.stderr(`lexicon: ${hint}
+  if (hint) io.stderr(`lexicon: ${safeLines(hint)}
 `);
   return 1;
+}
+var PACK_NOT_FOUND_NEXT_STEP = "run lexicon pack list to see the starter packs; a community pack is <author>/<name> with --registry <index> (lexicon pack search finds one)";
+function ownNextStep(err) {
+  if (err instanceof CliRefusal) return err.nextStep;
+  if (err instanceof Error && err.name === "PackNotFoundError") return PACK_NOT_FOUND_NEXT_STEP;
+  return void 0;
 }
 var DEFAULT_NEXT_STEP = "fix what error names, then run the command again (its --help lists the flags)";
 var PROJECT_TRUST_NEXT_STEP = "review the project lexicon and run lexicon trust, then run the command again; or write to the global lexicon instead";
@@ -60132,6 +60138,14 @@ function printJsonError(io, error62, nextStep) {
   io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
 `);
 }
+var CliRefusal = class extends Error {
+  constructor(message, nextStep) {
+    super(message);
+    this.nextStep = nextStep;
+    this.name = "CliRefusal";
+  }
+  nextStep;
+};
 function unreadableLexiconHint(message) {
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : void 0;
@@ -60574,8 +60588,8 @@ var registerTermTools = (server, ctx) => {
       description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
-        categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include these categories."),
-        limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported.")
+        categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
+        limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.")
       }
     },
     async ({ format, categories, limit }) => guarded(async () => {
@@ -60606,12 +60620,18 @@ var registerTermTools = (server, ctx) => {
       title: "Learn from a spelling correction",
       description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: external_exports.string().min(1).describe('The wrong form that was written, e.g. "Ashler".'),
-        meant: external_exports.string().min(1).describe('The spelling the user wants, e.g. "Ashlr.AI".'),
+        heard: external_exports.string().min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
+        meant: external_exports.string().min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default; or wherever the term already lives) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
     async ({ heard, meant, scope }) => guarded(async () => {
+      const tooLong = [...heard.trim().replace(/\s+/g, " ").length > MAX_CORRECTION_LENGTH ? ["heard"] : [], ...meant.trim().replace(/\s+/g, " ").length > MAX_CORRECTION_LENGTH ? ["meant"] : []];
+      if (tooLong.length > 0) {
+        throw new Error(
+          `${tooLong.join(" and ")} must be at most ${MAX_CORRECTION_LENGTH} characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.`
+        );
+      }
       const writeOpts = await mcpWriteOpts(ctx);
       const learned = await learnCorrection({ heard, meant }, { cwd: ctx.cwd, ...scope !== void 0 ? { scope } : {}, ...writeOpts });
       const untrusted = writeOpts.leaveUntrusted === true && learned.file.scope === "project";
@@ -60748,7 +60768,7 @@ var registerHarvestTools = (server, ctx) => {
       description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
       inputSchema: {
         cwd: external_exports.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: external_exports.number().int().positive().optional().describe("Max suggestions to return.")
+        limit: external_exports.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`)
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
@@ -64036,7 +64056,7 @@ var registerSetupTools = (server, ctx) => {
     "install_client",
     {
       title: "Register the lexicon MCP server in an agent client",
-      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone.",
+      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: external_exports.enum(INSTALL_CLIENT_VALUES).describe("Which client to configure."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only (default). true = write the config after the user confirmed."),
@@ -64046,21 +64066,31 @@ var registerSetupTools = (server, ctx) => {
     async ({ client, apply, scope }) => guarded(async () => {
       const io = bufferIO();
       const cliDir = cliDirForInstall();
-      const code = await runInstall(
-        client,
-        { cwd: ctx.cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
-        io,
-        cliDir !== void 0 ? { cliDir } : {}
-      );
+      let code;
+      try {
+        code = await runInstall(
+          client,
+          { cwd: ctx.cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
+          io,
+          cliDir !== void 0 ? { cliDir } : {}
+        );
+      } catch (err) {
+        if (scope === "project" && /has no project-level MCP config/.test(errorMessage(err))) {
+          throw new Error(`${client} has no project-level MCP config, so nothing was written; call install_client again without scope to use its user-level config.`);
+        }
+        throw err;
+      }
       const stderr = io.err().trim();
+      const ok = code === 0;
       return textResult({
         client,
         scope: scope ?? "user",
         applied: apply === true,
-        ok: code === 0,
+        ok,
         output: io.out().trimEnd(),
         ...stderr ? { stderr } : {},
-        ...apply === true ? {} : { next: "Show this to the user; call again with apply: true once they confirm." }
+        // A failed preview is not one to confirm: `next` said to apply it anyway.
+        ...!ok ? { nextStep: `The ${apply === true ? "install" : "preview"} did not complete; output and stderr say which step failed. Tell the user what failed and do not call again with apply: true until it is fixed.` } : apply === true ? {} : { next: "Show this to the user; call again with apply: true once they confirm." }
       });
     })
   );
@@ -64485,7 +64515,14 @@ var registerPackTools = (server, ctx) => {
       }
       if (apply === true) {
         if (sources === void 0 || previewToken === void 0 || approvedCandidateIds === void 0) {
-          throw new Error("apply requires explicit sources, previewToken and approvedCandidateIds from a user-approved preview");
+          const missing = [
+            ...sources === void 0 ? ["sources"] : [],
+            ...previewToken === void 0 ? ["previewToken"] : [],
+            ...approvedCandidateIds === void 0 ? ["approvedCandidateIds"] : []
+          ];
+          throw new Error(
+            `apply: true needs sources, previewToken and approvedCandidateIds from a user-approved preview; ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} missing, so nothing was read or written. Preview first: call without apply, with the sources the user agreed to read (and the same scope), show the candidates, then call again with apply: true, those sources, the returned previewToken and only the ids the user approved.`
+          );
         }
         const saved = imports.get(previewToken);
         if (!saved || saved.destination !== destination(scope) || JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify(saved.sources)) {
