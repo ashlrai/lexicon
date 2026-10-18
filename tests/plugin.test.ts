@@ -237,8 +237,12 @@ function callBundleTool(bundle: string, tool: string, env: NodeJS.ProcessEnv, cw
         const msg = JSON.parse(line) as { id?: number; result?: { content?: Array<{ text?: string }> } };
         if (msg.id === 2) {
           clearTimeout(timer);
+          // Resolve once the child has exited: on Windows a live process
+          // keeps its cwd (the test's temp home) busy, so afterEach's rmSync
+          // failed with EBUSY when it ran first.
+          const text = msg.result?.content?.[0]?.text ?? '';
+          child.once('exit', () => resolve(text));
           child.kill();
-          resolve(msg.result?.content?.[0]?.text ?? '');
           return;
         }
       }
