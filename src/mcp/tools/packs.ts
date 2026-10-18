@@ -317,7 +317,11 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ path, content, format, scope, dryRun }) =>
       guarded(async () => {
-        if (path === undefined && content === undefined) throw new Error('pass path or content');
+        if (path === undefined && content === undefined) {
+          throw new Error(
+            'pass path or content: path is a dictionary file in this workspace, content the dictionary text itself (format defaults to auto); nothing was imported',
+          );
+        }
         // A model picks `path`, and the report echoes every line that parses
         // as a term (a dry run too), so an unchecked path read any file it
         // named into the conversation. With `content` the path is never read.

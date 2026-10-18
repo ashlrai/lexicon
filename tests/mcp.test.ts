@@ -1018,6 +1018,8 @@ describe('lexicon MCP server', () => {
         const neither = await client.callTool({ name: 'import_dictionary', arguments: {} });
         expect(neither.isError).toBe(true);
         expect(textOf(neither)).toMatch(/pass path or content/);
+        // Catches: the refusal named the two arguments but not what either one is.
+        expect(textOf(neither)).toContain('path is a dictionary file in this workspace, content the dictionary text itself');
         cli.runImport.mockImplementationOnce(async (_f: string, _o: unknown, io: IO) => {
           io.stderr('lexicon: unknown import format "nope"\n');
           return 1;

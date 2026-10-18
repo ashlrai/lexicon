@@ -65128,7 +65128,11 @@ var registerPackTools = (server, ctx) => {
       }
     },
     async ({ path: path27, content, format, scope, dryRun }) => guarded(async () => {
-      if (path27 === void 0 && content === void 0) throw new Error("pass path or content");
+      if (path27 === void 0 && content === void 0) {
+        throw new Error(
+          "pass path or content: path is a dictionary file in this workspace, content the dictionary text itself (format defaults to auto); nothing was imported"
+        );
+      }
       const file2 = content === void 0 && path27 !== void 0 ? containedPath(ctx, path27, (f) => `import ${shellWord(f)}`) : path27 ?? "-";
       const io = bufferIO();
       const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
