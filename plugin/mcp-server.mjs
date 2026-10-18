@@ -62538,11 +62538,13 @@ async function runDoctorReport(opts, deps = {}) {
   }
   if (opts.audience === "mcp") for (const check2 of checks) check2.message = mcpRunHints(check2.message);
   const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
+  const firstFail = checks.find((c) => c.level === "fail");
   return {
-    ok: !checks.some((c) => c.level === "fail"),
+    ok: firstFail === void 0,
     ready: verdict.ready,
     summary: verdict.summary,
     nextStep: verdict.nextStep,
+    ...firstFail ? { error: firstFail.message } : {},
     checks,
     paths: {
       global: paths.global,

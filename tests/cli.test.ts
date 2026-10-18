@@ -1169,6 +1169,7 @@ describe('doctor: other MCP clients', () => {
     const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: home }, exec: () => 'no servers', home });
     expect(report.ok).toBe(true);
     expect(report.ready).toBe(true);
+    expect(report).not.toHaveProperty('error');
     expect(report.checks).toContainEqual({ level: 'ok', message: `lexicon MCP server configuration found for cursor: ${path.join(home, '.cursor', 'mcp.json')}` });
     expect(report.checks.some((c) => c.level === 'warn' && c.message.startsWith('lexicon MCP server not registered with claude (using cursor;'))).toBe(true);
   });
@@ -2249,6 +2250,24 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
 
       const ok = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--global', '--json', '--cwd', repo], globalPath);
       expect(ok.status).toBe(0);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: `doctor --json` with a failing check was { ok: false, ... } with
+  // no `error`, unlike every other failing --json document.
+  it('doctor --json with a failing check names it as error, next to nextStep', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-doctor-')));
+    try {
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      const out = lexicon(['doctor', '--json', '--cwd', tmp], globalPath);
+      expect(out.status).toBe(1);
+      const report = JSON.parse(out.stdout) as { ok: boolean; error?: string; nextStep?: string; checks: Array<{ level: string; message: string }> };
+      expect(report.ok).toBe(false);
+      expect(report.error).toBe(report.checks.find((c) => c.level === 'fail')?.message);
+      expect(report.error).toContain('global lexicon missing');
+      expect(typeof report.nextStep).toBe('string');
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

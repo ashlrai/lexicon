@@ -179,7 +179,7 @@ program
 program
   .command('doctor')
   .description('check lexicon files, term conflicts and the Claude Code integration')
-  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... }, as the lexicon_doctor MCP tool returns it)')
+  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... } plus error, the first failing check, when ok is false; as the lexicon_doctor MCP tool returns it)')
   .action(async (opts: DoctorCliOptions) => done(await runDoctor(withGlobals(opts), io)));
 
 program
