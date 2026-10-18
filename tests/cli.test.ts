@@ -156,15 +156,25 @@ function runDoctor(opts: Parameters<typeof runDoctorRaw>[0], io: Parameters<type
   return runDoctorRaw({ cwd: deps.home ?? doctorHome, ...opts }, io, doctorDeps(deps));
 }
 
+/** Temp dirs a test made with tempDir; afterEach removes them, so none outlives its test. */
+const tempDirs: string[] = [];
+
+/** fs.mkdtemp under os.tmpdir(), removed after the test that made it. */
+async function tempDir(prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 beforeEach(async () => {
-  doctorHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-report-fixture-'));
+  doctorHome = await tempDir('lexicon-report-fixture-');
   state.projectPath = undefined;
   vi.clearAllMocks();
 });
 
 afterEach(async () => {
   vi.unstubAllEnvs();
-  await fs.rm(doctorHome, { recursive: true, force: true });
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })));
 });
 
 describe('normalize', () => {
@@ -853,7 +863,7 @@ describe('export', () => {
     expect(io.out).toBe('export:wispr\n');
     expect(core.exportLexicon).toHaveBeenCalledWith(expect.anything(), 'wispr', { categories: ['brand'], limit: 5 });
 
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+    const dir = await tempDir('lexicon-cli-');
     const io2 = makeIO();
     await runExport('json', { out: path.join(dir, 'sub', 'lex.json') }, io2);
     expect(await fs.readFile(path.join(dir, 'sub', 'lex.json'), 'utf8')).toBe('export:json\n');
@@ -861,7 +871,7 @@ describe('export', () => {
   });
 
   it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+    const dir = await tempDir('lexicon-cli-');
     try {
       const all = makeIO();
       await runExport('text', { out: path.join(dir, 'all.txt') }, all);
@@ -897,7 +907,7 @@ describe('export', () => {
   // Catches: `lexicon export` had no --json, so `export claude-md --json` was a usage error.
   describe('--json', () => {
     it('with --out prints { ok, format, terms, bytes, path } and writes the file', async () => {
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-'));
+      const dir = await tempDir('lexicon-cli-');
       try {
         const io = makeIO();
         const out = path.join(dir, 'lex.md');
@@ -1065,7 +1075,7 @@ describe('install-claude', () => {
   });
 
   it('--apply merges the hook into settings.json (creating it) and is idempotent', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-settings-'));
+    const dir = await tempDir('lexicon-settings-');
     const settingsPath = path.join(dir, '.claude', 'settings.json');
     const exec = vi.fn(() => 'Added stdio MCP server lexicon');
     const io = makeIO();
@@ -1088,7 +1098,7 @@ describe('install-claude', () => {
   // install claude` by a plugin user) registered a second server and a second
   // pair of hooks, so every prompt got two correction notes.
   it('leaves a user-scope install alone when the lexicon plugin already provides it', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-plugin-installed-'));
+    const dir = await tempDir('lexicon-plugin-installed-');
     try {
       const settingsPath = path.join(dir, '.claude', 'settings.json');
       await fs.mkdir(path.join(dir, '.claude', 'plugins'), { recursive: true });
@@ -1129,7 +1139,7 @@ describe('install-claude', () => {
 describe('doctor', () => {
   it('passes with a healthy setup and registered MCP server', async () => {
     const io = makeIO();
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    const dir = await tempDir('lexicon-bin-');
     await fs.writeFile(path.join(dir, 'claude'), '');
     await fs.writeFile(path.join(dir, 'pbpaste'), '');
     await fs.writeFile(path.join(dir, 'pbcopy'), '');
@@ -1157,7 +1167,7 @@ describe('doctor', () => {
       ],
     };
     vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: conflicted, exists: true });
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    const dir = await tempDir('lexicon-bin-');
     await fs.writeFile(path.join(dir, 'claude'), '');
     const io = makeIO();
     const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: dir }, exec: () => 'no servers', home: dir });
@@ -1222,7 +1232,7 @@ describe('doctor: other MCP clients', () => {
   });
 
   it('passes for a Cursor-only setup and does not demand Claude registration', async () => {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cursor-'));
+    const home = await tempDir('lexicon-cursor-');
     await fs.writeFile(path.join(home, 'claude'), '');
     await fs.mkdir(path.join(home, '.cursor'));
     await fs.writeFile(path.join(home, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'lexicon-mcp' } } }));
@@ -1235,7 +1245,7 @@ describe('doctor: other MCP clients', () => {
   });
 
   it('warns about a client config that is not valid JSON instead of skipping it silently', async () => {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-badjson-'));
+    const home = await tempDir('lexicon-badjson-');
     await fs.mkdir(path.join(home, '.cursor'));
     const file = path.join(home, '.cursor', 'mcp.json');
     await fs.writeFile(file, '{ // comment\n "mcpServers": {} }');
@@ -1244,7 +1254,7 @@ describe('doctor: other MCP clients', () => {
   });
 
   it('still fails when no client has lexicon registered', async () => {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-none-'));
+    const home = await tempDir('lexicon-none-');
     await fs.writeFile(path.join(home, 'claude'), '');
     await fs.mkdir(path.join(home, '.cursor'));
     await fs.writeFile(path.join(home, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { other: {} } }));
@@ -1378,7 +1388,7 @@ describe('runDoctorReport', () => {
   });
 
   it('returns the checks as data with paths and versions', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    const dir = await tempDir('lexicon-bin-');
     await fs.writeFile(path.join(dir, 'claude'), '');
     const settingsPath = path.join(dir, 'settings.json');
     const installedPluginsPath = path.join(dir, 'installed_plugins.json');
@@ -1409,7 +1419,7 @@ describe('runDoctorReport', () => {
    */
   describe('ready, summary and nextStep', () => {
     it('is ready with a one-line "nothing to fix" step when terms exist and an agent is wired up', async () => {
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+      const dir = await tempDir('lexicon-bin-');
       await fs.writeFile(path.join(dir, 'claude'), '');
       const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
       expect(report.ready).toBe(true);
@@ -1422,7 +1432,7 @@ describe('runDoctorReport', () => {
     // user.name, no --person), doctor said "Run: lexicon setup" again, a loop.
     it('names lexicon add, not setup again, when an agent is wired up but there are no terms', async () => {
       vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+      const dir = await tempDir('lexicon-bin-');
       await fs.writeFile(path.join(dir, 'claude'), '');
       const deps = { platform: 'linux' as const, env: { PATH: dir }, exec: () => 'lexicon: connected' };
       const report = await runDoctorReport({}, deps);
@@ -1436,7 +1446,7 @@ describe('runDoctorReport', () => {
 
     it('is not ready, and names `lexicon setup`, when the lexicon has no terms', async () => {
       vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: true });
-      const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-nohooks-'));
+      const empty = await tempDir('lexicon-nohooks-');
       const report = await runDoctorReport({}, {
         platform: 'linux',
         env: { PATH: '/nonexistent' },
@@ -1454,7 +1464,7 @@ describe('runDoctorReport', () => {
     it('is not ready, and names the install command, when terms exist but nothing is wired up', async () => {
       // Point the settings probes at files that do not exist, so the machine
       // running the suite cannot make this look wired up.
-      const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-nohooks-'));
+      const empty = await tempDir('lexicon-nohooks-');
       const report = await runDoctorReport({}, {
         platform: 'linux',
         env: { PATH: '/nonexistent' },
@@ -1544,7 +1554,7 @@ describe('runDoctorReport', () => {
      */
     describe("audience 'mcp' (the lexicon_doctor tool)", () => {
       const noClients = async (): Promise<DoctorDeps> => {
-        const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-nohooks-'));
+        const empty = await tempDir('lexicon-nohooks-');
         return {
           platform: 'linux',
           env: { PATH: '/nonexistent' },
@@ -1575,7 +1585,7 @@ describe('runDoctorReport', () => {
       it('names trust_project and the npx trust command for an untrusted project file', async () => {
         state.projectPath = '/tmp/proj/.lexicon.yaml';
         vi.mocked(core.isTrusted).mockResolvedValue('untrusted');
-        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+        const dir = await tempDir('lexicon-bin-');
         await fs.writeFile(path.join(dir, 'claude'), '');
         const report = await runDoctorReport({ audience: 'mcp' }, { platform: 'linux', env: { PATH: dir }, exec: () => 'lexicon: connected' });
         expect(report.nextStep).toContain('trust_project with action "trust"');
@@ -1594,7 +1604,7 @@ describe('runDoctorReport', () => {
       });
 
       it('rewrites the run hint of the first failure and of an unreadable file', async () => {
-        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+        const dir = await tempDir('lexicon-bin-');
         await fs.writeFile(path.join(dir, 'claude'), '');
         const deps = { ...(await noClients()), env: { PATH: dir } };
         const failing = await runDoctorReport({ audience: 'mcp' }, deps);
@@ -1645,7 +1655,7 @@ describe('runDoctorReport', () => {
   });
 
   it('runDoctor prints exactly the rendering of runDoctorReport', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    const dir = await tempDir('lexicon-bin-');
     await fs.writeFile(path.join(dir, 'claude'), '');
     const deps = { platform: 'linux' as const, env: { PATH: dir }, exec: () => 'no servers', settingsPath: path.join(dir, 's.json'), installedPluginsPath: path.join(dir, 'p.json'), home: dir };
     const report = await runDoctorReport({}, deps);
@@ -1679,7 +1689,7 @@ describe('doctor: Claude Code hooks and plugin', () => {
   });
 
   async function scratch(): Promise<{ dir: string; bin: string; settingsPath: string; installedPluginsPath: string }> {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-doctor-'));
+    const dir = await tempDir('lexicon-doctor-');
     const bin = path.join(dir, 'bin');
     await fs.mkdir(bin);
     await fs.writeFile(path.join(bin, 'claude'), '');
@@ -1759,7 +1769,7 @@ describe('doctor: Claude Code hooks and plugin', () => {
 
 describe('resolveCliEntry', () => {
   async function fakePackage(build = true): Promise<{ root: string; cli: string }> {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-pkg-'));
+    const root = await tempDir('lexicon-pkg-');
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: '@ashlr/lexicon', version: '9.9.9' }));
     await fs.mkdir(path.join(root, 'plugin'), { recursive: true });
     await fs.mkdir(path.join(root, 'dist', 'cli'), { recursive: true });
@@ -1798,7 +1808,7 @@ describe('resolveCliEntry', () => {
     // realpath: os.tmpdir() hands back the 8.3 short form (RUNNER~1) on a
     // Windows runner, while resolveCliEntry realpaths what it finds, so the
     // two spellings of the same file would not compare equal.
-    const elsewhere = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-noscope-')));
+    const elsewhere = await fs.realpath(await tempDir('lexicon-noscope-'));
     // Creating a symlink on Windows needs Developer Mode or
     // SeCreateSymbolicLinkPrivilege. GitHub's windows-latest image has it, but
     // a developer box often does not, and a hard skip would also hide the
@@ -1835,7 +1845,7 @@ describe('resolveCliEntry', () => {
 
 describe('doctor: login service', () => {
   async function home(): Promise<string> {
-    return fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-doctor-home-'));
+    return tempDir('lexicon-doctor-home-');
   }
   const ok = () => '';
   const fail = (): string => {
@@ -1872,7 +1882,7 @@ describe('doctor: login service', () => {
       message: `login service ai.ashlr.lexicon.serve points at a missing file: ${missing} (run: lexicon serve --uninstall && lexicon serve --install)`,
     });
     // Rendered with the cross and counted as a failure by the report.
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bin-'));
+    const dir = await tempDir('lexicon-bin-');
     await fs.writeFile(path.join(dir, 'claude'), '');
     const report = await runDoctorReport({}, {
       platform: 'darwin',
@@ -1993,7 +2003,7 @@ describe('resolveIntegrationPaths and the bundled plugin files', () => {
   });
 
   it('prefers plugin/mcp-server.mjs and plugin/hook.mjs when both exist, and install-claude uses them for both hooks', async () => {
-    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-root-')));
+    const root = await fs.realpath(await tempDir('lexicon-root-'));
     await fs.mkdir(path.join(root, 'plugin'));
     await fs.writeFile(path.join(root, 'plugin', 'mcp-server.mjs'), '');
     // Only one bundle present: not enough, must fall back.
@@ -2054,7 +2064,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   }
 
   it('exits 1 with a message that names lexicon trust, leaves the file untouched, then succeeds once trusted', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-e2e-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-e2e-'));
     try {
       const repo = path.join(tmp, 'repo');
       const projectPath = path.join(repo, '.lexicon.yaml');
@@ -2084,7 +2094,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // created), though doctor's fix for a missing lexicon is `lexicon init` and
   // every other command that writes a lexicon file takes --json.
   it('init --json prints { ok, scope, path, created } and trust for --project', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-init-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-init-'));
     try {
       const globalPath = path.join(tmp, 'g', 'lexicon.yaml');
       const repo = path.join(tmp, 'repo');
@@ -2107,7 +2117,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // unknown option, exit 1), and its `--scope` default of `user` beat
   // `--project`, so it did not behave like `install claude`.
   it('install-claude takes --json and --project exactly as install claude does', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-alias-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-alias-'));
     try {
       const globalPath = path.join(tmp, 'lexicon.yaml');
       for (const flags of [[], ['--project'], ['--scope', 'bogus']]) {
@@ -2127,7 +2137,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // argument) never printed JSON, so `lexicon add --json --bogus` left a
   // script parsing an empty stdout.
   it('a commander usage error under --json prints { ok: false, error, nextStep } with commander\'s exit code', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-usage-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-usage-'));
     try {
       const globalPath = path.join(tmp, 'lexicon.yaml');
       const cases: [string[], string, string][] = [
@@ -2164,7 +2174,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // usage error (`--seconds abc`) printed { ok, error, nextStep } without it;
   // and `voice --status --toggle` answered the status and dropped the toggle.
   it('voice: a usage error under --json carries code, and two modes are refused with exit 1', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-voice-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-voice-'));
     try {
       const globalPath = path.join(tmp, 'lexicon.yaml');
       for (const [args, error] of [
@@ -2201,7 +2211,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // Catches: `voice --status --seconds 5` and `voice --list-devices --model x`
   // answered the status or device list and dropped the recording flag silently.
   it('voice: --status and --list-devices refuse a recording-only flag, naming it', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-voice-flags-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-voice-flags-'));
     try {
       const globalPath = path.join(tmp, 'lexicon.yaml');
       for (const [flags, error, nextStep] of [
@@ -2229,7 +2239,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // answered ok: true for the global lexicon alone and `doctor` said no project
   // lexicon was "found from" the typo, as if the repository had none.
   it('refuses a --cwd that is not an existing directory, with ok: false, error and nextStep under --json', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-cwd-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-cwd-'));
     try {
       const globalPath = path.join(tmp, 'lexicon.yaml');
       await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
@@ -2267,7 +2277,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.
   it('a failure under --full alone (list, harvest) prints { ok: false, error } on stdout', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-full-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-full-'));
     try {
       const globalPath = path.join(tmp, 'lexicon.yaml');
       const usage = lexicon(['list', '--full', '--bogus', '--cwd', tmp], globalPath);
@@ -2300,7 +2310,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // whose copy lacked the term or the alias stopped at the bare error, while
   // `remove` without --alias names the other file and the flag to pass.
   it('remove --alias with the wrong scope names the file whose copy holds the alias and the flag', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-alias-scope-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-alias-scope-'));
     try {
       const repo = path.join(tmp, 'repo');
       const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
@@ -2334,7 +2344,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   // Catches: `doctor --json` with a failing check was { ok: false, ... } with
   // no `error`, unlike every other failing --json document.
   it('doctor --json with a failing check names it as error, next to nextStep', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-doctor-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-doctor-'));
     try {
       const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
       const out = lexicon(['doctor', '--json', '--cwd', tmp], globalPath);
@@ -2351,7 +2361,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
 
   // Catches: a --json command whose handler threw (index.ts's catch) printed only the stderr line, so stdout was empty.
   it('a --json command that throws prints { ok: false, error, nextStep } on stdout with exit 1', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-jsonerr-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-jsonerr-'));
     try {
       const repo = path.join(tmp, 'repo');
       const projectPath = path.join(repo, '.lexicon.yaml');
@@ -2399,7 +2409,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
   }, 30_000);
 
   it('trust and untrust accept a project directory and act on the .lexicon.yaml inside it', async () => {
-    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-cli-dir-')));
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-dir-'));
     try {
       const repo = path.join(tmp, 'repo');
       const projectPath = path.join(repo, '.lexicon.yaml');
