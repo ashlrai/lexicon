@@ -502,6 +502,35 @@ describe('POST /learn and POST /add', () => {
     expect(((await check.json()) as NormalizeResult).replacements[0]?.reason).toBe('alias');
   });
 
+  // Catches: POST /learn of a spelling the term already held answered only
+  // created: false and aliasAdded: false, with no word that nothing was
+  // written, while POST /add and MCP learn_correction say so.
+  it('learn of a spelling the term already has says nothing was added', async () => {
+    const first = await api('POST', '/learn', { heard: 'Ashlurr', meant: 'Ashlr.AI' });
+    const firstBody = (await first.json()) as Record<string, unknown>;
+    expect(firstBody).toMatchObject({ aliasAdded: true });
+    expect(firstBody).not.toHaveProperty('unchanged');
+    expect(firstBody).not.toHaveProperty('note');
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const again = await api('POST', '/learn', { heard: 'Ashlurr', meant: 'Ashlr.AI' });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({
+      created: false,
+      aliasAdded: false,
+      unchanged: true,
+      note: 'Nothing was added: "Ashlurr" was already an alias of "Ashlr.AI".',
+    });
+    // The canonical itself in another case: also nothing to write.
+    const casing = await api('POST', '/learn', { heard: 'ashlr.ai', meant: 'Ashlr.AI' });
+    expect(await casing.json()).toMatchObject({
+      created: false,
+      aliasAdded: false,
+      unchanged: true,
+      note: 'Nothing was added: "Ashlr.AI" is already the canonical spelling; "ashlr.ai" is corrected to it.',
+    });
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);

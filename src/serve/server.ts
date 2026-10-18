@@ -157,7 +157,13 @@ export interface LearnResponse {
   path: string;
   /** Another term that also claims `heard` (LearnResult.conflict). */
   conflict?: LearnConflict;
-  /** With `conflict` only: `conflictNote([conflict])`, naming the scoped `lexicon remove --alias` command, as `learn --json` gives it. */
+  /** `heard` was already an alias (or a casing of the canonical) of the term, so nothing was written. Only then. */
+  unchanged?: true;
+  /**
+   * With `unchanged`: `learnUnchangedNote`, followed by the conflict note when there is a
+   * `conflict`. With `conflict` alone: `conflictNote([conflict])`, naming the scoped
+   * `lexicon remove --alias` command, as `learn --json` gives it.
+   */
   note?: string;
   /** The untrusted project lexicon that also claims `heard`, path only (LearnResult.untrustedProject). */
   untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
@@ -357,6 +363,19 @@ const BODY_SHAPES = {
   '/packs/:name': 'POST /packs/:name takes { scope?, cwd? } or an empty body',
 } as const;
 type BodyRoute = keyof typeof BODY_SHAPES;
+
+/**
+ * The `note` of a POST /learn that wrote nothing: the "Nothing was added:"
+ * lead of POST /add (`unchangedTermNote`) with the reason MCP
+ * learn_correction gives, `heard` already an alias of the term or already
+ * its canonical in another case.
+ */
+function learnUnchangedNote(heard: string, canonical: string): string {
+  const said = heard.trim().replace(/\s+/g, ' ');
+  return said.toLowerCase() === canonical.toLowerCase()
+    ? `Nothing was added: ${JSON.stringify(canonical)} is already the canonical spelling; ${JSON.stringify(said)} is corrected to it.`
+    : `Nothing was added: ${JSON.stringify(said)} was already an alias of ${JSON.stringify(canonical)}.`;
+}
 
 /** Seconds a 503 asks the client to wait (its `Retry-After`) before sending the same request again. */
 const BUSY_RETRY_AFTER_S = 1;
@@ -881,12 +900,22 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
     );
     invalidateWritten([result.file]);
+    const unchanged = !result.created && !result.aliasAdded;
+    const notes = [
+      ...(unchanged ? [learnUnchangedNote(body.heard, result.term.canonical)] : []),
+      ...(result.conflict ? [conflictNote([result.conflict])] : []),
+    ];
     return {
       term: result.term,
       created: result.created,
       aliasAdded: result.aliasAdded,
       path: result.file.path,
-      ...(result.conflict ? { conflict: result.conflict, note: conflictNote([result.conflict]) } : {}),
+      // Nothing was written (heard was already an alias, or the canonical in
+      // another case): say so, as POST /add and MCP learn_correction do,
+      // instead of two false flags that read like a failure or a merge.
+      ...(unchanged ? { unchanged: true as const } : {}),
+      ...(unchanged || result.conflict ? { note: notes.join(' ') } : {}),
+      ...(result.conflict ? { conflict: result.conflict } : {}),
       ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
     };
   }
