@@ -144,3 +144,17 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     expect(result.stderr).toContain('did not answer --version');
   });
 });
+
+// Catches: docs said the installer "then runs lexicon setup", which it does
+// not without a terminal, under sudo or with LEXICON_NO_SETUP=1.
+describe('install docs describe when the script runs setup', () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  it.each(['docs/FAQ.md', 'README.md', 'docs/QUICKSTART.md', 'docs/AGENTS.md', 'web/lib/site.ts'])('%s names the cases it skips setup', (file) => {
+    const text = readFileSync(path.join(repo, file), 'utf8');
+    expect(text).not.toMatch(/CLI and then runs `lexicon setup`/);
+    expect(text).not.toMatch(/CLI, then runs\s+`lexicon setup`\./);
+    expect(text).toMatch(/terminal/);
+    expect(text).toMatch(/`sudo`/);
+    expect(text).toContain('LEXICON_NO_SETUP=1');
+  });
+});

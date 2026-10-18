@@ -34,7 +34,10 @@ curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 ```
 
 Checks for Node 20+, installs the `@ashlr/lexicon` CLI, then runs
-`lexicon setup`. On a machine where you should not install globally:
+`lexicon setup` if it has a terminal. Run by an agent with no terminal, under
+`sudo` or with `LEXICON_NO_SETUP=1`, it only installs and prints
+`next: run  lexicon setup`; run `lexicon setup --yes` (or the `setup_lexicon`
+tool) after. On a machine where you should not install globally:
 
 ```bash
 npx @ashlr/lexicon@latest setup

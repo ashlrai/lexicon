@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- docs/FAQ.md, docs/AGENTS.md, docs/QUICKSTART.md, the README and the site say the `curl | sh` installer starts `lexicon setup` when it runs in a terminal, and that without one (CI, a Dockerfile), under `sudo` or with `LEXICON_NO_SETUP=1` it installs only and prints the `lexicon setup` next step. They said it then runs `lexicon setup`, which an agent running the one-liner never sees happen.
 - LexiconBar's "No lexicon file yet" alert (menu **Open lexicon file** before one exists) names `lexicon init`, or `lexicon add <term>` to create it with a first term. It offered `lexicon harvest`, which only prints candidates and creates nothing without `--add`. The Local API status for a port another process holds no longer uses an em-dash.
 - The `curl | sh` installer run through `sudo` (its own fallback for an npm permissions error) installs and then skips `lexicon setup`, printing `skipping setup under sudo: it would configure root, not <user>; as <user>, without sudo, run: lexicon setup`. It ran setup as root, which wrote root's lexicon and agent configs instead of the user's.
 - The Homebrew formula's recommended voice dependency is `whisper-cpp`, the Homebrew formula name that `lexicon voice` and `lexicon doctor` tell you to `brew install`. It said `whisper.cpp`, which no formula is called. A test holds the formula's `depends_on` names to that install hint.

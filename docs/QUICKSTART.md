@@ -30,7 +30,7 @@ If you would rather have it installed properly, which starts faster and stops th
 npm i -g @ashlr/lexicon && lexicon setup
 ```
 
-Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`), or `curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, which checks for Node 20+, installs globally and starts `lexicon setup` for you.
+Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`), or `curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, which checks for Node 20+, installs globally and starts `lexicon setup` for you when it runs in a terminal (not under `sudo`, in CI or with `LEXICON_NO_SETUP=1`: then run `lexicon setup` yourself).
 
 ## 2. `lexicon setup`
 
