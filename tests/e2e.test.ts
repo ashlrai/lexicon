@@ -153,6 +153,9 @@ async function freshHome(label: string): Promise<TestHome> {
   delete env.LEXICON_TRUST_ALL;
   delete env.LEXICON_CWD;
   delete env.NO_COLOR;
+  // Client directory overrides take precedence over --home in install commands.
+  delete env.CODEX_HOME;
+  delete env.GEMINI_CLI_HOME;
   return { home, globalPath, repo, env };
 }
 
@@ -888,6 +891,36 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doct
 // install
 // ---------------------------------------------------------------------------
 
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: install client config isolation', () => {
+  it('isolates inherited client configuration overrides from installation writes', async () => {
+    const ambient = await freshHome('ambient-client-configs');
+    const codexDir = path.join(ambient.home, '.codex');
+    const geminiDir = path.join(ambient.home, '.gemini');
+    await fs.mkdir(codexDir);
+    await fs.mkdir(geminiDir);
+    const codexFile = path.join(codexDir, 'config.toml');
+    const geminiFile = path.join(geminiDir, 'settings.json');
+    await fs.writeFile(codexFile, '# ambient config\n');
+    await fs.writeFile(geminiFile, '{"ambient":true}\n');
+    vi.stubEnv('CODEX_HOME', codexDir);
+    vi.stubEnv('GEMINI_CLI_HOME', ambient.home);
+    try {
+      const h = await freshHome('install-client-configs');
+      for (const client of ['codex', 'gemini']) {
+        const result = await runCli(['install', client, '--home', h.home, '--apply'], { env: h.env });
+        expect(result.code, result.stderr).toBe(0);
+      }
+      expect(await fs.readFile(codexFile, 'utf8')).toBe('# ambient config\n');
+      expect(await fs.readFile(geminiFile, 'utf8')).toBe('{"ambient":true}\n');
+      expect(await fs.readFile(path.join(h.home, '.codex', 'config.toml'), 'utf8')).toContain('[mcp_servers.lexicon]');
+      expect(await fs.readFile(path.join(h.home, '.gemini', 'settings.json'), 'utf8')).toContain('lexicon');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+// Not concurrent: the test above stubs process.env, which concurrent tests would share.
 describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: install', () => {
   it('install codex --apply writes ~/.codex/config.toml once and is idempotent', async () => {
     const h = await freshHome('install-codex');

@@ -19,6 +19,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Internal
 
 - Add matcher regression coverage for explicit aliases containing straight and curly apostrophes, full replacement offsets, real possessives, code/URL spans, and never entries. These cases already work without phonetic or fuzzy matching.
+- Isolate end-to-end installation tests from inherited `CODEX_HOME` and `GEMINI_CLI_HOME`, with disposable ambient-config regressions. Running the tests can no longer write registrations into those overridden directories.
 
 ### Fixed
 
