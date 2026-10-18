@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon add Foo` prints the aliases once, `aliases: Fo (suggested)`, and with given aliases plus `--suggest` names the suggested ones on the same line, `aliases: Kubernets, Cubernetes (suggested: Cubernetes)`. It printed `suggested aliases: Fo` and then `aliases: Fo`, the same list twice. The suggestions and `--json` are unchanged.
 - `lexicon add --bogus x` and `lexicon remove --bogus x` follow `unknown option '--bogus'` with `(use lexicon add --help for usage)` (or `remove`). They printed the example of the right call, which says nothing about the option; the example now follows only a missing term.
 - `lexicon init` follows `created global lexicon: <path>` with `next: add a term with lexicon add "Ashlr.AI" Ashler, or run lexicon setup for the guided first run` (with `--project`, the `lexicon add ... --project` form). It created an empty file and stopped with no word of what to do next. A second `init` (`already exists`) and `--json` print what they did.
 - `lexicon add` and `lexicon remove` with no term follow the usage error with an example: `(e.g. lexicon add "Ashlr.AI" Ashler Ashlar; use lexicon add --help for usage)`, and for remove the `--alias` form and `lexicon list`. They said only `missing required argument 'canonical'` and `(use --help for usage)`. The `--json` document is unchanged.

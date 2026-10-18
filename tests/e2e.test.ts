@@ -244,8 +244,9 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: init, add, list',
     const r = await runCli(['add', 'Kubernetes', '--category', 'product'], { env: h.env });
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain('created Kubernetes (global)');
-    expect(r.stdout).toMatch(/suggested aliases: .+/);
-    const suggested = /suggested aliases: (.+)/.exec(r.stdout)?.[1].split(', ') ?? [];
+    expect(r.stdout).toMatch(/^aliases: .+ \(suggested\)$/m);
+    expect(r.stdout).not.toContain('suggested aliases:');
+    const suggested = /^aliases: (.+) \(suggested\)$/m.exec(r.stdout)?.[1].split(', ') ?? [];
     expect(suggested.length).toBeGreaterThan(0);
     expect(suggested).not.toContain('Kubernetes');
 

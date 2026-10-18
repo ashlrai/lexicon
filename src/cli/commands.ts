@@ -407,8 +407,16 @@ export async function runAdd(
     return 0;
   }
   line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
-  if (suggested.length > 0 && !p && (!fallbackOnly || result.created)) line(io, `suggested aliases: ${safe(suggested.join(', '))}`);
-  line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
+  // One aliases line: the suggestions are marked in it rather than listed
+  // again on a line of their own (`suggested aliases: Fo` then `aliases: Fo`).
+  const saved = result.term.aliases;
+  const marked =
+    suggested.length > 0 && !p && (!fallbackOnly || result.created)
+      ? suggested.filter((s) => saved.some((a) => a.toLowerCase() === s.toLowerCase()))
+      : [];
+  const suggestedNote =
+    marked.length === 0 ? '' : marked.length === saved.length ? ' (suggested)' : ` (suggested: ${safe(marked.join(', '))})`;
+  line(io, `aliases: ${saved.length > 0 ? safe(saved.join(', ')) + dim(suggestedNote) : dim('(none)')}`);
   for (const c of conflicts) line(io, conflictLine(c));
   if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
   return 0;

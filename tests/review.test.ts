@@ -265,6 +265,7 @@ describe('add --interactive', () => {
     expect(term.aliases).toHaveLength(3);
     expect(io.out).toContain('created Ashlr.AI (global)');
     expect(io.out).not.toContain('suggested aliases:');
+    expect(io.out).not.toContain('(suggested');
     // The caller owns the prompter; runAdd must not close it.
     expect(p.closed).toBe(false);
   });

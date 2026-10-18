@@ -412,18 +412,24 @@ describe('add / remove / path', () => {
       expect.objectContaining({ scope: 'project', defaultAliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }),
     );
     expect(io.out).toContain('created');
-    expect(io.out).toContain('suggested aliases: Ashler, Ashlar, Ashlr AI');
+    // Catches: the suggestions printed twice, `suggested aliases: ...` and then `aliases: ...`.
+    expect(io.out).toContain('aliases: Ashler, Ashlar, Ashlr AI (suggested)');
+    expect(io.out.match(/Ashler, Ashlar, Ashlr AI/g)).toHaveLength(1);
     expect(io.out).toContain('/tmp/proj/.lexicon.yaml');
   });
 
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();
-    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true }, makeIO());
+    const io = makeIO();
+    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true }, io);
     expect(core.addTerm).toHaveBeenLastCalledWith(
       expect.objectContaining({ aliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }),
       expect.anything(),
     );
+    // Given and suggested aliases on one line, the suggested ones named.
+    expect(io.out).toContain('aliases: Ashler, Ashlar, Ashlr AI (suggested: Ashlar, Ashlr AI)');
+    expect(io.out).not.toContain('suggested aliases:');
   });
 
   // Catches: `lexicon add Other Ashler` printed plain success while "Ashler" kept going to Ashlr.AI (MCP add_term said so).
