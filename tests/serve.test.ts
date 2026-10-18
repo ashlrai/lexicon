@@ -1048,6 +1048,11 @@ describe('limits and errors', () => {
       const res = await fetch(`${t.url}/health`);
       expect(res.status).toBe(503);
       expect(res.headers.get('retry-after')).toBe('1');
+      // Catches: the error said only "too many concurrent requests", with no
+      // word that the request was not run or when to send it again.
+      expect(await res.json()).toEqual({
+        error: 'too many concurrent requests (0 already in flight), so this one was not run; retry it after 1 second (Retry-After)',
+      });
     } finally {
       await tiny.stop();
     }

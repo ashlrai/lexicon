@@ -357,6 +357,9 @@ const BODY_SHAPES = {
 } as const;
 type BodyRoute = keyof typeof BODY_SHAPES;
 
+/** Seconds a 503 asks the client to wait (its `Retry-After`) before sending the same request again. */
+const BUSY_RETRY_AFTER_S = 1;
+
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
@@ -1196,7 +1199,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (inFlight >= maxConcurrent) {
-      send(res, json(503, { error: 'too many concurrent requests' }), { ...cors, 'Retry-After': '1' }, head);
+      // Says what to do next, not only what went wrong: the request was not
+      // run, so the same request is safe to send again after Retry-After.
+      send(
+        res,
+        json(503, { error: `too many concurrent requests (${inFlight} already in flight), so this one was not run; retry it after ${BUSY_RETRY_AFTER_S} second (Retry-After)` }),
+        { ...cors, 'Retry-After': String(BUSY_RETRY_AFTER_S) },
+        head,
+      );
       return;
     }
     inFlight += 1;
