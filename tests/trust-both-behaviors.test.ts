@@ -1,7 +1,24 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** Every canonical `parseLexicon` saw, so a test can tell whether the project file was parsed. */
+const schemaParses = vi.hoisted(() => ({ canonicals: [] as string[] }));
+vi.mock('../src/core/schema.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/schema.js')>();
+  return {
+    ...real,
+    parseLexicon: (raw: unknown) => {
+      const terms = (raw as { terms?: unknown } | null)?.terms;
+      if (Array.isArray(terms)) {
+        for (const t of terms) if (typeof (t as { canonical?: unknown })?.canonical === 'string') schemaParses.canonicals.push((t as { canonical: string }).canonical);
+      }
+      return real.parseLexicon(raw);
+    },
+  };
+});
+
 import { addTerm, loadLexicon, readLexiconFile, recordHits } from '../src/core/store.js';
 import { isTrusted, trustProject } from '../src/core/trust.js';
 
@@ -19,6 +36,7 @@ const TRUSTED = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashl
 const CHANGED = 'version: 1\nterms: [this is: not: valid\n  - canonical: rm -rf ~\n';
 
 beforeEach(async () => {
+  schemaParses.canonicals.length = 0;
   tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-both-')));
   repo = path.join(tmp, 'repo');
   await fs.mkdir(path.join(repo, '.git'), { recursive: true });
@@ -67,3 +85,33 @@ describe('a changed project file: skipped without a parse, and never written or 
   });
 });
 
+
+// A changed file that IS valid YAML, so a parse would be visible to the spy
+// (the invalid file above would only show up as a throw that recordHits swallows).
+describe('recordHits and parseSkipped:false never parse a changed project file (spy on the parser)', () => {
+  const MARKER = 'ChangedMarker';
+  const VALID_CHANGED = `version: 1\nterms:\n  - canonical: ${MARKER}\n    aliases: [cm]\n`;
+
+  it('control: a trusted project file is parsed, so the spy sees its canonical', async () => {
+    await fs.writeFile(projectPath, VALID_CHANGED);
+    await trustProject(projectPath, { cwd: repo });
+    schemaParses.canonicals.length = 0;
+    await recordHits([MARKER], { cwd: repo });
+    expect(schemaParses.canonicals).toContain(MARKER);
+  });
+
+  it('recordHits without a load does not parse it', async () => {
+    await fs.writeFile(projectPath, VALID_CHANGED);
+    schemaParses.canonicals.length = 0;
+    await recordHits([MARKER], { cwd: repo });
+    expect(schemaParses.canonicals).not.toContain(MARKER);
+  });
+
+  it('loadLexicon with parseSkipped:false does not parse it', async () => {
+    await fs.writeFile(projectPath, VALID_CHANGED);
+    schemaParses.canonicals.length = 0;
+    const loaded = await loadLexicon({ cwd: repo, parseSkipped: false });
+    expect(loaded.projectTrust).toBe('changed');
+    expect(schemaParses.canonicals).not.toContain(MARKER);
+  });
+});
