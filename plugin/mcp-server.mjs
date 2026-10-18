@@ -53955,10 +53955,12 @@ async function trustProject(projectPath, opts = {}) {
   if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
     const registry2 = await readTrustRegistry(opts);
+    const existing = registry2.trusted[key];
+    if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
     registry2.trusted[key] = entry;
     await writeTrustRegistry(registry2, opts);
-    return entry;
+    return { ...entry, alreadyPinned: false };
   }, opts);
 }
 async function refreshTrust(projectPath, opts = {}) {
@@ -61482,7 +61484,7 @@ var registerTrustTools = (server, ctx) => {
         await untrustProject(filePath, { cwd: ctx.cwd });
         throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
       }
-      const verb = before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
+      const verb = entry.alreadyPinned ? "already-trusted" : before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
       return textResult({
         action,
         path: safePath,

@@ -952,6 +952,20 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: a file the registry already pinned at the same bytes came back as 're-pinned'.
+    it('trust_project trust says already-trusted when the pin did not change', async () => {
+      mocks.isTrusted.mockResolvedValue('trusted');
+      mocks.trustProject.mockResolvedValueOnce({ sha256: 'abcdef0123456789', trustedAt: '2026-09-19T00:00:00.000Z', alreadyPinned: true });
+      const { client, close } = await connect();
+      try {
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+        expect(result.isError).toBe(false);
+        expect(JSON.parse(textOf(result))).toMatchObject({ previousStatus: 'trusted', status: 'trusted', result: 'already-trusted', trustedAt: '2026-09-19T00:00:00.000Z' });
+      } finally {
+        await close();
+      }
+    });
+
     it('trust_project trust re-pins an already trusted file without asking', async () => {
       mocks.isTrusted.mockResolvedValue('trusted');
       const { client, close } = await connect();

@@ -157,7 +157,10 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   const registry = getTrustPath({ cwd });
   // The table is for the person deciding; under --json it goes to stderr, and
   // only when there is a question to answer, so stdout stays one document.
-  const ask = !opts.yes && (deps.isInteractive ?? isInteractive)();
+  // A file that already reads trusted gains nothing from a yes (MCP
+  // trust_project does not ask either), and a no would print "declined" for
+  // a file that stays trusted.
+  const ask = !opts.yes && before !== 'trusted' && (deps.isInteractive ?? isInteractive)();
   if (!opts.json) renderPreview(file, io.stdout);
   else if (ask) renderPreview(file, io.stderr);
   if (ask && !(await confirmTrust(filePath, opts, deps))) {
@@ -188,7 +191,8 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     await untrustProject(filePath, { cwd });
     return fail(io, opts.json, 'trust', filePath, `${filePath} changed while it was being trusted; trust was revoked`, 'review it and run: lexicon trust');
   }
-  const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
+  // `already-trusted` when the registry already pinned these bytes and nothing was written.
+  const verb = entry.alreadyPinned ? 'already-trusted' : before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
   if (opts.json) {
     // `ok: true`, then the object MCP trust_project returns for action 'trust',
     // with the full preview (trustPreview) where MCP hands the model a summary.
@@ -206,7 +210,11 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     }));
     return 0;
   }
-  io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(registry)}\n`);
+  if (entry.alreadyPinned) {
+    io.stdout(`already trusted: ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}, since ${entry.trustedAt}) in ${safe(registry)}; nothing changed\n`);
+  } else {
+    io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(registry)}\n`);
+  }
   io.stdout('It will be merged into the lexicon until its content changes; then run `lexicon trust` again.\n');
   return 0;
 }

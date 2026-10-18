@@ -83,7 +83,11 @@ describe('trustProject / isTrusted', () => {
       trusted: Record<string, { sha256: string; trustedAt: string }>;
     };
     expect(raw.version).toBe(1);
-    expect(raw.trusted[projectPath]).toEqual(entry);
+    const { alreadyPinned, ...stored } = entry;
+    expect(alreadyPinned).toBe(false);
+    expect(raw.trusted[projectPath]).toEqual(stored);
+    // The same bytes again: the pin is left as it was, trustedAt and all.
+    expect(await trustProject(projectPath, { globalPath })).toEqual({ ...stored, alreadyPinned: true });
     await expect(fs.stat(`${getTrustPath({ globalPath })}.tmp`)).rejects.toThrow();
 
     const registry = await readTrustRegistry({ globalPath });
@@ -337,7 +341,35 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     const never: Prompter = { ...scripted([]), confirm: async () => { throw new Error('asked despite --yes'); } };
     const flag = makeIO();
     expect(await runTrust(undefined, { cwd: cwd(), yes: true }, flag, { isInteractive: () => true, createPrompter: () => never })).toBe(0);
-    expect(flag.out).toContain(`re-pinned ${projectPath}`);
+    expect(flag.out).toContain(`already trusted: ${projectPath}`);
+  });
+
+  // Catches: trusting a file the registry already pinned at the same bytes
+  // printed "re-pinned" (result 're-pinned' under --json), rewrote trustedAt
+  // and asked the question again on a terminal, though the pin did not change.
+  it('an already trusted file with the same bytes says already trusted, asks nothing and leaves the pin', async () => {
+    expect(await runTrust(undefined, { cwd: cwd() }, makeIO(), { isInteractive: () => false })).toBe(0);
+    const registryPath = path.join(path.dirname(globalPath), 'trust.json');
+    const pinned = await fs.readFile(registryPath, 'utf8');
+    const { trustedAt } = (await readTrustRegistry({ globalPath })).trusted[await fs.realpath(projectPath)]!;
+
+    const never: Prompter = { ...scripted([]), confirm: async () => { throw new Error('asked about an already trusted file'); } };
+    const again = makeIO();
+    expect(await runTrust(undefined, { cwd: cwd() }, again, { isInteractive: () => true, createPrompter: () => never })).toBe(0);
+    expect(again.out).toContain(`already trusted: ${projectPath} (sha256 `);
+    expect(again.out).toContain(`since ${trustedAt}) in ${registryPath}; nothing changed`);
+    expect(again.out).not.toContain('re-pinned');
+
+    const json = makeIO();
+    expect(await runTrust(undefined, { cwd: cwd(), json: true }, json, { isInteractive: () => false })).toBe(0);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: true, action: 'trust', previousStatus: 'trusted', status: 'trusted', result: 'already-trusted', trustedAt });
+    expect(await fs.readFile(registryPath, 'utf8')).toBe(pinned);
+
+    // A changed file still says updated: the pin moved.
+    await fs.appendFile(projectPath, '# edited\n');
+    const edited = makeIO();
+    expect(await runTrust(undefined, { cwd: cwd(), json: true }, edited, { isInteractive: () => false })).toBe(0);
+    expect(JSON.parse(edited.out)).toMatchObject({ previousStatus: 'changed', result: 'updated' });
   });
 
   // The documented non-TTY behaviour: scripts keep working without --yes.

@@ -236,7 +236,8 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
           await untrustProject(filePath, { cwd: ctx.cwd });
           throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
         }
-        const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
+        // `already-trusted` when the registry already pinned these bytes and nothing was written.
+        const verb = entry.alreadyPinned ? 'already-trusted' : before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
         return textResult({
           action,
           path: safePath,
