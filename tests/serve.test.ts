@@ -498,6 +498,15 @@ describe('POST /learn and POST /add', () => {
     expect(((await check.json()) as NormalizeResult).replacements[0]?.reason).toBe('alias');
   });
 
+  it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
+    const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: aliases\[0\] \("x{24}\.\.\."\): must be at most 80 characters\. Nothing was written/);
+    expect(error).not.toContain('terms[');
+    expect((await api('GET', '/stats')).status).toBe(200);
+  });
+
   it('learn rejects identical spellings with 400', async () => {
     const res = await api('POST', '/learn', { heard: 'Ashlr.AI', meant: 'Ashlr.AI' });
     expect(res.status).toBe(400);

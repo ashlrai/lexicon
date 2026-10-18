@@ -319,6 +319,28 @@ describe('add_term errors', () => {
     expect(res.isError).toBe(true);
     expect(res.text).toBe('canonical must not be empty');
   });
+
+  it('name the field that is over the schema cap, not an index into the lexicon file', async () => {
+    // Two terms already in the file, so a file-level error would say terms[2].
+    await call('add_term', { canonical: 'One', aliases: [] });
+    await call('add_term', { canonical: 'Two', aliases: [] });
+    const before = await fs.readFile(process.env.LEXICON_PATH as string, 'utf8');
+    const long = 'b'.repeat(81);
+    const alias = await call('add_term', { canonical: 'Zed', aliases: ['zedd', long] });
+    expect(alias.isError).toBe(true);
+    expect(alias.text).toBe(
+      'term not added: aliases[1] ("bbbbbbbbbbbbbbbbbbbbbbbb..."): must be at most 80 characters. Nothing was written; fix that field and try again.',
+    );
+    const canonical = await call('add_term', { canonical: 'c'.repeat(81), notes: 'two\nlines' });
+    expect(canonical.isError).toBe(true);
+    expect(canonical.text).toContain('canonical: must be at most 80 characters; notes: must not contain control characters or newlines');
+    expect(canonical.text).toContain('fix those fields');
+    for (const res of [alias, canonical]) {
+      expect(res.text).not.toContain('terms[');
+      expect(res.text).not.toContain('Refusing to write lexicon');
+    }
+    expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
+  });
 });
 
 describe('normalize_transcript with an untrusted project lexicon', () => {

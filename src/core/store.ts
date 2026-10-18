@@ -1483,7 +1483,38 @@ export type AddTermOptions = StoreOptions & {
 function prepareIncoming(term: Term): Term {
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError('canonical must not be empty');
-  return { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  const prepared: Term = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  assertTermFields(prepared);
+  return prepared;
+}
+
+/**
+ * Refuse a term the lexicon schema would refuse, naming the field the caller
+ * passed. The write checks the whole file it produces, so an 81-character
+ * alias used to fail there as `Refusing to write lexicon at <path>: Invalid
+ * lexicon: - terms[13].aliases[0]: must be at most 80 characters`, an index
+ * into the file the caller never saw and no word on what to change.
+ */
+function assertTermFields(term: Term): void {
+  try {
+    parseLexicon({ version: 1, terms: [term] });
+  } catch (err) {
+    const issues = errorMessage(err)
+      .split('\n')
+      .map((line) => /^\s*-\s*terms\[0\]\.(.*)$/.exec(line)?.[1])
+      .filter((issue): issue is string => issue !== undefined)
+      .map((issue) => {
+        // A list entry's index is into the deduplicated list, so name the entry too.
+        const at = /^(aliases|never)\[(\d+)\]/.exec(issue);
+        const value = at ? (term[at[1] as 'aliases' | 'never'] ?? [])[Number(at[2])] : undefined;
+        if (value === undefined) return issue;
+        const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+        return issue.replace(/^[^:]+/, (field) => `${field} (${shown})`);
+      });
+    if (issues.length === 0) throw err;
+    const fix = issues.length === 1 ? 'fix that field' : 'fix those fields';
+    throw new InputError(`term not added: ${issues.join('; ')}. Nothing was written; ${fix} and try again.`);
+  }
 }
 
 /** Apply one prepared term to the in-memory `file` exactly as `addTerm` does; no IO. */
