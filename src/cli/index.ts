@@ -321,14 +321,17 @@ program.hook('preAction', (_program, actionCommand) => {
   if (problem) throw problem;
 });
 
+// `-v` is the version flag in node, npm and most CLIs; commander only knows -V.
+const argv = process.argv.length === 3 && process.argv[2] === '-v' ? [...process.argv.slice(0, 2), '--version'] : process.argv;
+
 try {
-  await program.parseAsync(process.argv);
+  await program.parseAsync(argv);
 } catch (err) {
   if (err instanceof CommanderError) {
     // commander already printed help/version/usage errors on stderr; under
     // --json a usage error also gets its stdout document. Same exit code.
     const failed = usageErrorCommand.get(err) ?? program;
-    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(process.argv.slice(2), jsonFlagsOf(failed))) {
+    if (err.exitCode !== 0 && !NOT_USAGE_ERRORS.has(err.code) && argvRequestsJson(argv.slice(2), jsonFlagsOf(failed))) {
       const where = commandPath(failed);
       // `voice --json` promises `code` (the exit code) on every failure, its
       // own refusals and commander's alike.

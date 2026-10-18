@@ -4,7 +4,7 @@
  * against a temp HOME, never the real one.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,4 +64,16 @@ describe('first run of the lexicon CLI', () => {
     expect(nope.status).toBe(1);
     expect(nope.stderr).toContain("error: unknown command 'definitely-not-a-command'\n(use --help for usage)");
   }, 60_000);
+
+  // Catches: `lexicon -v` failed with "unknown option '-v'".
+  it('-v alone prints the version, as --version does', () => {
+    const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { version: string };
+    const short = lexicon(['-v']);
+    expect(short.status).toBe(0);
+    expect(short.stdout.trim()).toBe(pkg.version);
+    // Only alone: after a command it is still that command's (unknown) option.
+    const after = lexicon(['list', '-v', '--cwd', home]);
+    expect(after.status).toBe(1);
+    expect(after.stderr).toContain("unknown option '-v'");
+  }, 30_000);
 });
