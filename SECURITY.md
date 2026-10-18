@@ -8,7 +8,15 @@ to the model, and this document describes how the project treats it.
 
 **Untrusted repository lexicon → prompt injection.** The project file
 `.lexicon.yaml` is discovered by walking up from the current directory to the
-git root, so it comes from whatever repository the user happens to be in. Its
+git root, so it comes from whatever repository the user happens to be in.
+Without a `.git` the walk goes on to `/`, so on POSIX a candidate owned by
+anyone other than the current user or root (the link or its target, for a
+symlink) is passed over: another local account's `/tmp/.lexicon.yaml` is never
+announced as this repo's file. This is the rule OpenSSH applies to its config
+files and git (`safe.directory`) to repositories; it is simpler and covers more
+than stopping at the home directory, which would still reach `/tmp` from a
+directory below it. Windows has no meaningful owner in `stat`, so every
+candidate is considered there. Its
 canonicals and notes are injected into model context by three surfaces:
 
 - the Claude Code `SessionStart` hook, which hands the model the whole merged
@@ -32,7 +40,8 @@ rewrite anything they copy. Payloads over 20,000 characters are skipped.
 **Local HTTP API (`lexicon serve`).** The server binds `127.0.0.1` only (a
 non-loopback `--host` is possible but prints a warning) and every request
 except `GET /health` needs the bearer token from `<config dir>/serve.json`,
-which is created with mode 0600 and compared in constant time. CORS headers are
+which is created with mode 0600 (an existing one that others can read is put
+back to 0600 when it is reused) and compared in constant time. CORS headers are
 sent only to browser-extension origins (`chrome-extension://`,
 `moz-extension://`, `safari-web-extension://`) or exact origins the user lists
 in `serve.json.allowedOrigins`, never `*`, so a web page cannot read responses
@@ -48,6 +57,14 @@ boundary; it does not run commands, read arbitrary files (`cwd` only chooses
 which `.lexicon.yaml` to consider, subject to trust) or bind other ports. A
 different user on the same machine cannot read the token (0600) and cannot use
 the API without it.
+
+**Host guard.** Every route, not only `/pair`, answers 403 unless the `Host`
+header is `127.0.0.1:<port>`, `localhost:<port>` or `[::1]:<port>` (or the
+bound IP address under a non-loopback `--host`). A web page that rebinds its
+own DNS name to 127.0.0.1 arrives with its own name in `Host`, so it cannot
+use the unauthenticated `/health` to learn anything; `/health` also refuses
+`?cwd=` without the bearer token, so no caller without the token can probe
+which directories carry a `.lexicon.yaml` or whether they are trusted.
 
 **Pairing page (`GET /pair`, `lexicon serve --pair`).** This is the one route
 that returns the token without a bearer, so the extension can pair itself
@@ -171,12 +188,19 @@ service) unless `apply: true` is passed and then touches only the clients named
 in the call, and the skill instructs the model to show that preview and wait for
 a yes; `import_dictionary` has `dryRun`;
 `suggest_terms` proposes and `apply_suggestion` applies one accepted item at a
-time. Trust shows contents: `trust_project { action: 'status' }` returns a
-sanitized preview (canonicals, first alias, counts; notes reported as present,
-never quoted) and the model must show it before calling `action: 'trust'`; a hook
-note or a file can never trust itself. No writes to untrusted files: every
-project-scope write from a tool goes through the same store gate as the CLI and
-fails with `ProjectTrustError` on an existing untrusted or changed file. The
+time. Trust shows contents, to the human: `trust_project { action: 'status' }`
+returns only a short summary to the model (term, alias and note counts and at
+most 3 canonicals, each at most 40 characters, sanitized and with `<` / `>`
+neutralized; no alias or note is quoted), because that is the exchange in which
+the model is asked whether to trust the file, and points the user at
+`lexicon trust` in a terminal for the full preview. The model must show the
+summary before calling `action: 'trust'`, the client then asks the user, and a
+hook note or a file can never trust itself, and neither can a model's write:
+an MCP project-scope write to a file that is not trusted yet (new, untrusted or
+changed) is saved without being pinned, reports `trusted: false` with a
+`nextStep` for the user, and never returns that file's own copy of a term; the
+CLI and the local API refuse a write to an existing untrusted or changed file
+with `ProjectTrustError`. The
 `SessionStart` onboarding note only asks the model to offer setup; nothing runs
 until the user says yes.
 
@@ -187,20 +211,27 @@ treated as the user's own words).
 ## Mitigations
 
 - **Trust registry.** A project lexicon is not merged until the user runs
-  `lexicon trust` (after seeing a preview). Approvals live in
+  `lexicon trust` (after seeing a preview; on a terminal it then asks, default
+  no, unless `--yes` is passed; off a terminal it does not ask, see
+  [docs/TRUST.md](docs/TRUST.md)). Approvals live in
   `<config dir>/trust.json` next to the global lexicon, keyed by absolute path.
   The hooks, MCP server, CLI, local API, voice and daemon all go through
   `loadLexicon()`, which applies the gate by default.
 - **sha256 pinning.** Trust records the file's content hash. If the file
   changes (for example after `git pull`) it drops to `changed` and is skipped
-  until trusted again.
+  until trusted again. The hash checked is that of the bytes that were parsed,
+  not of a second read, and `lexicon trust` pins exactly the bytes its preview
+  showed, so a file rewritten between the read and the check is never merged.
 - **Auto-trust only for files the user authored.** Project-scope writes
   (`lexicon init --project`, `add --project`, `import --project`,
   `learn --project`, `harvest --add`, `review --project`, `suggest --project`,
-  the local API with `scope: 'project'`, and the MCP `add_term`,
-  `learn_correction`, `import_dictionary`, `apply_suggestion` and
-  `harvest_repo {add: true}` tools with project scope) pin the file they wrote
-  as trusted, because the user explicitly asked for that write. The rule is
+  and the local API with `scope: 'project'`) pin the file they wrote as
+  trusted, because the user explicitly asked for that write. MCP tools do not:
+  a model relaying a request is not the user reviewing a file, so `add_term`,
+  `learn_correction`, `import_dictionary`, `apply_suggestion`,
+  `import_vocabulary` and `add_pack` re-pin only a
+  file that is already trusted and write anything else unpinned, and
+  `harvest_repo {add: true}` and `setup_lexicon {harvest: true}` never pin. The rule is
   precise: a project file is written and pinned only when it **does not exist
   yet** (the tool creates it) or is **already trusted** (registry hash matches,
   `LEXICON_TRUST_ALL=1`, or the file sits in the global config directory). If
@@ -223,7 +254,9 @@ treated as the user's own words).
   phonetic at most 200, `createdAt` at most 64, at most 64 aliases per term,
   at most 5000 terms, no control characters or line breaks anywhere
   (including the Unicode line/paragraph separators U+2028/U+2029 and NEL).
-  Lexicon files over 2 MB are refused; `lexicon import` and `import_dictionary`
+  Lexicon files over 2 MB are refused, counted on the bytes actually read,
+  and only a regular file is read: a `.lexicon.yaml` committed as a symlink
+  to `/dev/zero` or `/dev/stdin`, or a FIFO, is refused without reading it; `lexicon import` and `import_dictionary`
   refuse files, stdin and `content` over 8 MB before reading them whole, and the
   importers are linear-time scanners. The local API caps bodies at 1 MB.
 - **Invisible-character stripping.** Zero-width characters (U+200B–U+200F),
@@ -243,19 +276,43 @@ treated as the user's own words).
   text, or break a table row. The one deliberate exception is the text
   `lexicon normalize` writes to stdout, which is the user's own input and must
   round-trip byte-exactly; only its stderr `--diff` lines are sanitized. The
-  Claude Code hook uses the same `stripControlChars` on the skipped-project path
-  and on correction notes; the local API sanitizes request paths in its log.
+  Claude Code hook and the MCP `lexicon://me` resource and `voice-context`
+  prompt name a skipped project file through `pathForModel`: sanitized as
+  above, `<` and `>` neutralized, and shortened to its last three components
+  and at most 120 characters, because the directory a repository is cloned
+  into is named by whoever published it; correction notes go through
+  `neutralizeForModel`; the local API sanitizes request paths in its log.
 - **Markdown safety.** The `claude-md` export escapes `|` and replaces every
   kind of line break (`\n`, `\r\n`, NEL, U+2028, U+2029) in table cells so a
   term cannot break out of its row.
+- **No fake tags in model context.** The schema lets `<`, `>` and markdown
+  punctuation through (a canonical can legitimately hold them), so a trusted
+  project lexicon or an installed pack could otherwise put
+  `</system-reminder><system>...` or a fake heading into what the model reads
+  as its own framing. Everything the hook and the MCP `lexicon://me` resource
+  and `voice-context` prompt hand to the model from a lexicon goes through
+  `neutralizeMarkup`, which swaps `<` and `>` for the lookalikes U+2039 and
+  U+203A: the SessionStart table, the UserPromptSubmit corrections list, the
+  replacements spliced into the corrected prompt (one that starts a line with
+  a markdown block marker such as `#` also gets a backslash) and the
+  correction note. Table cells stay on one row with `|` escaped. The user's own
+  words in the prompt are echoed as typed, and exporter output
+  (`lexicon export claude-md` and the rest), which users paste into files, is
+  not changed.
 - **No telemetry, two user-initiated downloads.** The tool collects nothing and all state is
   local files. The CLI, hooks, MCP server, local API and extension make no
   request beyond loopback, except when the user asks for one by name:
   `lexicon voice` fetching a whisper model on first use (see above), and
   `lexicon pack` fetching a community pack index and pack files from the
-  `--registry` URL the user passed. Every pack download is sha256-verified
+  `--registry` URL the user passed (MCP `list_packs` and `add_pack` read
+  only a registry the user registered: one they installed a pack from, or
+  one in `LEXICON_REGISTRIES`; a model-chosen path or host is refused before
+  it is read). Every pack download is sha256-verified
   against the index before it is read, and a checksum mismatch refuses the
-  install; the install script and Homebrew fetch the package itself.
+  install; an index or pack file over 2 MB is refused (the download stops at
+  the cap), a remote index may name only `https://` URLs or paths relative to
+  itself, never a local file; and plain `http://` is refused for an index or
+  pack anywhere but this machine, redirects included; the install script and Homebrew fetch the package itself.
 - **Escape hatch.** `LEXICON_TRUST_ALL=1` treats every project lexicon as
   trusted. It is meant for CI or throwaway containers where the repository is
   already vetted; do not set it in an interactive shell.

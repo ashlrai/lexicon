@@ -20,12 +20,13 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { xdgConfigHome } from '../util/xdg.js';
-import { bold, dim, green, indent, line, red, safe, safeLines, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
   claudeConfigDir,
   defaultExec,
+  findInstalledLexiconPlugin,
   hookConfigFor,
   hookTimeoutFor,
   launchCommandLine,
@@ -60,6 +61,12 @@ export interface InstallOptions extends CommonOptions {
   project?: boolean;
   /** Override the home directory (test hook). */
   home?: string;
+  /**
+   * Print one JSON document instead of the text: `{ ok: true, client, scope,
+   * applied, written, output }` (`written` the files `--apply` touched, `output`
+   * the text the command would have printed) or `{ ok: false, error, nextStep }`.
+   */
+  json?: boolean;
 }
 
 export interface InstallDeps {
@@ -296,7 +303,7 @@ export function targetFor(
   ctx: PathContext,
 ): InstallTarget {
   // `node <abs path>` normally; `npx -y @ashlr/lexicon@<v> mcp` when this copy
-  // is running out of an npx cache, which npm is free to delete (see launchFor).
+  // is running out of an npx or plugin cache, which may be deleted (see launchFor).
   const launch = launchFor(serverPath, 'mcp');
   const env = lexiconServerEnv(ctx.env, ctx.cwd);
   const base: StdioServerEntry = { command: launch.command, args: launch.args, ...(env ? { env } : {}) };
@@ -527,7 +534,7 @@ function printGeneric(io: IO, serverPath: string, env: Record<string, string> | 
     line(io, `   lexicon install ${c}`);
   }
   line(io);
-  line(io, dim('add --apply to write the config, --project for the repo-level file where the client supports one'));
+  line(io, dim('name a client and add --apply to write its config, --project for the repo-level file where the client supports one'));
   line(io);
   printExportHint(io, 1, 'generic');
 }
@@ -541,6 +548,83 @@ export async function runInstall(
   opts: InstallOptions,
   io: IO,
   deps: InstallDeps = {},
+): Promise<number> {
+  if (opts.json) return runInstallJson(client, opts, io, deps);
+  return installText(client, opts, io, deps);
+}
+
+/** What `lexicon install --json` prints when it succeeds. */
+export interface InstallJsonResult {
+  ok: true;
+  /** The client as resolved (`generic` when none was named). */
+  client: string;
+  scope: 'user' | 'project';
+  applied: boolean;
+  /** Each config file `--apply` touched and what happened to it; empty for a preview. */
+  written: { file: string; outcome: InstallOutcome }[];
+  /** The text `lexicon install` prints without --json, uncoloured. */
+  output: string;
+}
+
+/**
+ * `lexicon install --json`: the text run into a buffer, wrapped in one
+ * document. An unknown client or scope (and any other refusal) is
+ * `{ ok: false, error, nextStep }`, so a script never parses prose.
+ */
+async function runInstallJson(client: string | undefined, opts: InstallOptions, io: IO, deps: InstallDeps): Promise<number> {
+  let out = '';
+  let err = '';
+  const buffer: IO = {
+    stdout: (s) => {
+      out += s;
+    },
+    stderr: (s) => {
+      err += s;
+    },
+  };
+  const written: { file: string; outcome: InstallOutcome }[] = [];
+  const onWritten = (file: string, outcome: InstallOutcome): void => {
+    written.push({ file, outcome });
+    deps.onWritten?.(file, outcome);
+  };
+  const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+  const print = (doc: object): void => line(io, JSON.stringify(doc, null, 2));
+  const name = (client ?? 'generic').toLowerCase();
+  let code: number;
+  try {
+    code = await installText(client, { ...opts, json: false }, buffer, { ...deps, onWritten });
+  } catch (e) {
+    const message = errorMessage(e);
+    const nextStep =
+      e instanceof CliRefusal && e.nextStep
+        ? e.nextStep
+        : !isInstallClient(name)
+          ? `name one of: ${INSTALL_CLIENTS.join(', ')} (e.g. lexicon install cursor --json)`
+          : /--scope must be/.test(message)
+            ? 'pass --scope user or --scope project'
+            : `fix the problem in error, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`;
+    print(jsonError(message, nextStep));
+    return 1;
+  }
+  if (err) io.stderr(err);
+  if (code !== 0) {
+    print({
+      ...jsonError(`lexicon install ${name} did not complete; output says which step failed`, `fix that step, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`),
+      output: plain(out),
+    });
+    return code;
+  }
+  const scope = (opts.scope ?? (opts.project ? 'project' : 'user')) as 'user' | 'project';
+  const result: InstallJsonResult = { ok: true, client: name, scope, applied: opts.apply === true, written, output: plain(out) };
+  print(result);
+  return 0;
+}
+
+async function installText(
+  client: string | undefined,
+  opts: InstallOptions,
+  io: IO,
+  deps: InstallDeps,
 ): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
@@ -562,6 +646,17 @@ export async function runInstall(
   }
 
   if (name === 'generic') {
+    // There is no generic config file, so --apply or --project with no client
+    // would print the snippet and write nothing, exit 0, though the printout
+    // said "add --apply to write the config".
+    if (opts.apply || project) {
+      const flags = [opts.apply ? '--apply' : '', project ? '--project' : ''].filter(Boolean).join(' ');
+      const clients = INSTALL_CLIENTS.filter((c) => c !== 'generic');
+      throw new CliRefusal(
+        `${flags} needs a client: with none named, lexicon install only prints the generic configuration and writes nothing`,
+        `name the client to write, e.g. lexicon install cursor ${flags} (one of: ${clients.join(', ')})`,
+      );
+    }
     printGeneric(io, serverPath, lexiconServerEnv(env, cwd));
     return 0;
   }
@@ -614,6 +709,7 @@ export function registerInstallCommands(program: Command, io: IO): void {
     .option('--scope <scope>', 'user|project (project = the repo-level config file)')
     .option('--project', 'same as --scope project')
     .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
+    .option('--json', 'print { ok: true, client, scope, applied, written, output } as JSON ({ ok: false, error, nextStep } for an unknown client or scope)')
     .action(async (client: string | undefined, opts: InstallOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();
       const merged: InstallOptions = cwd ? { ...opts, cwd } : opts;
@@ -644,6 +740,19 @@ export interface InstallClaudeDeps {
   onWritten?: (file: string, outcome: InstallOutcome) => void;
   /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`. Default process.env. */
   env?: NodeJS.ProcessEnv;
+  /** Claude's plugin registry. Default `plugins/installed_plugins.json` beside `settingsPath`. */
+  installedPluginsPath?: string;
+}
+
+/**
+ * The lexicon plugin's id when Claude Code has it installed or enabled
+ * (`findInstalledLexiconPlugin` over settings.json and installed_plugins.json),
+ * else undefined. An unreadable file counts as not listing it.
+ */
+async function installedLexiconPlugin(settingsPath: string, installedPluginsPath: string): Promise<string | undefined> {
+  const settings = await readJsonFile(settingsPath);
+  const installed = await readJsonFile(installedPluginsPath);
+  return findInstalledLexiconPlugin(settings.error === undefined ? settings.value : undefined, installed.error === undefined ? installed.value : undefined);
 }
 
 export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
@@ -657,8 +766,27 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
+  // The plugin already runs the MCP server and both hooks for every session.
+  // A user-scope registration on top of it doubled the hook notes on every
+  // prompt and added a second `lexicon` server (setup_lexicon from a plugin
+  // session asked for exactly that). A project-scope install writes the
+  // repo's config for whoever clones it, so it still goes ahead.
+  if (scope === 'user') {
+    const pluginId = await installedLexiconPlugin(
+      settingsPath,
+      deps.installedPluginsPath ?? path.join(path.dirname(settingsPath), 'plugins', 'installed_plugins.json'),
+    );
+    if (pluginId) {
+      line(
+        io,
+        `the lexicon Claude Code plugin (${safe(pluginId)}) already provides the MCP server and the ${HOOK_EVENTS.join(' and ')} hooks, so nothing was ${opts.apply ? 'written' : 'planned'}; ` +
+          `to wire Claude Code by hand instead, uninstall it first: claude plugin uninstall ${safe(pluginId)}`,
+      );
+      return 0;
+    }
+  }
+  const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const exec = deps.exec ?? defaultExec;
   let failed = false;
 
@@ -673,7 +801,7 @@ export async function runInstallClaude(
   // Arrow, not a bare reference: Array.map passes the index as the second
   // argument, which would land in `platform`.
   line(io, `   claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
-  if (serverLaunch.viaNpx) line(io, dim('   (run from an npx cache, so the config calls npx rather than a path npm may delete)'));
+  if (serverLaunch.viaNpx) line(io, dim('   (run from an npx or Claude Code plugin cache, so the config calls npx rather than a path that may be deleted)'));
   else if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !existsSync(serverPath)) {

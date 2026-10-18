@@ -7,7 +7,7 @@
  * The DOM lib reference above is deliberate: tests/extension.test.ts pulls
  * these modules into the root tsconfig, whose lib is ES2022 only.
  */
-import type { MatchReason } from '../../src/core/types.js';
+import type { MatchReason, NormalizeIncomplete } from '../../src/core/types.js';
 
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:41733';
 /** Path of the server's pairing page; `lexicon serve --pair` opens it, `pair.ts` runs on it. */
@@ -88,6 +88,8 @@ export interface NormalizeOk {
   mode: Mode;
   /** Set when `api` was configured but the request fell back to `embedded`. */
   fallback?: string;
+  /** Set when matching stopped at the engine's time budget: later text was not checked. */
+  incomplete?: NormalizeIncomplete;
 }
 export interface Failure {
   ok: false;
@@ -173,6 +175,66 @@ export function hostKey(hostname: string): string {
 
 export function siteEnabled(settings: Pick<Settings, 'sites'>, hostname: string): boolean {
   return settings.sites[hostKey(hostname)] !== false;
+}
+
+/** The one line the toast shows when matching stopped before the end of the text. */
+export function incompleteNotice(inc: NormalizeIncomplete): string {
+  if (inc.reasons.includes('length') && inc.checkedChars !== undefined) {
+    return `Stopped early: only the first ${inc.checkedChars} of ${inc.totalChars} characters were checked.`;
+  }
+  return 'Stopped early at the time limit: later text was not checked.';
+}
+
+/**
+ * The Options > Test connection result for `s`. "Connected" is kept for a
+ * server that is up and holds a token it accepts: a server that is up with no
+ * token set does not serve this browser's corrections yet, so that line leads
+ * with what is true and then the step that pairs it.
+ */
+export function connectionTestLine(s: StatusReply): string {
+  if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}`;
+  if (s.server && !s.tokenSet) {
+    return `Server is up, not paired: lexicon ${s.server.version}, ${s.server.terms} terms. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
+  }
+  if (s.server) return `Connected: lexicon ${s.server.version}, ${s.server.terms} terms.`;
+  const why = s.serverError ?? 'no reply';
+  return `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
+}
+
+/** What the popup's status pill and line say for a status reply. */
+export interface StatusView {
+  /** Pill text: `Local API`, `Embedded` or `Embedded (fallback)`. */
+  mode: string;
+  /** True when the pill should read as a warning (the configured API is not in use). */
+  warn: boolean;
+  /** The line under it; backticked spans render as <code> (setMessage). */
+  line: string;
+}
+
+/**
+ * The popup's status for `s`. Every reason the local API is not in use ends
+ * with the step that fixes it: the popup is where a first run, a missing or
+ * rejected token and a stopped server all show up first.
+ */
+export function statusView(s: StatusReply): StatusView {
+  if (s.activeMode === 'api' && s.server) {
+    return { mode: 'Local API', warn: false, line: `lexicon ${s.server.version}, ${s.server.terms} terms` };
+  }
+  const api = s.configuredMode === 'api';
+  const parts: string[] = [`${s.embeddedTerms} embedded terms`];
+  if (api && s.tokenError) parts.push(s.tokenError);
+  else if (api && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable; start it with `lexicon serve`');
+  if (api && !s.tokenSet) {
+    parts.push(
+      s.server
+        ? `server up (lexicon ${s.server.version}), but no token set: run \`lexicon serve --pair\``
+        : // A first run has neither: starting the server is not enough, the
+          // browser still has to pair, so name that step too.
+          'no token set: once the server is running, run `lexicon serve --pair`',
+    );
+  }
+  if (s.embeddedError) parts.push('embedded YAML has errors: fix it under Options > Embedded lexicon');
+  return { mode: api ? 'Embedded (fallback)' : 'Embedded', warn: api, line: parts.join(' · ') };
 }
 
 export function describeCorrection(c: Pick<Correction, 'original' | 'replacement'>): string {

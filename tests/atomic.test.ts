@@ -14,7 +14,7 @@ import type { ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BACKUP_ROTATE_MS,
   BACKUP_SUFFIX,
@@ -22,6 +22,7 @@ import {
   LOCK_SUFFIX,
   OLDER_BACKUP_SUFFIX,
   isFileLockError,
+  isTransientWindowsError,
   withFileLock,
   writeFileAtomic,
 } from '../src/util/atomic.js';
@@ -148,6 +149,33 @@ describe('physical target aliases share one lock', () => {
     }, opts);
     await expect(fs.stat(`${alias}${LOCK_SUFFIX}`)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.readlink(alias)).resolves.toBe(destination);
+  });
+});
+
+describe('a path that cannot hold a lock', () => {
+  // Catches: mkdir's EEXIST (a file where a directory on the path should be)
+  // was read as lock contention, so the call waited the whole timeout and
+  // then said the lock was "still held ... by another lexicon process".
+  it('fails at once naming the file in the way, not another process', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-lock-notdir-'));
+    try {
+      // The lock names the real path: Windows' os.tmpdir() can carry a short
+      // (8.3) name such as RUNNER~1 that native realpath expands.
+      const blocker = path.join(await fs.realpath(dir), 'blocker');
+      await fs.writeFile(blocker, 'not a directory', 'utf8');
+      let entered = false;
+      const started = Date.now();
+      const failure = withFileLock(path.join(blocker, 'lexicon.yaml'), async () => { entered = true; }, { timeoutMs: 5_000, queueTimeoutMs: 5_000 });
+      await expect(failure).rejects.toMatchObject({ name: 'FileLockError', message: expect.stringContaining(`${blocker} is not a directory`) });
+      await expect(failure).rejects.not.toMatchObject({ message: expect.stringContaining('still held') });
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(entered).toBe(false);
+      // Deeper too: the file is a parent of the lock's directory.
+      await expect(withFileLock(path.join(blocker, 'sub', 'lexicon.yaml'), async () => undefined, { timeoutMs: 5_000, queueTimeoutMs: 5_000 }))
+        .rejects.toMatchObject({ name: 'FileLockError', message: expect.stringContaining(`${blocker} is not a directory`) });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 });
 
@@ -479,5 +507,103 @@ describe('backup: true survives the writes that come after it', () => {
     await expect(fs.stat(`${target}${BACKUP_SUFFIX}`)).rejects.toThrow();
     await expect(fs.stat(`${target}${OLDER_BACKUP_SUFFIX}`)).rejects.toThrow();
     expect(await leftoverTemps(target)).toEqual([]);
+  });
+});
+
+/** Run `fn` as though on `platform`, restoring the real value afterwards. */
+async function asPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>): Promise<T> {
+  const real = Object.getOwnPropertyDescriptor(process, 'platform') as PropertyDescriptor;
+  Object.defineProperty(process, 'platform', { ...real, value: platform });
+  try {
+    return await fn();
+  } finally {
+    Object.defineProperty(process, 'platform', real);
+  }
+}
+
+function errno(code: string, syscall: string, file: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`${code}: operation not permitted, ${syscall} '${file}'`), { code, syscall, path: file });
+}
+
+describe('Windows sharing errors are contention, not failure', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Catches: `acquire` treating anything but EEXIST as fatal. On Windows the
+   * exclusive create of a lock file that the previous holder has just
+   * deleted, while a waiter still has it open to judge staleness, fails with
+   * EPERM. That is the lock changing hands; CI saw one of eight concurrent
+   * `trustProject` processes (and one of the concurrent `addTerm` children)
+   * exit 1 on it.
+   */
+  it('retries the lock create after EPERM on win32', async () => {
+    const target = path.join(await scratch(), 'trust.json');
+    const real = fs.writeFile.bind(fs);
+    let refused = 0;
+    vi.spyOn(fs, 'writeFile').mockImplementation(async (file, data, opts) => {
+      const flag = typeof opts === 'object' && opts !== null ? (opts as { flag?: unknown }).flag : undefined;
+      if (flag === 'wx' && refused < 2) {
+        refused++;
+        throw errno('EPERM', 'open', String(file));
+      }
+      return real(file, data, opts);
+    });
+    const value = await asPlatform('win32', () => withFileLock(target, async () => 'ran'));
+    expect(value).toBe('ran');
+    expect(refused).toBe(2);
+    await expect(fs.stat(`${target}${LOCK_SUFFIX}`)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('still throws an EPERM on the lock create at once on other platforms', async () => {
+    const target = path.join(await scratch(), 'trust.json');
+    vi.spyOn(fs, 'writeFile').mockRejectedValue(errno('EPERM', 'open', `${target}${LOCK_SUFFIX}`));
+    const started = Date.now();
+    await expect(asPlatform('linux', () => withFileLock(target, async () => 'ran'))).rejects.toMatchObject({
+      code: 'EPERM',
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('gives up on a Windows sharing error that outlasts the lock timeout, with the real error', async () => {
+    const target = path.join(await scratch(), 'trust.json');
+    vi.spyOn(fs, 'writeFile').mockRejectedValue(errno('EBUSY', 'open', `${target}${LOCK_SUFFIX}`));
+    await expect(
+      asPlatform('win32', () => withFileLock(target, async () => 'ran', { timeoutMs: 100 })),
+    ).rejects.toMatchObject({ code: 'EBUSY' });
+  });
+
+  /**
+   * Catches: a rename over a file another process is reading. Windows refuses
+   * to replace a file that is open without delete sharing (a virus scanner,
+   * an editor), with EPERM or EACCES, for as long as it is open.
+   */
+  it('retries the rename over the target after EPERM on win32', async () => {
+    const target = path.join(await scratch(), 'trust.json');
+    await fs.writeFile(target, 'old');
+    const real = fs.rename.bind(fs);
+    let refused = 0;
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (refused < 2) {
+        refused++;
+        throw errno(refused === 1 ? 'EPERM' : 'EACCES', 'rename', String(to));
+      }
+      return real(from, to);
+    });
+    await asPlatform('win32', () => writeFileAtomic(target, 'new'));
+    expect(refused).toBe(2);
+    expect(await fs.readFile(target, 'utf8')).toBe('new');
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+
+  it('only counts EPERM, EACCES and EBUSY, and only on win32', () => {
+    for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+      expect(isTransientWindowsError({ code }, 'win32')).toBe(true);
+      expect(isTransientWindowsError({ code }, 'linux')).toBe(false);
+      expect(isTransientWindowsError({ code }, 'darwin')).toBe(false);
+    }
+    expect(isTransientWindowsError({ code: 'ENOENT' }, 'win32')).toBe(false);
+    expect(isTransientWindowsError(undefined, 'win32')).toBe(false);
   });
 });

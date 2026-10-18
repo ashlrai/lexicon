@@ -30,11 +30,11 @@ npm run build
 npm test
 ```
 
-Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit`.
+Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package and on the extension sources (`extension/tsconfig.json`).
 
 ## The committed plugin bundles
 
-`plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.mcp.json`, `hooks/hooks.json`). They are single-file esbuild bundles of `src/mcp/server.ts` and `src/hooks/user-prompt-submit.ts` with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
+`plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.claude-plugin/plugin.json`, `hooks/hooks.json`). They are esbuild bundles of `src/mcp/server.ts` and `src/hooks/plugin-entry.ts` (a small stub that enables Node's compile cache and imports `plugin/hook-main.mjs`, the bundle of `src/hooks/user-prompt-submit.ts`) with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
 
 Run `npm run build:bundle` before committing any change that the MCP server or the hook can reach (almost everything under `src/core`, `src/mcp`, `src/hooks`, or a dependency bump) and commit the regenerated files. CI runs `npm run check:bundle`, which rebuilds and fails on any diff under `plugin/`. `dist/` (the tsc output for the npm package and library types) stays untracked.
 
@@ -50,9 +50,9 @@ lexicon doctor
 ```bash
 npm install
 npm run build           # tsc -> dist/
-npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs (commit these)
+npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs (commit these)
 npm run check:bundle    # rebuild and fail if plugin/ differs from the checked-in files (CI runs this)
-npm run typecheck       # tsc --noEmit
+npm run typecheck       # tsc --noEmit (package, then extension/tsconfig.json)
 npm test                # unit + integration + e2e (vitest)
 npm run test:e2e        # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
 npm run bench           # synthetic accuracy benchmark (see bench/README.md)
@@ -120,7 +120,7 @@ Matcher and normalize tests use inline fixtures. Store, trust, CLI and hook test
 
 ### End-to-end journeys
 
-`tests/e2e.test.ts` is the only suite that does not mock anything: it spawns the real CLI (`node --import tsx src/cli/index.ts`), the hook and the MCP server as subprocesses against a throwaway HOME under `os.tmpdir()` (`HOME`, `XDG_CONFIG_HOME` and `LEXICON_PATH` all point there) and a temp git repo passed with `--cwd`. It covers the user journey end to end: init, add, list, normalize (args, stdin, `--json`, `--diff`, `--dry-run`, `--min-confidence`), learn, import, every export format, harvest, the trust flow, stats, path, doctor, install, the hook's `additionalContext`, and a JSON-RPC handshake with the MCP server over stdio. The daemon is skipped so the suite runs on CI without a clipboard.
+`tests/e2e.test.ts` is the only suite that does not mock anything: it spawns the real CLI (`node --import tsx src/cli/index.ts`), the hook and the MCP server as subprocesses against a throwaway HOME under `os.tmpdir()` (`HOME`, `XDG_CONFIG_HOME` and `LEXICON_PATH` all point there) and a temp git repo passed with `--cwd`. It covers the user journey end to end: init, add, list, normalize (args, stdin, `--json`, `--diff`, `--dry-run`, `--min-confidence`), learn, import, every export format, harvest, the trust flow, stats, path, doctor, install, the hook's `additionalContext`, and a JSON-RPC handshake with the MCP server over stdio. The daemon is skipped so the suite runs on CI without a clipboard. With `LEXICON_E2E_DIST=1` (CI sets it after `npm run build`) it spawns the built `dist/` entry points under plain node instead of the sources under tsx: the same code in about half the time, so run `npm run build` first if you set it locally.
 
 ```bash
 npm run test:e2e          # about 20s

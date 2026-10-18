@@ -9,8 +9,13 @@ on:
   pull_request:
     branches: [main]
 
+# Superseded branch and PR runs are cancelled. Every push to main gets its own
+# group (keyed by SHA): with one shared main group, a run whose macOS row sat
+# in the shared macOS queue held the next main run pending behind it, and
+# that one cancelled the run pending before it, so main went hours without a
+# result and some commits were never tested at all.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -78,29 +83,42 @@ jobs:
           if [ -n "$untracked" ]; then echo "untracked bundle files: $untracked"; exit 1; fi
 
       # PRs run only the vitest files whose import graph reaches a changed
-      # file (vitest --changed). Any change to dependencies, configs, fixtures
-      # or CI falls back to the full suite, and pushes to main always run it.
-      - name: Unit tests (affected on PRs, full on main)
+      # file (vitest --changed), plus tests/e2e.test.ts, which spawns the real
+      # CLI, the real hook and the real MCP server as child processes and runs
+      # on every event. Any change to dependencies, configs, fixtures or CI
+      # falls back to the full suite, and pushes to main always run it.
+      # One vitest invocation: e2e is the slowest file (~40-80 s) and runs in
+      # one worker while the other workers take the remaining files. Run as a
+      # separate step it added its whole duration to the job; a failure is
+      # still named by file and test in the report.
+      - name: Tests (affected on PRs plus e2e, full on main)
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
+          # e2e spawns the dist/ built above under plain node rather than the
+          # sources under tsx: same code, half the e2e time (no loader per spawn).
+          LEXICON_E2E_DIST: '1'
         run: |
           if [ "$EVENT" = "pull_request" ] && ! git diff --name-only "$BASE...HEAD" | grep -Eq '^(package(-lock)?\.json|vitest\.config\.ts|tsconfig[^/]*\.json|tests/fixtures/|examples/|packs/|registry/|\.github/)'; then
-            npx vitest run --changed "$BASE"
+            # A failed listing must fail the step, never shrink the run to e2e.
+            list="$(npx vitest list --changed "$BASE" --filesOnly)"
+            mapfile -t affected <<< "$list"
+            [ -n "${affected[0]}" ] || affected=()
+            echo "affected test files (${#affected[@]}) plus tests/e2e.test.ts"
+            npx vitest run "${affected[@]}" tests/e2e.test.ts
           else
             npm test
           fi
 
-      # The e2e suite spawns the real CLI, the real hook and the real MCP
-      # server as child processes. `npm test` already includes it; this runs it
-      # again alone so a failure there is attributable at a glance rather than
-      # buried in 800 other results.
-      - name: End-to-end suite
-        run: npm run test:e2e
-
       - name: Smoke test the built CLI, the plugin hook and the MCP server
         run: npm run smoke
+
+      # The tarball a release would publish, installed into an empty project and
+      # driven through the CLI, MCP and hook surface Phantom relies on.
+      - name: Packed package installs and keeps the Phantom contract
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: node scripts/pack-smoke.mjs
 
       - name: Build the browser extension
         run: npm run build:extension
@@ -113,34 +131,15 @@ jobs:
           path: extension/dist
           if-no-files-found: error
 
-  # ---------------------------------------------------------------------------
-  # Documentation drift guards. Split from the test matrix so each check runs
-  # once per platform that can meaningfully run it, rather than five times.
-  # ---------------------------------------------------------------------------
-  docs:
-    name: docs (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - name: Keep LF endings on Windows
-        if: runner.os == 'Windows'
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
+      # -----------------------------------------------------------------------
+      # Documentation drift guards, once per platform that can meaningfully run
+      # them: the Node 22 row on Linux and on Windows. They used to be their own
+      # job, which cost two more runners (each with its own checkout, setup-node
+      # and npm ci) and two more places to queue; here they reuse this job's
+      # install and build.
+      # -----------------------------------------------------------------------
       - name: Every relative link resolves
+        if: matrix.node == 22 && runner.os != 'macOS'
         # Runs on Windows too, but ubuntu is the authoritative result: NTFS is
         # case-insensitive, so a link written `docs/cli.md` against the real
         # `docs/CLI.md` resolves here and fails on Linux. The Windows run
@@ -148,6 +147,7 @@ jobs:
         run: npm run check:links
 
       - name: CLI reference is up to date
+        if: matrix.node == 22 && runner.os != 'macOS'
         # The interesting platform for this one is Windows: gen-cli-docs
         # embeds the CLI's own --help output verbatim inside fenced blocks, and
         # commander writes CRLF there. An un-normalized \r would be *committed
@@ -163,40 +163,21 @@ jobs:
         # the OS, so a second full run on Windows would cost ~5 minutes to
         # assert the same numbers. The script itself is Windows-clean (it
         # spawns vitest's ESM entry with process.execPath, not the npx shim).
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          npm run build
-          npm run check:facts
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm run check:facts
 
-  # ---------------------------------------------------------------------------
-  # Windows features that unit tests only ever exercise through injected fakes.
-  # Everything here uses the real schtasks, the real clipboard and a real
-  # scratch %USERPROFILE%.
-  # ---------------------------------------------------------------------------
-  windows-integration:
-    name: windows integration
-    runs-on: windows-latest
-    steps:
-      - name: Keep LF endings on Windows
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run build
-
+      # -----------------------------------------------------------------------
+      # Windows features that unit tests only ever exercise through injected fakes.
+      # Everything here uses the real schtasks, the real clipboard and a real
+      # scratch %USERPROFILE%. Last in the job, so nothing they install or write
+      # can reach the tests above.
+      # -----------------------------------------------------------------------
       # --- lexicon serve --install -----------------------------------------
       # The task is created, queried back out of the Task Scheduler store, and
       # deleted in the same job. LEXICON_SERVE_LABEL keeps it off the name a
       # real install would use.
       - name: serve --install creates a Scheduled Task, --uninstall removes it
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           LEXICON_SERVE_LABEL: LexiconCI
@@ -235,6 +216,7 @@ jobs:
       # Get-Clipboard/Set-Clipboard through `lexicon daemon --once`, including
       # the CRLF round-trip the backend promises.
       - name: clipboard daemon corrects the real Windows clipboard
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           LEXICON_PATH: ${{ github.workspace }}\examples\lexicon.example.yaml
@@ -261,6 +243,7 @@ jobs:
       # back, so the paths are checked against the filesystem rather than
       # against our own constant.
       - name: client configs land where each vendor documents on Windows
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -300,6 +283,7 @@ jobs:
       # not attempted. What is checked is that the missing-tool path reports
       # the Windows install hint rather than crashing. See docs/PLATFORMS.md.
       - name: voice reports the Windows install hint when ffmpeg is absent
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           LEXICON_FFMPEG_BIN: C:\nowhere\ffmpeg.exe
@@ -312,25 +296,13 @@ jobs:
           # is exactly the path under test; the assertion above is the verdict.
           exit 0
 
-  # ---------------------------------------------------------------------------
-  # Linux beyond the happy path: the X11 clipboard backends under a real X
-  # server, and the systemd unit we write validated by systemd itself.
-  # ---------------------------------------------------------------------------
-  linux-integration:
-    name: linux integration
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run build
-
+      # -----------------------------------------------------------------------
+      # Linux beyond the happy path: the X11 clipboard backends under a real X
+      # server, and the systemd unit we write validated by systemd itself. Node 22
+      # row only, and last, for the same reasons as the Windows block.
+      # -----------------------------------------------------------------------
       - name: Install a display and the clipboard tools
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb xclip xsel wl-clipboard systemd
@@ -338,6 +310,7 @@ jobs:
       # xclip and xsel need a display. xvfb-run gives them one, so these run
       # for real instead of being skipped for want of an X server.
       - name: clipboard daemon corrects the real clipboard under X11
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         env:
           LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
         run: |
@@ -359,6 +332,7 @@ jobs:
       # compositor on the runner, so this asserts detection and the error the
       # user would actually see -- not a working Wayland clipboard.
       - name: the Wayland backend is selected by WAYLAND_DISPLAY and fails honestly without a compositor
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         env:
           LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
         run: |
@@ -375,6 +349,7 @@ jobs:
       # writes the unit and then fails to enable it. That is expected: what is
       # verified here is that the unit file we write is one systemd accepts.
       - name: the systemd user unit we write is valid
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         env:
           LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
         run: |
@@ -391,6 +366,7 @@ jobs:
       # XDG_CONFIG_HOME / XDG_DATA_HOME / XDG_STATE_HOME must actually move the
       # files, and a relative value must be ignored per the spec.
       - name: XDG_CONFIG_HOME moves the lexicon, and a relative value is ignored
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         run: |
           set -euo pipefail
           xdg="$RUNNER_TEMP/xdg"

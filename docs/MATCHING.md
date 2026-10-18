@@ -14,12 +14,13 @@ Checked before any replacement:
 
 - The built-in stoplist of about 3400 common English words in their usual inflections, plus `settings.protectedWords`, plus each term's `never`.
 - Spans already equal to the canonical. They are also claimed, so no other term can rewrite a word inside `Tadeusz Wróblewski` or `Wispr Flow's`.
-- Text inside code spans, fences, URLs, emails and paths when `skipCode` is on, and names glued to an identifier (`@ashlr/lexicon`, `ashlr_core`, `#ashlr`) in every mode.
+- Text inside code spans (opened and closed by backtick runs of the same length, on one line), backtick and tilde fences, HTML `<code>`, `<pre>`, `<kbd>`, `<samp>`, `<script>` and `<style>` elements (real tags that close; the escaped `&lt;code&gt;` a page uses to show markup is prose and is corrected), URLs, emails and paths when `skipCode` is on, and names glued to an identifier (`@ashlr/lexicon`, `ashlr_core`, `#ashlr`) in every mode.
 - Tokens shorter than three characters, and metaphone keys shorter than three characters (`Zod`, `SSO`, `Neon`, `SaaS`), are only ever matched by exact alias. Spelled-out aliases such as `j w t` never get a phonetic key.
 - A phonetic or fuzzy window of two or more words never starts or ends on a function word (`to`, `is`, `a`, `the`), so `normalizeTranscript to` cannot swallow the `to`.
 - A lone word matched against a term that has explicit aliases must score at least 0.88. In the phonetic pass that bar applies whatever the case (`Inter` is held to it as much as `inter`), and the candidate must also resemble the alias in spelling; in the fuzzy pass only an all-lowercase word (`prism`, `email`, `gram`, and a hyphenated compound such as `per-category`) is held to it. A term with no aliases is not held to it at all: see below.
 - A phonetic window of two or more words never starts or ends on a token with no word sound of its own: a bare numeral (`2`, `3.5`) or an abbreviation spelled out with periods (`i.e`, `a.m`). Confidence there is a ratio of letter counts, so such a token is free, and the window grew over it and then won on span length (`cooper netties i.e. Terraform` came out as `Kubernetes. Terraform`). The test is against the alias, not the window alone: when the term's own name carries one in the same place, the window covers it instead of swallowing it, so `clawd 4` still reaches `Claude 4` and `cooper netties 1` gives `Kubernetes 1` rather than `Kubernetes 1 1`. Phonetic pass only, so `b 2 b`, `auth 0` and `11 labs` still work as exact aliases.
 - A trailing possessive is kept: `ashler ai's` becomes `Ashlr.AI's`.
+- A plural keeps its "s". When the last word of a window has four or more letters and ends in a single "s" (not "ss"), the window is also tried without that "s"; the base is replaced and the "s" stays when nothing matched the whole window and the stripped one is an exact alias hit, or when the stripped one reaches the same term at higher confidence. A whole window that is already an exact alias hit is left to that hit. So `rotate the jots` becomes `rotate the JWTs` (alias `jot`), `key pee eyes` becomes `KPIs` and `three ollamas` becomes `three Ollamas`, not `Ollama`.
 - An implicit alias that had to invent a word boundary scores 0.95, not 1.0, and has to clear `minConfidence` like anything else. See below.
 
 ## Boundaries the matcher invented
@@ -74,7 +75,7 @@ lexicon normalize --diff "deploy to head sner with cooper netties and kubernetee
 #   deploy to Hetzner with Kubernetes and Kubernetes
 ```
 
-`--diff` goes to stderr so stdout stays pipeable. `--min-confidence 0.9`, `--no-phonetic` and `--no-fuzzy` override the file settings for one run. If the lexicon fails to load, `normalize` prints the reason to stderr, passes the text through stdout byte-exactly so a pipeline never loses input, and exits 1. The exit code is the only channel left: without it "no corrections were applied" and "nothing needed correcting" look identical.
+`--diff` goes to stderr so stdout stays pipeable, and still does with `--json`. `--dry-run` prints the same summary to stderr and leaves stdout as the input. `--min-confidence 0.9`, `--no-phonetic` and `--no-fuzzy` override the file settings for one run. If the lexicon fails to load, `normalize` prints the reason to stderr, passes the text through stdout byte-exactly so a pipeline never loses input, and exits 1. The exit code is the only channel left: without it "no corrections were applied" and "nothing needed correcting" look identical.
 
 The three tiers are colour-coded in the [live demo](https://ashlrai.github.io/lexicon/), which runs this same matcher in your browser.
 

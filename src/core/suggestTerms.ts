@@ -33,7 +33,7 @@ import type { AliasEntry, MatcherIndex } from './matcher.js';
 import { sanitizeForDisplay } from './schema.js';
 import { resolvePaths } from './store.js';
 import { suggestAliases } from './suggest.js';
-import type { LoadedLexicon, Replacement, Term, TermCategory } from './types.js';
+import type { LoadedLexicon, Replacement, Term, TermCategory, TermScope } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Contract
@@ -59,6 +59,14 @@ export interface TermSuggestion {
   aliases?: string[];
   /** For 'term' from a harvest: the category the harvester assigned. */
   category?: TermCategory;
+  /**
+   * The lexicon file applying it writes: where the term lives for 'alias',
+   * 'never' and 'stale', the global file for a new 'term'. Always set by
+   * suggestTerms; optional so a suggestion passed back without it still applies.
+   */
+  scope?: TermScope;
+  /** Path of that file. Set with `scope`. */
+  path?: string;
 }
 
 /** One line of `voice/history.jsonl`. `model` and `ms` are informational and optional here. */
@@ -282,7 +290,10 @@ function blankSkipped(text: string): string {
 
 function tokenize(text: string): Tok[] {
   const blanked = /[`/@:]/.test(text) ? blankSkipped(text) : text;
-  const draft: Array<Omit<Tok, 'joinsNext'>> = [];
+  // Built mutable and returned as the readonly Tok: `joinsNext` is set on the
+  // previous token once the next one is found, rather than copying every
+  // token in a second pass.
+  const toks: Array<{ -readonly [K in keyof Tok]: Tok[K] }> = [];
   TOKEN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = TOKEN_RE.exec(blanked)) !== null) {
@@ -292,9 +303,10 @@ function tokenize(text: string): Tok[] {
     const end = start + raw.length;
     const base = POSSESSIVE_RE.test(raw) && raw.length > 2 ? raw.slice(0, -2) : raw;
     const lower = fold(base);
-    const prev = draft[draft.length - 1];
+    const prev = toks[toks.length - 1];
     const gap = prev ? blanked.slice(prev.end, start) : '';
-    draft.push({
+    if (prev) prev.joinsNext = /^\s+$/.test(gap);
+    toks.push({
       text: raw,
       base,
       lower,
@@ -303,12 +315,10 @@ function tokenize(text: string): Tok[] {
       stop: STOPLIST.has(lower),
       fn: FUNCTION_WORDS.has(lower),
       sentenceStart: !prev || /[.!?\n]/.test(gap),
+      joinsNext: false,
     });
   }
-  return draft.map((t, i) => {
-    const next = draft[i + 1];
-    return { ...t, joinsNext: next !== undefined && /^\s+$/.test(blanked.slice(t.end, next.start)) };
-  });
+  return toks;
 }
 
 // ---------------------------------------------------------------------------
@@ -555,7 +565,12 @@ interface Bucket {
   still: boolean;
 }
 
-function bump(map: Map<string, Bucket>, canonical: string, word: string, count: number, evidence: string, confidence = 0, still = false): void {
+/**
+ * Count one sighting. `evidence` is a thunk: building a snippet sanitizes and
+ * re-splits the line, and a bucket keeps only MAX_EVIDENCE of them, so it is
+ * built only while the bucket still has room.
+ */
+function bump(map: Map<string, Bucket>, canonical: string, word: string, count: number, evidence: () => string, confidence = 0, still = false): void {
   const key = `${fold(canonical)}\0${fold(word)}`;
   let b = map.get(key);
   if (!b) {
@@ -565,7 +580,10 @@ function bump(map: Map<string, Bucket>, canonical: string, word: string, count: 
   b.count += count;
   b.confidenceSum += confidence * count;
   b.still = b.still || still;
-  if (b.evidence.length < MAX_EVIDENCE && !b.evidence.includes(evidence)) b.evidence.push(evidence);
+  if (b.evidence.length < MAX_EVIDENCE) {
+    const ev = evidence();
+    if (!b.evidence.includes(ev)) b.evidence.push(ev);
+  }
 }
 
 function dedupeKey(s: TermSuggestion): string {
@@ -687,17 +705,17 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
       if (covered(reps, win.start, win.end)?.reason === 'alias') continue;
       // Rewritten when it was recorded: the diff below classifies it instead.
       if (!outputLower.includes(win.lower)) continue;
-      bump(aliasBuckets, hit.canonical, win.text, line.count, snippet(line.raw, win.start, win.end), hit.score);
+      bump(aliasBuckets, hit.canonical, win.text, line.count, () => snippet(line.raw, win.start, win.end), hit.score);
     }
 
     for (const r of reps) {
       if (r.reason === 'alias') continue;
-      bump(promoteBuckets, r.canonical, r.original, line.count, snippet(line.raw, r.start, r.end), r.confidence);
+      bump(promoteBuckets, r.canonical, r.original, line.count, () => snippet(line.raw, r.start, r.end), r.confidence);
     }
 
     // --- rewrites made when the line was recorded ---------------------------
+    const outToks = changed ? tokenize(line.output) : rawToks;
     if (changed) {
-      const outToks = tokenize(line.output);
       if (rawToks.length <= MAX_DIFF_TOKENS && outToks.length <= MAX_DIFF_TOKENS) {
         const { hunks, pairs } = diffTokens(
           rawToks.map((t) => t.lower),
@@ -734,7 +752,7 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
           const current = reps.find((r) => r.start < end && start < r.end && fold(r.canonical) === fold(found.term.canonical));
           if (current?.reason === 'alias') continue;
           const still = current !== undefined;
-          const ev = snippet(line.raw, start, end);
+          const ev = (): string => snippet(line.raw, start, end);
           if (found.a1 - found.a0 === 1 && isOrdinaryWord(originalLower)) {
             bump(neverBuckets, found.term.canonical, original, line.count, ev, 0, still);
           } else if (!still) {
@@ -746,12 +764,12 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
     }
 
     // --- new names in the corrected output ---------------------------------
-    const outToks = changed ? tokenize(line.output) : rawToks;
     for (const t of outToks) seenTokens.add(t.lower);
+    // Cheap set lookups first: looksCapitalized runs four regexes per token.
     const qualifies = (t: Tok): boolean =>
-      looksCapitalized(t.base) &&
       !t.stop &&
       !t.fn &&
+      looksCapitalized(t.base) &&
       !HARVEST_STOPLIST.has(t.base) &&
       !cat.known.has(t.lower) &&
       !cat.known.has(t.lower.replace(/[^\p{L}\p{N}]+/gu, ''));
@@ -773,7 +791,7 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
       if (alphaOnly(phraseLower).length < 4) continue;
       if (cat.known.has(phraseLower) || cat.known.has(collapse(phrase))) continue;
       if (nearest(cat, phraseLower)) continue; // sounds like an existing term: alias material, not a new term
-      bump(termBuckets, phrase, '', line.count, snippet(line.output, first.start, last.end));
+      bump(termBuckets, phrase, '', line.count, () => snippet(line.output, first.start, last.end));
     }
   }
 
@@ -887,5 +905,17 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
 
   const merged = mergeSuggestions(suggestions);
   merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
-  return merged.slice(0, limit);
+  return merged.slice(0, limit).map((s) => withTarget(s, loaded));
+}
+
+/**
+ * Name the file a suggestion touches, so the user can be told before they
+ * accept it. An existing term lives where the merge took it from (the
+ * project file wins), a new one goes to the global file, as apply does.
+ */
+function withTarget(s: TermSuggestion, loaded: LoadedLexicon): TermSuggestion {
+  const key = s.canonical.trim().toLowerCase();
+  const held = s.kind === 'term' ? undefined : loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+  const scope: TermScope = held?.scope === 'project' && loaded.project ? 'project' : 'global';
+  return { ...s, scope, path: scope === 'project' && loaded.project ? loaded.project.path : loaded.global.path };
 }

@@ -4,6 +4,7 @@
  * objects. Pure: no IO. The CLI (`lexicon import`) reads the file and writes
  * the terms with addTerm.
  */
+import { parse as parseYaml } from 'yaml';
 import type { Term, TermSource } from '../types.js';
 import { REPLACEMENT_CHAR } from './encoding.js';
 import { parseCsvImport, isLexiconCsvHeader } from './csv.js';
@@ -112,12 +113,20 @@ export function detectImportFormat(content: string, filename?: string): Concrete
   const trimmed = text.trimStart();
   if (looksLikePlist(trimmed)) return 'macos';
 
+  let jsonError: string | undefined;
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(trimmed);
-    } catch {
-      parsed = undefined;
+    } catch (err) {
+      jsonError = err instanceof Error ? err.message : String(err);
+      // A YAML flow mapping (`{version: 1, terms: [...]}`) is a lexicon file too.
+      try {
+        const yaml: unknown = parseYaml(trimmed, { prettyErrors: false });
+        if (looksLikeLexiconJson(yaml)) return 'json';
+      } catch {
+        // fall through to the JSON error below
+      }
     }
     if (parsed !== undefined) {
       if (looksLikeSuperwhisper(parsed)) return 'superwhisper';
@@ -134,7 +143,15 @@ export function detectImportFormat(content: string, filename?: string): Concrete
   // Loose sniffing, so after every format with an unambiguous marker.
   if (looksLikeMarkdown(text)) return 'markdown';
 
-  const firstLine = parseCsv(text)[0]?.fields;
+  // Only the header row matters here, so only the first line is parsed: a
+  // quote left open further down is the parser's to report once the format is
+  // known, and a first line that opens with an unbalanced quote is no header.
+  let firstLine: string[] | undefined;
+  try {
+    firstLine = parseCsv(text.split(/\r\n|\r|\n/, 1)[0])[0]?.fields;
+  } catch {
+    firstLine = undefined;
+  }
   if (firstLine) {
     if (isWisprHeader(firstLine)) return 'wispr';
     if (isLexiconCsvHeader(firstLine)) return 'csv';
@@ -145,6 +162,13 @@ export function detectImportFormat(content: string, filename?: string): Concrete
   if (ext === 'md' || ext === 'markdown') return 'markdown';
   if (ext === 'csv') return 'wispr';
   if (ext === 'yml' || ext === 'yaml') return 'espanso';
+  if (jsonError !== undefined && ext !== 'txt') {
+    // Falling back to plain text here would import every line of a malformed
+    // JSON export (a trailing comma, a truncated download) as a term.
+    throw new Error(
+      `could not detect the import format: the content starts like JSON but does not parse (${jsonError}); fix the file or pass the format explicitly`,
+    );
+  }
   return 'text';
 }
 

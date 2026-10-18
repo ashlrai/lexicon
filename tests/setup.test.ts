@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readLexiconFile } from '../src/core/index.js';
+import { loadLexicon, readLexiconFile, readTrustRegistry, trustProject } from '../src/core/index.js';
 import type { HarvestCandidate } from '../src/core/index.js';
 import {
   SETUP_CLIENTS,
@@ -91,6 +91,8 @@ function fakes(overrides: Partial<SetupDeps> = {}, present: string[] = []): Fake
       return 0;
     },
     harvest: async () => [],
+    // The plan's real check resolves this checkout's CLI entry; tests that need it pass serveBlocker: undefined.
+    serveBlocker: async () => undefined,
     ...overrides,
   };
   return f;
@@ -194,12 +196,33 @@ describe('runSetup --yes', () => {
       globalPath,
       'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n',
     );
-    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    const { summary, io } = await run({ yes: true, clients: 'none' }, f);
     expect(summary.termsAdded).toEqual([]);
     expect(io.out).toContain('already has 3 terms');
 
     const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', reseed: true }, f);
     expect(again.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+  });
+
+  it('seeds an explicit --company / --person into a lexicon that already has terms, without the guessed defaults', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(
+      globalPath,
+      'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n',
+    );
+    // The plan (what setup_lexicon previews) names exactly the names that were passed.
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'Acme Robotics' }, fakes());
+    expect(planned.plan?.wouldSeed).toEqual(['Acme Robotics']);
+
+    const company = await run({ yes: true, clients: 'none', company: 'Acme Robotics' }, fakes());
+    expect(company.summary.termsAdded).toEqual(['Acme Robotics']);
+    const person = await run({ yes: true, clients: 'none', person: 'Jo Smith' }, fakes());
+    expect(person.summary.termsAdded).toEqual(['Jo Smith']);
+    expect(person.io.out).not.toContain('no company term');
+
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.map((t) => t.canonical)).toEqual(['A', 'B', 'C', 'Acme Robotics', 'Jo Smith']);
+    expect(file.lexicon.terms.find((t) => t.canonical === 'Acme Robotics')?.category).toBe('brand');
   });
 
   it('suggests the company from the git remote when nothing is passed and seeds it', async () => {
@@ -254,6 +277,10 @@ describe('runSetup --yes', () => {
     const { code, summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
     expect(code).toBe(1);
     expect(summary.serve).toBe('failed');
+    // Under --json the same failure leads with ok: false (exit 1), as MCP setup_lexicon reports it.
+    const failedJson = await run({ yes: true, json: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
+    expect(failedJson.code).toBe(1);
+    expect(JSON.parse(failedJson.io.out)).toMatchObject({ ok: false, serve: 'failed' });
 
     const win = fakes({ platform: 'win32' });
     const { summary: s2, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, win);
@@ -293,6 +320,45 @@ describe('runSetup --yes', () => {
     const again = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true }, f);
     expect(again.summary.termsAdded).toEqual([]);
     expect((await readLexiconFile(path.join(cwd, '.lexicon.yaml'), 'project')).lexicon.terms).toHaveLength(2);
+  });
+
+  // Catches: MCP setup_lexicon with harvest: true wrote the repo names and
+  // trusted the project file, so a model relaying a yes decided what every
+  // later prompt in the repo is rewritten with.
+  it('with harvestUntrusted writes the harvest but leaves the project file untrusted, and names it', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: ['package.json'], count: 9, suggestedAliases: ['play right'] },
+        { canonical: 'Kubernetes', category: 'product', source: 'harvest:repo', evidence: ['README.md'], count: 6, suggestedAliases: [] },
+      ],
+    });
+    const projectPath = path.join(cwd, '.lexicon.yaml');
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true, harvestUntrusted: true }, f);
+    expect((await readLexiconFile(projectPath, 'project')).lexicon.terms.map((t) => t.canonical)).toEqual(['Playwright', 'Kubernetes']);
+    expect(summary.untrustedProject).toBe(projectPath);
+    expect(io.out).toContain('(not trusted: review it and run lexicon trust)');
+    expect((await readTrustRegistry({ globalPath })).trusted).toEqual({});
+    expect((await loadLexicon({ cwd, globalPath })).projectTrust).toBe('untrusted');
+  });
+
+  // Catches: a harvestUntrusted run never pinned, so a project file the user
+  // had already trusted read as "changed" after MCP setup_lexicon harvested it.
+  it('with harvestUntrusted keeps an already-trusted project file trusted', async () => {
+    await fs.mkdir(path.join(cwd, '.git'));
+    const projectPath = path.join(cwd, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n');
+    await trustProject(projectPath, { globalPath });
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Playwright', category: 'product', source: 'harvest:package', evidence: ['package.json'], count: 9, suggestedAliases: ['play right'] },
+      ],
+    });
+    const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', harvest: true, harvestUntrusted: true }, f);
+    expect((await readLexiconFile(projectPath, 'project')).lexicon.terms.map((t) => t.canonical)).toEqual(['Playwright']);
+    expect(summary.untrustedProject).toBeUndefined();
+    expect(io.out).toContain('(trusted)');
+    expect((await loadLexicon({ cwd, globalPath })).projectTrust).toBe('trusted');
   });
 
   it('never seeds a person or company that is already in the global lexicon, and the harvest skips names the global lexicon covers', async () => {
@@ -401,9 +467,11 @@ describe('runSetup --yes', () => {
   it('--json prints only the summary on stdout and progress on stderr', async () => {
     const f = fakes();
     const { summary, io } = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, f);
-    const parsed = JSON.parse(io.out) as SetupSummary;
-    expect(parsed).toEqual(summary);
-    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'packs', 'serve', 'termsAdded']);
+    const parsed = JSON.parse(io.out) as SetupSummary & { ok: boolean };
+    // Catches: the success document had no `ok`, while the refusal is `{ ok: false, error }`.
+    expect(parsed).toEqual({ ok: true, ...summary });
+    expect(Object.keys(parsed)[0]).toBe('ok');
+    expect(Object.keys(parsed).sort()).toEqual(['clients', 'demo', 'exports', 'lexiconPath', 'ok', 'packs', 'serve', 'termsAdded']);
     expect(io.err).toContain('lexicon setup');
     expect(io.err).toContain('claude: installed');
     // The run ends in a correction the caller can show, not just a file list.
@@ -443,6 +511,8 @@ describe('runSetup --dry-run', () => {
       lexiconExists: false,
       wouldSeed: ['Mason Wyatt', 'Ashlr.AI'],
       wouldInstallPacks: ['developer', 'ai', 'voice-tools'],
+      packsOnOffer: ['developer', 'ai', 'voice-tools'],
+      packsToInstall: [],
       wouldHarvest: [],
       detectedClients: ['claude', 'codex', 'cursor'],
       wouldInstallClients: ['claude', 'codex', 'cursor'],
@@ -471,6 +541,23 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('Playwright');
     expect(io.out).toContain('Plan (nothing written)');
     expect(io.err).toBe('');
+  });
+
+  // Catches: from a plugin or npx install the plan said wouldInstallServe: true, the
+  // agent asked the user, and the real run then refused the login service.
+  it('a plan from a plugin cache says the login service would be refused, and how to fix it', async () => {
+    const pluginCli = path.join(home, '.claude', 'plugins', 'cache', 'ashlr', 'lexicon', '0.5.6', 'dist', 'cli');
+    const f = fakes({ cliDir: pluginCli, serveBlocker: undefined });
+    const { code, plan, io } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
+    expect(code).toBe(0);
+    expect(plan?.wouldInstallServe).toBe(false);
+    expect(plan?.serveBlocked).toContain('Claude Code plugin cache');
+    expect(plan?.serveBlocked).toContain('npm i -g @ashlr/lexicon');
+    expect(io.out).toContain('login service: would not install (this copy is running from an npx or Claude Code plugin cache');
+    expect(f.serveCalls).toBe(0);
+    // Not asked for: nothing to report.
+    const quiet = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, fakes({ cliDir: pluginCli, serveBlocker: undefined }));
+    expect(quiet.plan?.serveBlocked).toBeUndefined();
   });
 
   it('describes the run that would actually happen: the prompts, and what Enter does to them', async () => {
@@ -550,7 +637,7 @@ describe('runSetup --dry-run', () => {
   it('--json prints the plan instead of the summary', async () => {
     const f = fakes();
     const { plan, io } = await run({ yes: true, dryRun: true, json: true, clients: 'none', company: 'Ashlr.AI' }, f);
-    expect(JSON.parse(io.out)).toEqual(plan);
+    expect(JSON.parse(io.out)).toEqual({ ok: true, ...plan });
     expect(io.err).toContain('dry run');
   });
 });
@@ -706,6 +793,29 @@ describe('helpers', () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  // Catches: `setup --json --app nope` printed the refusal on stderr only, leaving stdout empty.
+  it('registerSetupCommands prints { ok: false, error } under --json when setup refuses', async () => {
+    const io = makeIO();
+    const program = new Command().exitOverride().option('--cwd <dir>');
+    registerSetupCommands(program, io);
+    const saved = process.exitCode;
+    try {
+      await program.parseAsync(['setup', '--yes', '--json', '--app', 'nope', '--clients', 'none', '--cwd', cwd], { from: 'user' });
+      expect(JSON.parse(io.out)).toEqual({ ok: false, error: expect.stringContaining('unknown app "nope"'), nextStep: expect.stringContaining('lexicon setup --json again') });
+      expect(io.err).toContain('lexicon: unknown app "nope"');
+      expect(process.exitCode).toBe(1);
+      expect(existsSync(globalPath)).toBe(false);
+
+      const plain = makeIO();
+      const p2 = new Command().exitOverride().option('--cwd <dir>');
+      registerSetupCommands(p2, plain);
+      await expect(p2.parseAsync(['setup', '--yes', '--app', 'nope', '--cwd', cwd], { from: 'user' })).rejects.toThrow('unknown app');
+      expect(plain.out).toBe('');
+    } finally {
+      process.exitCode = saved;
+    }
+  });
+
   it('registerSetupCommands wires --dry-run (writes nothing) and leaves serve undefined without --serve/--no-serve', async () => {
     const io = makeIO();
     const program = new Command().exitOverride().option('--cwd <dir>');
@@ -803,6 +913,27 @@ describe('runSetup starter packs', () => {
     expect(real.summary.demo).toEqual(planned.plan?.demo);
   });
 
+  // Catches: when the seeded name had no misspelling to show, the demo fell
+  // back to the example terms and said `lexicon add "Your Co" --suggest`,
+  // a placeholder, though the user had just given the company name.
+  it('the example fallback names the term this run seeds, not a "Your Co" placeholder', async () => {
+    const opts = { yes: true, clients: 'none', company: 'Acme', harvest: false } as const;
+    for (const dryRun of [true, false]) {
+      // No git user.name, so Acme (which has no likely misspelling) is the only seed.
+      const noGitName = fakes({
+        exec: (file, args) => {
+          if (file === 'git' && args.includes('get-url')) return 'https://github.com/ashlrai/lexicon.git';
+          throw new Error(`no ${args.join(' ')}`);
+        },
+      });
+      await fs.rm(globalPath, { force: true });
+      const { io, plan, summary } = await run({ ...opts, dryRun }, noGitName);
+      expect((dryRun ? plan?.demo : summary.demo)?.usedExample, String(dryRun)).toBe(true);
+      expect(io.out).toContain('add one now, what speech-to-text writes for it: lexicon add "Acme" "<misspelling>"');
+      expect(io.out).not.toContain('Your Co');
+    }
+  });
+
   it('a dry run lists the defaults (or the --packs list) in wouldInstallPacks, installs nothing and keeps pack names out of wouldHarvest', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const f = fakes({
@@ -828,6 +959,34 @@ describe('runSetup starter packs', () => {
     expect(off.plan?.wouldInstallPacks).toEqual([]);
     expect(off.io.out).toContain('skipped (--no-packs)');
     expect(off.io.out).toContain('starter packs: none');
+  });
+
+  it('a dry run says in packsToInstall what the same call installs, agreeing with its would install line', async () => {
+    // wouldInstallPacks is the set on offer: under --yes it named three packs
+    // while the line said `would install: none`, and an agent reading the
+    // JSON told the user they were on their way in.
+    const f = fakes();
+    const defaults = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
+    expect(defaults.plan?.packsOnOffer).toEqual(['developer', 'ai', 'voice-tools']);
+    expect(defaults.plan?.packsToInstall).toEqual([]);
+    expect(defaults.io.out).toContain('would install: none (pass --packs developer,ai,voice-tools');
+
+    const picked = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'business' }, f);
+    expect(picked.plan?.packsToInstall).toEqual(['business']);
+    expect(picked.plan?.packsOnOffer).toEqual(['business']);
+    expect(picked.io.out).toContain('would install: business');
+
+    const none = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: 'none' }, f);
+    expect(none.plan?.packsToInstall).toEqual([]);
+
+    const off = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: false }, f);
+    expect(off.plan?.packsOnOffer).toEqual([]);
+    expect(off.plan?.packsToInstall).toEqual([]);
+
+    // On a terminal, Enter at the checklist installs the checked defaults.
+    const asked = await run({ dryRun: true, clients: 'none', company: 'Ashlr.AI' }, fakes({ isInteractive: () => true }));
+    expect(asked.plan?.wouldAsk).toContain('packs');
+    expect(asked.plan?.packsToInstall).toEqual(['developer', 'ai', 'voice-tools']);
   });
 
   it('a rerun leaves installed packs out of the plan and reports them instead', async () => {

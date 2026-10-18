@@ -16,8 +16,8 @@ import {
   sendButtonFromTarget,
 } from './adapters.js';
 import type { SiteAdapter } from './adapters.js';
-import { applyCorrections, caretOffset, invertCorrections, readText } from './editable.js';
-import { LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
+import { applyCorrections, caretOffset, invertCorrections, performEnterDefault, readText, setCaret } from './editable.js';
+import { incompleteNotice, LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
 import type { Correction, NormalizeReply, Request } from './shared.js';
 import { removeToast, showToast } from './toast.js';
 
@@ -87,14 +87,20 @@ export function installContent(deps: ContentDeps): ContentHandle {
     showToast(doc, corrections, {
       mode: reply.mode,
       durationMs: deps.toastMs,
+      ...(reply.incomplete ? { notice: incompleteNotice(reply.incomplete) } : {}),
+      ...(reply.fallback ? { fallback: reply.fallback } : {}),
       onUndo: () => {
         const current = readText(composer);
         if (current === reply.output) {
           void applyCorrections(doc, composer, invertCorrections(corrections), original);
-        } else {
-          // Already sent (or edited): put the original wording back so the
-          // user can resend it as dictated.
+        } else if (current.trim() === '') {
+          // Already sent: put the original wording back so the user can
+          // resend it as dictated.
           void applyCorrections(doc, composer, [], original);
+        } else {
+          // The composer now holds something else (an edit, or the next
+          // message): restoring the old text would destroy it.
+          return;
         }
         precheck = { text: original, changed: false };
       },
@@ -114,6 +120,9 @@ export function installContent(deps: ContentDeps): ContentHandle {
       }
     } else if (reply.ok) {
       precheck = { text, changed: false };
+      // Nothing to fix in the part that was checked, but the rest was not
+      // looked at: say so rather than let it pass as clean.
+      if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete), ...(reply.fallback ? { fallback: reply.fallback } : {}) });
     }
     resend();
   }
@@ -171,11 +180,21 @@ export function installContent(deps: ContentDeps): ContentHandle {
     guard(() =>
       correctThen(composer, text, () => {
         withPassthrough(() => {
-          const notHandled = composer.dispatchEvent(new KeyboardEvent('keydown', init));
-          if (notHandled) {
-            // Nobody consumed the synthetic Enter; fall back to the button.
-            findSendButton(doc, adapter, composer)?.click();
+          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) return;
+          // Nobody consumed the synthetic Enter; fall back to the button.
+          const button = findSendButton(doc, adapter, composer);
+          if (button) {
+            button.click();
+            return;
           }
+          // A known site sends through its button only; anywhere else the
+          // press is ours to finish. A script-dispatched keydown has no
+          // default action, so without this a textarea lost its newline and
+          // a search box never submitted. Sites that listen for keypress
+          // get that first, as they would from a real Enter.
+          if (adapter.send || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+          if (!composer.dispatchEvent(new KeyboardEvent('keypress', { ...init, charCode: 13 } as KeyboardEventInit))) return;
+          performEnterDefault(doc, composer);
         });
       }),
     );
@@ -209,7 +228,10 @@ export function installContent(deps: ContentDeps): ContentHandle {
       void normalizeText(text, true).then((reply) => {
         // A dry run reports `changed: false` by design (nothing was applied),
         // so the replacements list is what says whether Enter must be intercepted.
-        if (reply.ok && readText(composer) === text) precheck = { text, changed: reply.changed || reply.replacements.length > 0 };
+        // A check that stopped early is intercepted too, so the send can say so.
+        if (reply.ok && readText(composer) === text) {
+          precheck = { text, changed: reply.changed || reply.replacements.length > 0 || reply.incomplete !== undefined };
+        }
       });
     }, precheckMs);
   }
@@ -229,6 +251,9 @@ export function installContent(deps: ContentDeps): ContentHandle {
           if (readText(composer) !== full) return;
           const output = reply.output + full.slice(caret);
           await applyCorrections(doc, composer, reply.replacements, output);
+          // Put the caret back where the user was typing, shifted by what
+          // the corrections changed before it.
+          if (composer === doc.activeElement || composer.contains(doc.activeElement)) setCaret(doc, composer, reply.output.length);
           precheck = null;
           toastFor(composer, full, reply.replacements, reply);
         })

@@ -45,17 +45,37 @@ export function parseEspansoImport(content: string): RawImport {
       return;
     }
     const triggers: string[] = [];
+    // A trigger YAML read as something other than a string (`trigger: 42`,
+    // `trigger: true`, `triggers: :x`) is a malformed entry, not a regex match.
+    let nonString = false;
     if (typeof entry.trigger === 'string') triggers.push(entry.trigger);
+    else if (entry.trigger !== undefined) nonString = true;
     if (Array.isArray(entry.triggers)) {
-      for (const t of entry.triggers) if (typeof t === 'string') triggers.push(t);
+      for (const t of entry.triggers) {
+        if (typeof t === 'string') triggers.push(t);
+        else nonString = true;
+      }
+    } else if (entry.triggers !== undefined) {
+      nonString = true;
     }
     if (triggers.length === 0) {
-      out.skipped.push({ line, reason: 'match has no trigger (regex matches are skipped)' });
+      const reason = nonString
+        ? 'trigger is not a string (quote it in the YAML)'
+        : entry.regex !== undefined
+          ? 'match has no trigger (regex matches are skipped)'
+          : 'match has no trigger';
+      out.skipped.push({ line, reason });
       return;
     }
     // espanso triggers are often prefixed with ':' or ';' to avoid firing on
     // ordinary typing; those prefixes are not what STT writes.
-    const aliases = triggers.map((t) => t.replace(/^[:;]+/, ''));
+    const aliases = triggers.map((t) => t.replace(/^[:;]+/, '')).filter((a) => a.trim());
+    // `trigger: ":"` or `trigger: ""` leaves nothing STT could write; importing
+    // the canonical alone would add a term the file never asked for, silently.
+    if (aliases.length === 0) {
+      out.skipped.push({ line, reason: 'trigger is empty once its ":" or ";" prefix is removed' });
+      return;
+    }
     const { row, skip } = rowFor(line, entry.replace, aliases);
     if (row) out.rows.push(row);
     if (skip) out.skipped.push(skip);

@@ -43,7 +43,8 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { listPacks } from '../core/index.js';
-import { bold, dim, safe, tildify } from './io.js';
+import { bold, dim, fail, jsonError, safe, tildify } from './io.js';
+import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
@@ -136,9 +137,11 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
       : `   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(', ') : dim('none')}`,
   );
   ctx.say(
-    asks('serve')
-      ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
-      : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
+    p.serveBlocked !== undefined
+      ? `   login service: would not install (${safe(p.serveBlocked)})`
+      : asks('serve')
+        ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
+        : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
   );
   const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
   ctx.say(
@@ -254,6 +257,8 @@ export async function runSetup(
       lexiconExists: false,
       wouldSeed: [],
       wouldInstallPacks: [],
+      packsOnOffer: [],
+      packsToInstall: [],
       wouldHarvest: [],
       detectedClients: [],
       wouldInstallClients: [],
@@ -284,8 +289,10 @@ export async function runSetup(
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  if (opts.json) io.stdout(`${JSON.stringify(ctx.plan ?? ctx.summary, null, 2)}\n`);
   const failed = ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
+  // `ok` leads the document so a script reads success the same way it reads
+  // the `{ ok: false, error, nextStep }` refusal; false when a client or serve failed (exit 1).
+  if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...(ctx.plan ?? ctx.summary) }, null, 2)}\n`);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...(ctx.plan ? { plan: ctx.plan } : {}) };
 }
 
@@ -307,13 +314,23 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
     .option('--no-serve', 'skip installing the local API login service (no prompt)')
     .option('--dry-run', 'detect and suggest only; write nothing and print what a run would do')
-    .option('--reseed', 'seed person/company terms even if the lexicon already has terms')
+    .option('--reseed', 'also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms')
     .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
-    .option('--json', 'print a machine-readable summary on stdout (progress goes to stderr)')
+    .option('--json', 'print a machine-readable summary on stdout, led by ok (progress goes to stderr; a refusal prints { ok: false, error, nextStep })')
     .action(async (opts: SetupOptions) => {
       const { cwd } = program.opts<{ cwd?: string }>();
       const merged: SetupOptions = cwd ? { ...opts, cwd } : opts;
-      const { code } = await runSetup(merged, io);
+      let code: number;
+      try {
+        ({ code } = await runSetup(merged, io));
+      } catch (err) {
+        if (!opts.json) throw err;
+        // Under --json stdout is the one document a script reads: a refusal
+        // (an unknown --app or client, a step that threw) is `{ ok: false,
+        // error }` there, with the usual stderr line, rather than nothing.
+        io.stdout(`${JSON.stringify(jsonError(errorMessage(err), 'fix what error names, then run lexicon setup --json again (lexicon setup --help lists the flags)'), null, 2)}\n`);
+        code = fail(io, err);
+      }
       if (code !== 0) process.exitCode = code;
     });
 }

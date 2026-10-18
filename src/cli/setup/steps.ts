@@ -11,6 +11,7 @@ import {
   EXPORT_FORMAT_INFO,
   ProjectTrustError,
   addTerm,
+  addTerms,
   demonstrate,
   exportLexicon,
   harvestRepo,
@@ -19,6 +20,7 @@ import {
   listPacks,
   loadLexicon,
   loadPack,
+  projectWriteTrusted,
   readLexiconFile,
   resolvePaths,
   suggestAliases,
@@ -35,7 +37,7 @@ import { bold, dim, plural, renderTable, safe, safeLines, tildify } from '../io.
 import type { IO } from '../io.js';
 import { runInstall } from '../cmd-install.js';
 import type { InstallOptions } from '../cmd-install.js';
-import { runServeInstall } from '../cmd-serve.js';
+import { runServeInstall, serveInstallBlocker } from '../cmd-serve.js';
 import type { ServeDeps } from '../cmd-serve.js';
 import { runInit } from '../commands.js';
 import type { InstallOutcome } from '../commands.js';
@@ -145,16 +147,23 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   if (ctx.plan) ctx.plan.lexiconExists = existed;
 
   const before = existed ? (await readLexiconFile(global, 'global')).lexicon.terms.length : 0;
-  if (before >= SEEDED_TERMS && !ctx.opts.reseed) {
+  // An already seeded lexicon skips the guessed defaults (git user.name, the
+  // package scope), but a name passed explicitly (--person, --company, or
+  // setup_lexicon's company/person) is always seeded: the user just typed it.
+  const gated = before >= SEEDED_TERMS && !ctx.opts.reseed;
+  if (gated && !ctx.opts.person && !ctx.opts.company) {
     ctx.say(dim(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
     return;
   }
+  if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
+  const guessCompany = async (): Promise<string | undefined> =>
+    gated
+      ? undefined
+      : suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
   if (ctx.plan) {
     // Same defaults as the non-interactive path below, without the writes.
-    const person = ctx.opts.person ?? gitUserName(ctx);
-    const company =
-      ctx.opts.company ??
-      suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+    const person = ctx.opts.person ?? (gated ? undefined : gitUserName(ctx));
+    const company = ctx.opts.company ?? (await guessCompany());
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
       [person, 'person'],
@@ -178,7 +187,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
 
   // Person: the git user, confirmed on a terminal.
-  const gitName = ctx.opts.person ?? gitUserName(ctx);
+  const gitName = ctx.opts.person ?? (gated ? undefined : gitUserName(ctx));
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = (await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true))
@@ -187,17 +196,15 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: 'person', source: 'user' });
-  } else {
+  } else if (!gated) {
     ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
 
   // Company: suggested from the package scope or the git remote.
-  const suggestion =
-    ctx.opts.company ??
-    suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+  const suggestion = ctx.opts.company ?? (await guessCompany());
   let company: string | undefined = ctx.opts.company ?? (ctx.prompter ? undefined : suggestion);
   let phonetic: string | undefined = ctx.opts.phonetic;
-  if (ctx.prompter && !ctx.opts.company) {
+  if (ctx.prompter && !ctx.opts.company && !gated) {
     company = (
       await ctx.prompter.ask('   Your company or product name (as you want it spelled; Enter to skip)', {
         default: suggestion ?? '',
@@ -205,7 +212,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
     ).trim();
   }
   if (!company) {
-    ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
     return;
   }
   const aliases = suggestAliases(company);
@@ -221,7 +228,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   ctx.company = company;
 
   // More terms, one at a time, on a terminal only.
-  while (ctx.prompter && (await ctx.prompter.confirm('   add another term?', false))) {
+  while (ctx.prompter && !gated && (await ctx.prompter.confirm('   add another term?', false))) {
     const name = (await ctx.prompter.ask('   name (as you want it spelled; Enter to stop)', { default: '' })).trim();
     if (!name) break;
     const hint = (await ctx.prompter.ask('   phonetic hint (Enter for none)', { default: '' })).trim();
@@ -271,7 +278,9 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   // user has is noise at best and a confusing second install at worst.
   let installed: string[] = [];
   try {
-    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd }));
+    // installedPacks reads the global file and a trusted project file only,
+    // so an untrusted one need not be parsed.
+    installed = installedPacks(await loadLexicon({ cwd: ctx.cwd, parseSkipped: false }));
   } catch {
     // an unreadable lexicon is reported by the steps that write it
   }
@@ -282,8 +291,13 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   if (ctx.plan) {
     const chosen = explicit !== undefined ? offered(explicit) : [...defaults];
     ctx.plan.wouldInstallPacks = chosen;
+    ctx.plan.packsOnOffer = [...chosen];
     if (installed.length > 0) ctx.plan.alreadyInstalledPacks = [...installed];
     const asks = explicit === undefined && ctx.plan.interactive;
+    // What the same call installs: an explicit list, or the checklist's
+    // defaults when Enter is pressed; with neither (--yes, no terminal, MCP
+    // without packs) nothing, which is what the text below says.
+    ctx.plan.packsToInstall = explicit !== undefined || asks ? [...chosen] : [];
     if (asks) ctx.plan.wouldAsk.push('packs');
     if (chosen.length === 0) {
       ctx.say(dim('   would install: none'));
@@ -408,11 +422,17 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   let created = 0;
   let merged = 0;
   let file: string | undefined;
+  // A harvestUntrusted run (MCP) follows the rule every MCP write does: a file
+  // the user already trusted takes the names and keeps its pin refreshed; a
+  // new, untrusted or changed one is written unpinned.
+  const leaveUntrusted = ctx.opts.harvestUntrusted === true && !(await projectWriteTrusted({ cwd: root }));
   try {
-    for (const c of candidates) {
-      const term: Term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
-      const result = await addTerm(term, { scope: 'project', cwd: root });
-      file = result.file.path;
+    // One read and one write for the list, as `lexicon harvest --add` does:
+    // one addTerm per name re-parsed the growing file on every write.
+    const terms: Term[] = candidates.map((c) => ({ canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source }));
+    const batch = await addTerms(terms, { scope: 'project', cwd: root, ...(leaveUntrusted ? { leaveUntrusted: true } : {}) });
+    file = batch.file.path;
+    for (const result of batch.results) {
       if (result.created) {
         created += 1;
         ctx.summary.termsAdded.push(result.term.canonical);
@@ -424,6 +444,11 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
       return;
     }
     throw err;
+  }
+  if (leaveUntrusted && file !== undefined) {
+    ctx.summary.untrustedProject = file;
+    ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file, ctx.home))} (not trusted: review it and run lexicon trust)`);
+    return;
   }
   ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file ?? root, ctx.home))} (trusted)`);
 }
@@ -513,6 +538,17 @@ export async function stepClients(ctx: Ctx): Promise<void> {
   }
 }
 
+/** What the login service installer is called with. */
+function serveDepsFor(ctx: Ctx): ServeDeps {
+  const serveDeps: ServeDeps = { platform: ctx.platform, env: ctx.env };
+  if (ctx.homeOverridden) serveDeps.home = ctx.home;
+  // The MCP server passes the package's dist/cli (the bundle runs from plugin/, where
+  // "next to this module" would be plugin/index.js); runServeInstall resolves the path
+  // otherwise and refuses one that does not exist, so a broken plist is never written.
+  if (ctx.deps.cliDir) serveDeps.cliPath = path.join(ctx.deps.cliDir, 'index.js');
+  return serveDeps;
+}
+
 /** Step e: the local API as a login service. */
 export async function stepServe(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 5, 'Local API (lexicon serve)');
@@ -526,6 +562,16 @@ export async function stepServe(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.plan) {
+    // A real run would refuse a service pointing into an npx or plugin cache
+    // (or at a missing file): say so, with the fix, instead of "would install".
+    if (ctx.opts.serve === true || ctx.plan.interactive) {
+      const blocked = await (ctx.deps.serveBlocker ?? serveInstallBlocker)(serveDepsFor(ctx));
+      if (blocked) {
+        ctx.plan.serveBlocked = blocked;
+        ctx.say(`   would not install the login service: ${safe(blocked)}`);
+        return;
+      }
+    }
     // A real run asks on a terminal (default yes) and skips it otherwise, so
     // the plan must not report "skipped" to someone who would be asked.
     if (ctx.opts.serve === true) {
@@ -555,12 +601,7 @@ export async function stepServe(ctx: Ctx): Promise<void> {
     return;
   }
   const install = ctx.deps.installServe ?? runServeInstall;
-  const serveDeps: ServeDeps = { platform: ctx.platform, env: ctx.env };
-  if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  // The MCP server passes the package's dist/cli (the bundle runs from plugin/, where
-  // "next to this module" would be plugin/index.js); runServeInstall resolves the path
-  // otherwise and refuses one that does not exist, so a broken plist is never written.
-  if (ctx.deps.cliDir) serveDeps.cliPath = path.join(ctx.deps.cliDir, 'index.js');
+  const serveDeps = serveDepsFor(ctx);
   const captured = captureIO();
   let code: number;
   try {
@@ -618,7 +659,8 @@ export async function stepExport(ctx: Ctx): Promise<void> {
     );
     return;
   }
-  const loaded = await loadLexicon({ cwd: ctx.cwd });
+  // The export is of the merged terms only: an untrusted project file is never parsed.
+  const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const text = exportLexicon(loaded.merged, format);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(file, text, 'utf8');
@@ -645,7 +687,7 @@ export async function stepDemo(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 7, 'Does it work?');
   let merged;
   try {
-    merged = (await loadLexicon({ cwd: ctx.cwd })).merged;
+    merged = (await loadLexicon({ cwd: ctx.cwd, parseSkipped: false })).merged;
   } catch {
     merged = { version: 1 as const, terms: [] };
   }
@@ -666,7 +708,16 @@ export async function stepDemo(ctx: Ctx): Promise<void> {
   if (summary) ctx.say(dim(`   fixed: ${summary}`));
   if (demo.usedExample) {
     ctx.say(dim('   (that used the built-in example terms: your lexicon has no misspellings recorded yet)'));
-    ctx.say(dim('   add one now: lexicon add "Your Co" --suggest'));
+    // A name this run seeds has no misspelling yet (that is why the example
+    // stood in), so name it rather than a "Your Co" placeholder.
+    const own = (ctx.plan ? ctx.plan.wouldSeed : ctx.seeded)[0];
+    ctx.say(
+      dim(
+        own === undefined
+          ? '   add one now: lexicon add "Your Co" --suggest'
+          : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own))} "<misspelling>"`,
+      ),
+    );
   }
   const record = { heard: demo.heard, corrected: demo.corrected, terms: demo.terms, usedExample: demo.usedExample };
   if (ctx.plan) ctx.plan.demo = record;

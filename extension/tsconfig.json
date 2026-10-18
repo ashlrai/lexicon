@@ -4,6 +4,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["chrome"],
     "noEmit": true,
+    "rootDir": "..",
     "declaration": false,
     "sourceMap": false
   },

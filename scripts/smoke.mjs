@@ -12,16 +12,21 @@
  *   2. the bundled plugin hook corrects a prompt, and answers SessionStart,
  *   3. the MCP server starts on stdio and stays alive.
  *
+ * Everything runs against a copy of examples/lexicon.example.yaml in a temp
+ * directory that is also HOME (see ./smoke-home.mjs), so nothing is written
+ * into the repo or the real home directory.
+ *
  * Usage: node scripts/smoke.mjs
  * Requires: npm run build && npm run build:bundle
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { prepareSmokeHome } from './smoke-home.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const LEXICON_PATH = path.join(root, 'examples', 'lexicon.example.yaml');
-const env = { ...process.env, LEXICON_PATH };
+const home = await prepareSmokeHome(root);
+const env = home.env;
 
 let failures = 0;
 
@@ -36,7 +41,7 @@ function report(name, ok, detail) {
 /** Run `node <script> ...args`, optionally feeding stdin, and resolve with { code, stdout, stderr }. */
 function run(script, args = [], { stdin, killAfterMs } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script, ...args], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [script, ...args], { cwd: home.dir, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let killed = false;
@@ -87,6 +92,8 @@ const MCP = path.join(root, 'dist', 'mcp', 'server.js');
   const r = await run(MCP, [], { killAfterMs: 4000 });
   report('MCP server starts on stdio and stays alive', r.killed || r.code === 0, `exit ${r.code}\n${r.stderr}`);
 }
+
+await home.cleanup().catch(() => undefined);
 
 if (failures > 0) {
   console.error(`\n${failures} smoke check(s) failed`);

@@ -1,7 +1,8 @@
 /// <reference types="chrome" />
 /** Popup: engine status, per-site switch, recent corrections, "learn" mini-form. */
 import { sendToBackground } from './chrome-store.js';
-import { coerceSettings, describeCorrection, hostKey, siteEnabled, STORAGE_KEYS } from './shared.js';
+import { setMessage } from './rich-text.js';
+import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusView, STORAGE_KEYS } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -37,20 +38,10 @@ async function activeHostname(): Promise<string> {
 }
 
 function renderStatus(s: StatusReply): void {
-  if (s.activeMode === 'api' && s.server) {
-    ui.mode.textContent = 'Local API';
-    ui.mode.className = 'pill';
-    ui.server.textContent = `lexicon ${s.server.version}, ${s.server.terms} terms`;
-  } else {
-    ui.mode.textContent = s.configuredMode === 'embedded' ? 'Embedded' : 'Embedded (fallback)';
-    ui.mode.className = s.configuredMode === 'embedded' ? 'pill' : 'pill warn';
-    const parts: string[] = [`${s.embeddedTerms} embedded terms`];
-    if (s.configuredMode === 'api' && s.tokenError) parts.push(s.tokenError);
-    else if (s.configuredMode === 'api') parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable');
-    if (!s.tokenSet && s.configuredMode === 'api') parts.push('no token set');
-    if (s.embeddedError) parts.push('embedded YAML has errors');
-    ui.server.textContent = parts.join(' · ');
-  }
+  const view = statusView(s);
+  ui.mode.textContent = view.mode;
+  ui.mode.className = view.warn ? 'pill warn' : 'pill';
+  setMessage(ui.server, view.line);
 
   ui.recent.replaceChildren();
   if (s.recent.length === 0) {
@@ -83,12 +74,12 @@ async function refresh(): Promise<void> {
     else {
       ui.mode.textContent = 'Error';
       ui.mode.className = 'pill warn';
-      ui.server.textContent = status.error;
+      setMessage(ui.server, status.error);
     }
   } catch (err) {
     ui.mode.textContent = 'Error';
     ui.mode.className = 'pill warn';
-    ui.server.textContent = err instanceof Error ? err.message : String(err);
+    setMessage(ui.server, err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -126,16 +117,16 @@ ui.learn.addEventListener('submit', (ev) => {
   void sendToBackground<LearnReply | Failure>({ type: 'learn', heard, meant })
     .then((reply) => {
       if (reply.ok) {
-        ui.learnMsg.textContent = `${reply.message} (${reply.mode === 'api' ? 'server' : 'embedded'})`;
+        setMessage(ui.learnMsg, `${reply.message} (${reply.mode === 'api' ? 'server' : 'embedded'})`);
         ui.meant.value = '';
         ui.heard.value = '';
         void refresh();
       } else {
-        ui.learnMsg.textContent = reply.error;
+        setMessage(ui.learnMsg, reply.error);
       }
     })
     .catch((err: unknown) => {
-      ui.learnMsg.textContent = err instanceof Error ? err.message : String(err);
+      setMessage(ui.learnMsg, err instanceof Error ? err.message : String(err));
     });
 });
 

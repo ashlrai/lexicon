@@ -27,7 +27,7 @@ A pack is a plain lexicon file plus `name`, `title` and `description`. Its terms
 
 `lexicon pack remove <name>` removes that pack's terms from the file, except the ones you have edited since: a term with recorded hits, extra aliases or its own [`never`](LEXICON-FILE.md#never) list stays and is reported as `kept`. For a project file the hit count comes from your own `hits.json` rather than from the committed file, so a pack term you use every day is kept even though the file shows no hits for it.
 
-Project-scope installs go through the [trust gate](TRUST.md) like every other write.
+Project-scope installs go through the [trust gate](TRUST.md) like every other write. From MCP (`add_pack` with `scope: 'project'`) a project file that is not trusted yet is written but left untrusted, and the result's `nextStep` asks you to review it and run `lexicon trust`.
 
 ## How the aliases were chosen
 
@@ -52,13 +52,17 @@ lexicon pack validate ./my-pack.yaml                                 # the publi
 
 A community pack installs through the same merge rules as the vendored four, with three extra guarantees, because installed terms reach model context on every hooked prompt:
 
+- **https only.** An index and its pack files are fetched over `https://` (plain `http://` only from this machine, `localhost` or `127.0.0.1`), a redirect to plain `http://` elsewhere is refused, and every index or pack file over 2 MB is refused. The index is what vouches for each pack's checksum, so over plain http anyone on the path could swap both.
 - **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `<global-lexicon-dir>/registry/registry.json`. `pack update` re-checks it.
-- **Preview before the first write.** `pack add <author>/<name>` shows the whole term list and asks (default no; `--yes` off a terminal). Updates are re-approved one by one, never silent.
+- **Preview before the first write.** `pack add <author>/<name>` shows the whole term list and asks (default no; `--yes` off a terminal). With `--json` and no `--yes` it prints that preview and writes nothing. In a list such as `pack add developer example/cardiology`, a community pack that is previewed or declined writes nothing but does not stop the others, and the output reports each pack's outcome (under `--json`, one array in argument order). A pack that fails (unknown, a failed install or fetch) stops the run with exit 1: the output names it (under `--json`, a last `{ ref, ok: false, error, nextStep }` entry, or that object for a single ref), and the packs after it are not attempted or reported. Updates are re-approved one by one, never silent.
+- **Agents read only registries you chose.** MCP `list_packs` and `add_pack` refuse any `registry` the user has not registered: one a community pack was installed from with the CLI (any scope), or one listed in `LEXICON_REGISTRIES` (comma separated, https URLs or absolute paths) in the MCP server's environment. A model cannot point Lexicon at an arbitrary file or host. The CLI's `--registry` is a human flag and is not gated.
 - **The ordinary-word guard, enforced.** `lexicon pack validate` runs the publish bar: schema, author present, and no canonical or alias that is an everyday English word. Run it in CI on the pack's own repo.
 
 Updates key on checksum, not on the display version: when the pack file changes, its checksum changes and `pack update` offers the new file, showing every incoming term field, including notes, phonetic spellings, case sensitivity and aliases, along with changed content, added terms and terms the new file drops (dropped terms are reported, never deleted from your lexicon). A pack pinned with `@version` is never moved by `pack update`.
 
-Over MCP, `list_packs` takes the same `registry` parameter, and `add_pack` takes a community ref: without `confirm: true` it returns the term-list preview and writes nothing; confirmation also requires the returned `previewDigest` for the same destination and all approved term fields. Changed content or metadata is refused, and installation uses the exact reviewed bytes.
+Over MCP, `list_packs` takes the same `registry` parameter, and `add_pack` takes a community ref: without `confirm: true` it returns the term-list preview and writes nothing; confirmation also requires the returned `previewDigest` for the same destination and all approved term fields. Changed content or metadata is refused, and installation uses the exact reviewed bytes. A vendored starter pack has no preview step: `add_pack` with a vendored name and `registry`, `previewDigest` or `confirm: false` is refused and writes nothing, so a call that asked for a preview never installs.
+
+Whether a pack counts as installed comes from one place: `settings.packs` in the lexicon files (trusted ones only), which `pack list`, `pack search`, MCP `list_packs` and `GET /packs` all read. The registry state file only adds the version and source `pack update` uses. When the two disagree for the listed scope, `pack list` says so on stderr, and `pack list --json` adds `registryMismatch { fileOnly, recordOnly }`: `fileOnly` is a pack the file lists with no registry record (`pack update` will not check it; reinstall it with `pack add`), `recordOnly` a record for a pack the file no longer lists (shown as not installed; `pack remove` clears the record). `communityInstalled` in that JSON is the registry records themselves. `pack search` (warnings and `--json`) and MCP `list_packs` report the same `registryMismatch`, checked across every file the flags come from.
 
 Project community packs keep separate pins and caches for each canonical project file. Pass `--project` to `pack list`, `pack add`, `pack update` and `pack remove` to operate on that project's installation. Global packs and other projects keep their own records. Metadata without a verified scope/target is refused; inspect and explicitly migrate or remove old metadata before reinstalling.
 
@@ -79,7 +83,7 @@ Pack files are read from the package's `packs/` directory only, and the name is 
 
 1. Write the pack YAML: the same schema as above, plus `author` (required for community packs) and `homepage`.
 2. Run `lexicon pack validate <file>` until it is clean.
-3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`/`file://`, or relative to the index).
+3. Add an entry to your index: `author`, `name`, `title`, `description`, `version` (a display string), `terms`/`aliases` counts, `checksum` (`shasum -a 256 <file>`), `url` (absolute `https://`, or relative to the index; an index read from a local path or `file://` may also name an absolute local path or `file://` URL, but an index fetched over `https://` may not, so a remote index can never make `lexicon` read a file on your machine).
 4. Host the index and the pack files anywhere a URL reaches. Point users at `lexicon pack search --registry <your index>`.
 
 ## See also

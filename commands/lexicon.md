@@ -1,6 +1,6 @@
 ---
 description: Show, add, harvest, export, set up, diagnose or improve the user's personal voice lexicon (STT spelling corrections).
-argument-hint: "[add <canonical> as <alias>, <alias> | learn <heard> -> <meant> | stats | harvest | export <format> | setup | doctor | suggest | trust [path]]"
+argument-hint: "[add <canonical> as <alias>, <alias> | remove <canonical> | remove <alias> from <canonical> | learn <heard> -> <meant> | stats | harvest [path] | export <format> | setup | doctor | suggest [n] | trust [path] | trust off [path]]"
 ---
 
 Manage the user's voice lexicon through the `lexicon` MCP server. Arguments: `$ARGUMENTS`
@@ -19,7 +19,8 @@ Decide what to do from the arguments:
 3. **`harvest`** (optionally followed by a path) - call `harvest_repo` with that
    path (or none for the current repo) and no `add`. Show the candidates with their
    counts and suggested aliases, then ask whether to save them. If the user says
-   yes, call `harvest_repo` again with `add: true`.
+   yes, call `harvest_repo` again with `add: true` and relay its `nextStep`: the file
+   is not trusted until the user runs `lexicon trust` (or `npx @ashlr/lexicon trust`).
 
 4. **`export <format>`** - call `export_lexicon` with that format and print the
    returned text verbatim inside a fenced code block. Valid formats: `claude-md`,
@@ -27,6 +28,8 @@ Decide what to do from the arguments:
    `assemblyai`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`. If the format is missing or unknown, list the valid ones instead.
 
 5. **`remove <canonical>`** - call `remove_term` and confirm whether it was found.
+   `remove <alias> from <canonical>` - call `remove_term` with `alias` to drop just
+   that alias. If the result has `foundIn`, retry with that `scope`.
 
 6. **`learn <heard> -> <meant>`** (also `learn <heard> => <meant>` or a sentence
    such as `learn it's Ashlr.AI not Ashler`) - call `learn_correction` with
@@ -60,17 +63,19 @@ Decide what to do from the arguments:
 
 10. **`suggest`** - call `suggest_terms` (pass `limit` if the user gave a
     number). Show each suggestion on one line: kind, canonical, alias, reason,
-    count. Ask which to apply; for each accepted one call `apply_suggestion`
-    with the suggestion object exactly as returned. Report what was written
-    and skip the rest. With no suggestions, say the lexicon looks healthy.
+    count, and the file applying it would write (its `scope` and `path`). Ask which to apply; call `apply_suggestion` once
+    with every accepted suggestion object, exactly as returned, in `suggestions`.
+    Report what was written (`applied`) and anything refused (`failures`), and
+    skip the rest. With no suggestions, say the lexicon looks healthy.
 
 11. **`trust [path]`** - call `trust_project { action: 'status', path? }` and
-    show the user the file path, its status and the preview table (canonical,
-    first alias, alias count). Ask whether to trust it. Only on a clear yes
+    show the user the file path, its status and the summary (term, alias and
+    note counts, the sample canonicals), and say `lexicon trust` in a terminal
+    shows every term. Ask whether to trust it. Only on a clear yes
     call `trust_project { action: 'trust', path? }`; the client asks the user to
     confirm. Report the result in one line (if it says the client cannot ask,
     tell them to run `lexicon trust` in a terminal).
     `trust off [path]` or `untrust` calls `action: 'untrust'`. Never trust a
-    file whose preview the user has not just seen.
+    file whose summary the user has not just seen.
 
 Anything else: explain the forms above in one short paragraph.

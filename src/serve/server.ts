@@ -3,9 +3,10 @@
  * cannot run a hook or an MCP server (browser extension, Claude Desktop, the
  * Codex app, macOS Shortcuts, Raycast, the menu bar app).
  *
- * node:http only, no framework. Every request except `GET /health` and
- * `GET /pair` needs `Authorization: Bearer <token>` (token from serve.json,
- * see ./config.ts). `/pair` is the one-click pairing page for the browser
+ * node:http only, no framework. Every request must carry a `Host` that names
+ * this server (isAllowedHost, the DNS rebinding guard). Every request except
+ * `GET /health` (without `?cwd=`) and `GET /pair` needs
+ * `Authorization: Bearer <token>` (token from serve.json, see ./config.ts). `/pair` is the one-click pairing page for the browser
  * extension: it carries the token in a <meta> tag and is served only to a
  * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
@@ -19,34 +20,49 @@
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
 import { timingSafeEqual } from 'node:crypto';
+import { promises as fs, realpathSync } from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
+  EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
+  LIMITS,
   addTerm,
   computeStats,
+  conflictNote,
   diffSummary,
   exportLexicon,
+  findRegistryRecordMismatch,
+  hasControlChars,
   installPack,
   installedPacks,
   resolveExportFormat,
   learnCorrection,
   listPacks,
   loadLexicon,
-  normalize,
+  loadMatcherIndex,
+  normalizeWithIndex,
   recordHits,
   resolvePaths,
   isProjectTrustError,
   sanitizeForDisplay,
+  spellingConflicts,
+  stripInvisible,
   suggestAliases,
+  timeBudgetIncomplete,
   uninstallPack,
 } from '../core/index.js';
 import type {
   ExportFormat,
   InstallPackResult,
+  LearnConflict,
   LexiconStats,
   LoadedLexicon,
+  RegistryRecordMismatch,
+  MatcherIndex,
+  NormalizeIncomplete,
   NormalizeResult,
   PackInfo,
   Term,
@@ -63,7 +79,7 @@ import {
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
-import { errorMessage } from '../util/errors.js';
+import { errorMessage, isInputError } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 
 // ---------------------------------------------------------------------------
@@ -89,6 +105,8 @@ export interface ServeServerOptions {
   reloadMs?: number;
   /** Hard cap on in-flight requests before 503. Default MAX_CONCURRENT_REQUESTS (64). */
   maxConcurrent?: number;
+  /** Matching budget per /normalize in ms. Default NORMALIZE_BUDGET_MS. */
+  normalizeBudgetMs?: number;
 }
 
 export interface ServeStartInfo {
@@ -116,6 +134,16 @@ export interface HealthResponse {
 
 export interface NormalizeResponse extends NormalizeResult {
   summary: string;
+  /** Present only when matching stopped at the time budget (`reasons: ['time']`). */
+  incomplete?: NormalizeIncomplete;
+  /** As `/stats` gives it: set whenever a project file exists for `cwd`. */
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /**
+   * Path only: a project file that was not merged, so its names were not
+   * corrected. Without it an unchanged result in a repo whose lexicon is not
+   * trusted read exactly like text that needed no correction.
+   */
+  skippedProject?: string;
 }
 
 export interface LearnResponse {
@@ -124,27 +152,52 @@ export interface LearnResponse {
   aliasAdded: boolean;
   /** Path of the lexicon file written. */
   path: string;
+  /** Another term that also claims `heard` (LearnResult.conflict). */
+  conflict?: LearnConflict;
+  /** With `conflict` only: `conflictNote([conflict])`, naming the scoped `lexicon remove --alias` command, as `learn --json` gives it. */
+  note?: string;
+  /** The untrusted project lexicon that also claims `heard`, path only (LearnResult.untrustedProject). */
+  untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
 }
 
 export interface AddResponse {
   term: Term;
   path: string;
   created: boolean;
+  /** Aliases another term also holds, so they may still be corrected to it (MCP add_term `conflicts`). Only when there is one. */
+  conflicts?: LearnConflict[];
 }
 
 export interface LexiconResponse {
   lexicon: LoadedLexicon['merged'];
+  /** The files merged into `lexicon`; a skipped project file is in `skippedProject` instead. */
   paths: { global: string; project?: string };
   projectTrust?: LoadedLexicon['projectTrust'];
   /** Path only; the contents of an untrusted file never leave the disk. */
   skippedProject?: string;
 }
 
+/**
+ * `GET /stats`: `LexiconStats` plus, as `/lexicon` and `/packs` carry them,
+ * `projectTrust` and the skipped project file's path. The counts leave a
+ * skipped file out, and nothing said so.
+ */
+export interface StatsResponse extends LexiconStats {
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /** Path only: its terms are not in the counts. */
+  skippedProject?: string;
+}
+
 export interface PacksResponse {
   /** Every pack shipped with the package, with whether the loaded lexicon lists it. */
   packs: (PackInfo & { installed: boolean })[];
-  /** Names from `settings.packs` of the global and (trusted) project files. */
+  /** Names from `settings.packs` of the global and (trusted) project files, community refs (`author/name`) included. */
   installed: string[];
+  /** The lexicon files and the registry records disagree about a community pack (as MCP list_packs reports it). */
+  registryMismatch?: RegistryRecordMismatch;
+  projectTrust?: LoadedLexicon['projectTrust'];
+  /** Path only: a pack only this skipped project file records reads as not installed. */
+  skippedProject?: string;
 }
 
 export interface AliasesResponse {
@@ -155,6 +208,15 @@ export interface AliasesResponse {
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const MAX_CONCURRENT_REQUESTS = 64;
 export const LEXICON_RELOAD_MS = 2_000;
+/**
+ * How long one /normalize may spend matching before it stops and returns the
+ * corrections found so far (the hook's HOOK_MATCH_BUDGET_MS, for a server).
+ * The server is one thread: a 1 MB paste against a large lexicon used to hold
+ * every other client for seconds, and the extension, which gives up after
+ * 1.5 s, fell back to its embedded engine while the send waited. Under that
+ * timeout on purpose.
+ */
+export const NORMALIZE_BUDGET_MS = 1_000;
 /** Path of the extension pairing page (`lexicon serve --pair` opens it). */
 export const PAIR_PATH = '/pair';
 /** `<meta name>` attributes the pairing page carries; extension/src/pair.ts reads the same names. */
@@ -201,19 +263,24 @@ const TERM_SCOPES = ['global', 'project'] as const satisfies readonly TermScope[
 
 const CwdField = z.string().min(1).optional();
 
+// Bodies are strict: an unknown key is a 400, not ignored. A typo such as
+// `dry_run` for `dryRun` used to be dropped, so the request ran as if the
+// option had not been sent (a dry run that recorded hits, an add that
+// generated aliases the caller never asked for) and still answered 200.
+
 const NormalizeBody = z.object({
   text: z.string(),
   dryRun: z.boolean().optional(),
   minConfidence: z.number().min(0).max(1).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 const LearnBody = z.object({
   heard: z.string(),
   meant: z.string(),
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 const AddBody = z.object({
   canonical: z.string().min(1),
@@ -224,26 +291,122 @@ const AddBody = z.object({
   never: z.array(z.string()).optional(),
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
-});
+}).strict();
 
 const PackBody = z.object({
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
-});
+}).strict();
+
+/**
+ * Every route as `METHOD /path`, in the order the Endpoints table of
+ * docs/LOCAL-API.md lists them. The unknown-route 404 names them, as the
+ * unknown export format 404 names the formats, so a client that guessed a
+ * path learns the real ones from the answer.
+ */
+const ROUTES: readonly string[] = [
+  'GET /health',
+  'GET /pair',
+  'POST /normalize',
+  'POST /learn',
+  'POST /add',
+  'GET /lexicon',
+  'GET /stats',
+  'GET /packs',
+  'POST /packs/:name',
+  'DELETE /packs/:name',
+  'GET /aliases',
+  'GET /export/:format',
+];
 
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
 const EXPORT_ROUTE_RE = /^\/export\/([a-z-]+)$/i;
 
+/**
+ * The status for an error thrown while handling a request. 400 is for what
+ * the request got wrong (`HttpError`s raised here, and core's `InputError`:
+ * an empty canonical, heard equal to meant, a term the schema rejects);
+ * anything else (a lexicon file that does not parse, a lock still held after
+ * its timeout, EACCES) is the server's state, so 500, which tells a client to
+ * retry or report rather than to change its input.
+ */
+export function errorStatus(err: unknown): number {
+  if (err instanceof HttpError) return err.status;
+  if (isProjectTrustError(err)) return 403;
+  if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
+  if (isInputError(err)) return 400;
+  return 500;
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Extra response headers, such as the `Allow` a 405 must carry. */
+    readonly headers: Readonly<Record<string, string>> = {},
   ) {
     super(message);
     this.name = 'HttpError';
   }
+}
+
+/**
+ * A 405 with the `Allow` header RFC 9110 requires, so a client can tell which
+ * method the route takes without parsing the message. It used to be absent.
+ */
+function wrongMethod(allow: readonly string[], message = `use ${allow.join(' or ')}`): HttpError {
+  return new HttpError(405, message, { Allow: allow.join(', ') });
+}
+
+/**
+ * The 405 of a GET route. HEAD is answered like GET without a body (RFC 9110
+ * 9.3.2), so `Allow` names both; the message still says `use GET`.
+ */
+function notGet(): HttpError {
+  return wrongMethod(['GET', 'HEAD'], 'use GET');
+}
+
+/**
+ * The query string is a GET route's body, so it is strict like the bodies: an
+ * unknown parameter is a 400 naming it and the ones the route takes, and a
+ * parameter given twice is a 400 unless it is listed in `repeatable`. A typo
+ * (`?cdw=`) or an option a route does not have (`/export/csv?limit=10`, which
+ * the CLI and MCP export take) used to be dropped, and the answer came back
+ * 200 as if it had been applied.
+ */
+function strictQuery(url: URL, route: string, allowed: readonly string[], repeatable: readonly string[] = []): void {
+  const takes = allowed.length > 0 ? `takes ${allowed.join(', ')}` : 'takes no query parameters';
+  for (const key of new Set(url.searchParams.keys())) {
+    if (!allowed.includes(key)) throw new HttpError(400, `unknown query parameter "${sanitizeForDisplay(key)}" (${route} ${takes})`);
+    if (!repeatable.includes(key) && url.searchParams.getAll(key).length > 1) throw new HttpError(400, `query parameter "${key}" given more than once`);
+  }
+}
+
+/**
+ * `?category=` (repeated or comma-separated) and `?limit=` of `GET
+ * /export/:format`, the CLI's `--category` and `--limit`. An unknown category
+ * or a limit that is not a positive integer is a 400.
+ */
+function exportQueryOptions(url: URL): { categories?: TermCategory[]; limit?: number } {
+  const categories: TermCategory[] = [];
+  for (const raw of url.searchParams.getAll('category').flatMap((v) => v.split(','))) {
+    const value = raw.trim().toLowerCase();
+    if (value === '') continue;
+    const category = TERM_CATEGORIES.find((c) => c === value);
+    if (category === undefined) {
+      throw new HttpError(400, `unknown category "${sanitizeForDisplay(raw.trim())}" (one of: ${TERM_CATEGORIES.join(', ')})`);
+    }
+    if (!categories.includes(category)) categories.push(category);
+  }
+  const limitParam = url.searchParams.get('limit');
+  let limit: number | undefined;
+  if (limitParam !== null) {
+    limit = /^\d+$/.test(limitParam.trim()) ? Number(limitParam.trim()) : NaN;
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new HttpError(400, `limit must be a positive integer, got "${sanitizeForDisplay(limitParam)}"`);
+  }
+  return { ...(categories.length > 0 ? { categories } : {}), ...(limit !== undefined ? { limit } : {}) };
 }
 
 
@@ -330,9 +493,21 @@ async function readJson(req: http.IncomingMessage, cap: number, optional = false
   return parsed;
 }
 
+/** A file's path with symlinks resolved when it exists, so two spellings of one file compare equal. */
+function canonicalFile(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
 interface CachedLexicon {
   loaded: LoadedLexicon;
   at: number;
+  /** Loaded on the first /normalize against this load (loadMatcherIndex); a 2000-term build is ~50 ms. */
+  index?: MatcherIndex;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +528,44 @@ export function isPairHost(hostHeader: string | undefined, port: number): boolea
   if (!hostHeader) return false;
   const h = hostHeader.trim().toLowerCase();
   return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
+}
+
+/**
+ * True when a /pair request may be answered given its `Origin` header: none
+ * (a top-level navigation, which is how the extension's content script meets
+ * the page) or the page's own origin. Anything else is a script on another
+ * origin fetching the token. CORS is granted to every browser-extension origin
+ * for the bearer routes, and those are useless without the token; /pair is
+ * the one route that hands it out, so it gets no CORS headers and refuses a
+ * cross-origin fetch outright, which keeps any other installed extension or
+ * an `allowedOrigins` page from reading it.
+ */
+export function isPairOrigin(origin: string | undefined, hostHeader: string | undefined): boolean {
+  if (origin === undefined) return true;
+  if (!hostHeader) return false;
+  return origin.trim().toLowerCase() === `http://${hostHeader.trim().toLowerCase()}`;
+}
+
+/**
+ * True when `hostHeader` names this server: `127.0.0.1:<port>`,
+ * `localhost:<port>` or `[::1]:<port>`, checked on every route. A page that
+ * rebinds its own DNS name to 127.0.0.1 reaches the server with its own name
+ * in `Host`, so it is refused before any route runs. With a non-loopback
+ * `--host`, the bound address itself is accepted too (any IP literal for a
+ * wildcard bind): an IP literal is what a client typed, never a rebound name.
+ */
+export function isAllowedHost(hostHeader: string | undefined, port: number, bindHost: string = DEFAULT_HOST): boolean {
+  if (!hostHeader) return false;
+  const h = hostHeader.trim().toLowerCase();
+  if (h === `127.0.0.1:${port}` || h === `localhost:${port}` || h === `[::1]:${port}`) return true;
+  const suffix = `:${port}`;
+  if (!h.endsWith(suffix)) return false;
+  let name = h.slice(0, -suffix.length);
+  if (name.startsWith('[') && name.endsWith(']')) name = name.slice(1, -1);
+  if (net.isIP(name) === 0) return false;
+  const bind = bindHost.trim().toLowerCase();
+  if (bind === '0.0.0.0' || bind === '::') return true;
+  return name === bind;
 }
 
 /** `127.0.0.1`, `::1` and the IPv4-mapped `::ffff:127.x.x.x` forms. */
@@ -450,31 +663,92 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   const version = opts.version ?? packageVersion(import.meta.url);
   const reloadMs = opts.reloadMs ?? LEXICON_RELOAD_MS;
   const maxConcurrent = opts.maxConcurrent ?? MAX_CONCURRENT_REQUESTS;
+  const normalizeBudgetMs = opts.normalizeBudgetMs ?? NORMALIZE_BUDGET_MS;
 
   let config: ServeConfig | undefined;
   let boundPort = 0;
   let inFlight = 0;
   const cache = new Map<string, CachedLexicon>();
 
-  function resolveCwd(given: string | null | undefined): string {
-    return given ? path.resolve(given) : defaultCwd;
+  /**
+   * The request's `cwd` (body field or `?cwd=`), or the server's own when it
+   * has none. A `cwd` that is empty or is not an existing directory is a 400:
+   * a typo used to fall through to the global lexicon alone, so the answer
+   * came back 200 for a project that was never looked at.
+   */
+  async function resolveCwd(given: string | null | undefined): Promise<string> {
+    if (given === null || given === undefined) return defaultCwd;
+    if (given.trim() === '') throw new HttpError(400, 'cwd must not be empty (omit it to use the server\'s directory)');
+    const resolved = path.resolve(given);
+    let isDir = false;
+    try {
+      isDir = (await fs.stat(resolved)).isDirectory();
+    } catch {
+      // missing or unreadable: reported below
+    }
+    if (!isDir) throw new HttpError(400, `cwd is not an existing directory: ${sanitizeForDisplay(resolved)}`);
+    return resolved;
   }
 
-  async function load(cwd: string): Promise<LoadedLexicon> {
+  async function loadEntry(cwd: string): Promise<CachedLexicon> {
     const now = Date.now();
     const hit = cache.get(cwd);
-    if (hit && now - hit.at < reloadMs) return hit.loaded;
-    const loaded = await loadLexicon({ cwd, ...storeOpts });
+    if (hit && now - hit.at < reloadMs) return hit;
+    // No route reads a skipped project file's terms (each names it by path
+    // only), so an untrusted or changed one is never parsed, as in the hook.
+    const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
     if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
     }
-    cache.set(cwd, { loaded, at: now });
-    return loaded;
+    const entry: CachedLexicon = { loaded, at: now };
+    cache.set(cwd, entry);
+    return entry;
   }
 
-  function invalidate(): void {
-    cache.clear();
+  async function load(cwd: string): Promise<LoadedLexicon> {
+    return (await loadEntry(cwd)).loaded;
+  }
+
+  /**
+   * After a write to `written` (learn, add, pack install, pack uninstall). A
+   * global write can change every cwd's load, so it drops them all. A
+   * project-scope write drops only the cached loads that used that project
+   * file (merged or skipped), plus any load that had no project file while
+   * its cwd now resolves to the written one (the write created it). Every
+   * other cwd reads another `.lexicon.yaml` and the unchanged global file, so
+   * its load and matcher index are still exact.
+   */
+  function invalidateWritten(written: readonly { scope: TermScope; path: string }[]): void {
+    if (written.some((f) => f.scope === 'global')) {
+      cache.clear();
+      return;
+    }
+    const targets = new Set(written.map((f) => canonicalFile(f.path)));
+    if (targets.size === 0) return;
+    for (const [cwd, entry] of cache) {
+      const used = entry.loaded.project?.path ?? entry.loaded.skippedProject?.path ?? resolvePaths({ cwd, ...storeOpts }).project;
+      if (used !== undefined && targets.has(canonicalFile(used))) cache.delete(cwd);
+    }
+  }
+
+  /** The scope of each file `uninstallPack` rewrote: the global file by path, any other one a project file. */
+  function scopedFiles(cwd: string, files: readonly string[]): { scope: TermScope; path: string }[] {
+    const global = canonicalFile(resolvePaths({ cwd, ...storeOpts }).global);
+    return files.map((f) => ({ scope: canonicalFile(f) === global ? 'global' : 'project', path: f }));
+  }
+
+  /**
+   * After `recordHits(canonicals)`: drops only the cached loads holding one of
+   * those terms. A hit count is all that call writes, and only those terms'
+   * `hits` can have moved, so every other cwd's load (and its matcher index)
+   * is still exact. Clearing the whole cache here made one normalize reload every cwd.
+   */
+  function invalidateHits(canonicals: readonly string[]): void {
+    const keys = new Set(canonicals.map((c) => c.trim().toLowerCase()));
+    for (const [key, entry] of cache) {
+      if (entry.loaded.merged.terms.some((t) => keys.has(t.canonical.trim().toLowerCase()))) cache.delete(key);
+    }
   }
 
   // ---- handlers ----------------------------------------------------------
@@ -492,36 +766,61 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function handleNormalize(raw: unknown): Promise<NormalizeResponse> {
     const body = parseBody(NormalizeBody, raw);
-    const cwd = resolveCwd(body.cwd);
-    const loaded = await load(cwd);
-    const result = normalize(body.text, loaded.merged, {
+    const cwd = await resolveCwd(body.cwd);
+    const entry = await loadEntry(cwd);
+    // From index-cache.json when the hook (or an earlier load) already built
+    // the index for this exact lexicon, which survives the reload that
+    // follows every hit-counting request.
+    entry.index ??= await loadMatcherIndex(entry.loaded);
+    const started = Date.now();
+    let timedOut = false;
+    const result = normalizeWithIndex(body.text, entry.index, {
+      shouldStop: () => (timedOut ||= Date.now() - started >= normalizeBudgetMs),
       ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
       ...(body.minConfidence !== undefined ? { minConfidence: body.minConfidence } : {}),
     });
     if (result.changed && !body.dryRun) {
       const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
       // Best effort, like the MCP server: a store hiccup never fails a normalize.
-      await recordHits(canonicals, { cwd, ...storeOpts }).catch(() => undefined);
-      invalidate();
+      // `loaded` spares recordHits re-reading (and re-parsing) both files.
+      await recordHits(canonicals, { cwd, ...storeOpts, loaded: entry.loaded }).catch(() => undefined);
+      invalidateHits(canonicals);
     }
-    return { ...result, summary: result.replacements.length > 0 ? diffSummary(result) : '' };
+    return {
+      ...result,
+      summary: result.replacements.length > 0 ? diffSummary(result) : '',
+      // Without it a body cut short by the budget reads as fully corrected.
+      ...(timedOut ? { incomplete: timeBudgetIncomplete(body.text.length, normalizeBudgetMs) } : {}),
+      // The same additive keys as /stats and MCP normalize_transcript.
+      ...(entry.loaded.projectTrust !== undefined ? { projectTrust: entry.loaded.projectTrust } : {}),
+      ...(entry.loaded.skippedProject !== undefined ? { skippedProject: entry.loaded.skippedProject.path } : {}),
+    };
   }
 
   async function handleLearn(raw: unknown): Promise<LearnResponse> {
     const body = parseBody(LearnBody, raw);
-    const cwd = resolveCwd(body.cwd);
+    const cwd = await resolveCwd(body.cwd);
     const result = await learnCorrection(
       { heard: body.heard, meant: body.meant },
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
     );
-    invalidate();
-    return { term: result.term, created: result.created, aliasAdded: result.aliasAdded, path: result.file.path };
+    invalidateWritten([result.file]);
+    return {
+      term: result.term,
+      created: result.created,
+      aliasAdded: result.aliasAdded,
+      path: result.file.path,
+      ...(result.conflict ? { conflict: result.conflict, note: conflictNote([result.conflict]) } : {}),
+      ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
+    };
   }
 
   async function handleAdd(raw: unknown): Promise<AddResponse> {
     const body = parseBody(AddBody, raw);
-    const cwd = resolveCwd(body.cwd);
-    const aliases = body.aliases && body.aliases.length > 0 ? body.aliases : suggestAliases(body.canonical);
+    const cwd = await resolveCwd(body.cwd);
+    // Generated aliases only when this creates the term (see addTerm's defaultAliases).
+    const aliases = body.aliases ?? [];
+    const given = aliases.length > 0;
     const term: Term = {
       canonical: body.canonical,
       aliases,
@@ -532,55 +831,94 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       ...(body.never && body.never.length > 0 ? { never: body.never } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
     };
-    const saved = await addTerm(term, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
-    invalidate();
-    return { term: saved.term, path: saved.file.path, created: saved.created };
+    const saved = await addTerm(term, {
+      cwd,
+      ...storeOpts,
+      ...(body.scope !== undefined ? { scope: body.scope } : {}),
+      ...(given ? {} : { defaultAliases: suggestAliases(body.canonical) }),
+    });
+    invalidateWritten([saved.file]);
+    // An alias another term already holds may keep being corrected to that
+    // term: report it, as MCP add_term and `lexicon add --json` do, instead
+    // of a bare success. Best effort: a reload that fails loses the report.
+    const conflicts = await load(cwd).then(
+      (loaded) => spellingConflicts(loaded.merged, saved.term.aliases, saved.term.canonical),
+      () => [],
+    );
+    return { term: saved.term, path: saved.file.path, created: saved.created, ...(conflicts.length > 0 ? { conflicts } : {}) };
   }
 
   async function handleLexicon(cwd: string): Promise<LexiconResponse> {
     const loaded = await load(cwd);
-    const paths = resolvePaths({ cwd, ...storeOpts });
+    // The files merged into `lexicon`, as MCP list_terms reports `paths`: a
+    // skipped (untrusted or changed) project file is `skippedProject`, not a
+    // path in use. `projectTrust` is set whenever a project file exists.
     return {
       lexicon: loaded.merged,
-      paths: { global: paths.global, ...(paths.project !== undefined ? { project: paths.project } : {}) },
+      paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
       ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
       ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
     };
   }
 
-  async function handleStats(cwd: string): Promise<LexiconStats> {
-    return computeStats(await load(cwd));
+  async function handleStats(cwd: string): Promise<StatsResponse> {
+    const loaded = await load(cwd);
+    return {
+      ...computeStats(loaded),
+      ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
+      ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+    };
   }
 
   async function handlePacks(cwd: string): Promise<PacksResponse> {
     const [packs, loaded] = await Promise.all([listPacks(), load(cwd)]);
     const installed = installedPacks(loaded);
-    return { packs: packs.map((p) => ({ ...p, installed: installed.includes(p.name) })), installed };
+    // The same additive keys MCP list_packs and `pack list --json` carry. A
+    // registry index is never read here: listing its community packs would
+    // have the local API fetch whatever URL or path a caller names.
+    const mismatch = await findRegistryRecordMismatch(loaded, { cwd, ...storeOpts });
+    return {
+      packs: packs.map((p) => ({ ...p, installed: installed.includes(p.name) })),
+      installed,
+      ...(mismatch ? { registryMismatch: mismatch } : {}),
+      ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
+      ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+    };
   }
 
   async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResult> {
     const body = parseBody(PackBody, raw);
-    const cwd = resolveCwd(body.cwd);
+    const cwd = await resolveCwd(body.cwd);
     const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
-    invalidate();
+    invalidateWritten([result]);
     return result;
   }
 
   async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {
-    const cwd = resolveCwd(url.searchParams.get('cwd'));
+    // The query string is this route's body, so it is strict too: a typo such
+    // as `?scop=project` was ignored and the pack came out of the default
+    // (global) lexicon instead, still 200.
+    strictQuery(url, 'DELETE /packs/:name', ['scope', 'cwd']);
+    const cwd = await resolveCwd(url.searchParams.get('cwd'));
     const scopeParam = url.searchParams.get('scope');
     const scope = TERM_SCOPES.find((s) => s === scopeParam);
     if (scopeParam !== null && scope === undefined) throw new HttpError(400, `invalid scope "${sanitizeForDisplay(scopeParam)}" (global or project)`);
     const result = await uninstallPack(name, { cwd, ...storeOpts, ...(scope !== undefined ? { scope } : {}) });
-    invalidate();
+    invalidateWritten(scopedFiles(cwd, result.files));
     return result;
   }
 
   /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */
   function handleAliases(url: URL): AliasesResponse {
-    const canonical = (url.searchParams.get('canonical') ?? '').trim();
-    if (!canonical) throw new HttpError(400, 'canonical query parameter is required');
-    if (canonical.length > 80) throw new HttpError(400, 'canonical must be at most 80 characters');
+    strictQuery(url, 'GET /aliases', ['canonical']);
+    // Cleaned as the schema cleans a canonical (stripInvisible, then trim), so
+    // a zero-width character neither counts toward the cap nor reaches the aliases.
+    const canonical = stripInvisible(url.searchParams.get('canonical') ?? '').trim();
+    if (!canonical) throw new HttpError(400, 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)');
+    if (canonical.length > LIMITS.word) throw new HttpError(400, `canonical must be at most ${LIMITS.word} characters`);
+    // The schema's NonEmptyWord refuses these too, so no stored canonical
+    // could carry them; the aliases they would seed would never be accepted.
+    if (hasControlChars(canonical)) throw new HttpError(400, 'canonical must not contain control characters or newlines');
     return { canonical, aliases: suggestAliases(canonical) };
   }
 
@@ -606,6 +944,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (!isPairHost(req.headers.host, boundPort)) {
       throw new HttpError(403, `the pairing page is served for Host 127.0.0.1:${boundPort} or localhost:${boundPort} only`);
     }
+    if (!isPairOrigin(req.headers.origin, req.headers.host)) {
+      throw new HttpError(403, 'the pairing page is not served to cross-origin requests');
+    }
     return {
       status: 200,
       text: pairPageHtml({ token: config.token, port: boundPort, version }),
@@ -615,16 +956,29 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function route(req: http.IncomingMessage, url: URL): Promise<Response> {
-    const method = req.method ?? 'GET';
+    // HEAD runs the GET route (same status and headers); send() drops the
+    // body. `curl -I /health` used to answer 405.
+    const method = req.method === 'HEAD' ? 'GET' : (req.method ?? 'GET');
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
     if (pathname === '/health') {
       // Unauthenticated, so a wrong method is answered before the token check.
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await health(resolveCwd(url.searchParams.get('cwd'))));
+      if (method !== 'GET') throw notGet();
+      // Strict like every other GET route: `/health?cdw=` used to answer for
+      // the server's own directory as if the typo were not there. Checked
+      // before the token, and it names no directory, so it reveals nothing.
+      strictQuery(url, 'GET /health', ['cwd']);
+      // Without the token /health only says the server is up: a `cwd` would
+      // let any local caller probe which directories carry a .lexicon.yaml
+      // and whether they are trusted.
+      const cwdParam = url.searchParams.get('cwd');
+      if (cwdParam !== null && (!config || !tokenMatches(req.headers.authorization, config.token))) {
+        throw new HttpError(401, '/health?cwd= needs the bearer token (see: lexicon serve --show); plain /health does not');
+      }
+      return json(200, await health(await resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw notGet();
       return pairPage(req);
     }
 
@@ -633,75 +987,82 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (pathname === '/normalize') {
-      if (method !== 'POST') throw new HttpError(405, 'use POST');
+      if (method !== 'POST') throw wrongMethod(['POST']);
       return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/learn') {
-      if (method !== 'POST') throw new HttpError(405, 'use POST');
+      if (method !== 'POST') throw wrongMethod(['POST']);
       return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/add') {
-      if (method !== 'POST') throw new HttpError(405, 'use POST');
+      if (method !== 'POST') throw wrongMethod(['POST']);
       return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES)));
     }
     if (pathname === '/lexicon') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await handleLexicon(resolveCwd(url.searchParams.get('cwd'))));
+      if (method !== 'GET') throw notGet();
+      strictQuery(url, 'GET /lexicon', ['cwd']);
+      return json(200, await handleLexicon(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/stats') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await handleStats(resolveCwd(url.searchParams.get('cwd'))));
+      if (method !== 'GET') throw notGet();
+      strictQuery(url, 'GET /stats', ['cwd']);
+      return json(200, await handleStats(await resolveCwd(url.searchParams.get('cwd'))));
     }
     if (pathname === '/packs') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
-      return json(200, await handlePacks(resolveCwd(url.searchParams.get('cwd'))));
+      if (method !== 'GET') throw notGet();
+      strictQuery(url, 'GET /packs', ['cwd']);
+      return json(200, await handlePacks(await resolveCwd(url.searchParams.get('cwd'))));
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
     if (packMatch) {
       if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, true)));
-      if (method === 'DELETE') return json(200, await handleUninstallPack(packMatch[1], url));
-      throw new HttpError(405, 'use POST to install or DELETE to remove');
+      if (method === 'DELETE') {
+        // Options travel in the query string. A body was ignored, so
+        // `{ "scope": "project" }` removed the pack from the global lexicon.
+        if ((await readBody(req, MAX_BODY_BYTES)).trim() !== '') {
+          throw new HttpError(400, 'DELETE /packs/:name takes no body; pass scope and cwd in the query string (?scope=project&cwd=...)');
+        }
+        return json(200, await handleUninstallPack(packMatch[1], url));
+      }
+      throw wrongMethod(['POST', 'DELETE'], 'use POST to install or DELETE to remove');
     }
     if (pathname === '/aliases') {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw notGet();
       return json(200, handleAliases(url));
     }
     const exportMatch = EXPORT_ROUTE_RE.exec(pathname);
     if (exportMatch) {
-      if (method !== 'GET') throw new HttpError(405, 'use GET');
+      if (method !== 'GET') throw notGet();
       const format = resolveExportFormat(exportMatch[1]);
-      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}"`);
-      const loaded = await load(resolveCwd(url.searchParams.get('cwd')));
-      return { status: 200, text: exportLexicon(loaded.merged, format), contentType: exportContentType(format) };
+      // The formats to choose from, as MCP export_lexicon and `lexicon export` give them.
+      if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}" (one of: ${EXPORT_FORMATS.join(', ')})`);
+      strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
+      const exportOpts = exportQueryOptions(url);
+      const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
+      return { status: 200, text: exportLexicon(loaded.merged, format, exportOpts), contentType: exportContentType(format) };
     }
-    throw new HttpError(404, `no route for ${method} ${sanitizeForDisplay(pathname)}`);
+    throw new HttpError(404, `no route for ${req.method ?? 'GET'} ${sanitizeForDisplay(pathname)} (routes: ${ROUTES.join(', ')})`);
   }
 
-  function statusFor(err: unknown): number {
-    if (err instanceof HttpError) return err.status;
-    if (isProjectTrustError(err)) return 403;
-    if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
-    // learnCorrection / addTerm / parseLexicon throw plain Errors on bad input.
-    if (err instanceof Error && !(err instanceof TypeError)) return 400;
-    return 500;
-  }
 
-  function send(res: http.ServerResponse, response: Response, extra: Record<string, string>): void {
+  /**
+   * Write `response`. `Content-Length` is always set from the body, so a HEAD
+   * answer (`head`) carries the length the GET would have, and no body.
+   */
+  function send(res: http.ServerResponse, response: Response, extra: Record<string, string>, head = false): void {
     const headers: Record<string, string> = { ...extra, ...response.headers, 'Cache-Control': 'no-store' };
-    if ('json' in response) {
-      headers['Content-Type'] = 'application/json; charset=utf-8';
-      res.writeHead(response.status, headers);
-      res.end(JSON.stringify(response.json));
-    } else {
-      headers['Content-Type'] = response.contentType;
-      res.writeHead(response.status, headers);
-      res.end(response.text);
-    }
+    const body = 'json' in response ? JSON.stringify(response.json) : response.text;
+    headers['Content-Type'] = 'json' in response ? 'application/json; charset=utf-8' : response.contentType;
+    headers['Content-Length'] = String(Buffer.byteLength(body, 'utf8'));
+    res.writeHead(response.status, headers);
+    if (head) res.end();
+    else res.end(body);
   }
 
   const server = http.createServer((req, res) => {
     const started = Date.now();
     const method = req.method ?? 'GET';
+    const head = method === 'HEAD';
     let url: URL;
     try {
       url = new URL(req.url ?? '/', 'http://localhost');
@@ -713,15 +1074,37 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} ${res.statusCode} ${Date.now() - started}ms`);
     };
     res.once('finish', logLine);
+    // A client that goes away before the response is complete never fires
+    // 'finish', so that request left no line at all. 'close' always fires.
+    res.once('close', () => {
+      if (opts.quiet || res.writableFinished) return;
+      const stage = res.headersSent ? `after ${res.statusCode} headers were sent` : 'before a response was sent';
+      log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} aborted by the client ${stage} ${Date.now() - started}ms`);
+    });
 
     const cors: Record<string, string> = {};
     const origin = req.headers.origin;
-    if (isOriginAllowed(origin, config?.allowedOrigins)) {
+    // Never for /pair: it carries the token (see isPairOrigin).
+    const isPair = (url.pathname.replace(/\/+$/, '') || '/') === PAIR_PATH;
+    if (!isPair && isOriginAllowed(origin, config?.allowedOrigins)) {
       cors['Access-Control-Allow-Origin'] = origin as string;
       cors['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
       cors['Access-Control-Allow-Methods'] = 'GET, POST, DELETE';
       cors['Access-Control-Max-Age'] = '600';
       cors['Vary'] = 'Origin';
+    }
+
+    // Before anything else, OPTIONS included (see isAllowedHost).
+    if (!isAllowedHost(req.headers.host, boundPort, host)) {
+      send(
+        res,
+        json(403, {
+          error: `Host must be 127.0.0.1:${boundPort}, localhost:${boundPort} or [::1]:${boundPort} (DNS rebinding guard)`,
+        }),
+        {},
+        head,
+      );
+      return;
     }
 
     if (method === 'OPTIONS') {
@@ -731,7 +1114,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (inFlight >= maxConcurrent) {
-      send(res, json(503, { error: 'too many concurrent requests' }), { ...cors, 'Retry-After': '1' });
+      send(res, json(503, { error: 'too many concurrent requests' }), { ...cors, 'Retry-After': '1' }, head);
       return;
     }
     inFlight += 1;
@@ -740,15 +1123,24 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     });
 
     route(req, url)
-      .then((response) => send(res, response, cors))
+      .then((response) => send(res, response, cors, head))
       .catch((err: unknown) => {
-        const status = statusFor(err);
-        const message = status === 500 ? 'internal error' : errorMessage(err);
+        const status = errorStatus(err);
+        // A 500's detail (a broken file and its path, a held lock) is what the
+        // user needs to fix it, so a client holding the token gets it; an
+        // anonymous caller (plain /health) gets only a pointer to the log.
+        const authed = config !== undefined && tokenMatches(req.headers.authorization, config.token);
+        let message = errorMessage(err);
+        if (status === 500) {
+          message = authed
+            ? `internal error: ${message}`
+            : 'internal error (the lexicon serve log has the detail)';
+        }
         if (status === 500) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
-        const extra: Record<string, string> = { ...cors };
+        const extra: Record<string, string> = { ...cors, ...(err instanceof HttpError ? err.headers : {}) };
         if (status === 413) extra['Connection'] = 'close';
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
-        send(res, json(status, { error: message }), extra);
+        send(res, json(status, { error: message }), extra, head);
       });
   });
 

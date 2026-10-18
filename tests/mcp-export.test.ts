@@ -30,17 +30,22 @@ afterAll(async () => {
 });
 
 async function callExport(format: string): Promise<{ isError: boolean; text: string }> {
-  const server = createServer({ cwd: home });
+  const result = await callExportBlocks({ format });
+  return { isError: result.isError, text: result.blocks.join('\n') };
+}
+
+async function callExportBlocks(args: Record<string, unknown>, cwd = home): Promise<{ isError: boolean; blocks: string[] }> {
+  const server = createServer({ cwd });
   const client = new Client({ name: 'test', version: '0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   try {
-    const result = (await client.callTool({ name: 'export_lexicon', arguments: { format } })) as {
+    const result = (await client.callTool({ name: 'export_lexicon', arguments: args })) as {
       isError?: boolean;
       content: { text?: string }[];
     };
-    return { isError: result.isError === true, text: result.content.map((c) => c.text ?? '').join('\n') };
+    return { isError: result.isError === true, blocks: result.content.map((c) => c.text ?? '') };
   } finally {
     await client.close();
     await server.close();
@@ -62,5 +67,44 @@ describe('export_lexicon format aliases', () => {
     expect(result.isError).toBe(true);
     expect(result.text).toContain('claude-md');
     expect(result.text).toContain('wispr-flow');
+  });
+});
+
+// Catches: the export came back as one bare text block whatever happened, so
+// a category filter that matched nothing returned an empty string, and a repo
+// whose .lexicon.yaml is untrusted got a global-only export with no word that
+// its terms were left out (`lexicon export` says so on stderr, lexicon://json
+// in `note`).
+describe('export_lexicon notes', () => {
+  it('returns the export alone when there is nothing to say', async () => {
+    const result = await callExportBlocks({ format: 'text' });
+    expect(result.isError).toBe(false);
+    expect(result.blocks).toEqual(['Ashlr.AI: Ashler\n']);
+  });
+
+  it('says so in a second block when no term matched the categories', async () => {
+    const result = await callExportBlocks({ format: 'text', categories: ['person'] });
+    expect(result.isError).toBe(false);
+    expect(result.blocks).toHaveLength(2);
+    expect(result.blocks[0]).toBe('');
+    expect(result.blocks[1]).toMatch(/^Note \(not part of the export\): No term matched categories \["person"\]/);
+    expect(result.blocks[1]).toContain('list_terms');
+  });
+
+  it('names a skipped untrusted project lexicon in a second block, leaving the export as is', async () => {
+    const repo = path.join(home, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Zephyrine\n    aliases: [Zefyrine]\n', 'utf8');
+    try {
+      const result = await callExportBlocks({ format: 'text' }, repo);
+      expect(result.isError).toBe(false);
+      expect(result.blocks[0]).toBe('Ashlr.AI: Ashler\n');
+      expect(result.blocks).toHaveLength(2);
+      expect(result.blocks[1]).toContain('untrusted project .lexicon.yaml');
+      expect(result.blocks[1]).toContain('Its terms are not in this export.');
+      expect(result.blocks.join('\n')).not.toContain('Zefyrine');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
   });
 });

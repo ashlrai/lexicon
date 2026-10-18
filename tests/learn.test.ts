@@ -12,6 +12,7 @@ vi.mock('../src/core/store.js', () => store);
 
 import {
   CORRECTION_EXAMPLES,
+  conflictNote,
   learnCorrection,
   parseCorrection,
   suggestCanonicalFor,
@@ -153,6 +154,51 @@ describe('parseCorrection', () => {
 // learnCorrection
 // ---------------------------------------------------------------------------
 
+const untrustedLoaded = (trust: 'untrusted' | 'changed' = 'untrusted'): LoadedLexicon => {
+  const globalOnly: Lexicon = { version: 1, terms: lexicon.terms.filter((t) => t.scope === 'global') };
+  return {
+    merged: globalOnly,
+    global: { path: '/fake/global.yaml', scope: 'global', lexicon: globalOnly, exists: true },
+    projectTrust: trust,
+    skippedProject: {
+      path: '/fake/repo/.lexicon.yaml',
+      scope: 'project',
+      lexicon: { version: 1, terms: [{ canonical: 'Hostile Name', aliases: ['Versel'] }, { canonical: 'Vercel', aliases: ['Versal'] }] },
+      exists: true,
+    },
+  };
+};
+
+describe('learnCorrection: an untrusted project lexicon that claims heard', () => {
+  it('names the skipped file and its trust state, never its terms', async () => {
+    store.loadLexicon.mockResolvedValue(untrustedLoaded());
+    const result = await learnCorrection({ heard: 'Versel', meant: 'Vercel' }, { cwd: '/fake/repo' });
+    // Still written globally, and the untrusted term is not merged or reported as a conflict.
+    expect(store.addTerm).toHaveBeenCalledWith(expect.objectContaining({ canonical: 'Vercel' }), { cwd: '/fake/repo', scope: 'global' });
+    expect(result.conflict).toBeUndefined();
+    expect(result.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+    expect(JSON.stringify(result)).not.toContain('Hostile Name');
+
+    store.loadLexicon.mockResolvedValue(untrustedLoaded('changed'));
+    expect((await learnCorrection({ heard: 'Versel', meant: 'Vercel' }, { cwd: '/fake/repo' })).untrustedProject?.trust).toBe('changed');
+  });
+
+  it('says nothing when the skipped file does not claim heard, or claims it for the same term', async () => {
+    store.loadLexicon.mockResolvedValue(untrustedLoaded());
+    expect((await learnCorrection({ heard: 'Verzel', meant: 'Vercel' }, { cwd: '/fake/repo' })).untrustedProject).toBeUndefined();
+    expect((await learnCorrection({ heard: 'Versal', meant: 'Vercel' }, { cwd: '/fake/repo' })).untrustedProject).toBeUndefined();
+  });
+
+  it('the CLI prints a warn line that names the file and lexicon trust', async () => {
+    store.loadLexicon.mockResolvedValue(untrustedLoaded());
+    const { io, out } = captureIO();
+    expect(await runLearn(['Versel', 'Vercel'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain('warn: the untrusted project lexicon /fake/repo/.lexicon.yaml also claims Versel for another term');
+    expect(out()).toContain('lexicon trust');
+    expect(out()).not.toContain('Hostile Name');
+  });
+});
+
 describe('learnCorrection', () => {
   it('adds heard as an alias of an existing canonical (in its own scope)', async () => {
     const result = await learnCorrection({ heard: 'Ashlur', meant: 'ashlr.ai' }, { cwd: '/fake/repo' });
@@ -236,6 +282,34 @@ describe('learnCorrection', () => {
       expect(result).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/global.yaml' } });
       expect(result.term.canonical).toBe('Zoë');
     });
+
+    it('reports another term that also holds the spelling as an alias', async () => {
+      const lex: Lexicon = {
+        version: 1,
+        terms: [
+          { canonical: 'ashlr', aliases: [], scope: 'global' },
+          { canonical: 'Ashlr.AI', aliases: ['Ashlr'], scope: 'global' },
+        ],
+      };
+      store.loadLexicon.mockResolvedValueOnce({ merged: lex, global: { path: '/fake/global.yaml', scope: 'global', lexicon: lex, exists: true } });
+      const result = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' });
+      expect(result.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashlr' });
+    });
+
+    it('names an untrusted project lexicon that claims the spelling for another term', async () => {
+      const base = untrustedLoaded();
+      store.loadLexicon.mockResolvedValue({
+        ...base,
+        skippedProject: { ...base.skippedProject!, lexicon: { version: 1, terms: [{ canonical: 'Hostile Name', aliases: ['ashlr', 'zoë'] }] } },
+      });
+      const created = await learnCorrection({ heard: 'ashlr', meant: 'Ashlr' }, { cwd: '/fake/repo' });
+      expect(created.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+      expect(JSON.stringify(created)).not.toContain('Hostile Name');
+      // Already spelled that way: nothing is written, the warning still comes back.
+      const known = await learnCorrection({ heard: 'zoë', meant: 'Zoë' }, { cwd: '/fake/repo' });
+      expect(store.addTerm).toHaveBeenCalledTimes(1);
+      expect(known.untrustedProject).toEqual({ path: '/fake/repo/.lexicon.yaml', trust: 'untrusted' });
+    });
   });
 
   it.each([
@@ -250,11 +324,57 @@ describe('learnCorrection', () => {
     await expect(learnCorrection(correction)).rejects.toThrow(message);
     expect(store.addTerm).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [{ heard: '', meant: 'Ashlr.AI' }],
+    [{ heard: 'Ashler', meant: '' }],
+    [{ heard: 'Ashler', meant: 'Ashler' }],
+    [{ heard: 'Ashler', meant: 'ashler' }],
+    [{ heard: 'x'.repeat(61), meant: 'Ashlr.AI' }],
+  ])('refuses %j without an internal function name or CLI syntax an MCP/HTTP caller cannot run', async (correction) => {
+    const err = await learnCorrection(correction).then(
+      () => new Error('expected a refusal'),
+      (e: unknown) => e as Error,
+    );
+    expect(err.message).not.toBe('expected a refusal');
+    expect(err.message).not.toMatch(/learnCorrection/);
+    expect(err.message).not.toMatch(/\blearn Ashler\b|lexicon remove/);
+  });
 });
 
 // ---------------------------------------------------------------------------
 // suggestCanonicalFor
 // ---------------------------------------------------------------------------
+
+// The one note builder CLI `learn --json`/`add --json`, MCP `add_term` and
+// serve `POST /learn` share, so the three cannot drift apart.
+describe('conflictNote', () => {
+  const alias = { canonical: 'Ashlr.AI', scope: 'global' as const, as: 'alias' as const, spelling: 'Ashler' };
+  const own = { canonical: 'Ashley', scope: 'project' as const, as: 'canonical' as const, spelling: 'Ashley' };
+
+  it('names the scoped lexicon remove command for an alias by default', () => {
+    expect(conflictNote([alias])).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+    );
+  });
+
+  it('names the remove_term call for the mcp audience', () => {
+    expect(conflictNote([alias], 'mcp')).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, call remove_term with canonical "Ashlr.AI", alias "Ashler", scope "global".',
+    );
+  });
+
+  // Catches: a canonical conflict said the spelling may be kept as written and
+  // stopped there, with no way out, while an alias conflict names the remove.
+  it('says a canonical conflict keeps the spelling as written and how to remove that term, one sentence per conflict', () => {
+    expect(conflictNote([own, alias])).toMatch(
+      /^"Ashley" is its own term \(project\), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Ashley" --project "Ashler" is also/,
+    );
+    expect(conflictNote([own], 'mcp')).toBe(
+      '"Ashley" is its own term (project), so it may still be kept as written; if the user never means it as its own term, call remove_term with canonical "Ashley", scope "project".',
+    );
+  });
+});
 
 describe('suggestCanonicalFor', () => {
   it('ranks phonetic and near-spelling matches, best first', () => {
@@ -307,6 +427,45 @@ describe('lexicon learn (CLI)', () => {
     expect(correctionFromArgs([], undefined)).toBeUndefined();
   });
 
+  // Catches: `learn --json` with no correction printed only the usage on stderr, leaving stdout empty.
+  it('--json prints { ok: false, error, nextStep } when there is nothing to learn', async () => {
+    const { io, out } = captureIO();
+    expect(await runLearn(['just', 'some', 'words'], { json: true, cwd: '/fake/repo' }, io)).toBe(1);
+    expect(JSON.parse(out())).toEqual({
+      ok: false,
+      error: 'could not find a correction in "just some words"',
+      nextStep: expect.stringContaining('lexicon learn <heard> <meant>'),
+    });
+    const meantOnly = captureIO();
+    expect(await runLearn([], { json: true, from: 'that should be Ashlr.AI', cwd: '/fake/repo' }, meantOnly.io)).toBe(1);
+    expect(JSON.parse(meantOnly.out())).toEqual({
+      ok: false,
+      error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
+      nextStep: 'run: lexicon learn <heard> "Ashlr.AI"',
+    });
+  });
+
+  // Catches: learn allows unknown options (so a bare `->` is a word), and
+  // `lexicon learn --dry-run Ashlr.AI` saved "--dry-run" as an alias of Ashlr.AI.
+  it('refuses a word that reads as an option and writes nothing', async () => {
+    for (const words of [['--dry-run', 'Ashlr.AI'], ['--scope=project', 'Ashlr.AI'], ['-n', 'Ashler', 'Ashlr.AI']]) {
+      const { io, out, err } = captureIO();
+      expect(await runLearn(words, { json: true, cwd: '/fake/repo' }, io), words.join(' ')).toBe(1);
+      expect(JSON.parse(out())).toEqual({
+        ok: false,
+        error: `unknown option '${words[0]}'; nothing was learned`,
+        nextStep: expect.stringContaining('lexicon learn --help'),
+      });
+      expect(err()).toContain(`lexicon: unknown option '${words[0]}'`);
+    }
+    // An option-like word next to --from is refused too, not ignored.
+    expect(await runLearn(['--yes'], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, captureIO().io)).toBe(1);
+    expect(store.addTerm).not.toHaveBeenCalled();
+    // The arrows are still words.
+    expect(await runLearn(['Ashlur', '->', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+    expect(await runLearn(['Ashlur', '=>', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+  });
+
   it('--from learns a parsed correction', async () => {
     const { io, out } = captureIO();
     const code = await runLearn([], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, io);
@@ -320,6 +479,40 @@ describe('lexicon learn (CLI)', () => {
     expect(out()).toContain('learned Ashlur -> Ashlr.AI (alias added)');
   });
 
+  it('warns when another term already claims the heard spelling', async () => {
+    // "Ashler" is an alias of Ashlr.AI in the fixture, so learning it for
+    // another name leaves two terms claiming it.
+    const { io, out } = captureIO();
+    expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
+    expect(out()).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+
+    const ownTerm = captureIO();
+    await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo' }, ownTerm.io);
+    expect(ownTerm.out()).toContain('warn: Kubernetes is its own term (project), so it may still be kept as written; to drop that term: lexicon remove "Kubernetes" --project');
+
+    const json = captureIO();
+    await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
+    expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
+    expect(JSON.parse(json.out()).note).toBe(
+      '"Kubernetes" is its own term (project), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Kubernetes" --project',
+    );
+
+    // Regression: `learn --json` had the conflict and no remove command, while
+    // `add --json` pairs its conflicts with a `note` naming the scoped one.
+    const alias = captureIO();
+    expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo', json: true }, alias.io)).toBe(0);
+    expect(JSON.parse(alias.out()).note).toBe(
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
+        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+    );
+
+    // No conflict: no note.
+    const plain = captureIO();
+    expect(await runLearn(['Versel', 'Vercel'], { cwd: '/fake/repo', json: true }, plain.io)).toBe(0);
+    expect(JSON.parse(plain.out())).not.toHaveProperty('note');
+  });
+
   it('--project writes to the project lexicon', async () => {
     const { io } = captureIO();
     await runLearn(['Ashlur', 'Ashlr.AI'], { project: true, cwd: '/fake/repo' }, io);
@@ -331,8 +524,24 @@ describe('lexicon learn (CLI)', () => {
     const code = await runLearn([], { from: 'not sure it\'s ready' }, io);
     expect(code).toBe(1);
     expect(err()).toContain('could not find a correction');
-    expect(out()).toContain("it's Ashlr.AI, not Ashler");
-    expect(out()).toContain('Ashler -> Ashlr.AI');
+    expect(err()).toContain("it's Ashlr.AI, not Ashler");
+    expect(err()).toContain('Ashler -> Ashlr.AI');
+    expect(out()).toBe('');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  // Catches: `learn X X --json` printed only `error`, with no nextStep like every other learn refusal.
+  it('--json names the next step when heard and meant are the same spelling', async () => {
+    for (const words of [['Ashlr.AI', 'Ashlr.AI'], ['Ashlr.AI ', ' Ashlr.AI']]) {
+      const { io, out, err } = captureIO();
+      expect(await runLearn(words, { json: true, cwd: '/fake/repo' }, io)).toBe(1);
+      expect(JSON.parse(out())).toEqual({
+        ok: false,
+        error: '"Ashlr.AI" and "Ashlr.AI" are the same spelling; nothing to learn',
+        nextStep: 'run: lexicon learn <heard> "Ashlr.AI", where <heard> is the misspelling STT wrote',
+      });
+      expect(err()).toContain('lexicon: run: lexicon learn <heard> "Ashlr.AI"');
+    }
     expect(store.addTerm).not.toHaveBeenCalled();
   });
 
@@ -341,7 +550,16 @@ describe('lexicon learn (CLI)', () => {
     const code = await runLearn([], { from: 'spelled Zoë' }, io);
     expect(code).toBe(1);
     expect(err()).toContain('not what was heard');
-    expect(out()).toContain('lexicon learn <heard> "Zoë"');
+    expect(err()).toContain('lexicon learn <heard> "Zoë"');
+    expect(out()).toBe('');
+  });
+
+  it('--json prints only the error object on stdout when there is nothing to learn (usage goes to stderr)', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn([], { json: true }, io)).toBe(1);
+    expect(JSON.parse(out())).toEqual({ ok: false, error: 'nothing to learn', nextStep: expect.any(String) });
+    expect(out()).not.toContain('usage:');
+    expect(err()).toContain('usage: lexicon learn');
   });
 
   it('--json prints the result', async () => {
@@ -350,5 +568,17 @@ describe('lexicon learn (CLI)', () => {
     expect(code).toBe(0);
     const payload = JSON.parse(out()) as { heard: string; meant: string; aliasAdded: boolean };
     expect(payload).toMatchObject({ heard: 'Ashlur', meant: 'Ashlr.AI', aliasAdded: true });
+  });
+
+  // Catches: --json dumped the whole lexicon file (every term in it) under `file` and had no `path`, unlike learn_correction.
+  it('--json gives path and the file path/scope only, not the file\'s terms', async () => {
+    const { io, out } = captureIO();
+    expect(await runLearn(['Ashlur', 'Ashlr.AI'], { json: true }, io)).toBe(0);
+    const payload = JSON.parse(out()) as Record<string, unknown>;
+    expect(payload.path).toBe('/fake/global.yaml');
+    expect(payload.file).toEqual({ path: '/fake/global.yaml', scope: 'global' });
+    expect(out()).not.toContain('Mason Wyatt');
+    expect(Object.keys(payload).sort()).toEqual(['aliasAdded', 'created', 'file', 'heard', 'meant', 'ok', 'path', 'term']);
+    expect(Object.keys(payload)[0]).toBe('ok');
   });
 });

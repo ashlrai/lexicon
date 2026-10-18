@@ -109,6 +109,15 @@ export function exportLexicon(lexicon: Lexicon, format: ExportFormat, opts: Expo
 }
 
 /**
+ * The terms `exportLexicon` hands the exporter: those in `opts.categories`
+ * (all when none are given), capped at `opts.limit`. A format with its own
+ * cap (`whisper-prompt`) may write fewer.
+ */
+export function selectExportTerms(lexicon: Lexicon, opts: ExportOptions = {}): Term[] {
+  return applyOptions(lexicon, opts).terms;
+}
+
+/**
  * Apply the category filter and term cap before dispatching. The cap keeps the
  * most important terms (hits desc, proper nouns first) but preserves the
  * lexicon's original term order afterwards so per-format sorting is unaffected.

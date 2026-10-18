@@ -65,11 +65,13 @@ describe('computeStats', () => {
     expect(stats.topTerms[0]).toEqual({ canonical: 'Hit0', hits: 100 });
     expect(stats.neverHit).toHaveLength(NEVER_HIT_CAP);
     expect(stats.neverHit[0]).toBe('Cold0');
+    // The cap hides how many there are; the count does not.
+    expect(stats.neverHitCount).toBe(30);
   });
 
   it('handles an empty lexicon', () => {
     const stats = computeStats(loadedOf([], false));
-    expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [] });
+    expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [], neverHitCount: 0 });
   });
 });
 
@@ -82,6 +84,13 @@ describe('lexicon stats (CLI)', () => {
     expect(text).toContain('never hit (2)\n  Mason Wyatt, Zoë');
     expect(text).toMatch(/global\s+\/fake\/global\.yaml\s+3 terms/);
     expect(text).toMatch(/project\s+\/fake\/repo\/\.lexicon\.yaml\s+1 term\n/);
+  });
+
+  it('gives the full never-hit count past the cap', () => {
+    const cold: Term[] = Array.from({ length: 30 }, (_, i) => ({ canonical: `Cold${i}`, aliases: [] }));
+    const text = renderStats(computeStats(loadedOf(cold)));
+    expect(text).toContain('never hit (30)\n  Cold0, ');
+    expect(text).toContain('Cold19, and 10 more');
   });
 
   it('says so when no hits were recorded', () => {
@@ -116,6 +125,44 @@ describe('lexicon stats (CLI)', () => {
       expect(stats.neverHit).toEqual(['Cold']);
       // ...and the committed file still says exactly what it said.
       expect(await fs.readFile(projectPath, 'utf8')).toContain('hits: 10');
+    } finally {
+      if (prev === undefined) delete process.env.LEXICON_PATH;
+      else process.env.LEXICON_PATH = prev;
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: lexicon_stats named a skipped project file, `lexicon stats` said nothing.
+  it('runStats reports an untrusted project lexicon it left out, on stderr and in --json', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-stats-skipped-')));
+    const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+    const repo = path.join(tmp, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const prev = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = globalPath;
+    try {
+      const out: string[] = [];
+      const err: string[] = [];
+      const io: IO = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s) };
+      expect(await runStats({ cwd: repo, json: true }, io)).toBe(0);
+      const stats = JSON.parse(out.join('')) as { termCount: number; skippedProject?: string; projectTrust?: string };
+      expect(stats.termCount).toBe(0);
+      expect(stats.skippedProject).toBe(projectPath);
+      expect(stats.projectTrust).toBe('untrusted');
+      expect(err.join('')).toContain(`untrusted project lexicon skipped: ${projectPath}`);
+
+      const text: string[] = [];
+      const textErr: string[] = [];
+      expect(await runStats({ cwd: repo }, { stdout: (s) => void text.push(s), stderr: (s) => void textErr.push(s) })).toBe(0);
+      expect(text.join('')).not.toContain('Kubectl');
+      expect(textErr.join('')).toContain('run: lexicon trust');
+
+      // No project file: the JSON has no such keys.
+      const plain: string[] = [];
+      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void plain.push(s), stderr: () => undefined })).toBe(0);
+      expect(JSON.parse(plain.join(''))).not.toHaveProperty('skippedProject');
     } finally {
       if (prev === undefined) delete process.env.LEXICON_PATH;
       else process.env.LEXICON_PATH = prev;

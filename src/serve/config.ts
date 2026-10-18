@@ -95,6 +95,34 @@ export async function writeServeConfig(config: ServeConfig, opts: StoreOptions =
   return target;
 }
 
+/**
+ * Put an existing serve.json back to 0600 when group or other can read it.
+ *
+ * The file is created 0600, but one that already exists is reused as found:
+ * restored from a backup, synced from another machine, copied with `cp`, or
+ * written by hand following the docs, it came back 0644, and the server (and
+ * `--show`, `--install`) went on serving a token any local account could read.
+ * Rewriting it only happened when the port changed. Not on Windows, where the
+ * mode bits do not describe access.
+ */
+async function keepOwnerOnly(file: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  let mode: number;
+  try {
+    mode = (await fs.stat(file)).mode & 0o777;
+  } catch {
+    return;
+  }
+  if ((mode & 0o077) === 0) return;
+  try {
+    await fs.chmod(file, SERVE_FILE_MODE);
+  } catch (err) {
+    throw new Error(
+      `${file} holds the local API token and is readable by other users (mode ${mode.toString(8)}), and it could not be made private: ${err instanceof Error ? err.message : String(err)}; run: chmod 600 ${file}`,
+    );
+  }
+}
+
 export function generateToken(): string {
   return randomBytes(16).toString('hex');
 }
@@ -110,7 +138,10 @@ export function generateToken(): string {
 export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeConfig> {
   return withServeConfigLock(async () => {
     const existing = await readServeConfig(opts);
-    if (existing) return existing;
+    if (existing) {
+      await keepOwnerOnly(getServePath(opts));
+      return existing;
+    }
     const config: ServeConfig = { port: DEFAULT_PORT, token: generateToken(), createdAt: new Date().toISOString() };
     await writeServeConfig(config, opts);
     return config;
@@ -133,4 +164,65 @@ export function serveUrl(port: number, host: string = DEFAULT_HOST): string {
 export function isLoopbackHost(host: string): boolean {
   const h = host.trim().toLowerCase();
   return h === 'localhost' || h === '::1' || h === '[::1]' || h.startsWith('127.');
+}
+
+/** What `probeHealth` saw at `<url>/health`. */
+export type HealthProbe =
+  /** 2xx: the parsed body (`HealthResponse`). */
+  | { state: 'up'; body: unknown }
+  /** The server answered, but with an error status: it is running and cannot serve (a broken lexicon file, say). */
+  | { state: 'failing'; status: number; error: string }
+  /** Nothing answered (refused, timed out). */
+  | { state: 'down'; error: string };
+
+/**
+ * True when a 2xx /health body is lexicon serve's (`{ ok: true, ... }`).
+ * Anything else that answers 200 on the port is another program, so neither
+ * `lexicon serve --status` nor MCP `serve_status` may call it up.
+ */
+export function isLexiconHealth(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && !Array.isArray(body) && (body as { ok?: unknown }).ok === true;
+}
+
+/** The next step for each way /health can fail, shared by `lexicon serve --status --json` and MCP `serve_status`. */
+export const SERVE_STATUS_HINTS = {
+  failing:
+    'The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.',
+  down: 'Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.',
+  foreign:
+    'Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>.',
+} as const;
+
+/** The `error` for a 2xx /health whose body is not lexicon serve's. */
+export const FOREIGN_HEALTH_ERROR = 'unexpected /health response (not lexicon serve)';
+
+/**
+ * GET `<baseUrl>/health`, sending the bearer `token` when there is one so a
+ * failing server returns its full error (see `errorStatus` in server.ts)
+ * rather than a pointer to its log. `lexicon serve --status` and the MCP
+ * `serve_status` tool share it, so neither calls a running server "down".
+ */
+export async function probeHealth(
+  baseUrl: string,
+  opts: { token?: string; timeoutMs?: number; fetch?: typeof fetch } = {},
+): Promise<HealthProbe> {
+  const doFetch = opts.fetch ?? fetch;
+  let res: Response;
+  try {
+    res = await doFetch(`${baseUrl}/health`, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 1_500),
+      ...(opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}),
+    });
+  } catch (err) {
+    return { state: 'down', error: err instanceof Error ? err.message : String(err) };
+  }
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = undefined;
+  }
+  if (res.ok) return { state: 'up', body };
+  const given = typeof body === 'object' && body !== null ? (body as { error?: unknown }).error : undefined;
+  return { state: 'failing', status: res.status, error: typeof given === 'string' ? given : `HTTP ${res.status}` };
 }

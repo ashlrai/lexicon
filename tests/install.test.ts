@@ -405,6 +405,72 @@ describe('generic, claude and the commander wiring', () => {
     await expect(run('emacs')).rejects.toThrow(/unknown client "emacs"/);
   });
 
+  // Catches: `lexicon install --apply` with no client printed the generic
+  // snippet ("add --apply to write the config"), wrote nothing and exited 0.
+  it('refuses --apply or --project with no client, naming the client to pass, and writes nothing', async () => {
+    const io = makeIO();
+    await expect(runInstall(undefined, { home, cwd, apply: true }, io, baseDeps())).rejects.toMatchObject({
+      name: 'CliRefusal',
+      message: '--apply needs a client: with none named, lexicon install only prints the generic configuration and writes nothing',
+      nextStep: 'name the client to write, e.g. lexicon install cursor --apply (one of: claude, codex, cursor, windsurf, gemini, claude-desktop, vscode)',
+    });
+    expect(io.out).toBe('');
+    await expect(run('generic', { project: true })).rejects.toThrow(/^--project needs a client/);
+    const doc = await run('generic', { apply: true, project: true, json: true });
+    expect(doc.code).toBe(1);
+    expect(JSON.parse(doc.io.out)).toEqual({
+      ok: false,
+      error: '--apply --project needs a client: with none named, lexicon install only prints the generic configuration and writes nothing',
+      nextStep: 'name the client to write, e.g. lexicon install cursor --apply --project (one of: claude, codex, cursor, windsurf, gemini, claude-desktop, vscode)',
+    });
+    expect(await fs.readdir(home)).toEqual([]);
+    expect(await fs.readdir(cwd)).toEqual([]);
+    expect((await run('generic')).io.out).toContain('name a client and add --apply to write its config');
+  });
+
+  // Catches: install had no --json, so an unknown client reached a script only as stderr text.
+  describe('--json', () => {
+    it('prints { ok: false, error, nextStep } for an unknown client or scope', async () => {
+      const unknown = await run('emacs', { json: true });
+      expect(unknown.code).toBe(1);
+      const doc = JSON.parse(unknown.io.out) as { ok: boolean; error: string; nextStep: string };
+      expect(doc.ok).toBe(false);
+      expect(doc.error).toMatch(/unknown client "emacs"/);
+      expect(doc.nextStep).toContain('cursor');
+      expect(doc.nextStep).toContain('lexicon install cursor --json');
+
+      const scope = await run('cursor', { json: true, scope: 'team' });
+      expect(scope.code).toBe(1);
+      expect(JSON.parse(scope.io.out)).toEqual({
+        ok: false,
+        error: '--scope must be "user" or "project" (got "team")',
+        nextStep: 'pass --scope user or --scope project',
+      });
+    });
+
+    it('prints the preview and then the written file as one document each', async () => {
+      const preview = await run('cursor', { json: true });
+      expect(preview.code).toBe(0);
+      const p = JSON.parse(preview.io.out) as { ok: boolean; client: string; scope: string; applied: boolean; written: unknown[]; output: string };
+      expect(p).toMatchObject({ ok: true, client: 'cursor', scope: 'user', applied: false, written: [] });
+      expect(p.output).toContain('would merge into');
+      expect(p.output).not.toMatch(/\x1b\[/);
+
+      const applied = await run('cursor', { json: true, apply: true });
+      expect(applied.code).toBe(0);
+      const file = path.join(home, '.cursor', 'mcp.json');
+      expect(JSON.parse(applied.io.out)).toMatchObject({ ok: true, applied: true, written: [{ file, outcome: 'created' }] });
+      expect(await readJson(file)).toHaveProperty('mcpServers.lexicon');
+    });
+
+    it('is a flag of the install command', () => {
+      const program = new Command();
+      registerInstallCommands(program, makeIO());
+      const install = program.commands.find((c) => c.name() === 'install');
+      expect(install?.options.map((o) => o.long)).toContain('--json');
+    });
+  });
+
   it('delegates claude to runInstallClaude (print mode) with the --home settings path', async () => {
     const { code, io } = await run('claude');
     expect(code).toBe(0);
@@ -446,6 +512,21 @@ describe('installing from an npx cache', () => {
     expect(isVolatileEntry(`${NPX_CLI}/index.js`)).toBe(true);
     expect(isVolatileEntry('/opt/homebrew/lib/node_modules/@ashlr/lexicon/dist/cli/index.js')).toBe(false);
     expect(isVolatileEntry('/Users/u/code/lexicon/dist/cli/index.js')).toBe(false);
+  });
+
+  // The plugin's MCP server runs from <config>/plugins/cache/<marketplace>/lexicon/<version>/.
+  // install_client and setup_lexicon called from a plugin session wrote that
+  // versioned path into Cursor, Codex and the Claude hooks, which then ran the
+  // old version after a plugin update and nothing once Claude Code removed it.
+  it('treats Claude Code\'s per-version plugin cache as a cache too', () => {
+    const plugin = '/Users/u/.claude/plugins/cache/ashlrai/lexicon/0.5.6/plugin';
+    expect(isVolatileEntry(`${plugin}/mcp-server.mjs`)).toBe(true);
+    expect(isVolatileEntry('C:\\Users\\u\\.claude\\plugins\\cache\\ashlrai\\lexicon\\0.5.6\\plugin\\hook.mjs')).toBe(true);
+    expect(launchFor(`${plugin}/mcp-server.mjs`, 'mcp', '0.5.6')).toEqual({ command: 'npx', args: ['-y', '@ashlr/lexicon@0.5.6', 'mcp'], viaNpx: true });
+    expect(launchCommandLine(launchFor(`${plugin}/hook.mjs`, 'hook', '0.5.6'), 'linux')).toBe('npx -y @ashlr/lexicon@0.5.6 hook');
+    // Another plugin's cache, and a checkout that merely has a plugins/ directory, are not this.
+    expect(isVolatileEntry('/Users/u/.claude/plugins/cache/ashlrai/other/1.0.0/plugin/mcp-server.mjs')).toBe(false);
+    expect(isVolatileEntry('/Users/u/code/lexicon/plugin/mcp-server.mjs')).toBe(false);
   });
 
   it('writes an npx command rather than a path npm may delete', () => {

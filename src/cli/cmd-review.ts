@@ -13,12 +13,14 @@ import {
   ProjectTrustError,
   TERM_CATEGORIES,
   addTerm,
+  addTerms,
   effectiveHits,
   emptyLexicon,
   isTrusted,
   readLexiconFile,
   readHitsFor,
   withLexiconLock,
+  refreshIndexCache,
   refreshTrust,
   resolvePaths,
   writeLexiconFile,
@@ -27,7 +29,7 @@ import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } fro
 import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { bold, dim, line, plural, resolveCwd, safe, safeLines } from './io.js';
+import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -110,30 +112,54 @@ export async function runHarvestInteractive(
   let addAll = false;
   let quit = false;
 
+  const toTerm = (c: HarvestCandidate): Term => ({ canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source });
+  const report = (result: { term: Term; created: boolean }): void => {
+    if (result.created) created += 1;
+    else merged += 1;
+    line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
+  };
+  /** False after printing a ProjectTrustError (nothing in the call was written); any other error is thrown. */
+  const refused = (err: unknown): false => {
+    if (err instanceof ProjectTrustError) {
+      io.stderr(`lexicon: ${safeLines(err.message)}\n`);
+      return false;
+    }
+    throw err;
+  };
+
   const add = async (c: HarvestCandidate): Promise<boolean> => {
-    const term: Term = { canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source };
     try {
-      const result = await addTerm(term, { ...store, scope: 'project' });
+      const result = await addTerm(toTerm(c), { ...store, scope: 'project' });
       filePath = result.file.path;
-      if (result.created) created += 1;
-      else merged += 1;
-      line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
+      report(result);
       return true;
     } catch (err) {
-      if (err instanceof ProjectTrustError) {
-        io.stderr(`lexicon: ${safeLines(err.message)}\n`);
-        return false;
-      }
-      throw err;
+      return refused(err);
     }
   };
 
-  for (let i = 0; i < work.length && !quit; i += 1) {
-    const c = work[i];
-    if (addAll) {
-      if (!(await add(c))) return 1;
-      continue;
+  /**
+   * The "a" key: this candidate and every one after it, in one read and one
+   * write of the project file (addTerms) instead of one per candidate. The
+   * first result is reported here; the rest are kept in `rest` and reported
+   * after the walk's blank line, which is where a write per candidate printed
+   * them. False after a refusal (nothing in the batch was written).
+   */
+  let rest: { term: Term; created: boolean }[] = [];
+  const addRest = async (from: number): Promise<boolean> => {
+    try {
+      const batch = await addTerms(work.slice(from).map(toTerm), { ...store, scope: 'project' });
+      filePath = batch.file.path;
+      report(batch.results[0]);
+      rest = batch.results.slice(1);
+      return true;
+    } catch (err) {
+      return refused(err);
     }
+  };
+
+  for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
+    const c = work[i];
     showCandidate(io, c, i, work.length);
     let decided = false;
     while (!decided) {
@@ -161,7 +187,7 @@ export async function runHarvestInteractive(
           break;
         case 'a':
           addAll = true;
-          if (!(await add(c))) return 1;
+          if (!(await addRest(i))) return 1;
           decided = true;
           break;
         case 'q':
@@ -175,6 +201,7 @@ export async function runHarvestInteractive(
     }
     line(io);
   }
+  for (const result of rest) report(result);
 
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
@@ -195,7 +222,20 @@ export interface ReviewOptions extends InteractiveOptions {
   global?: boolean;
   /** Only this category. */
   category?: string;
+  /** Refused: review is interactive. Prints `{ ok: false, error, nextStep }` naming the non-interactive commands. */
+  json?: boolean;
 }
+
+/**
+ * What a script or agent runs instead of `lexicon review`: it asks about each
+ * term, so it has no --json document to print.
+ */
+export const REVIEW_NON_INTERACTIVE_NEXT_STEP =
+  'read terms with lexicon list --json, delete with lexicon remove <canonical> [--alias <alias>], change with lexicon add <canonical> <aliases...>; MCP: list_terms, remove_term, add_term';
+
+/** What a script or agent runs instead of `lexicon edit`, which opens an editor. */
+export const EDIT_NON_INTERACTIVE_NEXT_STEP =
+  'change terms with lexicon add <canonical> <aliases...> and lexicon remove <canonical> [--alias <alias>], or edit the file lexicon path names; MCP: add_term, remove_term';
 
 const REVIEW_KEYS = ['k', 'd', 'e', 'p', 'n', 'q'] as const;
 const REVIEW_HELP = '[k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]uit';
@@ -304,15 +344,13 @@ async function pickFile(
 }
 
 export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter): Promise<number> {
+  if (opts.json) return refuse(io, true, 'review is interactive and has no --json output', REVIEW_NON_INTERACTIVE_NEXT_STEP);
   const cwd = resolveCwd(opts);
   const store = storeOpts(opts, cwd);
   if (!prompter && !isInteractive()) {
-    throw new Error('review needs a terminal (stdin and stdout must be a TTY); use `lexicon list` to print terms instead');
+    throw new CliRefusal('review needs a terminal (stdin and stdout must be a TTY); nothing was changed', REVIEW_NON_INTERACTIVE_NEXT_STEP);
   }
-  const category = opts.category?.toLowerCase();
-  if (category !== undefined && !isCategory(category)) {
-    throw new Error(`unknown category "${opts.category}" (expected one of: ${TERM_CATEGORIES.join(', ')})`);
-  }
+  const category = parseCategory(opts.category);
 
   const file = await pickFile(opts, cwd);
   if (!file.exists) {
@@ -456,7 +494,12 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       await writeLexiconFile(file);
     });
     // The user's own edit must not flip a trusted project file to 'changed'.
-    if (file.scope === 'project') await refreshTrust(file.path, store);
+    // Then the cached matcher index the hook reads next (a no-op where there
+    // is none); writeLexiconFile already refreshed it for a global file.
+    if (file.scope === 'project') {
+      await refreshTrust(file.path, store);
+      await refreshIndexCache(file, store);
+    }
   }
   if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
   line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
@@ -470,6 +513,8 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
 export interface EditOptions extends InteractiveOptions {
   /** Open the project .lexicon.yaml instead of the global file. */
   project?: boolean;
+  /** Refused: edit opens an editor. Prints `{ ok: false, error, nextStep }` naming the non-interactive commands. */
+  json?: boolean;
 }
 
 /** Runs `command args... filePath` attached to the terminal and resolves with its exit code. */
@@ -502,6 +547,7 @@ export async function runEdit(
   spawnEditor: SpawnEditor = spawnEditorInherit,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<number> {
+  if (opts.json) return refuse(io, true, 'edit opens an editor and has no --json output', EDIT_NON_INTERACTIVE_NEXT_STEP);
   const cwd = resolveCwd(opts);
   const store = storeOpts(opts, cwd);
   const paths = resolvePaths(store);
@@ -558,6 +604,9 @@ export async function runEdit(
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }
   }
+  // The editor wrote the file behind writeLexiconFile's back: refresh the
+  // cached index the hook reads next, through the same trust check.
+  await refreshIndexCache({ scope, path: target }, store);
   return 0;
 }
 
@@ -581,11 +630,13 @@ export function registerReviewCommands(program: Command, io: IO): void {
     .option('--project', 'review the project .lexicon.yaml instead of the global file')
     .option('--global', 'review the global lexicon (the default)')
     .option('--category <category>', 'only this category')
+    .option('--json', 'refused (exit 1): review asks about each term; prints { ok: false, error, nextStep } naming list --json, remove and add, and the MCP tools')
     .action(async (opts: ReviewOptions) => done(await runReview({ ...opts, ...globals() }, io)));
 
   program
     .command('edit')
     .description('open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards')
     .option('--project', 'open the project .lexicon.yaml instead of the global file')
+    .option('--json', 'refused (exit 1): edit opens an editor; prints { ok: false, error, nextStep } naming add, remove and the MCP tools')
     .action(async (opts: EditOptions) => done(await runEdit({ ...opts, ...globals() }, io)));
 }

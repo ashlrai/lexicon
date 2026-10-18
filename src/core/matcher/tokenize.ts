@@ -1,7 +1,8 @@
 /**
  * Splitting input into the tokens the matcher slides its windows over, and
  * working out which character ranges to leave alone: code fences, inline
- * code, URLs, emails and file paths are never rewritten.
+ * code, HTML `<code>`/`<pre>` elements, URLs, emails and file paths are never
+ * rewritten.
  */
 import { foldLower } from './text.js';
 
@@ -22,7 +23,8 @@ export interface Token {
 }
 
 const TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}'’.\-]*/gu;
-const TRAILING_PUNCT_RE = /[.'’\-]+$/u;
+/** Characters trimmed off a token's end (trimTrailingPunct). */
+const TRAILING_PUNCT = new Set(['.', "'", '’', '-']);
 const POSSESSIVE_RE = /['’][sS]$/u;
 
 export interface Range {
@@ -31,10 +33,25 @@ export interface Range {
 }
 
 const FENCE_RE = /```[\s\S]*?(?:```|$)/g;
-const INLINE_CODE_RE = /`[^`\n]*`/g;
+/**
+ * The other fenced code block: a line opening with `~~~` (up to three spaces of
+ * indent, as CommonMark allows) runs to a line opening with `~~~`, or to the
+ * end when it never closes, as an unclosed backtick fence does. Held to the
+ * start of a line, unlike the backtick fence, because a tilde run inside a
+ * sentence is prose ("about ~~~ here"), not code.
+ */
+const TILDE_FENCE_RE = /(?:^|\n) {0,3}~~~[\s\S]*?(?:\n {0,3}~~~|$)/g;
 const URL_RE = /\b(?:https?|ftp):\/\/\S+/gi;
 const WWW_RE = /\bwww\.\S+/gi;
-const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+/**
+ * The domain half of an email, matched sticky at each `@` (see emailRanges).
+ * The whole address used to be one regex, `[\w.+-]+@[\w-]+(?:\.[\w-]+)+`,
+ * which retries its local part from every position of a long `[\w.+-]` run
+ * that holds no `@`: 100 000 characters without a space took about 6 s before
+ * a single token was matched, out of reach of every time budget.
+ */
+const EMAIL_DOMAIN_RE = /@[\w-]+(?:\.[\w-]+)+/y;
+const EMAIL_LOCAL_CHAR_RE = /[\w.+-]/;
 /**
  * A file path or a `scope/name` slug: a token containing `/` with no spaces,
  * starting at a word boundary (`src/core/matcher.ts`, `~/ashlr`, `@ashlr/lexicon`,
@@ -183,9 +200,146 @@ export function indentedCodeRanges(text: string): Range[] {
   return out;
 }
 
+/**
+ * The ranges `[\w.+-]+@[\w-]+(?:\.[\w-]+)+` matches with the `g` flag, found in
+ * linear time: each `@` with a valid domain after it, extended left over the
+ * local-part characters no earlier than the end of the previous match.
+ */
+export function emailRanges(text: string): Range[] {
+  const out: Range[] = [];
+  let floor = 0;
+  let at = text.indexOf('@');
+  while (at !== -1) {
+    let start = at;
+    while (start > floor && EMAIL_LOCAL_CHAR_RE.test(text.charAt(start - 1))) start--;
+    if (start < at) {
+      EMAIL_DOMAIN_RE.lastIndex = at;
+      const m = EMAIL_DOMAIN_RE.exec(text);
+      if (m) {
+        const end = at + m[0].length;
+        out.push({ start, end });
+        floor = end;
+        at = text.indexOf('@', end);
+        continue;
+      }
+    }
+    at = text.indexOf('@', at + 1);
+  }
+  return out;
+}
+
+/**
+ * Inline code spans, CommonMark's way: a run of N backticks opens a span that
+ * the next run of exactly N backticks on the same line closes, so
+ * ``` ``ashler `x` run`` ``` is one span and the single backtick inside it is
+ * text. A run with no partner is literal text. Spans stay on one line, as the
+ * single-backtick pattern this replaces (`` `[^`\n]*` ``) did.
+ *
+ * Linear: one pass collects the runs of each line, and each length keeps a
+ * cursor into its own list of runs that only moves forward, so a line full of
+ * unmatched runs of many lengths is not rescanned once per run.
+ */
+export function codeSpanRanges(text: string): Range[] {
+  const out: Range[] = [];
+  let lineStart = 0;
+  while (lineStart <= text.length) {
+    let lineEnd = text.indexOf('\n', lineStart);
+    if (lineEnd === -1) lineEnd = text.length;
+    let tick = text.indexOf('`', lineStart);
+    if (tick !== -1 && tick < lineEnd) {
+      const runs: { start: number; len: number }[] = [];
+      while (tick !== -1 && tick < lineEnd) {
+        let end = tick;
+        while (end < lineEnd && text.charCodeAt(end) === 96) end++;
+        runs.push({ start: tick, len: end - tick });
+        tick = text.indexOf('`', end);
+      }
+      const byLen = new Map<number, number[]>();
+      runs.forEach((r, i) => {
+        const list = byLen.get(r.len);
+        if (list) list.push(i);
+        else byLen.set(r.len, [i]);
+      });
+      const cursor = new Map<number, number>();
+      let i = 0;
+      while (i < runs.length) {
+        const r = runs[i];
+        const list = byLen.get(r.len) as number[];
+        let k = cursor.get(r.len) ?? 0;
+        while (k < list.length && list[k] <= i) k++;
+        cursor.set(r.len, k);
+        if (k < list.length) {
+          const close = runs[list[k]];
+          out.push({ start: r.start, end: close.start + close.len });
+          i = list[k] + 1;
+        } else {
+          i++;
+        }
+      }
+    }
+    lineStart = lineEnd + 1;
+  }
+  return out;
+}
+
+/**
+ * The HTML elements whose content is code, keyboard input, program output or
+ * script, never prose: `<code>`, `<pre>`, `<kbd>`, `<samp>`, `<script>` and
+ * `<style>`.
+ */
+const HTML_CODE_ELEMENTS = ['code', 'pre', 'kbd', 'samp', 'script', 'style'] as const;
+
+/**
+ * One of those opening tags (any case, with attributes), and the closing tag
+ * of each. Only real tags: the escaped `&lt;code&gt;` an HTML page uses to
+ * show markup as text is prose, and is corrected like any other.
+ */
+const HTML_CODE_OPEN_RE = new RegExp(`<(${HTML_CODE_ELEMENTS.join('|')})(?=[\\s>/])[^<>]*>`, 'gi');
+const HTML_CODE_CLOSE_RE: Readonly<Record<string, RegExp>> = Object.fromEntries(
+  HTML_CODE_ELEMENTS.map((name) => [name, new RegExp(`</${name}\\s*>`, 'gi')]),
+);
+
+/**
+ * `<code>`, `<pre>`, `<kbd>`, `<samp>`, `<script>` and `<style>` elements in
+ * HTML (or in markdown, which allows inline HTML), opening tag to closing
+ * tag. An element that never closes is literal text, not a range: unlike a
+ * fence, a stray `<code>` in a sentence is usually someone naming the tag.
+ *
+ * Linear: the search for a closing tag starts where the last range ended, and
+ * once a tag name has no closing tag left in the text no later opener of that
+ * name is searched for again, so each name scans to the end at most once.
+ */
+export function htmlCodeRanges(text: string): Range[] {
+  const out: Range[] = [];
+  if (!text.includes('<')) return out;
+  const unclosed = new Set<string>();
+  HTML_CODE_OPEN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = HTML_CODE_OPEN_RE.exec(text)) !== null) {
+    const name = m[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const close = HTML_CODE_CLOSE_RE[name];
+    close.lastIndex = m.index + m[0].length;
+    const c = close.exec(text);
+    if (!c) {
+      unclosed.add(name);
+      if (unclosed.size === HTML_CODE_ELEMENTS.length) break;
+      continue;
+    }
+    const end = c.index + c[0].length;
+    out.push({ start: m.index, end });
+    HTML_CODE_OPEN_RE.lastIndex = end;
+  }
+  return out;
+}
+
 export function collectRanges(text: string): Range[] {
   const ranges: Range[] = indentedCodeRanges(text);
-  for (const re of [FENCE_RE, INLINE_CODE_RE, URL_RE, WWW_RE, EMAIL_RE, PATH_RE]) {
+  for (const r of htmlCodeRanges(text)) ranges.push(r);
+  // A loop, not push(...): a pasted address list can hold more ranges than a call takes arguments.
+  for (const r of emailRanges(text)) ranges.push(r);
+  for (const r of codeSpanRanges(text)) ranges.push(r);
+  for (const re of [FENCE_RE, TILDE_FENCE_RE, URL_RE, WWW_RE, PATH_RE]) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
@@ -200,6 +354,17 @@ export function collectRanges(text: string): Range[] {
   return ranges;
 }
 
+/**
+ * `raw` without its trailing run of `.`, `'`, `’` and `-`. A loop rather than
+ * `/[.'’\-]+$/u`, which retries from every character of a long run of them
+ * that does not reach the end ("a----...b" took seconds for 50 000 dashes).
+ */
+function trimTrailingPunct(raw: string): string {
+  let end = raw.length;
+  while (end > 0 && TRAILING_PUNCT.has(raw.charAt(end - 1))) end--;
+  return end === raw.length ? raw : raw.slice(0, end);
+}
+
 export function tokenize(text: string, skipCode: boolean): Token[] {
   const ranges = skipCode ? collectRanges(text) : [];
   const tokens: Token[] = [];
@@ -211,7 +376,7 @@ export function tokenize(text: string, skipCode: boolean): Token[] {
   while ((m = TOKEN_RE.exec(text)) !== null) {
     let raw = m[0];
     const start = m.index;
-    const trimmed = raw.replace(TRAILING_PUNCT_RE, '');
+    const trimmed = trimTrailingPunct(raw);
     if (trimmed.length === 0) continue;
     raw = trimmed;
     const end = start + raw.length;
