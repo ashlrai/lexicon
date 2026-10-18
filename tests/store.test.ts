@@ -1273,6 +1273,69 @@ describe('project parse cache', () => {
   });
 });
 
+describe('loadLexicon parseSkipped: false (the prompt hook)', () => {
+  /** Counts parseLexicon calls on project-shaped YAML (canonical P...) for the duration of `fn`. */
+  async function projectParses<T>(fn: () => Promise<T>): Promise<{ result: T; parses: number }> {
+    let parses = 0;
+    schemaOverride.parseLexicon = (raw: unknown): Lexicon => {
+      const obj = (raw ?? {}) as Partial<Lexicon>;
+      const terms = Array.isArray(obj.terms) ? obj.terms : [];
+      if (terms.some((t) => typeof t?.canonical === 'string' && t.canonical.startsWith('P'))) parses++;
+      return { ...obj, version: 1, terms };
+    };
+    try {
+      return { result: await fn(), parses };
+    } finally {
+      schemaOverride.parseLexicon = undefined;
+    }
+  }
+  async function repoWith(body: string): Promise<{ root: string; projectPath: string }> {
+    const { root } = await makeRepo();
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: G\n    aliases: [gee]\n');
+    const projectPath = path.join(root, '.lexicon.yaml');
+    await fs.writeFile(projectPath, body);
+    return { root, projectPath };
+  }
+  const BODY = 'version: 1\nterms:\n  - canonical: Proj\n    aliases: [prj]\n';
+
+  it('does not parse an untrusted project file, and reports it by path with an empty lexicon', async () => {
+    const { root, projectPath } = await repoWith(BODY);
+    const { result, parses } = await projectParses(() => loadLexicon({ cwd: root, globalPath, parseSkipped: false }));
+    expect(parses).toBe(0);
+    expect(result.projectTrust).toBe('untrusted');
+    expect(result.project).toBeUndefined();
+    expect(result.skippedProject?.path).toBe(projectPath);
+    expect(result.skippedProject?.lexicon.terms).toEqual([]);
+    expect(result.merged.terms.map((t) => t.canonical)).toEqual(['G']);
+    // A broken untrusted file is skipped the same way, never thrown.
+    await fs.writeFile(projectPath, 'terms: [unclosed\n');
+    expect((await loadLexicon({ cwd: root, globalPath, parseSkipped: false })).projectTrust).toBe('untrusted');
+  });
+
+  it('does not parse a changed file, and still parses and merges a trusted one', async () => {
+    const { root, projectPath } = await repoWith(BODY);
+    await trustProject(projectPath, { globalPath });
+    const trusted = await projectParses(() => loadLexicon({ cwd: root, globalPath, parseSkipped: false }));
+    expect(trusted.parses).toBe(1);
+    expect(trusted.result.projectTrust).toBe('trusted');
+    expect(findTerm(trusted.result.merged, 'Proj')?.aliases).toEqual(['prj']);
+
+    await fs.appendFile(projectPath, '  - canonical: PInjected\n    aliases: [inj]\n');
+    const changed = await projectParses(() => loadLexicon({ cwd: root, globalPath, parseSkipped: false }));
+    expect(changed.parses).toBe(0);
+    expect(changed.result.projectTrust).toBe('changed');
+    expect(findTerm(changed.result.merged, 'PInjected')).toBeUndefined();
+  });
+
+  it('leaves the default unchanged: a skipped file is parsed so learn and remove can name it', async () => {
+    const { root } = await repoWith(BODY);
+    const { result, parses } = await projectParses(() => loadLexicon({ cwd: root, globalPath }));
+    expect(parses).toBe(1);
+    expect(result.skippedProject?.lexicon.terms.map((t) => t.canonical)).toEqual(['Proj']);
+  });
+});
+
 describe('effectiveHits', () => {
   it('adds the sidecar count to the committed floor, case-insensitively', () => {
     const term: Term = { canonical: 'Ashlr.AI', aliases: [], hits: 10 };

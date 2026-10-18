@@ -45,6 +45,16 @@ export function rememberParsedHash(file: LexiconFile, sha256: string): void {
   entries.set(file, { sha256 });
 }
 
+/**
+ * Let `to` share `from`'s bytes and hash, hashed at most once between them:
+ * loadLexicon checks trust on a stand-in for a project file before parsing
+ * it, and the parse it then merges came from those same bytes.
+ */
+export function shareParsedHash(from: LexiconFile, to: LexiconFile): void {
+  const entry = entries.get(from);
+  if (entry) entries.set(to, entry);
+}
+
 export async function recalledParsedHash(file: LexiconFile): Promise<string | undefined> {
   const entry = entries.get(file);
   if (!entry) return undefined;

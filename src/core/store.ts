@@ -27,7 +27,7 @@ import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
 import { isTrusted, refreshTrust, trustProject } from './trust.js';
-import { recalledParsedHash, rememberParsedBytes, rememberParsedHash } from './parsed-hash.js';
+import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
@@ -61,6 +61,15 @@ export interface LoadOptions extends StoreOptions {
    * `LoadedLexicon.skippedProject` and NOT merged.
    */
   includeUntrusted?: boolean;
+  /**
+   * Parse a project file the trust gate leaves out. Default true, so
+   * `skippedProject.lexicon` holds its terms (learn and remove name the
+   * skipped file when it claims a word). With `false` (the prompt hook) trust
+   * is checked first, against the registry and the sha256 of the bytes read,
+   * and an untrusted or changed file is never parsed: `skippedProject` then
+   * carries its path with an empty lexicon. Ignored with `includeUntrusted`.
+   */
+  parseSkipped?: boolean;
 }
 
 export const PROJECT_FILE_NAME = '.lexicon.yaml';
@@ -364,9 +373,18 @@ interface ProjectRead {
   fresh?: { text: string };
 }
 
-async function readProjectLexiconCached(filePath: string, globalPath: string): Promise<ProjectRead> {
+/** A project file's bytes as read for `loadLexicon`, and the cached parse of exactly those bytes, if any. */
+interface ProjectBytes {
+  text: string;
+  bytes: Buffer;
+  cached?: { lexicon: Lexicon; sha256: string };
+}
+
+/** Read a project file and look its bytes up in the project parse cache; undefined when it does not exist. */
+async function readProjectBytes(filePath: string, globalPath: string): Promise<ProjectBytes | undefined> {
   const read = await readLexiconText(filePath);
-  if (read === undefined) return { file: { path: filePath, scope: 'project', lexicon: emptyLexicon(), exists: false } };
+  if (read === undefined) return undefined;
+  const out: ProjectBytes = { text: read.text, bytes: read.bytes };
   if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
     try {
       const cached: unknown = JSON.parse(await fs.readFile(path.join(path.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME), 'utf8'));
@@ -382,18 +400,34 @@ async function readProjectLexiconCached(filePath: string, globalPath: string): P
         Buffer.from(cached.text, 'utf8').equals(read.bytes)
       ) {
         const lexicon: unknown = JSON.parse(cached.lexicon);
-        if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
-          const file: LexiconFile = { path: filePath, scope: 'project', lexicon: lexicon as unknown as Lexicon, exists: true };
-          rememberParsedHash(file, cached.sha256);
-          return { file };
-        }
+        if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) out.cached = { lexicon: lexicon as unknown as Lexicon, sha256: cached.sha256 };
       }
     } catch {
-      // missing, unreadable or damaged: parse for real below
+      // missing, unreadable or damaged: parse for real
     }
   }
+  return out;
+}
+
+/**
+ * Remember on `file` the hash of the bytes in `read`: the cached sha256 when
+ * the cache had those bytes, else the bytes themselves, hashed on demand.
+ */
+function rememberProjectBytes(file: LexiconFile, read: ProjectBytes): void {
+  if (read.cached) rememberParsedHash(file, read.cached.sha256);
+  else rememberParsedBytes(file, read.bytes);
+}
+
+/** The project `LexiconFile` for `read`: the cached parse, or the YAML parsed now (which throws for a bad file). */
+function projectFileOf(filePath: string, read: ProjectBytes | undefined): ProjectRead {
+  if (read === undefined) return { file: { path: filePath, scope: 'project', lexicon: emptyLexicon(), exists: false } };
+  if (read.cached) {
+    const file: LexiconFile = { path: filePath, scope: 'project', lexicon: read.cached.lexicon, exists: true };
+    rememberProjectBytes(file, read);
+    return { file };
+  }
   const file = parseLexiconText(read.text, filePath, 'project');
-  rememberParsedBytes(file, read.bytes);
+  rememberProjectBytes(file, read);
   return { file, fresh: { text: read.text } };
 }
 
@@ -1101,18 +1135,36 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   const global = await readGlobalLexiconCached(paths.global);
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
 
+  // With parseSkipped false the gate runs before the parse, on a stand-in
+  // carrying the bytes just read (or their cached sha256), so an untrusted or
+  // changed file costs no YAML parse. The parse that follows for a trusted
+  // file is of those same bytes, and shares their hash.
+  const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project: LexiconFile;
   let fresh: ProjectRead['fresh'];
+  let projectTrust: TrustStatus | undefined;
   try {
-    ({ file: project, fresh } = await readProjectLexiconCached(paths.project, paths.global));
+    const read = await readProjectBytes(paths.project, paths.global);
+    if (gateFirst && read !== undefined) {
+      const probe: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
+      rememberProjectBytes(probe, read);
+      projectTrust = await isTrusted(probe, opts);
+      if (projectTrust !== 'trusted') {
+        return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: probe };
+      }
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+      shareParsedHash(probe, project);
+    } else {
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+    }
   } catch (err) {
     const placeholder: LexiconFile = { path: paths.project, scope: 'project', lexicon: emptyLexicon(), exists: true };
-    const trust = await isTrusted(placeholder, opts);
+    const trust = projectTrust ?? (await isTrusted(placeholder, opts));
     if (trust === 'trusted' || opts.includeUntrusted) throw err;
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
 
-  const projectTrust = await isTrusted(project, opts);
+  projectTrust ??= await isTrusted(project, opts);
   if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global);
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);

@@ -266,6 +266,8 @@ A trusted project file used to cost every prompt a YAML parse, a schema validati
 - **Trust is still decided by the registry on every load.** `isTrusted` reads `trust.json` and compares, as before, so `lexicon untrust`, a re-pin or a changed file is seen on the next prompt however warm the entry is. The entry is written only right after the gate found the file trusted, and an untrusted file's parse is never cached.
 - **Forging the entry gains nothing.** It lives in the global config directory, beside `trust.json` and the global lexicon, both of which are merged without review. Anyone who can write the entry can add a registry entry or a global term instead. Its `sum` (FNV-1a over the hash and the parsed JSON) catches corruption only, and does not claim more.
 
+The prompt hook goes one step further for a file the gate leaves out: it loads with `parseSkipped: false`, so trust is decided before any parse, from the registry and the sha256 of the bytes just read (taken from the entry when the bytes match it), and an untrusted or changed file is never parsed at all. The hook only ever names a skipped file by path, so it has no use for its terms; the parse that follows for a trusted file is of the same bytes the hash covered. With 2000 global terms and an untrusted 200-term repo file, that took the warm prompt from a best 258 ms to 165 ms.
+
 The entry is single, like the index cache (switching repos costs the old parse once), and files under `PARSE_CACHE_MIN_BYTES` are not cached.
 
 ## Why post-STT and pre-model

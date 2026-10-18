@@ -53806,6 +53806,10 @@ function rememberParsedBytes(file2, bytes) {
 function rememberParsedHash(file2, sha256) {
   entries.set(file2, { sha256 });
 }
+function shareParsedHash(from, to) {
+  const entry = entries.get(from);
+  if (entry) entries.set(to, entry);
+}
 async function recalledParsedHash(file2) {
   const entry = entries.get(file2);
   if (!entry) return void 0;
@@ -54165,25 +54169,35 @@ async function writeParseCache(filePath, text, lexicon, mode) {
 }
 var PROJECT_PARSE_CACHE_FILE_NAME = "project-parse-cache.json";
 var PROJECT_PARSE_CACHE_VERSION = 1;
-async function readProjectLexiconCached(filePath, globalPath) {
+async function readProjectBytes(filePath, globalPath) {
   const read = await readLexiconText(filePath);
-  if (read === void 0) return { file: { path: filePath, scope: "project", lexicon: emptyLexicon(), exists: false } };
+  if (read === void 0) return void 0;
+  const out = { text: read.text, bytes: read.bytes };
   if (read.bytes.length >= PARSE_CACHE_MIN_BYTES) {
     try {
       const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME), "utf8"));
       if (isPlainObject3(cached2) && cached2.version === PROJECT_PARSE_CACHE_VERSION && cached2.path === import_node_path5.default.resolve(filePath) && cached2.text === read.text && typeof cached2.sha256 === "string" && /^[0-9a-f]{64}$/.test(cached2.sha256) && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(`${cached2.sha256}${cached2.lexicon}`) && Buffer.from(cached2.text, "utf8").equals(read.bytes)) {
         const lexicon = JSON.parse(cached2.lexicon);
-        if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) {
-          const file3 = { path: filePath, scope: "project", lexicon, exists: true };
-          rememberParsedHash(file3, cached2.sha256);
-          return { file: file3 };
-        }
+        if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) out.cached = { lexicon, sha256: cached2.sha256 };
       }
     } catch {
     }
   }
+  return out;
+}
+function rememberProjectBytes(file2, read) {
+  if (read.cached) rememberParsedHash(file2, read.cached.sha256);
+  else rememberParsedBytes(file2, read.bytes);
+}
+function projectFileOf(filePath, read) {
+  if (read === void 0) return { file: { path: filePath, scope: "project", lexicon: emptyLexicon(), exists: false } };
+  if (read.cached) {
+    const file3 = { path: filePath, scope: "project", lexicon: read.cached.lexicon, exists: true };
+    rememberProjectBytes(file3, read);
+    return { file: file3 };
+  }
   const file2 = parseLexiconText(read.text, filePath, "project");
-  rememberParsedBytes(file2, read.bytes);
+  rememberProjectBytes(file2, read);
   return { file: file2, fresh: { text: read.text } };
 }
 async function writeProjectParseCache(file2, text, globalPath) {
@@ -54541,17 +54555,31 @@ async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
   const global = await readGlobalLexiconCached(paths.global);
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
+  const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
   let fresh;
+  let projectTrust;
   try {
-    ({ file: project, fresh } = await readProjectLexiconCached(paths.project, paths.global));
+    const read = await readProjectBytes(paths.project, paths.global);
+    if (gateFirst && read !== void 0) {
+      const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+      rememberProjectBytes(probe, read);
+      projectTrust = await isTrusted(probe, opts);
+      if (projectTrust !== "trusted") {
+        return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust, skippedProject: probe };
+      }
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+      shareParsedHash(probe, project);
+    } else {
+      ({ file: project, fresh } = projectFileOf(paths.project, read));
+    }
   } catch (err) {
     const placeholder = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
-    const trust = await isTrusted(placeholder, opts);
+    const trust = projectTrust ?? await isTrusted(placeholder, opts);
     if (trust === "trusted" || opts.includeUntrusted) throw err;
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
-  const projectTrust = await isTrusted(project, opts);
+  projectTrust ??= await isTrusted(project, opts);
   if (projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global);
   if (projectTrust === "trusted" || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
