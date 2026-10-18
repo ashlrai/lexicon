@@ -798,6 +798,36 @@ describe('tool and resource descriptions agree with what the code does', () => {
     await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
   });
 
+  // Catches: docs/MCP.md's learn_correction row described a project-scope
+  // `dryRun` the tool does not take (it is import_dictionary's). Every name
+  // a row lists as an argument, and every other tool's argument name a row's
+  // Returns column puts in backticks, must be in that tool's live schema.
+  it('docs/MCP.md tool rows name only arguments in the live tools/list schema', async () => {
+    const { tools } = await listed();
+    const params = new Map(
+      tools.map((t) => [t.name, Object.keys((t as { inputSchema?: { properties?: Record<string, unknown> } }).inputSchema?.properties ?? {})]),
+    );
+    const anyArg = new Set([...params.values()].flat());
+    // Also names of result or term fields (a suggestion's `path`, an `alias` or `never` suggestion).
+    const RESULT_FIELDS = new Set(['path', 'alias', 'never']);
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const section = /^## Tools\n([\s\S]*?)(?=^## )/m.exec(await fs.readFile(path.join(root, 'docs', 'MCP.md'), 'utf8'))?.[1] ?? '';
+    const rows = [...section.matchAll(/^\| `([a-z_]+)` \| (.*?) \| (.*) \|$/gm)];
+    expect(rows.map((r) => r[1]).sort()).toEqual([...params.keys()].sort());
+    for (const [, tool, args, returns] of rows) {
+      const own = new Set(params.get(tool) ?? []);
+      // Argument column: backticked names outside parentheses (those hold enum values or notes).
+      const listedArgs = [...args.replace(/\([^)]*\)/g, '').matchAll(/`([A-Za-z]+)\??`/g)].map((m) => m[1]);
+      expect(listedArgs.filter((a) => !own.has(a)), `${tool} arguments`).toEqual([]);
+      expect([...own].filter((a) => !listedArgs.includes(a)), `${tool} arguments missing from the row`).toEqual([]);
+      // "`harvest_repo`'s `path`" and "`suggest_terms` with `cwd`" name another tool's argument on purpose.
+      const mentioned = [...returns.replace(/`[a-z_]+`(?:'s| with) `[A-Za-z]+`/g, '').matchAll(/`([A-Za-z]+)(?:\?|: [^`]*)?`/g)]
+        .map((m) => m[1])
+        .filter((a) => !RESULT_FIELDS.has(a));
+      expect(mentioned.filter((a) => anyArg.has(a) && !own.has(a)), `${tool} returns`).toEqual([]);
+    }
+  });
+
   // Catches: add_term `canonical` and add_pack `name` stated no bound, though
   // the file schema caps a canonical at 80 characters and a pack name is
   // PACK_NAME_RE (64) or an <author>/<name> registry ref.

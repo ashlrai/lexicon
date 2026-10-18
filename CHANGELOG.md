@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- docs/MCP.md's `learn_correction` row no longer describes a project-scope `dryRun`, which the tool does not take; that sentence belongs to `import_dictionary` and is now in its row. A test holds every tool row to the live `tools/list` schema: the arguments it lists, and any other tool's argument it names in backticks.
 - The MCP input descriptions state the bounds that are enforced: `add_term` `canonical` is at most 80 characters once trimmed (the lexicon file schema's cap, which the CLI enforces too), and `add_pack` `name` is 1 to 64 lowercase letters, digits and dashes, or a community `<author>/<name>` ref with an author of 1 to 39 such characters and an optional `@<version>`. An agent learned of either only from a refusal.
 - `lexicon review --category nope` gives the same `nextStep` as `list`, `add` and `export` (`pass one of brand, person, product, acronym, identifier, place, other to --category, or leave --category out`), through the shared category parser. It checked the category itself and threw a plain error with no next step.
 - MCP `trust_project` with action `trust` on a file that does not exist names the next step after `file does not exist: <path>`: call `trust_project` with action `status` and no path to see which `.lexicon.yaml` the server resolves, pass an existing file or the repo directory holding it, or ask the user to create one with `lexicon init --project`. It stopped at the path.
