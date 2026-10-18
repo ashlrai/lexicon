@@ -2,12 +2,30 @@
  * The read-only CLI commands name a skipped (untrusted or changed) project
  * `.lexicon.yaml` by path only, so they must load with `parseSkipped: false`
  * and never parse it. `loadLexicon` is the real one, wrapped in a spy, over
- * a scratch global lexicon and repo.
+ * a scratch global lexicon and repo, and the schema module counts which
+ * files reach `parseLexicon`, so the tests see the parse itself and not only
+ * the option that should prevent it.
  */
 import { promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** Every canonical `parseLexicon` saw: `Kubectl` there means the project file was parsed. */
+const schemaParses = vi.hoisted(() => ({ canonicals: [] as string[] }));
+vi.mock('../src/core/schema.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/schema.js')>();
+  return {
+    ...real,
+    parseLexicon: (raw: unknown) => {
+      const terms = (raw as { terms?: unknown } | null)?.terms;
+      if (Array.isArray(terms)) {
+        for (const t of terms) if (typeof (t as { canonical?: unknown })?.canonical === 'string') schemaParses.canonicals.push((t as { canonical: string }).canonical);
+      }
+      return real.parseLexicon(raw);
+    },
+  };
+});
 
 vi.mock('../src/core/index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/index.js')>();
@@ -69,8 +87,11 @@ describe('read-only CLI commands and an untrusted project lexicon', () => {
     ];
     for (const [name, run] of runs) {
       vi.mocked(core.loadLexicon).mockClear();
+      schemaParses.canonicals.length = 0;
       const io = makeIO();
       expect(await run(io), `${name}: ${io.err}`).toBe(0);
+      // The project file never reached the parser; the global one did.
+      expect(schemaParses.canonicals, name).not.toContain('Kubectl');
       expect(core.loadLexicon, name).toHaveBeenCalledTimes(1);
       expect(vi.mocked(core.loadLexicon).mock.calls[0]?.[0], name).toMatchObject({ cwd: repo, parseSkipped: false });
       const out = JSON.parse(io.out) as { skippedProject?: string; projectTrust?: string };
@@ -82,15 +103,21 @@ describe('read-only CLI commands and an untrusted project lexicon', () => {
 
     // add writes the global file, then checks for conflicts over the merged terms.
     vi.mocked(core.loadLexicon).mockClear();
+    schemaParses.canonicals.length = 0;
     const io = makeIO();
     expect(await runAdd('Zed', ['zedd'], { cwd: repo, globalPath, json: true }, io), io.err).toBe(0);
     expect(core.loadLexicon).toHaveBeenCalledTimes(1);
     expect(vi.mocked(core.loadLexicon).mock.calls[0]?.[0]).toMatchObject({ cwd: repo, parseSkipped: false });
+    expect(schemaParses.canonicals).toContain('Zed');
+    expect(schemaParses.canonicals).not.toContain('Kubectl');
   });
 
   it('normalize --include-untrusted still merges the project file', async () => {
     const io = makeIO();
+    schemaParses.canonicals.length = 0;
     expect(await runNormalize(['run', 'cube', 'control'], { cwd: repo, includeUntrusted: true }, io)).toBe(0);
     expect(io.out).toBe('run Kubectl\n');
+    // The counter does see a project parse when there is one.
+    expect(schemaParses.canonicals).toContain('Kubectl');
   });
 });

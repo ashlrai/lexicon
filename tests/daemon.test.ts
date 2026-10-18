@@ -97,7 +97,7 @@ describe('runClipboardDaemon', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(h.write).toHaveBeenCalledWith('meet Ashlr.AI');
     expect(core.recordHits).toHaveBeenCalledTimes(1);
-    expect(core.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/cwd' });
+    expect(core.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/cwd', loaded: expect.objectContaining({ global: expect.objectContaining({ path: '/g' }) }) });
     expect(h.err.join('')).toContain('recordHits: disk full');
 
     // The loop is alive: a second correction is written and counted again.
@@ -271,7 +271,7 @@ describe('runClipboardOnce', () => {
   it('records hits after the write; a failing recordHits is reported on err without changing the result', async () => {
     const ok = onceHarness('meet Ashler');
     await runClipboardOnce({ read: ok.read, write: ok.write, out: ok.out, err: ok.err, cwd: '/fake/cwd' });
-    expect(core.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/cwd' });
+    expect(core.recordHits).toHaveBeenCalledWith(['Ashlr.AI'], { cwd: '/fake/cwd', loaded: expect.objectContaining({ global: expect.objectContaining({ path: '/g' }) }) });
 
     vi.mocked(core.recordHits).mockRejectedValueOnce(new Error('disk full'));
     const { h, read, write, out, err } = onceHarness('meet Ashler');
