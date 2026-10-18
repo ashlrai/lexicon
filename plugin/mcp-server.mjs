@@ -54811,6 +54811,7 @@ function mergeTermInto(file2, incoming, scope, opts) {
   const canonical = incoming.canonical;
   const existing = findTerm(file2.lexicon, canonical);
   if (existing && opts.merge !== false) {
+    const before = JSON.stringify(existing);
     existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
     existing.phonetic ??= incoming.phonetic;
     existing.category ??= incoming.category;
@@ -54819,7 +54820,7 @@ function mergeTermInto(file2, incoming, scope, opts) {
     if (incoming.never?.length) {
       existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
     }
-    return { term: existing, created: false };
+    return JSON.stringify(existing) === before ? { term: existing, created: false, unchanged: true } : { term: existing, created: false };
   }
   if (existing) {
     const replaced = {
@@ -58857,6 +58858,9 @@ function conflictNote(conflicts, audience = "cli") {
     (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
   ).join(" ");
 }
+function unchangedTermNote(canonical) {
+  return `Nothing was added: ${JSON.stringify(canonical)} already has every alias and field given.`;
+}
 
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
@@ -60848,11 +60852,13 @@ var registerTermTools = (server, ctx) => {
       const shown = untrusted && !saved.created ? term : saved.term;
       const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
       const note = conflictNote(conflicts, "mcp");
+      const unchanged = saved.unchanged === true && !untrusted;
       return textResult({
         term: shown,
         path: saved.file.path,
         created: saved.created,
-        ...conflicts.length > 0 ? { conflicts, note } : {},
+        ...unchanged ? { unchanged: true } : {},
+        ...conflicts.length > 0 ? { conflicts, note } : unchanged ? { note: unchangedTermNote(shown.canonical) } : {},
         ...untrusted ? untrustedWriteFields(saved.file.path, JSON.stringify(shown.canonical)) : {}
       });
     })

@@ -23,6 +23,7 @@ import {
   resolveExportFormat,
   selectExportTerms,
   conflictNote,
+  unchangedTermNote,
   spellingConflicts,
   suggestAliases,
   suggestCanonicalFor,
@@ -294,11 +295,14 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // Merged terms only, so a skipped project file is never parsed for it.
         const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
         const note = conflictNote(conflicts, 'mcp');
+        // Not for an untrusted file: whether its copy already had these aliases is its content.
+        const unchanged = saved.unchanged === true && !untrusted;
         return textResult({
           term: shown,
           path: saved.file.path,
           created: saved.created,
-          ...(conflicts.length > 0 ? { conflicts, note } : {}),
+          ...(unchanged ? { unchanged: true } : {}),
+          ...(conflicts.length > 0 ? { conflicts, note } : unchanged ? { note: unchangedTermNote(shown.canonical) } : {}),
           ...(untrusted ? untrustedWriteFields(saved.file.path, JSON.stringify(shown.canonical)) : {}),
         });
       }),

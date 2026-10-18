@@ -60,6 +60,7 @@ import {
   addTerm,
   addTerms,
   conflictNote,
+  unchangedTermNote,
   diffSummary,
   emptyLexicon,
   isEmptyLexicon,
@@ -402,14 +403,27 @@ export async function runAdd(
     line(
       io,
       JSON.stringify(
-        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : {}) }),
+        jsonOk({
+          term: result.term,
+          path: result.file.path,
+          created: result.created,
+          ...(result.unchanged ? { unchanged: true } : {}),
+          scope,
+          suggested,
+          ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
+        }),
         null,
         2,
       ),
     );
     return 0;
   }
-  line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+  if (result.unchanged) {
+    // The term already had every alias and field given: "merged" read as a change.
+    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safe(result.file.path)})`);
+  } else {
+    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+  }
   // One aliases line: the suggestions are marked in it rather than listed
   // again on a line of their own (`suggested aliases: Fo` then `aliases: Fo`).
   const saved = result.term.aliases;

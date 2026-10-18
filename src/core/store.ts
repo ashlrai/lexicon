@@ -1558,10 +1558,11 @@ function assertTermFields(term: Term): void {
 }
 
 /** Apply one prepared term to the in-memory `file` exactly as `addTerm` does; no IO. */
-function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts: AddTermOptions): { term: Term; created: boolean } {
+function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts: AddTermOptions): { term: Term; created: boolean; unchanged?: true } {
   const canonical = incoming.canonical;
   const existing = findTerm(file.lexicon, canonical);
   if (existing && opts.merge !== false) {
+    const before = JSON.stringify(existing);
     existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
     existing.phonetic ??= incoming.phonetic;
     existing.category ??= incoming.category;
@@ -1570,7 +1571,8 @@ function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts
     if (incoming.never?.length) {
       existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
     }
-    return { term: existing, created: false };
+    // Every alias, never-word and field was already there: say so, rather than "merged".
+    return JSON.stringify(existing) === before ? { term: existing, created: false, unchanged: true } : { term: existing, created: false };
   }
 
   if (existing) {
@@ -1602,7 +1604,7 @@ function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts
 export async function addTerm(
   term: Term,
   opts: AddTermOptions = {},
-): Promise<{ file: LexiconFile; term: Term; created: boolean }> {
+): Promise<{ file: LexiconFile; term: Term; created: boolean; unchanged?: true }> {
   const scope: TermScope = opts.scope ?? 'global';
   // The trust gate stays ahead of every other check, as it was when this
   // resolved the file rather than the path.
@@ -1633,7 +1635,7 @@ export async function addTerm(
 export async function addTerms(
   terms: readonly Term[],
   opts: AddTermOptions = {},
-): Promise<{ file: LexiconFile; results: { term: Term; created: boolean }[] }> {
+): Promise<{ file: LexiconFile; results: { term: Term; created: boolean; unchanged?: true }[] }> {
   const scope: TermScope = opts.scope ?? 'global';
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
