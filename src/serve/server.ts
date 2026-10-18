@@ -28,6 +28,7 @@ import { z } from 'zod';
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
+  LIMITS,
   addTerm,
   computeStats,
   conflictNote,
@@ -46,6 +47,7 @@ import {
   isProjectTrustError,
   sanitizeForDisplay,
   spellingConflicts,
+  stripInvisible,
   suggestAliases,
   timeBudgetIncomplete,
   uninstallPack,
@@ -873,9 +875,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */
   function handleAliases(url: URL): AliasesResponse {
     strictQuery(url, 'GET /aliases', ['canonical']);
-    const canonical = (url.searchParams.get('canonical') ?? '').trim();
+    // Cleaned as the schema cleans a canonical (stripInvisible, then trim), so
+    // a zero-width character neither counts toward the cap nor reaches the aliases.
+    const canonical = stripInvisible(url.searchParams.get('canonical') ?? '').trim();
     if (!canonical) throw new HttpError(400, 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)');
-    if (canonical.length > 80) throw new HttpError(400, 'canonical must be at most 80 characters');
+    if (canonical.length > LIMITS.word) throw new HttpError(400, `canonical must be at most ${LIMITS.word} characters`);
     return { canonical, aliases: suggestAliases(canonical) };
   }
 

@@ -507,6 +507,16 @@ describe('POST /learn and POST /add', () => {
     expect((await api('GET', '/stats')).status).toBe(200);
   });
 
+  // Catches: over the 60-character cap the 400 said only the cap, though the
+  // usual cause is a whole phrase sent as heard (MCP learn_correction says so).
+  it('learn over the length cap is a 400 that says to send only the name', async () => {
+    const res = await api('POST', '/learn', { heard: 'so I was saying that we should deploy the thing to Hetsner tomorrow', meant: 'Hetzner' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      'heard must be at most 60 characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.',
+    );
+  });
+
   it('learn rejects identical spellings with 400', async () => {
     const res = await api('POST', '/learn', { heard: 'Ashlr.AI', meant: 'Ashlr.AI' });
     expect(res.status).toBe(400);
@@ -2309,6 +2319,16 @@ describe('packs and aliases routes', () => {
     expect(await missing.json()).toEqual({ error: 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)' });
     expect((await api2('GET', '/aliases?canonical=%20')).status).toBe(400);
     expect((await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).status).toBe(400);
+    // Catches: the cap was a literal 80 on the raw value, so invisible
+    // characters (which the schema strips from a canonical) counted toward
+    // it and reached the answer.
+    const zwsp = encodeURIComponent('\u200B\uFEFF');
+    const padded = await api2('GET', `/aliases?canonical=${zwsp}${'a'.repeat(80)}${zwsp}`);
+    expect(padded.status).toBe(200);
+    expect(((await padded.json()) as { canonical: string }).canonical).toBe('a'.repeat(80));
+    const hidden = (await (await api2('GET', `/aliases?canonical=Ashlr${zwsp}.AI`)).json()) as { canonical: string; aliases: string[] };
+    expect(hidden).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
+    expect(await (await api2('GET', `/aliases?canonical=${'a'.repeat(81)}`)).json()).toEqual({ error: 'canonical must be at most 80 characters' });
     expect((await api2('POST', '/aliases', { canonical: 'x' })).status).toBe(405);
     expect((await fetch(`${info2.url}/aliases?canonical=x`)).status).toBe(401);
   });

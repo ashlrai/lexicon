@@ -58879,8 +58879,11 @@ async function learnCorrection(c, opts = {}) {
       `nothing to learn: give the misspelled form that was heard for "${meant}" (heard, e.g. "Ashler")`
     );
   }
-  if (heard.length > MAX_CORRECTION_LENGTH || meant.length > MAX_CORRECTION_LENGTH) {
-    throw new InputError(`heard and meant must each be at most ${MAX_CORRECTION_LENGTH} characters`);
+  const tooLong = [...heard.length > MAX_CORRECTION_LENGTH ? ["heard"] : [], ...meant.length > MAX_CORRECTION_LENGTH ? ["meant"] : []];
+  if (tooLong.length > 0) {
+    throw new InputError(
+      `${tooLong.join(" and ")} must be at most ${MAX_CORRECTION_LENGTH} characters; nothing was written. Pass only the misspelled name as heard and the name the user wants as meant, not the sentence around them.`
+    );
   }
   if (heard === meant) {
     throw new InputError(`"${heard}" and "${meant}" are the same spelling; nothing to learn`);
@@ -61247,7 +61250,10 @@ var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(ctx, path27) {
   const hint = (target) => `trust ${shellWord(target)}`;
   const requested = (0, import_node_path15.resolve)(ctx.cwd, path27);
-  if (!(0, import_node_fs14.existsSync)(requested)) return (0, import_node_path15.join)(containedPath(ctx, (0, import_node_path15.dirname)(requested), hint), (0, import_node_path15.basename)(requested));
+  if (!(0, import_node_fs14.existsSync)(requested)) {
+    if (!(0, import_node_fs14.existsSync)((0, import_node_path15.dirname)(requested))) return containedPath(ctx, path27, hint);
+    return (0, import_node_path15.join)(containedPath(ctx, (0, import_node_path15.dirname)(requested), hint), (0, import_node_path15.basename)(requested));
+  }
   const real = containedPath(ctx, requested, hint);
   if (!(0, import_node_fs14.statSync)(real).isDirectory()) return real;
   const inside = (0, import_node_path15.join)(real, PROJECT_FILE_NAME);

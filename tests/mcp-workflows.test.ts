@@ -93,6 +93,23 @@ describe('trust_project with a directory path', () => {
   });
 });
 
+describe('trust_project with a path that does not exist', () => {
+  // Catches: with the file's directory missing too, the error named that
+  // parent directory, not the path the agent passed (harvest_repo names it).
+  it('names the path given, not its parent directory', async () => {
+    for (const action of ['status', 'trust'] as const) {
+      const res = await call('trust_project', { action, path: 'no-such-dir/.lexicon.yaml' });
+      expect(res.isError, action).toBe(true);
+      expect(res.text, action).toContain(`"no-such-dir/.lexicon.yaml" does not exist (resolved from ${repo}); nothing was read.`);
+      expect(res.text, action).not.toContain(`"${path.join(repo, 'no-such-dir')}"`);
+    }
+    // A missing file in a directory that exists is still 'missing' for status.
+    const status = await call('trust_project', { action: 'status', path: 'nope.yaml' });
+    expect(status.isError).toBe(false);
+    expect((JSON.parse(status.text) as { status: string }).status).toBe('missing');
+  });
+});
+
 describe('remove_term', () => {
   // Catches: a miss is isError:false while `lexicon remove` exits 1, and the
   // description did not say so, so an agent took a quiet miss for success.
