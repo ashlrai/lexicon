@@ -96,6 +96,9 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
+          # e2e spawns the dist/ built above under plain node rather than the
+          # sources under tsx: same code, half the e2e time (no loader per spawn).
+          LEXICON_E2E_DIST: '1'
         run: |
           if [ "$EVENT" = "pull_request" ] && ! git diff --name-only "$BASE...HEAD" | grep -Eq '^(package(-lock)?\.json|vitest\.config\.ts|tsconfig[^/]*\.json|tests/fixtures/|examples/|packs/|registry/|\.github/)'; then
             # A failed listing must fail the step, never shrink the run to e2e.

@@ -1,6 +1,7 @@
 /**
  * End-to-end journey tests: the REAL `lexicon` CLI, hook and MCP server run as
- * subprocesses (`node --import tsx ...`, so no build step is needed) against a
+ * subprocesses (`node --import tsx ...`, so no build step is needed; LEXICON_E2E_DIST=1
+ * runs the built dist/ under plain node instead) against a
  * throwaway HOME under os.tmpdir(). Nothing here mocks the core.
  *
  * Layout:
@@ -23,9 +24,17 @@ import { EXPORT_FORMATS } from '../src/core/index.js';
 import type { HarvestCandidate, NormalizeResult } from '../src/core/index.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CLI = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
-const HOOK = path.join(REPO_ROOT, 'src', 'hooks', 'user-prompt-submit.ts');
-const MCP_SERVER = path.join(REPO_ROOT, 'src', 'mcp', 'server.ts');
+// LEXICON_E2E_DIST=1 (CI sets it right after `npm run build`) runs the compiled
+// dist/ entry points under plain node: the same code without the tsx loader,
+// which costs ~250 ms on every spawn and the file spawns hundreds of processes.
+const FROM_DIST = process.env.LEXICON_E2E_DIST === '1';
+const entry = (dir: string, name: string): string =>
+  FROM_DIST ? path.join(REPO_ROOT, 'dist', dir, `${name}.js`) : path.join(REPO_ROOT, 'src', dir, `${name}.ts`);
+const CLI = entry('cli', 'index');
+const HOOK = entry('hooks', 'user-prompt-submit');
+const MCP_SERVER = entry('mcp', 'server');
+/** node's argv for a script: JavaScript runs as is, TypeScript through the tsx loader. */
+const nodeArgs = (script: string): string[] => (/\.[cm]?js$/.test(script) ? [script] : ['--import', 'tsx', script]);
 const FAKE_REPO = path.join(REPO_ROOT, 'tests', 'fixtures', 'fake-repo');
 const TIMEOUT_MS = 20_000;
 
@@ -54,10 +63,10 @@ interface RunOptions {
   cwd?: string;
 }
 
-/** Runs `node --import tsx <script> ...args` and collects everything. */
+/** Runs `node [--import tsx] <script> ...args` and collects everything. */
 function runNode(script: string, args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', script, ...args], {
+    const child = spawn(process.execPath, [...nodeArgs(script), ...args], {
       cwd: opts.cwd ?? REPO_ROOT,
       env: opts.env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -984,7 +993,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
   it('exits 0 with one stderr line when stdout is already closed', async () => {
     const h = await cloneOf(shared, 'hook-epipe');
     const r = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, ['--import', 'tsx', HOOK], { cwd: REPO_ROOT, env: h.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(process.execPath, nodeArgs(HOOK), { cwd: REPO_ROOT, env: h.env, stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdout.destroy();
       let stderr = '';
       child.stderr.setEncoding('utf8').on('data', (d: string) => {
@@ -1039,7 +1048,7 @@ class StdioRpc {
     // `--import tsx` resolves the loader from the process cwd, so the server is
     // launched from the repo root and told about the project dir via LEXICON_CWD
     // (the same knob a real MCP client config would set).
-    this.child = spawn(process.execPath, script.endsWith('.mjs') ? [script] : ['--import', 'tsx', script], {
+    this.child = spawn(process.execPath, nodeArgs(script), {
       cwd: REPO_ROOT,
       env: { ...env, LEXICON_CWD: projectCwd },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -1334,7 +1343,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a closed stdout p
   it('ends quietly when the reader goes away', async () => {
     const h = await freshHome('epipe');
     const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, ['--import', 'tsx', CLI, 'pack', 'show', 'developer', '--cwd', os.tmpdir()], {
+      const child = spawn(process.execPath, [...nodeArgs(CLI), 'pack', 'show', 'developer', '--cwd', os.tmpdir()], {
         cwd: REPO_ROOT,
         env: h.env,
         stdio: ['ignore', 'pipe', 'pipe'],
