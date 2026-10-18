@@ -148,6 +148,8 @@ const setupPlan: SetupPlan = {
   wouldInstallClients: ['claude', 'cursor'],
   wouldInstallServe: false,
   wouldInstallPacks: ['developer', 'ai'],
+  packsOnOffer: ['developer', 'ai'],
+  packsToInstall: [],
   wouldExport: [],
 };
 
@@ -1436,6 +1438,7 @@ describe('lexicon MCP server', () => {
         expect(tool?.description).toMatch(/claude, claude-desktop, codex, cursor, windsurf, gemini, vscode/);
         expect(tool?.description).toMatch(/does not install clients that are not listed/);
         expect(tool?.description).toMatch(/does not harvest the repo unless harvest: true/);
+        expect(tool?.description).toMatch(/packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install/);
         expect(tool?.description).toMatch(/does not install the local API unless serve: true/);
         expect((tool?.inputSchema as { properties?: Record<string, unknown> }).properties).toHaveProperty('harvest');
         const result = await client.callTool({

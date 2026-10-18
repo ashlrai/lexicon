@@ -257,6 +257,8 @@ export async function runSetup(
       lexiconExists: false,
       wouldSeed: [],
       wouldInstallPacks: [],
+      packsOnOffer: [],
+      packsToInstall: [],
       wouldHarvest: [],
       detectedClients: [],
       wouldInstallClients: [],

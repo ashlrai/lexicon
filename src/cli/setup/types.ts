@@ -91,7 +91,8 @@ export interface SetupOptions extends CommonOptions {
    * checklist on a terminal (developer, ai, voice-tools checked) and installs
    * nothing without one (`--yes`, no TTY, MCP): a pack is a hundred-odd terms
    * and is never added silently. A dry run lists the defaults in
-   * `wouldInstallPacks` unless `packs === false`.
+   * `wouldInstallPacks` and `packsOnOffer` unless `packs === false`, and what
+   * it would actually install in `packsToInstall`.
    */
   packs?: string | false;
   /** Run detection and suggestions only; write nothing and fill in `SetupPlan`. */
@@ -185,6 +186,16 @@ export interface SetupPlan {
    * list or by saying yes to the checklist, so read it with `wouldAsk`.
    */
   wouldInstallPacks: string[];
+  /** The same list as `wouldInstallPacks`, under a name that says what it is: the packs to offer. */
+  packsOnOffer: string[];
+  /**
+   * The starter packs the same call without the dry run installs: the
+   * `--packs` list, or on a terminal the checklist's checked defaults (Enter
+   * installs them); empty when nothing would be installed without one
+   * (`--yes`, no terminal, MCP `setup_lexicon` without `packs`). This is the
+   * field that agrees with the plan's `would install` line.
+   */
+  packsToInstall: string[];
   /**
    * Starter packs the global lexicon already has. They are left out of
    * `wouldInstallPacks` and the checklist, so a rerun does not offer them
