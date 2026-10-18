@@ -4,6 +4,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+## 0.5.6 (2026-10-18)
+
+### Security
+
+- MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
+
 ### Added
 
 - MCP `apply_suggestion` takes `suggestions`, 1 to 100 suggestions from `suggest_terms`, in place of `suggestion`, so an agent applies every suggestion the user accepted in one call. They are applied in order, and each run of alias, never and term suggestions bound for the same lexicon file is one `addTerms` write, where one call per suggestion re-read and rewrote the whole file each time. The result is `{ count, applied, failures, summary }`: each `applied` entry is what `suggestion` returns plus its `index`, each failure `{ index, kind, canonical, error }`, a refused suggestion does not stop the rest, and the call is an error only when nothing was applied. A batch write that fails is retried one suggestion at a time, so each failure names its suggestion. `suggestion` and its result are unchanged.
@@ -16,10 +22,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon trust` asks `trust <path>? [y/N]` on a terminal after the preview, and `--yes` skips the question. It pinned the file straight after printing the preview, so the only way to say no was ctrl-C. Off a terminal it still trusts without asking, so existing scripts keep working (see docs/TRUST.md for why that is the choice). A file that changes while the question is open is not trusted.
 - `lexicon remove --global` removes only the global copy of a term, mirroring `--project` (the two together exit 1). With `--alias` it limits the alias removal to the global file too. The `warn:` line naming a copy left in the other file now gives `lexicon remove "<canonical>" --global` or `--project`, and `--project` on a term only the global file holds points at `--global`.
 
-### Internal
-
-- Add matcher regression coverage for explicit aliases containing straight and curly apostrophes, full replacement offsets, real possessives, code/URL spans, and never entries. These cases already work without phonetic or fuzzy matching.
-- Isolate end-to-end installation tests from inherited `CODEX_HOME` and `GEMINI_CLI_HOME`, with disposable ambient-config regressions. Running the tests can no longer write registrations into those overridden directories.
+- A plural keeps its "s". When a window minus its final "s" is an exact alias hit, or a closer match to the same term, only the base is replaced: "rotate the jots" becomes "rotate the JWTs", "three ollamas" becomes "three Ollamas" (it was "Ollama"), "the key pee eyes" becomes "the KPIs" (it was "KPI"). On the synthetic bench corpus (402 sentences of generated text, not audio): sentence accuracy 91.3% (367/402) to 92.0% (370/402), term recall 96.5% (302/313) to 96.8% (303/313), prose false positives excluding expected-hard unchanged at 0 of 95. Normalizing 29,659 lines of this workspace's own markdown gave identical output before and after.
 
 ### Fixed
 
@@ -256,22 +259,6 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `suggest_terms` (and `lexicon suggest --json`) gives each suggestion the `scope` and `path` of the lexicon file accepting it would write: where the term lives, or the global file for a new term. An agent could not tell the user which file a suggestion touches. MCP `apply_suggestion` honours a `scope` passed back on the suggestion.
 - `POST /normalize`, the extension's embedded engine and the Claude Code hook say when matching stopped at their time budget, as MCP `normalize_transcript` already did. Serve and the engine return `incomplete { reasons: ['time'], totalChars, note }` (the extension passes it on in its normalize reply); the hook adds one line telling the agent later parts of the prompt were not checked, even when nothing was corrected. Before, a long prompt cut short looked exactly like one with nothing left to fix.
 
-### Internal
-
-- The e2e project trust journey (`skips an untrusted project file, refuses to write to it, then merges it once trusted`) is four tests, one per stage, each with its own HOME and the stage before it re-run through the real CLI as setup, and the spawns within a stage that only read run together. As one test it ran 15 subprocesses one after another, about 12 s idle, and could hit the 30 s timeout under full-suite load; the longest stage now takes about 5 s. Every assertion is kept, and the timeout is unchanged.
-
-## 0.5.6 (2026-10-16)
-
-### Security
-
-- MCP `trust_project` `trust` no longer succeeds on the agent's call alone. It asks the user through MCP elicitation, binds the approval to the file's hash at preview time, and refuses (or revokes) if the bytes change. Clients without elicitation get an error telling the user to run `lexicon trust` in a terminal. Before, an agent steered by a hostile repo could trust that repo's `.lexicon.yaml` itself and its text then reached every prompt.
-
-### Added
-
-- A plural keeps its "s". When a window minus its final "s" is an exact alias hit, or a closer match to the same term, only the base is replaced: "rotate the jots" becomes "rotate the JWTs", "three ollamas" becomes "three Ollamas" (it was "Ollama"), "the key pee eyes" becomes "the KPIs" (it was "KPI"). On the synthetic bench corpus (402 sentences of generated text, not audio): sentence accuracy 91.3% (367/402) to 92.0% (370/402), term recall 96.5% (302/313) to 96.8% (303/313), prose false positives excluding expected-hard unchanged at 0 of 95. Normalizing 29,659 lines of this workspace's own markdown gave identical output before and after.
-
-### Fixed
-
 - `learn_correction` (MCP, `lexicon learn`, `POST /learn`) reports when another term already holds the misheard spelling, as an alias or as its own name. "It's Vercel not Versel" with `Versel` an alias of `Verse` was reported saved, yet the next transcript still said "Verse". The result now carries `conflict { canonical, scope, as, spelling }`; the MCP summary names the `remove_term` call that lets the correction win, and the CLI prints a `warn:` line with the `lexicon remove --alias` command. The other term is still never edited.
 - MCP `apply_suggestion` without `scope` writes an `alias` or `never` suggestion to the lexicon file the term lives in, as `lexicon suggest` already did. It wrote a new global copy of a project term instead; the project term wins the merge, so the accepted alias never corrected anything, and a suggestion carries no scope the agent could have passed.
 - `lexicon serve --status` prints the whole error of a running server whose `/health` fails, every line of it and the full path of the broken lexicon file. It went through the 200-character display cap, which cut a long path before the file name and joined a multi-line validation error into one truncated line. Output is now `... /health failed (HTTP 500): <error>`.
@@ -311,6 +298,13 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Changed
 
 - Document the Windows Cursor MCP configuration path and the `npx` installation command in `docs/CLIENTS.md`.
+
+### Internal
+
+- The e2e project trust journey (`skips an untrusted project file, refuses to write to it, then merges it once trusted`) is four tests, one per stage, each with its own HOME and the stage before it re-run through the real CLI as setup, and the spawns within a stage that only read run together. As one test it ran 15 subprocesses one after another, about 12 s idle, and could hit the 30 s timeout under full-suite load; the longest stage now takes about 5 s. Every assertion is kept, and the timeout is unchanged.
+
+- Add matcher regression coverage for explicit aliases containing straight and curly apostrophes, full replacement offsets, real possessives, code/URL spans, and never entries. These cases already work without phonetic or fuzzy matching.
+- Isolate end-to-end installation tests from inherited `CODEX_HOME` and `GEMINI_CLI_HOME`, with disposable ambient-config regressions. Running the tests can no longer write registrations into those overridden directories.
 
 ## 0.5.5 (2026-10-14)
 
