@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Documentation
+
+- `docs/PHANTOM-USAGE.md`: using Lexicon with Phantom. Lexicon makes no model calls and has no gateway or base URL setting; `phantom exec` around an agent is unaffected; the `serve.json` token is local and not a Phantom secret.
+
 ### Added
 
 - Corrections the UserPromptSubmit hook notices ("it's Vercel not versel") are queued for review in `pending-aliases.yaml`, next to the global lexicon (mode 0600, at most 200 entries, repeats counted). The queue is never applied on its own: the matcher does not read it, so matching is unchanged until you accept. `lexicon pending` lists the queue (`--json`), `lexicon pending accept <id...>` (or `--all`) learns each entry through the same path as `lexicon learn` and removes it, and `lexicon pending reject <id...>` drops entries without learning them. Corrections the lexicon already knows are not queued, a pending file that cannot be read is left alone rather than overwritten, and a queue failure never changes the hook's output. `LEXICON_QUEUE_CORRECTIONS=0` turns queueing off. The hook's `learn_correction` note to the agent is unchanged.
