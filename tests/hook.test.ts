@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => {
     normalize: vi.fn(),
     diffSummary: vi.fn(),
     recordHits: vi.fn(),
+    queueCorrections: vi.fn(),
+    learnCorrection: vi.fn(),
+    addTerm: vi.fn(),
     // The hook matches through a (cached) index: route that back through the
     // `normalize` mock so the tests below keep asserting on one function.
     loadMatcherIndex: vi.fn(async (l: { merged: unknown }) => ({ lexicon: l.merged })),
@@ -85,6 +88,7 @@ beforeEach(() => {
     r.replacements.map((x) => `"${x.original}" -> "${x.replacement}" (${x.reason}, ${x.confidence.toFixed(2)})`).join('\n'),
   );
   mocks.recordHits.mockResolvedValue(undefined);
+  mocks.queueCorrections.mockResolvedValue({ queued: [], skipped: 0, file: '/fake/global/pending-aliases.yaml' });
 });
 
 afterEach(() => {
@@ -1151,5 +1155,53 @@ describe('writeStdout', () => {
     expect(s.stream.once).toHaveBeenCalledWith('error', expect.any(Function));
     expect(() => s.fail(errno('EPIPE'))).not.toThrow();
     expect(s.err).toEqual(['[lexicon hook] could not write the hook output (EPIPE); the prompt goes through without it\n']);
+  });
+});
+
+describe('corrections are queued for review, never learned by the hook', () => {
+  it('queues each correction with the loaded lexicon and writes no term', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    const out = await runUserPromptSubmitHook(payload("it's Vercel not versel. Also it's Supabase not super base."));
+    expect(context(out)).toContain('learn_correction tool with heard: "versel", meant: "Vercel"');
+    expect(mocks.queueCorrections).toHaveBeenCalledTimes(1);
+    const [corrections, opts] = mocks.queueCorrections.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(corrections).toEqual([
+      { heard: 'versel', meant: 'Vercel' },
+      { heard: 'super base', meant: 'Supabase' },
+    ]);
+    expect(opts).toMatchObject({ globalPath: '/fake/global/lexicon.yaml', source: 'prompt-hook', lexicon: fixtureLexicon });
+    expect(mocks.learnCorrection).not.toHaveBeenCalled();
+    expect(mocks.addTerm).not.toHaveBeenCalled();
+  });
+
+  it('does not queue a prompt with no correction', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
+    expect(mocks.queueCorrections).not.toHaveBeenCalled();
+  });
+
+  it('a failing queue changes nothing in the output', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    const prompt = "it's Vercel not versel";
+    const ok = await runUserPromptSubmitHook(payload(prompt));
+    mocks.queueCorrections.mockRejectedValueOnce(new Error('locked'));
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(await runUserPromptSubmitHook(payload(prompt))).toBe(ok);
+      expect(err.mock.calls.map((c) => String(c[0])).join('')).toContain('could not queue corrections for review: locked');
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('LEXICON_QUEUE_CORRECTIONS=0 turns queueing off', async () => {
+    const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
+    vi.stubEnv('LEXICON_QUEUE_CORRECTIONS', '0');
+    try {
+      await runUserPromptSubmitHook(payload("it's Vercel not versel"));
+      expect(mocks.queueCorrections).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
