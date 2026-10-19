@@ -28,6 +28,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon untrust [options] [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
 | [`lexicon learn [options] [words...]`](#lexicon-learn) | record a spelling correction: what STT heard and what you meant |
 | [`lexicon stats [options]`](#lexicon-stats) | show term/alias counts, most-used terms and terms that never fired |
+| [`lexicon pending [options]`](#lexicon-pending) | review aliases noticed in your corrections; nothing is applied until you accept |
 | [`lexicon serve [options]`](#lexicon-serve) | run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps |
 | [`lexicon voice [options]`](#lexicon-voice) | dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon |
 | [`lexicon setup [options]`](#lexicon-setup) | guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app |
@@ -68,6 +69,7 @@ Commands:
   untrust [options] [path]                revoke approval for a project .lexicon.yaml
   learn [options] [words...]              record a spelling correction: what STT heard and what you meant
   stats [options]                         show term/alias counts, most-used terms and terms that never fired
+  pending [options]                       review aliases noticed in your corrections; nothing is applied until you accept
   serve [options]                         run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps
   voice [options]                         dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon
   setup [options]                         guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app
@@ -436,6 +438,24 @@ show term/alias counts, most-used terms and terms that never fired
 Options:
   --json      print the stats as JSON
   -h, --help  display help for command
+```
+
+## `lexicon pending`
+
+```text
+Usage: lexicon pending [options] [command]
+
+review aliases noticed in your corrections; nothing is applied until you accept
+
+Options:
+  --json                     print as JSON
+  -h, --help                 display help for command
+
+Commands:
+  list [options]             list pending aliases
+  accept [options] [ids...]  learn pending aliases (as lexicon learn does) and
+                             remove them from the queue
+  reject [options] [ids...]  drop pending aliases without learning them
 ```
 
 ## `lexicon serve`

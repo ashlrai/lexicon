@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, recordHits, sanitizeForDisplayMax } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, queueCorrections, recordHits, sanitizeForDisplayMax } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -609,6 +609,23 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
   });
 }
 
+/**
+ * Queue the prompt's corrections in the pending file (`lexicon pending`) for
+ * the user to accept or reject. Nothing is learned here: the matcher never
+ * reads the pending file, so matching is unchanged until the user accepts.
+ * Best-effort: a failure is one stderr line and never changes the output.
+ * `LEXICON_QUEUE_CORRECTIONS=0` turns it off.
+ */
+async function queueForReview(corrections: readonly Correction[], loaded: LoadedLexicon): Promise<void> {
+  if (process.env.LEXICON_QUEUE_CORRECTIONS === '0') return;
+  try {
+    await queueCorrections(corrections, { globalPath: loaded.global.path, source: 'prompt-hook', lexicon: loaded.merged });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[lexicon hook] could not queue corrections for review: ${sanitizeForDisplayMax(message, 300)}\n`);
+  }
+}
+
 function parseInput(raw: string): HookInput {
   const trimmed = raw.trim();
   if (!trimmed) return {};
@@ -742,6 +759,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
 
   const corrections = parseCorrections(head);
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : '';
+  if (corrections.length > 0) await queueForReview(corrections, loaded);
 
   // The compiled index comes from index-cache.json when the lexicon has not
   // changed since a previous prompt built it (see loadMatcherIndex). The
