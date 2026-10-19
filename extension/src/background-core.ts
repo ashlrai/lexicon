@@ -4,7 +4,7 @@
  * run it under jsdom with a fake server.
  */
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
-import { conflictNote, parseLexicon } from './core.js';
+import { conflictNote, parseLexicon, redactSecrets } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
   coerceSettings,
@@ -90,11 +90,12 @@ export function unreachableMessage(baseUrl: string): string {
 }
 
 /** The `error` string of a failed API reply (`{ error }`, see src/serve/server.ts), or undefined. */
-async function apiErrorDetail(res: Response): Promise<string | undefined> {
+async function apiErrorDetail(res: Response, token: string): Promise<string | undefined> {
   try {
     const body = (await res.json()) as { error?: unknown } | null;
     const error = body?.error;
-    return typeof error === 'string' && error.trim() ? error.trim().slice(0, 300) : undefined;
+    // A server at baseUrl that is not lexicon serve may quote the bearer token back.
+    return typeof error === 'string' && error.trim() ? redactSecrets(error.trim(), [token]).slice(0, 300) : undefined;
   } catch {
     return undefined;
   }
@@ -156,7 +157,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       // that says what to fix, so pass that through instead of a bare status.
       if (res.status === 401) throw new TokenRejectedError();
       if (!res.ok) {
-        const detail = await apiErrorDetail(res);
+        const detail = await apiErrorDetail(res, settings.token);
         throw new Error(detail ? `API ${path}: ${detail}` : `API ${path} returned HTTP ${res.status}`);
       }
       return (await res.json()) as unknown;

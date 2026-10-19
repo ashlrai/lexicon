@@ -41,6 +41,7 @@ import type { StoreOptions } from './store.js';
 import type { LoadedLexicon, Term, TermScope } from './types.js';
 import { STOPLIST } from './stoplist.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
+import { redactSecrets, safeUrlLabel } from './redact.js';
 import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 
 /** `author/name`, with an optional `@version` pin for installs. */
@@ -149,12 +150,17 @@ function tooLargeError(what: string): Error {
  * terms an on-path attacker likes; those terms then reach the model on
  * every prompt.
  */
+/** A registry source for a message: a URL without its credentials or query, or a path as is. */
+function sourceLabel(source: string): string {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(source) ? safeUrlLabel(source) : source;
+}
+
 export function assertSecureRegistryUrl(url: string): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`registry: not a valid URL: ${url}`);
+    throw new Error(`registry: not a valid URL: ${safeUrlLabel(url)}`);
   }
   if (parsed.protocol === 'https:') return;
   const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
@@ -167,7 +173,13 @@ export function assertSecureRegistryUrl(url: string): void {
 
 /** GET `url`, reading at most MAX_REGISTRY_FILE_BYTES of the body. */
 async function boundedFetch(url: string): Promise<Buffer> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  } catch (err) {
+    // fetch's own message can quote the URL (a URL with a password, for one).
+    throw new Error(`registry: GET ${safeUrlLabel(url)} failed: ${redactSecrets(errorMessage(err), [url])}`);
+  }
   // fetch follows redirects, including an https -> http downgrade.
   if (res.url) {
     try {
@@ -177,11 +189,11 @@ async function boundedFetch(url: string): Promise<Buffer> {
       throw err;
     }
   }
-  if (!res.ok) throw new Error(`registry: GET ${url} failed (HTTP ${res.status})`);
+  if (!res.ok) throw new Error(`registry: GET ${safeUrlLabel(url)} failed (HTTP ${res.status})`);
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
     await res.body?.cancel().catch(() => undefined);
-    throw tooLargeError(`GET ${url}`);
+    throw tooLargeError(`GET ${safeUrlLabel(url)}`);
   }
   if (!res.body) return Buffer.alloc(0);
   const reader = res.body.getReader();
@@ -193,7 +205,7 @@ async function boundedFetch(url: string): Promise<Buffer> {
     size += value.byteLength;
     if (size > MAX_REGISTRY_FILE_BYTES) {
       await reader.cancel().catch(() => undefined);
-      throw tooLargeError(`GET ${url}`);
+      throw tooLargeError(`GET ${safeUrlLabel(url)}`);
     }
     chunks.push(value);
   }
@@ -227,13 +239,13 @@ function resolvedDeps(deps: RegistryDeps): Required<RegistryDeps> {
     fetchText: async (url) => {
       assertSecureRegistryUrl(url);
       const text = await (deps.fetchText ?? defaultFetchText)(url);
-      if (Buffer.byteLength(text, 'utf8') > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
+      if (Buffer.byteLength(text, 'utf8') > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${safeUrlLabel(url)}`);
       return text;
     },
     fetchBytes: async (url) => {
       assertSecureRegistryUrl(url);
       const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url);
-      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url}`);
+      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${safeUrlLabel(url)}`);
       return bytes;
     },
   };
@@ -247,18 +259,18 @@ function parseIndexYaml(text: string, source: string): RegistryIndex {
     // local file must not quote that file back into the conversation.
     raw = parseYaml(text, { prettyErrors: false });
   } catch (err) {
-    throw new Error(`invalid registry index at ${source}: ${errorMessage(err)}`);
+    throw new Error(`invalid registry index at ${sourceLabel(source)}: ${errorMessage(err)}`);
   }
   const parsed = RegistryIndexSchema.safeParse(raw);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  - ${i.path.length > 0 ? i.path.join('.') : '(root)'}: ${i.message}`);
-    throw new Error(`invalid registry index at ${source}:\n${lines.join('\n')}`);
+    throw new Error(`invalid registry index at ${sourceLabel(source)}:\n${lines.join('\n')}`);
   }
   const seen = new Set<string>();
   const packs: RegistryIndexEntry[] = [];
   for (const e of parsed.data.packs) {
     const ref = `${e.author}/${e.name}`;
-    if (seen.has(ref)) throw new Error(`invalid registry index at ${source}: "${ref}" is listed twice`);
+    if (seen.has(ref)) throw new Error(`invalid registry index at ${sourceLabel(source)}: "${ref}" is listed twice`);
     seen.add(ref);
     packs.push({ ref, ...e });
   }

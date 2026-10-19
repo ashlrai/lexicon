@@ -59825,6 +59825,47 @@ var import_node_crypto2 = __toESM(require_node_crypto());
 var import_node_fs10 = __toESM(require_node_fs());
 var import_node_path10 = __toESM(require_node_path());
 var import_yaml7 = __toESM(require_dist2());
+
+// src/core/redact.ts
+var WINDOW = 8;
+function redactSecrets(text, secrets) {
+  const windows2 = /* @__PURE__ */ new Set();
+  for (const s of secrets) {
+    if (typeof s !== "string" || s.length < WINDOW) continue;
+    for (let i = 0; i + WINDOW <= s.length; i++) windows2.add(s.slice(i, i + WINDOW));
+  }
+  if (windows2.size === 0 || text.length < WINDOW) return text;
+  const covered = new Uint8Array(text.length);
+  let any2 = false;
+  for (let i = 0; i + WINDOW <= text.length; i++) {
+    if (windows2.has(text.slice(i, i + WINDOW))) {
+      covered.fill(1, i, i + WINDOW);
+      any2 = true;
+    }
+  }
+  if (!any2) return text;
+  let out = "";
+  for (let i = 0; i < text.length; ) {
+    if (covered[i]) {
+      while (i < text.length && covered[i]) i++;
+      out += "[redacted]";
+    } else {
+      out += text[i++];
+    }
+  }
+  return out;
+}
+function safeUrlLabel(url2) {
+  try {
+    const u = new URL(url2);
+    const extra = u.search || u.hash ? " (query omitted)" : "";
+    return `${u.protocol}//${u.host}${u.pathname}${extra}`;
+  } catch {
+    return "(unparseable URL)";
+  }
+}
+
+// src/core/registry.ts
 var REGISTRY_REF_RE = /^([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9][a-z0-9-]{0,63})(?:@([A-Za-z0-9][A-Za-z0-9._-]{0,31}))?$/;
 function parseRegistryRef(s) {
   const m = REGISTRY_REF_RE.exec(s.trim());
@@ -59867,12 +59908,15 @@ var REGISTRY_FETCH_TIMEOUT_MS = 3e4;
 function tooLargeError(what) {
   return new Error(`registry: ${what} exceeds the ${MAX_REGISTRY_FILE_BYTES} byte limit (refusing to read it)`);
 }
+function sourceLabel(source) {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(source) ? safeUrlLabel(source) : source;
+}
 function assertSecureRegistryUrl(url2) {
   let parsed;
   try {
     parsed = new URL(url2);
   } catch {
-    throw new Error(`registry: not a valid URL: ${url2}`);
+    throw new Error(`registry: not a valid URL: ${safeUrlLabel(url2)}`);
   }
   if (parsed.protocol === "https:") return;
   const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
@@ -59883,7 +59927,12 @@ function assertSecureRegistryUrl(url2) {
   );
 }
 async function boundedFetch(url2) {
-  const res = await fetch(url2, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  let res;
+  try {
+    res = await fetch(url2, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+  } catch (err) {
+    throw new Error(`registry: GET ${safeUrlLabel(url2)} failed: ${redactSecrets(errorMessage(err), [url2])}`);
+  }
   if (res.url) {
     try {
       assertSecureRegistryUrl(res.url);
@@ -59892,11 +59941,11 @@ async function boundedFetch(url2) {
       throw err;
     }
   }
-  if (!res.ok) throw new Error(`registry: GET ${url2} failed (HTTP ${res.status})`);
+  if (!res.ok) throw new Error(`registry: GET ${safeUrlLabel(url2)} failed (HTTP ${res.status})`);
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_REGISTRY_FILE_BYTES) {
     await res.body?.cancel().catch(() => void 0);
-    throw tooLargeError(`GET ${url2}`);
+    throw tooLargeError(`GET ${safeUrlLabel(url2)}`);
   }
   if (!res.body) return Buffer.alloc(0);
   const reader = res.body.getReader();
@@ -59908,7 +59957,7 @@ async function boundedFetch(url2) {
     size += value.byteLength;
     if (size > MAX_REGISTRY_FILE_BYTES) {
       await reader.cancel().catch(() => void 0);
-      throw tooLargeError(`GET ${url2}`);
+      throw tooLargeError(`GET ${safeUrlLabel(url2)}`);
     }
     chunks.push(value);
   }
@@ -59936,13 +59985,13 @@ function resolvedDeps(deps) {
     fetchText: async (url2) => {
       assertSecureRegistryUrl(url2);
       const text = await (deps.fetchText ?? defaultFetchText)(url2);
-      if (Buffer.byteLength(text, "utf8") > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url2}`);
+      if (Buffer.byteLength(text, "utf8") > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${safeUrlLabel(url2)}`);
       return text;
     },
     fetchBytes: async (url2) => {
       assertSecureRegistryUrl(url2);
       const bytes = await (deps.fetchBytes ?? defaultFetchBytes)(url2);
-      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${url2}`);
+      if (bytes.length > MAX_REGISTRY_FILE_BYTES) throw tooLargeError(`GET ${safeUrlLabel(url2)}`);
       return bytes;
     }
   };
@@ -59952,19 +60001,19 @@ function parseIndexYaml(text, source) {
   try {
     raw = (0, import_yaml7.parse)(text, { prettyErrors: false });
   } catch (err) {
-    throw new Error(`invalid registry index at ${source}: ${errorMessage(err)}`);
+    throw new Error(`invalid registry index at ${sourceLabel(source)}: ${errorMessage(err)}`);
   }
   const parsed = RegistryIndexSchema.safeParse(raw);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  - ${i.path.length > 0 ? i.path.join(".") : "(root)"}: ${i.message}`);
-    throw new Error(`invalid registry index at ${source}:
+    throw new Error(`invalid registry index at ${sourceLabel(source)}:
 ${lines.join("\n")}`);
   }
   const seen = /* @__PURE__ */ new Set();
   const packs = [];
   for (const e of parsed.data.packs) {
     const ref = `${e.author}/${e.name}`;
-    if (seen.has(ref)) throw new Error(`invalid registry index at ${source}: "${ref}" is listed twice`);
+    if (seen.has(ref)) throw new Error(`invalid registry index at ${sourceLabel(source)}: "${ref}" is listed twice`);
     seen.add(ref);
     packs.push({ ref, ...e });
   }
@@ -63467,7 +63516,7 @@ async function probeHealth(baseUrl, opts = {}) {
       ...opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}
     });
   } catch (err) {
-    return { state: "down", error: err instanceof Error ? err.message : String(err) };
+    return { state: "down", error: redactSecrets(err instanceof Error ? err.message : String(err), [opts.token, baseUrl]) };
   }
   let body;
   try {
@@ -63477,7 +63526,7 @@ async function probeHealth(baseUrl, opts = {}) {
   }
   if (res.ok) return { state: "up", body };
   const given = typeof body === "object" && body !== null ? body.error : void 0;
-  return { state: "failing", status: res.status, error: typeof given === "string" ? given : `HTTP ${res.status}` };
+  return { state: "failing", status: res.status, error: typeof given === "string" ? redactSecrets(given, [opts.token]) : `HTTP ${res.status}` };
 }
 
 // src/cli/cmd-serve.ts

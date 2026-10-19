@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../core/index.js';
+import { redactSecrets } from '../core/redact.js';
 import type { StoreOptions } from '../core/index.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
@@ -214,7 +215,7 @@ export async function probeHealth(
       ...(opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}),
     });
   } catch (err) {
-    return { state: 'down', error: err instanceof Error ? err.message : String(err) };
+    return { state: 'down', error: redactSecrets(err instanceof Error ? err.message : String(err), [opts.token, baseUrl]) };
   }
   let body: unknown;
   try {
@@ -224,5 +225,6 @@ export async function probeHealth(
   }
   if (res.ok) return { state: 'up', body };
   const given = typeof body === 'object' && body !== null ? (body as { error?: unknown }).error : undefined;
-  return { state: 'failing', status: res.status, error: typeof given === 'string' ? given : `HTTP ${res.status}` };
+  // A server that is not lexicon serve may quote the request's token back.
+  return { state: 'failing', status: res.status, error: typeof given === 'string' ? redactSecrets(given, [opts.token]) : `HTTP ${res.status}` };
 }
