@@ -52,6 +52,17 @@ describe('bench accuracy (default config)', () => {
     expect(report.terms.recall.rate).toBeGreaterThanOrEqual(0.95);
   });
 
+  // Measured 2026-10-18 on the synthetic corpus (402 generated sentences, text
+  // only, no audio): sentence accuracy 92.04% (370/402), positives excluding
+  // expected-hard 99.61% (255/256), term precision 93.81% (303/323). Thresholds
+  // sit about two points below those, so a real matcher regression trips them.
+  // The matcher is deterministic, so the run is repeatable.
+  it('holds the measured overall accuracy and precision on the synthetic corpus', () => {
+    expect(report.sentence.all.rate).toBeGreaterThanOrEqual(0.90);
+    expect(report.sentence.positivesExcludingHard.rate).toBeGreaterThanOrEqual(0.98);
+    expect(report.terms.precision.rate).toBeGreaterThanOrEqual(0.92);
+  });
+
   // The suite's target is <= 0.02 excl. expected-hard; the matcher measures
   // 0.0% (0/95) today. The expected-hard negatives are corpus ambiguities
   // (canonicals that are English words, user aliases that are phrases) and
