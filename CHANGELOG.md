@@ -4,6 +4,15 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Security
+
+- Credentials no longer reach error text from an upstream.
+  - The browser extension's popup errors quoted the server's `{ error }` text, so a server at the configured base URL that quoted the bearer token back showed the token. That text is now redacted.
+  - `lexicon serve --status` and the MCP `serve_status` tool showed a failing `/health` reply's `error` as is, with the same risk for the `serve.json` token. That text is now redacted too.
+  - Registry index and pack fetch errors named the full URL, including a query token or a password (fetch's own message quotes a URL with credentials). Those errors now name the URL without credentials, query or fragment.
+  - Any run of 8 or more characters of the token is replaced with `[redacted]`.
+  - A new test (`tests/upstream-redaction.test.ts`) drives each path against replies that quote the request, non-2xx statuses, a closed port and malformed URLs, and fails on any 8-character run of a canary.
+
 ### Documentation
 
 - `docs/PHANTOM-USAGE.md`: using Lexicon with Phantom. Lexicon makes no model calls and has no gateway or base URL setting; `phantom exec` around an agent is unaffected; the `serve.json` token is local and not a Phantom secret.
