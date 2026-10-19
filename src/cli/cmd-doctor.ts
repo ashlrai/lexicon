@@ -15,6 +15,7 @@ import { findOnPathSync, locateToolSync } from '../util/which.js';
 import { isRecord } from '../util/json.js';
 import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read.js';
 import { errorMessage } from '../util/errors.js';
+import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
 import { configPathFor } from './cmd-install.js';
@@ -754,6 +755,9 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
 
   // --- login service (lexicon serve --install) ------------------------------------
   checks.push(await checkLoginService({ platform, env, exec, home, ...(deps.uid !== undefined ? { uid: deps.uid } : {}) }));
+
+  // --- phantom (report-only, value-free) -----------------------------------------
+  checks.push(checkPhantomPresence({ env, exec }));
 
   // --- clipboard -----------------------------------------------------------------
   try {
