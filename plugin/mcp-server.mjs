@@ -61973,6 +61973,29 @@ async function readDoctorConfigJson(file2) {
   }
 }
 
+// src/cli/phantom-presence.ts
+function probePhantomCli(exec) {
+  let out;
+  try {
+    out = exec("phantom", ["--version"]);
+  } catch (err) {
+    return err.code === "ENOENT" ? { state: "absent" } : { state: "error" };
+  }
+  const version2 = /\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]{1,32})?/.exec(out)?.[0];
+  return version2 ? { state: "present", version: version2 } : { state: "error" };
+}
+function inPhantomExecSession(env) {
+  const port = (env["PHANTOM_PROXY_PORT"] ?? "").trim();
+  const valid = /^\d{1,5}$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
+  return valid && (env["PHANTOM_PROXY_TOKEN"] ?? "").trim() !== "";
+}
+function checkPhantomPresence(probe) {
+  const cli = probePhantomCli(probe.exec);
+  const session = inPhantomExecSession(probe.env) ? "; running under phantom exec" : "";
+  const cliText = cli.state === "present" ? `phantom ${cli.version} on PATH` : cli.state === "absent" ? "phantom not on PATH" : "phantom --version failed";
+  return { level: "info", message: `phantom (optional, report-only): ${cliText}${session}` };
+}
+
 // src/cli/cmd-install.ts
 var import_node_fs21 = __toESM(require_node_fs());
 var import_node_os7 = __toESM(require_node_os());
@@ -63002,6 +63025,7 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   checks.push(await checkLoginService({ platform, env, exec, home, ...deps.uid !== void 0 ? { uid: deps.uid } : {} }));
+  checks.push(checkPhantomPresence({ env, exec }));
   try {
     const backend = await detectClipboardBackend(platform, env, async (bin) => findOnPathSync(bin, { env }) !== void 0);
     push2("ok", `clipboard backend: ${backend.name}${backend.description ? ` (${backend.description})` : ""}`);
