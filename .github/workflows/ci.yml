@@ -111,6 +111,15 @@ jobs:
             npm test
           fi
 
+      # Always runs, whatever a PR touched: the affected-files step above picks
+      # tests by import graph, and an accuracy regression should never depend on
+      # that. The corpus is synthetic (hand-written STT errors, text only), so
+      # these thresholds guard the matcher against regressions; they are not a
+      # claim about real dictation (see bench/README.md and docs/BENCHMARK.md).
+      - name: Benchmark regression gate (synthetic corpus)
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npx vitest run bench/bench.test.ts
+
       - name: Smoke test the built CLI, the plugin hook and the MCP server
         run: npm run smoke
 

@@ -80,6 +80,22 @@ After a matcher change: `npm run bench -- --sweep`, commit the new `results.json
 numbers in `docs/BENCHMARK.md`, and move the thresholds in `bench.test.ts` if they changed
 deliberately.
 
+## CI regression gate
+
+CI runs `npx vitest run bench/bench.test.ts` as its own step ("Benchmark regression gate (synthetic corpus)") on every push and pull request, independent of which files a PR touched. It fails when the matcher's accuracy drops below thresholds set from the numbers measured on 2026-10-18 minus a small margin:
+
+| Measure (synthetic corpus, 402 sentences) | Measured | Gate |
+|---|---|---|
+| Positive sentences | 95.32% (265/278) | at least 94% |
+| Positives excluding expected-hard | 99.61% (255/256) | at least 98% |
+| Overall sentence accuracy | 92.04% (370/402) | at least 90% |
+| Term recall | 96.81% (303/313) | at least 95% |
+| Term precision | 93.81% (303/323) | at least 92% |
+| Prose false positives excluding expected-hard | 0.00% (0/95) | at most 2% |
+| Prose false positives including expected-hard | 15.32% (19/124) | at most 16% |
+
+The corpus is synthetic (hand-written STT errors, text only), so the gate protects against matcher regressions; it says nothing about real dictation accuracy. If a deliberate change moves a number, re-run `npm run bench`, update `docs/BENCHMARK.md`, and move the threshold in `bench/bench.test.ts` with it.
+
 ## TTS audio (`bench/audio/`)
 
 The corpus above is synthetic: the `heard` strings are hand-written STT errors. `bench/audio/`
