@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -122,6 +122,20 @@ describe('plugin manifests agree with the package and the bundles', () => {
   });
 });
 
+/**
+ * Runs `fn` once `child` has exited (at once if it already has), after killing it.
+ * On Windows a live process keeps its cwd (the test's temp home) busy, so
+ * settling before the exit let afterEach's rmSync fail with EBUSY.
+ */
+function afterExit(child: ChildProcess, fn: () => void): void {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    fn();
+    return;
+  }
+  child.once('exit', () => fn());
+  child.kill();
+}
+
 /** Starts `bundle`, initializes, and returns each tool's input parameter names from tools/list. */
 function listBundleToolParams(bundle: string, env: NodeJS.ProcessEnv, cwd: string): Promise<Map<string, string[]>> {
   return new Promise((resolve, reject) => {
@@ -129,8 +143,7 @@ function listBundleToolParams(bundle: string, env: NodeJS.ProcessEnv, cwd: strin
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`no tools/list answer from ${bundle}; stderr: ${err}`));
+      afterExit(child, () => reject(new Error(`no tools/list answer from ${bundle}; stderr: ${err}`)));
     }, 15_000);
     child.stderr.on('data', (d: Buffer) => (err += d.toString()));
     child.stdout.on('data', (d: Buffer) => {
@@ -144,8 +157,10 @@ function listBundleToolParams(bundle: string, env: NodeJS.ProcessEnv, cwd: strin
         const msg = JSON.parse(line) as { id?: number; result?: { tools?: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> } };
         if (msg.id === 2) {
           clearTimeout(timer);
-          child.kill();
-          resolve(new Map((msg.result?.tools ?? []).map((t) => [t.name, Object.keys(t.inputSchema?.properties ?? {})])));
+          // Same EBUSY on Windows as callBundleTool below: resolve only after the
+          // child has exited (main 6d46256, run 39107391634, tests/plugin.test.ts:174).
+          const params = new Map((msg.result?.tools ?? []).map((t) => [t.name, Object.keys(t.inputSchema?.properties ?? {})]));
+          afterExit(child, () => resolve(params));
           return;
         }
       }
@@ -164,6 +179,29 @@ function docArgNames(inner: string): string[] {
     .map((piece) => /^\s*([A-Za-z]+)/.exec(piece)?.[1])
     .filter((n): n is string => n !== undefined);
 }
+
+// Guards the helpers above: they settle only once the bundle process is gone,
+// which is what keeps the temp home deletable on Windows.
+describe('bundle test helpers settle after the child exits', () => {
+  it('waits for a live child to exit before running the callback', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    await new Promise<void>((ok) => child.once('spawn', () => ok()));
+    const seen = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((ok) =>
+      afterExit(child, () => ok({ code: child.exitCode, signal: child.signalCode })),
+    );
+    expect(seen.code !== null || seen.signal !== null).toBe(true);
+  });
+
+  it('runs the callback at once for a child that already exited', async () => {
+    const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+    await new Promise<void>((ok) => child.once('exit', () => ok()));
+    let ran = false;
+    afterExit(child, () => {
+      ran = true;
+    });
+    expect(ran).toBe(true);
+  });
+});
 
 describe('skills and commands agree with the MCP tool schemas', () => {
   let tmp: string;
@@ -230,8 +268,7 @@ function callBundleTool(bundle: string, tool: string, env: NodeJS.ProcessEnv, cw
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`no tools/call answer from ${bundle}; stderr: ${err}`));
+      afterExit(child, () => reject(new Error(`no tools/call answer from ${bundle}; stderr: ${err}`)));
     }, 15_000);
     child.stderr.on('data', (d: Buffer) => (err += d.toString()));
     child.stdout.on('data', (d: Buffer) => {
@@ -241,12 +278,8 @@ function callBundleTool(bundle: string, tool: string, env: NodeJS.ProcessEnv, cw
         const msg = JSON.parse(line) as { id?: number; result?: { content?: Array<{ text?: string }> } };
         if (msg.id === 2) {
           clearTimeout(timer);
-          // Resolve once the child has exited: on Windows a live process
-          // keeps its cwd (the test's temp home) busy, so afterEach's rmSync
-          // failed with EBUSY when it ran first.
           const text = msg.result?.content?.[0]?.text ?? '';
-          child.once('exit', () => resolve(text));
-          child.kill();
+          afterExit(child, () => resolve(text));
           return;
         }
       }
