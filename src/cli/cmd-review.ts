@@ -158,50 +158,69 @@ export async function runHarvestInteractive(
     }
   };
 
-  for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
-    const c = work[i];
-    showCandidate(io, c, i, work.length);
-    let decided = false;
-    while (!decided) {
-      const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y');
-      switch (key) {
-        case 'y':
-          if (!(await add(c))) return 1;
-          decided = true;
-          break;
-        case 'n':
-          skipped += 1;
-          decided = true;
-          break;
-        case 'e': {
-          const answer = await prompter.ask('  aliases (comma-separated, replaces the suggestions)', {
-            default: c.suggestedAliases.join(', '),
-          });
-          c.suggestedAliases = splitList(answer).filter((a) => a.toLowerCase() !== c.canonical.toLowerCase());
-          line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
-          break;
+  /** The candidate on screen; where ctrl-D stopped the walk, if it did. */
+  let current = 0;
+  let closedAt: number | undefined;
+  try {
+    for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
+      current = i;
+      const c = work[i];
+      showCandidate(io, c, i, work.length);
+      let decided = false;
+      while (!decided) {
+        const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y');
+        switch (key) {
+          case 'y':
+            if (!(await add(c))) return 1;
+            decided = true;
+            break;
+          case 'n':
+            skipped += 1;
+            decided = true;
+            break;
+          case 'e': {
+            const answer = await prompter.ask('  aliases (comma-separated, replaces the suggestions)', {
+              default: c.suggestedAliases.join(', '),
+            });
+            c.suggestedAliases = splitList(answer).filter((a) => a.toLowerCase() !== c.canonical.toLowerCase());
+            line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
+            break;
+          }
+          case 'c':
+            c.category = await askCategory(prompter, c.category);
+            line(io, `  category: ${c.category}`);
+            break;
+          case 'a':
+            addAll = true;
+            if (!(await addRest(i))) return 1;
+            decided = true;
+            break;
+          case 'q':
+            quit = true;
+            skipped += work.length - i;
+            decided = true;
+            break;
+          default:
+            break;
         }
-        case 'c':
-          c.category = await askCategory(prompter, c.category);
-          line(io, `  category: ${c.category}`);
-          break;
-        case 'a':
-          addAll = true;
-          if (!(await addRest(i))) return 1;
-          decided = true;
-          break;
-        case 'q':
-          quit = true;
-          skipped += work.length - i;
-          decided = true;
-          break;
-        default:
-          break;
       }
+      line(io);
     }
+  } catch (err) {
+    // ctrl-D is a quit. Rethrown, it printed only `input closed before the
+    // prompt was answered`, so the terms already added (each is written as
+    // it is accepted) went unmentioned.
+    if (!(err instanceof PromptClosedError)) throw err;
+    closedAt = current;
+    skipped += work.length - current;
     line(io);
   }
   for (const result of rest) report(result);
+
+  if (closedAt !== undefined) {
+    const kept = created + merged > 0 ? 'the terms added before it stay in the project lexicon' : 'nothing was added';
+    line(io, `input closed at candidate ${closedAt + 1} of ${work.length}; ${kept}`);
+  }
 
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);

@@ -135,6 +135,23 @@ describe('harvest --interactive', () => {
     expect(candidates[2].suggestedAliases).toEqual(['Gamma x', 'Gammay']);
   });
 
+  // Catches: ctrl-D threw `input closed before the prompt was answered`
+  // (exit 1) with no summary, though the terms accepted before it had
+  // already been written, so nothing said they were kept.
+  it('ctrl-D stops like q and says the terms added before it are kept', async () => {
+    const candidates = [candidate('Alpha'), candidate('Beta'), candidate('Gamma')];
+    const io = makeIO();
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, io, closingAfter(['y', 'e']))).toBe(0);
+    expect((await readYaml(projectPath)).terms.map((t) => t.canonical)).toEqual(['Alpha']);
+    expect(io.out).toContain('input closed at candidate 2 of 3; the terms added before it stay in the project lexicon');
+    expect(io.out).toContain(`added 1 new term, merged 0, skipped 2 in ${projectPath}`);
+
+    const none = makeIO();
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, none, closingAfter([]))).toBe(0);
+    expect(none.out).toContain('input closed at candidate 1 of 3; nothing was added');
+    expect(none.out).toContain('added 0 new terms, merged 0, skipped 3');
+  });
+
   it('c changes the category and a adds every remaining candidate without asking', async () => {
     const candidates = [candidate('One'), candidate('Two'), candidate('Three')];
     const p = scripted(['c', 'nope', 'Brand', 'a']);
