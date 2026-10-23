@@ -636,6 +636,16 @@ describe('edit', () => {
     expect(io.out).toContain('no $VISUAL or $EDITOR set');
     expect(io.out).toContain(globalPath);
     expect((await readYaml(globalPath)).terms).toEqual([]);
+    // Catches: the path was the last word, with nothing to check the edit
+    // afterwards, and for a project file no word that a hand edit leaves it
+    // untrusted (its terms unused) until `lexicon trust`.
+    expect(io.out).toContain('after saving, check it with: lexicon doctor');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(projectPath, { cwd: repo, globalPath });
+    const project = makeIO();
+    expect(await runEdit({ cwd: repo, project: true, globalPath }, project, undefined, {})).toBe(0);
+    expect(project.out).toContain(projectPath);
+    expect(project.out).toContain('after saving, run: lexicon trust (it shows the terms and trusts the file; until then its terms are not used)');
   });
 
   it('spawns $EDITOR on the file (real subprocess) and reports the re-parsed term count', async () => {

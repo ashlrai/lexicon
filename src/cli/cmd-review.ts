@@ -653,6 +653,16 @@ export async function runEdit(
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
     line(io, safe(target));
+    // Nothing checks the file afterwards on this path, and a hand edit leaves
+    // a project file untrusted (its terms unused) until it is trusted again.
+    line(
+      io,
+      dim(
+        scope === 'project'
+          ? 'after saving, run: lexicon trust (it shows the terms and trusts the file; until then its terms are not used)'
+          : 'after saving, check it with: lexicon doctor',
+      ),
+    );
     return 0;
   }
 
