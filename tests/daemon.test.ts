@@ -188,7 +188,8 @@ describe('runClipboardDaemon', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(h.write).not.toHaveBeenCalled();
     const report = h.out.join('');
-    expect(report).toContain('(dry-run)');
+    // Catches: the header said only `(dry-run) 1 correction`, not that nothing was written.
+    expect(report).toMatch(/\] \(dry-run\) 1 correction; the clipboard was left unchanged\n/);
     expect(report).toContain('"Ashler" -> "Ashlr.AI"');
     expect(report).toMatch(/\[\d\d:\d\d:\d\d\]/);
 
@@ -310,6 +311,9 @@ describe('runClipboardOnce', () => {
     vi.mocked(core.recordHits).mockClear();
     await runClipboardOnce({ read: dry.read, write: dry.write, out: dry.out, err: dry.err, dryRun: true });
     expect(core.recordHits).not.toHaveBeenCalled();
+    // Catches: `daemon --once --dry-run` printed `(dry-run) 1 correction` and never said the clipboard was left as it was.
+    expect(dry.h.out.join('')).toMatch(/^\(dry-run\) 1 correction; the clipboard was left unchanged\n/);
+    expect(dry.write).not.toHaveBeenCalled();
   });
 
   it('unchanged text is not written and prints "no changes"', async () => {

@@ -141,6 +141,16 @@ export function emptyLexiconHint(loaded: Pick<LoadedLexicon, 'merged' | 'skipped
     : 'the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>';
 }
 
+/**
+ * The line above a correction summary. Under --dry-run it says the clipboard
+ * was left as it was: `(dry-run) 2 corrections` alone did not say whether
+ * they had been written.
+ */
+function correctionsHeader(count: number, dryRun: boolean): string {
+  const n = `${count} correction${count === 1 ? '' : 's'}`;
+  return dryRun ? `(dry-run) ${n}; the clipboard was left unchanged` : n;
+}
+
 function formatSummary(result: NormalizeResult): string {
   const summary = diffSummary(result);
   return summary.endsWith('\n') || summary === '' ? summary : `${summary}\n`;
@@ -222,7 +232,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       recordHitsInBackground(result, cwd, loaded, err);
     }
     if (!quiet) {
-      const header = `[${timestamp()}]${dryRun ? ' (dry-run)' : ''} ${result.replacements.length} correction${result.replacements.length === 1 ? '' : 's'}`;
+      const header = `[${timestamp()}] ${correctionsHeader(result.replacements.length, dryRun)}`;
       out(`${header}\n${formatSummary(result)}`);
     }
   }
@@ -350,7 +360,7 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
         recordHitsInBackground(normalized, cwd, loaded, err);
       }
       if (!quiet) {
-        const header = `${dryRun ? '(dry-run) ' : ''}${normalized.replacements.length} correction${normalized.replacements.length === 1 ? '' : 's'}`;
+        const header = correctionsHeader(normalized.replacements.length, dryRun);
         out(`${header}\n${formatSummary(normalized)}`);
       }
     } else if (!quiet) {
