@@ -5,7 +5,7 @@
  */
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
-import type { Correction, LexiconStats, TermScope } from '../core/index.js';
+import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
 import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
@@ -191,9 +191,21 @@ export interface StatsOptions extends CommonOptions {
   json?: boolean;
 }
 
-export function renderStats(stats: LexiconStats): string {
+/**
+ * What `lexicon stats` says when the lexicon has no terms at all: a report of
+ * zeros named no step. Undefined when there are terms, and when a skipped
+ * project file holds them (warnSkippedProject names `lexicon trust` then).
+ * MCP lexicon_stats says the same in tool terms.
+ */
+export function emptyStatsNote(loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>): string | undefined {
+  if (loaded.merged.terms.length > 0 || loaded.skippedProject) return undefined;
+  return 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
+}
+
+export function renderStats(stats: LexiconStats, note?: string): string {
   const out: string[] = [];
   out.push(`terms: ${stats.termCount}   aliases: ${stats.aliasCount}   hits: ${stats.totalHits}`);
+  if (note) out.push(safe(note));
   const categories = Object.entries(stats.byCategory)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([k, v]) => `${k} ${v}`)
@@ -208,7 +220,7 @@ export function renderStats(stats: LexiconStats): string {
 
   out.push('top terms');
   if (stats.topTerms.length === 0) {
-    out.push('  (no hits yet. They are counted when normalize_transcript or the hook fixes something)');
+    out.push('  (no hits yet. They are counted when lexicon normalize, the prompt hook or the MCP server fixes something)');
   } else {
     out.push(
       renderTable(
@@ -238,10 +250,11 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     // The counts leave a skipped project file out; say so, as lexicon_stats does.
     warnSkippedProject(loaded, io);
     const stats = computeStats(loaded);
+    const empty = emptyStatsNote(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded) }), null, 2));
+      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded), ...(empty ? { note: empty } : {}) }), null, 2));
     } else {
-      io.stdout(renderStats(stats));
+      io.stdout(renderStats(stats, empty));
     }
     return 0;
   } catch (err) {

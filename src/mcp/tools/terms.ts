@@ -661,7 +661,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       description:
         'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. ' +
         '`neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. ' +
-        'An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only).',
+        'An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only). With no terms at all, `note` says so and names setup_lexicon and add_term.',
       inputSchema: {},
     },
     async () =>
@@ -669,7 +669,13 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
         const loaded = await load({ parseSkipped: false });
         // Otherwise the counts silently leave out the repo's own terms.
-        return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
+        // No terms at all: zeros alone named no step, so say what adds some
+        // (`lexicon stats` names the CLI commands).
+        const empty =
+          loaded.merged.terms.length === 0 && !loaded.skippedProject
+            ? { note: 'The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some.' }
+            : {};
+        return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded), ...empty });
       }),
   );
 

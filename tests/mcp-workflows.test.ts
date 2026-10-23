@@ -519,6 +519,10 @@ describe('lexicon_stats and voice-context with an untrusted project lexicon', ()
   it('add nothing when there is no project file', async () => {
     const payload = JSON.parse((await call('lexicon_stats', {})).text) as Record<string, unknown>;
     expect(payload).not.toHaveProperty('skippedProject');
+    // Catches: an empty lexicon answered zeros with no word on what adds terms.
+    expect(payload.note).toBe('The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some.');
+    await call('add_term', { canonical: 'Zork', aliases: ['zorc'] });
+    expect(JSON.parse((await call('lexicon_stats', {})).text)).not.toHaveProperty('note');
   });
 });
 
