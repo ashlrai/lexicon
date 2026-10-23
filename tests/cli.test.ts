@@ -414,6 +414,25 @@ describe('list', () => {
     expect(terms.map((t) => t.canonical)).toEqual(['Ashlr.AI']);
   });
 
+  // Catches: `list --query " wyeth "` matched nothing (the spaces were part
+  // of the substring) while MCP list_terms trims the query and found the
+  // term, and a query of only spaces filtered out every term.
+  it('trims --query as MCP list_terms does', async () => {
+    const padded = makeIO();
+    await runList({ query: '  wyeth ', json: true }, padded);
+    expect((JSON.parse(padded.out) as { canonical: string }[]).map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+
+    const blank = makeIO();
+    await runList({ query: '   ', full: true }, blank);
+    const all = JSON.parse(blank.out) as { counts: { matched: number; total: number }; note?: string };
+    expect(all.counts.matched).toBe(all.counts.total);
+    expect(all.note).toBeUndefined();
+
+    const miss = makeIO();
+    await runList({ query: ' zork ' }, miss);
+    expect(miss.out).toContain('no terms match --query "zork" (');
+  });
+
   // Catches: a filter on a lexicon with no terms said `no terms match`, which
   // sent a first user to fix the filter, and a filter that missed named no
   // way to see the terms there are; --full carried no word on either.

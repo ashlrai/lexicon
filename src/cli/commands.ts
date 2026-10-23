@@ -602,8 +602,12 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
   let terms = loaded.merged.terms;
   const category = parseCategory(opts.category);
   if (category) terms = terms.filter((t) => t.category === category);
-  if (opts.query) {
-    const q = opts.query.toLowerCase();
+  // Trimmed, as MCP list_terms trims it: a pasted " Ashler" matched nothing
+  // here while the agent's list_terms found the term, and a query of only
+  // spaces filters nothing in either.
+  const query = opts.query?.trim();
+  if (query) {
+    const q = query.toLowerCase();
     terms = terms.filter(
       (t) => t.canonical.toLowerCase().includes(q) || t.aliases.some((a) => a.toLowerCase().includes(q)),
     );
@@ -611,7 +615,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
 
   const filters = [
     ...(opts.category !== undefined ? [`--category ${opts.category}`] : []),
-    ...(opts.query ? [`--query ${JSON.stringify(opts.query)}`] : []),
+    ...(query ? [`--query ${JSON.stringify(query)}`] : []),
   ];
   const total = loaded.merged.terms.length;
   // Why the list is empty, as MCP list_terms says it in `note`: "no terms
