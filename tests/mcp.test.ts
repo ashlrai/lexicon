@@ -228,10 +228,13 @@ beforeEach(() => {
   mocks.suggestTerms.mockResolvedValue([aliasSuggestion]);
   mocks.loadVoiceHistory.mockResolvedValue([]);
   cli.runDoctorReport.mockResolvedValue(doctorReport);
-  cli.runInstall.mockImplementation(async (client: string, opts: { apply?: boolean }, io: IO) => {
-    io.stdout(`1. Add the lexicon MCP server to ${client}\n   ${opts.apply ? 'merge into' : 'would merge into'} /home/u/.cursor/mcp.json\n`);
-    return 0;
-  });
+  cli.runInstall.mockImplementation(
+    async (client: string, opts: { apply?: boolean }, io: IO, deps?: { onWritten?: (file: string, outcome: string) => void }) => {
+      io.stdout(`1. Add the lexicon MCP server to ${client}\n   ${opts.apply ? 'merge into' : 'would merge into'} /home/u/.cursor/mcp.json\n`);
+      if (opts.apply) deps?.onWritten?.('/home/u/.cursor/mcp.json', 'created');
+      return 0;
+    },
+  );
   cli.runImport.mockImplementation(async (file: string, opts: { dryRun?: boolean; project?: boolean }, io: IO, readInput?: (f: string, c: string) => Promise<string>) => {
     const content = readInput ? await readInput(file, '/fake/repo') : '';
     io.stdout(
@@ -770,6 +773,22 @@ describe('lexicon MCP server', () => {
         expect(a.output).toContain('merge into');
         expect(a.next).toBeUndefined();
         expect(cli.runInstall).toHaveBeenLastCalledWith('codex', { cwd: '/fake/repo', apply: true, scope: 'project' }, expect.anything(), expect.anything());
+      } finally {
+        await close();
+      }
+    });
+
+    // Catches: install_client returned only `output`, so an agent had to parse
+    // prose for the files `lexicon install --json` lists in `written`.
+    it('install_client returns the written list lexicon install --json returns', async () => {
+      const { client, close } = await connect();
+      try {
+        const preview = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'cursor' } }))) as Record<string, unknown>;
+        expect(preview.written).toEqual([]);
+        const applied = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'cursor', apply: true } }))) as Record<string, unknown>;
+        expect(applied.written).toEqual([{ file: '/home/u/.cursor/mcp.json', outcome: 'created' }]);
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'install_client');
+        expect(tool?.description).toContain('`written`');
       } finally {
         await close();
       }

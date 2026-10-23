@@ -18,6 +18,7 @@ import { isRecord } from '../../util/json.js';
 import { errorMessage } from '../../util/errors.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { runInstall } from '../../cli/cmd-install.js';
+import type { InstallOutcome } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
 import { serveInstallBlocker } from '../../cli/cmd-serve.js';
 import { cliCommand } from '../../util/cli-hint.js';
@@ -71,7 +72,8 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. " +
         'Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. ' +
         'Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. ' +
-        'Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. ' +
+        'Returns { client, scope, applied, ok, written, output, stderr?, next?, nextStep? }: `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. ' +
+          'Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. ' +
         "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: z.enum(INSTALL_CLIENT_VALUES).describe('Which client to configure.'),
@@ -86,13 +88,19 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const io = bufferIO();
         const cliDir = cliDirForInstall();
+        // The same `written` list `lexicon install --json` returns, so an agent
+        // reads which files changed without parsing `output`.
+        const written: { file: string; outcome: InstallOutcome }[] = [];
+        const onWritten = (file: string, outcome: InstallOutcome): void => {
+          written.push({ file, outcome });
+        };
         let code: number;
         try {
           code = await runInstall(
             client,
             { cwd: ctx.cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
             io,
-            cliDir !== undefined ? { cliDir } : {},
+            { ...(cliDir !== undefined ? { cliDir } : {}), onWritten },
           );
         } catch (err) {
           // The CLI's message says `drop --project`, a flag this tool does not take.
@@ -108,6 +116,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           scope: scope ?? 'user',
           applied: apply === true,
           ok,
+          written,
           output: io.out().trimEnd(),
           ...(stderr ? { stderr } : {}),
           // A failed preview is not one to confirm: `next` said to apply it anyway.

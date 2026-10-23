@@ -64653,7 +64653,7 @@ var registerSetupTools = (server, ctx) => {
     "install_client",
     {
       title: "Register the lexicon MCP server in an agent client",
-      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
+      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Returns { client, scope, applied, ok, written, output, stderr?, next?, nextStep? }: `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: external_exports.enum(INSTALL_CLIENT_VALUES).describe("Which client to configure."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only (default). true = write the config after the user confirmed."),
@@ -64663,13 +64663,17 @@ var registerSetupTools = (server, ctx) => {
     async ({ client, apply, scope }) => guarded(async () => {
       const io = bufferIO();
       const cliDir = cliDirForInstall();
+      const written = [];
+      const onWritten = (file2, outcome) => {
+        written.push({ file: file2, outcome });
+      };
       let code;
       try {
         code = await runInstall(
           client,
           { cwd: ctx.cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
           io,
-          cliDir !== void 0 ? { cliDir } : {}
+          { ...cliDir !== void 0 ? { cliDir } : {}, onWritten }
         );
       } catch (err) {
         if (scope === "project" && /has no project-level MCP config/.test(errorMessage(err))) {
@@ -64684,6 +64688,7 @@ var registerSetupTools = (server, ctx) => {
         scope: scope ?? "user",
         applied: apply === true,
         ok,
+        written,
         output: io.out().trimEnd(),
         ...stderr ? { stderr } : {},
         // A failed preview is not one to confirm: `next` said to apply it anyway.
