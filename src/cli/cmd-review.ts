@@ -454,7 +454,8 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
           case 'd':
             deleted.add(t);
             changed = true;
-            line(io, `  deleted ${bold(safe(t.canonical))}`);
+            // Worded as `lexicon remove` reports the same outcome.
+            line(io, `  removed ${bold(safe(t.canonical))} from ${safe(file.path)}`);
             decided = true;
             break;
           case 'e': {
@@ -558,10 +559,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   }
   if (inputClosed) line(io, `input closed at term ${stoppedAt + 1} of ${subject.length}; keeping the answers given before it`);
   if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
-  // A quit used to report only the terms answered, so "kept 1, deleted 0"
+  // A quit used to report only the terms answered, so "kept 1, removed 0"
   // after `q` on term 2 of 40 said nothing of the other 39.
   const rest = notReviewed > 0 ? `, ${notReviewed} not reviewed (left as they were)` : '';
-  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${rest}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  line(io, `kept ${kept}, removed ${deleted.size}, edited ${edited}${rest}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
   return 0;
 }
 

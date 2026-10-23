@@ -381,8 +381,11 @@ describe('review', () => {
       notes: 'my name',
     });
     expect(io.out).toContain('[2/4] Stale');
-    expect(io.out).toContain('deleted Stale');
-    expect(io.out).toContain(`kept 3, deleted 1, edited 3. Wrote ${globalPath}`);
+    // Catches: `d` printed `deleted Stale` and the summary `deleted 1`, where
+    // `lexicon remove` reports the same outcome as `removed X from <path>`.
+    expect(io.out).toContain(`removed Stale from ${globalPath}`);
+    expect(io.out).toContain(`kept 3, removed 1, edited 3. Wrote ${globalPath}`);
+    expect(io.out).not.toContain('deleted');
   });
 
   it('merges hits and terms written elsewhere while the review was running instead of overwriting them', async () => {
@@ -429,7 +432,7 @@ describe('review', () => {
     expect(written.terms[3]).toMatchObject({ canonical: 'Newcomer', aliases: ['new comer'] });
     // Keeper's alias and Newcomer; the hit counts never touched the file.
     expect(io.out).toContain('merged 2 changes made elsewhere during review');
-    expect(io.out).toContain(`kept 3, deleted 1, edited 1. Wrote ${globalPath}`);
+    expect(io.out).toContain(`kept 3, removed 1, edited 1. Wrote ${globalPath}`);
   });
 
   it('does not report a merge when nothing changed on disk', async () => {
@@ -483,14 +486,14 @@ describe('review', () => {
     expect(await runReview({ globalPath, category: 'person' }, io, scripted(['?', 'x', 'k']))).toBe(0);
     const help = '  [k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]uit  (Enter = k)';
     expect(io.out.split('\n').filter((l) => l === help)).toHaveLength(2);
-    expect(io.out).toContain('kept 1, deleted 0, edited 0 (nothing written)');
+    expect(io.out).toContain('kept 1, removed 0, edited 0 (nothing written)');
 
     const h = makeIO();
     expect(await runHarvestInteractive([candidate('Alpha')], { cwd: repo, globalPath }, h, scripted(['h', 'n']))).toBe(0);
     expect(h.out).toContain('  [y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit  (Enter = y)\n');
   });
 
-  // Catches: `q` on term 2 of 4 reported `kept 1, deleted 0, edited 0`, no
+  // Catches: `q` on term 2 of 4 reported `kept 1, removed 0, edited 0`, no
   // word on the two terms never shown; and ctrl-D threw `input closed before
   // the prompt was answered`, exit 1, losing the deletion already made with
   // no word on what was kept.
@@ -498,17 +501,17 @@ describe('review', () => {
     await seedGlobal(terms);
     const quit = makeIO();
     expect(await runReview({ globalPath }, quit, scripted(['k', 'q']))).toBe(0);
-    expect(quit.out).toContain('kept 1, deleted 0, edited 0, 3 not reviewed (left as they were) (nothing written)');
+    expect(quit.out).toContain('kept 1, removed 0, edited 0, 3 not reviewed (left as they were) (nothing written)');
 
     const io = makeIO();
     expect(await runReview({ globalPath }, io, closingAfter(['k', 'd']))).toBe(0);
     expect(io.out).toContain('input closed at term 3 of 4; keeping the answers given before it');
-    expect(io.out).toContain(`kept 1, deleted 1, edited 0, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+    expect(io.out).toContain(`kept 1, removed 1, edited 0, 2 not reviewed (left as they were). Wrote ${globalPath}`);
     expect((await readYaml(globalPath)).terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt', 'Keeper']);
 
     const all = makeIO();
     expect(await runReview({ globalPath }, all, scripted(['k', 'k', 'k']))).toBe(0);
-    expect(all.out).toContain('kept 3, deleted 0, edited 0 (nothing written)');
+    expect(all.out).toContain('kept 3, removed 0, edited 0 (nothing written)');
   });
 
   it('--project reviews the project file, refuses it when untrusted, and re-pins trust after a write', async () => {
