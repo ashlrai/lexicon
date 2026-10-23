@@ -693,6 +693,21 @@ describe('apply_suggestion stale on a term in both lexicon files', () => {
   });
 });
 
+describe('list_terms with nothing to return', () => {
+  // Catches: an empty result carried no word on why, where `lexicon list`
+  // says the lexicon has no terms or that the filter matched none.
+  it('says the lexicon has no terms, or that the filter matched none of them', async () => {
+    const none = JSON.parse((await call('list_terms', { category: 'person' })).text) as { terms: unknown[]; note?: string };
+    expect(none.terms).toEqual([]);
+    expect(none.note).toBe('The lexicon has no terms yet; add_term or setup_lexicon adds some.');
+    await call('add_term', { canonical: 'Zork', aliases: ['zorc'] });
+    const miss = JSON.parse((await call('list_terms', { category: 'person', query: 'nope' })).text) as { note?: string };
+    expect(miss.note).toBe('No term matches the category and query given; the lexicon has 1 term in all, which list_terms without them returns.');
+    const hit = JSON.parse((await call('list_terms', { query: 'zorc' })).text) as Record<string, unknown>;
+    expect(hit).not.toHaveProperty('note');
+  });
+});
+
 describe('learn_correction given only one spelling', () => {
   // Catches: learn_correction with heard and no meant answered only zod's
   // `expected string, received undefined`, where `lexicon learn Ashler` says

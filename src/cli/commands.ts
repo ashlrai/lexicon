@@ -609,8 +609,24 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     );
   }
 
+  const filters = [
+    ...(opts.category !== undefined ? [`--category ${opts.category}`] : []),
+    ...(opts.query ? [`--query ${JSON.stringify(opts.query)}`] : []),
+  ];
+  const total = loaded.merged.terms.length;
+  // Why the list is empty, as MCP list_terms says it in `note`: "no terms
+  // match" for a lexicon that had none at all sent a first user to fix the
+  // filter, and a filter that missed named no way to see what is there.
+  const emptyNote =
+    terms.length > 0 || loaded.skippedProject
+      ? undefined
+      : total === 0
+        ? 'The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.'
+        : `No term matches ${filters.join(' ')}; ${plural(total, 'term')} in all, which lexicon list without ${filters.length === 1 ? 'it' : 'them'} shows.`;
+
   if (opts.full) {
     // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.
+    const skipped = skippedProjectJson(loaded);
     const payload = {
       terms,
       counts: {
@@ -620,7 +636,8 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
         project: loaded.project?.lexicon.terms.length ?? 0,
       },
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
-      ...skippedProjectJson(loaded),
+      ...skipped,
+      ...(emptyNote ? { note: emptyNote } : {}),
     };
     line(io, JSON.stringify(jsonOk(payload), null, 2));
     return 0;
@@ -636,7 +653,14 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     const empty = loaded.skippedProject
       ? ' applied: the project lexicon is not trusted, so its terms are not loaded. Review it and run: lexicon trust'
       : ' yet. Try: lexicon add "Ashlr.AI" Ashler';
-    line(io, dim('no terms' + (opts.query || category ? ' match' : empty)));
+    line(
+      io,
+      dim(
+        total > 0 && filters.length > 0
+          ? `no terms match ${safe(filters.join(' '))} (${plural(total, 'term')} in all; run lexicon list without ${filters.length === 1 ? 'it' : 'them'} to see them)`
+          : 'no terms' + empty,
+      ),
+    );
   } else {
     const rows = terms.map((t) => [
       t.canonical,

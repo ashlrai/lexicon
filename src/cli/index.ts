@@ -144,7 +144,7 @@ program
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
   .option('--json', 'print terms as JSON (a bare array)')
-  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out (implies --json)')
+  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out, or note alone when nothing matched (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));

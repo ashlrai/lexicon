@@ -413,6 +413,38 @@ describe('list', () => {
     const terms = JSON.parse(io2.out) as { canonical: string }[];
     expect(terms.map((t) => t.canonical)).toEqual(['Ashlr.AI']);
   });
+
+  // Catches: a filter on a lexicon with no terms said `no terms match`, which
+  // sent a first user to fix the filter, and a filter that missed named no
+  // way to see the terms there are; --full carried no word on either.
+  it('says why the list is empty: no terms at all, or a filter that matched none', async () => {
+    const miss = makeIO();
+    expect(await runList({ category: 'product', query: 'zork' }, miss)).toBe(0);
+    expect(miss.out).toContain('no terms match --category product --query "zork" (2 terms in all; run lexicon list without them to see them)\n');
+    const missFull = makeIO();
+    expect(await runList({ category: 'product', full: true }, missFull)).toBe(0);
+    expect(JSON.parse(missFull.out)).toMatchObject({
+      counts: { matched: 0, total: 2 },
+      note: 'No term matches --category product; 2 terms in all, which lexicon list without it shows.',
+    });
+
+    const empty = { version: 1 as const, terms: [] };
+    const loadEmpty = () =>
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: false } });
+    loadEmpty();
+    const none = makeIO();
+    expect(await runList({ category: 'person' }, none)).toBe(0);
+    expect(none.out).toContain('no terms yet. Try: lexicon add "Ashlr.AI" Ashler\n');
+    expect(none.out).not.toContain('match');
+    loadEmpty();
+    const noneFull = makeIO();
+    expect(await runList({ full: true }, noneFull)).toBe(0);
+    expect(JSON.parse(noneFull.out).note).toBe('The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.');
+
+    const hit = makeIO();
+    expect(await runList({ category: 'brand', full: true }, hit)).toBe(0);
+    expect(JSON.parse(hit.out)).not.toHaveProperty('note');
+  });
 });
 
 describe('add / remove / path', () => {

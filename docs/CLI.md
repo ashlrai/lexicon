@@ -157,7 +157,8 @@ Options:
   --full                 print { ok: true, terms, counts, paths } as JSON, ok
                          and then the object MCP list_terms returns, plus
                          projectTrust, skippedProject and note when an untrusted
-                         project lexicon was left out (implies --json)
+                         project lexicon was left out, or note alone when
+                         nothing matched (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
   -h, --help             display help for command

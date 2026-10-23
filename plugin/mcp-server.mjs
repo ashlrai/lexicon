@@ -60983,7 +60983,10 @@ var registerTermTools = (server, ctx) => {
           project: loaded.project?.lexicon.terms.length ?? 0
         },
         paths: filePathsInUse(loaded),
-        ...skippedProjectFields(loaded)
+        ...skippedProjectFields(loaded),
+        // Why nothing came back, as `lexicon list` says it: no terms at
+        // all, or a filter that matched none of them.
+        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: "The lexicon has no terms yet; add_term or setup_lexicon adds some." } : { note: `No term matches the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? "" : "s"} in all, which list_terms without ${category && needle ? "them" : "it"} returns.` }
       });
     })
   );
