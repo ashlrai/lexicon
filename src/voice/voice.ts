@@ -30,7 +30,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
-import type { Lexicon } from '../core/index.js';
+import type { Lexicon, LoadedLexicon } from '../core/index.js';
 import { PASTE_APPLESCRIPT } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
@@ -314,9 +314,14 @@ function installSteps(platform: NodeJS.Platform, which: { ffmpeg: boolean; whisp
   return [`install: ${hint}`, ...(vars.length > 0 ? [`(or set ${vars.join(' / ')} to the binary)`] : [])];
 }
 
-/** The merged terms only, so an untrusted or changed project file is never parsed (`parseSkipped: false`). */
-async function loadMerged(r: Resolved, opts: VoiceOptions): Promise<Lexicon> {
-  return (await loadLexicon({ cwd: r.cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), parseSkipped: false })).merged;
+/**
+ * The load the corrections come from. Only its merged terms (the whisper
+ * prompt and the normalize) and its global and trusted project files (handed
+ * to `recordHits`) are used, so an untrusted or changed project file is never
+ * parsed (`parseSkipped: false`).
+ */
+async function loadForVoice(r: Resolved, opts: VoiceOptions): Promise<LoadedLexicon> {
+  return loadLexicon({ cwd: r.cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), parseSkipped: false });
 }
 
 /** Wrap the voice exec as the daemon's ClipboardExec (non-zero exit rejects). */
@@ -340,6 +345,7 @@ export async function deliver(
   io: VoiceIO,
   deps: VoiceDeps,
   r: Resolved,
+  loaded?: LoadedLexicon,
 ): Promise<number> {
   if (result.raw.length === 0) {
     if (opts.json) {
@@ -366,7 +372,9 @@ export async function deliver(
   }
   if (result.normalized.changed) {
     const canonicals = [...new Set(result.normalized.replacements.map((x) => x.canonical))];
-    await recordHits(canonicals, { cwd: r.cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) }).catch((e: unknown) => {
+    // `loaded` (the load the corrections came from) spares recordHits reading
+    // both lexicon files again, and it holds a project file only when trusted.
+    await recordHits(canonicals, { cwd: r.cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), ...(loaded ? { loaded } : {}) }).catch((e: unknown) => {
       r.log(`lexicon voice: recordHits: ${message(e)}`);
     });
     r.log(`${result.normalized.replacements.length} correction${result.normalized.replacements.length === 1 ? '' : 's'}: ${diffSummary(result.normalized).replace(/\n/g, '; ')}`);
@@ -640,18 +648,18 @@ async function transcribeCapture(
     io.stderr(`lexicon voice: the recording is kept at ${wav}\n`);
     return failed(r, EXIT_MISSING_TOOL, `${r.failure?.error ?? 'whisper-cli not found'} (audio kept at ${wav})`, r.failure?.nextStep);
   }
-  let lexicon: Lexicon;
+  let loaded: LoadedLexicon;
   try {
-    lexicon = await loadMerged(r, opts);
+    loaded = await loadForVoice(r, opts);
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
     return failed(r, EXIT_ERROR, `${message(e)} (audio kept at ${wav})`, 'fix the lexicon file (`lexicon doctor` names the problem), then transcribe the kept audio');
   }
   try {
     r.log('transcribing ...');
-    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
+    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli));
     await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
-    return await deliver(result, recordMs, seconds, opts, io, deps, r);
+    return await deliver(result, recordMs, seconds, opts, io, deps, r, loaded);
   } catch (e) {
     return transcribeFailed(r, io, e, wav);
   }
@@ -683,9 +691,9 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
   const noModel = refuseMissingModelPath(opts, io, r);
   if (noModel !== undefined) return noModel;
 
-  let lexicon: Lexicon;
+  let loaded: LoadedLexicon;
   try {
-    lexicon = await loadMerged(r, opts);
+    loaded = await loadForVoice(r, opts);
   } catch (e) {
     io.stderr(`lexicon voice: ${message(e)}\n`);
     return failed(r, EXIT_ERROR, message(e), 'fix the lexicon file (`lexicon doctor` names the problem), then run `lexicon voice` again');
@@ -742,9 +750,9 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
 
   try {
     r.log('transcribing ...');
-    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, lexicon, tools.whisperCli));
+    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli));
     await keepOrRemoveTranscribed(result, wav, io);
-    return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r);
+    return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r, loaded);
   } catch (e) {
     return transcribeFailed(r, io, e, wav);
   }

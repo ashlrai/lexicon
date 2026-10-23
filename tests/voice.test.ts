@@ -3,6 +3,23 @@ import { mkdirSync, promises as fs, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+/**
+ * A passthrough for util/bounded-read.ts that records every path it reads, so
+ * a test can count how often a lexicon file's bytes were read.
+ */
+const boundedReads = vi.hoisted(() => ({ paths: [] as string[] }));
+vi.mock('../src/util/bounded-read.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/util/bounded-read.js')>();
+  return {
+    ...real,
+    readBoundedRegularFile: (filePath: string, maxBytes: number) => {
+      boundedReads.paths.push(path.resolve(filePath));
+      return real.readBoundedRegularFile(filePath, maxBytes);
+    },
+  };
+});
+
+import { trustProject } from '../src/core/trust.js';
 import {
   formatDeviceList,
   parseArecordList,
@@ -940,6 +957,41 @@ describe('lexicon voice (foreground)', () => {
     };
     expect(hits.global).toEqual({ 'ashlr.ai': 1, kubernetes: 1 });
     expect(await fs.readFile(h.globalPath, 'utf8')).not.toMatch(/hits:/);
+  });
+
+  // Catches: deliver called recordHits without the load the corrections came
+  // from, so both lexicon files were read (and the project file parsed) again.
+  it('records hits from the load the corrections came from, reading each lexicon file once', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const repo = path.join(h.dir, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Kubernetes\n    aliases: ["cooper netties"]\n');
+    const reads = (file: string): number => boundedReads.paths.filter((p) => p === path.resolve(file)).length;
+    const hitsOf = async (): Promise<{ global?: Record<string, number>; projects?: Record<string, Record<string, number>> }> =>
+      JSON.parse(await fs.readFile(path.join(path.dirname(h.globalPath), 'hits.json'), 'utf8')) as {
+        global?: Record<string, number>;
+        projects?: Record<string, Record<string, number>>;
+      };
+
+    // Untrusted: the project file is never read, the global one once.
+    boundedReads.paths.length = 0;
+    expect(await runVoice({ ...h.opts, cwd: repo }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out.join('')).toContain('ping Ashlr.AI about the Kubernetes rollout');
+    expect(reads(h.globalPath)).toBe(1);
+    expect(reads(projectPath)).toBe(0);
+    expect((await hitsOf()).global).toEqual({ 'ashlr.ai': 1, kubernetes: 1 });
+
+    // Trusted: each file is read once, and the project's term is counted under it.
+    await trustProject(projectPath, { globalPath: h.globalPath });
+    boundedReads.paths.length = 0;
+    expect(await runVoice({ ...h.opts, cwd: repo }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(reads(h.globalPath)).toBe(1);
+    expect(reads(projectPath)).toBe(1);
+    const hits = await hitsOf();
+    expect(hits.global).toEqual({ 'ashlr.ai': 2, kubernetes: 1 });
+    expect(hits.projects?.[await fs.realpath(projectPath)]).toEqual({ kubernetes: 1 });
   });
 
   it('--no-history leaves history.jsonl alone', async () => {

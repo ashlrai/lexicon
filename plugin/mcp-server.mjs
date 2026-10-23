@@ -53928,6 +53928,12 @@ async function isTrusted(projectFile, opts = {}) {
   if (sha === void 0) return "untrusted";
   return sha === entry.sha256 ? "trusted" : "changed";
 }
+async function untrustedByPath(filePath, opts = {}) {
+  if (trustAllEnabled()) return false;
+  if (await isInsideGlobalConfig(filePath, opts)) return false;
+  const registry2 = await readTrustRegistry(opts);
+  return !registry2.trusted[await canonicalPath(filePath)];
+}
 function parsedContentHash(file2) {
   return recalledParsedHash(file2);
 }
@@ -54255,6 +54261,14 @@ function rememberProjectBytes(file2, read) {
   if (read.cached) rememberParsedHash(file2, read.cached.sha256);
   else rememberParsedBytes(file2, read.bytes);
 }
+async function projectFileExists(filePath) {
+  try {
+    await import_node_fs5.promises.stat(filePath);
+    return true;
+  } catch (err) {
+    return !isEnoent(err);
+  }
+}
 function projectFileOf(filePath, read) {
   if (read === void 0) return { file: { path: filePath, scope: "project", lexicon: emptyLexicon(), exists: false } };
   if (read.cached) {
@@ -54386,6 +54400,7 @@ async function refreshIndexCache(written, opts = {}) {
     const loaded = await loadLexicon({
       globalPath,
       cwd: import_node_path5.default.dirname(project),
+      parseSkipped: false,
       ...opts.env !== void 0 ? { env: opts.env } : {},
       ...opts.home !== void 0 ? { home: opts.home } : {}
     });
@@ -54655,6 +54670,10 @@ async function loadLexicon(opts = {}) {
   let fresh;
   let projectTrust;
   let read;
+  if (gateFirst && await untrustedByPath(paths.project, opts) && await projectFileExists(paths.project)) {
+    const probe = { path: paths.project, scope: "project", lexicon: emptyLexicon(), exists: true };
+    return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: "untrusted", skippedProject: probe };
+  }
   try {
     read = await readProjectBytes(paths.project, paths.global);
     if (gateFirst && read !== void 0) {

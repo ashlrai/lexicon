@@ -202,6 +202,22 @@ export async function isTrusted(projectFile: LexiconFile, opts: StoreOptions = {
 }
 
 /**
+ * True when an existing project file at `filePath` is 'untrusted' whatever its
+ * bytes are: `LEXICON_TRUST_ALL` is off, the file is not the global lexicon or
+ * directly in its directory, and the registry has no entry for its path. These
+ * are the checks `isTrusted` makes before it looks at the content, in the same
+ * order, so for an existing file `isTrusted` answers 'untrusted' exactly when
+ * this is true. When it is false the answer depends on the bytes (or there is
+ * nothing to decide), and only `isTrusted` on those bytes can give it.
+ */
+export async function untrustedByPath(filePath: string, opts: StoreOptions = {}): Promise<boolean> {
+  if (trustAllEnabled()) return false;
+  if (await isInsideGlobalConfig(filePath, opts)) return false;
+  const registry = await readTrustRegistry(opts);
+  return !registry.trusted[await canonicalPath(filePath)];
+}
+
+/**
  * The sha256 of the bytes `readLexiconFile` parsed for this object (project
  * scope), or undefined for an object it did not produce (a copy, a literal).
  * Pass it to `trustProject` as `expectedSha256` to pin exactly what a preview

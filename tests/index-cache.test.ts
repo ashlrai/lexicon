@@ -11,6 +11,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** Every canonical `parseLexicon` saw: `Injectedly` there means the changed project file was parsed. */
+const schemaParses = vi.hoisted(() => ({ canonicals: [] as string[] }));
+vi.mock('../src/core/schema.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/schema.js')>();
+  return {
+    ...real,
+    parseLexicon: (raw: unknown) => {
+      const terms = (raw as { terms?: unknown } | null)?.terms;
+      if (Array.isArray(terms)) {
+        for (const t of terms) if (typeof (t as { canonical?: unknown })?.canonical === 'string') schemaParses.canonicals.push((t as { canonical: string }).canonical);
+      }
+      return real.parseLexicon(raw);
+    },
+  };
+});
+
 import { loadCorpus, loadLexicon as loadBenchLexicon } from '../bench/lib.js';
 import { buildIndex, findReplacements } from '../src/core/matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from '../src/core/matcher/serialize.js';
@@ -562,6 +579,20 @@ describe('index cache after writes outside store.ts', () => {
 
     await uninstallRegistryPack('example/cardiology', undefined, opts);
     await expectHit('a stint for metropolol', 'a stint for metropolol');
+  });
+
+  // Catches: refreshIndexCache reloaded the merge the entry indexes with the
+  // default load, so a global write after that project file changed parsed it.
+  it('a global write does not parse the project file the entry indexes once it is no longer trusted', async () => {
+    await fs.appendFile(projectPath, '  - canonical: Injectedly\n    aliases: [injected lee]\n');
+    expect((await load()).projectTrust).toBe('changed');
+    schemaParses.canonicals.length = 0;
+    await addTerm({ canonical: 'Vercel', aliases: ['versel'] }, { cwd: tmp, globalPath, scope: 'global' });
+    expect(schemaParses.canonicals).toContain('Vercel');
+    expect(schemaParses.canonicals).not.toContain('Injectedly');
+    // The repo's prompt still leaves the changed file out.
+    const loaded = await load();
+    expect(normalizeWithIndex('deploy to versel with injected lee', await loadMatcherIndex(loaded)).output).toBe('deploy to Vercel with injected lee');
   });
 
   it('lexicon review --project', async () => {
