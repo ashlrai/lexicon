@@ -1526,6 +1526,29 @@ describe('runDoctorReport', () => {
       expect(report.nextStep).toBe('Run: lexicon setup');
     });
 
+    // Catches: with no global lexicon the failing check said `(run: lexicon
+    // init)` while nextStep said `Run: lexicon setup`, two different first
+    // steps in one report, and init leaves an empty file behind.
+    it('names lexicon setup in the missing-lexicon check and in nextStep alike', async () => {
+      vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: false });
+      const empty = await tempDir('lexicon-nohooks-');
+      const deps = {
+        platform: 'linux' as const,
+        env: { PATH: '/nonexistent' },
+        exec: () => '',
+        settingsPath: path.join(empty, 'settings.json'),
+        installedPluginsPath: path.join(empty, 'installed_plugins.json'),
+        home: empty,
+      };
+      const report = await runDoctorReport({}, deps);
+      expect(report.error).toBe(`global lexicon missing: ${state.globalPath} (run: lexicon setup)`);
+      expect(report.nextStep).toBe('Run: lexicon setup');
+      expect(JSON.stringify(report)).not.toContain('lexicon init');
+      const mcp = await runDoctorReport({ audience: 'mcp' }, deps);
+      expect(mcp.error).toBe(`global lexicon missing: ${state.globalPath} (call setup_lexicon; it previews first, apply: true once the user confirms)`);
+      expect(mcp.nextStep).toContain('call setup_lexicon');
+    });
+
     it('is not ready, and names the install command, when terms exist but nothing is wired up', async () => {
       // Point the settings probes at files that do not exist, so the machine
       // running the suite cannot make this look wired up.

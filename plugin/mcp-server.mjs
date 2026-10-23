@@ -62846,7 +62846,7 @@ function editCommand(scope) {
 function mcpCommandHint(commands) {
   const install = /^lexicon install (\S+) --apply$/.exec(commands);
   if (install) return `call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms`;
-  if (commands === "lexicon init") return "call setup_lexicon; it previews first, apply: true once the user confirms";
+  if (commands === "lexicon setup" || commands === "lexicon init") return "call setup_lexicon; it previews first, apply: true once the user confirms";
   if (commands === "lexicon trust") return 'call trust_project with action "trust", which asks the user directly';
   const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
   return `ask the user to run ${steps.join(", then ")}`;
@@ -62951,7 +62951,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("ok", `global lexicon parses: ${paths.global} (${plural2(g.lexicon.terms.length, "term")})`);
       files.push(g);
     } else {
-      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
+      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon setup)`);
     }
   } catch (err) {
     const error62 = errorMessage(err);
