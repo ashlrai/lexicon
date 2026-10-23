@@ -752,6 +752,18 @@ describe('runSuggest', () => {
     expect(prompter.closed).toBe(false);
   });
 
+  // Catches: an answer that is not a key re-asked `apply? [y/n/a/q]` with no
+  // word on what the keys do.
+  it('--apply reprints the keys when an answer is not one of them', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    const prompter = lenientPrompter(['?', 'x', 'q']);
+    expect(await runSuggest({ apply: true }, io, { ...store.deps, prompter })).toBe(0);
+    expect(prompter.asked).toHaveLength(3);
+    expect(io.out.split('[y]es  [n]o  [a]ll remaining  [q]uit  (Enter = y)')).toHaveLength(3);
+    expect(store.added).toEqual([]);
+  });
+
   // Catches: the stale removal dropped the project copy, printed "removed" and left the global copy correcting.
   it('--apply on a stale term with a project and a global copy removes the project one and names the global one', async () => {
     const globalLexicon = makeLexicon();

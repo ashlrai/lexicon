@@ -348,7 +348,7 @@ Dependency-free interactive helper over `node:readline`. No ANSI beyond bold/dim
   - A prompt whose input closes (EOF) rejects with `PromptClosedError`.
 - `createPrompter(io?: PrompterIO { input?; output? }): Prompter` (defaults to process stdin/stdout; readline is created lazily).
 - `isInteractive(): boolean` (`process.stdin.isTTY && process.stdout.isTTY`).
-- `askKey(prompter, question, keys: readonly string[], def?, onUnknown?: (answer: string) => void): Promise<string>` first character of the line, lower-cased, repeated until it is one of `keys`; empty line returns `def` when given; `onUnknown` runs with the trimmed answer before each re-ask (`review` and `harvest -i` reprint their key list with it).
+- `askKey(prompter, question, keys: readonly string[], def?, onUnknown?: (answer: string) => void): Promise<string>` first character of the line, lower-cased, repeated until it is one of `keys`; empty line returns `def` when given; `onUnknown` runs with the trimmed answer before each re-ask (`review`, `harvest -i` and `suggest --apply` reprint their key list with it).
 - `splitList(input): string[]` comma-separated, trimmed, empties dropped, case-insensitive dedupe (first spelling wins).
 - `PromptClosedError`. `styler` is imported from `./io.js`, not defined or re-exported here.
 

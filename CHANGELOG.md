@@ -53,6 +53,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon add -i` stops cleanly on ctrl-D. It threw `input closed before the prompt was answered` and exited 1, with no word on whether the term was written. It now prints `input closed before Ashlr.AI was saved; nothing was added` and exits 0, as `review` and `harvest -i` stop. Nothing is written until the last prompt is answered, so the lexicon file is untouched.
 - `lexicon review` words a removal as `lexicon remove` does. `d` printed `deleted Stale` and the summary `kept 3, deleted 1, edited 0`, while `lexicon remove` says `removed Stale from <path>` for the same outcome. `d` now prints `removed Stale from <path>` and the summary reads `kept 3, removed 1, edited 0`.
 - `lexicon harvest -i` and `lexicon review` name a next step. Both ended on their summary line with no word on what to do next. When the run added, merged, removed or edited terms they now end with `next: run lexicon list to see the terms`; a run that changed nothing still ends on the summary.
+- `lexicon suggest --apply` says what the keys do when an answer is not one of them. Typing `?` or a mistyped letter re-asked `apply? [y/n/a/q]` with no word. It now reprints `[y]es  [n]o  [a]ll remaining  [q]uit  (Enter = y)` (`Enter = n` on a stale-term removal), as `review` and `harvest -i` do.
 
 ## 0.5.6 (2026-10-18)
 
