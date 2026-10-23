@@ -381,7 +381,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
 
   const file = await pickFile(opts, cwd);
   if (!file.exists) {
-    line(io, dim(`no ${file.scope} lexicon at ${safe(file.path)}`));
+    // A first run of `lexicon review` landed here and was told only that
+    // there was nothing, with no way on.
+    const create = file.scope === 'global' ? 'lexicon setup' : 'lexicon init --project';
+    line(io, dim(`no ${file.scope} lexicon at ${safe(file.path)} yet; run ${create} to create one`));
     return 0;
   }
   if (file.scope === 'project') {
@@ -405,7 +408,19 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || t.category === category),
   );
   if (subject.length === 0) {
-    line(io, dim(`no terms to review in ${safe(file.path)}`));
+    // Which of the two it is, as `lexicon list` says it: an empty file wants
+    // a term, a filter that matched none wants the filter dropped.
+    const filters = [...(opts.neverHit ? ['--never-hit'] : []), ...(category !== undefined ? [`--category ${category}`] : [])];
+    const total = file.lexicon.terms.length;
+    line(
+      io,
+      dim(
+        total === 0 || filters.length === 0
+          ? `no terms to review in ${safe(file.path)} yet. Try: lexicon add "Ashlr.AI" Ashler`
+          : `no terms to review in ${safe(file.path)}: ${plural(total, 'term')} there, none matching ${filters.join(' ')} ` +
+              `(run lexicon review without ${filters.length === 1 ? 'it' : 'them'} to see them)`,
+      ),
+    );
     return 0;
   }
 

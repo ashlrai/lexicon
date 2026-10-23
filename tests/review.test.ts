@@ -444,6 +444,25 @@ describe('review', () => {
     expect((await readYaml(globalPath)).terms).toHaveLength(4);
   });
 
+  // Catches: a first `lexicon review` said only `no global lexicon at <path>`,
+  // and an empty file and a filter that matched none both said `no terms to
+  // review`, none of them naming a way on (`lexicon list` names one for each).
+  it('a missing lexicon, an empty one and a filter that matches none each name the next step', async () => {
+    const missing = makeIO();
+    expect(await runReview({ globalPath }, missing, scripted([]))).toBe(0);
+    expect(missing.out).toContain(`no global lexicon at ${globalPath} yet; run lexicon setup to create one`);
+
+    await seedGlobal([]);
+    const empty = makeIO();
+    expect(await runReview({ globalPath, neverHit: true }, empty, scripted([]))).toBe(0);
+    expect(empty.out).toContain(`no terms to review in ${globalPath} yet. Try: lexicon add "Ashlr.AI" Ashler`);
+
+    await seedGlobal(terms);
+    const miss = makeIO();
+    expect(await runReview({ globalPath, category: 'place' }, miss, scripted([]))).toBe(0);
+    expect(miss.out).toContain(`no terms to review in ${globalPath}: 4 terms there, none matching --category place (run lexicon review without it to see them)`);
+  });
+
   // Catches: `?` or a mistyped key re-asked `[k/d/e/p/n/q]` with no word
   // on what the letters do; the one line naming them had scrolled away.
   it('an answer that is not a key prints what each key does, in review and harvest -i', async () => {
