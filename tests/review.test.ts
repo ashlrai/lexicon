@@ -150,6 +150,10 @@ describe('harvest --interactive', () => {
     expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, none, closingAfter([]))).toBe(0);
     expect(none.out).toContain('input closed at candidate 1 of 3; nothing was added');
     expect(none.out).toContain('added 0 new terms, merged 0, skipped 3');
+    // Catches: the summary ended the run with no next step. One is named only
+    // when something was added.
+    expect(io.out).toContain('next: run lexicon list to see the terms');
+    expect(none.out).not.toContain('next:');
   });
 
   it('c changes the category and a adds every remaining candidate without asking', async () => {
@@ -386,6 +390,8 @@ describe('review', () => {
     expect(io.out).toContain(`removed Stale from ${globalPath}`);
     expect(io.out).toContain(`kept 3, removed 1, edited 3. Wrote ${globalPath}`);
     expect(io.out).not.toContain('deleted');
+    // Catches: the summary ended the run with no next step.
+    expect(io.out).toContain('next: run lexicon list to see the terms');
   });
 
   it('merges hits and terms written elsewhere while the review was running instead of overwriting them', async () => {
@@ -512,6 +518,7 @@ describe('review', () => {
     const all = makeIO();
     expect(await runReview({ globalPath }, all, scripted(['k', 'k', 'k']))).toBe(0);
     expect(all.out).toContain('kept 3, removed 0, edited 0 (nothing written)');
+    expect(all.out).not.toContain('next:');
   });
 
   it('--project reviews the project file, refuses it when untrusted, and re-pins trust after a write', async () => {

@@ -69,6 +69,9 @@ function storeOpts(opts: InteractiveOptions, cwd: string): { cwd: string; global
 
 export type HarvestInteractiveOptions = InteractiveOptions;
 
+/** The next step after `harvest -i` or `review` changed the lexicon. */
+const NEXT_LIST = 'next: run lexicon list to see the terms';
+
 const HARVEST_KEYS = ['y', 'n', 'e', 'c', 'a', 'q'] as const;
 const HARVEST_HELP = '[y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit';
 
@@ -233,6 +236,8 @@ export async function runHarvestInteractive(
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
   if (filePath) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
+  // One way on, and only when there is something new to look at.
+  if (created + merged > 0) line(io, dim(NEXT_LIST));
   return 0;
 }
 
@@ -563,6 +568,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   // after `q` on term 2 of 40 said nothing of the other 39.
   const rest = notReviewed > 0 ? `, ${notReviewed} not reviewed (left as they were)` : '';
   line(io, `kept ${kept}, removed ${deleted.size}, edited ${edited}${rest}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  if (changed) line(io, dim(NEXT_LIST));
   return 0;
 }
 
