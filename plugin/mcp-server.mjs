@@ -62332,6 +62332,9 @@ async function applyToml(target) {
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
+function undoEntry(target) {
+  return target.format === "toml" ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}` : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
+}
 function printExportHint(io, step, client) {
   line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
   line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
@@ -62450,6 +62453,7 @@ async function installText(client, opts, io, deps) {
     } else {
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
+    line(io, dim(`   undo: ${undoEntry(target)}`));
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
@@ -62504,10 +62508,12 @@ async function runInstallClaude(opts, io, deps = {}) {
     try {
       const out = exec("claude", mcpArgs).trim();
       line(io, green(`   ${out || "registered"}`));
+      line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
         line(io, dim("   already registered with claude, nothing changed"));
+        line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
         line(io, red(`   failed: ${safeLines(message)}`));
@@ -62540,6 +62546,7 @@ async function runInstallClaude(opts, io, deps = {}) {
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, "unchanged");
     }
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(" and ")} in ${safe(settingsPath)}`));
   }
   line(io);
   line(io, bold("3. Add to your CLAUDE.md"));

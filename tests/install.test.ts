@@ -105,6 +105,8 @@ describe('lexicon install <json client> --apply', () => {
         const first = await run(c.client, { apply: true });
         expect(first.code).toBe(0);
         expect(first.io.out).toContain(`created ${file}`);
+        // Catches: the write named its file but not how to take the entry out again.
+        expect(first.io.out).toContain(`undo: delete the "lexicon" entry under "${c.key}" in ${file}`);
         expect(first.io.out).toContain('lexicon export claude-md');
         expect(first.io.out).toContain(c.rulesHint);
 
@@ -156,6 +158,7 @@ describe('lexicon install <json client> --apply', () => {
         expect(io.out).toContain('would merge into');
         expect(io.out).toContain(file);
         expect(io.out).toContain('--apply');
+        expect(io.out).not.toContain('undo:');
         await expect(fs.access(file)).rejects.toThrow();
       });
 
@@ -234,6 +237,7 @@ describe('lexicon install codex --apply (TOML)', () => {
     const first = await run('codex', { apply: true });
     expect(first.code).toBe(0);
     expect(first.io.out).toContain(`created ${file}`);
+    expect(first.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table from ${file}`);
     expect(first.io.out).toContain('AGENTS.md');
     expect(await fs.readFile(file, 'utf8')).toBe(`${block}\n`);
 
@@ -604,6 +608,11 @@ describe('claude registration is idempotent', () => {
     expect(code).toBe(0);
     expect(io.out).toContain('already registered with claude, nothing changed');
     expect(io.out).not.toContain('failed:');
+    // Catches: neither step said how to take lexicon back out of Claude Code.
+    expect(io.out).toContain('undo: claude mcp remove --scope user lexicon');
+    expect(io.out).toContain(
+      `undo: delete the lexicon hook entries under hooks.UserPromptSubmit and hooks.SessionStart in ${path.join(home, '.claude', 'settings.json')}`,
+    );
   });
 
   it('still fails, with the reason, for a real error', async () => {

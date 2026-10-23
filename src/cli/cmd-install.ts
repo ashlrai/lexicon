@@ -517,6 +517,13 @@ function jsonSnippet(key: 'mcpServers' | 'servers', entry: StdioServerEntry | Vs
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
 
+/** How to take the lexicon entry back out of a client's config file by hand. */
+function undoEntry(target: InstallTarget): string {
+  return target.format === 'toml'
+    ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}`
+    : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
+}
+
 function printExportHint(io: IO, step: number, client: InstallClient): void {
   line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
   line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
@@ -687,6 +694,9 @@ async function installText(
     } else {
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
+    // The write named its file but not the way back; the rest of the file is
+    // the user's, so the undo is the one entry, not the file.
+    line(io, dim(`   undo: ${undoEntry(target)}`));
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== undefined) line(io, dim(`   note: ${caveat}`));
@@ -810,6 +820,7 @@ export async function runInstallClaude(
     try {
       const out = exec('claude', mcpArgs).trim();
       line(io, green(`   ${out || 'registered'}`));
+      line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
@@ -817,6 +828,7 @@ export async function runInstallClaude(
         // idempotent case, not a failure: every other writer here reports "already
         // present, nothing changed" and carries on, so this one does too.
         line(io, dim('   already registered with claude, nothing changed'));
+        line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
         line(io, red(`   failed: ${safeLines(message)}`));
@@ -852,6 +864,7 @@ export async function runInstallClaude(
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, 'unchanged');
     }
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safe(settingsPath)}`));
   }
   line(io);
 
