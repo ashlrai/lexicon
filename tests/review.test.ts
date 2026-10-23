@@ -465,6 +465,15 @@ describe('review', () => {
     expect((await readYaml(globalPath)).terms).toHaveLength(4);
   });
 
+  // Catches: `review --project` with no project file said `run: lexicon init
+  // --project`, which makes an empty file that review then has nothing in.
+  it('--project with no project file names a step that gives review terms', async () => {
+    await expect(runReview({ cwd: repo, project: true, globalPath }, makeIO(), scripted([]))).rejects.toThrow(
+      `no project lexicon found for ${repo}, so nothing to review yet ` +
+        '(run: lexicon harvest -i to pull names from this repo, or lexicon add "Ashlr.AI" Ashler --project)',
+    );
+  });
+
   // Catches: a first `lexicon review` said only `no global lexicon at <path>`,
   // and an empty file and a filter that matched none both said `no terms to
   // review`, none of them naming a way on (`lexicon list` names one for each).

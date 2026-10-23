@@ -358,6 +358,9 @@ export function reconcileReview(
   return { terms, changes };
 }
 
+/** What creates a project lexicon with terms in it, for review to walk. */
+const PROJECT_FIRST_STEP = 'lexicon harvest -i to pull names from this repo, or lexicon add "Ashlr.AI" Ashler --project';
+
 /**
  * Pick the file a review/edit targets. Global by default; `--project` picks the
  * project file found for cwd (an error when there is none).
@@ -369,7 +372,11 @@ async function pickFile(
   if (opts.project && opts.global) throw new Error('--project and --global are mutually exclusive');
   const paths = resolvePaths(storeOpts(opts, cwd));
   if (opts.project) {
-    if (!paths.project) throw new Error(`no project lexicon found for ${cwd} (run: lexicon init --project)`);
+    // `lexicon init --project` makes an empty file, which review then calls
+    // empty: name a step that gives it terms to review.
+    if (!paths.project) {
+      throw new Error(`no project lexicon found for ${cwd}, so nothing to review yet (run: ${PROJECT_FIRST_STEP})`);
+    }
     return readLexiconFile(paths.project, 'project');
   }
   return readLexiconFile(paths.global, 'global');
@@ -388,7 +395,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   if (!file.exists) {
     // A first run of `lexicon review` landed here and was told only that
     // there was nothing, with no way on.
-    const create = file.scope === 'global' ? 'lexicon setup' : 'lexicon init --project';
+    const create = file.scope === 'global' ? 'lexicon setup' : PROJECT_FIRST_STEP;
     line(io, dim(`no ${file.scope} lexicon at ${safe(file.path)} yet; run ${create} to create one`));
     return 0;
   }

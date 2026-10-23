@@ -54,6 +54,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon review` words a removal as `lexicon remove` does. `d` printed `deleted Stale` and the summary `kept 3, deleted 1, edited 0`, while `lexicon remove` says `removed Stale from <path>` for the same outcome. `d` now prints `removed Stale from <path>` and the summary reads `kept 3, removed 1, edited 0`.
 - `lexicon harvest -i` and `lexicon review` name a next step. Both ended on their summary line with no word on what to do next. When the run added, merged, removed or edited terms they now end with `next: run lexicon list to see the terms`; a run that changed nothing still ends on the summary.
 - `lexicon suggest --apply` says what the keys do when an answer is not one of them. Typing `?` or a mistyped letter re-asked `apply? [y/n/a/q]` with no word. It now reprints `[y]es  [n]o  [a]ll remaining  [q]uit  (Enter = y)` (`Enter = n` on a stale-term removal), as `review` and `harvest -i` do.
+- `lexicon review --project` with no project lexicon names a step that gives it something to review. It said `(run: lexicon init --project)`, which creates an empty file, so the next `review --project` said there were no terms to review. It now says `no project lexicon found for <dir>, so nothing to review yet (run: lexicon harvest -i to pull names from this repo, or lexicon add "Ashlr.AI" Ashler --project)`. `lexicon edit --project` still names `lexicon init --project`, since it opens that file in the editor.
 
 ## 0.5.6 (2026-10-18)
 
