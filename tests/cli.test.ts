@@ -2215,6 +2215,23 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(JSON.parse(project.stdout)).toEqual({ ok: true, scope: 'project', path: path.join(repo, '.lexicon.yaml'), created: true, trust: 'trusted' });
       // Without --json the text is unchanged.
       expect(lexicon(['init', '--cwd', repo], globalPath).stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
+
+      // Catches: init --project on an existing file that changed since it was
+      // trusted (or was never trusted) said only "already exists", though its
+      // terms are not used until it is trusted.
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      expect(lexicon(['init', '--project', '--cwd', repo], globalPath).stdout).toBe(`project lexicon already exists: ${projectPath}\n`);
+      await fs.appendFile(projectPath, '# hand edit\n');
+      const step = 'it has changed since it was trusted, so its terms are not used; review it and run: lexicon trust';
+      expect(lexicon(['init', '--project', '--cwd', repo], globalPath).stdout).toBe(`project lexicon already exists: ${projectPath}\n${step}\n`);
+      expect(JSON.parse(lexicon(['init', '--project', '--json', '--cwd', repo], globalPath).stdout)).toEqual({
+        ok: true,
+        scope: 'project',
+        path: projectPath,
+        created: false,
+        trust: 'changed',
+        nextStep: step,
+      });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

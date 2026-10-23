@@ -248,16 +248,26 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   const created = await createLexiconFile(target, scope);
   // The user asked for this file; that is the approval `lexicon trust` records.
   if (created && scope === 'project') await trustProject(target, { cwd });
+  // `trust` for a project file only: an existing one may be untrusted, which
+  // is what decides whether its terms are merged.
+  const trust = scope === 'project' ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : undefined;
+  // An existing project file init did not create may be one the user never
+  // reviewed (a cloned repo's) or edited since: its terms are not used until
+  // it is trusted, which "already exists" alone did not say.
+  const untrustedStep =
+    trust !== undefined && trust !== 'trusted'
+      ? `${trust === 'changed' ? 'it has changed since it was trusted' : 'it is not trusted yet'}, so its terms are not used; review it and run: lexicon trust`
+      : undefined;
   if (opts.json) {
-    // `trust` for a project file only: an existing one may be untrusted, which
-    // is what decides whether its terms are merged.
-    const trust =
-      scope === 'project' ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
-    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    line(
+      io,
+      JSON.stringify(jsonOk({ scope, path: target, created, ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) }), null, 2),
+    );
     return 0;
   }
   if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    if (untrustedStep) line(io, dim(untrustedStep));
     return 0;
   }
   line(io, `created ${scope} lexicon: ${safe(target)}`);

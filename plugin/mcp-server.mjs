@@ -63308,13 +63308,18 @@ async function runInit(opts, io) {
   const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await createLexiconFile(target, scope);
   if (created && scope === "project") await trustProject(target, { cwd });
+  const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
+  const untrustedStep = trust !== void 0 && trust !== "trusted" ? `${trust === "changed" ? "it has changed since it was trusted" : "it is not trusted yet"}, so its terms are not used; review it and run: lexicon trust` : void 0;
   if (opts.json) {
-    const trust = scope === "project" ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
-    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    line(
+      io,
+      JSON.stringify(jsonOk({ scope, path: target, created, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }), null, 2)
+    );
     return 0;
   }
   if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    if (untrustedStep) line(io, dim(untrustedStep));
     return 0;
   }
   line(io, `created ${scope} lexicon: ${safe(target)}`);
