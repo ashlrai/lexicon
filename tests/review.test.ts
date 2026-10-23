@@ -10,7 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest } from '../src/cli/commands.js';
-import { askKey, splitList } from '../src/cli/prompt.js';
+import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
 import { addTerm, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
@@ -62,6 +62,23 @@ function candidate(canonical: string, extra: Partial<HarvestCandidate> = {}): Ha
     count: 3,
     suggestedAliases: [`${canonical} x`, `${canonical}y`],
     ...extra,
+  };
+}
+
+/** A scripted prompter whose input closes (ctrl-D) once `answers` run out, as createPrompter's does. */
+function closingAfter(answers: string[]): Prompter {
+  const inner = scripted(answers);
+  let left = answers.length;
+  const gate = <T>(answer: () => Promise<T>): Promise<T> => {
+    if (left === 0) return Promise.reject(new PromptClosedError());
+    left -= 1;
+    return answer();
+  };
+  return {
+    ask: (question, opts) => gate(() => inner.ask(question, opts)),
+    confirm: (question, def) => gate(() => inner.confirm(question, def)),
+    choose: (question, choices, opts) => gate(() => inner.choose(question, choices, opts)),
+    close: () => inner.close(),
   };
 }
 
@@ -408,6 +425,27 @@ describe('review', () => {
     expect(io2.out).toContain('1 term in');
     expect(io2.out).toContain('[1/1] Mason Wyatt');
     expect((await readYaml(globalPath)).terms).toHaveLength(4);
+  });
+
+  // Catches: `q` on term 2 of 4 reported `kept 1, deleted 0, edited 0`, no
+  // word on the two terms never shown; and ctrl-D threw `input closed before
+  // the prompt was answered`, exit 1, losing the deletion already made with
+  // no word on what was kept.
+  it('q and ctrl-D say how many terms were not reviewed, and ctrl-D keeps the answers given', async () => {
+    await seedGlobal(terms);
+    const quit = makeIO();
+    expect(await runReview({ globalPath }, quit, scripted(['k', 'q']))).toBe(0);
+    expect(quit.out).toContain('kept 1, deleted 0, edited 0, 3 not reviewed (left as they were) (nothing written)');
+
+    const io = makeIO();
+    expect(await runReview({ globalPath }, io, closingAfter(['k', 'd']))).toBe(0);
+    expect(io.out).toContain('input closed at term 3 of 4; keeping the answers given before it');
+    expect(io.out).toContain(`kept 1, deleted 1, edited 0, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+    expect((await readYaml(globalPath)).terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt', 'Keeper']);
+
+    const all = makeIO();
+    expect(await runReview({ globalPath }, all, scripted(['k', 'k', 'k']))).toBe(0);
+    expect(all.out).toContain('kept 3, deleted 0, edited 0 (nothing written)');
   });
 
   it('--project reviews the project file, refuses it when untrusted, and re-pins trust after a write', async () => {

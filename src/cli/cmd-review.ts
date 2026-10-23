@@ -26,7 +26,7 @@ import {
   writeLexiconFile,
 } from '../core/index.js';
 import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
-import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
+import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
 import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
@@ -389,11 +389,15 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   let edited = 0;
   let kept = 0;
   let changed = false;
+  /** Index of the first term with no answer: `q` there, or the prompt ctrl-D closed. */
+  let stoppedAt = subject.length;
+  let inputClosed = false;
 
   try {
     line(io, `${bold(`${plural(subject.length, 'term')} in ${safe(file.path)}`)} ${dim(REVIEW_HELP)}`);
     line(io);
     for (let i = 0; i < subject.length; i += 1) {
+      stoppedAt = i;
       const t = subject[i];
       showTerm(io, t, i, subject.length, effectiveHits(t, hits));
       let decided = false;
@@ -459,10 +463,19 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       }
       line(io);
       if (quit) break;
+      stoppedAt = i + 1;
     }
+  } catch (err) {
+    // ctrl-D (or a closed pipe) is a quit: the answers already given stand,
+    // as they do in `harvest -i`, where each one is written as it is given.
+    // Rethrown, the review lost every deletion and edit with no word on it.
+    if (!(err instanceof PromptClosedError)) throw err;
+    inputClosed = true;
+    line(io);
   } finally {
     if (own) p.close();
   }
+  const notReviewed = subject.length - stoppedAt;
 
   let mergedElsewhere = 0;
   if (changed) {
@@ -501,8 +514,12 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       await refreshIndexCache(file, store);
     }
   }
+  if (inputClosed) line(io, `input closed at term ${stoppedAt + 1} of ${subject.length}; keeping the answers given before it`);
   if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
-  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  // A quit used to report only the terms answered, so "kept 1, deleted 0"
+  // after `q` on term 2 of 40 said nothing of the other 39.
+  const rest = notReviewed > 0 ? `, ${notReviewed} not reviewed (left as they were)` : '';
+  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${rest}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
   return 0;
 }
 
