@@ -149,7 +149,7 @@ export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorL
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
 import { runHarvestInteractive } from './cmd-review.js';
-import { createPrompter, isInteractive, splitList } from './prompt.js';
+import { PromptClosedError, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
 
@@ -304,6 +304,17 @@ export interface AddOptions extends CommonOptions {
   globalPath?: string;
 }
 
+/**
+ * ctrl-D during `add -i` is a cancel: nothing has been written yet, so say so
+ * and exit 0, as `review` and `harvest -i` stop. Any other error is rethrown.
+ */
+function addInputClosed(err: unknown, canonical: string, io: IO): number {
+  if (!(err instanceof PromptClosedError)) throw err;
+  line(io);
+  line(io, `input closed before ${safe(canonical)} was saved; nothing was added`);
+  return 0;
+}
+
 export async function runAdd(
   canonical: string,
   aliasArgs: readonly string[],
@@ -339,21 +350,26 @@ export async function runAdd(
     });
     if (p && aliasArgs.length === 0) {
       // Interactive: the suggestions are a checklist, not a fait accompli.
-      const kept =
-        suggested.length > 0
-          ? await p.choose(
-              `aliases for ${trimmed} (what STT is likely to write)`,
-              suggested.map((s) => ({ label: s, value: s })),
-              { multi: true },
-            )
-          : [];
-      const extra = splitList(await p.ask('more aliases (comma-separated, Enter for none)')).filter((a) => {
-        const key = a.toLowerCase();
-        if (key === trimmed.toLowerCase() || kept.some((k) => k.toLowerCase() === key)) return false;
-        return true;
-      });
-      suggested = kept;
-      aliases.push(...kept, ...extra);
+      try {
+        const kept =
+          suggested.length > 0
+            ? await p.choose(
+                `aliases for ${trimmed} (what STT is likely to write)`,
+                suggested.map((s) => ({ label: s, value: s })),
+                { multi: true },
+              )
+            : [];
+        const extra = splitList(await p.ask('more aliases (comma-separated, Enter for none)')).filter((a) => {
+          const key = a.toLowerCase();
+          if (key === trimmed.toLowerCase() || kept.some((k) => k.toLowerCase() === key)) return false;
+          return true;
+        });
+        suggested = kept;
+        aliases.push(...kept, ...extra);
+      } catch (err) {
+        if (ownPrompter) p.close();
+        return addInputClosed(err, trimmed, io);
+      }
     } else if (!fallbackOnly) {
       aliases.push(...suggested);
     }
@@ -376,6 +392,8 @@ export async function runAdd(
         }
         io.stderr(`lexicon: unknown category "${answer}"\n`);
       }
+    } catch (err) {
+      return addInputClosed(err, trimmed, io);
     } finally {
       if (ownPrompter) p.close();
     }

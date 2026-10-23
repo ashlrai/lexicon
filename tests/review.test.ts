@@ -333,6 +333,18 @@ describe('add --interactive', () => {
     expect(written.terms[0].phonetic).toBeUndefined();
   });
 
+  // Catches: ctrl-D threw `input closed before the prompt was answered`
+  // (exit 1) with no word that nothing was added.
+  it('ctrl-D at any prompt stops cleanly and says nothing was added', async () => {
+    for (const answers of [[], [[1]], [[1], ''], [[1], '', 'ASH-ler']] as Parameters<typeof scripted>[0][]) {
+      const io = makeIO();
+      expect(await runAdd('Ashlr.AI', [], { interactive: true, globalPath }, io, closingAfter(answers))).toBe(0);
+      expect(io.out).toContain('input closed before Ashlr.AI was saved; nothing was added');
+      expect(io.out).not.toContain('created');
+      await expect(fs.access(globalPath)).rejects.toThrow();
+    }
+  });
+
   it('errors without a terminal or a prompter', async () => {
     await expect(runAdd('X', [], { interactive: true, globalPath }, makeIO())).rejects.toThrow(/needs a terminal/);
   });
