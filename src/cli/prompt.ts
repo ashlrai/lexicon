@@ -67,19 +67,23 @@ export function splitList(input: string): string[] {
 /**
  * Ask for a single-key answer from `keys` (first character of the line,
  * case-insensitive). Repeats until a listed key is given; an empty line
- * returns `def` when provided.
+ * returns `def` when provided. `onUnknown` runs with the trimmed answer
+ * before each re-ask, so a caller can say what the keys do: a bare re-ask
+ * after `?` or a mistyped key left the user guessing.
  */
 export async function askKey(
   prompter: Prompter,
   question: string,
   keys: readonly string[],
   def?: string,
+  onUnknown?: (answer: string) => void,
 ): Promise<string> {
   for (;;) {
     const raw = (await prompter.ask(question)).trim().toLowerCase();
     if (raw === '' && def !== undefined) return def;
     const key = raw.charAt(0);
     if (key && keys.includes(key)) return key;
+    onUnknown?.(raw);
   }
 }
 

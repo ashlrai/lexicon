@@ -444,6 +444,21 @@ describe('review', () => {
     expect((await readYaml(globalPath)).terms).toHaveLength(4);
   });
 
+  // Catches: `?` or a mistyped key re-asked `[k/d/e/p/n/q]` with no word
+  // on what the letters do; the one line naming them had scrolled away.
+  it('an answer that is not a key prints what each key does, in review and harvest -i', async () => {
+    await seedGlobal(terms);
+    const io = makeIO();
+    expect(await runReview({ globalPath, category: 'person' }, io, scripted(['?', 'x', 'k']))).toBe(0);
+    const help = '  [k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]uit  (Enter = k)';
+    expect(io.out.split('\n').filter((l) => l === help)).toHaveLength(2);
+    expect(io.out).toContain('kept 1, deleted 0, edited 0 (nothing written)');
+
+    const h = makeIO();
+    expect(await runHarvestInteractive([candidate('Alpha')], { cwd: repo, globalPath }, h, scripted(['h', 'n']))).toBe(0);
+    expect(h.out).toContain('  [y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit  (Enter = y)\n');
+  });
+
   // Catches: `q` on term 2 of 4 reported `kept 1, deleted 0, edited 0`, no
   // word on the two terms never shown; and ctrl-D threw `input closed before
   // the prompt was answered`, exit 1, losing the deletion already made with

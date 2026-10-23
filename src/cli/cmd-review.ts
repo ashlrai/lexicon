@@ -45,6 +45,14 @@ async function askCategory(prompter: Prompter, def: TermCategory): Promise<TermC
   }
 }
 
+/**
+ * What a walk prints for an answer that is not one of its keys: the key list
+ * again, since the one line naming them scrolled away terms ago.
+ */
+function keyHelp(io: IO, help: string, def: string): (answer: string) => void {
+  return () => line(io, `  ${dim(`${help}  (Enter = ${def})`)}`);
+}
+
 /** Options every interactive handler shares. `globalPath` is a test hook (no CLI flag). */
 export interface InteractiveOptions extends CommonOptions {
   /** Explicit global lexicon path; overrides $LEXICON_PATH (tests). */
@@ -168,7 +176,7 @@ export async function runHarvestInteractive(
       showCandidate(io, c, i, work.length);
       let decided = false;
       while (!decided) {
-        const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y');
+        const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y', keyHelp(io, HARVEST_HELP, 'y'));
         switch (key) {
           case 'y':
             if (!(await add(c))) return 1;
@@ -422,7 +430,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       let decided = false;
       let quit = false;
       while (!decided) {
-        const key = await askKey(p, `  ${dim('[k/d/e/p/n/q]')}`, REVIEW_KEYS, 'k');
+        const key = await askKey(p, `  ${dim('[k/d/e/p/n/q]')}`, REVIEW_KEYS, 'k', keyHelp(io, REVIEW_HELP, 'k'));
         switch (key) {
           case 'k':
             kept += 1;
