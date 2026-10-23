@@ -91,6 +91,7 @@ import type {
   HarvestCandidate,
   HarvestOptions,
   LexiconFile,
+  LoadedLexicon,
   NormalizeOptions,
   RemoveAliasResult,
   Term,
@@ -987,6 +988,27 @@ function exportFormatNextStep(): string {
   return `run: lexicon export <format>, with one of: ${EXPORT_FORMATS.join(', ')} (lexicon export with no format describes each)`;
 }
 
+/**
+ * Why an export holds no terms, ending in the step that fixes it, or undefined
+ * when it holds some. The CLI form of MCP export_lexicon's note.
+ */
+export function emptyExportNote(
+  loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>,
+  categories: readonly string[] | undefined,
+  exported: number,
+): string | undefined {
+  if (exported > 0) return undefined;
+  if (loaded.merged.terms.length === 0) {
+    return loaded.skippedProject
+      ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
+      : 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
+  }
+  if (categories !== undefined && categories.length > 0) {
+    return `No term matched --category ${categories.join(' ')}, so the export is empty; lexicon list shows each term's category.`;
+  }
+  return undefined;
+}
+
 export async function runExport(requested: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
   const json = opts.json === true;
   if (requested === undefined) {
@@ -1037,18 +1059,24 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   // The terms actually exported: the same category filter and cap exportLexicon applies.
   const terms = selectExportTerms(merged, exportOpts).length;
   const bytes = Buffer.byteLength(text, 'utf8');
+  // An empty export read as a complete one: no word on stderr or under --json,
+  // where MCP export_lexicon says why in a note. stderr only, as above.
+  const empty = emptyExportNote(loaded, exportOpts.categories, terms);
+  if (empty) io.stderr(`lexicon: ${safe(empty.charAt(0).toLowerCase() + empty.slice(1))}\n`);
+  const skipped = skippedProjectJson(loaded, 'Its terms are not in the export.');
+  const notes = { ...skipped, ...(empty || skipped.note ? { note: [empty, skipped.note].filter(Boolean).join(' ') } : {}) };
 
   if (opts.out) {
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, text, 'utf8');
     if (json) {
-      line(io, JSON.stringify(jsonOk({ format, terms, bytes, path: outPath, ...skippedProjectJson(loaded, 'Its terms are not in the export.') }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, bytes, path: outPath, ...notes }), null, 2));
     } else {
       line(io, `wrote ${format} export (${plural(terms, 'term')}) to ${safe(outPath)}`);
     }
   } else if (json) {
-    line(io, JSON.stringify(jsonOk({ format, terms, bytes, content: text, ...skippedProjectJson(loaded, 'Its terms are not in the export.') }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, bytes, content: text, ...notes }), null, 2));
   } else {
     io.stdout(text);
   }

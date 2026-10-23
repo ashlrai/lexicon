@@ -870,6 +870,39 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  // Catches: an empty export (no terms yet, or --category matching none) came
+  // out with no word on stderr or under --json, read as a complete export,
+  // while MCP export_lexicon says why in a note.
+  it('says why an export is empty and what to run, on stderr and as the --json note', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: false } });
+    const none = makeIO();
+    expect(await runExport('wispr', {}, none)).toBe(0);
+    expect(none.out).toBe('export:wispr\n');
+    expect(none.err).toBe(
+      'lexicon: the lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.\n',
+    );
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: false } });
+    const noneJson = makeIO();
+    expect(await runExport('csv', { json: true }, noneJson)).toBe(0);
+    expect(JSON.parse(noneJson.out)).toMatchObject({
+      ok: true,
+      terms: 0,
+      note: 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
+    });
+    const unmatched = makeIO();
+    expect(await runExport('csv', { json: true, category: ['product'] }, unmatched)).toBe(0);
+    expect(JSON.parse(unmatched.out)).toMatchObject({
+      terms: 0,
+      note: "No term matched --category product, so the export is empty; lexicon list shows each term's category.",
+    });
+    expect(unmatched.err).toContain('lexicon: no term matched --category product, so the export is empty');
+    const some = makeIO();
+    expect(await runExport('csv', { json: true }, some)).toBe(0);
+    expect(JSON.parse(some.out)).not.toHaveProperty('note');
+    expect(some.err).toBe('');
+  });
+
   it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
     const dir = await tempDir('lexicon-cli-');
     try {
