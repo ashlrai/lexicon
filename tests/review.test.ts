@@ -66,7 +66,7 @@ function candidate(canonical: string, extra: Partial<HarvestCandidate> = {}): Ha
 }
 
 /** A scripted prompter whose input closes (ctrl-D) once `answers` run out, as createPrompter's does. */
-function closingAfter(answers: string[]): Prompter {
+function closingAfter(answers: Parameters<typeof scripted>[0]): Prompter {
   const inner = scripted(answers);
   let left = answers.length;
   const gate = <T>(answer: () => Promise<T>): Promise<T> => {
