@@ -50,6 +50,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     const output = text.replace(re, 'Ashlr.AI');
     return { input: text, output, replacements, changed: output !== text };
   };
+  const harvestRepo = vi.fn(async () => []);
   return {
     ...actual,
     normalize: vi.fn(normalize),
@@ -83,7 +84,9 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     }),
     isProjectTrustError: actual.isProjectTrustError,
     findTerm: vi.fn(),
-    harvestRepo: vi.fn(async () => []),
+    harvestRepo,
+    // runHarvest reads the report; the candidates still come from the harvestRepo mock.
+    harvestReport: async (...args: unknown[]) => ({ candidates: await (harvestRepo as (...a: unknown[]) => Promise<unknown>)(...args), truncated: false, filesScanned: 0, belowMinCount: 0, symbolsOnly: 0 }),
     exportLexicon: vi.fn((_l: Lexicon, format: string) => `export:${format}`),
     exportLexiconWithNotes: vi.fn((_l: Lexicon, format: string) => ({
       text: `export:${format}`,
@@ -561,7 +564,7 @@ describe('add / remove / path', () => {
     // remove call; the CLI's JSON had the conflicts and no way out.
     expect(JSON.parse(json.out).note).toBe(
       '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
-        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+        'if the user agrees, drop it with: lexicon remove Ashlr.AI --alias Ashler --global',
     );
     expect(io.out).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
 
@@ -673,7 +676,7 @@ describe('add / remove / path', () => {
     vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
     const trust = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, trust)).toBe(1);
-    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), nextStep: `run lexicon remove "Ashlr.AI" --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}`, canonical: 'Ashlr.AI', removed: false });
+    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), nextStep: `run lexicon remove Ashlr.AI --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}`, canonical: 'Ashlr.AI', removed: false });
     // Success leads with ok: true (it had no ok key, so `ok` only told failures apart).
     const ok = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
@@ -742,7 +745,7 @@ describe('add / remove / path', () => {
     expect(await runRemove('Ashlr.AI', {}, io)).toBe(0);
     expect(io.out).toContain('removed Ashlr.AI from /tmp/proj/.lexicon.yaml');
     expect(io.out).toContain(`warn: Ashlr.AI is still in the global lexicon (${state.globalPath})`);
-    expect(io.out).toContain('to remove that copy too: lexicon remove "Ashlr.AI"');
+    expect(io.out).toContain('to remove that copy too: lexicon remove Ashlr.AI');
 
     vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
     const json = makeIO();
@@ -785,7 +788,7 @@ describe('add / remove / path', () => {
     expect(await runRemove('Ashlr.AI', { global: true }, io)).toBe(0);
     expect(core.removeTerm).toHaveBeenCalledWith('Ashlr.AI', expect.objectContaining({ scope: 'global' }));
     expect(io.out).toContain(`removed Ashlr.AI from ${state.globalPath}`);
-    expect(io.out).toContain('to remove that copy too: lexicon remove "Ashlr.AI" --project');
+    expect(io.out).toContain('to remove that copy too: lexicon remove Ashlr.AI --project');
   });
 
   it('remove --global and --alias --global pass the global scope; --global with --project is refused', async () => {
@@ -851,7 +854,7 @@ describe('add / remove / path', () => {
       const io = makeIO();
       expect(await runRemove('Ashlr.AI', { json }, io)).toBe(1);
       expect(io.err).toContain('has changed since it was trusted');
-      expect(io.err).toContain('lexicon remove "Ashlr.AI" --global');
+      expect(io.err).toContain('lexicon remove Ashlr.AI --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
           ok: false,
@@ -940,7 +943,7 @@ describe('add / remove / path', () => {
       const io = makeIO();
       expect(await runRemove('Ashlr.AI', { alias: 'Ashler', json }, io)).toBe(1);
       expect(io.err).toContain('has changed since it was trusted');
-      expect(io.err).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      expect(io.err).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
           ok: false,

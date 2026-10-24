@@ -810,7 +810,7 @@ describe('runSuggest', () => {
     expect(store.removed).toEqual([{ canonical: 'Zebrafish Labs', scope: 'project' }]);
     expect(io.out).toContain('removed Zebrafish Labs from /tmp/proj/.lexicon.yaml');
     expect(io.out).toContain('warn: Zebrafish Labs is still in the global lexicon (/tmp/mock/lexicon.yaml)');
-    expect(io.out).toContain('to remove that copy too: lexicon remove "Zebrafish Labs"');
+    expect(io.out).toContain("to remove that copy too: lexicon remove 'Zebrafish Labs'");
 
     // One copy only: no warning.
     const single = mockStore([FIXED[4]]);

@@ -378,6 +378,27 @@ export function claimedSha256(headers: Headers): string | undefined {
   return undefined;
 }
 
+/**
+ * `rename` that waits out Windows: replacing a file another process is
+ * renaming into place, reading or scanning (an antivirus) fails there with
+ * EPERM, EACCES or EBUSY for a moment, so two `lexicon voice` runs fetching
+ * the same model at once failed one download that had finished and checked
+ * out. Retried a few times over about a second; any other error, or the same
+ * one past that, is thrown as before.
+ */
+async function renameOver(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 10 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) throw e;
+      await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+    }
+  }
+}
+
 export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await sweepStaleParts(dest);
@@ -408,7 +429,7 @@ export async function defaultDownloader(url: string, dest: string, onProgress: (
       throw new Error(`the file downloaded does not match the sha256 the server gave for it (${claimed}; the download's is ${sha256}) (${url})`);
     }
     const { ino } = await fs.stat(tmp);
-    await fs.rename(tmp, dest);
+    await renameOver(tmp, dest);
     writeModelHashRecord(dest, sha256, ino);
   } catch (e) {
     await fs.rm(tmp, { force: true });

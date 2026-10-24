@@ -95,6 +95,8 @@ const cli = vi.hoisted(() => ({
 vi.mock('../src/core/index.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ...mocks,
+  // harvest_repo reads the report; the candidates still come from the harvestRepo mock.
+  harvestReport: async (...args: unknown[]) => ({ candidates: await (mocks.harvestRepo as (...a: unknown[]) => Promise<unknown>)(...args), truncated: false, filesScanned: 0, belowMinCount: 0, symbolsOnly: 0 }),
 }));
 vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport }));
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));

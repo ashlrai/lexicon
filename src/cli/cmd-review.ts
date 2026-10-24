@@ -17,6 +17,7 @@ import {
   effectiveHits,
   emptyLexicon,
   isTrusted,
+  loadLexicon,
   readLexiconFile,
   readHitsFor,
   withLexiconLock,
@@ -25,7 +26,7 @@ import {
   resolvePaths,
   writeLexiconFile,
 } from '../core/index.js';
-import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
+import type { HarvestCandidate, Lexicon, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
 import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
@@ -67,7 +68,51 @@ function storeOpts(opts: InteractiveOptions, cwd: string): { cwd: string; global
 // harvest --interactive
 // ---------------------------------------------------------------------------
 
-export type HarvestInteractiveOptions = InteractiveOptions;
+/**
+ * What the harvest behind a walk saw (`HarvestReport`'s counts, the root and
+ * the `minCount` it ran with), so a walk with no candidates can say why.
+ */
+export interface HarvestScanContext {
+  root: string;
+  minCount: number;
+  filesScanned: number;
+  belowMinCount: number;
+  symbolsOnly: number;
+}
+
+export interface HarvestInteractiveOptions extends InteractiveOptions {
+  /** The scan the candidates came from; without it an empty walk says only that there was nothing to review. */
+  harvest?: HarvestScanContext;
+}
+
+/**
+ * The line for a harvest that proposed nothing, saying why and what to try:
+ * names left out for `--min-count` or as code symbols only (`--symbols`), no
+ * readable file at all, or files scanned and no name in them. `harvest -i`
+ * said only "no candidates to review", and plain `harvest` only "no
+ * candidates found in <root>". Display-safe.
+ */
+export function noHarvestCandidatesLine(scan: HarvestScanContext): string {
+  const head = `no candidates found in ${safe(scan.root)}`;
+  const left = [
+    ...(scan.belowMinCount > 0 ? [`${plural(scan.belowMinCount, 'name')} seen fewer than ${scan.minCount} times (to include them: --min-count 1)`] : []),
+    ...(scan.symbolsOnly > 0 ? [`${plural(scan.symbolsOnly, 'name')} found only as code symbols (to include them: --symbols)`] : []),
+  ];
+  if (left.length > 0) return `${head}: left out ${left.join(' and ')}`;
+  if (scan.filesScanned === 0) {
+    return `${head}: it holds no package manifest, README or source file, and neither its name nor the git log gave one; harvest a project directory, or add a name with: lexicon add <canonical> <alias>`;
+  }
+  return `${head}: ${plural(scan.filesScanned, 'file')} scanned and no name in them to propose; add one yourself with: lexicon add <canonical> <alias>`;
+}
+
+/** `c` is already a term of `lexicon` with every alias the harvest suggests. */
+function knownCandidate(lexicon: Lexicon, c: HarvestCandidate): boolean {
+  const fold = (s: string): string => s.trim().toLowerCase().normalize('NFC');
+  const term = lexicon.terms.find((t) => fold(t.canonical) === fold(c.canonical));
+  if (!term) return false;
+  const have = new Set([term.canonical, ...term.aliases].map(fold));
+  return c.suggestedAliases.every((a) => have.has(fold(a)));
+}
 
 /** The next step after `harvest -i` or `review` changed the lexicon. */
 const NEXT_LIST = 'next: run lexicon list to see the terms';
@@ -96,7 +141,20 @@ export async function runHarvestInteractive(
   const store = storeOpts(opts, cwd);
 
   if (candidates.length === 0) {
-    line(io, dim('no candidates to review'));
+    line(io, dim(opts.harvest ? noHarvestCandidatesLine(opts.harvest) : 'no candidates to review'));
+    return 0;
+  }
+  // Every candidate already a term with its aliases: the walk could only
+  // merge nothing into each, one prompt at a time.
+  const loadedForKnown = await loadLexicon(store).catch(() => undefined);
+  if (loadedForKnown && candidates.every((c) => knownCandidate(loadedForKnown.merged, c))) {
+    line(
+      io,
+      dim(
+        `nothing to review: ${candidates.length === 1 ? 'the 1 candidate is' : `all ${candidates.length} candidates are`} already in the lexicon with ${candidates.length === 1 ? 'its' : 'their'} suggested aliases. ` +
+          'To see them: lexicon list; to go over existing terms: lexicon review',
+      ),
+    );
     return 0;
   }
 

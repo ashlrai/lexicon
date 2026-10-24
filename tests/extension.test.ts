@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { LEXICON_SHAPE_MESSAGE, createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { ADAPTERS, GENERIC, adapterFor, builtinPage, composerFromTarget, findComposer, findSendButton, guardActive, siteNote } from '../extension/src/adapters.js';
+import { LEXICON_SHAPE_MESSAGE, createBackground, learnWarnings, tooLargeForApiMessage } from '../extension/src/background-core.js';
 import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
@@ -851,7 +851,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const learn = (await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { ok: true; message: string };
     expect(learn.message).toBe(
       'Added new term Ashley with alias "Ashler". But "Ashler" is also an alias of Ashlr.AI (global lexicon), so it may still be corrected to that ' +
-        '(to drop it, run: lexicon remove "Ashlr.AI" --alias "Ashler" --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
+        '(to drop it, run: lexicon remove Ashlr.AI --alias Ashler --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
         'once it is trusted its term wins (review it with: lexicon trust).',
     );
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: { canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' } };
@@ -860,7 +860,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
     // and named no way out, while the core conflictNote names the remove command.
     expect(own.message).toBe(
       'Added "Ashler" as an alias of Ashley. But "Ashler" is its own term (project), so it may still be kept as written; ' +
-        'if the user never means it as its own term, drop it with: lexicon remove "Ashler" --project.',
+        'if the user never means it as its own term, drop it with: lexicon remove Ashler --project.',
     );
     expect(own.message).toBe(
       `Added "Ashler" as an alias of Ashley. But ${conflictNote([{ canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' }])}.`,
@@ -868,6 +868,14 @@ describe('message routing (mock chrome.runtime) and background', () => {
     // No conflict, or one of an unexpected shape: the plain message.
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: 'odd' };
     expect(((await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { message: string }).message).toBe('Added "Ashler" as an alias of Ashley.');
+  });
+
+  // Catches: the popup's alias-conflict remove step was JSON-quoted, so a `$`
+  // in a name expanded when pasted into a shell; it now uses the core's
+  // shell-quoted conflictRemoveCommand (POSIX in the browser, no process).
+  it('quotes the alias-conflict remove step for the shell', () => {
+    const msg = learnWarnings('O$x', { canonical: 'Acme $HOME Co', scope: 'global', as: 'alias', spelling: 'O$x' }, undefined);
+    expect(msg).toContain(`(to drop it, run: lexicon remove 'Acme $HOME Co' --alias 'O$x' --global).`);
   });
 
   it("a refused learn shows the server's reason, and a 403 is not reported as a bad token", async () => {
@@ -1975,5 +1983,101 @@ describe('pairing with lexicon serve on another --port', () => {
     setPairPort.mockRejectedValueOnce(new Error(PAIR_PORT_DENIED_MESSAGE));
     expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:5000' })).toEqual({ ok: false, error: PAIR_PORT_DENIED_MESSAGE });
     expect(PAIR_PORT_DENIED_MESSAGE).toContain('Allow');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit: content scripts in shadow DOM, IME composition, site switches
+// ---------------------------------------------------------------------------
+
+describe('content: a composer inside an open shadow root', () => {
+  // Catches: the capture listeners on the document saw the shadow host as
+  // the event target, which is not editable, so a composer inside a web
+  // component (any-site mode) was never corrected on Enter, never prechecked
+  // on input, and findComposer missed it as the focused element.
+  it('corrects a textarea inside a shadow root on Enter, and finds it as the focused composer', async () => {
+    const host = document.createElement('chat-box');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<textarea></textarea>';
+    const t = root.querySelector('textarea')!;
+    t.focus();
+    expect(findComposer(document, GENERIC)).toBe(t);
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5 });
+    t.value = 'ping ashler';
+    t.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await wait(30);
+    expect(send).toHaveBeenCalledWith({ type: 'normalize', text: 'ping ashler', dryRun: true });
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, composed: true });
+    t.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(t.value.startsWith('ping Ashlr.AI')).toBe(true);
+  });
+});
+
+describe('content: IME composition in live mode', () => {
+  // Catches: live mode rewrote the composer while an IME composition was
+  // still open (input events fire during it), which cancels or garbles the
+  // word being composed. It now waits for compositionend.
+  it('does not rewrite during a composition, and corrects once it ends', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    t.focus();
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 1000, toastMs: 60_000 });
+    t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, composed: true }));
+    t.value = 'ping ashler';
+    t.setSelectionRange(11, 11);
+    t.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, isComposing: true }));
+    await wait(40);
+    expect(t.value).toBe('ping ashler');
+    t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, composed: true, data: 'ashler' }));
+    await wait(40);
+    expect(t.value).toBe('ping Ashlr.AI');
+  });
+
+  it('a live check already scheduled does not fire once a composition starts', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    t.focus();
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, liveDebounceMs: 20, precheckDebounceMs: 1000, toastMs: 60_000 });
+    t.value = 'ping ashler';
+    t.setSelectionRange(11, 11);
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    await wait(60);
+    expect(t.value).toBe('ping ashler');
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('extension: which pages the guard runs on', () => {
+  const settings = (anySite: boolean, sites: Record<string, boolean> = {}) => ({ anySite, sites });
+
+  // Catches: the content script read only the per-site switch, so turning
+  // "any site" off left every open tab of another site rewriting text until
+  // a reload, and the popup said "Corrections run before each send." on a
+  // site where no content script runs at all.
+  it('runs on a built-in chat site, and elsewhere only with "any site" on', () => {
+    expect(builtinPage('https://chatgpt.com/c/1')).toBe(true);
+    expect(builtinPage('https://www.perplexity.ai/search')).toBe(true);
+    expect(builtinPage('https://x.com/i/grok?focus=1')).toBe(true);
+    expect(builtinPage('https://x.com/home')).toBe(false);
+    expect(builtinPage('http://chatgpt.com/')).toBe(false);
+    expect(builtinPage('not a url')).toBe(false);
+    expect(guardActive(settings(false), 'https://claude.ai/new')).toBe(true);
+    expect(guardActive(settings(false), 'https://example.org/chat')).toBe(false);
+    expect(guardActive(settings(true), 'https://example.org/chat')).toBe(true);
+    expect(guardActive(settings(true, { 'example.org': false }), 'https://www.example.org/')).toBe(false);
+    expect(guardActive(settings(false, { 'claude.ai': false }), 'https://claude.ai/new')).toBe(false);
+  });
+
+  it('the popup line says when the site is not covered', () => {
+    expect(siteNote(settings(false), 'https://claude.ai/new')).toBe('Corrections run before each send.');
+    expect(siteNote(settings(false), 'https://example.org/')).toContain('turn on "Any site" in Options');
+    expect(siteNote(settings(true), 'https://example.org/')).toBe('Corrections run before each send.');
+    expect(siteNote(settings(true, { 'example.org': false }), 'https://example.org/')).toBe('Paused on this site.');
   });
 });

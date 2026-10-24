@@ -176,6 +176,8 @@ export interface LearnResponse {
   conflict?: LearnConflict;
   /** `heard` was already an alias (or a casing of the canonical) of the term, so nothing was written. Only then. */
   unchanged?: true;
+  /** `meant` is an alias of the term and `heard` its canonical: the lexicon already corrects the other way (LearnResult.reversed). With `unchanged`. */
+  reversed?: true;
   /**
    * With `unchanged`: `learnUnchangedNote`, followed by the conflict note when there is a
    * `conflict`. With `conflict` alone: `conflictNote([conflict])`, naming the scoped
@@ -1099,7 +1101,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     invalidateWritten([result.file]);
     const unchanged = !result.created && !result.aliasAdded;
     const notes = [
-      ...(unchanged ? [learnUnchangedNote(body.heard, result.term.canonical)] : []),
+      ...(unchanged ? [learnUnchangedNote(body.heard, result.term.canonical, { meant: body.meant, scope: result.file.scope })] : []),
       ...(result.conflict ? [conflictNote([result.conflict])] : []),
     ];
     return {
@@ -1111,6 +1113,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // another case): say so, as POST /add and MCP learn_correction do,
       // instead of two false flags that read like a failure or a merge.
       ...(unchanged ? { unchanged: true as const } : {}),
+      ...(result.reversed ? { reversed: true as const } : {}),
       ...(unchanged || result.conflict ? { note: notes.join(' ') } : {}),
       ...(result.conflict ? { conflict: result.conflict } : {}),
       ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),

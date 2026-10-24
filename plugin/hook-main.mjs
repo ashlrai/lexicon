@@ -19546,6 +19546,13 @@ function deserializeIndex(data, lexicon) {
 var import_node_fs4 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/util/atomic.ts
 var import_node_fs = __toESM(require_node_fs());
 var import_node_async_hooks = __toESM(require_node_async_hooks());
@@ -20699,13 +20706,6 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
-// src/core/collate.ts
-var collator;
-function compareText(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
-}
-
 // src/core/exporters/shared.ts
 var CATEGORY_ORDER = {
   brand: 0,
@@ -21254,7 +21254,33 @@ function allStoplisted(phrase) {
   const words = phrase.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0);
   return words.length > 0 && words.every((w) => STOPLIST.has(w));
 }
-function parseCorrection(text) {
+var MIN_CORRECTION_SIMILARITY = 0.5;
+var MIN_SAME_OPENING_SIMILARITY = 0.3;
+function spellingWords(s) {
+  return s.normalize("NFKD").replace(new RegExp("\\p{M}", "gu"), "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0);
+}
+function spellingsAlike(heard, meant) {
+  let h = spellingWords(heard);
+  let m = spellingWords(meant);
+  const shared = new Set(h.filter((w) => m.includes(w)));
+  const hRest = h.filter((w) => !shared.has(w));
+  const mRest = m.filter((w) => !shared.has(w));
+  if (hRest.length > 0 && mRest.length > 0) {
+    h = hRest;
+    m = mRest;
+  }
+  const a = h.join("");
+  const b = m.join("");
+  if (a === "" || b === "" || a === b) return true;
+  if (new RegExp("\\p{N}", "u").test(a) || new RegExp("\\p{N}", "u").test(b)) return true;
+  const sim = similarity(a, b);
+  if (sim >= MIN_CORRECTION_SIMILARITY) return true;
+  const ka = phoneticKey(a);
+  const kb = phoneticKey(b);
+  if (ka !== "" && ka === kb) return true;
+  return a[0] === b[0] && sim >= MIN_SAME_OPENING_SIMILARITY;
+}
+function parseCorrection(text, opts = {}) {
   const input = text.replace(/\s+/g, " ").trim();
   if (!input) return void 0;
   for (const { needle, re, order, bareNeedsName } of COMPILED) {
@@ -21285,6 +21311,7 @@ function parseCorrection(text) {
     if (heard && allStoplisted(heard) && allStoplisted(meant)) return void 0;
     if (/^not\b/i.test(meant) || /^not\b/i.test(heard)) return void 0;
     if (!new RegExp("\\p{L}", "u").test(meant)) return void 0;
+    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant)) return void 0;
     return { heard, meant };
   }
   return void 0;

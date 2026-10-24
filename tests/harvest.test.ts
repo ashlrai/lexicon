@@ -13,7 +13,12 @@ vi.mock('../src/core/suggest.js', () => ({
   suggestAliases: (canonical: string): string[] => [`${canonical} spaced`, `${canonical}tight`],
 }));
 
-import { harvestRepo, HARVEST_STOPLIST } from '../src/core/harvest.js';
+import { HARVEST_MAX_FILES, harvestReport, harvestRepo, harvestTruncatedNote, HARVEST_STOPLIST } from '../src/core/harvest.js';
+import { runHarvest } from '../src/cli/commands.js';
+import { createServer } from '../src/mcp/server.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { makeIO } from './helpers.js';
 import type { HarvestCandidate } from '../src/core/types.js';
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-repo');
@@ -320,3 +325,90 @@ describe('directory-name candidate', () => {
     }
   });
 });
+
+describe('harvestReport', () => {
+  // Catches: the walk stopped at 5000 files and set `truncated`, but nothing
+  // reported it, so a large monorepo looked fully scanned on the CLI and MCP.
+  it('reports a scan cut at HARVEST_MAX_FILES, on the CLI text, --full and MCP', async () => {
+    const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-harvest-cap-')));
+    try {
+      const dir = path.join(base, 'Bigrepo');
+      await fs.mkdir(dir);
+      await Promise.all(Array.from({ length: HARVEST_MAX_FILES + 1 }, (_, i) => fs.writeFile(path.join(dir, `n${String(i).padStart(5, '0')}.md`), 'x\n')));
+      const report = await harvestReport(dir, { git: false });
+      expect(report).toMatchObject({ truncated: true, filesScanned: HARVEST_MAX_FILES });
+
+      const text = makeIO();
+      expect(await runHarvest(dir, {}, text, { isInteractive: () => false })).toBe(0);
+      expect(text.out).toContain(`warn: ${harvestTruncatedNote(dir)}`);
+      expect(harvestTruncatedNote(dir)).toContain(`stopped after the first ${HARVEST_MAX_FILES} files under ${dir}`);
+
+      const full = makeIO();
+      expect(await runHarvest(dir, { full: true }, full, { isInteractive: () => false })).toBe(0);
+      expect(JSON.parse(full.out)).toMatchObject({ ok: true, truncated: true, note: harvestTruncatedNote(dir) });
+
+      const bare = makeIO();
+      expect(await runHarvest(dir, { json: true }, bare, { isInteractive: () => false })).toBe(0);
+      expect(Array.isArray(JSON.parse(bare.out))).toBe(true);
+      expect(bare.err).toContain(harvestTruncatedNote(dir));
+
+      const server = createServer({ cwd: dir });
+      const client = new Client({ name: 'test', version: '0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      try {
+        const res = (await client.callTool({ name: 'harvest_repo', arguments: {} })) as { content: { text: string }[] };
+        expect(JSON.parse(res.content[0].text)).toMatchObject({ truncated: true, note: harvestTruncatedNote(dir) });
+      } finally {
+        await client.close();
+      }
+
+      const small = await harvestReport(path.join(repo, 'src'), { git: false });
+      expect(small.truncated).toBe(false);
+    } finally {
+      await fs.rm(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 60_000);
+
+  // Catches: gitAuthors ran `git log` in the root, which for a directory
+  // below the top of a work tree read the whole enclosing repo's log, so a
+  // subdirectory, or one git does not track, proposed every author of it.
+  it.skipIf(!hasGitBinary())('names only the authors of commits that touch a subdirectory root', async () => {
+    const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-harvest-authors-')));
+    try {
+      const top = path.join(base, 'Monorepo');
+      const sub = path.join(top, 'packages', 'widget');
+      const plain = path.join(top, 'scratch');
+      await fs.mkdir(sub, { recursive: true });
+      await fs.mkdir(plain);
+      const commit = (name: string, file: string): void => {
+        git(['add', file], top);
+        git(['-c', `user.name=${name}`, '-c', 'user.email=x@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', name], top);
+      };
+      git(['init', '-q'], top);
+      await fs.writeFile(path.join(top, 'notes.txt'), 'top\n');
+      commit('Mason Wyatt', 'notes.txt');
+      await fs.writeFile(path.join(sub, 'index.ts'), 'export const a = 1;\n');
+      commit('Ada Lovelace', path.join('packages', 'widget', 'index.ts'));
+      await fs.writeFile(path.join(plain, 'notes.txt'), 'untracked\n');
+
+      const people = async (root: string): Promise<string[]> =>
+        (await harvestRepo(root)).filter((c) => c.source === 'harvest:git').map((c) => c.canonical).sort();
+      expect(await people(top)).toEqual(['Ada Lovelace', 'Mason Wyatt']);
+      expect(await people(sub)).toEqual(['Ada Lovelace']);
+      expect(await people(plain)).toEqual([]);
+    } finally {
+      await fs.rm(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+});
+
+function hasGitBinary(): boolean {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}

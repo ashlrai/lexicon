@@ -53644,6 +53644,13 @@ function deserializeIndex(data, lexicon) {
 var import_node_fs4 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/util/atomic.ts
 var import_node_fs = __toESM(require_node_fs());
 var import_node_async_hooks = __toESM(require_node_async_hooks());
@@ -54586,7 +54593,7 @@ async function listTrusted(opts = {}) {
     const status = sha === void 0 ? "missing" : sha === entry.sha256 ? "trusted" : "changed";
     out.push({ path: filePath, ...entry, status });
   }
-  return out.sort((a, b) => a.path.localeCompare(b.path));
+  return out.sort((a, b) => compareText(a.path, b.path));
 }
 var TRUST_PREVIEW_ROWS = 25;
 function trustPreview(file2) {
@@ -55761,13 +55768,6 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
-// src/core/collate.ts
-var collator;
-function compareText(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
-}
-
 // src/core/harvest.ts
 var import_node_child_process = __toESM(require_node_child_process());
 var import_node_fs6 = __toESM(require_node_fs());
@@ -55885,7 +55885,8 @@ function confusions(s) {
 }
 
 // src/core/harvest.ts
-var MAX_FILES = 5e3;
+var HARVEST_MAX_FILES = 5e3;
+var MAX_FILES = HARVEST_MAX_FILES;
 var MAX_FILE_BYTES = 512 * 1024;
 var MAX_EVIDENCE = 5;
 var ALWAYS_IGNORED_DIRS = /* @__PURE__ */ new Set([
@@ -57319,6 +57320,9 @@ var HARVEST_STOPLIST = /* @__PURE__ */ new Set([
   "Languages"
 ]);
 async function harvestRepo(root, opts = {}) {
+  return (await harvestReport(root, opts)).candidates;
+}
+async function harvestReport(root, opts = {}) {
   const absRoot = import_node_path6.default.resolve(root);
   const stat = safeStat(absRoot);
   if (!stat || !stat.isDirectory()) {
@@ -57360,7 +57364,7 @@ async function harvestRepo(root, opts = {}) {
       bump3(author, "person", "harvest:git", "git log", 1, true);
     }
   }
-  const { files } = gitFiles(absRoot, ignore2) ?? walk(absRoot, ignore2);
+  const { files, truncated } = gitFiles(absRoot, ignore2) ?? walk(absRoot, ignore2);
   for (const file2 of files) {
     const rel = import_node_path6.default.relative(absRoot, file2) || import_node_path6.default.basename(file2);
     const base = import_node_path6.default.basename(file2);
@@ -57404,9 +57408,17 @@ async function harvestRepo(root, opts = {}) {
     }
   }
   const candidates = [];
+  let belowMinCount = 0;
+  let symbolsOnly = 0;
   for (const bucket of buckets.values()) {
-    if (!bucket.external && !wantSymbols) continue;
-    if (!bucket.alwaysInclude && bucket.count < minCount) continue;
+    if (!bucket.external && !wantSymbols) {
+      symbolsOnly += 1;
+      continue;
+    }
+    if (!bucket.alwaysInclude && bucket.count < minCount) {
+      belowMinCount += 1;
+      continue;
+    }
     candidates.push({
       canonical: bucket.canonical,
       category: bucket.category,
@@ -57417,7 +57429,10 @@ async function harvestRepo(root, opts = {}) {
     });
   }
   candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
-  return candidates.slice(0, Math.max(0, limit));
+  return { candidates: candidates.slice(0, Math.max(0, limit)), truncated, filesScanned: files.length, belowMinCount, symbolsOnly };
+}
+function harvestTruncatedNote(root) {
+  return `The scan stopped after the first ${HARVEST_MAX_FILES} files under ${root}, so names in the rest of it were not seen; harvest a subdirectory to scan that part in full.`;
 }
 function walk(root, ignore2) {
   const files = [];
@@ -57909,7 +57924,13 @@ function countDotTldBrands(text) {
 }
 function gitAuthors(root) {
   try {
-    const out = (0, import_node_child_process.execFileSync)("git", ["-C", root, "log", "--format=%an", "-n", "500"], {
+    const prefix = (0, import_node_child_process.execFileSync)("git", ["-C", root, "rev-parse", "--show-prefix"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5e3
+    }).trim();
+    const scope = prefix === "" ? [] : ["--", "."];
+    const out = (0, import_node_child_process.execFileSync)("git", ["-C", root, "log", "--format=%an", "-n", "500", ...scope], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 5e3
@@ -59816,17 +59837,47 @@ function mergeRows(rows, source) {
   return { terms: [...byKey.values()], skipped };
 }
 
-// src/core/conflict-note.ts
-function conflictRemoveCommand(c, show = (s) => s) {
-  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+// src/core/shell.ts
+function posixShellWord(s) {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
-function conflictNote(conflicts, audience = "cli") {
+function powerShellWord(s) {
+  return /^[\w+=:./\\-][\w@+=:./\\~-]*$/.test(s) ? s : `'${s.replace(/['\u2018-\u201B]/g, (c) => c + c)}'`;
+}
+function hostPlatform() {
+  const proc = globalThis.process;
+  return typeof proc?.platform === "string" ? proc.platform : "linux";
+}
+function shellWord(s, platform = hostPlatform()) {
+  return platform === "win32" ? powerShellWord(s) : posixShellWord(s);
+}
+function commandLine(words, platform = hostPlatform()) {
+  const quoted = words.map((w) => shellWord(w, platform));
+  return `${platform === "win32" && words.length > 0 && quoted[0] !== words[0] ? "& " : ""}${quoted.join(" ")}`;
+}
+
+// src/core/conflict-note.ts
+function conflictRemoveCommand(c, show = (s) => s, platform = hostPlatform()) {
+  return commandLine(["lexicon", "remove", show(c.canonical), "--alias", show(c.spelling), `--${c.scope}`], platform);
+}
+function conflictRemoveTermCommand(c, platform = hostPlatform()) {
+  return commandLine(["lexicon", "remove", c.canonical, `--${c.scope}`], platform);
+}
+function conflictNote(conflicts, audience = "cli", platform = hostPlatform()) {
   return conflicts.map(
-    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
+    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c, void 0, platform)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: ${conflictRemoveTermCommand(c, platform)}`)
   ).join(" ");
 }
 function unchangedTermNote(canonical) {
   return `Nothing was added: ${JSON.stringify(canonical)} already has every alias and field given.`;
+}
+function said(s) {
+  return s.trim().replace(/\s+/g, " ");
+}
+function reversedCorrectionNote(heard, meant, canonical, scope, audience = "cli", platform = hostPlatform()) {
+  const [h, m, c] = [said(heard), said(meant), canonical].map((x) => JSON.stringify(x));
+  const lead = `Nothing was added: ${m} is an alias of ${c}, so it is already corrected to ${c}, the other way round from this correction (${h} to ${m}).`;
+  return audience === "mcp" ? `${lead} If the user wants ${m} written instead, ask them, then make it the canonical: call remove_term with canonical ${c}, scope "${scope}", and add_term with canonical ${m}, scope "${scope}", and aliases ${c} plus the term's other aliases.` : `${lead} If you want ${m} written instead, make it the canonical: run ${commandLine(["lexicon", "edit", ...scope === "project" ? ["--project"] : []], platform)} and rename the term ${c} to ${m}, keeping ${c} as an alias.`;
 }
 
 // src/core/learn.ts
@@ -59924,6 +59975,10 @@ async function learnCorrection(c, opts = {}) {
   const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
   const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (existing) {
+    if (sameText(existing.canonical, heard) && !sameText(existing.canonical, meant)) {
+      const holder = (existing.scope === "project" ? loaded.project : loaded.global) ?? loaded.global;
+      return { term: existing, created: false, file: holder, aliasAdded: false, reversed: true, ...withConflict };
+    }
     const targetScope = scope ?? existing.scope ?? "global";
     const targetFile = targetScope === "project" ? loaded.project : loaded.global;
     const inTarget = scope === void 0 ? existing : targetFile?.lexicon.terms.find((t) => sameText(t.canonical, existing.canonical));
@@ -61121,7 +61176,7 @@ ${lines.join("\n")}`);
     seen.add(ref);
     packs.push({ ref, ...e });
   }
-  packs.sort((a, b) => a.ref.localeCompare(b.ref));
+  packs.sort((a, b) => compareText(a.ref, b.ref));
   return { packs };
 }
 async function loadRegistryIndex(source, deps = {}) {
@@ -61510,21 +61565,6 @@ function demonstrate(lexicon, prefer = []) {
     terms: ["Ashlr.AI"],
     usedExample: true
   };
-}
-
-// src/core/shell.ts
-function posixShellWord(s) {
-  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
-}
-function powerShellWord(s) {
-  return /^[\w+=:./\\-][\w@+=:./\\~-]*$/.test(s) ? s : `'${s.replace(/['\u2018-\u201B]/g, (c) => c + c)}'`;
-}
-function shellWord(s, platform = process.platform) {
-  return platform === "win32" ? powerShellWord(s) : posixShellWord(s);
-}
-function commandLine(words, platform = process.platform) {
-  const quoted = words.map((w) => shellWord(w, platform));
-  return `${platform === "win32" && words.length > 0 && quoted[0] !== words[0] ? "& " : ""}${quoted.join(" ")}`;
 }
 
 // src/mcp/shared.ts
@@ -62173,7 +62213,7 @@ var registerTermTools = (server, ctx) => {
       const meantText = meant.trim().replace(/\s+/g, " ");
       const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
       const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
-      const saved = learned.aliasAdded ? `"${heardText}" -> "${term.canonical}" saved` : heardText.toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it` : `"${heardText}" was already an alias of "${term.canonical}"`;
+      const saved = learned.aliasAdded ? `"${heardText}" -> "${term.canonical}" saved` : learned.reversed && !untrusted ? reversedCorrectionNote(heardText, meantText, term.canonical, learned.file.scope, "mcp").replace(/^Nothing was added: /, "").replace(/\.$/, "") : heardText.toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it` : `"${heardText}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictText = conflict ? `. ${conflictNote([conflict], "mcp")}` : "";
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heardText}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
@@ -62183,6 +62223,7 @@ var registerTermTools = (server, ctx) => {
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
+        ...learned.reversed && !untrusted ? { reversed: true } : {},
         ...conflict ? { conflict } : {},
         ...untrustedProject ? { untrustedProject } : {},
         ...pending ?? {},
@@ -62264,7 +62305,7 @@ var registerHarvestTools = (server, ctx) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, plus \`truncated: true\` and a \`note\` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
@@ -62274,10 +62315,11 @@ var registerHarvestTools = (server, ctx) => {
     },
     async ({ path: path28, limit, minCount, add }) => guarded(async () => {
       const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
-      const candidates = await harvestRepo(root, {
+      const report2 = await harvestReport(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
       });
+      const candidates = report2.candidates;
       let added = 0;
       let written;
       const failures = [];
@@ -62315,7 +62357,14 @@ var registerHarvestTools = (server, ctx) => {
         count: candidates.length,
         ...add ? { added, failures } : {},
         ...written !== void 0 ? { path: written, ...writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {} } : {},
-        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? " was" : "s were"} not added (first: ${failures[0]?.error}); see failures` } : {}
+        // The 5000-file cap was never reported, so a large tree looked fully scanned.
+        ...report2.truncated ? { truncated: true } : {},
+        ...failures.length > 0 || report2.truncated ? {
+          note: [
+            ...failures.length > 0 ? [`${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? " was" : "s were"} not added (first: ${failures[0]?.error}); see failures`] : [],
+            ...report2.truncated ? [harvestTruncatedNote(root)] : []
+          ].join(". ")
+        } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
       return textResult(payload);
@@ -62925,6 +62974,11 @@ var import_node_path23 = __toESM(require_node_path());
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
 var CLIPBOARD_BACKEND_NAMES = ["pbcopy", "wl", "xclip", "xsel", "powershell"];
+function utf8LocaleEnv(env = process.env) {
+  const named = (k) => (env[k] ?? "") !== "";
+  if (named("LC_ALL") || named("LC_CTYPE") || named("LANG")) return env;
+  return { ...env, LANG: "en_US.UTF-8", LC_CTYPE: "en_US.UTF-8" };
+}
 var ExecError = class extends Error {
   constructor(cmd, exitCode, stderr) {
     super(`${cmd} exited with code ${exitCode ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
@@ -62966,12 +63020,14 @@ function isClipboardTimeout(err) {
 function isClipboardTooLarge(err) {
   return err instanceof Error && err.name === "ClipboardTooLargeError";
 }
-function defaultClipboardExec(cmd, args, stdin, timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS) {
+function defaultClipboardExec(cmd, args, stdin, opts = {}) {
   const isWrite = stdin !== void 0;
+  const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === "number" ? { timeoutMs: opts, env: void 0 } : opts;
   return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
       stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      ...env ? { env } : {}
     });
     const out = [];
     const errChunks = [];
@@ -63011,22 +63067,23 @@ function defaultClipboardExec(cmd, args, stdin, timeoutMs = CLIPBOARD_EXEC_TIMEO
     }
   });
 }
-async function readOrEmpty(exec, cmd, args) {
+async function readOrEmpty(exec, cmd, args, opts) {
   try {
-    return await exec(cmd, args);
+    return await (opts ? exec(cmd, args, void 0, opts) : exec(cmd, args));
   } catch (e) {
     if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return "";
   }
 }
-function pbcopyBackend(exec = defaultClipboardExec) {
+function pbcopyBackend(exec = defaultClipboardExec, env = process.env) {
+  const opts = { env: utf8LocaleEnv(env) };
   return {
     name: "pbcopy",
     description: "pbpaste / pbcopy (macOS)",
-    read: () => readOrEmpty(exec, "pbpaste", []),
+    read: () => readOrEmpty(exec, "pbpaste", [], opts),
     write: async (text) => {
-      await exec("pbcopy", [], text);
+      await exec("pbcopy", [], text, opts);
     }
   };
 }
@@ -63097,7 +63154,7 @@ async function detectClipboardBackend(platform = process.platform, env = process
       if (!await has("pbpaste") || !await has("pbcopy")) {
         throw new Error("pbpaste/pbcopy not found on PATH (they ship with macOS; check your PATH)");
       }
-      return pbcopyBackend(exec);
+      return pbcopyBackend(exec, env);
     }
     case "win32": {
       if (await has("powershell")) return powershellBackend(exec, "powershell");
@@ -66070,7 +66127,7 @@ async function stepDemo(ctx) {
     const own2 = (ctx.plan ? ctx.plan.wouldSeed : ctx.seeded)[0];
     ctx.say(
       dim(
-        own2 === void 0 ? '   add one now: lexicon add "Your Co" --suggest' : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own2))} "<misspelling>"`
+        own2 === void 0 ? '   add one now: lexicon add "Your Co" --suggest' : `   add one now, what speech-to-text writes for it: ${shownCommand(["lexicon", "add", own2, "<misspelling>"])}`
       )
     );
   }

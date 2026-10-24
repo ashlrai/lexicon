@@ -17,6 +17,7 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { compareText } from './collate.js';
 import { MAX_LEXICON_BYTES, resolvePaths } from './store.js';
 import type { StoreOptions } from './store.js';
 import type { LexiconFile } from './types.js';
@@ -355,7 +356,7 @@ export async function listTrusted(opts: StoreOptions = {}): Promise<TrustListEnt
       sha === undefined ? 'missing' : sha === entry.sha256 ? 'trusted' : 'changed';
     out.push({ path: filePath, ...entry, status });
   }
-  return out.sort((a, b) => a.path.localeCompare(b.path));
+  return out.sort((a, b) => compareText(a.path, b.path));
 }
 
 /** Terms listed in a trust preview before "... and N more". */

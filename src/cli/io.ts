@@ -12,7 +12,7 @@ import { statSync } from 'node:fs';
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import path from 'node:path';
-import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
+import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, shellWord, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -105,6 +105,16 @@ export const safe: (s: string) => string = sanitizeForDisplay;
  */
 export function shownCommand(words: readonly string[], platform: NodeJS.Platform = process.platform): string {
   return sanitizeForDisplayMax(commandLine(words, platform), Number.POSITIVE_INFINITY);
+}
+
+/**
+ * One word quoted for this platform's shell, for a command line written
+ * around a placeholder. shownCommand([word]) is a whole command: on Windows
+ * a quoted first word gets PowerShell's call operator, which put
+ * `lexicon learn <heard> & 'Zoë'` on screen.
+ */
+export function shownWord(word: string, platform: NodeJS.Platform = process.platform): string {
+  return sanitizeForDisplayMax(shellWord(word, platform), Number.POSITIVE_INFINITY);
 }
 
 /** `safe` per line, for text whose line breaks are the point (diff summaries, multi-line errors). */
@@ -462,7 +472,7 @@ export function skippedProjectJson(
  * copy: `--project` or `--global`.
  */
 export function stillInLine(canonical: string, holder: TermHolder): string {
-  const command = `lexicon remove ${JSON.stringify(safe(canonical))} --${holder.scope}`;
+  const command = shownCommand(['lexicon', 'remove', canonical, `--${holder.scope}`]);
   return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
 }
 

@@ -29,6 +29,7 @@ import {
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_MAX_LIMIT,
   conflictNote,
+  reversedCorrectionNote,
   unchangedTermNote,
   spellingConflicts,
   suggestAliases,
@@ -655,6 +656,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // argument put a stray newline or padding into the summary.
         const saved = learned.aliasAdded
           ? `"${heardText}" -> "${term.canonical}" saved`
+          : learned.reversed && !untrusted
+            ? reversedCorrectionNote(heardText, meantText, term.canonical, learned.file.scope, 'mcp').replace(/^Nothing was added: /, '').replace(/\.$/, '')
           : heardText.toLowerCase() === term.canonical.toLowerCase()
             ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it`
             : `"${heardText}" was already an alias of "${term.canonical}"`;
@@ -675,6 +678,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           path: learned.file.path,
           created: learned.created,
           aliasAdded: learned.aliasAdded,
+          ...(learned.reversed && !untrusted ? { reversed: true } : {}),
           ...(conflict ? { conflict } : {}),
           ...(untrustedProject ? { untrustedProject } : {}),
           ...(pending ?? {}),

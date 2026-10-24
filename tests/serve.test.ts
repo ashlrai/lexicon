@@ -770,7 +770,7 @@ describe('POST /learn and POST /add', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { conflict?: unknown; note?: string };
       expect(body.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' });
-      expect(body.note).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      expect(body.note).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
       // No conflict, no note.
       const clean = (await (await api('POST', '/learn', { heard: 'zork mid', meant: 'Zorkmid', scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
       expect(clean).not.toHaveProperty('conflict');

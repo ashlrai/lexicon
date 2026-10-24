@@ -30,7 +30,9 @@ import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
 import { isRecord } from '../util/json.js';
 
-const MAX_FILES = 5000;
+/** Most files one harvest reads; the rest of a larger tree is not scanned (`HarvestReport.truncated`). */
+export const HARVEST_MAX_FILES = 5000;
+const MAX_FILES = HARVEST_MAX_FILES;
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_EVIDENCE = 5;
 
@@ -266,7 +268,31 @@ interface WalkResult {
   truncated: boolean;
 }
 
+/** What a harvest found, beyond its candidates: why there may be few or none. */
+export interface HarvestReport {
+  candidates: HarvestCandidate[];
+  /** True when the scan stopped at HARVEST_MAX_FILES files, so names in the rest of the tree were not seen. */
+  truncated: boolean;
+  /** Files the scan read (manifests, READMEs, source). */
+  filesScanned: number;
+  /** Names seen fewer than `minCount` times in file text, so not proposed. */
+  belowMinCount: number;
+  /** Names seen only as a PascalCase symbol in source, so not proposed without `symbols`. */
+  symbolsOnly: number;
+}
+
+/** `harvestReport(root, opts).candidates`. */
 export async function harvestRepo(root: string, opts: HarvestOptions = {}): Promise<HarvestCandidate[]> {
+  return (await harvestReport(root, opts)).candidates;
+}
+
+/**
+ * `harvestRepo` with what the scan saw: whether it stopped at
+ * HARVEST_MAX_FILES files (`truncated`, which was never reported, so a large
+ * monorepo looked fully scanned), how many files it read, and how many names
+ * it left out for `minCount` or for being only a code symbol.
+ */
+export async function harvestReport(root: string, opts: HarvestOptions = {}): Promise<HarvestReport> {
   const absRoot = path.resolve(root);
   const stat = safeStat(absRoot);
   if (!stat || !stat.isDirectory()) {
@@ -330,7 +356,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     }
   }
 
-  const { files } = gitFiles(absRoot, ignore) ?? walk(absRoot, ignore);
+  const { files, truncated } = gitFiles(absRoot, ignore) ?? walk(absRoot, ignore);
 
   for (const file of files) {
     const rel = path.relative(absRoot, file) || path.basename(file);
@@ -386,9 +412,17 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
   }
 
   const candidates: HarvestCandidate[] = [];
+  let belowMinCount = 0;
+  let symbolsOnly = 0;
   for (const bucket of buckets.values()) {
-    if (!bucket.external && !wantSymbols) continue;
-    if (!bucket.alwaysInclude && bucket.count < minCount) continue;
+    if (!bucket.external && !wantSymbols) {
+      symbolsOnly += 1;
+      continue;
+    }
+    if (!bucket.alwaysInclude && bucket.count < minCount) {
+      belowMinCount += 1;
+      continue;
+    }
     candidates.push({
       canonical: bucket.canonical,
       category: bucket.category,
@@ -400,7 +434,16 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
   }
 
   candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
-  return candidates.slice(0, Math.max(0, limit));
+  return { candidates: candidates.slice(0, Math.max(0, limit)), truncated, filesScanned: files.length, belowMinCount, symbolsOnly };
+}
+
+/**
+ * The sentence a harvest that stopped at HARVEST_MAX_FILES gives (`lexicon
+ * harvest`, MCP `harvest_repo`): the rest of the tree was not scanned, and
+ * how to scan it. Unsanitized.
+ */
+export function harvestTruncatedNote(root: string): string {
+  return `The scan stopped after the first ${HARVEST_MAX_FILES} files under ${root}, so names in the rest of it were not seen; harvest a subdirectory to scan that part in full.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -803,9 +846,21 @@ function countDotTldBrands(text: string): Map<string, number> {
 // Git
 // ---------------------------------------------------------------------------
 
+/**
+ * Authors of the last 500 commits. At the top of a work tree that is the
+ * whole log; below it (`root` a subdirectory of the repo, or a directory in
+ * it git does not track at all) only commits that touch `root` (the `-- .`
+ * pathspec): the enclosing repo's whole log named people who never touched it.
+ */
 function gitAuthors(root: string): string[] {
   try {
-    const out = execFileSync('git', ['-C', root, 'log', '--format=%an', '-n', '500'], {
+    const prefix = execFileSync('git', ['-C', root, 'rev-parse', '--show-prefix'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5000,
+    }).trim();
+    const scope = prefix === '' ? [] : ['--', '.'];
+    const out = execFileSync('git', ['-C', root, 'log', '--format=%an', '-n', '500', ...scope], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5000,

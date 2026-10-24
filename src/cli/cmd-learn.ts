@@ -4,9 +4,9 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
+import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -28,7 +28,7 @@ function usageHint(io: IO): void {
  */
 function learnCommand(heard: string | undefined, meant: string | undefined): string {
   const head = shownCommand(['lexicon', 'learn', ...(heard !== undefined ? [heard] : [])]);
-  return `${heard === undefined ? `${head} <heard>` : head} ${meant === undefined ? '<meant>' : shownCommand([meant])}`;
+  return `${heard === undefined ? `${head} <heard>` : head} ${meant === undefined ? '<meant>' : shownWord(meant)}`;
 }
 
 /**
@@ -42,6 +42,14 @@ export function oneSpellingRefusal(word: string): [error: string, nextStep: stri
     `only one spelling was given ("${spelling}"); learn needs the spelling STT wrote and the one you meant, so nothing was learned`,
     `run: ${learnCommand(spelling, undefined)}, where <meant> is the spelling you want`,
   ];
+}
+
+/**
+ * The refusal for a sentence shaped like a correction whose bare sides do not
+ * look or sound alike (`spellingsAlike` false). Exported for tests.
+ */
+export function unrelatedCorrectionError(heard: string, meant: string): string {
+  return `"${heard}" and "${meant}" neither look nor sound alike, so this reads as a change of meaning, not a spelling speech-to-text got wrong; nothing was learned`;
 }
 
 export interface LearnOptions extends CommonOptions {
@@ -95,6 +103,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   }
   if (!correction) {
     const source = opts.from ?? words.join(' ');
+    // The shape of a correction whose two sides neither look nor sound alike
+    // ("it's the API not the UI"): say so, and how to learn it on purpose,
+    // rather than "could not find a correction" and the usage examples.
+    const unrelated = source ? parseCorrection(source, { allowUnrelated: true }) : undefined;
+    if (unrelated?.heard) {
+      return refuse(io, opts.json, unrelatedCorrectionError(unrelated.heard, unrelated.meant), `if speech-to-text really writes "${unrelated.heard}" for "${unrelated.meant}", run: ${learnCommand(unrelated.heard, unrelated.meant)}`);
+    }
     if (opts.json) {
       printJsonError(io, source ? `could not find a correction in "${source}"` : 'nothing to learn', 'run: lexicon learn <heard> <meant>, or lexicon learn --from "<sentence>"');
     }
@@ -146,7 +161,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       const { file, ...rest } = result;
       const unchanged = !result.created && !result.aliasAdded;
       const notes = [
-        ...(unchanged ? [learnUnchangedNote(correction.heard, result.term.canonical)] : []),
+        ...(unchanged ? [learnUnchangedNote(correction.heard, result.term.canonical, { meant: correction.meant, scope: file.scope })] : []),
         ...(result.conflict ? [conflictNote([result.conflict])] : []),
       ];
       line(
@@ -169,7 +184,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     }
     if (!result.created && !result.aliasAdded) {
       // It said "learned X -> Y (already known)", which reads as a write.
-      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical))} (${result.file.scope}: ${safe(result.file.path)})`);
+      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical), { meant: safe(correction.meant), scope: result.file.scope })} (${result.file.scope}: ${safe(result.file.path)})`);
     } else {
       line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safe(result.file.path)}`);
     }
@@ -202,11 +217,11 @@ export function renderStats(stats: LexiconStats, note?: string): string {
   out.push(`terms: ${stats.termCount}   aliases: ${stats.aliasCount}   hits: ${stats.totalHits}`);
   if (note) out.push(safe(note));
   const categories = Object.entries(stats.byCategory)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
     .map(([k, v]) => `${k} ${v}`)
     .join(', ');
   const sources = Object.entries(stats.bySource)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
     .map(([k, v]) => `${k} ${v}`)
     .join(', ');
   if (categories) out.push(`by category: ${categories}`);

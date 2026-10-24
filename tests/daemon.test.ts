@@ -912,3 +912,34 @@ describe('standalone main --cwd', () => {
     await expect(daemonMain(['--cwd', '  '])).rejects.toThrow('--cwd expects a directory');
   });
 });
+
+// Catches: pbpaste and pbcopy ran with the caller's environment, so under
+// launchd, cron or `env -i` (no LANG, LC_CTYPE or LC_ALL) they used a legacy
+// encoding and a non-ASCII clipboard (Zoë, 東京) came back as mojibake.
+describe('pbcopy locale', () => {
+  it('passes a UTF-8 LANG and LC_CTYPE to pbpaste and pbcopy when the caller names no locale', async () => {
+    const seen: { cmd: string; env?: NodeJS.ProcessEnv }[] = [];
+    const exec: ClipboardExec = async (cmd, _args, _stdin, opts) => {
+      seen.push({ cmd, env: opts?.env });
+      return '';
+    };
+    const bare = backends.pbcopyBackend(exec, { PATH: '/usr/bin' });
+    await bare.read();
+    await bare.write('Zoë');
+    expect(seen.map((s) => [s.cmd, s.env?.LANG, s.env?.LC_CTYPE, s.env?.PATH])).toEqual([
+      ['pbpaste', 'en_US.UTF-8', 'en_US.UTF-8', '/usr/bin'],
+      ['pbcopy', 'en_US.UTF-8', 'en_US.UTF-8', '/usr/bin'],
+    ]);
+    // A locale the caller set is kept as is.
+    seen.length = 0;
+    await backends.createClipboardBackend('pbcopy', exec, 'powershell', { LANG: 'de_DE.UTF-8' }).read();
+    expect(seen[0].env).toEqual({ LANG: 'de_DE.UTF-8' });
+    expect(backends.utf8LocaleEnv({ LC_ALL: 'C' })).toEqual({ LC_ALL: 'C' });
+    expect(backends.utf8LocaleEnv({ LANG: '' })).toMatchObject({ LANG: 'en_US.UTF-8', LC_CTYPE: 'en_US.UTF-8' });
+  });
+
+  it('defaultClipboardExec runs the child with the env it is given', async () => {
+    const out = await backends.defaultClipboardExec(process.execPath, ['-e', 'process.stdout.write(String(process.env.LEXICON_PB_PROBE))'], undefined, { env: { ...process.env, LEXICON_PB_PROBE: 'yes' } });
+    expect(out).toBe('yes');
+  });
+});

@@ -54,6 +54,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
+  commandLine,
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   TERM_CATEGORIES,
@@ -71,7 +72,8 @@ import {
   exportLexiconWithNotes,
   selectExportTerms,
   resolveExportFormat,
-  harvestRepo,
+  harvestReport,
+  harvestTruncatedNote,
   loadLexicon,
   normalize,
   isProjectTrustError,
@@ -125,6 +127,7 @@ import {
   safe,
   safeLines,
   safeMessage,
+  shownCommand,
   skippedProjectJson,
   wholeNumber,
   stillInLine,
@@ -158,7 +161,7 @@ export { checkLoginService, renderDoctorReport, runDoctor, runDoctorReport } fro
 export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorLevel, DoctorReport, DoctorReportOptions } from './cmd-doctor.js';
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
-import { runHarvestInteractive } from './cmd-review.js';
+import { noHarvestCandidatesLine, runHarvestInteractive } from './cmd-review.js';
 import { PromptClosedError, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
@@ -519,11 +522,11 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // the global copy is still removable on its own.
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
-      const nextStep = global ? `run lexicon remove ${JSON.stringify(canonical)} --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
+      const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
       line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
     io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --global\n`);
+    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
     return 1;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
@@ -621,7 +624,7 @@ async function runRemoveAlias(
     if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
       if (holdsAlias(loaded?.global)) {
-        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --alias ${JSON.stringify(safe(alias))} --global\n`);
+        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
       }
     } else if (untrusted) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);
@@ -964,15 +967,20 @@ export async function runHarvest(
   if (minCount !== undefined) harvestOpts.minCount = minCount;
   if (opts.symbols) harvestOpts.symbols = true;
 
-  const candidates: HarvestCandidate[] = await harvestRepo(target, harvestOpts);
+  const report = await harvestReport(target, harvestOpts);
+  const candidates: HarvestCandidate[] = report.candidates;
+  // The 5000-file cap was never reported, so a large tree looked fully scanned.
+  const truncatedLine = report.truncated ? `warn: ${harvestTruncatedNote(target)}` : undefined;
+  const scan = { root: target, minCount: harvestOpts.minCount ?? 2, filesScanned: report.filesScanned, belowMinCount: report.belowMinCount, symbolsOnly: report.symbolsOnly };
 
   if (interactive) {
     // The walkthrough is the display; the table would only repeat it.
     const prompter = (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))();
     try {
+      if (truncatedLine) line(io, safeMessage(truncatedLine));
       return await runHarvestInteractive(
         candidates,
-        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) },
+        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), harvest: scan },
         io,
         prompter,
       );
@@ -987,7 +995,7 @@ export async function runHarvest(
   } else if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
   } else if (candidates.length === 0) {
-    line(io, dim(`no candidates found in ${safe(target)}`));
+    line(io, dim(noHarvestCandidatesLine(scan)));
   } else {
     const rows = candidates.map((c) => [
       c.canonical,
@@ -997,6 +1005,11 @@ export async function runHarvest(
       c.evidence[0] ?? '',
     ]);
     io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence']));
+  }
+
+  if (truncatedLine) {
+    if (json) io.stderr(`lexicon: ${safeMessage(truncatedLine.replace(/^warn: /, ''))}\n`);
+    else line(io, safeMessage(truncatedLine));
   }
 
   let created = 0;
@@ -1042,7 +1055,8 @@ export async function runHarvest(
   if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
-    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...addResult }), null, 2));
+    const truncated = report.truncated ? { truncated: true as const, note: harvestTruncatedNote(target) } : {};
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
   }
   return 0;
 }

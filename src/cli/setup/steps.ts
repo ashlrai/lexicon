@@ -34,7 +34,7 @@ import type {
 } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
 import { writeFileAtomic } from '../../util/atomic.js';
-import { bold, dim, plural, renderTable, safe, safeLines, tildify } from '../io.js';
+import { bold, dim, plural, renderTable, safe, safeLines, shownCommand, tildify } from '../io.js';
 import type { IO } from '../io.js';
 import { runInstall } from '../cmd-install.js';
 import type { InstallOptions } from '../cmd-install.js';
@@ -838,7 +838,7 @@ export async function stepDemo(ctx: Ctx): Promise<void> {
       dim(
         own === undefined
           ? '   add one now: lexicon add "Your Co" --suggest'
-          : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own))} "<misspelling>"`,
+          : `   add one now, what speech-to-text writes for it: ${shownCommand(['lexicon', 'add', own, '<misspelling>'])}`,
       ),
     );
   }

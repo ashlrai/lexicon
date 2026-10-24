@@ -4,7 +4,7 @@
  * run it under jsdom with a fake server.
  */
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
-import { conflictNote, parseLexicon, redactSecrets } from './core.js';
+import { conflictNote, conflictRemoveCommand, parseLexicon, redactSecrets } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
   API_MAX_BODY_BYTES,
@@ -587,7 +587,7 @@ export function learnWarnings(heard: string, conflict: unknown, untrustedProject
     const spelling = typeof c.spelling === 'string' ? c.spelling : heard;
     out +=
       c.as === 'alias'
-        ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: lexicon remove ${JSON.stringify(c.canonical)} --alias ${JSON.stringify(spelling)} --${c.scope}).`
+        ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: ${conflictRemoveCommand({ canonical: c.canonical, scope: c.scope, as: 'alias', spelling })}).`
         : // The core's sentence (CLI audience), so the popup names the same
           // remove step as learn --json, add --json and serve POST /learn.
           ` But ${conflictNote([{ canonical: c.canonical, scope: c.scope, as: 'canonical', spelling }])}.`;

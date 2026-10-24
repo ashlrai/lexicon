@@ -1858,6 +1858,32 @@ describe('model download', () => {
     const record = JSON.parse(await fs.readFile(`${dest}.sha256.json`, 'utf8')) as { sha256: string };
     expect(record.sha256).toBe(createHash('sha256').update(got).digest('hex'));
   });
+
+  // Catches: on Windows the rename into place failed with EPERM while the
+  // other download was renaming over the same file, failing a finished,
+  // checked download.
+  it('retries a rename into place that Windows refuses for a moment', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const body = model(200_000, 3);
+    vi.stubGlobal('fetch', async () => new Response(new Uint8Array(body), { status: 200, headers: { 'content-length': String(body.length) } }));
+    const realRename = fs.rename.bind(fs);
+    let refused = 0;
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (refused < 2) {
+        refused++;
+        throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+      }
+      return realRename(from, to);
+    });
+    try {
+      await defaultDownloader('https://example.invalid/m', dest, () => undefined);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(refused).toBe(2);
+    expect((await fs.readFile(dest)).equals(body)).toBe(true);
+    expect(checkModelHashRecord(dest)).toBeUndefined();
+  });
 });
 
 describe('models and tools', () => {
