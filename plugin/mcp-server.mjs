@@ -58500,6 +58500,24 @@ function quotedNames(names, max = 10) {
   if (shown.length <= 1) return shown.join("");
   return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
 }
+function uniqueTriggers(pairs, key = (a) => a) {
+  const rank2 = /* @__PURE__ */ new Map();
+  sortByImportance([...new Set(pairs.map((p) => p.term))]).forEach((t, i) => rank2.set(t, i));
+  const winner = /* @__PURE__ */ new Map();
+  for (const p of pairs) {
+    const k = key(p.alias);
+    const current = winner.get(k);
+    if (!current || (rank2.get(p.term) ?? 0) < (rank2.get(current.term) ?? 0)) winner.set(k, p);
+  }
+  const kept = [];
+  const dropped = [];
+  for (const p of pairs) (winner.get(key(p.alias)) === p ? kept : dropped).push(p);
+  return { kept, dropped };
+}
+function sharedTriggerNote(dropped, what) {
+  if (dropped.length === 0) return void 0;
+  return `left out ${dropped.length} ${what}${dropped.length === 1 ? "" : "s"} another term already uses (the more used term keeps it): ${quotedNames(dropped.map((p) => `${p.alias} -> ${p.canonical}`))}`;
+}
 
 // src/core/exporters/assemblyai.ts
 var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
@@ -58639,10 +58657,13 @@ function espansoRenders(body) {
 function espansoEscape(canonical) {
   return canonical.replace(/\{{2,}/g, (run) => (run.length % 2 === 1 ? "{" : "") + "\\{\\{".repeat(Math.floor(run.length / 2)));
 }
-function exportEspanso(lexicon, _opts = {}) {
+function exportEspanso(lexicon, _opts = {}, sink) {
   const leftOut = [];
   const matches = [];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
+  const shared = sharedTriggerNote(dropped, "trigger");
+  if (shared) sink?.notes.push(shared);
+  for (const { alias, canonical } of kept) {
     const replace = espansoEscape(canonical);
     const typed = espansoRenders(replace);
     if (typed !== canonical) {
@@ -58652,7 +58673,8 @@ function exportEspanso(lexicon, _opts = {}) {
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
   }
-  const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0 });
+  if (sink) sink.rows = matches.length;
+  const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0, defaultStringType: "QUOTE_DOUBLE", defaultKeyType: "PLAIN" });
   return leftOut.length > 0 ? `${leftOut.join("\n")}
 ${body}` : body;
 }
@@ -58690,14 +58712,18 @@ function exportJson(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/macos.ts
-function exportMacos(lexicon, _opts = {}) {
+function exportMacos(lexicon, _opts = {}, sink) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
     '<plist version="1.0">',
     "<array>"
   ];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon), (a) => a.toLowerCase());
+  const shared = sharedTriggerNote(dropped, "shortcut");
+  if (shared) sink?.notes.push(shared);
+  let rows = 0;
+  for (const { alias, canonical } of kept) {
     if (findUnencodableChar(alias) !== void 0 || findUnencodableChar(canonical) !== void 0) continue;
     lines.push("	<dict>");
     lines.push("		<key>phrase</key>");
@@ -58705,7 +58731,9 @@ function exportMacos(lexicon, _opts = {}) {
     lines.push("		<key>shortcut</key>");
     lines.push(`		<string>${xmlEscape(alias)}</string>`);
     lines.push("	</dict>");
+    rows += 1;
   }
+  if (sink) sink.rows = rows;
   lines.push("</array>", "</plist>");
   return lines.join("\n") + "\n";
 }

@@ -189,3 +189,34 @@ export function quotedNames(names: readonly string[], max = 10): string {
   if (shown.length <= 1) return shown.join('');
   return `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
 }
+
+/**
+ * `pairs` with each trigger once: when two terms share an alias (the same
+ * `key(alias)`), the pair of the term `sortByImportance` puts first keeps it
+ * (more hits, then brand/person/product, then canonical A to Z), so the
+ * result does not depend on the file's order. The others come back in
+ * `dropped`. Pairs keep their order.
+ */
+export function uniqueTriggers(
+  pairs: readonly AliasPair[],
+  key: (alias: string) => string = (a) => a,
+): { kept: AliasPair[]; dropped: AliasPair[] } {
+  const rank = new Map<Term, number>();
+  sortByImportance([...new Set(pairs.map((p) => p.term))]).forEach((t, i) => rank.set(t, i));
+  const winner = new Map<string, AliasPair>();
+  for (const p of pairs) {
+    const k = key(p.alias);
+    const current = winner.get(k);
+    if (!current || (rank.get(p.term) ?? 0) < (rank.get(current.term) ?? 0)) winner.set(k, p);
+  }
+  const kept: AliasPair[] = [];
+  const dropped: AliasPair[] = [];
+  for (const p of pairs) (winner.get(key(p.alias)) === p ? kept : dropped).push(p);
+  return { kept, dropped };
+}
+
+/** The note for the pairs `uniqueTriggers` dropped, or undefined when there are none. */
+export function sharedTriggerNote(dropped: readonly AliasPair[], what: string): string | undefined {
+  if (dropped.length === 0) return undefined;
+  return `left out ${dropped.length} ${what}${dropped.length === 1 ? '' : 's'} another term already uses (the more used term keeps it): ${quotedNames(dropped.map((p) => `${p.alias} -> ${p.canonical}`))}`;
+}

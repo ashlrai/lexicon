@@ -4,6 +4,7 @@
  * duplicate triggers), and the notes that name what was left out.
  */
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import { exportLexicon, exportLexiconWithNotes } from '../src/core/exporters/index.js';
 import { WHISPER_PROMPT_TOKEN_BUDGET, estimateWhisperTokens } from '../src/core/exporters/whisperPrompt.js';
 import type { Lexicon, Term } from '../src/core/types.js';
@@ -155,5 +156,49 @@ describe('csv and wispr: spreadsheet formulas', () => {
 
   it('a lexicon with no such cells has no note', () => {
     expect(exportLexiconWithNotes(lex([{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }]), 'csv').notes).toEqual([]);
+  });
+});
+
+describe('espanso and macos: ambiguous scalars and shared triggers', () => {
+  // Catches: a plain scalar such as `yes`, `on`, `~` or `0o7` was written
+  // unquoted, so a YAML 1.1 reader (or 1.2, for `0o7`) read a boolean, null
+  // or number instead of the trigger or name.
+  it('espanso double-quotes every string, so any YAML version reads it as text', () => {
+    const ambiguous = ['yes', 'No', 'on', 'OFF', 'y', 'null', '~', '0o7', '1_000', '1:20', '.inf', '2001-12-14', 'true'];
+    const text = exportLexicon(lex(ambiguous.map((a, i) => ({ canonical: ambiguous[(i + 1) % ambiguous.length], aliases: [a] }))), 'espanso');
+    for (const a of ambiguous) expect(text).toContain(`trigger: ${JSON.stringify(a)}`);
+    expect(text).toMatch(/word: true\n/);
+    expect(text).not.toMatch(/(trigger|replace): [^"]/);
+    const parsed = parseYaml(text, { version: '1.1' }) as { matches: { trigger: unknown; replace: unknown }[] };
+    expect(parsed.matches.map((m) => m.trigger)).toEqual(ambiguous);
+    expect(parsed.matches.every((m) => typeof m.replace === 'string')).toBe(true);
+  });
+
+  const shared = lex([
+    { canonical: 'Zeta Corp', aliases: ['zeta', 'zed'] },
+    { canonical: 'Zeta', aliases: ['zeta', 'Zed'], category: 'brand' },
+  ]);
+
+  // Catches: two terms sharing an alias wrote one trigger (or shortcut)
+  // twice, which the tool expands to either.
+  it('espanso writes a shared trigger once, for the term ranked first, whatever the file order', () => {
+    for (const l of [shared, { ...shared, terms: [...shared.terms].reverse() }]) {
+      const { text, notes, rows } = exportLexiconWithNotes(l, 'espanso');
+      const matches = (parseYaml(text) as { matches: { trigger: string; replace: string }[] }).matches;
+      expect(matches.filter((m) => m.trigger === 'zeta')).toEqual([expect.objectContaining({ replace: 'Zeta' })]);
+      // Triggers are matched as written: `zed` and `Zed` are two.
+      expect(matches.map((m) => m.trigger).sort()).toEqual(['Zed', 'zed', 'zeta']);
+      expect(rows).toBe(3);
+      expect(notes).toEqual(['left out 1 trigger another term already uses (the more used term keeps it): "zeta -> Zeta Corp"']);
+    }
+  });
+
+  it('macos writes a shared shortcut once, compared ignoring case', () => {
+    const { text, notes, rows } = exportLexiconWithNotes(shared, 'macos');
+    expect((text.match(/<dict>/g) ?? []).length).toBe(2);
+    expect(rows).toBe(2);
+    expect(text).toContain('<string>Zeta</string>\n\t\t<key>shortcut</key>\n\t\t<string>zeta</string>');
+    expect(text).toContain('<string>Zeta</string>\n\t\t<key>shortcut</key>\n\t\t<string>Zed</string>');
+    expect(notes).toEqual(['left out 2 shortcuts another term already uses (the more used term keeps it): "zeta -> Zeta Corp" and "zed -> Zeta Corp"']);
   });
 });
