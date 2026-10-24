@@ -2787,6 +2787,24 @@ describe('two hotkey presses, one recording', () => {
     expect(await claimStop(h.globalPath)).toBeUndefined();
   });
 
+  // Catches a claim that is exclusive only by rename. On Windows a rename goes
+  // through a handle to the file, so a press that opened the state file before
+  // the other renamed it then renames the already-claimed file again, and both
+  // presses read it: two deliveries of one capture (main run 40114339868).
+  it('claimStop stays exclusive over many simultaneous pairs of presses', async () => {
+    const h = await harness();
+    const state = { pid: 4242, wav: 'a.wav', startedAt: '2026-09-19T12:00:00.000Z' };
+    let doubles = 0;
+    for (let i = 0; i < 200; i += 1) {
+      await writeState(h.globalPath, state);
+      const claims = await Promise.all([claimStop(h.globalPath), claimStop(h.globalPath)]);
+      if (claims.filter((c) => c !== undefined).length > 1) doubles += 1;
+      expect(await readState(h.globalPath)).toBeUndefined();
+    }
+    expect(doubles).toBe(0);
+    expect((await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.startsWith('stopping-'))).toEqual([]);
+  });
+
   it('a press that loses the state file stands down instead of starting a second recorder', async () => {
     const h = await harness();
     const wav = path.join(voiceDir(h.globalPath), 'recording-2026-09-19T11-00-00-000Z.wav');
