@@ -91,6 +91,8 @@ export interface SuggestInput {
 }
 
 export const SUGGEST_DEFAULT_LIMIT = 20;
+/** The most suggestions `lexicon suggest --limit` and MCP `suggest_terms` take. */
+export const SUGGEST_MAX_LIMIT = 500;
 export const STALE_AFTER_DAYS = 30;
 /** `--yes` and MCP auto-apply use this: suggestions at or above it are safe to apply unattended. */
 export const AUTO_APPLY_CONFIDENCE = 0.8;

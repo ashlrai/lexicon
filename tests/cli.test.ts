@@ -1228,6 +1228,14 @@ describe('positiveIntOption', () => {
     }
     expect(() => positiveIntOption('--interval', 250)('0')).toThrow('e.g. --interval 250');
   });
+
+  // Catches: --limit had no upper bound, while MCP harvest_repo, suggest_terms
+  // and export_lexicon now refuse a limit over the core's maxima.
+  it('refuses a value over the maximum it is given, naming the maximum', () => {
+    const limit = positiveIntOption('--limit', 50, 1000);
+    expect(limit('1000')).toBe(1000);
+    expect(() => limit('1001')).toThrow('expected a positive integer of at most 1000, e.g. --limit 50');
+  });
 });
 
 // Catches: runExport and runHarvest called with a string option (not through
@@ -1245,6 +1253,8 @@ describe('handler integer options', () => {
     // wrote nothing and then blamed the lexicon for having no rows.
     await expect(runExport('csv', { limit: 0 }, makeIO())).rejects.toThrow('--limit must be a positive integer');
     await expect(runHarvest(os.tmpdir(), { limit: 0 }, makeIO(), { isInteractive: () => false })).rejects.toThrow('--limit must be a positive integer');
+    await expect(runHarvest(os.tmpdir(), { limit: 1001 }, makeIO(), { isInteractive: () => false })).rejects.toThrow('--limit must be at most 1000');
+    await expect(runExport('csv', { limit: '10001' }, makeIO())).rejects.toThrow('--limit must be at most 10000');
     vi.mocked(core.harvestRepo).mockResolvedValueOnce([]);
     expect(await runHarvest(os.tmpdir(), { limit: ' 5 ', minCount: '2' }, makeIO(), { isInteractive: () => false })).toBe(0);
     expect(vi.mocked(core.harvestRepo)).toHaveBeenLastCalledWith(os.tmpdir(), { limit: 5, minCount: 2 });

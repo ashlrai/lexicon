@@ -106,6 +106,13 @@ const EXPORTERS: Record<ExportFormat, (lexicon: Lexicon, opts: ExportOptions) =>
  * The formats that write one row per alias (`canonical,alias`, a replacement
  * pair, a trigger), so a term without an alias contributes nothing to them.
  */
+/**
+ * The largest `limit` `lexicon export --limit`, MCP `export_lexicon` and
+ * `GET /export/:format?limit=` take: a global and a project file of the
+ * schema's 5000 terms each, so any merged lexicon fits under it.
+ */
+export const EXPORT_MAX_LIMIT = 10000;
+
 export const EXPORT_ALIAS_ROW_FORMATS: readonly ExportFormat[] = ['csv', 'wispr', 'superwhisper', 'macos', 'espanso'];
 
 /** Whether a term has an alias an alias-row format can write a row for. */

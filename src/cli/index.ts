@@ -5,6 +5,7 @@
  */
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { packageVersion } from '../util/package.js';
+import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT } from '../core/index.js';
 import { parseBackendName, runDaemonCommand } from '../daemon/clipboard.js';
 import { registerImportCommands } from './cmd-import.js';
 import { registerInstallCommands } from './cmd-install.js';
@@ -161,7 +162,7 @@ program
   .command('harvest')
   .description('scan a repository for names worth adding to the lexicon')
   .argument('[path]', 'repository root (default: cwd)')
-  .option('--limit <n>', 'max candidates', positiveIntOption('--limit', 50))
+  .option('--limit <n>', `max candidates (default 50, at most ${HARVEST_MAX_LIMIT})`, positiveIntOption('--limit', 50, HARVEST_MAX_LIMIT))
   .option('--min-count <n>', 'minimum occurrences for a name found only in file text (default 2); the directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count', positiveIntOption('--min-count', 2))
   .option('--add', 'add candidates (with suggested aliases) to the project lexicon; on a terminal this walks them one by one')
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
@@ -179,7 +180,7 @@ program
   .argument('[format]')
   .option('--out <file>', 'write to a file instead of stdout')
   .option('--category <categories...>', 'only these categories')
-  .option('--limit <n>', 'cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias', positiveIntOption('--limit', 50))
+  .option('--limit <n>', `cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias; at most ${EXPORT_MAX_LIMIT}`, positiveIntOption('--limit', 50, EXPORT_MAX_LIMIT))
   .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus rows for the one-row-per-alias formats, and projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
   .action(async (format: string | undefined, opts: ExportCliOptions) =>
     done(await runExport(format, withGlobals(opts), io)),

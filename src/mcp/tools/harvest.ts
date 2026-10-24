@@ -6,6 +6,8 @@ import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   SUGGEST_DEFAULT_LIMIT,
+  SUGGEST_MAX_LIMIT,
+  HARVEST_MAX_LIMIT,
   TERM_CATEGORIES,
   TERM_SCOPES,
   addTerm,
@@ -85,7 +87,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'With `add: true` the result adds `added`, `failures` and `path`, and is an error when no candidate could be written.',
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: z.number().int().positive().optional().describe('Max candidates to return (default 50).'),
+        limit: z.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
         minCount: z
           .number()
           .int()
@@ -176,7 +178,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.',
       inputSchema: {
         cwd: nonBlank().optional().describe(`Repository to scan for evidence. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: z.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`),
+        limit: z.number().int().positive().max(SUGGEST_MAX_LIMIT).optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}, at most ${SUGGEST_MAX_LIMIT}).`),
       },
     },
     async ({ cwd: cwdArg, limit }) =>

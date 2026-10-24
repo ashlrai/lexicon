@@ -69,6 +69,7 @@ import {
 } from '../core/index.js';
 // Built in core/notes.ts; still exported here, where POST /normalize uses it.
 export { emptyNormalizeHint } from '../core/index.js';
+import { EXPORT_MAX_LIMIT } from '../core/index.js';
 import type {
   ExportFormat,
   InstallPackResult,
@@ -539,6 +540,7 @@ function exportQueryOptions(url: URL): { categories?: TermCategory[]; limit?: nu
   if (limitParam !== null) {
     limit = /^\d+$/.test(limitParam.trim()) ? Number(limitParam.trim()) : NaN;
     if (!Number.isSafeInteger(limit) || limit <= 0) throw new HttpError(400, `limit must be a positive integer, got "${sanitizeForDisplay(limitParam)}"`);
+    if (limit > EXPORT_MAX_LIMIT) throw new HttpError(400, `limit must be at most ${EXPORT_MAX_LIMIT}, got ${limit}`);
   }
   return { ...(categories.length > 0 ? { categories } : {}), ...(limit !== undefined ? { limit } : {}) };
 }

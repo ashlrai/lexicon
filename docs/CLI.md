@@ -207,7 +207,7 @@ Arguments:
   path               repository root (default: cwd)
 
 Options:
-  --limit <n>        max candidates
+  --limit <n>        max candidates (default 50, at most 1000)
   --min-count <n>    minimum occurrences for a name found only in file text
                      (default 2); the directory name, git authors, package names
                      and dot-TLD brands (Ashlr.AI) are proposed at any count
@@ -243,7 +243,7 @@ Options:
                               person and product terms first, then canonical A
                               to Z); csv, wispr, superwhisper, macos and espanso
                               (one row per alias) count only terms that have an
-                              alias
+                              alias; at most 10000
   --json                      print { ok: true, format, terms, bytes, path }
                               after writing --out, or { ok: true, format, terms,
                               bytes, content } with the export as a string
@@ -618,7 +618,7 @@ Options:
                    asking
   --harvest [dir]  also harvest a repository for new-term candidates (default:
                    the --cwd directory); an explicit --cwd harvests too
-  --limit <n>      max suggestions (default 20)
+  --limit <n>      max suggestions (default 20, at most 500)
   --project        write new terms to the project lexicon instead of the global
                    one
   -h, --help       display help for command

@@ -27,6 +27,7 @@ import {
   removeTerm,
   resolveExportFormat,
   EXPORT_ALIAS_ROW_FORMATS,
+  EXPORT_MAX_LIMIT,
   conflictNote,
   unchangedTermNote,
   spellingConflicts,
@@ -531,9 +532,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .number()
           .int()
           .positive()
+          .max(EXPORT_MAX_LIMIT)
           .optional()
           .describe(
-            `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. ` +
+            `Cap the number of terms exported (at most ${EXPORT_MAX_LIMIT}), applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. ` +
               `The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(', ')}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`,
           ),
       },

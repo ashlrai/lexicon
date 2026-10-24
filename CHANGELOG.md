@@ -25,6 +25,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `limit` has an upper bound wherever it is taken: MCP `harvest_repo` and `lexicon harvest --limit` at 1000, MCP `suggest_terms` and `lexicon suggest --limit` at 500, MCP `export_lexicon`, `lexicon export --limit` and `GET /export/:format?limit=` at 10000 (a global and a project file of 5000 terms each). A larger value is refused naming the maximum; it had no bound, so `limit: 1000000000` passed. The core exports them as `HARVEST_MAX_LIMIT`, `SUGGEST_MAX_LIMIT` and `EXPORT_MAX_LIMIT`.
 - MCP `import_vocabulary` refuses a `previewToken` that is not the lowercase UUID a preview returns, at the argument (`at previewToken`). Any string was taken, so a 100 KB token or one with a trailing newline was looked up and answered "preview is missing".
 - MCP `import_dictionary` caps `content` at 8 MB of UTF-8 bytes, as documented and as `lexicon import` caps a file. The schema counted characters, so text of two-byte characters under 8M characters but over 8 MB passed and was refused later as `stdin is ... bytes`, naming the wrong input; it is now refused at `content`.
 - MCP `normalize_transcript` with empty or whitespace-only `text` carries a `note` (`no text to correct ...`), as `lexicon normalize` says on empty input; it answered `{ output: "", changed: false }` and nothing else, which read as text that needed no correction.

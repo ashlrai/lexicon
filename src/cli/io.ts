@@ -498,10 +498,11 @@ export function conflictLine(c: LearnConflict): string {
  * digits (surrounding spaces aside) is taken, so `5abc` and `1.5` are refused
  * rather than read as 5 and 1.
  */
-export function positiveIntOption(flag: string, example: number): (value: string) => number {
+export function positiveIntOption(flag: string, example: number, max?: number): (value: string) => number {
   return (value: string): number => {
     const n = wholeNumber(value);
     if (n === undefined || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
+    if (max !== undefined && n > max) throw new InvalidArgumentError(`expected a positive integer of at most ${max}, e.g. ${flag} ${example}`);
     return n;
   };
 }

@@ -56212,6 +56212,7 @@ var GENERIC_IDENTIFIERS = /* @__PURE__ */ new Set([
   "XXX"
 ]);
 var GENERIC_PREFIXES = ["React", "Http", "Json", "HTML", "Html", "SVG", "Svg", "DOM", "CSS", "URL", "XML", "Xml"];
+var HARVEST_MAX_LIMIT = 1e3;
 var HARVEST_STOPLIST = /* @__PURE__ */ new Set([
   // articles, pronouns, determiners, conjunctions
   "The",
@@ -58480,6 +58481,7 @@ var EXPORTERS = {
   "text": exportText,
   "markdown": exportMarkdown
 };
+var EXPORT_MAX_LIMIT = 1e4;
 var EXPORT_ALIAS_ROW_FORMATS = ["csv", "wispr", "superwhisper", "macos", "espanso"];
 function hasAliasRow(term) {
   return term.aliases.some((a) => a.trim() !== "");
@@ -59625,6 +59627,7 @@ var import_node_fs8 = __toESM(require_node_fs());
 var import_node_path8 = __toESM(require_node_path());
 var import_fastest_levenshtein3 = __toESM(require_mod());
 var SUGGEST_DEFAULT_LIMIT = 20;
+var SUGGEST_MAX_LIMIT = 500;
 var STALE_AFTER_DAYS = 30;
 var AUTO_APPLY_CONFIDENCE = 0.8;
 var MAX_EVIDENCE2 = 5;
@@ -61574,8 +61577,8 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
-        limit: external_exports.number().int().positive().optional().describe(
-          `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(", ")}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`
+        limit: external_exports.number().int().positive().max(EXPORT_MAX_LIMIT).optional().describe(
+          `Cap the number of terms exported (at most ${EXPORT_MAX_LIMIT}), applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(", ")}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`
         )
       }
     },
@@ -61732,7 +61735,7 @@ var registerHarvestTools = (server, ctx) => {
       description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
+        limit: external_exports.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
         minCount: external_exports.number().int().positive().optional().describe("Minimum occurrences for a name found only in file text (default 2). The directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count."),
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.")
       }
@@ -61793,7 +61796,7 @@ var registerHarvestTools = (server, ctx) => {
       description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.",
       inputSchema: {
         cwd: nonBlank().optional().describe(`Repository to scan for evidence. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: external_exports.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`)
+        limit: external_exports.number().int().positive().max(SUGGEST_MAX_LIMIT).optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}, at most ${SUGGEST_MAX_LIMIT}).`)
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {

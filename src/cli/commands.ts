@@ -92,6 +92,7 @@ import {
   withLexiconLock,
   writeLexiconFile,
 } from '../core/index.js';
+import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT } from '../core/index.js';
 import type {
   ExportFormat,
   ExportOptions,
@@ -184,10 +185,11 @@ function findGitRoot(start: string): string | undefined {
  * positiveIntOption refuses it: a direct `limit: 0` csv export wrote nothing
  * and then said the lexicon had no rows.
  */
-function parseIntOption(value: string | number | undefined, flag: string): number | undefined {
+function parseIntOption(value: string | number | undefined, flag: string, max?: number): number | undefined {
   if (value === undefined) return undefined;
   const n = typeof value === 'number' ? value : wholeNumber(value);
   if (n === undefined || !Number.isSafeInteger(n) || n <= 0) throw new Error(`${flag} must be a positive integer`);
+  if (max !== undefined && n > max) throw new Error(`${flag} must be at most ${max}`);
   return n;
 }
 
@@ -954,7 +956,7 @@ export async function runHarvest(
   }
 
   const harvestOpts: HarvestOptions = {};
-  const limit = parseIntOption(opts.limit, '--limit');
+  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
   const minCount = parseIntOption(opts.minCount, '--min-count');
   if (limit !== undefined) harvestOpts.limit = limit;
   if (minCount !== undefined) harvestOpts.minCount = minCount;
@@ -1121,7 +1123,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   if (opts.category && opts.category.length > 0) {
     exportOpts.categories = opts.category.map((c) => parseCategory(c)).filter((c): c is TermCategory => !!c);
   }
-  const limit = parseIntOption(opts.limit, '--limit');
+  const limit = parseIntOption(opts.limit, '--limit', EXPORT_MAX_LIMIT);
   if (limit !== undefined) exportOpts.limit = limit;
 
   const cwd = resolveCwd(opts);

@@ -647,6 +647,9 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: harvest', () => {
     const bad = await runCli(['harvest', FAKE_REPO, '--limit', '0'], { env: shared.env });
     expect(bad.code).toBe(1);
     expect(bad.stderr).toContain("option '--limit <n>' argument '0' is invalid. expected a positive integer, e.g. --limit 50");
+    const over = await runCli(['harvest', FAKE_REPO, '--limit', '1001'], { env: shared.env });
+    expect(over.code).toBe(1);
+    expect(over.stderr).toContain("option '--limit <n>' argument '1001' is invalid. expected a positive integer of at most 1000, e.g. --limit 50");
     const minCount = await runCli(['harvest', FAKE_REPO, '--min-count', '0'], { env: shared.env });
     expect(minCount.code).toBe(1);
     expect(minCount.stderr).toContain('expected a positive integer, e.g. --min-count 2');
