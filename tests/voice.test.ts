@@ -1786,6 +1786,22 @@ describe('device parsers', () => {
     expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec: pulseExec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
   });
 
+  // Catches: on macOS an index no listed device has went to ffmpeg as `:7`, which failed only once recording started.
+  it('refuses a --device index that no listed device has on macOS too, before recording', async () => {
+    const h = await harness({ platform: 'darwin' });
+    h.deps.waitForStop = async () => 'enter';
+    expect(await runVoice({ ...h.opts, device: '7', json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toEqual([]);
+    expect(h.err.join('')).toContain('no audio input device has index 7 (the list has 0 to 2)');
+    const exec: VoiceExec = async () => ({ code: 1, stdout: '', stderr: AVFOUNDATION_LIST });
+    const devices = parseAvfoundationDevices(AVFOUNDATION_LIST);
+    await expect(resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: '3', devices })).rejects.toThrow(/index 3 \(the list has 0 to 2\)/);
+    // A listed index, a listed name and a name avfoundation may still know resolve as before.
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: '1', devices })).toEqual({ format: 'avfoundation', input: ':1' });
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: 'MacBook Pro Microphone', devices })).toEqual({ format: 'avfoundation', input: ':2' });
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: 'Studio Mic', devices })).toEqual({ format: 'avfoundation', input: ':Studio Mic' });
+  });
+
   // Catches: devices were numbered by card, so two inputs on one card shared an index and --device <index> reached only the first.
   it('numbers arecord devices by position, so two inputs on one card each get an index', () => {
     const list = [

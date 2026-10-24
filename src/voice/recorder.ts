@@ -273,7 +273,7 @@ function noSuchIndex(devices: readonly AudioDevice[], device: string): undefined
 
 /**
  * Decide the ffmpeg input for this platform and `--device`.
- * - darwin: avfoundation `:default` (or `:N` / `:Name`)
+ * - darwin: avfoundation `:default` (or `:N` for a listed index, `:Name`)
  * - linux: pulse `default` when ffmpeg has the pulse demuxer, else alsa `default`
  * - win32: dshow `audio=<name>`; without `--device` the first listed input is used
  */
@@ -282,9 +282,10 @@ export async function resolveInput(opts: ResolveInputOptions): Promise<InputSpec
   switch (platform) {
     case 'darwin': {
       if (!device) return { format: 'avfoundation', input: ':default' };
-      if (/^\d+$/.test(device.trim())) return { format: 'avfoundation', input: `:${device.trim()}` };
+      // An index is looked up like a name: one no listed device has went to
+      // ffmpeg as `:N`, which avfoundation then failed on after the user spoke.
       const devices = opts.devices ?? (await listAudioDevices(opts));
-      const picked = pickDevice(devices, device);
+      const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
       // avfoundation also matches a bare name; fall back to that when the list lookup misses.
       return { format: 'avfoundation', input: picked ? picked.id : `:${device}` };
     }
