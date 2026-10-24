@@ -60478,9 +60478,13 @@ function exportDeepgram(lexicon, _opts = {}, sink) {
   const keywords = [];
   const seen = /* @__PURE__ */ new Set();
   const collided = [];
+  const onlyColons = [];
   for (const { term, canonical } of ordered) {
     const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (!keyword) continue;
+    if (!keyword) {
+      onlyColons.push(canonical);
+      continue;
+    }
     if (seen.has(keyword)) {
       collided.push(canonical);
       continue;
@@ -60493,6 +60497,9 @@ function exportDeepgram(lexicon, _opts = {}, sink) {
   }
   if (keytermRepeats.length > 0) {
     sink?.notes.push(`left out ${keytermRepeats.length} name${keytermRepeats.length === 1 ? "" : "s"} from keyterm that read as one already listed once whitespace is collapsed: ${quotedNames(keytermRepeats)}`);
+  }
+  if (onlyColons.length > 0) {
+    sink?.notes.push(`left out ${onlyColons.length} name${onlyColons.length === 1 ? "" : "s"} from keywords that hold nothing but colons and whitespace (a colon becomes a space there): ${quotedNames(onlyColons)}`);
   }
   if (collided.length > 0) {
     sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
