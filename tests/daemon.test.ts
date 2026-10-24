@@ -549,6 +549,13 @@ describe('detectClipboardBackend', () => {
     );
   });
 
+  // Catches: an unsupported platform was named with no way forward.
+  it('an unsupported platform names --backend and lexicon normalize', async () => {
+    await expect(detectClipboardBackend('android', {}, which('xclip'))).rejects.toThrow(
+      'clipboard daemon does not support platform "android"; pass --backend <pbcopy|wl|xclip|xsel|powershell> if one of those tools works here, or pipe the text through lexicon normalize instead',
+    );
+  });
+
   it('win32 -> powershell (pwsh fallback)', async () => {
     const ps = await detectClipboardBackend('win32', {}, which('powershell'));
     expect(ps.name).toBe('powershell');

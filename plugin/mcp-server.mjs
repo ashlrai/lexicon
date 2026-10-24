@@ -61862,6 +61862,7 @@ var import_node_path22 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
+var CLIPBOARD_BACKEND_NAMES = ["pbcopy", "wl", "xclip", "xsel", "powershell"];
 var ExecError = class extends Error {
   constructor(cmd, exitCode, stderr) {
     super(`${cmd} exited with code ${exitCode ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
@@ -62009,7 +62010,9 @@ async function detectClipboardBackend(platform = process.platform, env = process
       throw new Error(`no clipboard tool found (${session}); ${LINUX_INSTALL_HINT}`);
     }
     default:
-      throw new Error(`clipboard daemon does not support platform "${platform}"`);
+      throw new Error(
+        `clipboard daemon does not support platform "${platform}"; pass --backend <${CLIPBOARD_BACKEND_NAMES.join("|")}> if one of those tools works here, or pipe the text through lexicon normalize instead`
+      );
   }
 }
 
