@@ -202,3 +202,26 @@ describe('espanso and macos: ambiguous scalars and shared triggers', () => {
     expect(notes).toEqual(['left out 2 shortcuts another term already uses (the more used term keeps it): "zeta -> Zeta Corp" and "zed -> Zeta Corp"']);
   });
 });
+
+describe('macos: control characters', () => {
+  // Catches: a C0 control character from a lexicon built in memory was
+  // written into the plist, which XML 1.0 cannot hold, so the whole file
+  // failed to load.
+  it('removes C0 controls but tab, LF and CR, and skips a pair left empty', () => {
+    const { text, notes, rows } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Ashlr\u0007.AI', aliases: ['Ash\u0000ler'] },
+        { canonical: 'Bell', aliases: ['\u001b'] },
+        { canonical: 'Tab\tName', aliases: ['tabby'] },
+      ]),
+      'macos',
+    );
+    expect(text).not.toMatch(/[\x00-\x08\x0b\x0c\x0e-\x1f]/);
+    expect(text).toContain('<string>Ashlr.AI</string>');
+    expect(text).toContain('<string>Ashler</string>');
+    expect(text).toContain('<string>Tab\tName</string>');
+    expect(text).not.toContain('Bell');
+    expect(rows).toBe(2);
+    expect(notes).toEqual(['removed control characters XML cannot hold from 2 entries (a pair left with an empty shortcut or phrase is not written)']);
+  });
+});

@@ -58712,6 +58712,9 @@ function exportJson(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/macos.ts
+function stripXmlControls(value) {
+  return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+}
 function exportMacos(lexicon, _opts = {}, sink) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -58719,12 +58722,21 @@ function exportMacos(lexicon, _opts = {}, sink) {
     '<plist version="1.0">',
     "<array>"
   ];
-  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon), (a) => a.toLowerCase());
+  let stripped = 0;
+  const pairs = [];
+  for (const pair of aliasPairs(lexicon)) {
+    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) continue;
+    const alias = stripXmlControls(pair.alias).trim();
+    const canonical = stripXmlControls(pair.canonical);
+    if (alias !== pair.alias || canonical !== pair.canonical) stripped += 1;
+    if (alias === "" || canonical.trim() === "") continue;
+    pairs.push({ ...pair, alias, canonical });
+  }
+  const { kept, dropped } = uniqueTriggers(pairs, (a) => a.toLowerCase());
   const shared = sharedTriggerNote(dropped, "shortcut");
   if (shared) sink?.notes.push(shared);
   let rows = 0;
   for (const { alias, canonical } of kept) {
-    if (findUnencodableChar(alias) !== void 0 || findUnencodableChar(canonical) !== void 0) continue;
     lines.push("	<dict>");
     lines.push("		<key>phrase</key>");
     lines.push(`		<string>${xmlEscape(canonical)}</string>`);
@@ -58734,6 +58746,9 @@ function exportMacos(lexicon, _opts = {}, sink) {
     rows += 1;
   }
   if (sink) sink.rows = rows;
+  if (stripped > 0) {
+    sink?.notes.push(`removed control characters XML cannot hold from ${stripped} entr${stripped === 1 ? "y" : "ies"} (a pair left with an empty shortcut or phrase is not written)`);
+  }
   lines.push("</array>", "</plist>");
   return lines.join("\n") + "\n";
 }
