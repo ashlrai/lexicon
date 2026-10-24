@@ -241,3 +241,43 @@ describe('lexicon_doctor, serve_status and trust_project name every field they a
     expect((await call('trust_project', { action: 'untrust' })).json()).toMatchObject({ removed: false });
   });
 });
+
+describe('resources and prompts', () => {
+  async function listedAll() {
+    return connected(async (client) => ({
+      resources: (await client.listResources()).resources,
+      prompts: (await client.listPrompts()).prompts,
+    }));
+  }
+
+  // Catches: lexicon://me promised the lexicon with no word that an untrusted
+  // project file is left out or that an empty one carries a note.
+  it('lexicon://me says what it leaves out and what an empty lexicon reads, and it does', async () => {
+    const { resources } = await listedAll();
+    const d = resources.find((r) => r.uri === 'lexicon://me')?.description ?? '';
+    expect(d).toContain('An untrusted (or changed) project file is left out and named by path in a closing note, never quoted');
+    expect(d).toContain('with no terms at all, a closing note says so');
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+    const text = await connected(async (client) => ((await client.readResource({ uri: 'lexicon://me' })).contents[0] as { text: string }).text);
+    expect(text).not.toContain('Kubectl');
+    expect(text).toContain(path.join(repo, '.lexicon.yaml'));
+    expect(text).toMatch(/no terms yet/);
+  });
+
+  // Catches: neither prompt said it takes no arguments (an argument is refused),
+  // and onboard left out the packs step and the normalize_transcript proof.
+  it('voice-context and onboard say they take no arguments, and refuse one', async () => {
+    const { prompts } = await listedAll();
+    for (const name of ['voice-context', 'onboard']) {
+      expect(prompts.find((p) => p.name === name)?.description, name).toContain('Takes no arguments');
+      await expect(connected((client) => client.getPrompt({ name, arguments: { scope: 'project' } }))).rejects.toThrow(/unknown argument "scope"/);
+    }
+    const onboard = prompts.find((p) => p.name === 'onboard')?.description ?? '';
+    expect(onboard).toContain('offer the starter packs');
+    const script = await connected(async (client) => ((await client.getPrompt({ name: 'onboard' })).messages[0]?.content as { text: string }).text);
+    expect(script).toContain('list_packs');
+    expect(script).toContain('normalize_transcript');
+    const empty = await connected(async (client) => ((await client.getPrompt({ name: 'voice-context' })).messages[0]?.content as { text: string }).text);
+    expect(empty).toMatch(/no terms yet/);
+  });
+});
