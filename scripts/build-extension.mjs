@@ -11,7 +11,7 @@
  *   extension/dist/manifest.json   <- extension/manifest.json with the package version
  *   extension/dist/*.html, ui.css  <- extension/static/
  *   extension/dist/icons/*.png     <- generated here (pure-JS PNG encoder)
- *   extension/dist-firefox/        <- same files, Firefox manifest (background.scripts + gecko id)
+ *   extension/dist-firefox/        <- same files, Firefox manifest (scripts/extension-manifest.mjs)
  *   extension/lexicon-extension.zip, extension/lexicon-extension-firefox.zip (when `zip` is on PATH)
  *
  * Like the demo site, only browser-safe core modules may be reached from the
@@ -23,6 +23,7 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, w
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
+import { firefoxManifest } from './extension-manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const src = resolve(root, 'extension/src');
@@ -115,11 +116,7 @@ for (const size of [16, 48, 128]) {
 // 6. Firefox variant: same files, manifest with background.scripts and a gecko id.
 mkdirSync(outdirFirefox, { recursive: true });
 copyDir(outdir, outdirFirefox);
-const ffManifest = {
-  ...manifest,
-  background: { scripts: ['background.js'], type: 'module' },
-  browser_specific_settings: { gecko: { id: 'lexicon@ashlr.ai', strict_min_version: '121.0' } },
-};
+const ffManifest = firefoxManifest(manifest);
 writeFileSync(resolve(outdirFirefox, 'manifest.json'), JSON.stringify(ffManifest, null, 2) + '\n');
 
 // 7. Zips for "Load unpacked" alternatives and releases.

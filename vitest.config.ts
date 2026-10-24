@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 // The browser-extension suite runs under jsdom, whose undici build needs Node 22+.
-// jsdom is a dev-only dependency, so on older runtimes we skip that one file.
+// jsdom is a dev-only dependency, so on older runtimes we skip those files.
 const nodeMajor = Number(process.versions.node.split('.')[0]);
 
 // Wall-clock assertions. They run in their own project (below), never in the
@@ -24,7 +24,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['tests/**/*.test.ts', 'src/**/*.test.ts', 'bench/**/*.test.ts'],
-          exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts'] : []), ...PERF_FILES],
+          exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts', 'tests/extension-api-health.test.ts'] : []), ...PERF_FILES],
           sequence: { groupOrder: 0 },
         },
       },

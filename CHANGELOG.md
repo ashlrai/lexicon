@@ -26,6 +26,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- Browser extension: the Firefox build now requires Firefox 127 (`strict_min_version` was 121). Firefox grants an MV3 add-on's host permissions at install only from 127, so on 121 to 126 the chat sites and the local server stayed blocked until each was allowed by hand in `about:addons`. The minimum was raised rather than asking for the permissions at runtime. The manifest is built by `scripts/extension-manifest.mjs`.
 - Browser extension: the stored API token is trimmed when settings are read, so a token saved with the spaces or newline around it (by an older Options page, or a settings patch) is no longer sent as is and rejected.
 - Browser extension: in the Embedded mode the popup no longer probes `/health` on every open; no server is configured for that mode. Options > Test connection still checks the server.
 - Browser extension: a `/health` reply counts as lexicon serve only when it has the server's fields (`ok`, a `version` string and a whole-number `terms`). Any `{ ok: true }` used to count, so another program on the port read as Connected and every correction was posted to it; now status says something else answers there and corrections use the embedded lexicon.

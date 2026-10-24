@@ -93,6 +93,7 @@ site/                       the demo page (GitHub Pages) and, after build, insta
 scripts/
   build-bundle.mjs          produces plugin/*.mjs (npm run build:bundle; CI runs check:bundle)
   build-extension.mjs       produces extension/dist, dist-firefox and the zips
+  extension-manifest.mjs    the Firefox manifest (gecko id, strict_min_version 127)
   build-macos-app.sh        builds and ad-hoc signs apps/macos/build/LexiconBar.app
   build-site.mjs            produces site/dist including install.sh
   gen-cli-docs.ts           produces docs/CLI.md from every command's --help
