@@ -1103,6 +1103,16 @@ describe('recordHits', () => {
     expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
   });
 
+  // Catches: any integer was taken as a count, so a hand-edited 1e300 (or 2**60) read as a real hit total.
+  it('drops a hits.json count that is not a positive safe integer', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(
+      getHitsPath({ globalPath }),
+      `{"version":1,"projects":{},"global":{"a":1e300,"b":${2 ** 60},"c":-3,"d":0,"e":1.5,"f":"4","g":7}}`,
+    );
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 7 });
+  });
+
   it('keeps a count already in the global file as a floor and forgets a removed global term', async () => {
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Legacy\n    aliases: []\n    hits: 10\n');

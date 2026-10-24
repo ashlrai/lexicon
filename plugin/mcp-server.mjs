@@ -43011,9 +43011,9 @@ function isPlainObject3(value) {
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) continue;
+    if (typeof n !== "number" || !Number.isSafeInteger(n) || n <= 0) continue;
     const key = hitKey(canonical);
-    entry[key] = (entry[key] ?? 0) + n;
+    entry[key] = Math.min((entry[key] ?? 0) + n, Number.MAX_SAFE_INTEGER);
   }
   return entry;
 }

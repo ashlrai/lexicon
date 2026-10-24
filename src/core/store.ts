@@ -1456,7 +1456,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The valid counts of one `hits.json` entry, keyed by `hitKey`. A key written
+ * The valid counts of one `hits.json` entry, keyed by `hitKey`: positive
+ * safe integers only, so a hand-edited `1e300` (an integer to
+ * `Number.isInteger`, and past every count arithmetic can still raise) is
+ * dropped rather than shown and summed as a count. A key written
  * before hitKey folded to NFC (a canonical typed with a combining accent) is
  * folded the same way, and two keys that fold together are added up, so an
  * old file keeps its counts; the next write stores the folded keys.
@@ -1464,9 +1467,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function validCounts(counts: Record<string, unknown>): Record<string, number> {
   const entry: Record<string, number> = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) continue;
+    if (typeof n !== 'number' || !Number.isSafeInteger(n) || n <= 0) continue;
     const key = hitKey(canonical);
-    entry[key] = (entry[key] ?? 0) + n;
+    // Two keys that fold together cannot add up past what a count can hold.
+    entry[key] = Math.min((entry[key] ?? 0) + n, Number.MAX_SAFE_INTEGER);
   }
   return entry;
 }
