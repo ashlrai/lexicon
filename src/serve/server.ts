@@ -1554,6 +1554,28 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     server.emit('request', req, res);
   });
 
+  // A request the HTTP parser cannot read never reaches the handler, and
+  // Node's own answer is a bare status line with no body, where every other
+  // error of this API is `{ error }`. Same statuses as Node's: 431 for
+  // headers over the limit, 408 for a request that took too long, else 400.
+  server.on('clientError', (err: NodeJS.ErrnoException, socket: net.Socket) => {
+    if (err.code === 'ECONNRESET' || !socket.writable) {
+      socket.destroy();
+      return;
+    }
+    const [status, reason, what] =
+      err.code === 'HPE_HEADER_OVERFLOW'
+        ? [431, 'Request Header Fields Too Large', 'request headers are too large']
+        : err.code === 'ERR_HTTP_REQUEST_TIMEOUT'
+          ? [408, 'Request Timeout', 'the request did not arrive in time']
+          : [400, 'Bad Request', 'malformed HTTP request'];
+    const body = JSON.stringify({ error: `${what} (${err.code ?? 'parse error'}); nothing was run` });
+    if (!opts.quiet) log(`[serve] ${status} ${what} (${err.code ?? 'parse error'})`);
+    socket.end(
+      `HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body, 'utf8')}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n${body}`,
+    );
+  });
+
   // Close idle keep-alive sockets quickly on stop(); the default 5 s is fine while running.
   server.keepAliveTimeout = 5_000;
 

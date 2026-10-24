@@ -1,10 +1,12 @@
 /**
  * Local HTTP API at the protocol level: what a client gets for a body it
- * announces as too large before sending it (`Expect: 100-continue`). An
- * in-process `createServer()` on port 0 against a throwaway HOME/LEXICON_PATH.
+ * announces as too large before sending it (`Expect: 100-continue`), and for
+ * a request the HTTP parser cannot read. An in-process `createServer()` on
+ * port 0 against a throwaway HOME/LEXICON_PATH.
  */
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -70,6 +72,25 @@ function expectContinue(length: number, body: () => Buffer): Promise<{ continued
   });
 }
 
+/** Writes `raw` to the port and reads everything back until the server closes. */
+function rawExchange(raw: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(info.port, '127.0.0.1', () => socket.write(raw));
+    let out = '';
+    socket.setEncoding('utf8');
+    socket.on('data', (d: string) => {
+      out += d;
+    });
+    socket.on('end', () => resolve(out));
+    socket.on('error', reject);
+  });
+}
+
+function bodyOf(response: string): unknown {
+  const at = response.indexOf('\r\n\r\n');
+  return JSON.parse(response.slice(at + 4)) as unknown;
+}
+
 describe('Expect: 100-continue', () => {
   // Catches: Node answered 100 Continue to every request, so a client
   // announcing a 20 MB body uploaded it, and past 16 MB the server cut the
@@ -88,5 +109,22 @@ describe('Expect: 100-continue', () => {
     expect(res.continued).toBe(true);
     expect(res.status).toBe(200);
     expect((res.json as { replacements: Array<{ canonical: string }> }).replacements.map((r) => r.canonical)).toEqual(['Ashlr.AI']);
+  });
+});
+
+describe('requests the HTTP parser cannot read', () => {
+  // Catches: Node's default answer to a malformed request is a bare status
+  // line with no body, where every other error of the API is `{ error }`.
+  it('answer 400 with the API\'s { error } body', async () => {
+    const res = await rawExchange('NOT A REQUEST\r\n\r\n');
+    expect(res.startsWith('HTTP/1.1 400 ')).toBe(true);
+    expect(res).toMatch(/content-type: application\/json; charset=utf-8/i);
+    expect(bodyOf(res)).toEqual({ error: expect.stringContaining('malformed HTTP request') });
+  });
+
+  it('answer 431 with { error } to headers over the limit', async () => {
+    const res = await rawExchange(`GET /health HTTP/1.1\r\nHost: 127.0.0.1:${info.port}\r\nX-Big: ${'a'.repeat(64 * 1024)}\r\n\r\n`);
+    expect(res.startsWith('HTTP/1.1 431 ')).toBe(true);
+    expect(bodyOf(res)).toEqual({ error: expect.stringContaining('request headers are too large') });
   });
 });
