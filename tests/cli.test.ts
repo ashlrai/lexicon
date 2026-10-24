@@ -501,6 +501,12 @@ describe('add / remove / path', () => {
     expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ never: ['sauce', ' '] }), expect.anything());
   });
 
+  // Catches: `lexicon add X "  "` dropped the blank alias and answered success.
+  it('passes a blank alias argument to addTerm, so it is refused there, and suggests none for it', async () => {
+    await runAdd('Ashlr.AI', ['Ashler', '  '], {}, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ aliases: ['Ashler', '  '] }), expect.anything());
+  });
+
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();

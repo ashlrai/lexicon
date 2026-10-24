@@ -54804,7 +54804,7 @@ function prepareIncoming(term) {
 }
 var BLANK_ENTRY_RE = /^[\s\p{Cf}]*$/u;
 function assertNoBlankEntries(term) {
-  for (const field of ["never"]) {
+  for (const field of ["aliases", "never"]) {
     const list = term[field] ?? [];
     const at = list.findIndex((s) => typeof s !== "string" || BLANK_ENTRY_RE.test(s));
     if (at < 0) continue;
@@ -60930,7 +60930,7 @@ var registerTermTools = (server, ctx) => {
           `The correct spelling, exactly as the user wants it written; must not be blank. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`
         ),
         aliases: external_exports.array(external_exports.string()).optional().describe(
-          `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`
+          `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}; a blank one is an error and nothing is written. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`
         ),
         phonetic: external_exports.string().optional().describe(`Pronunciation hint, e.g. "ASH-ler": one line, at most ${LIMITS.text} characters.`),
         category: external_exports.enum(TERM_CATEGORIES).optional(),

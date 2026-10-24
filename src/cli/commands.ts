@@ -354,7 +354,8 @@ export async function runAdd(
     ? (prompter ?? createPrompter({ input: process.stdin, output: process.stdout }))
     : undefined;
 
-  const aliases = aliasArgs.map((a) => a.trim()).filter(Boolean);
+  // A blank one is kept as given: addTerm refuses it, as MCP add_term and POST /add do.
+  const aliases = aliasArgs.map((a) => (a.trim() ? a.trim() : a));
   let suggested: string[] = [];
   // No aliases and no --suggest: the suggestions apply only if this creates the
   // term (addTerm's defaultAliases), so `add X --never w` on an existing X adds none.

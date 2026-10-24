@@ -260,7 +260,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .array(z.string())
           .optional()
           .describe(
-            `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`,
+            `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}; a blank one is an error and nothing is written. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`,
           ),
         phonetic: z.string().optional().describe(`Pronunciation hint, e.g. "ASH-ler": one line, at most ${LIMITS.text} characters.`),
         category: z.enum(TERM_CATEGORIES).optional(),

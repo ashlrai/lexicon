@@ -398,6 +398,16 @@ describe('add_term errors', () => {
     expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
   });
 
+  // Catches: `aliases: ["  "]` was dropped silently and the call answered success.
+  it('refuse a blank alias, naming it, and write nothing', async () => {
+    await call('add_term', { canonical: 'SaaS', aliases: ['sass'] });
+    const before = await fs.readFile(process.env.LEXICON_PATH as string, 'utf8');
+    const res = await call('add_term', { canonical: 'SaaS', aliases: ['  '] });
+    expect(res.isError).toBe(true);
+    expect(res.text).toBe('term not added: aliases[0] ("  ") is blank. Nothing was written; drop that entry or give the word and try again.');
+    expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
+  });
+
   it('name the field that is over the schema cap, not an index into the lexicon file', async () => {
     // Two terms already in the file, so a file-level error would say terms[2].
     await call('add_term', { canonical: 'One', aliases: [] });
