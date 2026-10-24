@@ -850,6 +850,11 @@ describe('lexicon voice --toggle start race', () => {
     expect(await readState(h.globalPath)).toEqual({ wav: 'a.wav', startedAt: 't' });
     await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 'nope', wav: 'a.wav', startedAt: 't' }));
     expect(await readState(h.globalPath)).toBeUndefined();
+    // Catches: any number was taken as the recorder's pid, so a damaged file's -1 or 0 reached process.kill on the stop press (every process of the user, or the process group).
+    for (const pid of [-1, 0, 1.5, 2 ** 60]) {
+      await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid, wav: 'a.wav', startedAt: 't' }));
+      expect(await readState(h.globalPath)).toBeUndefined();
+    }
     const now = Date.parse('2026-09-19T12:00:00.000Z');
     expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS)).toBe(false);
     expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS + 1)).toBe(true);

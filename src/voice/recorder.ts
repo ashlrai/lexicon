@@ -123,7 +123,10 @@ async function readStateFile(file: string): Promise<RecordingState | undefined> 
   try {
     const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as Partial<RecordingState>;
     if (typeof parsed.wav !== 'string' || typeof parsed.startedAt !== 'string') return undefined;
-    if (parsed.pid !== undefined && typeof parsed.pid !== 'number') return undefined;
+    // A pid is a positive integer. `-1` or `0` in a damaged file would reach
+    // process.kill as "every process this user owns" or "this process group"
+    // when the toggle stops the recorder, and a fraction is no process at all.
+    if (parsed.pid !== undefined && !(Number.isSafeInteger(parsed.pid) && (parsed.pid as number) > 0)) return undefined;
     return { ...(parsed.pid !== undefined ? { pid: parsed.pid } : {}), wav: parsed.wav, startedAt: parsed.startedAt };
   } catch {
     return undefined;
