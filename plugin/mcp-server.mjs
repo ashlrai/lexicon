@@ -64073,9 +64073,9 @@ function launchCommandLine(launch, platform = process.platform) {
   };
   return [launch.command, ...launch.args].map(quote).join(" ");
 }
-function defaultExec(file2, args) {
+function defaultExec(file2, args, opts = {}) {
   try {
-    return (0, import_node_child_process3.execFileSync)(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"] });
+    return (0, import_node_child_process3.execFileSync)(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"], ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {} });
   } catch (err) {
     const text = (stream) => typeof stream === "string" ? stream.trim() : "";
     const detail = text(err.stderr) || text(err.stdout);
@@ -65169,7 +65169,8 @@ async function runInstallClaude(opts, io, deps = {}) {
     }
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const exec = deps.exec ?? defaultExec;
+  const claudeCwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
+  const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd: claudeCwd }));
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
   const serverEnv = lexiconServerEnv(deps.env ?? process.env, import_node_path19.default.resolve(opts.cwd ?? process.cwd()));
@@ -67938,7 +67939,8 @@ async function uninstallText(client, opts, io, deps, changes) {
   let ok = true;
   if (name === "claude") {
     const settingsPath = deps.settingsPath ?? (opts.home && !project ? import_node_path28.default.join(claudeConfigDir(env, home), "settings.json") : claudeSettingsPathFor(scope, cwd, env));
-    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec, {
+    const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd }));
+    ok = await uninstallClaude(ctx, scope, settingsPath, exec, {
       userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(env, home),
       cwd
     });

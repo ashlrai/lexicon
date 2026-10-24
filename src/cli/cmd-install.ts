@@ -1069,7 +1069,12 @@ export async function runInstallClaude(
     }
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const exec = deps.exec ?? defaultExec;
+  // In the directory the install is for: `claude mcp add --scope project`
+  // writes that directory's .mcp.json, and ran in the process's own, so
+  // `lexicon --cwd <repo> install claude --scope project` registered the
+  // server in another project from the one that got the hooks.
+  const claudeCwd = path.resolve(opts.cwd ?? process.cwd());
+  const exec = deps.exec ?? ((file: string, args: readonly string[]): string => defaultExec(file, args, { cwd: claudeCwd }));
   let failed = false;
 
   // 1. MCP server registration ------------------------------------------------

@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon --cwd <dir> install claude` and `uninstall claude` run `claude mcp add`, `get` and `remove` in `<dir>`. They ran in the current directory, so at project scope the server was registered in (or looked up and removed from) that directory's `.mcp.json` while the hooks went into `<dir>/.claude/settings.json`.
 - `lexicon uninstall codex` writes `config.toml` through a temp file and a rename, as `lexicon install codex` does. It wrote the file in place, which truncates it first, so a full disk or a killed process partway through left the user's Codex config cut short.
 - `lexicon serve --install` runs a Homebrew node through `<prefix>/opt/node/bin/node` (or `opt/node@<N>`), the symlink that follows upgrades. Node reports its own path with symlinks resolved, so the service was pinned to the versioned `Cellar/node/<version>` directory, which `brew upgrade` and `brew cleanup` delete, and the login service then crash-looped on a missing binary. Other node paths (nvm, a system node) are written as before.
 - `lexicon serve --install` writes the LaunchAgent plist and the systemd unit as mode 0644. They took the umask (002 on many shared machines) or kept the mode of the file they replaced, and launchd refuses to bootstrap a group- or world-writable plist, so such an install wrote the file and then failed to load it.

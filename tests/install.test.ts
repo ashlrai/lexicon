@@ -870,6 +870,37 @@ describe('install claude --scope project writes the repo hooks', () => {
   });
 });
 
+// Catches: `claude mcp add --scope project` ran in the process's own
+// directory, so `lexicon --cwd <repo> install claude --scope project` wrote
+// another directory's .mcp.json while the hooks went into <repo>'s.
+describe.skipIf(process.platform === 'win32')('claude runs in the directory the install is for', () => {
+  it('install and uninstall run claude with --cwd as its working directory', async () => {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-bin-'));
+    const log = path.join(bin, 'claude.log');
+    const savedPath = process.env.PATH;
+    const savedLog = process.env.TEST_CLAUDE_LOG;
+    try {
+      await fs.writeFile(
+        path.join(bin, 'claude'),
+        `#!/bin/sh\nprintf '%s %s\\n' "$(pwd -P)" "$2" >> "$TEST_CLAUDE_LOG"\ncase "$2" in get) printf 'lexicon:\\n  Scope: Project config\\n  Command: node\\n  Args: /x/plugin/mcp-server.mjs\\n' ;; *) printf 'ok\\n' ;; esac\n`,
+        { mode: 0o755 },
+      );
+      process.env.PATH = `${bin}${path.delimiter}${savedPath ?? ''}`;
+      process.env.TEST_CLAUDE_LOG = log;
+      expect(await runInstall('claude', { apply: true, home, cwd, scope: 'project' }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '' } })).toBe(0);
+      const { runUninstall } = await import('../src/cli/cmd-uninstall.js');
+      expect(await runUninstall('claude', { home, cwd, scope: 'project' }, makeIO(), { env: { PATH: '' } })).toBe(0);
+      const real = await fs.realpath(cwd);
+      expect((await fs.readFile(log, 'utf8')).trim().split('\n')).toEqual([`${real} add`, `${real} get`, `${real} remove`]);
+    } finally {
+      process.env.PATH = savedPath;
+      if (savedLog === undefined) delete process.env.TEST_CLAUDE_LOG;
+      else process.env.TEST_CLAUDE_LOG = savedLog;
+      await fs.rm(bin, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('claude registration is idempotent', () => {
   it('reports an existing `claude mcp add` entry as unchanged rather than failed', async () => {
     const io = makeIO();

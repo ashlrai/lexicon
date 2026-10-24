@@ -427,7 +427,10 @@ async function uninstallText(client: string | undefined, opts: UninstallOptions,
   if (name === 'claude') {
     const settingsPath =
       deps.settingsPath ?? (opts.home && !project ? path.join(claudeConfigDir(env, home), 'settings.json') : claudeSettingsPathFor(scope, cwd, env));
-    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec, {
+    // In the directory the uninstall is for, as install runs it: the project
+    // and local scopes are that directory's.
+    const exec = deps.exec ?? ((file: string, args: readonly string[]): string => defaultExec(file, args, { cwd }));
+    ok = await uninstallClaude(ctx, scope, settingsPath, exec, {
       userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(env, home),
       cwd,
     });

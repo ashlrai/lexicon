@@ -436,7 +436,7 @@ Everything the CLI knows about Claude Code's own files, extracted from `commands
 - `HOOK_EVENTS = ['UserPromptSubmit', 'SessionStart']`.
 - `ClaudeSettings`, `HookCommand`, `HookGroup`, `hookConfigFor(...)`, `mergeHookIntoSettings(...)` (idempotent: a second install does not duplicate a hook, from the same location or another: a hook an earlier install wrote, `isInstalledLexiconHook(command)` (`node <dir>/plugin/hook.mjs` or `node <dir>/hooks/user-prompt-submit.js`, quoted or not, either separator, or `npx -y @ashlr/lexicon[@<version>] hook`), is pointed at the new command with its timeout instead, any further copy of it is removed with its group when nothing else is left there, and an exact match keeps its timeout; a user's own hook is never touched), `settingsHasLexiconHook(settings, event)`.
 - `findInstalledLexiconPlugin(settings, installedPlugins): string | undefined` so the CLI does not add a hook that the installed plugin already provides.
-- `IntegrationPaths`, `resolveIntegrationPaths(cliDir?)`, `defaultExec(file, args)`.
+- `IntegrationPaths`, `resolveIntegrationPaths(cliDir?)`, `defaultExec(file, args, opts?: { cwd? })` (`lexicon install claude` and `lexicon uninstall claude` run `claude` with `cwd` = their `--cwd` directory, whose `.mcp.json` and local scope are the project's).
 
 ## src/cli/cmd-doctor.ts
 `lexicon doctor`, extracted from `commands.ts` and re-exported by it.

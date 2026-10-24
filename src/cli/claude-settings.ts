@@ -414,9 +414,9 @@ export function launchCommandLine(launch: StdioLaunch, platform: NodeJS.Platform
  * reason ("MCP server lexicon already exists in user config") lives on the
  * child's output, so that is what the caller gets to show.
  */
-export function defaultExec(file: string, args: readonly string[]): string {
+export function defaultExec(file: string, args: readonly string[], opts: { cwd?: string } = {}): string {
   try {
-    return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] });
+    return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
   } catch (err) {
     const text = (stream: unknown): string => (typeof stream === 'string' ? stream.trim() : '');
     const detail = text((err as { stderr?: unknown }).stderr) || text((err as { stdout?: unknown }).stdout);
