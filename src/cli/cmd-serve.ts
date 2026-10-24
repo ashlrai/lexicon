@@ -640,9 +640,16 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
-    const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT_NAME]);
-    if (enable.code !== 0) {
-      io.stderr('lexicon: could not enable the unit; the file is in place, run `systemctl --user enable --now lexicon-serve.service` manually\n');
+    // `enable --now` starts a stopped unit but leaves a running one as it is,
+    // so a reinstall (a new node or CLI path, new Environment= lines) kept the
+    // old process serving until the next login. `restart` starts it either
+    // way, as bootout + bootstrap does on macOS.
+    const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', SYSTEMD_UNIT_NAME]);
+    const started = enable.code === 0 ? await runAndReport(exec, io, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT_NAME]) : enable;
+    if (started.code !== 0) {
+      io.stderr(
+        `lexicon: could not ${enable.code !== 0 ? 'enable' : 'start'} the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually\n`,
+      );
       return 1;
     }
     line(io, `installed ${SYSTEMD_UNIT_NAME}; check with: lexicon serve --status`);

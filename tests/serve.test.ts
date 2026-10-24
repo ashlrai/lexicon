@@ -2377,14 +2377,22 @@ describe('lexicon serve (CLI)', () => {
       expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli.replace(/\\/g, '\\\\')}" serve`);
       expect(unit).toContain('WantedBy=default.target');
       expect(unit).not.toContain('Environment=');
+      // Catches: `enable --now` leaves a running unit as it is, so a
+      // reinstall kept the old process (old node, old CLI path) serving.
       expect(calls).toEqual([
         ['systemctl', '--user', 'daemon-reload'],
-        ['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT_NAME],
+        ['systemctl', '--user', 'enable', SYSTEMD_UNIT_NAME],
+        ['systemctl', '--user', 'restart', SYSTEMD_UNIT_NAME],
       ]);
       expect(io.out.join('')).toContain(`wrote ${unitPath}`);
 
       const failing = memIO();
       expect(await runServe({ install: true, globalPath: env.globalPath }, failing, { platform: 'linux', home, env: {}, exec: fakeExec([], 1), cliPath: cli })).toBe(1);
+      expect(failing.err.join('')).toContain(`could not enable the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually`);
+      const restartFails: ServeExec = async (_cmd, args) => ({ code: args[1] === 'restart' ? 1 : 0, stdout: '', stderr: '' });
+      const noStart = memIO();
+      expect(await runServe({ install: true, globalPath: env.globalPath }, noStart, { platform: 'linux', home, env: {}, exec: restartFails, cliPath: cli })).toBe(1);
+      expect(noStart.err.join('')).toContain('could not start the unit; the file is in place');
 
       const calls2: string[][] = [];
       expect(await runServe({ uninstall: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec(calls2) })).toBe(0);

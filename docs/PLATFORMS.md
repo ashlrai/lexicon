@@ -47,7 +47,7 @@ This is the one feature where the three platforms are genuinely different produc
 |---|---|---|
 | macOS | `~/Library/LaunchAgents/ai.ashlr.lexicon.serve.plist` | The plist is generated under test, and `lexicon doctor` reports whether the agent is loaded. `launchctl bootstrap` itself is run by hand on a Mac, not on a runner. |
 | Windows | A Scheduled Task with a logon trigger | A CI job creates the task, queries it back out of the Task Scheduler store, asserts the trigger and the program path, confirms `lexicon doctor` sees it, then deletes it and confirms it is gone. This is the most thoroughly proved of the three. |
-| Linux | `~/.config/systemd/user/lexicon-serve.service` | The unit is written and then handed to `systemd-analyze verify`, which is the authority on whether it parses and whether `ExecStart` points at something runnable. The `systemctl --user enable --now` step is not verified: a GitHub runner has no user session bus, so `--install` writes the unit and then fails to enable it. |
+| Linux | `~/.config/systemd/user/lexicon-serve.service` | The unit is written and then handed to `systemd-analyze verify`, which is the authority on whether it parses and whether `ExecStart` points at something runnable. The `systemctl --user enable` and `restart` steps are not verified: a GitHub runner has no user session bus, so `--install` writes the unit and then fails to enable it. |
 
 On any other platform the command refuses and tells you to run `lexicon serve` from your own session startup.
 
