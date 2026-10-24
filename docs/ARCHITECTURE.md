@@ -55,7 +55,7 @@ src/
     history.ts              voice/history.jsonl (newest 1000 lines)
     voice.ts                runVoice, runVoiceToggle, runVoiceStatus, runVoiceListDevices; exit codes 0/1/2/3
   cli/
-    index.ts                commander wiring (bin: lexicon), 26 commands
+    index.ts                commander wiring (bin: lexicon), 27 commands
     cli-entry.ts            package name, $LEXICON_CLI, resolveCliEntry(): which file the installers point at
     io.ts                   the IO seam every handler writes through, plus bold/dim/safe/renderTable
     prompt.ts               dependency-free readline prompter used by the interactive commands

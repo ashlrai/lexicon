@@ -54058,6 +54058,75 @@ ${inner}${e}`).join(",");
   if (trailing) return [{ start: at, end: at, text: `${lines},` }];
   return at === after ? [{ start: at, end: at, text: `,${lines}` }] : [{ start: at, end: at, text: lines }, { start: after, end: after, text: "," }];
 }
+function commaAfter(text, at) {
+  const scan = new Scanner(text);
+  scan.i = at;
+  scan.skip();
+  return text[scan.i] === "," ? scan.i : -1;
+}
+function startsLine(text, at) {
+  return /^[ \t]*$/.test(text.slice(text.lastIndexOf("\n", at - 1) + 1, at));
+}
+function pastLineBreak(text, at) {
+  const end = endOfLineComments(text, at);
+  if (end >= text.length) return end;
+  if (text[end] === "\r" && text[end + 1] === "\n") return end + 2;
+  if (text[end] === "\n") return end + 1;
+  return void 0;
+}
+function removalEdits(text, node2, children, expected) {
+  const edits = [];
+  if (children.every((c) => !c.keep)) {
+    edits.push({ start: node2.start, end: node2.end, text: node2.kind === "array" ? "[]" : "{}" });
+  } else {
+    for (let a = 0; a < children.length; a++) {
+      if (children[a]?.keep) continue;
+      let b = a;
+      while (b + 1 < children.length && !children[b + 1]?.keep) b++;
+      const first = children[a];
+      const last = children[b];
+      if (b + 1 < children.length) {
+        const comma = commaAfter(text, last.end);
+        if (comma < 0) return null;
+        const lineEnd2 = startsLine(text, first.start) ? pastLineBreak(text, comma + 1) : void 0;
+        if (lineEnd2 !== void 0) {
+          edits.push({ start: first.start - lineIndent(text, first.start).length, end: lineEnd2, text: "" });
+        } else {
+          let end = comma + 1;
+          while (text[end] === " " || text[end] === "	") end++;
+          edits.push({ start: first.start, end, text: "" });
+        }
+      } else {
+        const prev = children[a - 1];
+        const before = commaAfter(text, prev.end);
+        if (before < 0) return null;
+        const trailing = commaAfter(text, last.end);
+        const tail = trailing >= 0 ? trailing + 1 : last.end;
+        const lineEnd2 = startsLine(text, first.start) ? pastLineBreak(text, tail) : void 0;
+        if (lineEnd2 !== void 0) {
+          edits.push({ start: first.start - lineIndent(text, first.start).length, end: lineEnd2, text: "" });
+          if (trailing < 0) edits.push({ start: before, end: before + 1, text: "" });
+        } else if (trailing < 0) {
+          edits.push({ start: before, end: last.end, text: "" });
+        } else {
+          let end = tail;
+          while (text[end] === " " || text[end] === "	") end++;
+          edits.push({ start: first.start, end, text: "" });
+        }
+      }
+      a = b;
+    }
+  }
+  let slice = text.slice(node2.start, node2.end);
+  for (const e of [...edits].sort((x, y) => y.start - x.start)) {
+    slice = slice.slice(0, e.start - node2.start) + e.text + slice.slice(e.end - node2.start);
+  }
+  try {
+    return same(parseJsonc(slice), expected) ? edits : null;
+  } catch {
+    return null;
+  }
+}
 function diff(text, node2, next, unit, edits) {
   const old = toValue(node2);
   if (same(old, next)) return;
@@ -54065,6 +54134,16 @@ function diff(text, node2, next, unit, edits) {
   if (node2.kind === "object" && isPlain(next)) {
     const keys = Object.keys(next);
     const kept = node2.members.filter((m) => Object.prototype.hasOwnProperty.call(next, m.key));
+    if (kept.length < node2.members.length && keys.length === kept.length && kept.every((m, i) => keys[i] === m.key)) {
+      const expected = Object.fromEntries(kept.map((m) => [m.key, toValue(m.value)]));
+      const children = node2.members.map((m) => ({ start: m.keyStart, end: m.value.end, keep: kept.includes(m) }));
+      const removal = removalEdits(text, node2, children, expected);
+      if (removal !== null) {
+        edits.push(...removal);
+        for (const m of kept) diff(text, m.value, next[m.key], unit, edits);
+        return;
+      }
+    }
     if (kept.length !== node2.members.length || kept.some((m, i) => keys[i] !== m.key)) {
       edits.push({ start: node2.start, end: node2.end, text: render(next, unit, indent2) });
       return;
@@ -54080,6 +54159,19 @@ function diff(text, node2, next, unit, edits) {
       edits.push(...appendTo(text, node2, entries2, last?.value.end, unit, first?.keyStart));
     }
     return;
+  }
+  if (node2.kind === "array" && Array.isArray(next) && next.length < node2.items.length) {
+    let j = 0;
+    const children = node2.items.map((item) => {
+      const keep = j < next.length && same(toValue(item), next[j]);
+      if (keep) j++;
+      return { start: item.start, end: item.end, keep };
+    });
+    const removal = j === next.length ? removalEdits(text, node2, children, next) : null;
+    if (removal !== null) {
+      edits.push(...removal);
+      return;
+    }
   }
   if (node2.kind === "array" && Array.isArray(next) && next.length === node2.items.length) {
     for (const [i, item] of node2.items.entries()) diff(text, item, next[i], unit, edits);

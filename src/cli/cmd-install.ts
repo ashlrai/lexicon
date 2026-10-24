@@ -515,7 +515,7 @@ async function writeText(file: string, text: string): Promise<void> {
  * refusal that says nothing was changed and how to go on. It surfaced as
  * Node's bare `EACCES: permission denied, open '<file>'`.
  */
-async function explainWrite(file: string, write: () => Promise<void>): Promise<void> {
+export async function explainWrite(file: string, write: () => Promise<void>): Promise<void> {
   try {
     await write();
   } catch (err) {

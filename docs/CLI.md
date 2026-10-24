@@ -24,6 +24,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
 | [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
+| [`lexicon uninstall [options] [client]`](#lexicon-uninstall) | remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched |
 | [`lexicon trust [options] [path]`](#lexicon-trust) | approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal) |
 | [`lexicon untrust [options] [path]`](#lexicon-untrust) | revoke approval for a project .lexicon.yaml |
 | [`lexicon learn [options] [words...]`](#lexicon-learn) | record a spelling correction: what STT heard and what you meant |
@@ -65,6 +66,7 @@ Commands:
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
+  uninstall [options] [client]            remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched
   trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)
   untrust [options] [path]                revoke approval for a project .lexicon.yaml
   learn [options] [words...]              record a spelling correction: what STT heard and what you meant
@@ -380,6 +382,29 @@ Options:
   --json           print { ok: true, client, scope, applied, written, output }
                    as JSON ({ ok: false, error, nextStep } for an unknown client
                    or scope)
+  -h, --help       display help for command
+```
+
+## `lexicon uninstall`
+
+```text
+Usage: lexicon uninstall [options] [client]
+
+remove the MCP config (and, for claude, the hooks) lexicon install wrote for a
+client; nothing else is touched
+
+Arguments:
+  client           one of: claude, codex, cursor, windsurf, gemini,
+                   claude-desktop, vscode
+
+Options:
+  --dry-run        print what would be removed; write nothing
+  --scope <scope>  user|project (project = the repo-level config file), as for
+                   install
+  --project        same as --scope project
+  --home <dir>     treat <dir> as the home directory (mainly for tests)
+  --json           print { ok: true, client, scope, dryRun, changes, output } as
+                   JSON ({ ok: false, error, nextStep } on a refusal)
   -h, --help       display help for command
 ```
 
