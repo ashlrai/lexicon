@@ -226,7 +226,8 @@ installed; the CLI adds SIGINT/SIGTERM handling around it.
 
 Loopback only, bearer token stored 0600, CORS restricted to browser
 extensions (never `*`), no TLS because nothing leaves the machine, 1 MB body
-cap, 64 concurrent requests. Anyone who can read `serve.json` is already the
+cap, 64 concurrent requests, and a request must arrive within 30 seconds
+(headers within 10), else it gets 408 with `{ error }`. Anyone who can read `serve.json` is already the
 same user and could edit the lexicon file directly; the API grants nothing
 beyond that. `/pair` hands the same token to a loopback browser tab whose
 `Host` names this server, which is the same boundary. See `SECURITY.md`.

@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addTerm } from '../src/core/index.js';
-import { BROKEN_LEXICON_ANONYMOUS, createServer, MAX_BODY_BYTES } from '../src/serve/index.js';
+import { BROKEN_LEXICON_ANONYMOUS, createServer, HEADERS_TIMEOUT_MS, MAX_BODY_BYTES, REQUEST_TIMEOUT_MS } from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 
 let home: string;
@@ -129,6 +129,64 @@ describe('requests the HTTP parser cannot read', () => {
     const res = await rawExchange(`GET /health HTTP/1.1\r\nHost: 127.0.0.1:${info.port}\r\nX-Big: ${'a'.repeat(64 * 1024)}\r\n\r\n`);
     expect(res.startsWith('HTTP/1.1 431 ')).toBe(true);
     expect(bodyOf(res)).toEqual({ error: expect.stringContaining('request headers are too large') });
+  });
+});
+
+describe('a request that arrives too slowly', () => {
+  /** Opens a connection to `port`, writes `raw` and keeps the socket open; resolves with what the server sent once it closes. */
+  function trickle(port: number, raw: string): Promise<{ out: string; ms: number }> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const socket = net.connect(port, '127.0.0.1', () => socket.write(raw));
+      let out = '';
+      socket.setEncoding('utf8');
+      socket.on('data', (d: string) => {
+        out += d;
+      });
+      socket.on('close', () => resolve({ out, ms: Date.now() - started }));
+      socket.on('error', reject);
+    });
+  }
+
+  // Catches: Node's default request timeout is 300 s, so a client that sent
+  // its headers and trickled (or never sent) the body held one of the
+  // concurrency slots for five minutes, and the answer had no { error } body.
+  it('is answered 408 with { error } and frees its slot', async () => {
+    const own = createServer({ port: 0, cwd, globalPath, quiet: true, version: '9.9.9', maxConcurrent: 1, requestTimeoutMs: 300, headersTimeoutMs: 200 });
+    const ownInfo = await own.start();
+    try {
+      const slow = trickle(
+        ownInfo.port,
+        `POST /normalize HTTP/1.1\r\nHost: 127.0.0.1:${ownInfo.port}\r\nAuthorization: Bearer ${ownInfo.token}\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"text":`,
+      );
+      const res = await slow;
+      expect(res.out.startsWith('HTTP/1.1 408 ')).toBe(true);
+      expect(bodyOf(res.out)).toEqual({ error: expect.stringContaining('the request did not arrive in time') });
+      expect(res.ms).toBeLessThan(5_000);
+      const next = await fetch(`${ownInfo.url}/health`);
+      expect(next.status).toBe(200);
+    } finally {
+      await own.stop();
+    }
+  });
+
+  it('headers that never finish get 408 too', async () => {
+    const own = createServer({ port: 0, cwd, globalPath, quiet: true, version: '9.9.9', requestTimeoutMs: 400, headersTimeoutMs: 150 });
+    const ownInfo = await own.start();
+    try {
+      const res = await trickle(ownInfo.port, `GET /health HTTP/1.1\r\nHost: 127.0.0.1:${ownInfo.port}\r\n`);
+      expect(res.out.startsWith('HTTP/1.1 408 ')).toBe(true);
+      expect(res.ms).toBeLessThan(5_000);
+    } finally {
+      await own.stop();
+    }
+  });
+
+  it('defaults to timeouts that suit a local API', () => {
+    expect(REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(60_000);
+    expect(HEADERS_TIMEOUT_MS).toBeLessThanOrEqual(REQUEST_TIMEOUT_MS);
+    expect(srv.server.requestTimeout).toBe(REQUEST_TIMEOUT_MS);
+    expect(srv.server.headersTimeout).toBe(HEADERS_TIMEOUT_MS);
   });
 });
 

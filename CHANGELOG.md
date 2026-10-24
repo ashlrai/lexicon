@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve` gives a request 30 seconds to arrive (its headers 10), then answers 408 with `{ error }` and closes it. Node's default was 300 s, so a client that sent its headers and trickled the body, or never sent it, held one of the 64 request slots for five minutes.
 - `lexicon serve`'s plain `/health`, asked without the token (the browser extension's status check does this), says when a lexicon file does not parse and names `lexicon serve --status` and `lexicon doctor` for the file and line. It said only `internal error (the lexicon serve log has the detail)`, so the popup gave no hint that the fix was an edit to the lexicon. The path is still left out without the token.
 - `lexicon serve` answers a request it cannot parse (a malformed request line, headers over Node's limit) with its usual `{ error }` JSON body and the status Node would give (400, 431 or 408). Node's own answer was a status line with no body, the one error of the API a client could not read as `{ error }`.
 - `lexicon serve` no longer invites a body it will refuse. Node answered every `Expect: 100-continue` with 100 Continue, so a client announcing a body over the 1 MB limit (curl does this for large uploads) sent all of it, and past 16 MB the connection was cut, so the client saw a reset instead of the 413. Such a request now gets the 413 at once, before the body is sent.
