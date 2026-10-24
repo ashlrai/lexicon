@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `add_pack` refuses a blank `name` at the schema (`must not be blank at name`), as the other required string arguments do; it passed the schema and came back as `unknown pack "  "`. The other tool schemas were checked: every other required string argument already makes this check.
 - MCP `import_vocabulary` says reading mail needs new OAuth scopes and reading Slack needs a workspace token, as each source's own description says; it read as both needing OAuth scopes.
 - `lexicon harvest --min-count` help says it applies only to names found in file text (default 2); the directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count. It said only "minimum occurrences". This matches MCP `harvest_repo`'s `minCount`.
 - MCP `setup_lexicon` names every field of its preview: `demo` (the before and after a real run ends on), `interactive` and `wouldAsk` (false and empty here) and `next` were missing from the plan it lists.

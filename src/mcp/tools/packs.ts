@@ -121,10 +121,9 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with ' + cliCommand('pack remove <name>') + '. ' +
         'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. A vendored pack installs directly: registry, previewDigest or confirm: false with one is refused and nothing is written. Community installs pin the checksum, so ' + cliCommand('pack update') + ' re-checks it later.',
       inputSchema: {
-        name: z
-          .string()
+        name: nonBlank()
           .describe(
-            'Pack name from list_packs (e.g. developer) or a community ref like example/cardiology. A pack name is 1 to 64 lowercase letters, digits and dashes, starting with a letter or digit; ' +
+            'Pack name from list_packs (e.g. developer) or a community ref like example/cardiology; must not be blank. A pack name is 1 to 64 lowercase letters, digits and dashes, starting with a letter or digit; ' +
               'a community ref is <author>/<name>, the author 1 to 39 of the same characters, optionally followed by @<version> (up to 32 characters). Anything else is refused.',
           ),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
