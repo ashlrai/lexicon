@@ -55,7 +55,7 @@ public sealed record ServeCredentials(int Port, string Token)
 ///
 /// <code>%USERPROFILE%\.config\lexicon\serve.json</code>
 ///
-/// — not <c>%APPDATA%\lexicon\serve.json</c>. The <c>%APPDATA%</c> and
+/// and not <c>%APPDATA%\lexicon\serve.json</c>. The <c>%APPDATA%</c> and
 /// <c>%LOCALAPPDATA%</c> locations are probed after it anyway, so that if the
 /// Node side ever grows a proper Windows branch this app keeps working without
 /// a release; and <c>LEXICON_PATH</c> / <c>XDG_CONFIG_HOME</c> are honoured

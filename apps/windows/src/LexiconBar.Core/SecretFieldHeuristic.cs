@@ -38,16 +38,16 @@ public sealed record FieldHints(
 /// A process-name list always lags reality: a password manager we have never
 /// heard of ships tomorrow, and <see cref="AppExclusions"/> does not know about
 /// it. UIA's <c>IsPassword</c> only protects the literal masked input, so in
-/// any manager we do not exclude the *ordinary* fields are still fair game — an
+/// any manager we do not exclude the *ordinary* fields are still fair game: an
 /// item's notes, a custom field holding a secret, a TOTP seed box, a vault
 /// search field echoing a saved username. A burst in one of those would be read
 /// and POSTed to the local API.
 ///
 /// This is the second, name-independent guard: refuse a field whose own labels
 /// suggest it holds a secret, in any app, and refuse any field inside a window
-/// whose title says the same. It is deliberately a *refusal* heuristic — a
+/// whose title says the same. It is deliberately a *refusal* heuristic (a
 /// false positive costs one uncorrected sentence, a false negative sends a
-/// secret over the wire — but it still has to leave ordinary writing alone, so
+/// secret over the wire), but it still has to leave ordinary writing alone, so
 /// matching is on whole words, never substrings. "Notes" is not "note your
 /// password", and "shipping" must never match "pin".
 ///

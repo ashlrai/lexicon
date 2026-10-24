@@ -16,7 +16,7 @@ public class ServePathsTests
     {
         // This is the assertion that documents the surprise: the Node CLI has no
         // win32 branch in resolvePaths, so `os.homedir()/.config/lexicon` is
-        // where serve.json really lands on Windows — not %APPDATA%.
+        // where serve.json really lands on Windows, not %APPDATA%.
         IReadOnlyList<string> candidates = ServePaths.Candidates(
             Env(("APPDATA", @"C:\Users\mason\AppData\Roaming")),
             @"C:\Users\mason");

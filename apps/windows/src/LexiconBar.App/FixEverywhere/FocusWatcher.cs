@@ -11,7 +11,7 @@ namespace LexiconBar.FixEverywhere;
 /// per-element handlers are attached to whatever currently has focus and torn
 /// down when it moves. That is simpler, but it puts more weight on the poll,
 /// because <c>Text_TextChanged</c> is the one UIA event providers are most
-/// inconsistent about raising — Win32 Edit controls raise a value-property
+/// inconsistent about raising: Win32 Edit controls raise a value-property
 /// change instead, and some Electron builds raise neither until the element is
 /// queried.
 ///

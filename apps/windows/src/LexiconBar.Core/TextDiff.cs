@@ -1,7 +1,7 @@
 namespace LexiconBar;
 
 /// <summary>
-/// A half-open span of a string, in UTF-16 code units — which for a .NET
+/// A half-open span of a string, in UTF-16 code units, which for a .NET
 /// <see cref="string"/> is simply "characters", the same unit the macOS app
 /// uses for <c>NSRange</c> and the same unit UI Automation's
 /// <c>TextPatternRange</c> offsets come out in once you measure them with
@@ -31,7 +31,7 @@ public static class TextDiff
     /// A prefix/suffix diff cannot always say *where* an insertion happened.
     /// Dictating "ping ashler ..." in front of a field that already reads
     /// "ping Ashlr.AI ..." shares the leading "ping ", so the stripped window
-    /// starts five units late and runs five units into the old text — a span
+    /// starts five units late and runs five units into the old text: a span
     /// that is textually consistent but is not what was inserted. Rewriting
     /// that window splices the correction into the middle of a word and leaves
     /// the rest of the burst untouched. <see cref="SlideLeft"/> /

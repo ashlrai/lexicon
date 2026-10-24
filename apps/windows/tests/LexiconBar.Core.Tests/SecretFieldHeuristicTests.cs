@@ -82,7 +82,7 @@ public class SecretFieldHeuristicTests
     /// rule splits a pluralized all-caps acronym at the lowercase "s", so
     /// "PINs" tokenizes as "pi" + "ns" and misses. The macOS tokenizer does
     /// exactly the same thing. It is pinned here so that if either port is ever
-    /// "fixed", the two are fixed together — the heuristic is only useful while
+    /// "fixed", the two are fixed together; the heuristic is only useful while
     /// both apps refuse the same fields.
     /// </summary>
     [Fact]

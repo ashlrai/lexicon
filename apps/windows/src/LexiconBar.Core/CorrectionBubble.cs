@@ -11,7 +11,7 @@ public enum BubbleAction
 
     /// <summary>
     /// "that guess was right": promotes the original to an explicit alias. Only
-    /// offered when the rewrite came from a phonetic or fuzzy guess — an exact
+    /// offered when the rewrite came from a phonetic or fuzzy guess; an exact
     /// alias is already explicit, so there is nothing to add.
     /// </summary>
     Add,

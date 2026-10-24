@@ -9,9 +9,9 @@ namespace LexiconBar;
 /// screen coordinates have their origin bottom-left with y growing upwards, so
 /// the Mac version puts the bubble *below* the caret by subtracting from y.
 /// Windows screen coordinates have their origin top-left with y growing
-/// downwards, so "below" means adding. The shape of the logic — prefer below
+/// downwards, so "below" means adding. The shape of the logic (prefer below
 /// and left-aligned, flip above rather than cover the text being written, clamp
-/// into the work area — is the same, and the tests cover both the flip and the
+/// into the work area) is the same, and the tests cover both the flip and the
 /// clamp.
 ///
 /// Pass the monitor's *working* area (<c>Screen.WorkingArea</c>), which already

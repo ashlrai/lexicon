@@ -6,7 +6,7 @@ namespace LexiconBar.Tests;
 /// The gate that decides whether a focused field's text may be read at all.
 ///
 /// The property these tests exist for is not "a refused field is not corrected"
-/// — that was always true — but "a refused field is <b>never read</b>". A
+/// (that was always true) but "a refused field is <b>never read</b>". A
 /// refusal that happens after the read leaves the user's TOTP seed or vault
 /// note sitting in this process's memory, where a crash dump or a debugger can
 /// reach it, which is precisely what the threat model in SECURITY.md says does
@@ -14,7 +14,7 @@ namespace LexiconBar.Tests;
 ///
 /// So <c>RecordingField</c> counts the reads, and every refusal case
 /// asserts that count is zero. A regression that moves the decision back behind
-/// the read still corrects nothing and still logs nothing — and fails here.
+/// the read still corrects nothing and still logs nothing, and fails here.
 /// </summary>
 public class FieldGateTests
 {
@@ -55,7 +55,7 @@ public class FieldGateTests
     /// <summary>
     /// Classic Credential Manager runs inside rundll32, which cannot be
     /// excluded by name without excluding every control panel applet. The
-    /// window title is the only thing that gives it away — and it is metadata,
+    /// window title is the only thing that gives it away, and it is metadata,
     /// so the gate can see it without reading anything.
     /// </summary>
     [Fact]
@@ -129,7 +129,7 @@ public class FieldGateTests
 
     /// <summary>
     /// A field that cannot be read is not a field that was refused. The watcher
-    /// treats the two differently — one means "the element is gone, re-resolve
+    /// treats the two differently: one means "the element is gone, re-resolve
     /// focus", the other means "do not touch this".
     /// </summary>
     [Fact]

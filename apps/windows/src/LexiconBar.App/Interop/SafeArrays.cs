@@ -6,9 +6,9 @@ namespace LexiconBar.Interop;
 
 /// <summary>
 /// The only pointer code in the app. Two UI Automation calls hand back a raw
-/// <c>SAFEARRAY*</c> that the caller owns — <c>GetRuntimeId</c> (VT_I4, the
+/// <c>SAFEARRAY*</c> that the caller owns: <c>GetRuntimeId</c> (VT_I4, the
 /// element's identity) and <c>GetBoundingRectangles</c> (VT_R8, four doubles
-/// per rectangle) — and both have to be read and then destroyed or the client
+/// per rectangle). Both have to be read and then destroyed or the client
 /// leaks a little on every focus change.
 /// </summary>
 internal static unsafe class SafeArrays

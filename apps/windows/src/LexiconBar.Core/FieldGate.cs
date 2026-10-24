@@ -6,7 +6,7 @@ namespace LexiconBar;
 /// pulls the user's text across the process boundary.
 ///
 /// The split is the whole point. <see cref="ProcessName"/> and
-/// <see cref="Hints"/> can be inspected for free — they are what the window
+/// <see cref="Hints"/> can be inspected for free: they are what the window
 /// manager and the accessibility tree say *about* the field. <see cref="ReadValue"/>
 /// is the first moment the user's own text enters this process, so
 /// <see cref="FieldGate"/> gets to decide before it is ever called.
@@ -62,7 +62,7 @@ public static class FieldGate
     /// Why this field's contents must never be read, or null when they may be.
     ///
     /// Pure string work over metadata the caller already has, so it is cheap
-    /// enough to re-run on every poll — which matters, because the user can add
+    /// enough to re-run on every poll, which matters, because the user can add
     /// an app to the exclusion list while that app still holds focus.
     /// </summary>
     public static string? Refuse(AppExclusions exclusions, string? processName, FieldHints hints)

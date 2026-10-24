@@ -13,7 +13,7 @@ namespace LexiconBar.FixEverywhere;
 /// the UI thread through <see cref="Event"/>.
 ///
 /// The decision logic is shared with the Mac app through the tested core; what
-/// is different, and untested, is the write ladder — see <see cref="Write"/>.
+/// is different, and untested, is the write ladder; see <see cref="Write"/>.
 /// </summary>
 internal sealed class FixEngine
 {
@@ -157,7 +157,7 @@ internal sealed class FixEngine
     /// This is <b>defence in depth, not the guard itself</b>. The guard is in
     /// <see cref="FocusWatcher"/>, which consults <see cref="FieldGate"/> before
     /// it reads anything, so a refused field's text never reaches this class to
-    /// begin with — a value handed to this method has already been admitted.
+    /// begin with: a value handed to this method has already been admitted.
     /// What this check buys is the case where the two disagree: the engine's
     /// config and the watcher's are pushed separately, so for the width of one
     /// settings change the engine may hold a list the watcher has not got yet.
@@ -209,7 +209,7 @@ internal sealed class FixEngine
         // text across the process boundary; a refusal that arrived while this
         // timer was armed has to be honoured here and not two calls later in
         // Handle. Today the watcher drops a newly refused field before this
-        // timer can fire, so this is not known to be reachable — but the
+        // timer can fire, so this is not known to be reachable, but the
         // ordering is what SECURITY.md promises, and a promise that holds only
         // because of the queue discipline in another class is not one worth
         // making.
@@ -233,7 +233,7 @@ internal sealed class FixEngine
 
             case SettleOutcome.Coalescing:
                 // Dictation is still streaming in. Nothing was decided and the
-                // detector kept the run pending, so ask again shortly — no value
+                // detector kept the run pending, so ask again shortly: no value
                 // change is coming to re-arm the timer if the user stopped
                 // speaking mid-run.
                 _settleGeneration++;
@@ -376,7 +376,7 @@ internal sealed class FixEngine
     /// </list>
     ///
     /// <paramref name="before"/> is the field value the plan was made from;
-    /// nothing is written when the field no longer holds it — the guard is
+    /// nothing is written when the field no longer holds it. The guard is
     /// re-checked immediately before each destructive step, because the
     /// selection round trip takes real time. That comparison is of the field's
     /// whole text, which is necessary and not sufficient: the user can move the
@@ -449,8 +449,8 @@ internal sealed class FixEngine
                 // selection while leaving every character where it was, and the
                 // keystrokes would then land at the caret instead of over the
                 // span. Verified last, immediately before SendInput, because
-                // everything above it — selecting, re-reading, the foreground
-                // check — takes round trips the user can type into.
+                // everything above it (selecting, re-reading, the foreground
+                // check) takes round trips the user can type into.
                 notes.Add("selection moved after it was made, keystrokes skipped");
             }
             else
@@ -672,7 +672,7 @@ internal sealed class FixEngine
     /// The field is re-read first. <see cref="PartialWrite"/> is arithmetic
     /// about what must have happened, not an observation, and an entry that
     /// does not match the field would offer an undo that splices at the wrong
-    /// offset — which is the same class of damage this whole change exists to
+    /// offset, which is the same class of damage this whole change exists to
     /// stop. When they disagree nothing is recorded and the caller says so.
     /// </summary>
     private bool RecordPartial(PartialWrite? halfWritten, UiaField field)

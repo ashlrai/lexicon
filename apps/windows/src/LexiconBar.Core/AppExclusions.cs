@@ -6,7 +6,7 @@ namespace LexiconBar;
 /// the user can add or remove entries.
 ///
 /// Windows has no bundle identifier, so the identity used here is the
-/// **process executable name without its extension, lowercased** —
+/// **process executable name without its extension, lowercased**:
 /// <c>WindowsTerminal.exe</c> is <c>windowsterminal</c>. Entries match
 /// case-insensitively; a trailing <c>*</c> matches a prefix
 /// (<c>keepass*</c> catches KeePass, KeePass2 and KeePassXC).
@@ -139,8 +139,8 @@ public sealed class AppExclusions
     public bool IsEmpty => !ProcessNames.Any(entry => Normalize(entry.Trim()).Length > 0);
 
     /// <summary>
-    /// Normalizes whatever the caller has — a full path, an executable name, a
-    /// bare process name — to the lowercased stem this class matches on.
+    /// Normalizes whatever the caller has (a full path, an executable name, a
+    /// bare process name) to the lowercased stem this class matches on.
     /// </summary>
     public static string Normalize(string? processNameOrPath)
     {

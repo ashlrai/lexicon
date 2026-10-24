@@ -49,7 +49,7 @@ internal sealed class UiaField : IInspectableField
     /// <summary>
     /// This field's own labels and those of its window. Captured here, once,
     /// because <see cref="FieldGate"/> needs them on every poll to decide
-    /// whether the value may be read — and because they are metadata, which is
+    /// whether the value may be read, and because they are metadata, which is
     /// exactly what may be looked at before that decision is made.
     /// </summary>
     internal FieldHints Hints { get; }
@@ -148,7 +148,7 @@ internal sealed class UiaField : IInspectableField
     /// <summary>
     /// The field's current text, or null when it cannot be read.
     /// <paramref name="limit"/> caps how much is pulled across the process
-    /// boundary — a burst in a 2 MB document is refused anyway, so there is no
+    /// boundary: a burst in a 2 MB document is refused anyway, so there is no
     /// reason to marshal the whole thing on every poll. One extra unit is
     /// fetched so "too long" is still distinguishable from "exactly the limit".
     /// </summary>
@@ -405,7 +405,7 @@ internal sealed class UiaField : IInspectableField
     /// This narrows the window to the one call it cannot cover. A single
     /// <c>SendInput</c> is non-interleaving, so nothing can land between this
     /// check and the keystrokes except in the microseconds it takes to issue
-    /// them — which is true of <i>one</i> call and was not true of the loop of
+    /// them, which is true of <i>one</i> call and was not true of the loop of
     /// them this used to sit in front of. <c>Keyboard.MaxKeyEvents</c> is what
     /// keeps it one call.
     /// </summary>
@@ -589,7 +589,7 @@ internal sealed class UiaField : IInspectableField
 
         // No runtime id (rare, but providers may refuse). A per-process
         // fallback is coarse, and the consequence is only that undo may be
-        // offered for the wrong field — which the text comparison then refuses.
+        // offered for the wrong field, which the text comparison then refuses.
         return $"pid:{processId}";
     }
 
