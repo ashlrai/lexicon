@@ -972,6 +972,24 @@ describe('runHook', () => {
       expect(shown + Number(more![1])).toBe(300);
     });
 
+    // Catches: a capped table kept its first rows in export order (category, then A to Z), so a large lexicon's context never held the names the user dictates most.
+    it('keeps the most used terms when the table is capped, as lexicon://me does', async () => {
+      const terms: Term[] = Array.from({ length: 300 }, (_, i) => ({ canonical: `Term${String(i).padStart(3, '0')}`, aliases: [`turm${i}`], category: 'product' }));
+      terms[299] = { ...terms[299], hits: 40 };
+      terms[250] = { ...terms[250], hits: 7 };
+      mocks.loadLexicon.mockResolvedValue({ ...loaded, merged: { version: 1, terms } });
+      const { runHook, SESSION_CONTEXT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runHook(sessionStartPayload()));
+      expect(ctx.length).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+      expect(ctx).toContain('| Term299 | turm299 | product |');
+      expect(ctx).toContain('| Term250 | turm250 | product |');
+      expect(ctx).toContain('| Term000 | turm0 | product |');
+      // Written in the export's order, not by hits.
+      expect(ctx.indexOf('| Term250 |')).toBeLessThan(ctx.indexOf('| Term299 |'));
+      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for more, or call the list_terms tool to look any term up\.$/m.exec(ctx);
+      expect((ctx.match(/^\| Term\d+ \|/gm) ?? []).length + Number(more![1])).toBe(300);
+    });
+
     // Catches: the table was cut to the cap and the skipped-project note was
     // appended after it, so the context ran past SESSION_CONTEXT_MAX_CHARS.
     it('keeps the table plus the skipped-project note within the cap', async () => {
