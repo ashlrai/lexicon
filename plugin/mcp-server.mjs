@@ -62835,7 +62835,7 @@ function filePathsInUse(loaded) {
 function skippedProjectFields(loaded, consequence) {
   const note = skippedProjectNote(loaded, consequence, { who: "the user can ", trust: cliCommand("trust") });
   if (!loaded.skippedProject || note === void 0) return {};
-  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
+  return { projectTrust: loaded.projectTrust, skippedProject: pathForModel(loaded.skippedProject.path), note };
 }
 
 // src/mcp/server.ts

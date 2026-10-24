@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `lexicon://json` and the tools that report a skipped project file (`normalize_transcript`, `list_terms`, `lexicon_stats`, `suggest_canonical`, `list_packs`) name it in `skippedProject` through `pathForModel`, as `lexicon://me` does: control and bidi characters removed, markup neutralized, the last three path parts, bounded length. The path went into model context raw, and JSON escaping leaves a bidi override or kilobytes of directory name intact.
 - MCP tools, resources and prompts answer a lexicon that cannot be read (`Cannot read lexicon at <path>: ...`) with a second line asking the user to make that path readable or fix or unset `LEXICON_PATH`, then check with `lexicon_doctor`. The model got the store error with no fix, though a file that does not parse had one.
 - `lexicon doctor` (and MCP `lexicon_doctor`) reports a lexicon that cannot be read at all (`Cannot read lexicon at <path>: ...`, a `LEXICON_PATH` under a file or a permission error) as `cannot be read`, with a next step that names the path and, for the global file, `LEXICON_PATH`. It said the file `does not parse (run: lexicon edit)`, which an editor cannot fix.
 - `lexicon serve --status` and `--pair` say a `serve.json` that exists but cannot be read (a directory, a permission error) could not be read, naming the error code. It was reported as `does not exist; lexicon serve creates it`, and lexicon serve then failed on it instead of creating anything.
