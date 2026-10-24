@@ -7,7 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyCorrections } from '../extension/src/editable.js';
+import { applyCorrections, caretOffset, setCaret } from '../extension/src/editable.js';
+import { holdsCode } from '../extension/src/adapters.js';
 import { createEmbedded } from '../extension/src/embedded.js';
 
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
@@ -91,5 +92,67 @@ describe('editable: a textarea correction keeps the undo history', () => {
     };
     const r = engine.normalize(t.value);
     expect(await applyCorrections(document, t, r.replacements, r.output)).toBe('ping Ashlr.AI now');
+  });
+});
+
+describe('editable: the caret inside an open shadow root', () => {
+  /** A composer in a shadow root whose own selection (Chromium's ShadowRoot.getSelection) holds `range`, while the document's is retargeted to the host. */
+  function shadowComposer(html: string): { host: HTMLElement; root: ShadowRoot; editor: HTMLElement; ranges: Range[] } {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = html;
+    const editor = root.querySelector('[contenteditable]') as HTMLElement;
+    const ranges: Range[] = [];
+    const sel = {
+      get rangeCount() {
+        return ranges.length;
+      },
+      get anchorNode() {
+        return ranges[0]?.startContainer ?? null;
+      },
+      getRangeAt: (i: number) => ranges[i],
+      removeAllRanges: () => {
+        ranges.length = 0;
+      },
+      addRange: (r: Range) => {
+        ranges.push(r);
+      },
+    };
+    (root as unknown as { getSelection(): unknown }).getSelection = () => sel;
+    // What document.getSelection() reports for a caret in a shadow tree: a point beside the host.
+    const outer = document.createRange();
+    outer.setStart(document.body, Array.from(document.body.childNodes).indexOf(host));
+    outer.collapse(true);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(outer);
+    return { host, root, editor, ranges };
+  }
+
+  it('caretOffset reads the shadow root\'s selection, not the host-level document one', () => {
+    const { editor, ranges } = shadowComposer('<div contenteditable="true">ping ashler and more</div>');
+    const r = document.createRange();
+    r.setStart(editor.firstChild!, 11);
+    r.collapse(true);
+    ranges.push(r);
+    expect(caretOffset(document, editor)).toBe(11);
+  });
+
+  it('setCaret puts the caret in the shadow root\'s selection', () => {
+    const { editor, ranges } = shadowComposer('<div contenteditable="true">ping ashler and more</div>');
+    setCaret(document, editor, 4);
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0].startContainer).toBe(editor.firstChild);
+    expect(ranges[0].startOffset).toBe(4);
+  });
+
+  it('holdsCode sees a caret inside code in a shadow-root composer', () => {
+    const { editor, ranges } = shadowComposer('<div contenteditable="true">run <code>npm ci</code> now</div>');
+    const code = editor.querySelector('code')!;
+    const r = document.createRange();
+    r.setStart(code.firstChild!, 2);
+    r.collapse(true);
+    ranges.push(r);
+    expect(holdsCode(document, editor)).toBe(true);
   });
 });

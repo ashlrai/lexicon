@@ -9,7 +9,7 @@
  * working), and the React-safe native value setter plus an `input` event
  * only when neither takes.
  */
-import { CODE_SELECTOR, deepActiveElement, isTextField } from './adapters.js';
+import { CODE_SELECTOR, deepActiveElement, isTextField, selectionFor } from './adapters.js';
 import type { Correction } from './shared.js';
 
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'PRE', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'SECTION']);
@@ -148,7 +148,7 @@ export function locate(flat: Flattened, offset: number, side: 'start' | 'end' = 
 export function caretOffset(doc: Document, el: HTMLElement): number {
   if (isTextField(el)) return el.selectionEnd ?? el.value.length;
   const flat = flatten(el);
-  const sel = doc.getSelection?.();
+  const sel = selectionFor(doc, el);
   if (!sel || sel.rangeCount === 0) return flat.text.length;
   const range = sel.getRangeAt(0);
   const node = range.endContainer;
@@ -269,7 +269,7 @@ function replaceInEditable(doc: Document, el: HTMLElement, start: number, end: n
   };
 
   const win = doc.defaultView;
-  const sel = doc.getSelection?.();
+  const sel = selectionFor(doc, el);
   if (sel && typeof doc.execCommand === 'function' && win) {
     const range = selectRange();
     if (range) {
@@ -572,7 +572,7 @@ export function setWholeText(doc: Document, el: HTMLElement, text: string): void
     fireInput(el, 'insertReplacementText', text);
     return;
   }
-  const sel = doc.getSelection?.();
+  const sel = selectionFor(doc, el);
   if (sel && typeof doc.execCommand === 'function') {
     el.focus();
     const range = doc.createRange();
@@ -634,7 +634,7 @@ export function setCaret(doc: Document, el: HTMLElement, offset: number): void {
     }
     return;
   }
-  const sel = doc.getSelection?.();
+  const sel = selectionFor(doc, el);
   if (!sel) return;
   const flat = flatten(el);
   const at = locate(flat, Math.max(0, Math.min(offset, flat.text.length)));
@@ -723,7 +723,7 @@ export function performEnterDefault(doc: Document, el: HTMLElement): void {
       // fall through to the DOM splice
     }
   }
-  const sel = doc.getSelection?.();
+  const sel = selectionFor(doc, el);
   if (!sel || sel.rangeCount === 0 || !el.contains(sel.getRangeAt(0).endContainer)) return;
   const range = sel.getRangeAt(0);
   range.deleteContents();
