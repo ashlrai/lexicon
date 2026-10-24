@@ -4,7 +4,7 @@ import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, pairUrl, syncedLine, STORAGE_KEYS } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairUrl, syncedLine, STORAGE_KEYS } from './shared.js';
 import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -168,7 +168,7 @@ ui.test.addEventListener('click', () => {
     }
     setMessage(ui.testResult, connectionTestLine(status));
   })().catch((err: unknown) => {
-    setMessage(ui.testResult, errorMessage(err));
+    setMessage(ui.testResult, extensionRequestFailedLine(errorMessage(err)));
   });
 });
 
@@ -191,7 +191,7 @@ ui.sync.addEventListener('click', () => {
   })()
     .catch((err: unknown) => {
       ui.yamlError.hidden = false;
-      setMessage(ui.yamlError, `Sync failed: ${errorMessage(err)}`);
+      setMessage(ui.yamlError, `Sync failed: ${extensionRequestFailedLine(errorMessage(err))}`);
     })
     .finally(() => {
       ui.sync.disabled = false;
@@ -224,7 +224,7 @@ ui.anySite.addEventListener('change', () => {
       setMessage(ui.anySiteMsg, reply.error);
     }
   })().catch((err: unknown) => {
-    setMessage(ui.anySiteMsg, errorMessage(err));
+    setMessage(ui.anySiteMsg, extensionRequestFailedLine(errorMessage(err)));
   });
 });
 

@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -848,6 +848,20 @@ describe('extension errors name the next step', () => {
     expect(popup).not.toMatch(/textContent = 'Error'/);
   });
 
+  // Catches: Options and the /pair page showed a failed request to the
+  // background (the extension reloaded under the page) as a bare
+  // "extension messaging failed", with no way back.
+  it('a failed request to the background says to reload the page, then the extension', () => {
+    expect(extensionRequestFailedLine('extension messaging failed')).toBe(
+      "extension messaging failed. Reload this page; if it persists, reload Lexicon on the browser's extensions page.",
+    );
+    expect(extensionRequestFailedLine('no response. ')).toMatch(/^no response\. Reload/);
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const catches = options.split('\n').filter((l) => /\.catch\(\(err: unknown\)/.test(l)).length;
+    expect(catches).toBe(3);
+    expect(options.match(/extensionRequestFailedLine\(errorMessage\(err\)\)/g)).toHaveLength(catches);
+  });
+
   // Catches: "Permission not granted." with no word of how to grant it or
   // whether the extension still works without it.
   it('the any-site refusal says how to grant it and what still works', () => {
@@ -905,7 +919,9 @@ describe('pairing (/pair page content script + background)', () => {
     });
     pairPage();
     await pairFromDocument({ doc: document, send: thrown });
-    expect(document.getElementById('status')!.textContent).toBe('Pairing failed: extension messaging failed');
+    expect(document.getElementById('status')!.textContent).toBe(
+      "Pairing failed: extension messaging failed. Reload this page; if it persists, reload Lexicon on the browser's extensions page.",
+    );
 
     pairPage('');
     const untouched = vi.fn(async (): Promise<PairReply> => ({ ok: true, baseUrl: '', terms: 0, version: '' }));

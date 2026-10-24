@@ -260,6 +260,15 @@ export function statusView(s: StatusReply): StatusView {
 }
 
 /**
+ * A page of the extension (Options, the /pair page) whose request to the
+ * background itself failed, as when the extension was reloaded or updated
+ * under the page: what failed, then how to get it back.
+ */
+export function extensionRequestFailedLine(error: string): string {
+  return `${error.replace(/[.\s]+$/, '')}. Reload this page; if it persists, reload Lexicon on the browser's extensions page.`;
+}
+
+/**
  * The popup's status when the status request itself failed: the pill says
  * what failed (a bare "Error" did not) and the line how to get it back.
  */
