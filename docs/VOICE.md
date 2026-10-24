@@ -76,7 +76,7 @@ directory in every working directory); a repo checkout
 also looks in `bench/audio/models/` so the benchmark's download is reused. A missing
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
-progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A model file that is
+progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A name Hugging Face answers 404 for (a misspelt `--model`) is said to be no whisper model, with names that exist. A model file that is
 already there is used only when it starts with the ggml magic bytes: an empty file or a
 saved error page is downloaded again (a named model) or refused before recording (a
 `--model` path), and `lexicon doctor` warns about it.

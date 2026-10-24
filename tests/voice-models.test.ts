@@ -176,3 +176,20 @@ describe('the sha256 of a downloaded model', () => {
     expect(checkModelHashRecord(dest)).toMatch(/^it changed since Lexicon downloaded it \(\d+ bytes now, \d+ then\)/);
   });
 });
+
+describe('a download that fails says why', () => {
+  // Catches: every failed download said "check the network", for a misspelt model name (a 404) too.
+  it('names a model that does not exist instead of blaming the network', async () => {
+    const d = tmp();
+    vi.stubGlobal('fetch', async () => new Response('Entry not found', { status: 404, statusText: 'Not Found' }));
+    const err = await defaultDownloader('https://example.invalid/ggml-base-en.bin', path.join(d, 'm.bin'), () => undefined).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 404 });
+
+    const globalPath = path.join(d, 'lexicon.yaml');
+    const opts = { globalPath, env: {}, fallbackDirs: [], log: () => undefined, progress: () => undefined };
+    const thrown = await ensureModel('base-en', opts).catch((e: unknown) => (e as Error).message);
+    expect(thrown).toContain('there is no whisper model named base-en');
+    expect(thrown).toContain('base.en');
+    expect(thrown).not.toContain('check the network');
+  });
+});
