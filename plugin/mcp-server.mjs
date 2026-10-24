@@ -63957,9 +63957,54 @@ function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
   for (const event of events) hooks[event] = [{ hooks: [{ type: "command", command, timeout }] }];
   return { hooks };
 }
-var INSTALLED_HOOK_COMMAND = /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+var INSTALLED_HOOK_SCRIPT = /[\\/](?:plugin[\\/]hook\.mjs|hooks[\\/]user-prompt-submit\.js)$/;
 function isInstalledLexiconHook(command) {
-  return INSTALLED_HOOK_COMMAND.test(command.trim());
+  const words = commandWords(command);
+  if (!words) return false;
+  if (words.length === 2 && words[0] === "node") return INSTALLED_HOOK_SCRIPT.test(words[1] ?? "");
+  return words.length === 4 && words[0] === "npx" && words[1] === "-y" && /^@ashlr\/lexicon(?:@\S+)?$/.test(words[2] ?? "") && words[3] === "hook";
+}
+function commandWords(command) {
+  const words = [];
+  let word = "";
+  let inWord = false;
+  let i = 0;
+  while (i < command.length) {
+    const c = command[i];
+    if (/\s/.test(c)) {
+      if (inWord) words.push(word);
+      word = "";
+      inWord = false;
+      i += 1;
+      continue;
+    }
+    inWord = true;
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command[i] !== '"') {
+        const next = command[i + 1];
+        if (command[i] === "\\" && next !== void 0 && '"\\$`'.includes(next)) {
+          word += next;
+          i += 2;
+        } else {
+          word += command[i];
+          i += 1;
+        }
+      }
+      if (i >= command.length) return void 0;
+      i += 1;
+    } else if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end < 0) return void 0;
+      word += command.slice(i + 1, end);
+      i = end + 1;
+    } else {
+      word += c;
+      i += 1;
+    }
+  }
+  if (inWord) words.push(word);
+  return words;
 }
 function isInstalledLexiconServer(command, args) {
   const cmd = command.trim();
