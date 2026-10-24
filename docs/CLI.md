@@ -243,7 +243,7 @@ export the merged lexicon for another tool (run without a format to list them)
 
 Options:
   --out <file>                write to a file instead of stdout
-  --category <categories...>  only these categories
+  --category <categories...>  only these categories, space- or comma-separated
   --limit <n>                 cap the number of terms, applied after --category,
                               keeping the most hits first (at equal hits brand,
                               person and product terms first, then canonical A

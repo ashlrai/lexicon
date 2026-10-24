@@ -1184,6 +1184,14 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  // Catches: --category brand,person (the form GET /export/:format?category=
+  // takes) was refused as one unknown category "brand,person".
+  it('--category takes a comma-separated list too', async () => {
+    const io = makeIO();
+    expect(await runExport('wispr', { category: ['brand, person', 'brand', 'other,'] }, io)).toBe(0);
+    expect(core.exportLexiconWithNotes).toHaveBeenCalledWith(expect.anything(), 'wispr', { categories: ['brand', 'person', 'other'] });
+  });
+
   // Catches: --out was written in place (an export cut short left a truncated
   // file where the last good one was), a directory failed with a bare EISDIR,
   // and --out naming the lexicon file itself replaced every term with the export.

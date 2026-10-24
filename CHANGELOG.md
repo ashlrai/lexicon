@@ -35,6 +35,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- `lexicon export --category` takes a comma-separated list (`--category brand,person`) as well as space-separated values, as `GET /export/:format?category=brand,person` does. A comma list was refused as one unknown category.
 - `--category` is trimmed before it is checked, in `lexicon list`, `add`, `export` and `review`, as the local API trims `?category=`. `--category " brand"` was refused as an unknown category.
 - `lexicon review --category other` offers the terms that have no category too, as `list` and `export` count them. They were skipped.
 - `lexicon normalize --min-confidence ""` (a blank value, as an unset shell variable gives) is refused like any other value outside 0 to 1. It was read as 0, which let every fuzzy and phonetic match through.

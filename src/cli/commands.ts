@@ -1223,7 +1223,18 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
   const exportOpts: ExportOptions = {};
   if (opts.category && opts.category.length > 0) {
-    exportOpts.categories = opts.category.map((c) => parseCategory(c)).filter((c): c is TermCategory => !!c);
+    // Space- or comma-separated, as GET /export/:format?category=brand,person
+    // takes them: `--category brand,person` was refused as one unknown
+    // category. A blank piece of a comma list is skipped, as the API skips it.
+    const categories: TermCategory[] = [];
+    for (const value of opts.category) {
+      const pieces = value.includes(',') ? value.split(',').filter((v) => v.trim() !== '') : [value];
+      for (const piece of pieces) {
+        const category = parseCategory(piece);
+        if (category && !categories.includes(category)) categories.push(category);
+      }
+    }
+    exportOpts.categories = categories;
   }
   const limit = parseIntOption(opts.limit, '--limit', EXPORT_MAX_LIMIT);
   if (limit !== undefined) exportOpts.limit = limit;
