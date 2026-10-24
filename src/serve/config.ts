@@ -16,6 +16,7 @@ import { redactSecrets } from '../core/redact.js';
 import type { StoreOptions } from '../core/index.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
+import { errorMessage } from '../util/errors.js';
 
 /** serve.json holds the API token, so it is owner-only. */
 const SERVE_FILE_MODE = 0o600;
@@ -81,8 +82,13 @@ export function unusableServeConfigReason(file: string): string {
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
-  } catch {
-    return 'does not exist; lexicon serve creates it';
+  } catch (err) {
+    // Only a missing file is one lexicon serve creates: a serve.json that is
+    // a directory or unreadable (EISDIR, EACCES) was reported as missing too,
+    // and lexicon serve then failed on it instead of creating anything.
+    const code = (err as { code?: unknown }).code;
+    if (code === 'ENOENT') return 'does not exist; lexicon serve creates it';
+    return `could not be read (${typeof code === 'string' ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
   }
   if (text.replace(/^\uFEFF/, '').trim() === '') return 'is empty; lexicon serve replaces it';
   try {

@@ -103,6 +103,12 @@ export function normalizeCut(text: string, max: number): number {
   return cut;
 }
 
+/** The canonical as `file` spells it, when it holds `canonical` (compared as the store compares). */
+function storedCanonical(file: { lexicon: { terms: readonly Term[] } } | undefined, canonical: string): string | undefined {
+  const key = spellingKey(canonical);
+  return file?.lexicon.terms.find((t) => spellingKey(t.canonical) === key)?.canonical;
+}
+
 /** Canonical lookup, case-insensitive and in NFC, matching how the store compares canonicals. */
 function holds(terms: readonly Term[] | undefined, canonical: string): boolean {
   const key = spellingKey(canonical);
@@ -434,7 +440,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // removeTerm edits one file (the project one first without a scope). A
         // term with a copy in both files keeps correcting from the other copy,
         // so name it rather than let `removed: true` read as gone.
-        const before = termHolders(await load(), canonical);
+        const loadedBefore = await load();
+        const before = termHolders(loadedBefore, canonical);
         let removed: boolean;
         try {
           removed = await removeTerm(canonical, opts);
@@ -449,24 +456,27 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const loadedAfter = await load();
         const after = termHolders(loadedAfter, canonical);
         const from = before.find((b) => !after.some((a) => a.path === b.path));
+        // The spelling the file held, not the one the caller typed (`remove_term yod` removes "Yod").
+        const stored = from ? storedCanonical(from.scope === 'project' ? loadedBefore.project : loadedBefore.global, canonical) : undefined;
+        const name = stored ?? canonical;
         // A copy in the skipped (untrusted) project file is not loaded and is
         // never edited, but it wins the merge once the user trusts the file.
         // Path and trust only: none of that file's contents are reported.
         const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
-        if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...(from ? { path: from.path } : {}) });
+        if (after.length === 0 && !untrustedProject) return textResult({ canonical: name, removed, ...(from ? { path: from.path } : {}) });
         const notes = after.map(
           (h) =>
-            `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; ` +
+            `"${name}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; ` +
             `if the user wants it gone too, call remove_term again with scope "${h.scope}".`,
         );
         if (untrustedProject) {
           notes.push(
-            `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
+            `"${name}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
               'so it was neither loaded nor edited; that copy corrects again once the user runs ' + cliCommand('trust') + ', so tell them to review the file first.',
           );
         }
         return textResult({
-          canonical,
+          canonical: name,
           removed,
           ...(from ? { path: from.path } : {}),
           ...(after.length > 0 ? { stillIn: after } : {}),

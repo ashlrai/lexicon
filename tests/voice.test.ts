@@ -397,6 +397,23 @@ describe('lexicon voice --toggle', () => {
     expect(stateFilePath(h.globalPath)).toBe(path.join(h.dir, 'voice', 'recording.json'));
   });
 
+  it('refuses --seconds over the toggle limit before recording, rather than cutting it short silently', async () => {
+    const h = await harness();
+    h.opts.seconds = 900;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('--toggle records at most 600 seconds; --seconds 900 is longer');
+    expect(h.spawnCalls).toEqual([]);
+    expect(await readState(h.globalPath)).toBeUndefined();
+  });
+
+  it('records with --seconds at the toggle limit', async () => {
+    const h = await harness();
+    h.opts.seconds = 600;
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-t', '600']));
+  });
+
   it('stops the recorder on the second call, transcribes, normalizes and clears the state file', async () => {
     const h = await harness();
     await runVoiceToggle(h.opts, h.io, h.deps);
@@ -1385,6 +1402,27 @@ describe('lexicon voice (foreground)', () => {
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-small.en.bin')]));
   });
 
+  // Catches: a misspelt --model was found out only after the user had spoken, when the download answered 404.
+  it('refuses a --model name no whisper model has before recording, and keeps a model file of that name in the models dir working', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    let downloads = 0;
+    h.deps.download = async () => {
+      downloads += 1;
+    };
+    expect(await runVoice({ ...h.opts, model: 'base-en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('lexicon voice: there is no whisper model named base-en\n  pass one that exists with --model, such as tiny.en, base.en');
+    expect(h.spawnCalls).toEqual([]);
+    expect(downloads).toBe(0);
+    expect(await runVoiceToggle({ ...h.opts, model: 'base-en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toEqual([]);
+
+    // A custom model the user put in the models directory is used as before.
+    await fs.writeFile(path.join(h.dir, 'models', 'ggml-my-finetune.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('x')]));
+    expect(await runVoice({ ...h.opts, model: 'my-finetune' }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-my-finetune.bin')]));
+  });
+
   // Catches: a failed download reported only "fetch failed", with no way forward.
   it('a failed model download names the network, the file to save by hand and --model', async () => {
     const h = await harness();
@@ -1748,6 +1786,22 @@ describe('device parsers', () => {
     expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec: pulseExec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
   });
 
+  // Catches: on macOS an index no listed device has went to ffmpeg as `:7`, which failed only once recording started.
+  it('refuses a --device index that no listed device has on macOS too, before recording', async () => {
+    const h = await harness({ platform: 'darwin' });
+    h.deps.waitForStop = async () => 'enter';
+    expect(await runVoice({ ...h.opts, device: '7', json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toEqual([]);
+    expect(h.err.join('')).toContain('no audio input device has index 7 (the list has 0 to 2)');
+    const exec: VoiceExec = async () => ({ code: 1, stdout: '', stderr: AVFOUNDATION_LIST });
+    const devices = parseAvfoundationDevices(AVFOUNDATION_LIST);
+    await expect(resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: '3', devices })).rejects.toThrow(/index 3 \(the list has 0 to 2\)/);
+    // A listed index, a listed name and a name avfoundation may still know resolve as before.
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: '1', devices })).toEqual({ format: 'avfoundation', input: ':1' });
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: 'MacBook Pro Microphone', devices })).toEqual({ format: 'avfoundation', input: ':2' });
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: 'Studio Mic', devices })).toEqual({ format: 'avfoundation', input: ':Studio Mic' });
+  });
+
   // Catches: devices were numbered by card, so two inputs on one card shared an index and --device <index> reached only the first.
   it('numbers arecord devices by position, so two inputs on one card each get an index', () => {
     const list = [
@@ -1794,6 +1848,27 @@ describe('history', () => {
     expect(kept).toEqual(Array.from({ length: 12 }, (_, i) => `t${i}`).sort());
     // No lock file is left behind.
     expect((await fs.readdir(voiceDir(h.globalPath))).filter((n) => n.includes('lock'))).toEqual([]);
+  });
+
+  // Catches: any read error, not only a missing file, was taken as an empty history, so the append replaced every earlier entry with one.
+  it('keeps the history when it cannot be read, dropping the new entry instead', async () => {
+    const h = await harness();
+    await appendHistory(h.globalPath, entry(0));
+    await appendHistory(h.globalPath, entry(1));
+    const file = historyPath(h.globalPath);
+    const before = await fs.readFile(file, 'utf8');
+    const realRead = fs.readFile.bind(fs);
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === file) throw Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' });
+      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.readFile);
+    try {
+      await appendHistory(h.globalPath, entry(2));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
   });
 
   // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and readHistory returned JSON that was not an entry.

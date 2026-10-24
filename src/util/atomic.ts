@@ -504,7 +504,11 @@ function startHeartbeat(lockPath: string, token: string, staleMs: number): () =>
 }
 
 /** The nearest existing ancestor of `dir` (or `dir` itself) that is not a directory, for the error that names it. */
-async function blockingFile(dir: string): Promise<string> {
+/**
+ * The nearest ancestor of `dir` (or `dir` itself) that exists but is not a
+ * directory: the file an ENOTDIR under `dir` is about. `dir` when none is found.
+ */
+export async function blockingFile(dir: string): Promise<string> {
   for (let p = dir; ; p = path.dirname(p)) {
     try {
       if (!(await fs.stat(p)).isDirectory()) return p;

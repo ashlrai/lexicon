@@ -12,7 +12,7 @@
  * injectable so the loop can be tested without touching a real clipboard.
  */
 import { statSync } from 'node:fs';
-import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, getTrustPath, loadLexicon, noTermsYet, normalize, recordHits, resolvePaths } from '../core/index.js';
+import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, getTrustPath, loadLexicon, noTermsYet, normalize, recordHits, resolvePaths, sanitizeForDisplayMax } from '../core/index.js';
 import type { LoadedLexicon, NormalizeResult } from '../core/index.js';
 import {
   checkClipboardBackend,
@@ -120,8 +120,24 @@ function hasLetters(s: string): boolean {
   return /\p{L}/u.test(s);
 }
 
+/** Longest line of an error or summary the daemon prints: PATH_MAX, so a path in it is never cut. */
+const SHOWN_LINE_MAX_CHARS = 4096;
+
+/**
+ * `s` safe for the terminal, line by line: an error names a lexicon path (a
+ * repository can sit in a directory named after an escape sequence) or
+ * quotes a clipboard tool's stderr, and a correction summary quotes the
+ * copied text. They were written as they came.
+ */
+function shown(s: string): string {
+  return s
+    .split('\n')
+    .map((l) => sanitizeForDisplayMax(l, SHOWN_LINE_MAX_CHARS))
+    .join('\n');
+}
+
 function message(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+  return shown(e instanceof Error ? e.message : String(e));
 }
 
 interface ResolvedClipboard {
@@ -199,7 +215,7 @@ function correctionsHeader(count: number, dryRun: boolean): string {
 }
 
 function formatSummary(result: NormalizeResult): string {
-  const summary = diffSummary(result);
+  const summary = shown(diffSummary(result));
   return summary.endsWith('\n') || summary === '' ? summary : `${summary}\n`;
 }
 
@@ -289,8 +305,19 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     lastInput = undefined;
     if (!reportable(text)) return;
 
-    const loaded = await currentLexicon();
-    const result = normalize(text, loaded.merged);
+    let loaded: LoadedLexicon;
+    let result: NormalizeResult;
+    try {
+      loaded = await currentLexicon();
+      result = normalize(text, loaded.merged);
+    } catch (e) {
+      // As for a failed write: lastSeen already holds this text, so the next
+      // poll skipped it, cleared the error as "working again" while the
+      // lexicon still would not load, and the text was never corrected
+      // once the file was fixed. Forget it so the next poll tries again.
+      lastSeen = undefined;
+      throw e;
+    }
     if (!result.changed) return;
 
     if (!dryRun) {

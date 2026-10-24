@@ -148,6 +148,13 @@ describe('remove_term', () => {
     expect(JSON.parse(miss.text)).toMatchObject({ removed: false, note: expect.stringContaining('list_terms') });
   });
 
+  // Catches: remove_term reported the canonical as the agent typed it ("yod"), not the term the file held ("Yod").
+  it('reports the stored spelling of the canonical it removed', async () => {
+    expect((await call('add_term', { canonical: 'Yod', aliases: ['yodd'] })).isError).toBe(false);
+    const hit = await call('remove_term', { canonical: 'yod' });
+    expect(JSON.parse(hit.text)).toMatchObject({ canonical: 'Yod', removed: true });
+  });
+
   it('tells the agent where a term lives when the requested scope does not hold it', async () => {
     await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
@@ -219,7 +226,7 @@ describe('remove_term', () => {
     expect(first.note).toMatch(/scope "global"/);
 
     const second = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
-    expect(second).toEqual({ canonical: 'kubectl', removed: true, path: path.join(home, 'lexicon.yaml') });
+    expect(second).toEqual({ canonical: 'Kubectl', removed: true, path: path.join(home, 'lexicon.yaml') });
     const listed = JSON.parse((await call('list_terms', { query: 'kubectl' })).text) as { terms: unknown[] };
     expect(listed.terms).toEqual([]);
   });
@@ -233,7 +240,7 @@ describe('remove_term', () => {
 
     const result = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
     expect(result).toMatchObject({
-      canonical: 'kubectl',
+      canonical: 'Kubectl',
       removed: true,
       path: path.join(home, 'lexicon.yaml'),
       untrustedProject: { path: projectFile, trust: 'untrusted' },

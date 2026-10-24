@@ -37,7 +37,7 @@ import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
 import { appendHistory } from './history.js';
-import { DEFAULT_MODEL, isModelPath, modelsDir, resolveModel } from './models.js';
+import { DEFAULT_MODEL, KNOWN_MODELS, isModelPath, isWhisperModelName, modelsDir, resolveModel } from './models.js';
 import type { Downloader } from './models.js';
 import {
   defaultExec,
@@ -617,6 +617,16 @@ function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved, de
       io.stderr(`lexicon voice: ${error}\n`);
       return failed(r, EXIT_ERROR, error, `delete ${named.path} to download it again, or delete ${named.path}.sha256.json to keep using it`);
     }
+    // A name no download can fetch (a typo) was found out only after the
+    // recording, when the download answered 404 and the dictation was lost.
+    if (!named.present && !isWhisperModelName(spec)) {
+      return refuseWith(
+        r,
+        io,
+        `there is no whisper model named ${sanitizeForDisplay(spec)}`,
+        `pass one that exists with --model, such as ${KNOWN_MODELS.join(', ')}, or a ggml file you have`,
+      );
+    }
     return undefined;
   }
   const model = resolveModel(spec, { globalPath: r.globalPath, env: r.env });
@@ -1169,6 +1179,17 @@ async function recoverDeadRecorder(
  * next press starts cleanly.
  */
 async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
+  // A detached capture is spawned with `-t MAX_TOGGLE_SECONDS` at most. A longer
+  // --seconds was cut to that without a word, so a user who asked for fifteen
+  // minutes lost everything said after ten. Refused before anything records.
+  if (opts.seconds !== undefined && opts.seconds > MAX_TOGGLE_SECONDS) {
+    return refuseWith(
+      r,
+      io,
+      `--toggle records at most ${MAX_TOGGLE_SECONDS} seconds; --seconds ${opts.seconds} is longer`,
+      `use --seconds ${MAX_TOGGLE_SECONDS} or less with --toggle, or run \`lexicon voice --seconds ${opts.seconds}\` without --toggle`,
+    );
+  }
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
   const noModel = refuseMissingModelPath(opts, io, r, deps);

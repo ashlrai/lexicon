@@ -42383,8 +42383,14 @@ async function readLexiconText(filePath) {
         err.reason === "not-regular" ? `Refusing to read lexicon at ${filePath}: not a regular file` : `Refusing to read lexicon at ${filePath}: ${err.size ?? "more than"} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
       );
     }
-    throw err;
+    throw await unreadableLexiconError(filePath, err);
   }
+}
+async function unreadableLexiconError(filePath, err) {
+  const code = err?.code;
+  if (typeof code !== "string") return err instanceof Error ? err : new Error(errorMessage(err));
+  const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path5.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
+  return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
 }
 function parseLexiconText(text, filePath, scope) {
   let raw;
@@ -43140,9 +43146,10 @@ function mergeTermInto(file2, incoming, scope, opts) {
     file2.lexicon.terms[idx] = replaced;
     return { term: replaced, created: false };
   }
+  const neverKeys = new Set((incoming.never ?? []).map(foldKey));
   const created = {
     ...incoming,
-    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
+    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(foldKey(a))), canonical) } : {},
     scope,
     source: incoming.source ?? "user",
     createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
@@ -43157,10 +43164,22 @@ async function addTerm(term, opts = {}) {
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
+    assertNoNeverAliasClash(file2, incoming, opts);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
     return { file: file2, ...result };
   });
+}
+function assertNoNeverAliasClash(file2, incoming, opts) {
+  if (opts.merge === false) return;
+  const existing = findTerm(file2.lexicon, incoming.canonical);
+  const never2 = new Set([...existing?.never ?? [], ...incoming.never ?? []].map(foldKey));
+  const aliases = new Set([...existing?.aliases ?? [], ...incoming.aliases].map(foldKey));
+  const clash = incoming.aliases.find((a) => never2.has(foldKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(foldKey(w)));
+  if (clash === void 0) return;
+  throw new InputError(
+    `term not added: "${clash}" would be both an alias and a never word of "${existing?.canonical ?? incoming.canonical}", and a never word stops every correction of that spelling to the term, so the alias would never apply; drop it from one of the two`
+  );
 }
 async function addTerms(terms, opts = {}) {
   const scope = opts.scope ?? "global";
@@ -62633,6 +62652,9 @@ var CliRefusal = class extends Error {
   nextStep;
 };
 function unreadableLexiconHint(message) {
+  if (/^Cannot read lexicon at /.test(message)) {
+    return "the command stopped and nothing was changed; make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it), then check it with: lexicon doctor";
+  }
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : void 0;
 }
@@ -62833,6 +62855,10 @@ function normalizeCut(text, max) {
     if (/\s/.test(text.charAt(i - 1))) return i;
   }
   return cut;
+}
+function storedCanonical(file2, canonical) {
+  const key = spellingKey(canonical);
+  return file2?.lexicon.terms.find((t) => spellingKey(t.canonical) === key)?.canonical;
 }
 function holds(terms, canonical) {
   const key = spellingKey(canonical);
@@ -63036,7 +63062,8 @@ var registerTermTools = (server, ctx) => {
           } : {}
         });
       }
-      const before = termHolders(await load(), canonical);
+      const loadedBefore = await load();
+      const before = termHolders(loadedBefore, canonical);
       let removed;
       try {
         removed = await removeTerm(canonical, opts);
@@ -63049,18 +63076,20 @@ var registerTermTools = (server, ctx) => {
       const loadedAfter = await load();
       const after = termHolders(loadedAfter, canonical);
       const from = before.find((b) => !after.some((a) => a.path === b.path));
+      const stored = from ? storedCanonical(from.scope === "project" ? loadedBefore.project : loadedBefore.global, canonical) : void 0;
+      const name = stored ?? canonical;
       const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
-      if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...from ? { path: from.path } : {} });
+      if (after.length === 0 && !untrustedProject) return textResult({ canonical: name, removed, ...from ? { path: from.path } : {} });
       const notes = after.map(
-        (h) => `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
+        (h) => `"${name}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
       );
       if (untrustedProject) {
         notes.push(
-          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
+          `"${name}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
         );
       }
       return textResult({
-        canonical,
+        canonical: name,
         removed,
         ...from ? { path: from.path } : {},
         ...after.length > 0 ? { stillIn: after } : {},

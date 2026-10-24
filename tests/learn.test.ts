@@ -307,6 +307,22 @@ describe('learnCorrection: an untrusted project lexicon that claims heard', () =
   });
 });
 
+describe('runLearn: a long lexicon path', () => {
+  // Catches: the success and warn lines printed the file through the 200-character display cap, so a deep path ended in an ellipsis.
+  it('prints the file whole', async () => {
+    const deep = `/fake/${'nested-directory/'.repeat(12)}global.yaml`;
+    store.addTerm.mockImplementationOnce(async (term: Term) => ({
+      file: { path: deep, scope: 'global', lexicon, exists: true },
+      term: { ...term, scope: 'global' },
+      created: true,
+    }));
+    const { io, out } = captureIO();
+    expect(await runLearn(['Versel', 'Vercel'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain(`in ${deep}\n`);
+    expect(out()).not.toContain('\u2026');
+  });
+});
+
 describe('runLearn: a name the lexicon holds, written by sound', () => {
   it('learns "it\'s Niamh not Neve" when Niamh is a term, and refuses it when not', async () => {
     const withNiamh: Lexicon = { version: 1, terms: [...lexicon.terms, { canonical: 'Niamh', aliases: [], scope: 'global' }] };

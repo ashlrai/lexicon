@@ -20452,8 +20452,14 @@ async function readLexiconText(filePath) {
         err.reason === "not-regular" ? `Refusing to read lexicon at ${filePath}: not a regular file` : `Refusing to read lexicon at ${filePath}: ${err.size ?? "more than"} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
       );
     }
-    throw err;
+    throw await unreadableLexiconError(filePath, err);
   }
+}
+async function unreadableLexiconError(filePath, err) {
+  const code = err?.code;
+  if (typeof code !== "string") return err instanceof Error ? err : new Error(errorMessage(err));
+  const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path5.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
+  return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
 }
 function parseLexiconText(text, filePath, scope) {
   let raw;

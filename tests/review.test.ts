@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
-import { runAdd, runHarvest } from '../src/cli/commands.js';
+import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
-import { addTerm, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
+import { addTerm, isTrusted, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
 import { makeIO, scripted } from './helpers.js';
 
@@ -245,6 +245,26 @@ describe('harvest --interactive', () => {
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
   });
 
+  // Catches: the trust refusals went through the 200-character display cap, so a deep repo path cut off the `lexicon trust` next step.
+  it('prints the trust refusal for a project lexicon at a long path whole', async () => {
+    const deepRepo = path.join(tmp, ...Array.from({ length: 12 }, () => 'nested-directory'), 'repo');
+    await fs.mkdir(path.join(deepRepo, '.git'), { recursive: true });
+    await fs.writeFile(path.join(deepRepo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    const deepProject = path.join(deepRepo, '.lexicon.yaml');
+    await fs.writeFile(deepProject, 'version: 1\nterms:\n  - canonical: Proj\n    aliases: [prodge]\n', 'utf8');
+    const walk = makeIO();
+    expect(await runHarvestInteractive([candidate('Alpha')], { cwd: deepRepo, globalPath }, walk, scripted([]))).toBe(1);
+    const add = makeIO();
+    expect(await runHarvest(deepRepo, { add: true, yes: true, minCount: 1, globalPath }, add, { isInteractive: () => false })).toBe(1);
+    const review = makeIO();
+    expect(await runReview({ cwd: deepRepo, project: true, globalPath }, review, scripted([]))).toBe(1);
+    for (const io of [walk, add, review]) {
+      expect(io.err).toContain(deepProject);
+      expect(io.err).toMatch(/run `lexicon trust` first/);
+      expect(io.err).not.toContain('\u2026');
+    }
+  });
+
   // Catches: `harvest --add --yes` printed the candidate table (or the --json
   // array) and only then hit the trust gate, so the output read as a success.
   it('runHarvest --add --yes refuses an untrusted project lexicon before printing candidates', async () => {
@@ -327,6 +347,54 @@ describe('harvest --interactive', () => {
 // ---------------------------------------------------------------------------
 // add --interactive
 // ---------------------------------------------------------------------------
+
+describe('add with an alias that is the canonical in another case', () => {
+  // Catches: `lexicon add Yod yod` dropped the alias silently and printed `aliases: (none)`, in text and --json.
+  it('says the alias was not added, in text and --json', async () => {
+    const text = makeIO();
+    expect(await runAdd('Yod', ['yod'], { cwd: tmp, globalPath }, text)).toBe(0);
+    expect(text.out).toContain('aliases: (none)');
+    expect(text.out).toContain('note: yod was not added as an alias of Yod: it differs from the canonical only in case');
+    const json = makeIO();
+    expect(await runAdd('Yod', ['YOD', 'Yodd'], { cwd: tmp, globalPath, json: true }, json)).toBe(0);
+    const doc = JSON.parse(json.out);
+    expect(doc.term.aliases).toEqual(['Yodd']);
+    expect(doc.droppedAliases).toEqual([{ alias: 'YOD', reason: 'differs from the canonical only in case, and matching already ignores case' }]);
+    // An ordinary add has no such key.
+    const plain = makeIO();
+    expect(await runAdd('Zed', ['zedd'], { cwd: tmp, globalPath, json: true }, plain)).toBe(0);
+    expect(JSON.parse(plain.out)).not.toHaveProperty('droppedAliases');
+  });
+});
+
+describe('remove with the canonical in another case', () => {
+  // Catches: `lexicon remove yod` said `removed yod` (and `canonical: "yod"` under --json) for the term the file spells "Yod".
+  it('reports the stored spelling, in text and --json', async () => {
+    await runAdd('Yod', ['yodd'], { cwd: tmp, globalPath }, makeIO());
+    await runAdd('Zed', ['zedd'], { cwd: tmp, globalPath }, makeIO());
+    process.env.LEXICON_PATH = globalPath;
+    const text = makeIO();
+    expect(await runRemove('yod', { cwd: tmp }, text)).toBe(0);
+    expect(text.out).toContain('removed Yod from');
+    const json = makeIO();
+    expect(await runRemove('ZED', { cwd: tmp, json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: true, canonical: 'Zed', removed: true });
+  });
+});
+
+describe('remove --alias that misses', () => {
+  // Catches: a miss gave the generic "fix what error names" next step, in text and --json.
+  it("names the term's aliases, or how to find the term", async () => {
+    await runAdd('Yod', ['yodd', 'yodda'], { cwd: tmp, globalPath }, makeIO());
+    process.env.LEXICON_PATH = globalPath;
+    const text = makeIO();
+    expect(await runRemove('yod', { cwd: tmp, alias: 'nope' }, text)).toBe(1);
+    expect(text.err).toContain('lexicon: the aliases of "Yod" are: yodd, yodda; remove one with lexicon remove Yod --alias <alias>\n');
+    const json = makeIO();
+    expect(await runRemove('Yox', { cwd: tmp, alias: 'nope', json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: false, removed: false, nextStep: 'run lexicon list --query Yox to see the exact spellings of the terms' });
+  });
+});
 
 describe('add --interactive', () => {
   it('shows suggestions as a checklist, keeps the selection plus extras, asks phonetic and category', async () => {
@@ -659,6 +727,35 @@ describe('edit', () => {
     expect(editorCommand({})).toBeUndefined();
   });
 
+  // Catches: a quoted editor path with a space in it was split at the space and run as `"/Applications/Sublime`, failing with ENOENT.
+  it('editorCommand keeps a quoted editor path with spaces whole', () => {
+    expect(editorCommand({ EDITOR: '"/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl" -w' })).toEqual({
+      command: '/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl',
+      args: ['-w'],
+    });
+    expect(editorCommand({ EDITOR: '"C:\\Program Files\\Notepad++\\notepad++.exe" -multiInst' })).toEqual({
+      command: 'C:\\Program Files\\Notepad++\\notepad++.exe',
+      args: ['-multiInst'],
+    });
+    expect(editorCommand({ VISUAL: "'/opt/my editor/ed' --title 'Lexicon file'" })).toEqual({ command: '/opt/my editor/ed', args: ['--title', 'Lexicon file'] });
+    expect(editorCommand({ EDITOR: 'code   --wait  ' })).toEqual({ command: 'code', args: ['--wait'] });
+    expect(editorCommand({ EDITOR: '""' })).toBeUndefined();
+  });
+
+  // Catches: an $EDITOR naming no program ended with only `spawn <name> ENOENT`, thrown, with no variable or file named.
+  it('says which variable names an editor that cannot be started, and where the file is', async () => {
+    const io = makeIO();
+    const spawnFails: SpawnEditor = async () => {
+      throw Object.assign(new Error('spawn nonexistent-ed ENOENT'), { code: 'ENOENT' });
+    };
+    expect(await runEdit({ globalPath }, io, spawnFails, { EDITOR: 'nonexistent-ed -w' })).toBe(1);
+    expect(io.err).toContain('lexicon: could not start the editor $EDITOR names (nonexistent-ed): spawn nonexistent-ed ENOENT');
+    expect(io.err).toContain(`lexicon: set $EDITOR to an editor on your PATH (e.g. EDITOR=vi), or edit the file directly: ${globalPath}`);
+    const visual = makeIO();
+    expect(await runEdit({ globalPath }, visual, spawnFails, { VISUAL: 'nope', EDITOR: 'vi' })).toBe(1);
+    expect(visual.err).toContain('the editor $VISUAL names (nope)');
+  });
+
   it('prints the path when no editor is configured (creating a missing global file)', async () => {
     const io = makeIO();
     expect(await runEdit({ globalPath }, io, undefined, {})).toBe(0);
@@ -716,19 +813,56 @@ describe('edit', () => {
     expect(await fs.readFile(globalPath, 'utf8')).toBe(broken);
   });
 
-  it('passes editor arguments through, notes a non-zero exit, and re-trusts an edited trusted project file', async () => {
+  // Catches: the parse error went through the 200-character display cap, so a deep lexicon path cut it off before the reason.
+  it('prints the whole parse error for a lexicon at a long path', async () => {
+    const deep = path.join(tmp, ...Array.from({ length: 12 }, () => 'nested-directory'), 'lexicon.yaml');
+    await fs.mkdir(path.dirname(deep), { recursive: true });
+    const spawnEditor: SpawnEditor = async (_cmd, _args, file) => {
+      await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: ""\n    aliases: [x]\n', 'utf8');
+      return 0;
+    };
+    const io = makeIO();
+    expect(await runEdit({ globalPath: deep }, io, spawnEditor, { EDITOR: 'fake' })).toBe(1);
+    expect(io.err).toContain(`Invalid lexicon at ${deep}:`);
+    expect(io.err).toContain('terms[0].canonical');
+    expect(io.err).toContain(`your edits are still in ${deep};`);
+    expect(io.err).not.toContain('\u2026');
+    // The path to edit by hand, when no editor is set, is printed whole too.
+    const none = makeIO();
+    const fresh = path.join(path.dirname(deep), 'fresh.yaml');
+    expect(await runEdit({ globalPath: fresh }, none, undefined, {})).toBe(0);
+    expect(none.out).toContain(`\n${fresh}\n`);
+    expect(none.out).not.toContain('\u2026');
+  });
+
+  // Catches: an editor that exited non-zero (vim `:cq` after a `:w`) was only noted, and the file it left was re-trusted.
+  it('treats a non-zero editor exit as aborted and does not re-trust the file', async () => {
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Seed\n    aliases: [seed]\n', 'utf8');
+    await trustProject(projectPath, { globalPath });
+    const spawnEditor: SpawnEditor = async (_cmd, _args, file) => {
+      await fs.appendFile(file, '  - canonical: Proj\n    aliases: [prodge]\n', 'utf8');
+      return 1;
+    };
+    const io = makeIO();
+    expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { EDITOR: 'vim' })).toBe(1);
+    expect(io.err).toContain('vim exited with code 1, so the edit is treated as aborted and the project lexicon was not re-trusted');
+    expect(io.err).toContain('changed anyway, so its terms are not used until you review it and run: lexicon trust');
+    expect(io.out).not.toContain('re-trusted');
+    expect(await isTrusted({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true }, { cwd: repo, globalPath })).toBe('changed');
+  });
+
+  it('passes editor arguments through and re-trusts an edited trusted project file', async () => {
     await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Seed\n    aliases: [seed]\n', 'utf8');
     await trustProject(projectPath, { globalPath });
     const calls: { cmd: string; args: readonly string[]; file: string }[] = [];
     const spawnEditor: SpawnEditor = async (cmd, args, file) => {
       calls.push({ cmd, args, file });
       await fs.appendFile(file, '  - canonical: Proj\n    aliases: [prodge]\n', 'utf8');
-      return 3;
+      return 0;
     };
     const io = makeIO();
     expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { VISUAL: 'code --wait' })).toBe(0);
     expect(calls).toEqual([{ cmd: 'code', args: ['--wait'], file: projectPath }]);
-    expect(io.err).toContain('code exited with code 3');
     expect(io.out).toContain('ok: 2 terms in');
     expect(io.out).toContain('re-trusted');
     // A follow-up project-scope write goes through, so the hash was re-pinned.

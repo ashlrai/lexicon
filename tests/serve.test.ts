@@ -256,6 +256,12 @@ describe('serve.json', () => {
 
       await fs.writeFile(servePath, '  \n');
       expect((await ensureServeConfig({ globalPath: gp })).token).toMatch(/^[0-9a-f]{32}$/);
+
+      // Catches: a serve.json that exists but cannot be read (here a directory) was reported as missing.
+      await fs.rm(servePath);
+      expect(unusableServeConfigReason(servePath)).toBe('does not exist; lexicon serve creates it');
+      await fs.mkdir(servePath);
+      expect(unusableServeConfigReason(servePath)).toBe('could not be read (EISDIR); make it a readable file, or remove it so lexicon serve makes a new token');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -2082,6 +2088,21 @@ describe('lexicon serve (CLI)', () => {
     expect(calls).toEqual([]);
     await expect(fs.stat(servePath)).rejects.toThrow();
     expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  // Catches: --pair took any `{ ok: true }` /health for lexicon serve, so another program on the port had its page opened as the pairing page.
+  it('--pair refuses a port where something other than lexicon serve answers', async () => {
+    const calls: string[][] = [];
+    const foreignFetch = (async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch;
+    const text = memIO();
+    expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, text, { platform: 'darwin', exec: fakeExec(calls), fetch: foreignFetch })).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text.err.join('')).toContain('something else answers on that port');
+    expect(text.err.join('')).toContain('lexicon serve --port <n>');
+    const json = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec(calls), fetch: foreignFetch })).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.stringContaining('something else answers on that port'), nextStep: expect.stringContaining('lexicon serve --port <n>') });
+    expect(calls).toEqual([]);
   });
 
   it('--pair exits 1 with a start hint when the server is down, and when no browser opens', async () => {

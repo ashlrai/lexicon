@@ -17,7 +17,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
+import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, safeMessage, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -251,13 +251,28 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   const healthUrl = `${serveUrl(port, DEFAULT_HOST)}/health`;
 
   let up = false;
+  let foreign = false;
   let reason = '';
   try {
     const res = await doFetch(healthUrl, { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) });
     if (!res.ok) reason = `HTTP ${res.status}`;
-    else up = ((await res.json()) as { ok?: unknown }).ok === true;
+    else {
+      // lexicon serve's /health shape, as --status checks it: any `{ ok: true }`
+      // counted, so another program on the port had its page opened as the
+      // pairing page and the output said the extension would pair there.
+      const body: unknown = await res.json().catch(() => undefined);
+      up = isLexiconHealth(body);
+      foreign = !up;
+    }
   } catch (err) {
     reason = errorMessage(err);
+  }
+  if (foreign) {
+    const error = `${FOREIGN_HEALTH_ERROR} (${healthUrl})`;
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(error, SERVE_STATUS_HINTS.foreign), up: false, url, reason: 'unexpected /health response' }, null, 2));
+    io.stderr(`lexicon: ${safeMessage(error)}\n`);
+    io.stderr(`lexicon: ${SERVE_STATUS_HINTS.foreign}\n`);
+    return 1;
   }
   if (!up) {
     if (opts.json) {

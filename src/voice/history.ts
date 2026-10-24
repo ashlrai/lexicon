@@ -72,11 +72,15 @@ export async function appendHistory(globalPath: string, entry: HistoryEntry, max
     await withFileLock(
       file,
       async () => {
+        // Only a missing file is an empty history. Any other read error (EIO,
+        // EACCES, a directory in the way) was taken as empty too, and the
+        // write below then replaced every earlier entry with this one. The
+        // entry is dropped instead (history is best-effort); the file is kept.
         let existing = '';
         try {
           existing = await fs.readFile(file, 'utf8');
-        } catch {
-          existing = '';
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
         }
         const lines = existing.split('\n').filter((l) => l.length > 0 && entryOf(l) !== undefined);
         lines.push(JSON.stringify(entry));

@@ -30,7 +30,7 @@ import type { HarvestCandidate, Lexicon, LexiconFile, Term, TermCategory, TermSc
 import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
+import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeMessage } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -164,7 +164,7 @@ export async function runHarvestInteractive(
   if (projectPath && existsSync(projectPath)) {
     const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(projectPath, status).message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(new ProjectTrustError(projectPath, status).message)}\n`);
       return 1;
     }
   }
@@ -190,7 +190,7 @@ export async function runHarvestInteractive(
   /** False after printing a ProjectTrustError (nothing in the call was written); any other error is thrown. */
   const refused = (err: unknown): false => {
     if (err instanceof ProjectTrustError) {
-      io.stderr(`lexicon: ${safeLines(err.message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(err.message)}\n`);
       return false;
     }
     throw err;
@@ -460,7 +460,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   if (file.scope === 'project') {
     const status = await isTrusted(file, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(file.path, status).message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(new ProjectTrustError(file.path, status).message)}\n`);
       return 1;
     }
   }
@@ -610,7 +610,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
           mergedElsewhere = merged.changes;
         } catch (err) {
           io.stderr(
-            `lexicon: ${safe(file.path)} changed during review but could not be re-read (${safeLines(errorMessage(err))}); writing the reviewed version\n`,
+            `lexicon: ${safeMessage(file.path)} changed during review but could not be re-read (${safeMessage(errorMessage(err))}); writing the reviewed version\n`,
           );
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }
@@ -658,11 +658,36 @@ export const spawnEditorInherit: SpawnEditor = (command, args, filePath) =>
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
   });
 
-/** `$VISUAL` then `$EDITOR`, split on whitespace so `code --wait` works. */
+/**
+ * `$VISUAL` then `$EDITOR`, split on whitespace so `code --wait` works, with
+ * a single- or double-quoted part kept whole (quotes removed), as a shell
+ * reads it: `"/Applications/Sublime Text.app/.../subl" -w` and
+ * `"C:\Program Files\Notepad++\notepad++.exe"`. Split on every space, a
+ * quoted editor path with a space in it was run as `"/Applications/Sublime`
+ * and failed with ENOENT. Backslashes are kept as written (Windows paths).
+ */
 export function editorCommand(env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } | undefined {
   const raw = (env.VISUAL?.trim() || env.EDITOR?.trim()) ?? '';
   if (!raw) return undefined;
-  const [command, ...args] = raw.split(/\s+/);
+  const words: string[] = [];
+  let word: string | undefined;
+  let quote: string | undefined;
+  for (const ch of raw) {
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+      else word += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      word ??= '';
+    } else if (/\s/.test(ch)) {
+      if (word !== undefined) words.push(word);
+      word = undefined;
+    } else {
+      word = (word ?? '') + ch;
+    }
+  }
+  if (word !== undefined) words.push(word);
+  const [command, ...args] = words;
   return command ? { command, args } : undefined;
 }
 
@@ -700,7 +725,7 @@ export async function runEdit(
   await withLexiconLock(target, async () => {
     if (existsSync(target)) return;
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
-    line(io, `created ${scope} lexicon: ${safe(target)}`);
+    line(io, `created ${scope} lexicon: ${safeMessage(target)}`);
   });
   const trustedBefore =
     scope === 'project'
@@ -710,7 +735,7 @@ export async function runEdit(
   const editor = editorCommand(env);
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
-    line(io, safe(target));
+    line(io, safeMessage(target));
     // Nothing checks the file afterwards on this path, and a hand edit leaves
     // a project file untrusted (its terms unused) until it is trusted again.
     line(
@@ -724,15 +749,43 @@ export async function runEdit(
     return 0;
   }
 
-  const code = await spawnEditor(editor.command, editor.args, target);
-  if (code !== 0) io.stderr(`lexicon: ${editor.command} exited with code ${code}; checking the file anyway\n`);
+  let code: number;
+  try {
+    code = await spawnEditor(editor.command, editor.args, target);
+  } catch (err) {
+    // A $VISUAL or $EDITOR that names no program on PATH ended the command
+    // with only `spawn <name> ENOENT`: no word on which variable, or where
+    // the file is to edit by hand.
+    const variable = env.VISUAL?.trim() ? '$VISUAL' : '$EDITOR';
+    return refuse(
+      io,
+      false,
+      `could not start the editor ${variable} names (${editor.command}): ${errorMessage(err)}`,
+      `set ${variable} to an editor on your PATH (e.g. ${variable === '$VISUAL' ? 'VISUAL' : 'EDITOR'}=vi), or edit the file directly: ${target}`,
+    );
+  }
+  if (code !== 0) {
+    // A non-zero exit is how an editor says the edit was abandoned (vim `:cq`,
+    // a killed `code --wait`). Re-trusting the file then would bless whatever
+    // an earlier `:w` in that session left there, which the user just backed
+    // out of, so nothing is checked or re-trusted.
+    io.stderr(
+      `lexicon: ${safe(editor.command)} exited with code ${code}, so the edit is treated as aborted` +
+        `${scope === 'project' && trustedBefore ? ' and the project lexicon was not re-trusted' : ''}\n`,
+    );
+    if (scope === 'project' && trustedBefore && (await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) !== 'trusted') {
+      io.stderr(`lexicon: ${safeMessage(target)} changed anyway, so its terms are not used until you review it and run: lexicon trust\n`);
+    }
+    io.stderr(`lexicon: to edit it again, run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    return 1;
+  }
 
   try {
     const file = await readLexiconFile(target, scope);
-    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safe(target)}`);
+    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safeMessage(target)}`);
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    io.stderr(`lexicon: your edits are still in ${safe(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
+    io.stderr(`lexicon: your edits are still in ${safeMessage(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
     return 1;
   }
 
@@ -740,7 +793,7 @@ export async function runEdit(
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
       await refreshTrust(target, store);
-      line(io, dim(`project lexicon re-trusted (${safe(target)})`));
+      line(io, dim(`project lexicon re-trusted (${safeMessage(target)})`));
     } else {
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }

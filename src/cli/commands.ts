@@ -92,6 +92,7 @@ import {
   suggestAliases,
   trustProject,
   withLexiconLock,
+  spellingKey,
   writeLexiconFile,
 } from '../core/index.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT } from '../core/index.js';
@@ -341,6 +342,9 @@ function addInputClosed(err: unknown, canonical: string, io: IO): number {
   return 0;
 }
 
+/** Why `runAdd` reports an alias as dropped (`droppedAliases[].reason` under --json). */
+const SAME_AS_CANONICAL_REASON = 'differs from the canonical only in case, and matching already ignores case';
+
 export async function runAdd(
   canonical: string,
   aliasArgs: readonly string[],
@@ -368,7 +372,9 @@ export async function runAdd(
   // term (addTerm's defaultAliases), so `add X --never w` on an existing X adds none.
   const fallbackOnly = !opts.suggest && aliases.length === 0 && !p;
   if (opts.suggest || aliases.length === 0) {
-    const have = new Set(aliases.map((a) => a.toLowerCase()));
+    // A never word is excluded as given (`--suggest --never sass` on SaaS): the
+    // store refuses an alias that is also a never word, since it never applies.
+    const have = new Set([...aliases, ...(opts.never ?? []).map((w) => w.trim())].map((a) => a.toLowerCase()));
     suggested = suggestAliases(trimmed).filter((s) => {
       const key = s.toLowerCase();
       if (key === trimmed.toLowerCase() || have.has(key)) return false;
@@ -445,6 +451,12 @@ export async function runAdd(
     (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
     () => [],
   );
+  // An alias that is the canonical in another case (`add Yod yod`) is
+  // dropped by addTerm, since matching ignores case: say so instead of
+  // printing `aliases: (none)` as if it had been taken.
+  const canonicalKey = spellingKey(result.term.canonical);
+  const sameAsCanonical = [...new Set(aliases.filter((a) => a.trim() !== '' && spellingKey(a) === canonicalKey))];
+  const droppedAliases = sameAsCanonical.map((alias) => ({ alias, reason: SAME_AS_CANONICAL_REASON }));
   if (opts.json) {
     line(
       io,
@@ -460,6 +472,7 @@ export async function runAdd(
           // listed for an existing term too, where none was added.
           suggested: !fallbackOnly || result.created ? suggested : [],
           ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
+          ...(droppedAliases.length > 0 ? { droppedAliases } : {}),
         }),
         null,
         2,
@@ -469,9 +482,9 @@ export async function runAdd(
   }
   if (result.unchanged) {
     // The term already had every alias and field given: "merged" read as a change.
-    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safe(result.file.path)})`);
+    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safeMessage(result.file.path)})`);
   } else {
-    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safeMessage(result.file.path)}`);
   }
   // One aliases line: the suggestions are marked in it rather than listed
   // again on a line of their own (`suggested aliases: Fo` then `aliases: Fo`).
@@ -483,8 +496,9 @@ export async function runAdd(
   const suggestedNote =
     marked.length === 0 ? '' : marked.length === saved.length ? ' (suggested)' : ` (suggested: ${safe(marked.join(', '))})`;
   line(io, `aliases: ${saved.length > 0 ? safe(saved.join(', ')) + dim(suggestedNote) : dim('(none)')}`);
+  for (const alias of sameAsCanonical) line(io, `note: ${safe(alias)} was not added as an alias of ${safe(result.term.canonical)}: it ${SAME_AS_CANONICAL_REASON}`);
   for (const c of conflicts) line(io, conflictLine(c));
-  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
+  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safeMessage(result.file.path)})`));
   return 0;
 }
 
@@ -525,11 +539,14 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
       const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
       line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
+    io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
+    if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
     return 1;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
+  // The spelling the file held, not the one typed: `lexicon remove yod` removes "Yod".
+  const fromFile = from && loaded ? (from.scope === 'project' ? loaded.project : loaded.global) : undefined;
+  const removedName = fromFile?.lexicon.terms.find((t) => spellingKey(t.canonical) === spellingKey(canonical))?.canonical ?? canonical;
   const stillIn = removed ? holders.filter((h) => h !== from) : [];
   const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
   // What to do about a miss, also the `nextStep` under --json: the flag for
@@ -541,16 +558,16 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
       : (emptyLexiconRemoveStep(loaded) ?? 'run lexicon list to see the exact canonical spellings');
   const notFound = (): string =>
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
-    (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +
+    (missStep ? `lexicon: ${safeMessage(missStep)}\n` : '') +
     (untrusted
-      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
+      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safeMessage(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
       : '');
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -558,9 +575,9 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     io.stderr(notFound());
     return 1;
   }
-  line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safe(from.path)}` : ''}`);
-  for (const h of stillIn) line(io, stillInLine(canonical, h));
-  if (untrusted) line(io, untrustedLine(canonical, untrusted));
+  line(io, `removed ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
+  for (const h of stillIn) line(io, stillInLine(removedName, h));
+  if (untrusted) line(io, untrustedLine(removedName, untrusted));
   return 0;
 }
 
@@ -586,6 +603,24 @@ function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | und
   return loaded.skippedProject
     ? `${onlyUntrustedTerms('is not loaded')}; review it and run lexicon trust`
     : `${noTermsYet({ lower: true, so: 'there is nothing to remove' })}; run lexicon setup, or add one with: lexicon add <canonical> <alias>`;
+}
+
+/**
+ * The next step after `remove <canonical> --alias <alias>` missed on a
+ * lexicon that has terms: the aliases the term does have (with the command
+ * that removes one), or, when no loaded file in reach holds the term, how to
+ * find its exact spelling. It used to be the generic "fix what error names".
+ */
+function aliasMissStep(loaded: LoadedLexicon | undefined, scope: TermScope | undefined, canonical: string): string | undefined {
+  if (loaded === undefined) return undefined;
+  const key = spellingKey(canonical);
+  const files = scope === 'project' ? [loaded.project] : scope === 'global' ? [loaded.global] : [loaded.project, loaded.global];
+  const term = files.flatMap((f) => f?.lexicon.terms ?? []).find((t) => spellingKey(t.canonical) === key);
+  if (!term) return `run ${commandLine(['lexicon', 'list', '--query', canonical.trim()])} to see the exact spellings of the terms`;
+  if (term.aliases.length === 0) {
+    return `"${term.canonical}" has no aliases; to remove the term itself, run ${commandLine(['lexicon', 'remove', term.canonical, ...(scope ? [`--${scope}`] : [])])}`;
+  }
+  return `the aliases of "${term.canonical}" are: ${term.aliases.join(', ')}; remove one with ${commandLine(['lexicon', 'remove', term.canonical])} --alias <alias>${scope ? ` --${scope}` : ''}`;
 }
 
 async function runRemoveAlias(
@@ -617,14 +652,14 @@ async function runRemoveAlias(
       isInputError(err) && other && holdsAlias(other)
         ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it`
         : isInputError(err) && !untrusted
-          ? emptyLexiconRemoveStep(loaded)
+          ? (emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical))
           : undefined;
     if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
-    if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
+    io.stderr(`lexicon: ${safeMessage(message)}\n`);
+    if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
       if (holdsAlias(loaded?.global)) {
-        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
+        io.stderr(`lexicon: to remove it only from the global copy (${safeMessage(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
       }
     } else if (untrusted) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);
@@ -636,7 +671,7 @@ async function runRemoveAlias(
     line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
     return 0;
   }
-  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
+  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   if (untrusted) line(io, untrustedAliasLine(result.term.canonical, alias, untrusted));
   return 0;
@@ -873,7 +908,7 @@ export async function runNormalize(
     // different answers and exit 0 made them indistinguishable: a script, a
     // watcher or a person saw silence and concluded it was working.
     const message = errorMessage(err);
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
+    io.stderr(`lexicon: ${safeMessage(message)}\n`);
     io.stderr('lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n');
     if (opts.json) {
       // `{ ok: false, error, nextStep }` and then the unchanged NormalizeResult,
@@ -954,7 +989,7 @@ export async function runHarvest(
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
         if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
-        io.stderr(`lexicon: ${safeLines(message)}\n`);
+        io.stderr(`lexicon: ${safeMessage(message)}\n`);
         return 1;
       }
     }
@@ -1040,7 +1075,7 @@ export async function runHarvest(
       const hint = unreadableLexiconHint(message);
       const where = filePath ? { path: filePath } : {};
       line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
-      io.stderr(`lexicon: ${safeLines(message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
       io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');
       return 1;
@@ -1194,7 +1229,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
         counted = `${plural(rows, 'row')} from ${plural(terms - without, 'term')}`;
         if (without > 0) counted += `; ${plural(without, 'term')} without an alias wrote no row`;
       }
-      line(io, `wrote ${format} export (${counted}) to ${safe(outPath)}`);
+      line(io, `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json) {
     line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));

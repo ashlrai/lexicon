@@ -60,7 +60,7 @@ export function registerVoiceCommands(program: Command, io: IO): void {
     .option('--toggle', 'hotkey mode: first call starts recording in the background, second call stops and transcribes')
     .option('--status', 'print "recording since <time>" (exit 0) or "idle" (exit 1)')
     .option('--list-devices', 'print the audio input devices ffmpeg can see')
-    .option('--seconds <n>', 'stop recording after n seconds instead of waiting for Enter', positiveNumber)
+    .option('--seconds <n>', 'stop recording after n seconds instead of waiting for Enter (with --toggle, at most 600)', positiveNumber)
     .option('--device <name|index>', 'input device (default: the system default microphone)')
     .option('--model <name|path>', 'whisper model: a name like base.en or small.en (auto-downloaded) or a ggml file', 'base.en')
     .option('--lang <code>', 'spoken language', 'en')

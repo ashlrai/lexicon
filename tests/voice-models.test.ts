@@ -9,7 +9,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runDoctorReport } from '../src/cli/cmd-doctor.js';
-import { GGML_MAGIC, REPO_MODELS_DIR, checkModelHashRecord, claimedSha256, defaultDownloader, ensureModel, inspectModelFile, modelFileName, modelHashPath, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, REPO_MODELS_DIR, checkModelHashRecord, claimedSha256, defaultDownloader, ensureModel, inspectModelFile, isWhisperModelName, modelFileName, modelHashPath, resolveModel } from '../src/voice/models.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -206,5 +206,16 @@ describe('a download that fails says why', () => {
     expect(thrown).toContain(`there is no space left for it in ${path.join(d, 'models')} (it is 141 MB)`);
     expect(thrown).toContain('LEXICON_WHISPER_MODELS');
     expect(thrown).not.toContain('check the network');
+  });
+});
+
+describe('isWhisperModelName', () => {
+  it('accepts the names whisper.cpp publishes, quantized ones and later large versions, and nothing else', () => {
+    for (const n of ['tiny', 'tiny.en', 'base.en', 'small.en-q5_1', 'medium-q8_0', 'large-v1', 'large-v3', 'large-v3-turbo', 'large-v3-turbo-q5_0', 'large-v4']) {
+      expect(isWhisperModelName(n), n).toBe(true);
+    }
+    for (const n of ['base-en', 'bse.en', 'base.em', 'Base.en', 'large', 'base.en ', 'small.en;rm', '']) {
+      expect(isWhisperModelName(n), n).toBe(false);
+    }
   });
 });

@@ -296,6 +296,16 @@ describe('normalize', () => {
    * could tell them apart, and a person watching a pipeline saw silence and
    * concluded it was working.
    */
+  // Catches: the load error went through the 200-character display cap, so a deep lexicon path cut it off before the reason.
+  it('prints a load error naming a long path whole', async () => {
+    const message = `Failed to parse lexicon YAML at /tmp/${'nested-directory/'.repeat(12)}lexicon.yaml: bad indentation`;
+    vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error(message));
+    const io = makeIO();
+    expect(await runNormalize(['meet Ashler'], {}, io)).toBe(1);
+    expect(io.err).toContain(message);
+    expect(io.err).not.toContain('\u2026');
+  });
+
   it('passes text through byte-exactly but exits 1 when the lexicon fails to load', async () => {
     vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
     const io = makeIO();
@@ -535,6 +545,12 @@ describe('add / remove / path', () => {
     expect(JSON.parse(fresh.out)).toMatchObject({ created: true, suggested: ['Ashler', 'Ashlar', 'Ashlr AI'] });
   });
 
+  // Catches: `add X --suggest --never <w>` put a suggested spelling that is also a never word among the aliases, where the never word blocks it.
+  it('--suggest leaves out a suggestion that is one of the --never words', async () => {
+    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true, never: [' ashlar '] }, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ aliases: ['Ashler', 'Ashlr AI'] }), expect.anything());
+  });
+
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();
@@ -654,6 +670,47 @@ describe('add / remove / path', () => {
     const full = makeIO();
     expect(await runRemove('Nope', { alias: 'nop' }, full)).toBe(1);
     expect(full.err).not.toContain('nothing to remove');
+  });
+
+  // Catches: add's, remove's and export --out's success lines printed the file through the 200-character display cap, so a deep path ended in an ellipsis.
+  it('add, remove and export --out print a long path whole on success', async () => {
+    const saved = state.globalPath;
+    const deep = `/tmp/${'nested-directory/'.repeat(12)}lexicon.yaml`;
+    state.globalPath = deep;
+    try {
+      const added = makeIO();
+      expect(await runAdd('Ashlr.AI', ['Ashler'], {}, added)).toBe(0);
+      expect(added.out).toContain(`in ${deep}\n`);
+      const removed = makeIO();
+      expect(await runRemove('Ashlr.AI', {}, removed)).toBe(0);
+      expect(removed.out).toContain(`from ${deep}\n`);
+      const alias = makeIO();
+      expect(await runRemove('Ashlr.AI', { alias: 'Ashler' }, alias)).toBe(0);
+      expect(alias.out).toContain(deep);
+      for (const io of [added, removed, alias]) expect(io.out).not.toContain('\u2026');
+    } finally {
+      state.globalPath = saved;
+    }
+    const dir = await tempDir('lexicon-cli-');
+    const out = path.join(dir, ...Array.from({ length: 12 }, () => 'nested-directory'), 'lex.json');
+    const exported = makeIO();
+    expect(await runExport('json', { out }, exported)).toBe(0);
+    expect(exported.out).toContain(`to ${out}\n`);
+    expect(exported.out).not.toContain('\u2026');
+  });
+
+  // Catches: remove's error lines went through the 200-character display cap, so a refusal naming a deep project path ended in `...` mid-sentence.
+  it('remove prints a long error naming a path whole', async () => {
+    const deep = `/tmp/${'nested-directory/'.repeat(12)}.lexicon.yaml`;
+    vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError(deep, 'untrusted'));
+    const term = makeIO();
+    expect(await runRemove('Ashlr.AI', {}, term)).toBe(1);
+    expect(term.err).toContain(new core.ProjectTrustError(deep, 'untrusted').message);
+    expect(term.err).not.toContain('\u2026');
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(new core.ProjectTrustError(deep, 'untrusted'));
+    const alias = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler' }, alias)).toBe(1);
+    expect(alias.err).toContain(new core.ProjectTrustError(deep, 'untrusted').message);
   });
 
   // Catches: every `remove --json` failure document (not found, unknown alias,
@@ -2897,10 +2954,10 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       });
       expect(wrong.stderr).toContain('lexicon: it is an alias of "Kubectl" in the global lexicon');
 
-      // An alias no file has gets the generic next step only.
+      // An alias no file has: the next step names the aliases the term does have.
       const nowhere = lexicon(['remove', 'Kubectl', '--alias', 'nope', '--global', '--json', '--cwd', repo], globalPath);
       expect(nowhere.status).toBe(1);
-      expect(JSON.parse(nowhere.stdout).nextStep).toBe(DEFAULT_NEXT_STEP);
+      expect(JSON.parse(nowhere.stdout).nextStep).toBe('the aliases of "Kubectl" are: cube control; remove one with lexicon remove Kubectl --alias <alias> --global');
 
       const ok = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--global', '--json', '--cwd', repo], globalPath);
       expect(ok.status).toBe(0);

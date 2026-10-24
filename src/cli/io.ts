@@ -422,6 +422,9 @@ export function refuse(io: IO, json: boolean | undefined, error: string, nextSte
  * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
  */
 export function unreadableLexiconHint(message: string): string | undefined {
+  if (/^Cannot read lexicon at /.test(message)) {
+    return 'the command stopped and nothing was changed; make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it), then check it with: lexicon doctor';
+  }
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
 }
@@ -473,7 +476,7 @@ export function skippedProjectJson(
  */
 export function stillInLine(canonical: string, holder: TermHolder): string {
   const command = shownCommand(['lexicon', 'remove', canonical, `--${holder.scope}`]);
-  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
+  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safeMessage(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
 }
 
 /**
@@ -484,7 +487,7 @@ export function stillInLine(canonical: string, holder: TermHolder): string {
 export function untrustedLine(canonical: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
   const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
   return (
-    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safeMessage(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
 }
@@ -493,7 +496,7 @@ export function untrustedLine(canonical: string, holder: { path: string; trust: 
 export function untrustedAliasLine(canonical: string, alias: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
   const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
   return (
-    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safeMessage(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
 }

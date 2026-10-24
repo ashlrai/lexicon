@@ -79,6 +79,7 @@ import {
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject, untrustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
 import { usableHome, xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
+import { unreadableLexiconHint } from '../src/cli/io.js';
 
 let tmp: string;
 let globalPath: string;
@@ -111,6 +112,23 @@ async function makeRepo(): Promise<{ root: string; nested: string }> {
   await fs.mkdir(nested, { recursive: true });
   return { root, nested };
 }
+
+describe('an unreadable lexicon path', () => {
+  // Catches: a LEXICON_PATH under a file reached list, stats, export and learn as Node's bare
+  // `ENOTDIR: not a directory, stat '<path>'` with the generic "fix what error names" next step.
+  it('names the lexicon and the file in the way, and the CLI says what to fix', async () => {
+    const notes = path.join(tmp, 'notes.txt');
+    await fs.writeFile(notes, 'not a directory\n', 'utf8');
+    const under = path.join(notes, 'lexicon.yaml');
+    const err = await loadLexicon({ cwd: tmp, globalPath: under }).then(
+      () => undefined,
+      (e: unknown) => e as NodeJS.ErrnoException,
+    );
+    expect(err?.message).toBe(`Cannot read lexicon at ${under}: ${notes} is not a directory, so no lexicon file can be there`);
+    expect(err?.code).toBe('ENOTDIR');
+    expect(unreadableLexiconHint(err!.message)).toMatch(/LEXICON_PATH.*lexicon doctor/);
+  });
+});
 
 describe('resolvePaths', () => {
   it('uses LEXICON_PATH when set', () => {
@@ -664,6 +682,25 @@ describe('addTerm', () => {
     expect(merged.term.never).toEqual(['ashes']);
     const explicit = await addTerm({ canonical: 'Vercel', aliases: ['Versal'] }, { cwd: tmp, globalPath, defaultAliases: ['Vercell'] });
     expect(explicit.term.aliases).toEqual(['Versal']);
+  });
+
+  // Catches: an alias that is also one of the term's never words was saved and reported, though the never word blocks it, so it never applied.
+  it('refuses an alias that would also be a never word of the term, writing nothing', async () => {
+    const message = /"wexx" would be both an alias and a never word of "Wex".*the alias would never apply/;
+    await expect(addTerm({ canonical: 'Wex', aliases: ['wexx'], never: ['Wexx'] }, { cwd: tmp, globalPath })).rejects.toThrow(message);
+    await expect(fs.stat(globalPath)).rejects.toThrow();
+    await addTerm({ canonical: 'Wex', aliases: ['wexx'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    // A never word that is an alias already, and an alias that is a never word already.
+    await expect(addTerm({ canonical: 'wex', aliases: [], never: ['WEXX'] }, { cwd: tmp, globalPath })).rejects.toThrow(/"WEXX" would be both an alias and a never word of "Wex"/);
+    await addTerm({ canonical: 'Vox', aliases: [], never: ['voxx'] }, { cwd: tmp, globalPath });
+    await expect(addTerm({ canonical: 'Vox', aliases: ['Voxx'] }, { cwd: tmp, globalPath })).rejects.toThrow(/"Voxx" would be both an alias and a never word of "Vox"/);
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms.find((t) => t.canonical === 'Wex')?.never).toBeUndefined();
+    expect(before).toContain('wexx');
+    // A generated alias that is a never word is left out, not refused.
+    const created = await addTerm({ canonical: 'SaaS', aliases: [], never: ['sass'] }, { cwd: tmp, globalPath, defaultAliases: ['sass', 'SaS'] });
+    expect(created.term.aliases).toEqual(['SaS']);
+    expect(created.term.never).toEqual(['sass']);
   });
 
   it('creates a new term in the global file with defaults', async () => {
