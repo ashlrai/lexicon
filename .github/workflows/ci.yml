@@ -56,22 +56,52 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Docs-only PRs (only docs/**/*.md or top-level *.md) keep the whole
+      # ubuntu node 22 row, which runs the doc gates (links, CLI reference, the
+      # numbers in the docs, which runs the full vitest suite, so no-dashes and
+      # every doc-reading test still run). The Windows row keeps install, build,
+      # links and the CLI reference (the CRLF check). Every other step, and all
+      # of the node 20 and 24 rows, are skipped, but each job still runs and
+      # reports, so no required check strands. Pushes, and any PR touching
+      # another path (including #179's serve, install, setup and atomic-writer
+      # paths), run everything. If the diff cannot be read, everything runs.
+      - name: Classify changes
+        id: scope
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          code=true
+          if [ "$EVENT" = "pull_request" ] && files="$(git diff --name-only "$BASE...HEAD")" && [ -n "$files" ]; then
+            if ! printf '%s\n' "$files" | grep -Evq '^(docs/.*\.md|[A-Za-z_-]+\.md)$'; then
+              code=false
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "full row: $code"
+
       - uses: actions/setup-node@v7
+        if: (steps.scope.outputs.code == 'true' || matrix.node == 22)
         with:
           node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Release publication contract (offline synthetic fixtures)
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: node --test scripts/release-contract.test.mjs
 
       - run: npm ci
+        if: (steps.scope.outputs.code == 'true' || matrix.node == 22)
 
       - run: npm run typecheck
+        if: (steps.scope.outputs.code == 'true' || matrix.node == 22)
 
       - run: npm run build
+        if: (steps.scope.outputs.code == 'true' || matrix.node == 22)
 
       - name: Plugin bundle is up to date
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22))
         # Git Bash rather than pwsh, so the one conditional reads the same as
         # it does locally. `timeout`/`/dev/null` are what Git Bash cannot be
         # trusted with; `git ls-files` and `[ -n ]` are fine.
@@ -95,6 +125,7 @@ jobs:
       # separate step it added its whole duration to the job; a failure is
       # still named by file and test in the report.
       - name: Tests (affected on PRs plus e2e, full on main)
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22))
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
@@ -120,23 +151,25 @@ jobs:
       # these thresholds guard the matcher against regressions; they are not a
       # claim about real dictation (see bench/README.md and docs/BENCHMARK.md).
       - name: Benchmark regression gate (synthetic corpus)
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: npx vitest run bench/bench.test.ts
 
       - name: Smoke test the built CLI, the plugin hook and the MCP server
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22))
         run: npm run smoke
 
       # The tarball a release would publish, installed into an empty project and
       # driven through the CLI, MCP and hook surface Phantom relies on.
       - name: Packed package installs and keeps the Phantom contract
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: node scripts/pack-smoke.mjs
 
       - name: Build the browser extension
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22))
         run: npm run build:extension
 
       - name: Upload the browser extension
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         uses: actions/upload-artifact@v7
         with:
           name: lexicon-extension
@@ -151,7 +184,7 @@ jobs:
       # install and build.
       # -----------------------------------------------------------------------
       - name: Every relative link resolves
-        if: matrix.node == 22 && runner.os != 'macOS'
+        if: (steps.scope.outputs.code == 'true' || matrix.node == 22) && (matrix.node == 22 && runner.os != 'macOS')
         # Runs on Windows too, but ubuntu is the authoritative result: NTFS is
         # case-insensitive, so a link written `docs/cli.md` against the real
         # `docs/CLI.md` resolves here and fails on Linux. The Windows run
@@ -159,7 +192,7 @@ jobs:
         run: npm run check:links
 
       - name: CLI reference is up to date
-        if: matrix.node == 22 && runner.os != 'macOS'
+        if: (steps.scope.outputs.code == 'true' || matrix.node == 22) && (matrix.node == 22 && runner.os != 'macOS')
         # The interesting platform for this one is Windows: gen-cli-docs
         # embeds the CLI's own --help output verbatim inside fenced blocks, and
         # commander writes CRLF there. An un-normalized \r would be *committed
@@ -175,7 +208,7 @@ jobs:
         # the OS, so a second full run on Windows would cost ~5 minutes to
         # assert the same numbers. The script itself is Windows-clean (it
         # spawns vitest's ESM entry with process.execPath, not the npx shim).
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: npm run check:facts
 
       # -----------------------------------------------------------------------
@@ -189,7 +222,7 @@ jobs:
       # deleted in the same job. LEXICON_SERVE_LABEL keeps it off the name a
       # real install would use.
       - name: serve --install creates a Scheduled Task, --uninstall removes it
-        if: runner.os == 'Windows'
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (runner.os == 'Windows')
         shell: pwsh
         env:
           LEXICON_SERVE_LABEL: LexiconCI
@@ -228,7 +261,7 @@ jobs:
       # Get-Clipboard/Set-Clipboard through `lexicon daemon --once`, including
       # the CRLF round-trip the backend promises.
       - name: clipboard daemon corrects the real Windows clipboard
-        if: runner.os == 'Windows'
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (runner.os == 'Windows')
         shell: pwsh
         env:
           LEXICON_PATH: ${{ github.workspace }}\examples\lexicon.example.yaml
@@ -255,7 +288,7 @@ jobs:
       # back, so the paths are checked against the filesystem rather than
       # against our own constant.
       - name: client configs land where each vendor documents on Windows
-        if: runner.os == 'Windows'
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (runner.os == 'Windows')
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -295,7 +328,7 @@ jobs:
       # not attempted. What is checked is that the missing-tool path reports
       # the Windows install hint rather than crashing. See docs/PLATFORMS.md.
       - name: voice reports the Windows install hint when ffmpeg is absent
-        if: runner.os == 'Windows'
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (runner.os == 'Windows')
         shell: pwsh
         env:
           LEXICON_FFMPEG_BIN: C:\nowhere\ffmpeg.exe
@@ -314,7 +347,7 @@ jobs:
       # row only, and last, for the same reasons as the Windows block.
       # -----------------------------------------------------------------------
       - name: Install a display and the clipboard tools
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb xclip xsel wl-clipboard systemd
@@ -322,7 +355,7 @@ jobs:
       # xclip and xsel need a display. xvfb-run gives them one, so these run
       # for real instead of being skipped for want of an X server.
       - name: clipboard daemon corrects the real clipboard under X11
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         env:
           LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
         run: |
@@ -344,7 +377,7 @@ jobs:
       # compositor on the runner, so this asserts detection and the error the
       # user would actually see -- not a working Wayland clipboard.
       - name: the Wayland backend is selected by WAYLAND_DISPLAY and fails honestly without a compositor
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         env:
           LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
         run: |
@@ -361,7 +394,7 @@ jobs:
       # writes the unit and then fails to enable it. That is expected: what is
       # verified here is that the unit file we write is one systemd accepts.
       - name: the systemd user unit we write is valid
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         env:
           LEXICON_PATH: ${{ github.workspace }}/examples/lexicon.example.yaml
         run: |
@@ -378,7 +411,7 @@ jobs:
       # XDG_CONFIG_HOME / XDG_DATA_HOME / XDG_STATE_HOME must actually move the
       # files, and a relative value must be ignored per the spec.
       - name: XDG_CONFIG_HOME moves the lexicon, and a relative value is ignored
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: |
           set -euo pipefail
           xdg="$RUNNER_TEMP/xdg"
