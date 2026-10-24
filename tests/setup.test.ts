@@ -1232,7 +1232,7 @@ describe('runSetup starter packs', () => {
       await fs.rm(globalPath, { force: true });
       const { io, plan, summary } = await run({ ...opts, dryRun }, noGitName);
       expect((dryRun ? plan?.demo : summary.demo)?.usedExample, String(dryRun)).toBe(true);
-      expect(io.out).toContain('add one now, what speech-to-text writes for it: lexicon add "Acme" "<misspelling>"');
+      expect(io.out).toContain("add one now, what speech-to-text writes for it: lexicon add Acme '<misspelling>'");
       expect(io.out).not.toContain('Your Co');
     }
   });

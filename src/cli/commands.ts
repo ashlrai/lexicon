@@ -54,6 +54,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
+  commandLine,
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   TERM_CATEGORIES,
@@ -125,6 +126,7 @@ import {
   safe,
   safeLines,
   safeMessage,
+  shownCommand,
   skippedProjectJson,
   wholeNumber,
   stillInLine,
@@ -519,11 +521,11 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // the global copy is still removable on its own.
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
-      const nextStep = global ? `run lexicon remove ${JSON.stringify(canonical)} --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
+      const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
       line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
     io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --global\n`);
+    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
     return 1;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
@@ -621,7 +623,7 @@ async function runRemoveAlias(
     if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
       if (holdsAlias(loaded?.global)) {
-        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --alias ${JSON.stringify(safe(alias))} --global\n`);
+        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
       }
     } else if (untrusted) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);

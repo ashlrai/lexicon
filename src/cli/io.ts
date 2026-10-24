@@ -462,7 +462,7 @@ export function skippedProjectJson(
  * copy: `--project` or `--global`.
  */
 export function stillInLine(canonical: string, holder: TermHolder): string {
-  const command = `lexicon remove ${JSON.stringify(safe(canonical))} --${holder.scope}`;
+  const command = shownCommand(['lexicon', 'remove', canonical, `--${holder.scope}`]);
   return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
 }
 

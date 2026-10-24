@@ -59816,13 +59816,35 @@ function mergeRows(rows, source) {
   return { terms: [...byKey.values()], skipped };
 }
 
-// src/core/conflict-note.ts
-function conflictRemoveCommand(c, show = (s) => s) {
-  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+// src/core/shell.ts
+function posixShellWord(s) {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
-function conflictNote(conflicts, audience = "cli") {
+function powerShellWord(s) {
+  return /^[\w+=:./\\-][\w@+=:./\\~-]*$/.test(s) ? s : `'${s.replace(/['\u2018-\u201B]/g, (c) => c + c)}'`;
+}
+function hostPlatform() {
+  const proc = globalThis.process;
+  return typeof proc?.platform === "string" ? proc.platform : "linux";
+}
+function shellWord(s, platform = hostPlatform()) {
+  return platform === "win32" ? powerShellWord(s) : posixShellWord(s);
+}
+function commandLine(words, platform = hostPlatform()) {
+  const quoted = words.map((w) => shellWord(w, platform));
+  return `${platform === "win32" && words.length > 0 && quoted[0] !== words[0] ? "& " : ""}${quoted.join(" ")}`;
+}
+
+// src/core/conflict-note.ts
+function conflictRemoveCommand(c, show = (s) => s, platform = hostPlatform()) {
+  return commandLine(["lexicon", "remove", show(c.canonical), "--alias", show(c.spelling), `--${c.scope}`], platform);
+}
+function conflictRemoveTermCommand(c, platform = hostPlatform()) {
+  return commandLine(["lexicon", "remove", c.canonical, `--${c.scope}`], platform);
+}
+function conflictNote(conflicts, audience = "cli", platform = hostPlatform()) {
   return conflicts.map(
-    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
+    (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c, void 0, platform)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: ${conflictRemoveTermCommand(c, platform)}`)
   ).join(" ");
 }
 function unchangedTermNote(canonical) {
@@ -61510,21 +61532,6 @@ function demonstrate(lexicon, prefer = []) {
     terms: ["Ashlr.AI"],
     usedExample: true
   };
-}
-
-// src/core/shell.ts
-function posixShellWord(s) {
-  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
-}
-function powerShellWord(s) {
-  return /^[\w+=:./\\-][\w@+=:./\\~-]*$/.test(s) ? s : `'${s.replace(/['\u2018-\u201B]/g, (c) => c + c)}'`;
-}
-function shellWord(s, platform = process.platform) {
-  return platform === "win32" ? powerShellWord(s) : posixShellWord(s);
-}
-function commandLine(words, platform = process.platform) {
-  const quoted = words.map((w) => shellWord(w, platform));
-  return `${platform === "win32" && words.length > 0 && quoted[0] !== words[0] ? "& " : ""}${quoted.join(" ")}`;
 }
 
 // src/mcp/shared.ts
@@ -66070,7 +66077,7 @@ async function stepDemo(ctx) {
     const own2 = (ctx.plan ? ctx.plan.wouldSeed : ctx.seeded)[0];
     ctx.say(
       dim(
-        own2 === void 0 ? '   add one now: lexicon add "Your Co" --suggest' : `   add one now, what speech-to-text writes for it: lexicon add ${JSON.stringify(safe(own2))} "<misspelling>"`
+        own2 === void 0 ? '   add one now: lexicon add "Your Co" --suggest' : `   add one now, what speech-to-text writes for it: ${shownCommand(["lexicon", "add", own2, "<misspelling>"])}`
       )
     );
   }

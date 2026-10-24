@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { commandLine, posixShellWord, powerShellWord, shellWord } from '../src/core/index.js';
+import path from 'node:path';
+import { commandLine, conflictNote, conflictRemoveCommand, hostPlatform, posixShellWord, powerShellWord, shellWord } from '../src/core/index.js';
+import { shownCommand, stillInLine } from '../src/cli/io.js';
 
 // The quoting of every command lexicon prints for a person to copy: POSIX on
 // macOS and Linux, PowerShell on Windows. Each platform branch is tested here
@@ -39,5 +41,38 @@ describe('shell quoting for printed commands', () => {
     expect(commandLine(['lexicon', '--cwd', 'C:\\a b', 'setup'], 'win32')).toBe(`lexicon --cwd 'C:\\a b' setup`);
     expect(commandLine(['C:\\a b\\whisper-cli.exe', '-f', 'x.wav'], 'win32')).toBe(`& 'C:\\a b\\whisper-cli.exe' -f x.wav`);
     expect(commandLine(['/a b/whisper-cli', '-f', 'x.wav'], 'linux')).toBe(`'/a b/whisper-cli' -f x.wav`);
+  });
+});
+
+// Catches: the learn/add conflict notes, the "still in the other file" line,
+// `remove`'s global-copy hints and setup's "add one now" printed the command
+// with JSON string literals, so a `$` in a name expanded in the shell and a
+// quote broke the argument, instead of the shared shell quoting.
+describe('printed commands use the shared shell quoting', () => {
+  const alias = { canonical: 'Acme $HOME Co', scope: 'global' as const, as: 'alias' as const, spelling: "O'Brien" };
+
+  it('quotes the conflict remove command for the shell, on POSIX and PowerShell', () => {
+    expect(conflictRemoveCommand(alias, undefined, 'linux')).toBe(`lexicon remove 'Acme $HOME Co' --alias 'O'\\''Brien' --global`);
+    expect(conflictRemoveCommand(alias, undefined, 'win32')).toBe(`lexicon remove 'Acme $HOME Co' --alias 'O''Brien' --global`);
+    expect(conflictNote([alias], 'cli', 'linux')).toContain(`drop it with: lexicon remove 'Acme $HOME Co' --alias 'O'\\''Brien' --global`);
+    expect(conflictNote([{ ...alias, as: 'canonical', spelling: alias.canonical }], 'cli', 'linux')).toContain(`drop it with: lexicon remove 'Acme $HOME Co' --global`);
+  });
+
+  it('quotes the still-in-the-other-file remove command with shownCommand', () => {
+    expect(stillInLine('Acme $HOME Co', { scope: 'project', path: path.join('repo', '.lexicon.yaml') })).toContain(
+      `to remove that copy too: ${shownCommand(['lexicon', 'remove', 'Acme $HOME Co', '--project'])}`,
+    );
+    expect(shownCommand(['lexicon', 'remove', 'Acme $HOME Co', '--project'])).not.toContain('"');
+  });
+
+  it('defaults to the host platform, and to POSIX where there is no process (the extension)', () => {
+    expect(hostPlatform()).toBe(process.platform);
+    const saved = globalThis.process;
+    try {
+      (globalThis as { process?: unknown }).process = undefined;
+      expect(hostPlatform()).toBe('linux');
+    } finally {
+      globalThis.process = saved;
+    }
   });
 });

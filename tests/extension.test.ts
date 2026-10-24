@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { LEXICON_SHAPE_MESSAGE, createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { LEXICON_SHAPE_MESSAGE, createBackground, learnWarnings, tooLargeForApiMessage } from '../extension/src/background-core.js';
 import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
@@ -851,7 +851,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const learn = (await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { ok: true; message: string };
     expect(learn.message).toBe(
       'Added new term Ashley with alias "Ashler". But "Ashler" is also an alias of Ashlr.AI (global lexicon), so it may still be corrected to that ' +
-        '(to drop it, run: lexicon remove "Ashlr.AI" --alias "Ashler" --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
+        '(to drop it, run: lexicon remove Ashlr.AI --alias Ashler --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
         'once it is trusted its term wins (review it with: lexicon trust).',
     );
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: { canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' } };
@@ -860,7 +860,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
     // and named no way out, while the core conflictNote names the remove command.
     expect(own.message).toBe(
       'Added "Ashler" as an alias of Ashley. But "Ashler" is its own term (project), so it may still be kept as written; ' +
-        'if the user never means it as its own term, drop it with: lexicon remove "Ashler" --project.',
+        'if the user never means it as its own term, drop it with: lexicon remove Ashler --project.',
     );
     expect(own.message).toBe(
       `Added "Ashler" as an alias of Ashley. But ${conflictNote([{ canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' }])}.`,
@@ -868,6 +868,14 @@ describe('message routing (mock chrome.runtime) and background', () => {
     // No conflict, or one of an unexpected shape: the plain message.
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: 'odd' };
     expect(((await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { message: string }).message).toBe('Added "Ashler" as an alias of Ashley.');
+  });
+
+  // Catches: the popup's alias-conflict remove step was JSON-quoted, so a `$`
+  // in a name expanded when pasted into a shell; it now uses the core's
+  // shell-quoted conflictRemoveCommand (POSIX in the browser, no process).
+  it('quotes the alias-conflict remove step for the shell', () => {
+    const msg = learnWarnings('O$x', { canonical: 'Acme $HOME Co', scope: 'global', as: 'alias', spelling: 'O$x' }, undefined);
+    expect(msg).toContain(`(to drop it, run: lexicon remove 'Acme $HOME Co' --alias 'O$x' --global).`);
   });
 
   it("a refused learn shows the server's reason, and a 403 is not reported as a bad token", async () => {

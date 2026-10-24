@@ -418,7 +418,7 @@ describe('conflictNote', () => {
 
   it('names the scoped lexicon remove command for an alias by default', () => {
     expect(conflictNote([alias])).toBe(
-      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, drop it with: lexicon remove Ashlr.AI --alias Ashler --global',
     );
   });
 
@@ -432,7 +432,7 @@ describe('conflictNote', () => {
   // stopped there, with no way out, while an alias conflict names the remove.
   it('says a canonical conflict keeps the spelling as written and how to remove that term, one sentence per conflict', () => {
     expect(conflictNote([own, alias])).toMatch(
-      /^"Ashley" is its own term \(project\), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Ashley" --project "Ashler" is also/,
+      /^"Ashley" is its own term \(project\), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove Ashley --project "Ashler" is also/,
     );
     expect(conflictNote([own], 'mcp')).toBe(
       '"Ashley" is its own term (project), so it may still be kept as written; if the user never means it as its own term, call remove_term with canonical "Ashley", scope "project".',
@@ -567,7 +567,7 @@ describe('lexicon learn (CLI)', () => {
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
     expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
     expect(JSON.parse(json.out()).note).toBe(
-      '"Kubernetes" is its own term (project), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Kubernetes" --project',
+      '"Kubernetes" is its own term (project), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove Kubernetes --project',
     );
 
     // Regression: `learn --json` had the conflict and no remove command, while
@@ -576,7 +576,7 @@ describe('lexicon learn (CLI)', () => {
     expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo', json: true }, alias.io)).toBe(0);
     expect(JSON.parse(alias.out()).note).toBe(
       '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
-        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+        'if the user agrees, drop it with: lexicon remove Ashlr.AI --alias Ashler --global',
     );
 
     // No conflict: no note.

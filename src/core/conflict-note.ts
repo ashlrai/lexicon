@@ -4,6 +4,7 @@
  * node: imports) so the browser extension reuses the exact wording
  * (extension/src/core.ts); learn.ts re-exports everything here.
  */
+import { commandLine, hostPlatform } from './shell.js';
 import type { TermScope } from './types.js';
 
 /** The term `LearnResult.conflict` names, and the spelling of `heard` it holds. */
@@ -22,11 +23,18 @@ export type ConflictNoteAudience = 'cli' | 'mcp';
 /**
  * The `lexicon remove --alias` command that drops a conflicting alias from the
  * other term, limited to the file that holds it (`--<scope>`). `show` is
- * applied to each spelling first (a terminal sanitizer); JSON string literals
- * keep a `"` in a spelling from blurring where an argument ends.
+ * applied to each spelling first (a terminal sanitizer); each word is then
+ * quoted for the shell on `platform` (`commandLine`: POSIX, or PowerShell on
+ * win32), so the command runs as printed even with a space, `$` or quote in a
+ * spelling. A JSON string literal did not: `"$HOME Co"` expands in a shell.
  */
-export function conflictRemoveCommand(c: LearnConflict, show: (s: string) => string = (s) => s): string {
-  return `lexicon remove ${JSON.stringify(show(c.canonical))} --alias ${JSON.stringify(show(c.spelling))} --${c.scope}`;
+export function conflictRemoveCommand(c: LearnConflict, show: (s: string) => string = (s) => s, platform: string = hostPlatform()): string {
+  return commandLine(['lexicon', 'remove', show(c.canonical), '--alias', show(c.spelling), `--${c.scope}`], platform);
+}
+
+/** The `lexicon remove <canonical> --<scope>` command that removes a conflicting term from one file, quoted like `conflictRemoveCommand`. */
+export function conflictRemoveTermCommand(c: Pick<LearnConflict, 'canonical' | 'scope'>, platform: string = hostPlatform()): string {
+  return commandLine(['lexicon', 'remove', c.canonical, `--${c.scope}`], platform);
 }
 
 /**
@@ -37,18 +45,18 @@ export function conflictRemoveCommand(c: LearnConflict, show: (s: string) => str
  * the `remove_term` call (`'mcp'`); for a spelling that is another term's
  * canonical, how to remove that term. Unsanitized, like every JSON field.
  */
-export function conflictNote(conflicts: readonly LearnConflict[], audience: ConflictNoteAudience = 'cli'): string {
+export function conflictNote(conflicts: readonly LearnConflict[], audience: ConflictNoteAudience = 'cli', platform: string = hostPlatform()): string {
   return conflicts
     .map((c) =>
       c.as === 'alias'
         ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` +
           (audience === 'mcp'
             ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".`
-            : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`)
+            : `if the user agrees, drop it with: ${conflictRemoveCommand(c, undefined, platform)}`)
         : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` +
           (audience === 'mcp'
             ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".`
-            : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`),
+            : `if the user never means it as its own term, drop it with: ${conflictRemoveTermCommand(c, platform)}`),
     )
     .join(' ');
 }

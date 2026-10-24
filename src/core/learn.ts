@@ -18,7 +18,7 @@ import type { LearnConflict } from './conflict-note.js';
 
 // The conflict wording lives in a module with no IO so the browser extension
 // bundles the same sentences (extension/src/core.ts re-exports it).
-export { conflictNote, conflictRemoveCommand, learnUnchangedNote, unchangedTermNote } from './conflict-note.js';
+export { conflictNote, conflictRemoveCommand, conflictRemoveTermCommand, learnUnchangedNote, unchangedTermNote } from './conflict-note.js';
 export type { ConflictNoteAudience, LearnConflict } from './conflict-note.js';
 
 export interface Correction {
