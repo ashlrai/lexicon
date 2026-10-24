@@ -156,6 +156,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - `lexicon serve` reads a request path that starts with `//` as a path: `new URL(req.url, base)` read `//health` as host `health` and path `/`, so the request was routed by the wrong path. It is now a 404 for the unknown path `//health` (`requestUrl`).
 - `lexicon serve`: a lexicon load that started before a write (`/learn`, `/add`, a pack install or uninstall) and finished after the write cleared the cache no longer puts the old lexicon back in the cache, where the next requests for up to two seconds answered without the write. Such a load still answers its own request.
 - `lexicon serve` on Windows and macOS: a project write through a path spelled in another case (`C:\Users\Me\repo` against `c:\users\me\repo`) now drops the cached load of that project, which kept answering with the old lexicon for up to two seconds, and a pack uninstall that rewrote the global file through such a spelling counts as a global write. File identity is case-folded on win32 and darwin (and NFC-normalised on darwin).
+- The standalone clipboard watcher (`node dist/daemon/clipboard.js`) refuses `--cwd` with no directory after it, a blank one, or another flag in its place (`--cwd --once` took `--once` as the directory) with `--cwd expects a directory`, and takes `--cwd=<dir>`. Its usage line names `--cwd`.
 
 ## 0.5.6 (2026-10-18)
 

@@ -506,9 +506,9 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   return 0;
 }
 
-const USAGE = 'usage: lexicon daemon [--once [--paste]] [--interval <ms>] [--dry-run] [--quiet] [--backend <name>] [--which]\n';
+const USAGE = 'usage: lexicon daemon [--once [--paste]] [--interval <ms>] [--dry-run] [--quiet] [--backend <name>] [--cwd <dir>] [--which]\n';
 
-/** Minimal standalone entry: `node dist/daemon/clipboard.js [--once] [--paste] [--interval ms] [--dry-run] [--quiet] [--backend name] [--which]`. */
+/** Minimal standalone entry: `node dist/daemon/clipboard.js [--once] [--paste] [--interval ms] [--dry-run] [--quiet] [--backend name] [--cwd dir] [--which]`. */
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const opts: DaemonCommandOptions = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -532,8 +532,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       const n = Number(arg.slice('--interval='.length));
       if (!Number.isFinite(n) || n <= 0) throw new Error('--interval expects a positive number of milliseconds');
       opts.intervalMs = n;
-    } else if (arg === '--cwd') {
-      opts.cwd = argv[++i];
+    } else if (arg === '--cwd' || arg.startsWith('--cwd=')) {
+      // `--cwd` with nothing after it (or followed by the next flag) left cwd
+      // undefined or set to "--once", so the watcher ran from the wrong place.
+      const value = arg === '--cwd' ? argv[++i] : arg.slice('--cwd='.length);
+      if (value === undefined || value.trim() === '' || (arg === '--cwd' && value.startsWith('-'))) {
+        throw new Error(`--cwd expects a directory (got ${value === undefined ? 'nothing' : `"${value}"`}); run: lexicon daemon --cwd <dir>`);
+      }
+      opts.cwd = value;
     } else if (arg === '--help' || arg === '-h') {
       process.stdout.write(USAGE);
       return;
