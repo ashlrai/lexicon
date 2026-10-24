@@ -8,6 +8,7 @@ import {
   EXPORT_FORMATS,
   exportClaudeMdWithin,
   exportLexicon,
+  exportLexiconWithNotes,
   isExportFormat,
   selectExportTerms,
 } from '../src/core/exporters/index.js';
@@ -235,8 +236,14 @@ describe('exportLexicon', () => {
     expect((parseYaml(text) as { matches: { trigger: string }[] }).matches.map((m) => m.trigger)).toEqual(['fine']);
     expect(text).toMatch(/^# left out "odd" -> "x\\\\\{\\\\\{y": espanso would type it as "x\{\{y"/m);
     expect(text).toMatch(/^# left out "odder" -> "p\\\\\}\\\\\}q": espanso would type it as "p\}\}q"/m);
+    // Catches: the pairs were named only in the file's comment, so
+    // `export --json` (dropped) and the MCP note said nothing was left out.
+    expect(exportLexiconWithNotes(odd, 'espanso').notes).toEqual([
+      `left out 2 pairs espanso would not type as written (a canonical holding a literal \\{\\{ or \\}\\}): ${JSON.stringify('odd -> x\\{\\{y')} and ${JSON.stringify('odder -> p\\}\\}q')}`,
+    ]);
     // A name without braces is written as before.
     expect(exportLexicon(lexicon, 'espanso')).not.toContain('# left out');
+    expect(exportLexiconWithNotes(lexicon, 'espanso').notes).toEqual([]);
   });
 
   // Catches: `canonical:boost` with a colon in the canonical (`Win:2`) read

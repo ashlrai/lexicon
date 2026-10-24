@@ -60512,6 +60512,7 @@ function espansoEscape(canonical) {
 }
 function exportEspanso(lexicon, _opts = {}, sink) {
   const leftOut = [];
+  const unrenderable = [];
   const matches = [];
   const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
   const shared = sharedTriggerNote(dropped, "trigger");
@@ -60522,9 +60523,15 @@ function exportEspanso(lexicon, _opts = {}, sink) {
     if (typed !== canonical) {
       const as = typed === void 0 ? "read a variable in it" : `type it as ${JSON.stringify(typed)}`;
       leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
+      unrenderable.push(`${alias} -> ${canonical}`);
       continue;
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
+  }
+  if (unrenderable.length > 0) {
+    sink?.notes.push(
+      `left out ${unrenderable.length} pair${unrenderable.length === 1 ? "" : "s"} espanso would not type as written (a canonical holding a literal \\{\\{ or \\}\\}): ${quotedNames(unrenderable)}`
+    );
   }
   if (sink) sink.rows = matches.length;
   const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0, defaultStringType: "QUOTE_DOUBLE", defaultKeyType: "PLAIN" });

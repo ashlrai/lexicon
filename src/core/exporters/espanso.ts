@@ -1,7 +1,7 @@
 /** espanso match file: one word-bounded trigger per alias. */
 import { stringify as stringifyYaml } from 'yaml';
 import type { ExportOptions, Lexicon } from '../types.js';
-import { aliasPairs, sharedTriggerNote, uniqueTriggers } from './shared.js';
+import { aliasPairs, quotedNames, sharedTriggerNote, uniqueTriggers } from './shared.js';
 import type { ExportSink } from './shared.js';
 
 /**
@@ -30,7 +30,8 @@ function espansoEscape(canonical: string): string {
  * One match per alias, `replace` escaped by `espansoEscape`. A pair whose
  * canonical espanso cannot be made to type as written (it holds a literal
  * `\{\{` or `\}\}`, which espanso always unescapes) is left out, with a YAML
- * comment at the top naming it, rather than written to type something else.
+ * comment at the top naming it and a note, rather than written to type
+ * something else.
  *
  * Two terms sharing an alias wrote the trigger twice, and espanso then
  * expands it to either. The term `uniqueTriggers` ranks first keeps it (a
@@ -45,6 +46,7 @@ function espansoEscape(canonical: string): string {
  */
 export function exportEspanso(lexicon: Lexicon, _opts: ExportOptions = {}, sink?: ExportSink): string {
   const leftOut: string[] = [];
+  const unrenderable: string[] = [];
   const matches = [];
   const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
   const shared = sharedTriggerNote(dropped, 'trigger');
@@ -55,9 +57,17 @@ export function exportEspanso(lexicon: Lexicon, _opts: ExportOptions = {}, sink?
     if (typed !== canonical) {
       const as = typed === undefined ? 'read a variable in it' : `type it as ${JSON.stringify(typed)}`;
       leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
+      unrenderable.push(`${alias} -> ${canonical}`);
       continue;
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
+  }
+  // The comment is in the file only: `lexicon export --json` (`dropped`) and
+  // MCP export_lexicon's note said nothing about these pairs.
+  if (unrenderable.length > 0) {
+    sink?.notes.push(
+      `left out ${unrenderable.length} pair${unrenderable.length === 1 ? '' : 's'} espanso would not type as written (a canonical holding a literal \\{\\{ or \\}\\}): ${quotedNames(unrenderable)}`,
+    );
   }
   if (sink) sink.rows = matches.length;
   const body = stringifyYaml({ matches }, { lineWidth: 0, defaultStringType: 'QUOTE_DOUBLE', defaultKeyType: 'PLAIN' });
