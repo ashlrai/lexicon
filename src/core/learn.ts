@@ -274,8 +274,13 @@ export function parseCorrection(text: string): Correction | undefined {
 // learnCorrection
 // ---------------------------------------------------------------------------
 
+/** Trimmed, lowercased and in NFC, as store.ts compares spellings ("Caf\u00e9" and NFD "Cafe\u0301" are one). */
+function foldText(s: string): string {
+  return s.trim().toLowerCase().normalize('NFC');
+}
+
 function sameText(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return foldText(a) === foldText(b);
 }
 
 /** The term `meant` refers to: canonical match first, then a term that lists `meant` as an alias. */
@@ -292,7 +297,7 @@ function dedupeCaseInsensitive(values: readonly string[]): string[] {
   for (const raw of values) {
     const v = raw.trim();
     if (!v) continue;
-    const key = v.toLowerCase();
+    const key = foldText(v);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(v);

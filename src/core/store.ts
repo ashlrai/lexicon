@@ -1807,9 +1807,9 @@ export function untrustedAliasHolder(
   alias: string,
 ): { path: string; trust: 'untrusted' | 'changed' } | undefined {
   const skipped = loaded.skippedProject;
-  const drop = alias.trim().toLowerCase();
+  const drop = foldKey(alias);
   const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
-  if (!skipped || !drop || !term || !term.aliases.some((a) => a.trim().toLowerCase() === drop)) return undefined;
+  if (!skipped || !drop || !term || !term.aliases.some((a) => foldKey(a) === drop)) return undefined;
   return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
 }
 
@@ -1859,7 +1859,7 @@ export async function removeAlias(
       const term = findTerm(file.lexicon, wanted);
       if (!term) return;
       termFound = true;
-      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
+      const remaining = term.aliases.filter((a) => foldKey(a) !== foldKey(drop));
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file, opts);
       term.aliases = remaining;
@@ -2030,19 +2030,29 @@ function candidatePaths(opts: StoreOptions, scope?: TermScope): { path: string; 
   return targets;
 }
 
+/**
+ * The key two spellings are compared under: trimmed, lowercased and in NFC, so
+ * "Caf\u00e9" typed precomposed and "Cafe\u0301" (NFD, as macOS file names and
+ * some keyboards give it) are one spelling. Without NFC an NFD alias of an NFC
+ * canonical was kept and lexicon://me showed "Caf\u00e9 | Caf\u00e9".
+ */
+function foldKey(s: string): string {
+  return s.trim().toLowerCase().normalize('NFC');
+}
+
 /** What sameCanonical compares: two canonicals are the same term when their keys are equal. */
 function canonicalKey(canonical: string): string {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
 }
 
 function sameCanonical(a: string, b: string): boolean {
   return canonicalKey(a) === canonicalKey(b);
 }
 
-/** Trim, drop empties and anything equal to the canonical, dedupe case-insensitively (first spelling wins). */
+/** Trim, drop empties and anything equal to the canonical, dedupe case-insensitively and under NFC (first spelling wins). */
 export function dedupeAliases(aliases: string[], canonical: string): string[] {
-  const canon = canonical.trim().toLowerCase();
-  return dedupeCaseInsensitive(aliases).filter((a) => a.toLowerCase() !== canon);
+  const canon = foldKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
 }
 
 function dedupeCaseInsensitive(values: string[]): string[] {
@@ -2051,7 +2061,7 @@ function dedupeCaseInsensitive(values: string[]): string[] {
   for (const raw of values) {
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) continue;
-    const key = value.toLowerCase();
+    const key = foldKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);

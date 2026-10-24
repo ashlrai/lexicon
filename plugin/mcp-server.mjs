@@ -55341,9 +55341,9 @@ function untrustedTermHolder(loaded, canonical) {
 }
 function untrustedAliasHolder(loaded, canonical, alias) {
   const skipped = loaded.skippedProject;
-  const drop = alias.trim().toLowerCase();
+  const drop = foldKey(alias);
   const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
-  if (!skipped || !drop || !term || !term.aliases.some((a) => a.trim().toLowerCase() === drop)) return void 0;
+  if (!skipped || !drop || !term || !term.aliases.some((a) => foldKey(a) === drop)) return void 0;
   return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
 }
 async function removeAlias(canonical, alias, opts = {}) {
@@ -55364,7 +55364,7 @@ async function removeAlias(canonical, alias, opts = {}) {
       const term = findTerm(file2.lexicon, wanted);
       if (!term) return;
       termFound = true;
-      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
+      const remaining = term.aliases.filter((a) => foldKey(a) !== foldKey(drop));
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
@@ -55461,15 +55461,18 @@ function candidatePaths(opts, scope) {
   targets.push({ path: paths.global, scope: "global" });
   return targets;
 }
+function foldKey(s) {
+  return s.trim().toLowerCase().normalize("NFC");
+}
 function canonicalKey2(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
 }
 function sameCanonical(a, b) {
   return canonicalKey2(a) === canonicalKey2(b);
 }
 function dedupeAliases(aliases, canonical) {
-  const canon = canonical.trim().toLowerCase();
-  return dedupeCaseInsensitive(aliases).filter((a) => a.toLowerCase() !== canon);
+  const canon = foldKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
 }
 function dedupeCaseInsensitive(values) {
   const seen = /* @__PURE__ */ new Set();
@@ -55477,7 +55480,7 @@ function dedupeCaseInsensitive(values) {
   for (const raw of values) {
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value) continue;
-    const key = value.toLowerCase();
+    const key = foldKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);
@@ -59386,8 +59389,11 @@ var COMPILED = PATTERNS.map((p) => {
   const source = p.template.replace(/\{[XY]\}/g, side);
   return { needle: p.needle, re: new RegExp(source, "iu"), order: p.order, bareNeedsName: p.bareNeedsName === true };
 });
+function foldText(s) {
+  return s.trim().toLowerCase().normalize("NFC");
+}
 function sameText(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return foldText(a) === foldText(b);
 }
 function termFor(lexicon, meant) {
   return lexicon.terms.find((t) => sameText(t.canonical, meant)) ?? lexicon.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
@@ -59398,7 +59404,7 @@ function dedupeCaseInsensitive2(values) {
   for (const raw of values) {
     const v = raw.trim();
     if (!v) continue;
-    const key = v.toLowerCase();
+    const key = foldText(v);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(v);

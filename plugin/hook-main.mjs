@@ -20404,12 +20404,15 @@ async function recordHits(canonicals, opts = {}) {
   } catch {
   }
 }
+function foldKey(s) {
+  return s.trim().toLowerCase().normalize("NFC");
+}
 function canonicalKey(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
 }
 function dedupeAliases(aliases, canonical) {
-  const canon = canonical.trim().toLowerCase();
-  return dedupeCaseInsensitive(aliases).filter((a) => a.toLowerCase() !== canon);
+  const canon = foldKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
 }
 function dedupeCaseInsensitive(values) {
   const seen = /* @__PURE__ */ new Set();
@@ -20417,7 +20420,7 @@ function dedupeCaseInsensitive(values) {
   for (const raw of values) {
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value) continue;
-    const key = value.toLowerCase();
+    const key = foldKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);
