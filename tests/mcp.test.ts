@@ -1608,6 +1608,28 @@ describe('lexicon MCP server', () => {
     });
 
     // Catches: a plugin install's plan promised a login service the apply then refused.
+    // Catches: the plan seeded a 100-character company without a word, and the
+    // apply then failed on aliases[0] and aliases[1], fields the agent never passed.
+    it('setup_lexicon refuses a company or person over the term cap, in the preview too', async () => {
+      const { client, close } = await connect();
+      try {
+        const long = 'x'.repeat(81);
+        for (const args of [{ company: long }, { company: long, apply: true }, { person: 'Ada\nLovelace' }, { company: '   ' }]) {
+          const result = await client.callTool({ name: 'setup_lexicon', arguments: args });
+          expect(result.isError).toBe(true);
+          expect(textOf(result)).toMatch(/^(company|person) must .+; nothing was written/);
+        }
+        expect(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { company: long } }))).toContain('company must be at most 80 characters (it has 81)');
+        expect(cli.runSetup).not.toHaveBeenCalled();
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'setup_lexicon');
+        expect((tool?.inputSchema.properties as Record<string, { description?: string }>).company?.description).toContain('at most 80 characters');
+        const ok = await client.callTool({ name: 'setup_lexicon', arguments: { company: 'x'.repeat(80) } });
+        expect(ok.isError).toBeFalsy();
+      } finally {
+        await close();
+      }
+    });
+
     it('setup_lexicon relays serveBlocked and tells the agent not to offer serve: true', async () => {
       const blocked = 'this copy is running from an npx or Claude Code plugin cache (/x), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install';
       cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] }, plan: { ...setupPlan, serveBlocked: blocked } });

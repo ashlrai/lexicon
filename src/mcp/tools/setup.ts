@@ -14,6 +14,7 @@ import {
 } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
+import { LIMITS, hasControlChars, stripInvisible } from '../../core/index.js';
 import { isRecord } from '../../util/json.js';
 import { errorMessage } from '../../util/errors.js';
 import { runDoctorReport } from '../../cli/commands.js';
@@ -145,8 +146,14 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
         'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
       inputSchema: {
-        company: z.string().optional().describe('Company or product name, spelled exactly as it should appear.'),
-        person: z.string().optional().describe("The user's own name as they write it."),
+        company: z
+          .string()
+          .optional()
+          .describe(`Company or product name, spelled exactly as it should appear: one name of at most ${LIMITS.word} characters once trimmed, on one line (the lexicon's cap for a term). A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
+        person: z
+          .string()
+          .optional()
+          .describe(`The user's own name as they write it: at most ${LIMITS.word} characters once trimmed, on one line. A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
         clients: z
           .array(z.enum(INSTALL_CLIENT_VALUES))
           .optional()
@@ -168,6 +175,24 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ company, person, clients, packs, harvest, serve, apply }) =>
       guarded(async () => {
+        // The plan seeded a 100-character company without a word, then the
+        // apply refused it with errors about generated aliases the agent never
+        // passed. Check both names against the term caps up front, for both.
+        for (const [field, value] of [['company', company], ['person', person]] as const) {
+          if (value === undefined) continue;
+          const name = stripInvisible(value).trim();
+          const problem =
+            name === ''
+              ? 'must not be blank'
+              : hasControlChars(name)
+                ? 'must be one line, with no control characters'
+                : name.length > LIMITS.word
+                  ? `must be at most ${LIMITS.word} characters (it has ${name.length})`
+                  : undefined;
+          if (problem !== undefined) {
+            throw new Error(`${field} ${problem}; nothing was written. Pass only the name, spelled as the user writes it, or omit ${field}.`);
+          }
+        }
         const io = bufferIO();
         const cliDir = cliDirForInstall();
         const applied = apply === true;
