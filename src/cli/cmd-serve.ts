@@ -773,7 +773,12 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
  * the task is not running (or, on a first install, did not exist).
  */
 function schtasksNotRunning(result: ExecResult): boolean {
-  return /not (currently )?running|no running instance|cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
+  return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}\n${result.stdout}`);
+}
+
+/** True when a failed schtasks command means the task does not exist. */
+function schtasksNotFound(result: ExecResult): boolean {
+  return /cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
 /**
@@ -824,11 +829,21 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
   if (platform === 'win32') {
     const taskName = scheduledTaskName(env);
     const deleted = await runAndReport(exec, io, 'schtasks', ['/Delete', '/TN', taskName, '/F']);
+    if (deleted.code === 0) {
+      line(io, `removed Scheduled Task ${safe(taskName)}`);
+      return 0;
+    }
     // schtasks exits non-zero when the task is not there, which is the same
-    // "was not installed" case the other two platforms report rather than fail.
-    if (deleted.code === 0) line(io, `removed Scheduled Task ${safe(taskName)}`);
-    else line(io, `Scheduled Task ${safe(taskName)} was not installed`);
-    return 0;
+    // "was not installed" case the other two platforms report rather than
+    // fail. Any other failure (access denied, the scheduler service down)
+    // left the task in place and was reported as not installed, exit 0.
+    if (schtasksNotFound(deleted)) {
+      line(io, `Scheduled Task ${safe(taskName)} was not installed`);
+      return 0;
+    }
+    const why = (deleted.stderr || deleted.stdout).trim() || `exit ${deleted.code ?? 'error'}`;
+    io.stderr(`lexicon: could not remove the Scheduled Task "${safe(taskName)}": ${safeLines(why)}\n`);
+    return 1;
   }
 
   io.stderr(`lexicon: serve --uninstall is not supported on ${platform}\n`);

@@ -66919,7 +66919,11 @@ async function runServeInstall(opts, io, deps = {}) {
   return 1;
 }
 function schtasksNotRunning(result) {
-  return /not (currently )?running|no running instance|cannot find|does not exist/i.test(`${result.stderr}
+  return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}
+${result.stdout}`);
+}
+function schtasksNotFound(result) {
+  return /cannot find|does not exist/i.test(`${result.stderr}
 ${result.stdout}`);
 }
 

@@ -2848,14 +2848,26 @@ describe('lexicon serve (CLI)', () => {
     expect(ok).toEqual([['schtasks', '/Delete', '/TN', 'Lexicon', '/F']]);
     expect(io.out.join('')).toContain('removed Scheduled Task Lexicon');
 
-    const missing: string[][] = [];
     const io2 = memIO();
+    const missing: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: The system cannot find the file specified.\r\n' });
     expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io2, {
       platform: 'win32',
       home: 'C:\\Users\\me',
-      exec: fakeExec(missing, 1),
+      exec: missing,
     })).toBe(0);
     expect(io2.out.join('')).toContain('was not installed');
+
+    // Catches: every /Delete failure (access denied, the scheduler down) was
+    // reported as "was not installed" with exit 0, the task still in place.
+    const io3 = memIO();
+    const denied: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: Access is denied.' });
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io3, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: denied,
+    })).toBe(1);
+    expect(io3.out.join('')).not.toContain('was not installed');
+    expect(io3.err.join('')).toContain('lexicon: could not remove the Scheduled Task "Lexicon": ERROR: Access is denied.');
   });
 
   it('the task XML round-trips its program path and binds the trigger to one user', () => {
