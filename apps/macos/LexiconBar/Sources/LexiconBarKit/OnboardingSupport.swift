@@ -210,6 +210,18 @@ public struct TermDraft: Equatable, Sendable, Identifiable {
     }
 }
 
+/// The `GET /aliases` path that asks about `canonical`. `URLComponents`
+/// leaves a `+` in a query value as it is, and the server reads the query
+/// with `URLSearchParams`, which takes `+` for a space, so `C++` was asked
+/// about as `C` and its suggestions were another term's. `+` goes as `%2B`.
+public func aliasesRequestPath(canonical: String) -> String {
+    var components = URLComponents()
+    components.path = "/aliases"
+    components.queryItems = [URLQueryItem(name: "canonical", value: canonical)]
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+    return components.string ?? "/aliases"
+}
+
 /// Which starter packs are on. Separate from the network so the toggle can be
 /// optimistic and roll back on failure.
 public struct PackSelection: Equatable, Sendable {
