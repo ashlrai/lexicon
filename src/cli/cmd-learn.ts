@@ -104,6 +104,16 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     io.stderr(`lexicon: ${nextStep}\n`);
     return 1;
   }
+  if (opts.from !== undefined && words.length > 0) {
+    // Learned from --from alone, the words were dropped without a word, so
+    // `lexicon learn Ashler Ashlr.AI --from "..."` never learned Ashler.
+    return refuse(
+      io,
+      opts.json,
+      `--from and the words ${shownCommand(words)} were both given; learn takes one correction, so nothing was learned`,
+      'pass either <heard> <meant> or --from "<sentence>", not both',
+    );
+  }
   let correction = correctionFromArgs(words, opts.from);
   if (!correction && (opts.from !== undefined || (words.length > 0 && words.length !== 2))) {
     // A name the lexicon already holds, written by sound ("it's Niamh not
@@ -310,7 +320,7 @@ export function registerLearnCommands(program: Command, io: IO): void {
     .command('learn')
     .description('record a spelling correction: what STT heard and what you meant')
     .argument('[words...]', '<heard> <meant>, or a sentence like "Ashler -> Ashlr.AI"')
-    .option('--from <sentence>', 'parse a natural-language correction, e.g. "it\'s Ashlr.AI not Ashler"')
+    .option('--from <sentence>', 'parse a natural-language correction, e.g. "it\'s Ashlr.AI not Ashler" (instead of <heard> <meant>, not with them)')
     .option('--project', 'write to the project lexicon instead of the global one')
     .option('--json', 'print the result as JSON')
     // A bare "->" would otherwise be rejected as an unknown option; let it through
