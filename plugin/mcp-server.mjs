@@ -55774,11 +55774,12 @@ function suggestAliases(canonical) {
   const base = canonical.trim();
   const out = [];
   const seen = /* @__PURE__ */ new Set([base.toLowerCase()]);
-  const add = (s) => {
+  const add = (s, everydayOk = false) => {
     const v = s.replace(/\s+/g, " ").trim();
     if (!v) return;
     const key = v.toLowerCase();
     if (seen.has(key)) return;
+    if (!everydayOk && !key.includes(" ") && STOPLIST.has(key)) return;
     seen.add(key);
     out.push(v);
   };
@@ -55795,7 +55796,7 @@ function suggestAliases(canonical) {
     for (const variant of insertVowels(target)) add(variant);
   }
   if (acronym) {
-    add(pronounceAcronym(base));
+    add(pronounceAcronym(base), true);
     add(base.replace(/[^\p{L}\p{N}]/gu, "").split("").join(" "));
   }
   for (const target of stem ? [stem, spaced] : [spaced, base]) {
