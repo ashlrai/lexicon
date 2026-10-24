@@ -158,11 +158,18 @@ function errorResult(err: unknown): CallToolResult {
 /**
  * A store error for a lexicon file that does not parse or validate, which
  * already names the file, with the fix appended on a second line: the
- * `lexicon edit` command that opens it and `lexicon doctor` to check it.
+ * `lexicon edit` command that opens it and `lexicon doctor` to check it. A
+ * file that cannot be read at all gets the path or LEXICON_PATH fix instead.
  * Any other message is returned unchanged. Tools, resources and prompts all
  * report a broken file this way, so a model reading any of them can relay it.
  */
 export function withLexiconFix(message: string): string {
+  // A file that could not be read at all (store.ts `Cannot read lexicon at
+  // <path>: ...`: a LEXICON_PATH under a file, a permission error) has no
+  // parse error for an editor to fix; the path itself is the fix.
+  if (/^Cannot read lexicon at /.test(message)) {
+    return `${message}\nNothing was read or changed. Ask the user to make that path readable, or to point LEXICON_PATH in this server's environment at a file in an existing directory (or unset it), then check it with lexicon_doctor.`;
+  }
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}\nNothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ''))}, then check it with lexicon_doctor.`;

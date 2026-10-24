@@ -62755,6 +62755,10 @@ function errorResult(err) {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
 function withLexiconFix(message) {
+  if (/^Cannot read lexicon at /.test(message)) {
+    return `${message}
+Nothing was read or changed. Ask the user to make that path readable, or to point LEXICON_PATH in this server's environment at a file in an existing directory (or unset it), then check it with lexicon_doctor.`;
+  }
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}

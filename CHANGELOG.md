@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP tools, resources and prompts answer a lexicon that cannot be read (`Cannot read lexicon at <path>: ...`) with a second line asking the user to make that path readable or fix or unset `LEXICON_PATH`, then check with `lexicon_doctor`. The model got the store error with no fix, though a file that does not parse had one.
 - `lexicon doctor` (and MCP `lexicon_doctor`) reports a lexicon that cannot be read at all (`Cannot read lexicon at <path>: ...`, a `LEXICON_PATH` under a file or a permission error) as `cannot be read`, with a next step that names the path and, for the global file, `LEXICON_PATH`. It said the file `does not parse (run: lexicon edit)`, which an editor cannot fix.
 - `lexicon serve --status` and `--pair` say a `serve.json` that exists but cannot be read (a directory, a permission error) could not be read, naming the error code. It was reported as `does not exist; lexicon serve creates it`, and lexicon serve then failed on it instead of creating anything.
 - `lexicon serve --pair` refuses a port where something other than lexicon serve answers `/health` (exit 1, the `--status` wording and its `--port <n>` next step) instead of opening that program's page as the pairing page. Any `{ ok: true }` reply counted as lexicon serve.

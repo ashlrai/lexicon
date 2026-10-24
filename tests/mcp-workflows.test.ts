@@ -1295,6 +1295,37 @@ describe('a lexicon file that does not parse', () => {
     }
   });
 
+  // Catches: a lexicon that could not be read at all (LEXICON_PATH under a
+  // regular file) reached the model as the bare store error, with no fix.
+  it('a lexicon that cannot be read names the path and LEXICON_PATH, not lexicon edit', async () => {
+    const saved = process.env.LEXICON_PATH;
+    const blocker = path.join(repo, 'notes.txt');
+    await fs.writeFile(blocker, 'not a directory\n', 'utf8');
+    process.env.LEXICON_PATH = path.join(blocker, 'lexicon.yaml');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const failures: string[] = [];
+      failures.push(await client.readResource({ uri: 'lexicon://json' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      expect(tool.isError).toBe(true);
+      failures.push((tool.content ?? []).map((c) => c.text ?? '').join('\n'));
+      for (const message of failures) {
+        expect(message).toContain('Cannot read lexicon at');
+        expect(message).toContain('Ask the user to make that path readable, or to point LEXICON_PATH');
+        expect(message).toContain('then check it with lexicon_doctor');
+        expect(message).not.toContain('lexicon edit');
+      }
+    } finally {
+      process.env.LEXICON_PATH = saved;
+      await client.close();
+      await server.close();
+    }
+  });
+
   // Catches: a schema-invalid file with 5000 bad entries made every tool,
   // resource and prompt answer with a 359 KB error (lexicon_doctor 730 KB).
   it('a file with thousands of problems gives a bounded error that still names the file and the fix', async () => {

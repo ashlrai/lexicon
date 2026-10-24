@@ -71,7 +71,7 @@ Neither prompt takes arguments (`prompts/list` gives `arguments: []`). Omit `arg
 
 An untrusted or changed project `.lexicon.yaml` is never parsed by `normalize_transcript`, `list_terms`, `export_lexicon`, `suggest_canonical`, `lexicon_stats`, `list_packs`, `suggest_terms`, `add_term`'s conflict check, the two resources or `voice-context`: they check trust first and name a skipped file by path only, so a large or broken repo file costs them nothing and cannot fail them. `remove_term` and `learn_correction` still parse it, because they report a copy of a term in it.
 
-A lexicon file that does not parse fails every tool, resource and prompt that reads it (`onboard` reads none) with the store's error, which names the file, and a second line with the fix: `lexicon edit` (`lexicon edit --project` for a `.lexicon.yaml`), then `lexicon doctor`. A tool returns it as an `isError` result; a resource or prompt as the JSON-RPC error message.
+A lexicon file that does not parse fails every tool, resource and prompt that reads it (`onboard` reads none) with the store's error, which names the file, and a second line with the fix: `lexicon edit` (`lexicon edit --project` for a `.lexicon.yaml`), then `lexicon doctor`. A lexicon that cannot be read at all (`Cannot read lexicon at <path>: ...`, such as a `LEXICON_PATH` under a file or a permission error) gets a second line asking the user to make that path readable or point `LEXICON_PATH` at a file in an existing directory (or unset it), then check it with `lexicon_doctor`. A tool returns it as an `isError` result; a resource or prompt as the JSON-RPC error message.
 
 ## Writes and previews
 
