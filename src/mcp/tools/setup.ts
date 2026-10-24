@@ -21,6 +21,7 @@ import { runDoctorReport } from '../../cli/commands.js';
 import { reloadStepFor, runInstall } from '../../cli/cmd-install.js';
 import type { InstallOutcome } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
+import { runUninstall } from '../../cli/cmd-uninstall.js';
 import { setupNameProblem } from '../../cli/setup/detect.js';
 import { serveInstallBlocker } from '../../cli/cmd-serve.js';
 import { cliCommand } from '../../util/cli-hint.js';
@@ -129,6 +130,91 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
             : apply === true
               ? {}
               : { next: 'Show this to the user; call again with apply: true once they confirm.' }),
+        });
+      }),
+  );
+
+  server.registerTool(
+    'uninstall_client',
+    {
+      title: 'Remove the lexicon MCP server from an agent client',
+      description:
+        "Take back out what install_client (or the CLI install command) wrote for a client: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. " +
+        'Only entries an install writes are removed: a lexicon server launched the way an install launches it and, for claude, the lexicon hook commands. ' +
+        'A server of the user\'s own named lexicon is reported as kept and left alone, and every other entry in the file is untouched. ' +
+        'SAFETY DEFAULT: apply omitted (or false) is a dry run that writes nothing and returns what would be removed; this tool never removes anything unless apply is true. ' +
+        'Show the dry run to the user and call again with apply: true only after they confirm. ' +
+        "Returns { client, scope, applied, ok, changes, output, stderr?, next?, nextStep? }: `changes` lists each entry as { file, entry, outcome } with outcome removed (would be removed, in a dry run), absent or kept, the list the CLI uninstall command prints with --json. " +
+        'Check `ok`: false means it did not complete (`error` and `nextStep` say why), so do not report it as removed. ' +
+        "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope. " +
+        'The Claude Code plugin is not removed by this tool; when it is installed, `output` names the command that removes it.',
+      inputSchema: {
+        client: z.enum(INSTALL_CLIENT_VALUES).describe('Which client to remove lexicon from.'),
+        apply: z.boolean().optional().describe('false/omitted = dry run only (default): report what would be removed and write nothing. true = remove it after the user confirmed.'),
+        scope: z
+          .enum(INSTALL_SCOPES)
+          .optional()
+          .describe("'user' (default: the user-level config) or 'project' (the config inside the current repo), as for install_client."),
+      },
+    },
+    async ({ client, apply, scope }) =>
+      guarded(async () => {
+        const io = bufferIO();
+        const applied = apply === true;
+        const code = await runUninstall(
+          client,
+          { cwd: ctx.cwd, dryRun: !applied, json: true, ...(scope !== undefined ? { scope } : {}) },
+          io,
+        );
+        let doc: Record<string, unknown>;
+        try {
+          const parsed: unknown = JSON.parse(io.out());
+          doc = isRecord(parsed) ? parsed : {};
+        } catch {
+          doc = {};
+        }
+        const stderr = io.err().trim();
+        const output = typeof doc.output === 'string' ? doc.output : '';
+        const changes = Array.isArray(doc.changes) ? doc.changes : [];
+        if (doc.ok !== true && !Array.isArray(doc.changes)) {
+          // A refusal before anything was touched: unknown client, bad scope, a file it cannot read.
+          const error = typeof doc.error === 'string' ? doc.error : `uninstall ${client} did not complete${stderr ? `: ${stderr}` : ''}`;
+          // The CLI's hints name `--project` and the CLI command; this tool takes `scope` and `apply`.
+          throw new Error(
+            /has no project-level MCP config/.test(error)
+              ? `${client} has no project-level MCP config, so nothing was changed; call uninstall_client again without scope to use its user-level config.`
+              : `${error}; nothing was changed. Fix that (the message names the file), then call uninstall_client again.`,
+          );
+        }
+        if (code !== 0 || doc.ok !== true) {
+          // A step failed part way (claude mcp get or remove): `changes` says what did happen.
+          return textResult({
+            client,
+            scope: scope ?? 'user',
+            applied,
+            ok: false,
+            changes,
+            output,
+            ...(stderr ? { stderr } : {}),
+            nextStep: `The ${applied ? 'uninstall' : 'dry run'} did not complete; output says which step failed and changes what was ${applied ? 'removed' : 'found'}. Tell the user what failed and do not call again with apply: true until it is fixed.`,
+          });
+        }
+        const wouldRemove = changes.some((c) => isRecord(c) && c.outcome === 'removed');
+        return textResult({
+          client,
+          scope: scope ?? 'user',
+          applied,
+          ok: true,
+          changes,
+          output,
+          ...(stderr ? { stderr } : {}),
+          ...(applied
+            ? wouldRemove
+              ? { next: `Tell the user to restart or reload ${client === 'claude' ? 'Claude Code' : 'the client'} so a running session stops starting lexicon; install_client puts it back.` }
+              : {}
+            : wouldRemove
+              ? { next: 'Nothing was written. Show this to the user; call again with apply: true once they confirm.' }
+              : { next: 'Nothing was written, and there is nothing of lexicon\'s to remove for this client and scope.' }),
         });
       }),
   );

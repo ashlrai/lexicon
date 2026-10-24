@@ -83,6 +83,7 @@ const cli = vi.hoisted(() => ({
   runImport: vi.fn(),
   runInstall: vi.fn(),
   runSetup: vi.fn(),
+  runUninstall: vi.fn(),
   serveInstallBlocker: vi.fn(),
 }));
 
@@ -101,6 +102,7 @@ vi.mock('../src/cli/cmd-install.js', async (importOriginal) => ({
   runInstall: cli.runInstall,
 }));
 vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
+vi.mock('../src/cli/cmd-uninstall.js', () => ({ runUninstall: cli.runUninstall }));
 vi.mock('../src/cli/cmd-serve.js', () => ({ serveInstallBlocker: cli.serveInstallBlocker }));
 
 const doctorReport: DoctorReport = {
@@ -293,7 +295,7 @@ function textOf(result: unknown): string {
 }
 
 describe('lexicon MCP server', () => {
-  it('lists the twenty tools', async () => {
+  it('lists the twenty-one tools', async () => {
     const { client, close } = await connect();
     try {
       const { tools } = await client.listTools();
@@ -311,6 +313,7 @@ describe('lexicon MCP server', () => {
           'suggest_canonical',
           'lexicon_doctor',
           'install_client',
+          'uninstall_client',
           'trust_project',
           'import_dictionary',
           'import_vocabulary',
@@ -776,6 +779,46 @@ describe('lexicon MCP server', () => {
         expect(a.output).toContain('merge into');
         expect(a.next).toBeUndefined();
         expect(cli.runInstall).toHaveBeenLastCalledWith('codex', { cwd: '/fake/repo', apply: true, scope: 'project' }, expect.anything(), expect.anything());
+      } finally {
+        await close();
+      }
+    });
+
+    it('uninstall_client is a dry run by default and passes dryRun: false only with apply: true', async () => {
+      cli.runUninstall.mockImplementation(async (client: string, opts: { dryRun?: boolean; scope?: string }, io: IO) => {
+        io.stdout(JSON.stringify({ ok: true, client, scope: opts.scope ?? 'user', dryRun: opts.dryRun === true, changes: [{ file: '/home/u/.cursor/mcp.json', entry: 'mcpServers.lexicon', outcome: 'removed' }], output: 'would remove' }));
+        return 0;
+      });
+      const { client, close } = await connect();
+      try {
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'uninstall_client');
+        expect(tool?.description).toMatch(/dry run that writes nothing/);
+        expect(tool?.description).toMatch(/confirm/);
+        const dry = JSON.parse(textOf(await client.callTool({ name: 'uninstall_client', arguments: { client: 'cursor' } }))) as Record<string, unknown>;
+        expect(dry).toMatchObject({ client: 'cursor', scope: 'user', applied: false, ok: true });
+        expect(dry.next).toMatch(/apply: true/);
+        expect(cli.runUninstall).toHaveBeenLastCalledWith('cursor', { cwd: '/fake/repo', dryRun: true, json: true }, expect.anything());
+        const applied = JSON.parse(textOf(await client.callTool({ name: 'uninstall_client', arguments: { client: 'codex', apply: true, scope: 'project' } }))) as Record<string, unknown>;
+        expect(applied).toMatchObject({ applied: true, scope: 'project', ok: true });
+        expect(applied.next).toMatch(/restart or reload/);
+        expect(cli.runUninstall).toHaveBeenLastCalledWith('codex', { cwd: '/fake/repo', dryRun: false, json: true, scope: 'project' }, expect.anything());
+        // A partial failure reports ok: false with the changes, not an error and not success.
+        cli.runUninstall.mockImplementationOnce(async (_c: string, _o: unknown, io: IO) => {
+          io.stdout(JSON.stringify({ ok: false, error: 'did not complete', nextStep: 'x', changes: [], output: 'could not check' }));
+          return 1;
+        });
+        const failed = JSON.parse(textOf(await client.callTool({ name: 'uninstall_client', arguments: { client: 'claude', apply: true } }))) as Record<string, unknown>;
+        expect(failed).toMatchObject({ ok: false, applied: true });
+        expect(failed.nextStep).toMatch(/do not call again with apply: true/);
+        // A refusal before anything was read is a tool error naming the tool, not the CLI flag.
+        cli.runUninstall.mockImplementationOnce(async (_c: string, _o: unknown, io: IO) => {
+          io.stdout(JSON.stringify({ ok: false, error: 'windsurf has no project-level MCP config; drop --project', nextStep: 'x' }));
+          return 1;
+        });
+        const refused = await client.callTool({ name: 'uninstall_client', arguments: { client: 'windsurf', scope: 'project' } });
+        expect(refused.isError).toBe(true);
+        expect(textOf(refused)).toContain('call uninstall_client again without scope');
+        expect(textOf(refused)).not.toContain('--project');
       } finally {
         await close();
       }

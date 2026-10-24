@@ -160,6 +160,7 @@ note says a project file was skipped as untrusted or changed:
 | "Is it set up?" / nothing gets corrected | `lexicon_doctor {}` |
 | Starter term packs | `list_packs { registry? }`, `add_pack { name, scope?, registry?, confirm?, previewDigest? }` (community packs preview first) |
 | Register the server in a client (preview, then apply) | `install_client { client, apply?, scope? }` |
+| Remove it from a client again (dry run, then apply) | `uninstall_client { client, apply?, scope? }` |
 | Inspect or approve a repo `.lexicon.yaml` | `trust_project { action: 'status' \| 'trust' \| 'untrust', path? }` |
 | Bring in a Wispr/Superwhisper/macOS/espanso/CSV dictionary | `import_dictionary { path? \| content?, format?, scope?, dryRun? }` |
 | Names from the user's contacts, calendar or GitHub (preview, then apply) | `import_vocabulary { sources?, apply?, scope?, previewToken?, approvedCandidateIds? }` |

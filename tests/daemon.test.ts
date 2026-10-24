@@ -28,7 +28,7 @@ vi.mock('../src/core/index.js', async () => {
 });
 
 import * as core from '../src/core/index.js';
-import { runClipboardDaemon, runClipboardOnce, runDaemonCommand } from '../src/daemon/clipboard.js';
+import { main as daemonMain, runClipboardDaemon, runClipboardOnce, runDaemonCommand } from '../src/daemon/clipboard.js';
 import {
   ExecError,
   createClipboardBackend,
@@ -758,5 +758,16 @@ describe('a clipboard too large to correct', () => {
     const res = await runClipboardOnce({ backend: 'pbcopy', exec, platform: 'darwin', paste: true, sendPaste, out: () => undefined, err: () => undefined, cwd: '/fake' });
     expect(sendPaste).toHaveBeenCalledTimes(1);
     expect(res.pasted).toBe(true);
+  });
+});
+
+// Catches: the standalone entry took `--cwd` with no value (cwd undefined) or
+// the next flag as the directory (`--cwd --once` set cwd to "--once").
+describe('standalone main --cwd', () => {
+  it('refuses --cwd with no value, an empty value or a flag in its place', async () => {
+    await expect(daemonMain(['--cwd'])).rejects.toThrow('--cwd expects a directory (got nothing); run: lexicon daemon --cwd <dir>');
+    await expect(daemonMain(['--cwd', '--once'])).rejects.toThrow('--cwd expects a directory (got "--once")');
+    await expect(daemonMain(['--cwd='])).rejects.toThrow('--cwd expects a directory (got "")');
+    await expect(daemonMain(['--cwd', '  '])).rejects.toThrow('--cwd expects a directory');
   });
 });

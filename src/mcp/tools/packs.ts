@@ -47,7 +47,7 @@ const IMPORT_PREVIEWS_KEPT = 20;
 const IMPORT_PREVIEW_TTL_MS = 300_000;
 
 const REGISTRY_SOURCE_DESC =
-  'Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.';
+  'Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused, and so is a blank one. Omit for the vendored starter packs only.';
 
 export const registerPackTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
@@ -70,7 +70,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by ' + cliCommand('pack update') + ', recordOnly reads as not installed (' + cliCommand('pack remove <ref>') + ' clears the record). ' +
         'Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.',
       inputSchema: {
-        registry: z.string().optional().describe(REGISTRY_SOURCE_DESC),
+        registry: nonBlank().optional().describe(REGISTRY_SOURCE_DESC),
       },
     },
     async ({ registry }) =>
@@ -127,7 +127,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
               'a community ref is <author>/<name>, the author 1 to 39 of the same characters, optionally followed by @<version> (up to 32 characters). Anything else is refused.',
           ),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
-        registry: z.string().optional().describe(REGISTRY_SOURCE_DESC + ' Required for community refs.'),
+        registry: nonBlank().optional().describe(REGISTRY_SOURCE_DESC + ' Required for community refs.'),
         confirm: z.boolean().optional().describe('Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing. A vendored pack has no preview: confirm: false with one is refused.'),
         previewDigest: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Community packs only: digest returned by the approved full-content preview; required with confirm. Refused with a vendored pack.'),
       },
@@ -187,7 +187,14 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
             ...(writeOpts.leaveUntrusted ? untrustedWriteFields(result.path, `The ${result.ref} terms`, true) : {}),
           });
         }
-        if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
+        if (!/^[a-z0-9-]+$/.test(name)) {
+          // Name the packs there are, as an unknown lowercase name does (and
+          // `lexicon pack add` does for both), and the one meant when only the case is off.
+          const names = (await listPacks()).map((p) => p.name);
+          const folded = name.trim().toLowerCase();
+          const meant = names.includes(folded) ? ` Pack names are lowercase: did you mean "${folded}"?` : '';
+          throw new Error(`unknown pack "${name}" (available: ${names.join(', ')}; or pass an <author>/<name> community ref).${meant} Nothing was installed.`);
+        }
         // A vendored pack installs in one call. registry, previewDigest and
         // confirm: false belong to the community preview flow; silently
         // installing anyway would turn a call that asked for a preview (or for

@@ -84,7 +84,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'where `evidence` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and `suggestedAliases` is often empty on purpose (an identifier gets none). ' +
         'With `add: true` the result adds `added`, `failures` and `path`, and is an error when no candidate could be written.',
       inputSchema: {
-        path: z.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
+        path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe('Max candidates to return (default 50).'),
         minCount: z
           .number()
@@ -175,7 +175,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. " +
         'The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.',
       inputSchema: {
-        cwd: z.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
+        cwd: nonBlank().optional().describe(`Repository to scan for evidence. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`),
       },
     },

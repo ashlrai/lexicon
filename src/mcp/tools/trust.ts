@@ -27,7 +27,7 @@ import {
   trustSummaryForModel,
 } from '../../core/index.js';
 import type { LexiconFile } from '../../core/index.js';
-import { HARVEST_ROOTS_ENV, containedPath, guarded, shellWord, textResult, trustPreview } from '../shared.js';
+import { HARVEST_ROOTS_ENV, containedPath, guarded, nonBlank, shellWord, textResult, trustPreview } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 import { existsSync, statSync } from 'node:fs';
@@ -127,11 +127,10 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         'Use this instead of reading .lexicon.yaml yourself: the summary passes every string through sanitizeForDisplay, quotes no alias or note, and names only a few short canonicals, so next to nothing the file says reaches the conversation as text. Do not open the file with Read or cat.',
       inputSchema: {
         action: z.enum(['status', 'trust', 'untrust']),
-        path: z
-          .string()
+        path: nonBlank()
           .optional()
           .describe(
-            'Lexicon file (or the project directory holding it) to act on. Defaults to the project .lexicon.yaml resolved from the server working directory. ' +
+            'Lexicon file (or the project directory holding it) to act on. Omit for the project .lexicon.yaml resolved from the server working directory (a blank one is refused). ' +
               `For status and trust it must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused.`,
           ),
       },

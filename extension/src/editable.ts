@@ -325,6 +325,24 @@ function editTextNodes(el: HTMLElement, start: number, end: number, replacement:
 }
 
 /**
+ * Where `code` sits in `text` at or after `from`: the occurrence nearest
+ * `expected` (where it would be if the prose before it kept its length).
+ * The first occurrence was the wrong one whenever the prose before a code
+ * span held the same text (`run npm, then <code>npm</code>`): the code was
+ * aligned with the prose word and the rewrite fell back to flattening it.
+ * -1 when `text` does not hold it.
+ */
+function nearestOccurrence(text: string, code: string, from: number, expected: number): number {
+  let best = -1;
+  for (let at = text.indexOf(code, from); at >= 0; at = text.indexOf(code, at + 1)) {
+    if (best < 0 || Math.abs(at - expected) < Math.abs(best - expected)) best = at;
+    else if (at > expected) break;
+    if (code.length === 0) break;
+  }
+  return best;
+}
+
+/**
  * The edits (old flattened [start, end) and the text to put there, each
  * within one line) that turn the prose of `flat` into `text` while every code
  * range keeps its text, or null when `text` does not hold the code as it
@@ -336,7 +354,7 @@ function proseEdits(flat: Flattened, ranges: ReadonlyArray<readonly [number, num
   let newAt = 0;
   for (const [cs, ce] of ranges) {
     const code = flat.text.slice(cs, ce);
-    const idx = text.indexOf(code, newAt);
+    const idx = nearestOccurrence(text, code, newAt, newAt + (cs - oldAt));
     if (idx < 0) return null;
     regions.push([oldAt, cs, text.slice(newAt, idx)]);
     oldAt = ce;
@@ -388,6 +406,104 @@ function setProseKeepingCode(el: HTMLElement, text: string): boolean {
   return false;
 }
 
+/** The outermost code elements under `el` (a `<pre>`, inline `<code>`, a code editor), in document order. */
+function outerCodeElements(el: HTMLElement): HTMLElement[] {
+  return Array.from(el.querySelectorAll<HTMLElement>(CODE_SELECTOR)).filter((c) => {
+    const outer = c.parentElement?.closest(CODE_SELECTOR) ?? null;
+    return outer === null || !el.contains(outer) || outer === el;
+  });
+}
+
+/**
+ * setWholeText for a rich editor holding code when ranged prose edits
+ * cannot express the rewrite (a prose region gained or lost a line): the
+ * composer is rebuilt from `text`, one paragraph (or `<br>` line) per line as
+ * the last resort does, but each code element goes back in as the element it
+ * was, where its text sits in `text`: a block one (`<pre>`) on lines of its
+ * own, an inline one inside its line. False, with every node put back where
+ * it was, when `text` does not hold each code element's text in order (a
+ * block one on whole lines) or the rebuilt composer does not read back as
+ * `text`. The last resort flattened the code in both cases.
+ */
+function rebuildKeepingCode(doc: Document, el: HTMLElement, text: string): boolean {
+  const codes = outerCodeElements(el);
+  if (codes.length === 0) return false;
+  const flat = flatten(el);
+  type Part = string | HTMLElement;
+  const out: Array<{ line: Part[] } | { block: HTMLElement }> = [];
+  let cur: Part[] | null = null;
+  const addProse = (chunk: string): void => {
+    chunk.split('\n').forEach((part, n) => {
+      if (n > 0 && cur !== null) {
+        out.push({ line: cur });
+        cur = null;
+      }
+      cur ??= [];
+      if (part) cur.push(part);
+    });
+  };
+  let newAt = 0;
+  let oldAt = 0;
+  // After a block element, the line break that ends it belongs to it.
+  let afterBlock = false;
+  for (const code of codes) {
+    const codeText = flatten(code).text;
+    const first = flat.segments.find((seg) => code.contains(seg.node));
+    const oldStart = first ? first.start : oldAt;
+    const idx = nearestOccurrence(text, codeText, newAt, newAt + Math.max(0, oldStart - oldAt));
+    if (idx < 0) return false;
+    const end = idx + codeText.length;
+    if (BLOCK_TAGS.has(code.tagName)) {
+      if (idx > 0 && text[idx - 1] !== '\n') return false;
+      if (end < text.length && text[end] !== '\n') return false;
+      if (idx - 1 >= newAt) addProse(text.slice(newAt, idx - 1));
+      if (cur !== null) out.push({ line: cur });
+      cur = null;
+      out.push({ block: code });
+      newAt = end < text.length ? end + 1 : end;
+      afterBlock = end === text.length;
+    } else {
+      addProse(text.slice(newAt, idx));
+      (cur as Part[] | null)?.push(code);
+      newAt = end;
+      afterBlock = false;
+    }
+    oldAt = oldStart + codeText.length;
+  }
+  if (!afterBlock) addProse(text.slice(newAt));
+  if (cur !== null) out.push({ line: cur });
+
+  const saved = Array.from(el.childNodes);
+  const homes = codes.map((c) => [c, c.parentNode, c.nextSibling] as const);
+  const usesParagraphs = Array.from(el.querySelectorAll('p')).some((p) => !codes.some((c) => c.contains(p)));
+  while (el.firstChild) el.removeChild(el.firstChild);
+  let prevWasLine = false;
+  for (const item of out) {
+    if ('block' in item) {
+      el.appendChild(item.block);
+      prevWasLine = false;
+      continue;
+    }
+    const nodes = item.line.map((part) => (typeof part === 'string' ? doc.createTextNode(part) : part));
+    if (usesParagraphs) {
+      const p = doc.createElement('p');
+      if (nodes.length === 0) p.appendChild(doc.createElement('br'));
+      for (const node of nodes) p.appendChild(node);
+      el.appendChild(p);
+    } else {
+      if (prevWasLine) el.appendChild(doc.createElement('br'));
+      for (const node of nodes) el.appendChild(node);
+    }
+    prevWasLine = true;
+  }
+  if (flatten(el).text === text) return true;
+  while (el.firstChild) el.removeChild(el.firstChild);
+  // Direct children go back with the rest; a nested one goes back into its old parent first.
+  for (const [code, parent, next] of [...homes].reverse()) if (parent !== null && parent !== el) parent.insertBefore(code, next);
+  for (const node of saved) el.appendChild(node);
+  return false;
+}
+
 /**
  * Last resort: replace everything. Keeps one paragraph per line for
  * ProseMirror-style editors, and a composer's `<pre>` and `<code>` elements
@@ -398,7 +514,7 @@ export function setWholeText(doc: Document, el: HTMLElement, text: string): void
     setFieldValue(el, text);
     return;
   }
-  if (el.querySelector(CODE_SELECTOR) !== null && setProseKeepingCode(el, text)) {
+  if (el.querySelector(CODE_SELECTOR) !== null && (setProseKeepingCode(el, text) || rebuildKeepingCode(doc, el, text))) {
     fireInput(el, 'insertReplacementText', text);
     return;
   }
