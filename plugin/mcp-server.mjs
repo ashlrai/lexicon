@@ -54057,11 +54057,23 @@ var import_node_path4 = __toESM(require_node_path());
 var import_node_os2 = __toESM(require_node_os());
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
-  if (!trimmed) return fallback;
-  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback;
+  if (!trimmed) return fallback();
+  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback();
+}
+function usableHome(home) {
+  const trimmed = home.trim();
+  if (trimmed && import_node_path4.default.isAbsolute(trimmed)) return home;
+  let fromUserDb;
+  try {
+    fromUserDb = import_node_os2.default.userInfo().homedir;
+  } catch {
+  }
+  if (fromUserDb && import_node_path4.default.isAbsolute(fromUserDb)) return fromUserDb;
+  const what = trimmed ? `the relative path ${JSON.stringify(trimmed)}` : "empty";
+  throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
 function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
-  return absoluteOr(env.XDG_CONFIG_HOME, import_node_path4.default.join(home, ".config"));
+  return absoluteOr(env.XDG_CONFIG_HOME, () => import_node_path4.default.join(usableHome(home), ".config"));
 }
 function globalLexiconPath(env = process.env, home = import_node_os2.default.homedir()) {
   return env.LEXICON_PATH || import_node_path4.default.join(xdgConfigHome(env, home), "lexicon", "lexicon.yaml");
@@ -54544,8 +54556,8 @@ function assertReadsBack(text, filePath) {
     throw new InputError(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
   }
 }
-function withLexiconLock(filePath, fn) {
-  return withFileLock(filePath, fn);
+function withLexiconLock(filePath, fn, opts) {
+  return withFileLock(filePath, fn, opts);
 }
 var TERM_KEY_ORDER = [
   "canonical",
@@ -55034,7 +55046,7 @@ async function recordHits(canonicals, opts = {}) {
       }
       await import_node_fs5.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
+    }, opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0);
   } catch {
   }
 }
@@ -58909,9 +58921,12 @@ var SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80})\`|($
 var QUOTED_SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80})\`|((?!)))`;
 var TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 var LEAD = `(?:^|[\\s,;:\u2014-])`;
+var APOS = `['\u2019]`;
 var PATTERNS = [
-  // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"
-  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
+  // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y". The apostrophe
+  // may be the typographic one (U+2019) that macOS and iOS smart punctuation and
+  // dictation write; with only `'` accepted, "it\u2019s Ashlr.AI not Ashler" was no correction.
+  { template: `${LEAD}it${APOS}?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
   // "I said X not Y"
   { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I said Ashlr.AI not Ashler", needle: /not /iu },
   // "I meant X not Y"
@@ -58919,7 +58934,7 @@ var PATTERNS = [
   // "X not Y" with no verb - only when both sides are quoted, otherwise far too loose
   { template: `^\\s*{X},? not {Y}${TAIL}`, order: ["meant", "heard"], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"', needle: /not /iu },
   // "not Y, X" / "not Y, it's X"
-  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
+  { template: `^\\s*not {Y},\\s*(?:it${APOS}?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
   // "replace Y with X"
   { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "replace Ashler with Ashlr.AI", needle: /replace /iu },
   // "Y -> X" / "Y => X" / "Y → X"
@@ -61960,8 +61975,11 @@ function pbcopyBackend(exec = defaultClipboardExec) {
 function wlBackend(exec = defaultClipboardExec) {
   return {
     name: "wl",
-    description: "wl-paste --no-newline / wl-copy (Wayland, wl-clipboard)",
-    read: () => readOrEmpty(exec, "wl-paste", ["--no-newline"]),
+    description: "wl-paste --no-newline --type text / wl-copy (Wayland, wl-clipboard)",
+    // `--type text` asks for any text type: without it wl-paste hands over the
+    // first offered type when no text is offered, so a copied image came back
+    // as PNG bytes. With no text on offer it exits non-zero, which reads as ''.
+    read: () => readOrEmpty(exec, "wl-paste", ["--no-newline", "--type", "text"]),
     write: async (text) => {
       await exec("wl-copy", [], text);
     }

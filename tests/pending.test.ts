@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
+import { isHeldLockError } from '../src/util/atomic.js';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -15,6 +16,7 @@ import {
   queueCorrections,
   readPending,
   rejectPending,
+  withLexiconLock,
 } from '../src/core/index.js';
 import { Command } from 'commander';
 import { registerPendingCommands, runPendingAccept, runPendingList, runPendingReject } from '../src/cli/cmd-pending.js';
@@ -130,6 +132,51 @@ describe('pending aliases are queued, never applied', () => {
     });
     expect(res.accepted[0].error).toBe('disk full');
     expect((await listPending(o)).entries).toHaveLength(1);
+  });
+
+  it('accept takes the lexicon lock outside the pending lock (the contract order), so a lexicon writer that queues does not deadlock with it', async () => {
+    const o = await opts();
+    await queueCorrections([{ heard: 'Quibbletron', meant: 'Ashlr.AI' }], o);
+    // A writer that holds the lexicon lock and then queues a correction: the
+    // order every other caller uses. With the pending lock outer in accept,
+    // accept held it while waiting for the lexicon lock, and this writer
+    // held the lexicon lock while waiting for the pending one.
+    let release!: () => void;
+    const holding = new Promise<void>((resolve) => (release = resolve));
+    let entered!: () => void;
+    const hasLexiconLock = new Promise<void>((resolve) => (entered = resolve));
+    const writer = withLexiconLock(globalPath, async () => {
+      entered();
+      await holding;
+      await queueCorrections([{ heard: 'versel', meant: 'Vercel' }], o);
+    });
+    await hasLexiconLock;
+    const accept = acceptPending({ all: true }, o);
+    // Let accept run as far as it can before the writer asks for the pending lock.
+    await new Promise((r) => setTimeout(r, 150));
+    release();
+    const outcome = await Promise.race([
+      Promise.all([writer, accept]).then(() => 'done'),
+      new Promise((r) => setTimeout(() => r('deadlock'), 4_000)),
+    ]);
+    expect(outcome).toBe('done');
+    const res = await accept;
+    // Accept read the queue only once it had the lexicon lock, after the
+    // writer queued, so it took both entries and lost neither.
+    expect(res.accepted.map((a) => [a.entry.heard, a.error])).toEqual([['Quibbletron', undefined], ['versel', undefined]]);
+    expect((await listPending(o)).entries).toEqual([]);
+    expect(await corrected('ping Quibbletron')).toBe('ping Ashlr.AI');
+  }, 15_000);
+
+  it('lockTimeoutMs bounds the wait for a pending lock another live process holds', async () => {
+    const o = await opts();
+    const file = pendingPathFor(globalPath);
+    await fs.writeFile(`${file}.lock`, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'other', at: new Date().toISOString() }));
+    const started = Date.now();
+    const err = await queueCorrections([{ heard: 'Ashler', meant: 'Ashlr.AI' }], { ...o, lockTimeoutMs: 50 }).catch((e: unknown) => e);
+    expect(isHeldLockError(err)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2000);
+    await fs.rm(`${file}.lock`);
   });
 
   it('never overwrites a pending file it cannot read', async () => {

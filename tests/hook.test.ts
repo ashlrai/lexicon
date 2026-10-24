@@ -144,7 +144,7 @@ describe('runUserPromptSubmitHook', () => {
       const out = await runUserPromptSubmitHook(payload('deploy Ashler tonight'));
       expect(out).not.toBe('');
       expect(mocks.recordHits).toHaveBeenCalledTimes(1);
-      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI', 'Mason Wyatt'], { cwd: '/fake/repo', loaded: expect.objectContaining({ merged: expect.any(Object) }) });
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Ashlr.AI', 'Mason Wyatt'], { cwd: '/fake/repo', loaded: expect.objectContaining({ merged: expect.any(Object) }), lockTimeoutMs: 50 });
 
       mocks.recordHits.mockClear();
       expect(await runUserPromptSubmitHook(payload('plain prompt'))).toBe('');
@@ -369,6 +369,34 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
     });
 
+    it('does not flag "it\'s X not Y" that contrasts two ordinary words', async () => {
+      const { runUserPromptSubmitHook, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      // An agent that followed a learn_correction line here made "broken" an alias of "flaky".
+      for (const prompt of [
+        "if the test fails, it's flaky not broken",
+        "it's prod not staging",
+        "it's null not undefined",
+        "it's a typo not a bug",
+        "it's a regression not flaky",
+        'I think it\'s a race condition not a deadlock',
+      ]) {
+        expect(parseCorrections(prompt), prompt).toEqual([]);
+        expect(await runUserPromptSubmitHook(payload(prompt)), prompt).toBe('');
+      }
+      expect(mocks.queueCorrections).not.toHaveBeenCalled();
+    });
+
+    it('still flags a lowercase correction whose sides resemble, a name-like side, or a quoted one', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      expect(parseCorrections("it's vercel not versel")).toEqual([{ heard: 'versel', meant: 'vercel' }]);
+      expect(parseCorrections("it's supabase not super base")).toEqual([{ heard: 'super base', meant: 'supabase' }]);
+      expect(parseCorrections("it's claude not cloud")).toEqual([{ heard: 'cloud', meant: 'claude' }]);
+      expect(parseCorrections("it's Ashlr.AI not actually i")).toEqual([{ heard: 'actually i', meant: 'Ashlr.AI' }]);
+      expect(parseCorrections("it's k8s not kates")).toEqual([{ heard: 'kates', meant: 'k8s' }]);
+      expect(parseCorrections('it\'s "flaky" not "broken"')).toEqual([{ heard: 'broken', meant: 'flaky' }]);
+      expect(parseCorrections('it\'s `prod` not staging')).toEqual([{ heard: 'staging', meant: 'prod' }]);
+    });
+
     it('still corrects an unrelated garble in the same prompt', async () => {
       mocks.normalize.mockImplementation(phoneticNormalize);
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');
@@ -378,7 +406,7 @@ describe('runUserPromptSubmitHook', () => {
       expect(ctx).toContain("Corrected prompt:\nit's Ashlr.AI not Ashlur. Also ping Mason Wyatt");
       expect(ctx).toContain('heard: "Ashlur", meant: "Ashlr.AI"');
       expect(mocks.recordHits).toHaveBeenCalledTimes(1);
-      expect(mocks.recordHits).toHaveBeenCalledWith(['Mason Wyatt'], { cwd: '/fake/repo', loaded: expect.objectContaining({ merged: expect.any(Object) }) });
+      expect(mocks.recordHits).toHaveBeenCalledWith(['Mason Wyatt'], { cwd: '/fake/repo', loaded: expect.objectContaining({ merged: expect.any(Object) }), lockTimeoutMs: 50 });
     });
 
     it('dropCorrectionSpans matches the heard side case-insensitively and leaves other results alone', async () => {
@@ -1169,7 +1197,7 @@ describe('corrections are queued for review, never learned by the hook', () => {
       { heard: 'versel', meant: 'Vercel' },
       { heard: 'super base', meant: 'Supabase' },
     ]);
-    expect(opts).toMatchObject({ globalPath: '/fake/global/lexicon.yaml', source: 'prompt-hook', lexicon: fixtureLexicon });
+    expect(opts).toMatchObject({ globalPath: '/fake/global/lexicon.yaml', source: 'prompt-hook', lexicon: fixtureLexicon, lockTimeoutMs: 50 });
     expect(mocks.learnCorrection).not.toHaveBeenCalled();
     expect(mocks.addTerm).not.toHaveBeenCalled();
   });

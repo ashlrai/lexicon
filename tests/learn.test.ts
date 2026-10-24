@@ -65,6 +65,14 @@ describe('parseCorrection', () => {
     expect(parseCorrection('ok\u2014replace Ashler with Ashlr.AI')).toEqual(ashlr);
   });
 
+  // macOS and iOS smart punctuation (and dictation) write U+2019, not '.
+  it('accepts the typographic apostrophe in "it\u2019s"', () => {
+    expect(parseCorrection('it\u2019s Ashlr.AI not Ashler')).toEqual(ashlr);
+    expect(parseCorrection('It\u2019s Ashlr.AI, not Ashler.')).toEqual(ashlr);
+    expect(parseCorrection('it\u2019s \u201cAshlr.AI\u201d not \u201cAshler\u201d')).toEqual(ashlr);
+    expect(parseCorrection('not Ashler, it\u2019s Ashlr.AI')).toEqual(ashlr);
+  });
+
   it.each([
     ["it's Ashlr.AI not Ashler", ashlr],
     ["it's Ashlr.AI, not Ashler", ashlr],

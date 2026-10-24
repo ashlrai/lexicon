@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, queueCorrections, recordHits, sanitizeForDisplayMax } from '../core/index.js';
+import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, sanitizeForDisplayMax, similarity } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -57,6 +57,17 @@ export const HOOK_MATCH_BUDGET_MS = 100;
  * Dictation is a few thousand characters; this is a pasted file.
  */
 export const HOOK_PROMPT_MAX_CHARS = 50_000;
+
+/**
+ * How long the hook waits for the pending file's lock (queueing a
+ * correction) and for `hits.json`'s (usage counters) before giving up on
+ * that bookkeeping. Both used the store default of ten seconds: a lock held
+ * by another lexicon process held the prompt (pending) or kept the hook's
+ * process alive (hits) for ten seconds, past the plugin's five-second hook
+ * timeout and far past the 200 ms budget. A lock is normally held for a few
+ * milliseconds.
+ */
+export const HOOK_LOCK_TIMEOUT_MS = 50;
 
 /**
  * Where to cut `text` to at most `max` characters: after the last whitespace
@@ -343,6 +354,7 @@ export function parseCorrections(text: string): Correction[] {
   const seen = new Set<string>();
   const add = (c: Correction | undefined): void => {
     if (!c || c.heard.trim() === '' || c.meant.trim() === '') return;
+    if (isOrdinaryContrast(text, c)) return;
     const key = `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -353,6 +365,45 @@ export function parseCorrections(text: string): Correction[] {
   if (!SENTENCE_BREAK_RE.test(text)) return found;
   for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
   return found;
+}
+
+/** Least similarity (letters and digits only, lowercased) at which two plain-word sides still read as one spelling. */
+export const CORRECTION_MIN_SIMILARITY = 0.45;
+
+/** `side` appears quoted in `text` ("x", \u201cx\u201d or `x`): the user marked it as a spelling. */
+function quotedIn(text: string, side: string): boolean {
+  return text.includes(`"${side}"`) || text.includes(`\u201c${side}\u201d`) || text.includes(`\`${side}\``);
+}
+
+/** Letters and digits only, lowercased. */
+function lettersOf(side: string): string {
+  return side.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * True for "it's X not Y" that contrasts two ordinary words rather than
+ * correcting a spelling: "it's flaky not broken", "it's prod not staging",
+ * "it's null not undefined", "it's a typo not a bug". Each of these used to
+ * get a learn_correction line and a pending entry, and an agent that followed
+ * the line made "broken" an alias of "flaky", so every later "broken" in a
+ * prompt was rewritten. A correction is kept when either side is quoted, or
+ * holds an uppercase letter, a digit, a dot or a hyphen (how names are
+ * written: Ashlr.AI, k8s, Next.js), or when the two sides resemble each other
+ * the way a misheard spelling does (similarity at least
+ * CORRECTION_MIN_SIMILARITY, or the same phonetic key: versel and Vercel,
+ * super base and supabase).
+ */
+function isOrdinaryContrast(text: string, c: Correction): boolean {
+  const heard = c.heard.trim();
+  const meant = c.meant.trim();
+  if (quotedIn(text, heard) || quotedIn(text, meant)) return false;
+  const nameLike = /[\p{Lu}\p{N}.-]/u;
+  if (nameLike.test(heard) || nameLike.test(meant)) return false;
+  const a = lettersOf(heard);
+  const b = lettersOf(meant);
+  if (similarity(a, b) >= CORRECTION_MIN_SIMILARITY) return false;
+  const ka = phoneticKey(heard);
+  return ka === '' || ka !== phoneticKey(meant);
 }
 
 /**
@@ -603,7 +654,7 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
   // `loaded` spares recordHits re-reading both lexicon files.
-  void recordHits(canonicals, { cwd, loaded }).catch((err: unknown) => {
+  void recordHits(canonicals, { cwd, loaded, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS }).catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] recordHits: ${message}\n`);
   });
@@ -619,7 +670,7 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
 async function queueForReview(corrections: readonly Correction[], loaded: LoadedLexicon): Promise<void> {
   if (process.env.LEXICON_QUEUE_CORRECTIONS === '0') return;
   try {
-    await queueCorrections(corrections, { globalPath: loaded.global.path, source: 'prompt-hook', lexicon: loaded.merged });
+    await queueCorrections(corrections, { globalPath: loaded.global.path, source: 'prompt-hook', lexicon: loaded.merged, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] could not queue corrections for review: ${sanitizeForDisplayMax(message, 300)}\n`);

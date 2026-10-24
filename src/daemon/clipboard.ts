@@ -125,8 +125,19 @@ export async function resolveClipboard(opts: ClipboardCommonOptions): Promise<Re
   };
 }
 
+/**
+ * True for clipboard contents that are not text: a NUL, or U+FFFD, which is
+ * what UTF-8 decoding leaves for bytes that are not UTF-8. A tool that hands
+ * over an image when no text type is offered (wl-paste without `--type`, or a
+ * custom one) gives bytes such as a PNG header, and writing the "corrected"
+ * decoding back replaced the user's copied image with mangled text.
+ */
+export function looksBinary(text: string): boolean {
+  return /[\u0000\uFFFD]/.test(text);
+}
+
 function reportable(text: string): boolean {
-  return text.length > 0 && text.length <= MAX_CLIPBOARD_CHARS && hasLetters(text);
+  return text.length > 0 && text.length <= MAX_CLIPBOARD_CHARS && hasLetters(text) && !looksBinary(text);
 }
 
 /**
@@ -218,6 +229,12 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       return;
     }
     lastSeen = text;
+    // Something new was copied, so the guard has done its job: it only has to
+    // stop us rewriting our own output, or fighting a clipboard tool that puts
+    // the original straight back. Kept forever, it meant the same dictated
+    // text copied again later (after anything else) was never corrected.
+    lastWritten = undefined;
+    lastInput = undefined;
     if (!reportable(text)) return;
 
     const loaded = await currentLexicon();
@@ -344,7 +361,14 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
 
   if (!reportable(text)) {
     if (!quiet) {
-      const why = text.length === 0 ? 'clipboard is empty or not text' : text.length > MAX_CLIPBOARD_CHARS ? 'clipboard too large' : 'no letters';
+      const why =
+        text.length === 0
+          ? 'clipboard is empty or not text'
+          : text.length > MAX_CLIPBOARD_CHARS
+            ? 'clipboard too large'
+            : looksBinary(text)
+              ? 'clipboard holds binary data, not text; left as it was'
+              : 'no letters';
       out(`no changes (${why})\n`);
     }
   } else {

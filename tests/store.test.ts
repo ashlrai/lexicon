@@ -76,7 +76,7 @@ import {
 } from '../src/core/store.js';
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject, untrustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
-import { xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
+import { usableHome, xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
 
 let tmp: string;
 let globalPath: string;
@@ -611,6 +611,18 @@ describe('project-scope writes never launder an unreviewed file', () => {
     const result = await addTerm({ canonical: 'Foo', aliases: [] }, { cwd: nested, globalPath, scope: 'project' });
     expect(result.file.path).toBe(projectPath);
     expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Foo')).toBeDefined();
+  });
+
+  it('recordHits gives up after lockTimeoutMs on a hits.json lock another live process holds', async () => {
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath, cwd: tmp });
+    const hitsPath = getHitsPath({ globalPath });
+    await fs.mkdir(path.dirname(hitsPath), { recursive: true });
+    await fs.writeFile(`${hitsPath}${LOCK_SUFFIX}`, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'other', at: new Date().toISOString() }));
+    const started = Date.now();
+    await expect(recordHits(['Ashlr.AI'], { cwd: tmp, globalPath, lockTimeoutMs: 50 })).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(2000);
+    await expect(fs.stat(hitsPath)).rejects.toThrow();
+    await fs.rm(`${hitsPath}${LOCK_SUFFIX}`);
   });
 
   it('recordHits on an untrusted project file neither throws nor writes', async () => {
@@ -1744,6 +1756,37 @@ describe('XDG base directories', () => {
     process.env.XDG_CONFIG_HOME = 'relative/dir';
     delete process.env.LEXICON_PATH;
     expect(resolvePaths({ cwd: tmp }).global).toBe(path.join(os.homedir(), '.config', 'lexicon', 'lexicon.yaml'));
+  });
+
+  it('an empty or relative HOME never makes the global lexicon path relative to the cwd', () => {
+    // `HOME=` made os.homedir() return '', so the global lexicon (and trust.json,
+    // hits.json beside it) resolved to .config/lexicon/ under the cwd: the
+    // prompt hook then applied a repository's own .config/lexicon/lexicon.yaml
+    // as the user's global lexicon, untrusted.
+    for (const home of ['', '   ', 'relative/home']) {
+      const global = resolvePaths({ cwd: tmp, env: {}, home }).global;
+      expect(path.isAbsolute(global)).toBe(true);
+      expect(global).toBe(path.join(os.userInfo().homedir, '.config', 'lexicon', 'lexicon.yaml'));
+      expect(path.isAbsolute(xdgConfigHome({}, home))).toBe(true);
+      expect(path.isAbsolute(xdgDataHome({}, home))).toBe(true);
+      expect(path.isAbsolute(xdgStateHome({}, home))).toBe(true);
+    }
+    // An absolute XDG_CONFIG_HOME or LEXICON_PATH still needs no home at all.
+    expect(xdgConfigHome({ XDG_CONFIG_HOME: '/abs/config' }, '')).toBe('/abs/config');
+    expect(resolvePaths({ cwd: tmp, env: { LEXICON_PATH: '/from/env.yaml' }, home: '' }).global).toBe('/from/env.yaml');
+    expect(usableHome('/abs/home')).toBe('/abs/home');
+  });
+
+  it('with no usable home anywhere, resolving the global lexicon throws instead of going relative', () => {
+    const spy = vi.spyOn(os, 'userInfo').mockImplementation(() => {
+      throw new Error('no passwd entry');
+    });
+    try {
+      expect(() => resolvePaths({ cwd: tmp, env: {}, home: '' })).toThrow(/no usable home directory: HOME is empty/);
+      expect(() => usableHome('rel')).toThrow(/HOME is the relative path "rel"/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('resolvePaths takes env and home as options rather than only reading the process', () => {

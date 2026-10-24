@@ -21,25 +21,50 @@
 import path from 'node:path';
 import os from 'node:os';
 
-/** Honour `value` only when it is set, non-blank and absolute; else `fallback`. */
-function absoluteOr(value: string | undefined, fallback: string): string {
+/** Honour `value` only when it is set, non-blank and absolute; else `fallback()`. */
+function absoluteOr(value: string | undefined, fallback: () => string): string {
   const trimmed = value?.trim();
-  if (!trimmed) return fallback;
+  if (!trimmed) return fallback();
   // POSIX rules decide: on Windows these variables are not part of any
   // platform convention, and a bare `C:foo` is not absolute anywhere.
-  return path.isAbsolute(trimmed) ? trimmed : fallback;
+  return path.isAbsolute(trimmed) ? trimmed : fallback();
+}
+
+/**
+ * `home` when it is an absolute path, else the home directory the user
+ * database gives (`os.userInfo().homedir`), else an Error. `os.homedir()`
+ * returns `$HOME` as it is, so `HOME=` (an empty value, as some sandboxes and
+ * service launchers leave it) made every default path relative:
+ * `.config/lexicon/lexicon.yaml` under the process's working directory. The
+ * prompt hook runs in the user's repository, so that repository's own
+ * `.config/lexicon/lexicon.yaml` was applied as the user's global lexicon (and
+ * its `trust.json` consulted) with no trust check, and `hits.json` was written
+ * into it. A relative `HOME` is refused the same way.
+ */
+export function usableHome(home: string): string {
+  const trimmed = home.trim();
+  if (trimmed && path.isAbsolute(trimmed)) return home;
+  let fromUserDb: string | undefined;
+  try {
+    fromUserDb = os.userInfo().homedir;
+  } catch {
+    // no entry for this uid
+  }
+  if (fromUserDb && path.isAbsolute(fromUserDb)) return fromUserDb;
+  const what = trimmed ? `the relative path ${JSON.stringify(trimmed)}` : 'empty';
+  throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
 
 export function xdgConfigHome(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
-  return absoluteOr(env.XDG_CONFIG_HOME, path.join(home, '.config'));
+  return absoluteOr(env.XDG_CONFIG_HOME, () => path.join(usableHome(home), '.config'));
 }
 
 export function xdgDataHome(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
-  return absoluteOr(env.XDG_DATA_HOME, path.join(home, '.local', 'share'));
+  return absoluteOr(env.XDG_DATA_HOME, () => path.join(usableHome(home), '.local', 'share'));
 }
 
 export function xdgStateHome(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
-  return absoluteOr(env.XDG_STATE_HOME, path.join(home, '.local', 'state'));
+  return absoluteOr(env.XDG_STATE_HOME, () => path.join(usableHome(home), '.local', 'state'));
 }
 
 /**

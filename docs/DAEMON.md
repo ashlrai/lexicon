@@ -24,11 +24,11 @@ The clipboard tool is detected per platform (`lexicon daemon --which` and `lexic
 | Platform | Backend | Commands |
 |---|---|---|
 | macOS | `pbcopy` | `pbpaste` / `pbcopy` (built in) |
-| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline` / `wl-copy` (`sudo apt install wl-clipboard`) |
+| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline --type text` / `wl-copy` (`sudo apt install wl-clipboard`) |
 | Linux, X11 | `xclip`, else `xsel` | `xclip -selection clipboard -o` / `-i` (`sudo apt install xclip`) |
 | Windows | `powershell` | `Get-Clipboard -Raw` / `Set-Clipboard` (built in; CRLF preserved) |
 
-An empty or non-text clipboard (an image, a file) is treated as no text and skipped, as is anything over 20,000 characters.
+An empty or non-text clipboard (an image, a file) is treated as no text and skipped, as is anything over 20,000 characters. Content a tool hands over as bytes that are not UTF-8 text (a NUL, or bytes that do not decode) is never rewritten either, so a copied image stays an image.
 
 ## One-shot mode for a keyboard shortcut
 

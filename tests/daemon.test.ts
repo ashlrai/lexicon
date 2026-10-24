@@ -221,6 +221,53 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  // Catches: a tool that handed over an image's bytes (wl-paste with no text on
+  // offer) had the decoding "corrected" and written back, so the copied image
+  // was replaced by mangled text.
+  it('never rewrites binary clipboard content', async () => {
+    const png = '\uFFFDPNG\r\n\u001a\n\u0000\u0000Ashler\uFFFD\uFFFD garbage';
+    const h = start(png);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(core.normalize).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+    h.clipboard = 'meet Ashler\u0000';
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).not.toHaveBeenCalled();
+    h.clipboard = 'meet Ashler';
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).toHaveBeenCalledWith('meet Ashlr.AI');
+    h.controller.abort();
+    await h.done;
+  });
+
+  // Catches: the guard kept the last corrected input forever, so copying the
+  // same dictated text again later (after copying anything else) was never corrected.
+  it('corrects the same text again once something else was copied in between', async () => {
+    const h = start('meet Ashler');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    h.clipboard = 'something else';
+    await vi.advanceTimersByTimeAsync(250);
+    h.clipboard = 'meet Ashler';
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(h.write).toHaveBeenLastCalledWith('meet Ashlr.AI');
+    h.controller.abort();
+    await h.done;
+  });
+
+  it('a clipboard tool that puts the original back right after the write is not fought', async () => {
+    const h = start('meet Ashler');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    // A clipboard manager restores what was there before.
+    h.clipboard = 'meet Ashler';
+    await vi.advanceTimersByTimeAsync(250 * 4);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    h.controller.abort();
+    await h.done;
+  });
+
   it('reloads the lexicon at most every 5s and stops when the signal aborts', async () => {
     const h = start('a Ashler');
     await vi.advanceTimersByTimeAsync(0);
@@ -317,6 +364,16 @@ describe('runClipboardOnce', () => {
     // Catches: `daemon --once --dry-run` printed `(dry-run) 1 correction` and never said the clipboard was left as it was.
     expect(dry.h.out.join('')).toMatch(/^\(dry-run\) 1 correction; the clipboard was left unchanged\n/);
     expect(dry.write).not.toHaveBeenCalled();
+  });
+
+  it('binary content is left as it was and said so', async () => {
+    const write = vi.fn(async () => undefined);
+    const out: string[] = [];
+    const res = await runClipboardOnce({ read: async () => '\uFFFDPNG\r\n\u0000Ashler', write, out: (s) => out.push(s), err: () => undefined, cwd: '/fake' });
+    expect(res).toEqual({ changed: false, written: false, corrections: 0, pasted: false });
+    expect(write).not.toHaveBeenCalled();
+    expect(core.normalize).not.toHaveBeenCalled();
+    expect(out.join('')).toBe('no changes (clipboard holds binary data, not text; left as it was)\n');
   });
 
   it('unchanged text is not written and prints "no changes"', async () => {
@@ -512,7 +569,7 @@ describe('clipboard backends', () => {
     expect(calls).toEqual([
       { cmd: 'pbpaste', args: [] },
       { cmd: 'pbcopy', args: [], stdin: 'a' },
-      { cmd: 'wl-paste', args: ['--no-newline'] },
+      { cmd: 'wl-paste', args: ['--no-newline', '--type', 'text'] },
       { cmd: 'wl-copy', args: [], stdin: 'b' },
       { cmd: 'xclip', args: ['-selection', 'clipboard', '-o'] },
       { cmd: 'xclip', args: ['-selection', 'clipboard', '-i'], stdin: 'c' },

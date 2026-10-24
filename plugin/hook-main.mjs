@@ -17777,6 +17777,11 @@ function collapse(s) {
 function squash(s) {
   return s.replace(/\s+/g, " ").trim();
 }
+function phoneticKey(s) {
+  const alpha = alphaOnly(s);
+  if (alpha.length === 0) return "";
+  return doubleMetaphone(alpha)[0];
+}
 var OSA_MAX_LENGTH = 40;
 var OSA_ROWS = [new Int32Array(OSA_MAX_LENGTH + 1), new Int32Array(OSA_MAX_LENGTH + 1), new Int32Array(OSA_MAX_LENGTH + 1)];
 function osaDistance(a, b) {
@@ -19803,11 +19808,23 @@ var import_node_path4 = __toESM(require_node_path());
 var import_node_os2 = __toESM(require_node_os());
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
-  if (!trimmed) return fallback;
-  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback;
+  if (!trimmed) return fallback();
+  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback();
+}
+function usableHome(home) {
+  const trimmed = home.trim();
+  if (trimmed && import_node_path4.default.isAbsolute(trimmed)) return home;
+  let fromUserDb;
+  try {
+    fromUserDb = import_node_os2.default.userInfo().homedir;
+  } catch {
+  }
+  if (fromUserDb && import_node_path4.default.isAbsolute(fromUserDb)) return fromUserDb;
+  const what = trimmed ? `the relative path ${JSON.stringify(trimmed)}` : "empty";
+  throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
 function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
-  return absoluteOr(env.XDG_CONFIG_HOME, import_node_path4.default.join(home, ".config"));
+  return absoluteOr(env.XDG_CONFIG_HOME, () => import_node_path4.default.join(usableHome(home), ".config"));
 }
 function globalLexiconPath(env = process.env, home = import_node_os2.default.homedir()) {
   return env.LEXICON_PATH || import_node_path4.default.join(xdgConfigHome(env, home), "lexicon", "lexicon.yaml");
@@ -20116,8 +20133,8 @@ function indexHeadProject(head) {
     return void 0;
   }
 }
-function withLexiconLock(filePath, fn) {
-  return withFileLock(filePath, fn);
+function withLexiconLock(filePath, fn, opts) {
+  return withFileLock(filePath, fn, opts);
 }
 var HITS_FILE_NAME = "hits.json";
 function getHitsPath(opts = {}) {
@@ -20322,7 +20339,7 @@ async function recordHits(canonicals, opts = {}) {
       }
       await import_node_fs5.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
+    }, opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0);
   } catch {
   }
 }
@@ -20647,9 +20664,12 @@ var QUOTED_SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80
 var GROUPS_PER_SIDE = 4;
 var TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 var LEAD = `(?:^|[\\s,;:\u2014-])`;
+var APOS = `['\u2019]`;
 var PATTERNS = [
-  // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"
-  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
+  // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y". The apostrophe
+  // may be the typographic one (U+2019) that macOS and iOS smart punctuation and
+  // dictation write; with only `'` accepted, "it\u2019s Ashlr.AI not Ashler" was no correction.
+  { template: `${LEAD}it${APOS}?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
   // "I said X not Y"
   { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I said Ashlr.AI not Ashler", needle: /not /iu },
   // "I meant X not Y"
@@ -20657,7 +20677,7 @@ var PATTERNS = [
   // "X not Y" with no verb - only when both sides are quoted, otherwise far too loose
   { template: `^\\s*{X},? not {Y}${TAIL}`, order: ["meant", "heard"], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"', needle: /not /iu },
   // "not Y, X" / "not Y, it's X"
-  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
+  { template: `^\\s*not {Y},\\s*(?:it${APOS}?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
   // "replace Y with X"
   { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "replace Ashler with Ashlr.AI", needle: /replace /iu },
   // "Y -> X" / "Y => X" / "Y → X"
@@ -20810,6 +20830,7 @@ async function queueCorrections(corrections, opts = {}) {
   const file = pendingPath(opts);
   const now = (opts.now ?? /* @__PURE__ */ new Date()).toISOString();
   const source = opts.source ?? "manual";
+  const lockOpts = opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0;
   return withLexiconLock(file, async () => {
     const entries2 = await readPending(file);
     const queued = [];
@@ -20838,7 +20859,7 @@ async function queueCorrections(corrections, opts = {}) {
       await writePending(file, entries2);
     }
     return { queued, skipped, file };
-  });
+  }, lockOpts);
 }
 
 // src/util/package.ts
@@ -20880,6 +20901,7 @@ function cliCommand(args) {
 // src/hooks/user-prompt-submit.ts
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_PROMPT_MAX_CHARS = 5e4;
+var HOOK_LOCK_TIMEOUT_MS = 50;
 function promptCut(text, max) {
   if (text.length <= max) return text.length;
   let cut = max;
@@ -20999,6 +21021,7 @@ function parseCorrections(text) {
   const seen = /* @__PURE__ */ new Set();
   const add = (c) => {
     if (!c || c.heard.trim() === "" || c.meant.trim() === "") return;
+    if (isOrdinaryContrast(text, c)) return;
     const key = `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -21008,6 +21031,25 @@ function parseCorrections(text) {
   if (!SENTENCE_BREAK_RE.test(text)) return found;
   for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
   return found;
+}
+var CORRECTION_MIN_SIMILARITY = 0.45;
+function quotedIn(text, side) {
+  return text.includes(`"${side}"`) || text.includes(`\u201C${side}\u201D`) || text.includes(`\`${side}\``);
+}
+function lettersOf(side) {
+  return side.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+function isOrdinaryContrast(text, c) {
+  const heard = c.heard.trim();
+  const meant = c.meant.trim();
+  if (quotedIn(text, heard) || quotedIn(text, meant)) return false;
+  const nameLike = /[\p{Lu}\p{N}.-]/u;
+  if (nameLike.test(heard) || nameLike.test(meant)) return false;
+  const a = lettersOf(heard);
+  const b = lettersOf(meant);
+  if (similarity(a, b) >= CORRECTION_MIN_SIMILARITY) return false;
+  const ka = phoneticKey(heard);
+  return ka === "" || ka !== phoneticKey(meant);
 }
 function formatCorrectionNotes(corrections) {
   const lines = corrections.slice(0, CORRECTION_NOTES_MAX).map(formatCorrectionNote);
@@ -21168,7 +21210,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
 function recordHitsInBackground(result, cwd, loaded) {
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
-  void recordHits(canonicals, { cwd, loaded }).catch((err) => {
+  void recordHits(canonicals, { cwd, loaded, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS }).catch((err) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] recordHits: ${message}
 `);
@@ -21177,7 +21219,7 @@ function recordHitsInBackground(result, cwd, loaded) {
 async function queueForReview(corrections, loaded) {
   if (process.env.LEXICON_QUEUE_CORRECTIONS === "0") return;
   try {
-    await queueCorrections(corrections, { globalPath: loaded.global.path, source: "prompt-hook", lexicon: loaded.merged });
+    await queueCorrections(corrections, { globalPath: loaded.global.path, source: "prompt-hook", lexicon: loaded.merged, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] could not queue corrections for review: ${sanitizeForDisplayMax(message, 300)}
@@ -21411,8 +21453,10 @@ if (isMainModule()) {
 export {
   CORRECTED_PROMPT_MAX_CHARS,
   CORRECTION_LIST_MAX_CHARS,
+  CORRECTION_MIN_SIMILARITY,
   CORRECTION_NOTES_MAX,
   DATA_BLOCK_MIN_ROWS,
+  HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
   ONBOARD_NOTE,
