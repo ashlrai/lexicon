@@ -63,6 +63,7 @@ import {
   isStaleProvisional,
   readState,
   recorderLogPath,
+  resetPrivateFile,
   resolveInput,
   startRecorder,
   stateFilePath,
@@ -1192,7 +1193,8 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
   try {
     // Both files exist 0600 before ffmpeg touches them; ffmpeg keeps the mode.
     await touchPrivateFile(wav);
-    await touchPrivateFile(logFile);
+    // Emptied, so what it holds is this recording's ffmpeg output only.
+    await resetPrivateFile(logFile);
     child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, seconds, detached: true, logFile });
     if (child.pid === undefined) throw new Error('could not start ffmpeg');
   } catch (e) {

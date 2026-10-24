@@ -87,6 +87,21 @@ export async function touchPrivateFile(file: string): Promise<void> {
   }
 }
 
+/**
+ * Create `file` empty with mode 0600, emptying one that is already there.
+ * The detached recorder's stderr log is opened for append, and it was never
+ * emptied: it grew by every recording's errors, and a recording that failed
+ * without a word quoted an earlier recording's last lines as `ffmpeg said:`.
+ */
+export async function resetPrivateFile(file: string): Promise<void> {
+  const handle = await fs.open(file, 'w', VOICE_FILE_MODE);
+  try {
+    await handle.chmod(VOICE_FILE_MODE);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Parse a state file at an explicit path (the live one, or a claimed copy). */
 async function readStateFile(file: string): Promise<RecordingState | undefined> {
   try {

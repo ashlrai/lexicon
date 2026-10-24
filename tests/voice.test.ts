@@ -476,6 +476,24 @@ describe('lexicon voice --toggle', () => {
     await expect(fs.access(wav)).rejects.toThrow();
   });
 
+  // Catches: recorder.log was opened for append and never emptied, so a recording that failed quoted an earlier one's error.
+  it('starts each recording with an empty recorder log, so a failure never quotes an earlier one', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    await fs.writeFile(recorderLogPath(h.globalPath), '[AVFoundation indev @ 0x1] Error opening input: from yesterday\n');
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(await fs.readFile(recorderLogPath(h.globalPath), 'utf8')).toBe('');
+    if (process.platform !== 'win32') expect(await modeOf(recorderLogPath(h.globalPath))).toBe(0o600);
+
+    // This recording leaves nothing usable and ffmpeg logged nothing for it.
+    const wav = (await readState(h.globalPath))?.wav ?? '';
+    await fs.writeFile(wav, Buffer.alloc(0));
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('recording failed');
+    expect(h.err.join('')).not.toContain('from yesterday');
+  });
+
   it('keeps a capture it cannot parse rather than deleting the user audio', async () => {
     const h = await harness();
     const wav = await deadRecorderState(h, Buffer.alloc(100_000, 3));

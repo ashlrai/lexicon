@@ -197,7 +197,7 @@ refuses to transcribe is kept too, because a refusal is a parser's opinion about
 container and the audio is the user's. Those kept captures add up, and nothing here
 deletes them for you: a start sweeps away only what cannot hold audio (zero-byte
 captures) and then says how many recordings are still sitting in `voice/` and how much
-space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`.
+space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`, which each start empties, so it holds the current recording's output only.
 
 ### Hotkey recipes
 
