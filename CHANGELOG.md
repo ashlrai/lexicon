@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- `lexicon install <client> --scope user --project` is refused, writing nothing. It was taken as project scope: the preview named the repo-level file while the `--apply` line it printed (`--scope user`) wrote the user one, and `--json` reported `scope: "user"`.
 - `lexicon daemon --interval` under 20 ms says on stderr that it polls every 20 ms. The value was raised to 20 without a word, so `--interval 5` looked like it polled every 5 ms; `--help` now names the minimum too.
 - A clipboard read keeps at most 4 KiB of what the tool printed on stderr, as a write does. A read buffered all of it, so a tool that kept printing warnings while it read grew the daemon's memory until it exited or timed out.
 - `lexicon daemon --once --paste` off macOS no longer says the text is on the clipboard when the clipboard held binary data, nothing or no text it looked at. It now says the clipboard holds no text to paste, and why, and that it was left as it was.

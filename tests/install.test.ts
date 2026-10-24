@@ -758,6 +758,19 @@ describe('a preview names the full command that applies it', () => {
     expect(scoped.io.out).not.toContain('run again with --apply');
   });
 
+  // Catches: --scope user with --project previewed the repo file, named an
+  // --apply line (--scope user) that wrote the user file, and --json said user.
+  it('refuses --scope user with --project, writing nothing', async () => {
+    for (const client of ['cursor', 'claude'] as const) {
+      await expect(run(client, { scope: 'user', project: true, apply: true })).rejects.toThrow(/--scope user and --project contradict each other; nothing was changed/);
+    }
+    const json = await run('cursor', { scope: 'user', project: true, json: true });
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.io.out)).toMatchObject({ ok: false, nextStep: expect.stringContaining('pass one of them') });
+    await expect(fs.access(path.join(cwd, '.cursor', 'mcp.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(home, '.cursor', 'mcp.json'))).rejects.toThrow();
+  });
+
   it('quotes a path that needs it and names no --cwd for the current directory', async () => {
     const io = makeIO();
     const spaced = path.join(home, "it's here");
